@@ -1,0 +1,1 @@
+<!-- this page will render all the coin created on BSC network -->
