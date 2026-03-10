@@ -3,6 +3,7 @@
 	import favicon from '$lib/assets/favicon.svg';
 	import { setContext, onMount } from 'svelte';
 	import { ethers } from 'ethers';
+	import { initAppKit, getAppKit } from '$lib/wagmiConfig';
 	import type { SupportedNetworks, SupportedNetwork, PaymentOption } from '$lib/structure';
 	import { page } from '$app/state';
 
@@ -54,7 +55,6 @@
 	let userAddress: string | null = $state(null);
 	let isConnecting = $state(false);
 	let isLoading = $state(true);
-	let showWalletModal = $state(false);
 	let mobileMenuOpen = $state(false);
 
 	function addFeedback(feedback: { message: string; type: string }) {
@@ -77,59 +77,61 @@
 		return addr.slice(0, 6) + '...' + addr.slice(-4);
 	}
 
-	async function connectMetaMask() {
-		if (!getEthereum()) {
-			addFeedback({ message: 'MetaMask not detected. Please install it.', type: 'error' });
-			return false;
-		}
-		isConnecting = true;
+	async function setupEthersFromProvider(ethProvider: any) {
 		try {
-			provider = new ethers.BrowserProvider(getEthereum());
-			await provider.send('eth_requestAccounts', []);
+			provider = new ethers.BrowserProvider(ethProvider);
 			signer = await provider.getSigner();
 			userAddress = await signer.getAddress();
-			addFeedback({ message: 'Wallet connected!', type: 'success' });
-			showWalletModal = false;
-			return true;
 		} catch (e) {
-			addFeedback({ message: 'Connection failed. Try again.', type: 'error' });
-			return false;
-		} finally {
-			isConnecting = false;
+			console.error('Failed to setup ethers provider:', e);
 		}
-	}
-
-	async function connectWalletConnect() {
-		addFeedback({ message: 'Configure WalletConnect projectId in wagmiConfig.ts', type: 'info' });
-		showWalletModal = false;
 	}
 
 	async function connectWallet() {
-		showWalletModal = true;
+		const kit = getAppKit();
+		if (!kit) {
+			// Fallback to direct MetaMask if AppKit not initialized
+			if (!getEthereum()) {
+				addFeedback({ message: 'No wallet detected. Please install MetaMask.', type: 'error' });
+				return false;
+			}
+			isConnecting = true;
+			try {
+				provider = new ethers.BrowserProvider(getEthereum());
+				await provider.send('eth_requestAccounts', []);
+				signer = await provider.getSigner();
+				userAddress = await signer.getAddress();
+				addFeedback({ message: 'Wallet connected!', type: 'success' });
+				return true;
+			} catch {
+				addFeedback({ message: 'Connection failed. Try again.', type: 'error' });
+				return false;
+			} finally {
+				isConnecting = false;
+			}
+		}
+		await kit.open();
 		return false;
 	}
 
 	function disconnectWallet() {
+		const kit = getAppKit();
+		if (kit) {
+			kit.disconnect();
+		}
 		provider = null;
 		signer = null;
 		userAddress = null;
 		addFeedback({ message: 'Wallet disconnected.', type: 'info' });
 	}
 
-	async function initProviders() {
+	function initProviders() {
 		const map = new Map<number, ethers.JsonRpcProvider>();
-		const promises = supportedNetworks
-			.filter((n) => n.rpc)
-			.map(async (n) => {
-				try {
-					const p = new ethers.JsonRpcProvider(n.rpc);
-					await p.getBlockNumber(); // warm up connection
-					map.set(n.chain_id, p);
-				} catch (e) {
-					console.warn(`Failed to init provider for ${n.name}:`, e);
-				}
-			});
-		await Promise.allSettled(promises);
+		for (const n of supportedNetworks) {
+			if (!n.rpc) continue;
+			const p = new ethers.JsonRpcProvider(n.rpc, n.chain_id, { staticNetwork: true });
+			map.set(n.chain_id, p);
+		}
 		networkProviders = map;
 		providersReady = true;
 	}
@@ -138,6 +140,24 @@
 		isLoading = false;
 		// Initialize providers in background
 		initProviders();
+
+		// Initialize AppKit (Reown) for wallet connections
+		const kit = initAppKit();
+		if (kit) {
+			kit.subscribeAccount(async (account: any) => {
+				if (account.isConnected && account.address) {
+					// Get the underlying provider from AppKit
+					const ethProvider = getEthereum();
+					if (ethProvider) {
+						await setupEthersFromProvider(ethProvider);
+					}
+				} else if (!account.isConnected) {
+					provider = null;
+					signer = null;
+					userAddress = null;
+				}
+			});
+		}
 
 		// Capture referral from URL if not already stored
 		const params = new URLSearchParams(window.location.search);
@@ -208,67 +228,7 @@
 	{/each}
 </div>
 
-<!-- Wallet Connect Modal -->
-{#if showWalletModal}
-	<div
-		class="fixed inset-0 z-[90] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
-		onclick={() => (showWalletModal = false)}
-	>
-		<div
-			class="modal-card w-full max-w-sm rounded-2xl border border-white/10 bg-[#0d0d14] p-6 shadow-2xl"
-			onclick={(e) => e.stopPropagation()}
-		>
-			<div class="flex justify-between items-center mb-6">
-				<h2 class="syne text-xl font-bold text-white">Connect Wallet</h2>
-				<button
-					onclick={() => (showWalletModal = false)}
-					class="text-gray-400 hover:text-white transition text-xl w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/10 cursor-pointer"
-				>x</button>
-			</div>
-
-			<div class="flex flex-col gap-3">
-				<button
-					onclick={connectMetaMask}
-					disabled={isConnecting}
-					class="wallet-option flex items-center gap-4 w-full p-4 rounded-xl border border-white/10 hover:border-cyan-500/50 hover:bg-cyan-500/5 transition group cursor-pointer"
-				>
-					<div class="w-10 h-10 rounded-xl bg-orange-500/20 flex items-center justify-center text-2xl">M</div>
-					<div class="text-left">
-						<div class="font-semibold text-white group-hover:text-cyan-300 transition text-sm">MetaMask</div>
-						<div class="text-xs text-gray-500">Browser Extension</div>
-					</div>
-					<div class="ml-auto text-gray-600 group-hover:text-cyan-400 transition">-></div>
-				</button>
-
-				<button
-					onclick={connectWalletConnect}
-					class="wallet-option flex items-center gap-4 w-full p-4 rounded-xl border border-white/10 hover:border-cyan-500/50 hover:bg-cyan-500/5 transition group cursor-pointer"
-				>
-					<div class="w-10 h-10 rounded-xl bg-blue-500/20 flex items-center justify-center text-2xl">W</div>
-					<div class="text-left">
-						<div class="font-semibold text-white group-hover:text-cyan-300 transition text-sm">WalletConnect</div>
-						<div class="text-xs text-gray-500">Mobile &amp; Desktop Wallets</div>
-					</div>
-					<div class="ml-auto text-gray-600 group-hover:text-cyan-400 transition">-></div>
-				</button>
-
-				<button
-					onclick={connectMetaMask}
-					class="wallet-option flex items-center gap-4 w-full p-4 rounded-xl border border-white/10 hover:border-cyan-500/50 hover:bg-cyan-500/5 transition group cursor-pointer"
-				>
-					<div class="w-10 h-10 rounded-xl bg-blue-600/20 flex items-center justify-center text-2xl">C</div>
-					<div class="text-left">
-						<div class="font-semibold text-white group-hover:text-cyan-300 transition text-sm">Coinbase Wallet</div>
-						<div class="text-xs text-gray-500">Coinbase Smart Wallet</div>
-					</div>
-					<div class="ml-auto text-gray-600 group-hover:text-cyan-400 transition">-></div>
-				</button>
-			</div>
-
-			<p class="text-xs text-gray-600 text-center mt-4">By connecting, you agree to our Terms of Service</p>
-		</div>
-	</div>
-{/if}
+<!-- AppKit handles the wallet modal -->
 
 <!-- App Shell -->
 <div class="app-shell min-h-screen w-full overflow-x-hidden">
@@ -461,11 +421,6 @@
 		opacity: 0.9;
 		transform: translateY(-1px);
 		box-shadow: 0 4px 24px rgba(0,210,255,0.35);
-	}
-	.modal-card { animation: modalIn 0.2s ease-out; }
-	@keyframes modalIn {
-		from { opacity: 0; transform: scale(0.95) translateY(10px); }
-		to   { opacity: 1; transform: scale(1) translateY(0); }
 	}
 	.toast { animation: slideIn 0.3s ease-out; }
 	@keyframes slideIn {
