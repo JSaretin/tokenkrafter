@@ -44,9 +44,9 @@
 	let mintAmount = $state('');
 	let mintTo = $state('');
 	let burnAmount = $state('');
-	let buyTaxBpsInput = $state('');
-	let sellTaxBpsInput = $state('');
-	let transferTaxBpsInput = $state('');
+	let buyTaxPctInput = $state('');
+	let sellTaxPctInput = $state('');
+	let transferTaxPctInput = $state('');
 	let actionLoading = $state(false);
 
 	// Tax distribution
@@ -166,9 +166,9 @@
 			};
 
 			isOwner = !!(owner && userAddress && owner.toLowerCase() === userAddress.toLowerCase());
-			buyTaxBpsInput = String(buyTaxBps ?? 0);
-			sellTaxBpsInput = String(sellTaxBps ?? 0);
-			transferTaxBpsInput = String(transferTaxBps ?? 0);
+			buyTaxPctInput = String((buyTaxBps ?? 0) / 100);
+			sellTaxPctInput = String((sellTaxBps ?? 0) / 100);
+			transferTaxPctInput = String((transferTaxBps ?? 0) / 100);
 			if (userAddress) mintTo = userAddress;
 
 			// Default router
@@ -237,9 +237,9 @@
 		try {
 			const contract = new ethers.Contract(contractAddress, TOKEN_ABI, s);
 			const tx = await contract.setTaxes(
-				Number(buyTaxBpsInput),
-				Number(sellTaxBpsInput),
-				Number(transferTaxBpsInput)
+				Math.round(Number(buyTaxPctInput) * 100),
+				Math.round(Number(sellTaxPctInput) * 100),
+				Math.round(Number(transferTaxPctInput) * 100)
 			);
 			addFeedback({ message: 'Updating taxes...', type: 'info' });
 			await tx.wait();
@@ -741,67 +741,70 @@
 					<div class="form-fields">
 						<!-- Tax Rates -->
 						<div class="sub-panel">
-							<h4 class="syne text-sm font-bold text-white mb-3">Tax Rates (basis points, 100 = 1%)</h4>
+							<h4 class="syne text-sm font-bold text-white mb-3">Tax Rates (%)</h4>
 							<div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
 								<div class="field-group">
-									<label class="label-text" for="buy-tax">Buy Tax (bps)</label>
+									<label class="label-text" for="buy-tax">Buy Tax</label>
 									<div class="input-with-badge">
 										<input
 											id="buy-tax"
 											class="input-field"
 											type="number"
 											min="0"
-											max="2500"
-											bind:value={buyTaxBpsInput}
+											max="10"
+											step="0.01"
+											bind:value={buyTaxPctInput}
 											placeholder="0"
 											disabled={!isOwner}
 										/>
-										<span class="input-badge">bps</span>
+										<span class="input-badge">%</span>
 									</div>
 									{#if tokenInfo.buyTaxBps !== undefined}
-										<span class="field-hint font-mono">Current: {tokenInfo.buyTaxBps} bps ({(tokenInfo.buyTaxBps / 100).toFixed(1)}%)</span>
+										<span class="field-hint font-mono">Current: {(tokenInfo.buyTaxBps / 100).toFixed(2)}%</span>
 									{/if}
 								</div>
 								<div class="field-group">
-									<label class="label-text" for="sell-tax">Sell Tax (bps)</label>
+									<label class="label-text" for="sell-tax">Sell Tax</label>
 									<div class="input-with-badge">
 										<input
 											id="sell-tax"
 											class="input-field"
 											type="number"
 											min="0"
-											max="2500"
-											bind:value={sellTaxBpsInput}
+											max="10"
+											step="0.01"
+											bind:value={sellTaxPctInput}
 											placeholder="0"
 											disabled={!isOwner}
 										/>
-										<span class="input-badge">bps</span>
+										<span class="input-badge">%</span>
 									</div>
 									{#if tokenInfo.sellTaxBps !== undefined}
-										<span class="field-hint font-mono">Current: {tokenInfo.sellTaxBps} bps ({(tokenInfo.sellTaxBps / 100).toFixed(1)}%)</span>
+										<span class="field-hint font-mono">Current: {(tokenInfo.sellTaxBps / 100).toFixed(2)}%</span>
 									{/if}
 								</div>
 								<div class="field-group">
-									<label class="label-text" for="transfer-tax">Transfer Tax (bps)</label>
+									<label class="label-text" for="transfer-tax">Transfer Tax</label>
 									<div class="input-with-badge">
 										<input
 											id="transfer-tax"
 											class="input-field"
 											type="number"
 											min="0"
-											max="2500"
-											bind:value={transferTaxBpsInput}
+											max="5"
+											step="0.01"
+											bind:value={transferTaxPctInput}
 											placeholder="0"
 											disabled={!isOwner}
 										/>
-										<span class="input-badge">bps</span>
+										<span class="input-badge">%</span>
 									</div>
 									{#if tokenInfo.transferTaxBps !== undefined}
-										<span class="field-hint font-mono">Current: {tokenInfo.transferTaxBps} bps</span>
+										<span class="field-hint font-mono">Current: {(tokenInfo.transferTaxBps / 100).toFixed(2)}%</span>
 									{/if}
 								</div>
 							</div>
-							<div class="text-xs text-gray-500 font-mono mt-2">Combined buy + sell + transfer tax must be &lt;= 2500 bps (25%)</div>
+							<div class="text-xs text-gray-500 font-mono mt-2">Max: buy 10%, sell 10%, transfer 5%. Combined must be &lt;= 25%.</div>
 							<button
 								onclick={doSetTaxes}
 								disabled={!isOwner || actionLoading}

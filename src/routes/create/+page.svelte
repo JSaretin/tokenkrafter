@@ -298,7 +298,9 @@
 
 			addFeedback({ message: 'Deploying token...', type: 'info' });
 			const txOptions = isNativePayment ? { value: selectedFee } : {};
-			const tx = await factory.createToken(params, txOptions);
+			const storedRef = localStorage.getItem('referral');
+			const referral = storedRef && ethers.isAddress(storedRef) ? storedRef : ZERO_ADDRESS;
+			const tx = await factory.createToken(params, referral, txOptions);
 			deployTxHash = tx.hash;
 			const receipt = await tx.wait();
 

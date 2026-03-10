@@ -138,6 +138,13 @@
 		isLoading = false;
 		// Initialize providers in background
 		initProviders();
+
+		// Capture referral from URL if not already stored
+		const params = new URLSearchParams(window.location.search);
+		const ref = params.get('ref');
+		if (ref && ethers.isAddress(ref) && !localStorage.getItem('referral')) {
+			localStorage.setItem('referral', ref);
+		}
 	});
 
 	setContext('addFeedback', addFeedback);
