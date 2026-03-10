@@ -84,6 +84,11 @@
 	}
 </script>
 
+<svelte:head>
+	<title>My Tokens | TokenKrafter</title>
+	<meta name="description" content="Manage your deployed tokens. Mint, burn, configure taxes, add DEX liquidity, and set up anti-whale protection." />
+</svelte:head>
+
 <div class="max-w-5xl mx-auto px-4 sm:px-6 py-12">
 	<!-- Header -->
 	<div class="flex items-start justify-between flex-wrap gap-4 mb-8">

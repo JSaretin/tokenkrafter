@@ -62,6 +62,11 @@
 	];
 </script>
 
+<svelte:head>
+	<title>TokenKrafter - Deploy Custom ERC-20 Tokens Across Multiple Chains</title>
+	<meta name="description" content="Create and deploy custom ERC-20 tokens on Ethereum, BSC, and more. No coding required. Mintable, taxable, and partner tokens with built-in DEX liquidity and anti-whale protection." />
+</svelte:head>
+
 <div class="page-wrap">
 	<!-- Hero -->
 	<section class="hero-section">

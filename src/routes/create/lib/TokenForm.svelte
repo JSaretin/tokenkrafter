@@ -1,6 +1,28 @@
 <script lang="ts">
 	import type { SupportedNetwork } from '$lib/structure';
 
+	export type ListingConfig = {
+		enabled: boolean;
+		baseCoin: 'native' | 'usdt' | 'usdc';
+		mode: 'manual' | 'price';
+		tokenAmount: string;
+		baseAmount: string;
+		pricePerToken: string;
+		listBaseAmount: string;
+	};
+
+	export type TokenFormData = {
+		name: string;
+		symbol: string;
+		totalSupply: string;
+		decimals: number;
+		isMintable: boolean;
+		isTaxable: boolean;
+		isPartner: boolean;
+		network: SupportedNetwork;
+		listing: ListingConfig;
+	};
+
 	let name = $state('');
 	let symbol = $state('');
 	let totalSupply = $state('');
@@ -10,6 +32,15 @@
 	let isTaxable = $state(false);
 	let isPartner = $state(false);
 
+	// Listing settings
+	let listingEnabled = $state(false);
+	let listingBaseCoin = $state<'native' | 'usdt' | 'usdc'>('native');
+	let listingMode = $state<'manual' | 'price'>('manual');
+	let listingTokenAmount = $state('');
+	let listingBaseAmount = $state('');
+	let listingPricePerToken = $state('');
+	let listingListBaseAmount = $state('');
+
 	let {
 		supportedNetworks,
 		addFeedback,
@@ -17,17 +48,28 @@
 	}: {
 		supportedNetworks: SupportedNetwork[];
 		addFeedback: (feedback: { message: string; type: string }) => void;
-		updateTokenInfo: (tokenInfo: {
-			name: string;
-			symbol: string;
-			totalSupply: string;
-			decimals: number;
-			isMintable: boolean;
-			isTaxable: boolean;
-			isPartner: boolean;
-			network: SupportedNetwork;
-		}) => void;
+		updateTokenInfo: (tokenInfo: TokenFormData) => void;
 	} = $props();
+
+	let selectedNetwork = $derived(supportedNetworks.find((n) => n.chain_id == chainId));
+	let nativeCoinSymbol = $derived(selectedNetwork?.native_coin ?? 'ETH');
+	let baseCoinSymbol = $derived(
+		listingBaseCoin === 'native' ? nativeCoinSymbol :
+		listingBaseCoin === 'usdt' ? 'USDT' : 'USDC'
+	);
+
+	let calculatedTokenAmount = $derived(() => {
+		if (!listingPricePerToken || !listingListBaseAmount || Number(listingPricePerToken) <= 0) return '';
+		return (Number(listingListBaseAmount) / Number(listingPricePerToken)).toFixed(6);
+	});
+
+	// Validate listing amounts against total supply
+	let listingTokenPct = $derived(() => {
+		if (!totalSupply) return 0;
+		const amount = listingMode === 'price' ? Number(calculatedTokenAmount()) : Number(listingTokenAmount);
+		if (!amount || amount <= 0) return 0;
+		return (amount / Number(totalSupply)) * 100;
+	});
 
 	function onsubmit(e: Event) {
 		e.preventDefault();
@@ -36,7 +78,32 @@
 			addFeedback({ message: 'Please select a network', type: 'error' });
 			return;
 		}
-		updateTokenInfo({ name, symbol, totalSupply, decimals, isMintable, isTaxable, isPartner, network });
+
+		if (listingEnabled) {
+			const tokenAmt = listingMode === 'price' ? calculatedTokenAmount() : listingTokenAmount;
+			const baseAmt = listingMode === 'price' ? listingListBaseAmount : listingBaseAmount;
+			if (!tokenAmt || !baseAmt || Number(tokenAmt) <= 0 || Number(baseAmt) <= 0) {
+				addFeedback({ message: 'Please fill in all listing amounts.', type: 'error' });
+				return;
+			}
+			if (Number(tokenAmt) > Number(totalSupply)) {
+				addFeedback({ message: 'Listing token amount exceeds total supply.', type: 'error' });
+				return;
+			}
+		}
+
+		updateTokenInfo({
+			name, symbol, totalSupply, decimals, isMintable, isTaxable, isPartner, network,
+			listing: {
+				enabled: listingEnabled,
+				baseCoin: listingBaseCoin,
+				mode: listingMode,
+				tokenAmount: listingTokenAmount,
+				baseAmount: listingBaseAmount,
+				pricePerToken: listingPricePerToken,
+				listBaseAmount: listingListBaseAmount
+			}
+		});
 	}
 </script>
 
@@ -214,8 +281,151 @@
 			</span>
 		</div>
 
+		<!-- Listing Settings (disabled for now) -->
+		{#if false}
+		<div class="listing-section">
+			<label class="toggle-card {listingEnabled ? 'active listing-active' : ''}">
+				<div class="toggle-info">
+					<div class="toggle-icon listing-icon">$</div>
+					<div>
+						<div class="text-sm font-semibold text-white syne">Add Initial Liquidity</div>
+						<div class="text-xs text-gray-500 font-mono mt-0.5">List your token on a DEX right after creation</div>
+					</div>
+				</div>
+				<div class="toggle-switch {listingEnabled ? 'on listing-switch-on' : ''}">
+					<div class="toggle-thumb"></div>
+				</div>
+				<input type="checkbox" bind:checked={listingEnabled} class="sr-only" />
+			</label>
+
+			{#if listingEnabled}
+				<div class="listing-settings">
+					<h4 class="syne text-sm font-bold text-white mb-3">Listing Settings</h4>
+
+					<!-- Pair Type -->
+					<div class="field-group">
+						<label class="label-text">Pair With</label>
+						<div class="pair-options">
+							<button type="button" class="pair-option {listingBaseCoin === 'native' ? 'active' : ''}" onclick={() => (listingBaseCoin = 'native')}>
+								{nativeCoinSymbol}
+							</button>
+							<button type="button" class="pair-option {listingBaseCoin === 'usdt' ? 'active' : ''}" onclick={() => (listingBaseCoin = 'usdt')}>
+								USDT
+							</button>
+							<button type="button" class="pair-option {listingBaseCoin === 'usdc' ? 'active' : ''}" onclick={() => (listingBaseCoin = 'usdc')}>
+								USDC
+							</button>
+						</div>
+					</div>
+
+					<!-- Mode Toggle -->
+					<div class="field-group">
+						<label class="label-text">Listing Mode</label>
+						<div class="mode-toggle">
+							<button type="button" class="mode-btn {listingMode === 'manual' ? 'active' : ''}" onclick={() => (listingMode = 'manual')}>Manual Amounts</button>
+							<button type="button" class="mode-btn {listingMode === 'price' ? 'active' : ''}" onclick={() => (listingMode = 'price')}>Price-Based</button>
+						</div>
+					</div>
+
+					{#if listingMode === 'manual'}
+						<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+							<div class="field-group">
+								<label class="label-text" for="list-token-amt">Token Amount</label>
+								<div class="input-with-badge">
+									<input
+										id="list-token-amt"
+										class="input-field"
+										type="number"
+										min="0"
+										bind:value={listingTokenAmount}
+										placeholder="100000"
+									/>
+									<span class="input-badge">{symbol || 'TOKEN'}</span>
+								</div>
+							</div>
+							<div class="field-group">
+								<label class="label-text" for="list-base-amt">{baseCoinSymbol} Amount</label>
+								<div class="input-with-badge">
+									<input
+										id="list-base-amt"
+										class="input-field"
+										type="number"
+										min="0"
+										step="any"
+										bind:value={listingBaseAmount}
+										placeholder="0.5"
+									/>
+									<span class="input-badge">{baseCoinSymbol}</span>
+								</div>
+							</div>
+						</div>
+					{:else}
+						<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+							<div class="field-group">
+								<label class="label-text" for="list-price">Price per Token</label>
+								<div class="input-with-badge">
+									<input
+										id="list-price"
+										class="input-field"
+										type="number"
+										min="0"
+										step="any"
+										bind:value={listingPricePerToken}
+										placeholder="0.001"
+									/>
+									<span class="input-badge">{baseCoinSymbol}</span>
+								</div>
+								<span class="field-hint">How much 1 {symbol || 'token'} costs in {baseCoinSymbol}</span>
+							</div>
+							<div class="field-group">
+								<label class="label-text" for="list-base-total">{baseCoinSymbol} to List</label>
+								<div class="input-with-badge">
+									<input
+										id="list-base-total"
+										class="input-field"
+										type="number"
+										min="0"
+										step="any"
+										bind:value={listingListBaseAmount}
+										placeholder="1.0"
+									/>
+									<span class="input-badge">{baseCoinSymbol}</span>
+								</div>
+							</div>
+						</div>
+
+						{#if calculatedTokenAmount()}
+							<div class="calc-result">
+								<span class="text-gray-500 text-xs font-mono">Tokens to list:</span>
+								<span class="text-white text-sm font-mono font-bold">
+									{Number(calculatedTokenAmount()).toLocaleString()} {symbol || 'tokens'}
+								</span>
+							</div>
+						{/if}
+					{/if}
+
+					{#if listingTokenPct() > 0}
+						<div class="listing-pct-bar">
+							<div class="flex justify-between text-xs font-mono mb-1">
+								<span class="text-gray-500">Supply allocated to liquidity</span>
+								<span class="text-cyan-400">{listingTokenPct().toFixed(1)}%</span>
+							</div>
+							<div class="pct-track">
+								<div class="pct-fill" style="width: {Math.min(listingTokenPct(), 100)}%"></div>
+							</div>
+						</div>
+					{/if}
+
+					<div class="listing-info-box">
+						<span class="text-gray-500 text-[11px] font-mono">Liquidity will be added automatically after your token is deployed. You'll need {baseCoinSymbol} in your wallet for the pair. LP tokens go to your wallet.</span>
+					</div>
+				</div>
+			{/if}
+		</div>
+		{/if}
+
 		<button type="submit" class="submit-btn w-full syne">
-			Review Transaction ->
+			{listingEnabled ? 'Review Transaction & Listing ->' : 'Review Transaction ->'}
 		</button>
 	</div>
 </form>
@@ -481,5 +691,144 @@
 		color: #9ca3af;
 		font-family: 'Space Mono', monospace;
 		line-height: 1.5;
+	}
+
+	/* Listing Settings */
+	.listing-section {
+		padding: 16px;
+		background: rgba(255,255,255,0.02);
+		border-radius: 12px;
+		border: 1px solid rgba(255,255,255,0.05);
+	}
+
+	.listing-icon {
+		background: rgba(16,185,129,0.12) !important;
+		color: #10b981 !important;
+	}
+	.toggle-card.listing-active {
+		border-color: rgba(16,185,129,0.3);
+		background: rgba(16,185,129,0.05);
+	}
+	.toggle-card.listing-active:hover {
+		border-color: rgba(16,185,129,0.4);
+	}
+	.listing-switch-on {
+		background: rgba(16,185,129,0.5) !important;
+	}
+
+	.listing-settings {
+		margin-top: 12px;
+		padding: 16px;
+		background: rgba(16,185,129,0.03);
+		border: 1px solid rgba(16,185,129,0.12);
+		border-radius: 10px;
+		display: flex;
+		flex-direction: column;
+		gap: 14px;
+		animation: fadeIn 0.2s ease-out;
+	}
+
+	.pair-options {
+		display: flex;
+		gap: 8px;
+	}
+	.pair-option {
+		flex: 1;
+		padding: 10px;
+		border-radius: 8px;
+		border: 1px solid rgba(255,255,255,0.08);
+		background: rgba(255,255,255,0.03);
+		color: #94a3b8;
+		font-family: 'Space Mono', monospace;
+		font-size: 13px;
+		font-weight: 600;
+		cursor: pointer;
+		transition: all 0.15s;
+		text-align: center;
+	}
+	.pair-option:hover {
+		border-color: rgba(16,185,129,0.3);
+		color: #e2e8f0;
+	}
+	.pair-option.active {
+		border-color: rgba(16,185,129,0.5);
+		background: rgba(16,185,129,0.1);
+		color: #10b981;
+	}
+
+	.mode-toggle {
+		display: flex;
+		gap: 4px;
+		background: rgba(255,255,255,0.03);
+		border: 1px solid rgba(255,255,255,0.06);
+		border-radius: 8px;
+		padding: 3px;
+	}
+	.mode-btn {
+		flex: 1;
+		padding: 8px 12px;
+		border-radius: 6px;
+		border: none;
+		background: transparent;
+		color: #6b7280;
+		font-family: 'Space Mono', monospace;
+		font-size: 12px;
+		cursor: pointer;
+		transition: all 0.15s;
+	}
+	.mode-btn:hover { color: #e2e8f0; }
+	.mode-btn.active {
+		background: rgba(16,185,129,0.12);
+		color: #10b981;
+	}
+
+	.input-with-badge {
+		position: relative;
+	}
+	.input-with-badge .input-field {
+		padding-right: 70px;
+	}
+	.input-badge {
+		position: absolute;
+		right: 12px;
+		top: 50%;
+		transform: translateY(-50%);
+		font-size: 11px;
+		font-family: 'Space Mono', monospace;
+		color: #4b5563;
+		pointer-events: none;
+	}
+
+	.calc-result {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 10px 12px;
+		background: rgba(16,185,129,0.05);
+		border: 1px solid rgba(16,185,129,0.12);
+		border-radius: 8px;
+	}
+
+	.listing-pct-bar {
+		padding: 10px 0;
+	}
+	.pct-track {
+		height: 4px;
+		background: rgba(255,255,255,0.06);
+		border-radius: 999px;
+		overflow: hidden;
+	}
+	.pct-fill {
+		height: 100%;
+		background: linear-gradient(90deg, #10b981, #00d2ff);
+		border-radius: 999px;
+		transition: width 0.3s;
+	}
+
+	.listing-info-box {
+		padding: 10px 12px;
+		background: rgba(255,255,255,0.02);
+		border: 1px solid rgba(255,255,255,0.05);
+		border-radius: 8px;
 	}
 </style>

@@ -4,6 +4,11 @@
 	const supportedNetworks: SupportedNetworks = getContext('supportedNetworks');
 </script>
 
+<svelte:head>
+	<title>Explore Tokens | TokenKrafter</title>
+	<meta name="description" content="Browse and explore tokens deployed on Ethereum, BSC, and other supported networks through TokenKrafter." />
+</svelte:head>
+
 <div class="max-w-5xl mx-auto px-4 sm:px-6 py-12">
 	<h1 class="syne text-3xl sm:text-4xl font-bold text-white mb-2">Explore Tokens</h1>
 	<p class="text-gray-400 font-mono text-sm mb-8">Browse tokens deployed on supported networks.</p>

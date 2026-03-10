@@ -2,8 +2,9 @@
 	import { ethers } from 'ethers';
 	import { getContext, onDestroy } from 'svelte';
 	import type { SupportedNetwork, PaymentOption } from '$lib/structure';
-	import { FACTORY_ABI, ERC20_ABI, ZERO_ADDRESS } from '$lib/tokenCrafter';
+	import { FACTORY_ABI, ROUTER_ABI, ERC20_ABI, ZERO_ADDRESS } from '$lib/tokenCrafter';
 	import TokenForm from './lib/TokenForm.svelte';
+	import type { ListingConfig, TokenFormData } from './lib/TokenForm.svelte';
 
 	let getProvider: () => ethers.BrowserProvider | null = getContext('provider');
 	let getSigner: () => ethers.Signer | null = getContext('signer');
@@ -23,7 +24,7 @@
 
 	let showPreview = $state(false);
 	let isCreating = $state(false);
-	let step = $state<'idle' | 'review' | 'checking-balance' | 'waiting-deposit' | 'approving' | 'creating' | 'done'>('idle');
+	let step = $state<'idle' | 'review' | 'checking-balance' | 'waiting-deposit' | 'approving' | 'creating' | 'approving-listing' | 'adding-liquidity' | 'done'>('idle');
 	let deployAfterConnect = $state(false);
 	let deployedTokenAddress: string | null = $state(null);
 	let deployTxHash: string | null = $state(null);
@@ -135,16 +136,13 @@
 	let balanceCheckInterval: ReturnType<typeof setInterval> | null = null;
 	let requiredAmount: bigint = $state(0n);
 
-	let tokenInfo: {
-		name: string;
-		symbol: string;
-		totalSupply: string;
-		decimals: number;
-		isMintable: boolean;
-		isTaxable: boolean;
-		isPartner: boolean;
-		network: SupportedNetwork;
-	} | null = $state(null);
+	// DEX router addresses per chain
+	const DEX_ROUTERS: Record<number, string> = {
+		1: '0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D',   // Uniswap V2
+		56: '0x10ED43C718714eb63d5aA57B78B54704E256024E'     // PancakeSwap V2
+	};
+
+	let tokenInfo: (TokenFormData & { listing: ListingConfig }) | null = $state(null);
 
 	// Derived: selected payment option
 	let selectedPayment = $derived(paymentOptions[selectedPaymentIndex]);
@@ -165,7 +163,7 @@
 		return networkProviders.get(chainId) ?? null;
 	}
 
-	async function updateTokenInfo(info: typeof tokenInfo) {
+	async function updateTokenInfo(info: TokenFormData) {
 		showPreview = true;
 		tokenInfo = info;
 		step = 'review';
@@ -316,14 +314,125 @@
 				deployedTokenAddress = parsed?.args?.tokenAddress ?? null;
 			}
 
-			step = 'done';
 			addFeedback({ message: 'Token created successfully!', type: 'success' });
+
+			// If listing is enabled, add liquidity
+			if (tokenInfo.listing?.enabled && deployedTokenAddress) {
+				await addListingLiquidity(deployedTokenAddress);
+			}
+
+			step = 'done';
 		} catch (e: any) {
 			const msg = e.shortMessage || e.message || 'Transaction failed';
 			addFeedback({ message: `Error: ${msg}`, type: 'error' });
 			step = 'review';
 		} finally {
 			isCreating = false;
+		}
+	}
+
+	function getBaseTokenAddress(network: SupportedNetwork, baseCoin: string): string {
+		if (baseCoin === 'native') return ZERO_ADDRESS;
+		if (baseCoin === 'usdt') return network.usdt_address;
+		return network.usdc_address;
+	}
+
+	function getBaseDecimals(network: SupportedNetwork, baseCoin: string): number {
+		if (baseCoin === 'native') return 18;
+		return network.chain_id === 56 ? 18 : 6;
+	}
+
+	function getBaseSymbol(network: SupportedNetwork, baseCoin: string): string {
+		if (baseCoin === 'native') return network.native_coin;
+		return baseCoin.toUpperCase();
+	}
+
+	async function addListingLiquidity(tokenAddress: string) {
+		if (!tokenInfo || !signer || !userAddress) return;
+		const listing = tokenInfo.listing;
+		const network = tokenInfo.network;
+		const routerAddress = DEX_ROUTERS[network.chain_id];
+		if (!routerAddress) {
+			addFeedback({ message: 'DEX router not configured for this network. Add liquidity manually from Manage Tokens.', type: 'error' });
+			return;
+		}
+
+		const tokenAmt = listing.mode === 'price'
+			? (() => {
+				if (!listing.pricePerToken || !listing.listBaseAmount || Number(listing.pricePerToken) <= 0) return '0';
+				return (Number(listing.listBaseAmount) / Number(listing.pricePerToken)).toFixed(6);
+			})()
+			: listing.tokenAmount;
+		const baseAmt = listing.mode === 'price' ? listing.listBaseAmount : listing.baseAmount;
+
+		if (!tokenAmt || !baseAmt || Number(tokenAmt) <= 0 || Number(baseAmt) <= 0) {
+			addFeedback({ message: 'Invalid listing amounts. Add liquidity manually from Manage Tokens.', type: 'error' });
+			return;
+		}
+
+		const parsedTokenAmount = ethers.parseUnits(String(Number(tokenAmt)), tokenInfo.decimals);
+		const isNativeBase = listing.baseCoin === 'native';
+		const baseDecimals = getBaseDecimals(network, listing.baseCoin);
+		const baseSymbol = getBaseSymbol(network, listing.baseCoin);
+
+		try {
+			// Approve token for router
+			step = 'approving-listing';
+			const tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI, signer);
+			const allowance = await tokenContract.allowance(userAddress, routerAddress);
+			if (allowance < parsedTokenAmount) {
+				addFeedback({ message: `Approving ${tokenInfo.symbol} for DEX router...`, type: 'info' });
+				const approveTx = await tokenContract.approve(routerAddress, parsedTokenAmount);
+				await approveTx.wait();
+			}
+
+			const router = new ethers.Contract(routerAddress, ROUTER_ABI, signer);
+			const deadline = Math.floor(Date.now() / 1000) + 1200;
+
+			step = 'adding-liquidity';
+			if (isNativeBase) {
+				const ethAmount = ethers.parseEther(String(Number(baseAmt)));
+				addFeedback({ message: `Adding ${tokenInfo.symbol}/${baseSymbol} liquidity...`, type: 'info' });
+				const tx = await router.addLiquidityETH(
+					tokenAddress,
+					parsedTokenAmount,
+					parsedTokenAmount * 95n / 100n,
+					ethAmount * 95n / 100n,
+					userAddress,
+					deadline,
+					{ value: ethAmount }
+				);
+				await tx.wait();
+			} else {
+				const baseAddress = getBaseTokenAddress(network, listing.baseCoin);
+				const parsedBaseAmount = ethers.parseUnits(String(Number(baseAmt)), baseDecimals);
+
+				// Approve base token
+				const baseContract = new ethers.Contract(baseAddress, ERC20_ABI, signer);
+				const baseAllowance = await baseContract.allowance(userAddress, routerAddress);
+				if (baseAllowance < parsedBaseAmount) {
+					addFeedback({ message: `Approving ${baseSymbol}...`, type: 'info' });
+					const approveTx = await baseContract.approve(routerAddress, parsedBaseAmount);
+					await approveTx.wait();
+				}
+
+				addFeedback({ message: `Adding ${tokenInfo.symbol}/${baseSymbol} liquidity...`, type: 'info' });
+				const tx = await router.addLiquidity(
+					tokenAddress,
+					baseAddress,
+					parsedTokenAmount,
+					parsedBaseAmount,
+					parsedTokenAmount * 95n / 100n,
+					parsedBaseAmount * 95n / 100n,
+					userAddress,
+					deadline
+				);
+				await tx.wait();
+			}
+
+			addFeedback({ message: 'Liquidity added successfully!', type: 'success' });
+		} catch (e: any) {
+			addFeedback({ message: `Liquidity failed: ${e.shortMessage || e.message || 'Unknown error'}. You can add it manually from Manage Tokens.`, type: 'error' });
 		}
 	}
 
@@ -382,14 +491,23 @@
 		return addr.slice(0, 10) + '...' + addr.slice(-8);
 	}
 
-	const deploySteps = [
-		{ key: 'checking-balance', label: 'Checking balance' },
-		{ key: 'approving', label: 'Approving token spend' },
-		{ key: 'creating', label: 'Deploying contract' }
-	];
+	let deploySteps = $derived(() => {
+		const steps = [
+			{ key: 'checking-balance', label: 'Checking balance' },
+			{ key: 'approving', label: 'Approving token spend' },
+			{ key: 'creating', label: 'Deploying contract' }
+		];
+		if (tokenInfo?.listing?.enabled) {
+			steps.push(
+				{ key: 'approving-listing', label: 'Approving tokens for DEX' },
+				{ key: 'adding-liquidity', label: 'Adding liquidity' }
+			);
+		}
+		return steps;
+	});
 
 	function stepStatus(stepKey: string) {
-		const order = ['checking-balance', 'waiting-deposit', 'approving', 'creating', 'done'];
+		const order = ['checking-balance', 'waiting-deposit', 'approving', 'creating', 'approving-listing', 'adding-liquidity', 'done'];
 		const currentIdx = order.indexOf(step);
 		const stepIdx = order.indexOf(stepKey);
 		if (step === 'done') return 'done';
@@ -399,10 +517,15 @@
 	}
 </script>
 
+<svelte:head>
+	<title>Create Token | TokenKrafter</title>
+	<meta name="description" content="Deploy your own ERC-20 token in minutes. Configure supply, decimals, minting, taxes, and anti-whale protection. Add DEX liquidity on launch." />
+</svelte:head>
+
 <!-- Review Modal -->
 {#if showPreview && tokenInfo}
 	<div
-		class="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4"
+		class="modal-backdrop fixed inset-0 z-[80] flex items-center justify-center p-4"
 		onclick={closePreview}
 	>
 		<div
@@ -412,8 +535,12 @@
 			{#if step === 'done'}
 				<div class="text-center py-8">
 					<div class="text-5xl mb-4 syne font-bold text-emerald-400">Done!</div>
-					<h2 class="syne text-2xl font-bold text-white mb-2">Token Deployed!</h2>
-					<p class="text-gray-400 font-mono text-sm mb-4">Your token is now live on {tokenInfo.network.name}.</p>
+					<h2 class="syne text-2xl font-bold text-white mb-2">
+						{tokenInfo.listing?.enabled ? 'Token Deployed & Listed!' : 'Token Deployed!'}
+					</h2>
+					<p class="text-gray-400 font-mono text-sm mb-4">
+						Your token is now live on {tokenInfo.network.name}.{tokenInfo.listing?.enabled ? ' Liquidity has been added to the DEX.' : ''}
+					</p>
 
 					{#if deployedTokenAddress}
 						<div class="deployed-address-box mb-4">
@@ -504,10 +631,14 @@
 				<div class="text-center py-10">
 					<div class="spinner w-12 h-12 rounded-full border-2 border-white/10 border-t-cyan-400 mx-auto mb-6"></div>
 					<p class="text-cyan-300 font-mono text-sm mb-6">
-						{step === 'checking-balance' ? 'Checking balance...' : step === 'approving' ? `Approving ${selectedPayment?.symbol}...` : 'Deploying contract...'}
+						{step === 'checking-balance' ? 'Checking balance...' :
+						 step === 'approving' ? `Approving ${selectedPayment?.symbol}...` :
+						 step === 'creating' ? 'Deploying contract...' :
+						 step === 'approving-listing' ? 'Approving tokens for DEX...' :
+						 step === 'adding-liquidity' ? 'Adding liquidity...' : 'Processing...'}
 					</p>
 					<div class="flex flex-col gap-2 text-left">
-						{#each deploySteps as ds}
+						{#each deploySteps() as ds}
 							{@const status = stepStatus(ds.key)}
 							<div class="flex items-center gap-3 text-sm font-mono {status === 'active' ? 'text-cyan-300' : status === 'done' ? 'text-emerald-400' : 'text-gray-600'}">
 								<span class="w-4">{status === 'done' ? 'v' : status === 'active' ? 'o' : '-'}</span>
@@ -581,6 +712,40 @@
 					</div>
 				</div>
 
+				<!-- Listing Details -->
+				{#if tokenInfo.listing?.enabled}
+					{@const listTokenAmt = tokenInfo.listing.mode === 'price'
+						? (Number(tokenInfo.listing.listBaseAmount) / Number(tokenInfo.listing.pricePerToken)).toFixed(6)
+						: tokenInfo.listing.tokenAmount}
+					{@const listBaseAmt = tokenInfo.listing.mode === 'price'
+						? tokenInfo.listing.listBaseAmount
+						: tokenInfo.listing.baseAmount}
+					{@const baseSymbol = getBaseSymbol(tokenInfo.network, tokenInfo.listing.baseCoin)}
+					<div class="modal-section">
+						<div class="label-text mb-3">Initial Liquidity</div>
+						<div class="detail-grid">
+							<div class="detail-row">
+								<span class="detail-label">Pair</span>
+								<span class="detail-value text-emerald-400">{tokenInfo.symbol}/{baseSymbol}</span>
+							</div>
+							<div class="detail-row">
+								<span class="detail-label">Tokens</span>
+								<span class="detail-value">{Number(listTokenAmt).toLocaleString()} {tokenInfo.symbol}</span>
+							</div>
+							<div class="detail-row">
+								<span class="detail-label">{baseSymbol}</span>
+								<span class="detail-value">{listBaseAmt} {baseSymbol}</span>
+							</div>
+							{#if tokenInfo.listing.mode === 'price'}
+								<div class="detail-row">
+									<span class="detail-label">Price</span>
+									<span class="detail-value">{tokenInfo.listing.pricePerToken} {baseSymbol}/token</span>
+								</div>
+							{/if}
+						</div>
+					</div>
+				{/if}
+
 				<!-- Fee & Payment Method -->
 				<div class="modal-section fee-section">
 					<div class="flex justify-between items-center mb-3">
@@ -626,7 +791,7 @@
 					disabled={feeLoading || paymentOptions.length === 0}
 					class="create-btn w-full syne cursor-pointer"
 				>
-					{feeLoading ? 'Calculating fee...' : 'Confirm & Deploy Token'}
+					{feeLoading ? 'Calculating fee...' : tokenInfo.listing?.enabled ? 'Deploy & Add Liquidity' : 'Confirm & Deploy Token'}
 				</button>
 			{/if}
 		</div>

@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="240" height="48" viewBox="0 0 240 48">
+  <defs>
+    <linearGradient id="icon-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00d2ff"/>
+      <stop offset="100%" stop-color="#3a7bd5"/>
+    </linearGradient>
+    <linearGradient id="icon-shine" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="rgba(255,255,255,0.25)"/>
+      <stop offset="100%" stop-color="rgba(255,255,255,0)"/>
+    </linearGradient>
+    <linearGradient id="text-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#00d2ff"/>
+      <stop offset="100%" stop-color="#3a7bd5"/>
+    </linearGradient>
+  </defs>
+  <!-- Icon -->
+  <g>
+    <rect width="42" height="42" rx="10" y="3" fill="url(#icon-bg)"/>
+    <rect width="42" height="42" rx="10" y="3" fill="url(#icon-shine)"/>
+    <!-- Token ring -->
+    <circle cx="21" cy="22" r="13" fill="none" stroke="rgba(255,255,255,0.4)" stroke-width="1.5"/>
+    <!-- Notches -->
+    <g stroke="rgba(255,255,255,0.5)" stroke-width="1.2" stroke-linecap="round">
+      <line x1="21" y1="8" x2="21" y2="10.5"/>
+      <line x1="21" y1="33.5" x2="21" y2="36"/>
+      <line x1="7" y1="22" x2="9.5" y2="22"/>
+      <line x1="32.5" y1="22" x2="35" y2="22"/>
+    </g>
+    <!-- TK -->
+    <text x="21" y="26" text-anchor="middle" font-family="'Arial Black', 'Helvetica', sans-serif" font-weight="900" font-size="12" fill="white" letter-spacing="-0.5">TK</text>
+    <!-- Anvil -->
+    <rect x="12" y="38" width="18" height="2.5" rx="1.2" fill="rgba(255,255,255,0.5)"/>
+  </g>
+  <!-- Text: TokenKrafter -->
+  <text x="54" y="32" font-family="'Syne', 'Arial Black', sans-serif" font-weight="800" font-size="26" fill="white" letter-spacing="-0.5">Token<tspan fill="url(#text-grad)">Krafter</tspan></text>
+</svg>

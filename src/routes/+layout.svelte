@@ -346,7 +346,7 @@
 		{/if}
 	</nav>
 
-	<main class="relative z-10 pt-16 min-h-screen">
+	<main class="pt-16 min-h-screen">
 		{#if isLoading}
 			<div class="flex items-center justify-center min-h-[80vh]">
 				<div class="flex flex-col items-center gap-4">
@@ -360,7 +360,7 @@
 	</main>
 
 	<!-- Footer -->
-	<footer class="footer relative z-10 border-t border-white/5 mt-auto">
+	<footer class="footer border-t border-white/5 mt-auto">
 		<div class="max-w-7xl mx-auto px-4 sm:px-6 py-12">
 			<div class="grid grid-cols-1 sm:grid-cols-3 gap-10 sm:gap-8">
 				<!-- Brand -->

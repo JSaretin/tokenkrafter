@@ -81,23 +81,68 @@
 	let excludedCheckResult: boolean | null = $state(null);
 
 	// Liquidity states
-	let liqBaseCoin = $state<'native' | 'usdt' | 'usdc'>('native');
-	let liqTokenAmount = $state('');
-	let liqBaseAmount = $state('');
 	let selectedRouter = $state('');
-	let liqMode = $state<'manual' | 'price'>('manual');
 
-	// Price-based liquidity
-	let pricePerToken = $state('');
-	let listBaseAmount = $state('');
-	let calculatedTokenAmount = $derived(() => {
-		if (!pricePerToken || !listBaseAmount || Number(pricePerToken) <= 0) return '';
-		return (Number(listBaseAmount) / Number(pricePerToken)).toFixed(6);
+	// New pool creation states
+	let newPoolBaseCoin = $state<'native' | 'usdt' | 'usdc'>('native');
+	let newPoolMode = $state<'manual' | 'price'>('manual');
+	let newPoolTokenAmount = $state('');
+	let newPoolBaseAmount = $state('');
+	let newPoolPricePerToken = $state('');
+	let newPoolListBaseAmount = $state('');
+	let showNewPool = $state(false);
+
+	let newPoolCalculatedTokenAmount = $derived(() => {
+		if (!newPoolPricePerToken || !newPoolListBaseAmount || Number(newPoolPricePerToken) <= 0) return '';
+		return (Number(newPoolListBaseAmount) / Number(newPoolPricePerToken)).toFixed(6);
 	});
 
+	// Supply % allocated to liquidity (for new pool)
+	let newPoolTokenPct = $derived(() => {
+		if (!tokenInfo?.totalSupply) return 0;
+		const amount = newPoolMode === 'price' ? Number(newPoolCalculatedTokenAmount()) : Number(newPoolTokenAmount);
+		if (!amount || amount <= 0) return 0;
+		return (amount / Number(tokenInfo.totalSupply)) * 100;
+	});
+
+	let newPoolSelectedBase = $derived(getBaseCoinOptions().find((b) => b.key === newPoolBaseCoin) ?? getBaseCoinOptions()[0]);
+
 	// Existing pool lookup
-	let existingPools: { baseSymbol: string; pairAddress: string; reserve0: string; reserve1: string; token0: string }[] = $state([]);
+	type ExistingPool = {
+		baseSymbol: string;
+		baseKey: string;
+		pairAddress: string;
+		reserve0: string;
+		reserve1: string;
+		token0: string;
+		tokenReserve: number;
+		baseReserve: number;
+		pricePerToken: number;
+		baseDecimals: number;
+	};
+	let existingPools: ExistingPool[] = $state([]);
 	let poolsLoading = $state(false);
+	let poolsLoaded = $state(false);
+
+	// Per-pool add liquidity states
+	let poolAddAmounts: Record<string, { baseAmount: string; tokenAmount: string; expanded: boolean }> = $state({});
+	let poolAddLoading: Record<string, boolean> = $state({});
+
+	// Deposit modal state
+	let showDepositModal = $state(false);
+	let depositInfo: {
+		symbol: string;
+		networkName: string;
+		required: string;
+		userBalance: string;
+		deficit: string;
+		decimals: number;
+		isNative: boolean;
+		// Callback to resume after deposit
+		onResume: () => void;
+	} | null = $state(null);
+	let depositPollTimer: ReturnType<typeof setInterval> | null = null;
+	let addressCopied = $state(false);
 
 	// DEX router addresses
 	const DEX_ROUTERS: Record<number, { name: string; address: string }[]> = {
@@ -119,7 +164,6 @@
 		];
 	}
 
-	let selectedBase = $derived(getBaseCoinOptions().find((b) => b.key === liqBaseCoin) ?? getBaseCoinOptions()[0]);
 
 	async function loadToken() {
 		const { chain_symbol, contract_addr } = page.params;
@@ -227,6 +271,10 @@
 	onMount(async () => {
 		await loadToken();
 		isLoading = false;
+		// Auto-load pools in background if router is set
+		if (selectedRouter && !poolsLoaded) {
+			lookupExistingPools();
+		}
 	});
 
 	async function ensureSigner() {
@@ -389,7 +437,7 @@
 			const dexFactory = new ethers.Contract(dexFactoryAddr, FACTORY_V2_ABI, provider);
 
 			const baseCoins = getBaseCoinOptions();
-			const results: typeof existingPools = [];
+			const results: ExistingPool[] = [];
 
 			for (const base of baseCoins) {
 				const baseAddr = base.address === ZERO_ADDRESS ? wethAddr : base.address;
@@ -401,44 +449,224 @@
 							pairContract.getReserves(),
 							pairContract.token0()
 						]);
+						const tokenDec = tokenInfo?.decimals ?? 18;
+						const isToken0 = token0.toLowerCase() === contractAddress.toLowerCase();
+						const tokenReserve = Number(ethers.formatUnits(reserves[isToken0 ? 0 : 1], tokenDec));
+						const baseReserve = Number(ethers.formatUnits(reserves[isToken0 ? 1 : 0], base.decimals));
+						const pricePerToken = tokenReserve > 0 ? baseReserve / tokenReserve : 0;
+
 						results.push({
 							baseSymbol: base.symbol,
+							baseKey: base.key,
 							pairAddress: pair,
-							reserve0: ethers.formatUnits(reserves[0], token0.toLowerCase() === contractAddress.toLowerCase() ? tokenInfo?.decimals ?? 18 : base.decimals),
-							reserve1: ethers.formatUnits(reserves[1], token0.toLowerCase() === contractAddress.toLowerCase() ? base.decimals : tokenInfo?.decimals ?? 18),
-							token0: token0
+							reserve0: ethers.formatUnits(reserves[0], isToken0 ? tokenDec : base.decimals),
+							reserve1: ethers.formatUnits(reserves[1], isToken0 ? base.decimals : tokenDec),
+							token0,
+							tokenReserve,
+							baseReserve,
+							pricePerToken,
+							baseDecimals: base.decimals
 						});
+
+						// Init per-pool add state
+						if (!poolAddAmounts[pair]) {
+							poolAddAmounts[pair] = { baseAmount: '', tokenAmount: '', expanded: false };
+						}
 					}
 				} catch {}
 			}
 			existingPools = results;
-			if (results.length === 0) {
-				addFeedback({ message: 'No existing liquidity pools found.', type: 'info' });
-			}
+			poolsLoaded = true;
 		} catch (e: any) {
 			addFeedback({ message: 'Failed to lookup pools: ' + (e.shortMessage || e.message), type: 'error' });
 		} finally { poolsLoading = false; }
 	}
 
-	async function doAddLiquidity() {
+	function isEmptyPool(pool: ExistingPool): boolean {
+		return pool.tokenReserve === 0 && pool.baseReserve === 0;
+	}
+
+	function poolCalcTokenFromBase(pool: ExistingPool, baseAmount: string): string {
+		if (!baseAmount || Number(baseAmount) <= 0 || pool.pricePerToken <= 0) return '';
+		return (Number(baseAmount) / pool.pricePerToken).toFixed(6);
+	}
+
+	function poolCalcBaseFromToken(pool: ExistingPool, tokenAmount: string): string {
+		if (!tokenAmount || Number(tokenAmount) <= 0) return '';
+		return (Number(tokenAmount) * pool.pricePerToken).toFixed(6);
+	}
+
+	function poolTokenPct(pool: ExistingPool, tokenAmount: string): number {
+		if (!tokenInfo?.totalSupply || !tokenAmount || Number(tokenAmount) <= 0) return 0;
+		return (Number(tokenAmount) / Number(tokenInfo.totalSupply)) * 100;
+	}
+
+	function onPoolBaseInput(pool: ExistingPool) {
+		const state = poolAddAmounts[pool.pairAddress];
+		if (!state || isEmptyPool(pool)) return; // Don't auto-calc for empty pools
+		state.tokenAmount = poolCalcTokenFromBase(pool, state.baseAmount);
+	}
+
+	function onPoolTokenInput(pool: ExistingPool) {
+		const state = poolAddAmounts[pool.pairAddress];
+		if (!state || isEmptyPool(pool)) return; // Don't auto-calc for empty pools
+		state.baseAmount = poolCalcBaseFromToken(pool, state.tokenAmount);
+	}
+
+	async function checkBalances(
+		tokenAmount: string,
+		baseAmount: string,
+		baseSymbol: string,
+		baseKey: string,
+		baseDecimals: number,
+		baseAddress: string,
+		onResume: () => void
+	): Promise<boolean> {
+		if (!userAddress || !network) return false;
+		const provider = getProvider() ?? new ethers.JsonRpcProvider(network.rpc);
+
+		// Check token balance
+		const tokenContract = new ethers.Contract(contractAddress, TOKEN_ABI, provider);
+		const tokenBal = await tokenContract.balanceOf(userAddress);
+		const parsedTokenAmount = ethers.parseUnits(String(Number(tokenAmount)), tokenInfo?.decimals ?? 18);
+		if (tokenBal < parsedTokenAmount) {
+			const balFormatted = ethers.formatUnits(tokenBal, tokenInfo?.decimals ?? 18);
+			const deficit = Number(tokenAmount) - Number(balFormatted);
+			depositInfo = {
+				symbol: tokenInfo?.symbol ?? 'TOKEN',
+				networkName: network.name,
+				required: tokenAmount,
+				userBalance: Number(balFormatted).toFixed(4),
+				deficit: deficit.toFixed(4),
+				decimals: tokenInfo?.decimals ?? 18,
+				isNative: false,
+				onResume
+			};
+			showDepositModal = true;
+			startDepositPoll(parsedTokenAmount, contractAddress, tokenInfo?.decimals ?? 18, false, onResume);
+			return false;
+		}
+
+		// Check base balance
+		const isNative = baseKey === 'native';
+		let baseBal: bigint;
+		const parsedBaseAmount = isNative
+			? ethers.parseEther(String(Number(baseAmount)))
+			: ethers.parseUnits(String(Number(baseAmount)), baseDecimals);
+
+		if (isNative) {
+			baseBal = await provider.getBalance(userAddress);
+		} else {
+			const baseContract = new ethers.Contract(baseAddress, ERC20_ABI, provider);
+			baseBal = await baseContract.balanceOf(userAddress);
+		}
+
+		if (baseBal < parsedBaseAmount) {
+			const balFormatted = isNative
+				? ethers.formatEther(baseBal)
+				: ethers.formatUnits(baseBal, baseDecimals);
+			const deficit = Number(baseAmount) - Number(balFormatted);
+			depositInfo = {
+				symbol: baseSymbol,
+				networkName: network.name,
+				required: baseAmount,
+				userBalance: Number(balFormatted).toFixed(4),
+				deficit: deficit.toFixed(4),
+				decimals: baseDecimals,
+				isNative,
+				onResume
+			};
+			showDepositModal = true;
+			const checkAddr = isNative ? '' : baseAddress;
+			startDepositPoll(parsedBaseAmount, checkAddr, baseDecimals, isNative, onResume);
+			return false;
+		}
+
+		return true;
+	}
+
+	function startDepositPoll(requiredAmount: bigint, tokenAddr: string, decimals: number, isNative: boolean, onResume: () => void) {
+		stopDepositPoll();
+		depositPollTimer = setInterval(async () => {
+			if (!userAddress || !network) return;
+			try {
+				const provider = getProvider() ?? new ethers.JsonRpcProvider(network.rpc);
+				let bal: bigint;
+				if (isNative) {
+					bal = await provider.getBalance(userAddress);
+				} else {
+					const contract = new ethers.Contract(tokenAddr, ERC20_ABI, provider);
+					bal = await contract.balanceOf(userAddress);
+				}
+				if (bal >= requiredAmount) {
+					stopDepositPoll();
+					showDepositModal = false;
+					depositInfo = null;
+					addFeedback({ message: 'Deposit detected! Proceeding...', type: 'success' });
+					onResume();
+				} else if (depositInfo) {
+					// Update displayed balance
+					const balFormatted = isNative ? ethers.formatEther(bal) : ethers.formatUnits(bal, decimals);
+					const deficit = Number(depositInfo.required) - Number(balFormatted);
+					depositInfo.userBalance = Number(balFormatted).toFixed(4);
+					depositInfo.deficit = deficit > 0 ? deficit.toFixed(4) : '0';
+				}
+			} catch {}
+		}, 5000);
+	}
+
+	function stopDepositPoll() {
+		if (depositPollTimer) {
+			clearInterval(depositPollTimer);
+			depositPollTimer = null;
+		}
+	}
+
+	function closeDepositModal() {
+		stopDepositPoll();
+		showDepositModal = false;
+		depositInfo = null;
+	}
+
+	async function copyAddress() {
+		if (!userAddress) return;
+		await navigator.clipboard.writeText(userAddress);
+		addressCopied = true;
+		setTimeout(() => { addressCopied = false; }, 2000);
+	}
+
+	onDestroy(() => {
+		stopDepositPoll();
+	});
+
+	async function doAddToExistingPool(pool: ExistingPool) {
 		const s = await ensureSigner();
 		if (!s || !network || !selectedRouter) return;
-		actionLoading = true;
-
-		const tokenAmount = liqMode === 'price' ? calculatedTokenAmount() : liqTokenAmount;
-		const baseAmount = liqMode === 'price' ? listBaseAmount : liqBaseAmount;
-
-		if (!tokenAmount || !baseAmount) {
-			addFeedback({ message: 'Please fill in all amounts.', type: 'error' });
-			actionLoading = false;
+		const state = poolAddAmounts[pool.pairAddress];
+		if (!state?.tokenAmount || !state?.baseAmount) {
+			addFeedback({ message: 'Please fill in amounts.', type: 'error' });
 			return;
 		}
 
+		// Check balances before proceeding
+		const baseOption = getBaseCoinOptions().find(b => b.symbol === pool.baseSymbol);
+		const hasFunds = await checkBalances(
+			state.tokenAmount,
+			state.baseAmount,
+			pool.baseSymbol,
+			pool.baseKey,
+			pool.baseDecimals,
+			baseOption?.address ?? ZERO_ADDRESS,
+			() => doAddToExistingPool(pool) // Retry after deposit
+		);
+		if (!hasFunds) return;
+
+		poolAddLoading[pool.pairAddress] = true;
+
 		try {
 			const tokenContract = new ethers.Contract(contractAddress, TOKEN_ABI, s);
-			const parsedTokenAmount = ethers.parseUnits(String(Number(tokenAmount)), tokenInfo?.decimals ?? 18);
+			const parsedTokenAmount = ethers.parseUnits(String(Number(state.tokenAmount)), tokenInfo?.decimals ?? 18);
 
-			// Approve router for token
 			const allowance = await tokenContract.allowance(userAddress, selectedRouter);
 			if (allowance < parsedTokenAmount) {
 				addFeedback({ message: 'Approving tokens for router...', type: 'info' });
@@ -449,9 +677,8 @@
 			const router = new ethers.Contract(selectedRouter, ROUTER_ABI, s);
 			const deadline = Math.floor(Date.now() / 1000) + 1200;
 
-			if (liqBaseCoin === 'native') {
-				// addLiquidityETH
-				const ethAmount = ethers.parseEther(String(Number(baseAmount)));
+			if (pool.baseKey === 'native') {
+				const ethAmount = ethers.parseEther(String(Number(state.baseAmount)));
 				addFeedback({ message: 'Adding liquidity...', type: 'info' });
 				const tx = await router.addLiquidityETH(
 					contractAddress,
@@ -464,11 +691,96 @@
 				);
 				await tx.wait();
 			} else {
-				// addLiquidity with ERC20 base
-				const baseInfo = selectedBase;
+				const baseOption = getBaseCoinOptions().find(b => b.symbol === pool.baseSymbol);
+				const parsedBaseAmount = ethers.parseUnits(String(Number(state.baseAmount)), pool.baseDecimals);
+				const baseContract = new ethers.Contract(baseOption!.address, ERC20_ABI, s);
+				const baseAllowance = await baseContract.allowance(userAddress, selectedRouter);
+				if (baseAllowance < parsedBaseAmount) {
+					addFeedback({ message: `Approving ${pool.baseSymbol}...`, type: 'info' });
+					const approveTx = await baseContract.approve(selectedRouter, parsedBaseAmount);
+					await approveTx.wait();
+				}
+
+				addFeedback({ message: 'Adding liquidity...', type: 'info' });
+				const tx = await router.addLiquidity(
+					contractAddress,
+					baseOption!.address,
+					parsedTokenAmount,
+					parsedBaseAmount,
+					parsedTokenAmount * 95n / 100n,
+					parsedBaseAmount * 95n / 100n,
+					userAddress,
+					deadline
+				);
+				await tx.wait();
+			}
+
+			addFeedback({ message: 'Liquidity added successfully!', type: 'success' });
+			state.tokenAmount = '';
+			state.baseAmount = '';
+			await lookupExistingPools(); // Refresh reserves
+		} catch (e: any) {
+			addFeedback({ message: e.shortMessage || e.message || 'Liquidity failed', type: 'error' });
+		} finally { poolAddLoading[pool.pairAddress] = false; }
+	}
+
+	async function doCreateNewPool() {
+		const s = await ensureSigner();
+		if (!s || !network || !selectedRouter) return;
+
+		const tokenAmount = newPoolMode === 'price' ? newPoolCalculatedTokenAmount() : newPoolTokenAmount;
+		const baseAmount = newPoolMode === 'price' ? newPoolListBaseAmount : newPoolBaseAmount;
+
+		if (!tokenAmount || !baseAmount) {
+			addFeedback({ message: 'Please fill in all amounts.', type: 'error' });
+			return;
+		}
+
+		// Check balances before proceeding
+		const hasFunds = await checkBalances(
+			tokenAmount,
+			baseAmount,
+			newPoolSelectedBase.symbol,
+			newPoolBaseCoin,
+			newPoolSelectedBase.decimals,
+			newPoolSelectedBase.address,
+			() => doCreateNewPool() // Retry after deposit
+		);
+		if (!hasFunds) return;
+
+		actionLoading = true;
+
+		try {
+			const tokenContract = new ethers.Contract(contractAddress, TOKEN_ABI, s);
+			const parsedTokenAmount = ethers.parseUnits(String(Number(tokenAmount)), tokenInfo?.decimals ?? 18);
+
+			const allowance = await tokenContract.allowance(userAddress, selectedRouter);
+			if (allowance < parsedTokenAmount) {
+				addFeedback({ message: 'Approving tokens for router...', type: 'info' });
+				const approveTx = await tokenContract.approve(selectedRouter, parsedTokenAmount);
+				await approveTx.wait();
+			}
+
+			const router = new ethers.Contract(selectedRouter, ROUTER_ABI, s);
+			const deadline = Math.floor(Date.now() / 1000) + 1200;
+
+			if (newPoolBaseCoin === 'native') {
+				const ethAmount = ethers.parseEther(String(Number(baseAmount)));
+				addFeedback({ message: 'Creating pool & adding liquidity...', type: 'info' });
+				const tx = await router.addLiquidityETH(
+					contractAddress,
+					parsedTokenAmount,
+					parsedTokenAmount * 95n / 100n,
+					ethAmount * 95n / 100n,
+					userAddress,
+					deadline,
+					{ value: ethAmount }
+				);
+				await tx.wait();
+			} else {
+				const baseInfo = newPoolSelectedBase;
 				const parsedBaseAmount = ethers.parseUnits(String(Number(baseAmount)), baseInfo.decimals);
 
-				// Approve base token
 				const baseContract = new ethers.Contract(baseInfo.address, ERC20_ABI, s);
 				const baseAllowance = await baseContract.allowance(userAddress, selectedRouter);
 				if (baseAllowance < parsedBaseAmount) {
@@ -477,7 +789,7 @@
 					await approveTx.wait();
 				}
 
-				addFeedback({ message: 'Adding liquidity...', type: 'info' });
+				addFeedback({ message: 'Creating pool & adding liquidity...', type: 'info' });
 				const tx = await router.addLiquidity(
 					contractAddress,
 					baseInfo.address,
@@ -491,11 +803,13 @@
 				await tx.wait();
 			}
 
-			addFeedback({ message: 'Liquidity added successfully!', type: 'success' });
-			liqTokenAmount = '';
-			liqBaseAmount = '';
-			pricePerToken = '';
-			listBaseAmount = '';
+			addFeedback({ message: 'Pool created & liquidity added!', type: 'success' });
+			newPoolTokenAmount = '';
+			newPoolBaseAmount = '';
+			newPoolPricePerToken = '';
+			newPoolListBaseAmount = '';
+			showNewPool = false;
+			await lookupExistingPools(); // Refresh
 		} catch (e: any) {
 			addFeedback({ message: e.shortMessage || e.message || 'Liquidity failed', type: 'error' });
 		} finally { actionLoading = false; }
@@ -661,6 +975,11 @@
 		return true;
 	}
 </script>
+
+<svelte:head>
+	<title>Manage {tokenInfo?.name ?? 'Token'} | TokenKrafter</title>
+	<meta name="description" content="Manage {tokenInfo?.name ?? 'your token'} ({tokenInfo?.symbol ?? ''}) — mint, burn, configure taxes, add DEX liquidity, and more on TokenKrafter." />
+</svelte:head>
 
 <div class="page-container max-w-6xl mx-auto px-4 sm:px-6 py-10">
 	{#if isLoading}
@@ -1427,9 +1746,9 @@
 				<div class="panel">
 					<div class="panel-header">
 						<div>
-							<h3 class="syne text-lg font-bold text-white">Add Liquidity</h3>
+							<h3 class="syne text-lg font-bold text-white">Liquidity</h3>
 							<p class="text-sm text-gray-500 font-mono mt-1">
-								Add your token to a DEX liquidity pool.
+								Manage DEX liquidity pools for your token.
 							</p>
 						</div>
 						<span class="badge badge-purple">DEX</span>
@@ -1439,24 +1758,14 @@
 						<!-- Router Selection -->
 						<div class="field-group">
 							<label class="label-text" for="dex-router">DEX Router</label>
-							<select id="dex-router" class="input-field" bind:value={selectedRouter}>
+							<select id="dex-router" class="input-field" bind:value={selectedRouter} onchange={() => { poolsLoaded = false; existingPools = []; }}>
 								{#each DEX_ROUTERS[network?.chain_id ?? 1] ?? [] as r}
 									<option value={r.address}>{r.name}</option>
 								{/each}
 							</select>
 						</div>
 
-						<!-- Base Coin Selection -->
-						<div class="field-group">
-							<label class="label-text" for="base-coin">Base Coin</label>
-							<select id="base-coin" class="input-field" bind:value={liqBaseCoin}>
-								{#each getBaseCoinOptions() as opt}
-									<option value={opt.key}>{opt.symbol}</option>
-								{/each}
-							</select>
-						</div>
-
-						<!-- Existing Pool Lookup -->
+						<!-- Existing Pools Section -->
 						<div class="sub-panel">
 							<div class="flex items-center justify-between mb-3">
 								<h4 class="syne text-sm font-bold text-white">Existing Pools</h4>
@@ -1465,147 +1774,390 @@
 									disabled={poolsLoading}
 									class="btn-secondary text-xs px-3 py-1.5 cursor-pointer"
 								>
-									{poolsLoading ? 'Loading...' : 'Lookup Pools'}
+									{poolsLoading ? 'Loading...' : poolsLoaded ? 'Refresh' : 'Load Pools'}
 								</button>
 							</div>
+
+							{#if poolsLoading}
+								<div class="flex items-center gap-3 py-4 justify-center">
+									<div class="spinner w-5 h-5 rounded-full border-2 border-white/10 border-t-cyan-400"></div>
+									<span class="text-gray-500 text-xs font-mono">Scanning pools...</span>
+								</div>
+							{:else if poolsLoaded && existingPools.length === 0}
+								<p class="text-gray-500 text-xs font-mono py-2">No existing liquidity pools found. Create a new one below.</p>
+							{:else if !poolsLoaded}
+								<p class="text-gray-600 text-xs font-mono py-2">Click "Load Pools" to scan for existing liquidity pools.</p>
+							{/if}
+
 							{#if existingPools.length > 0}
-								<div class="flex flex-col gap-2">
+								<div class="flex flex-col gap-3">
 									{#each existingPools as pool}
-										<div class="pool-row">
-											<div class="flex justify-between items-center">
-												<span class="text-white text-sm font-mono">{tokenInfo.symbol}/{pool.baseSymbol}</span>
-												<span class="text-gray-500 text-xs font-mono">{shortAddr(pool.pairAddress)}</span>
-											</div>
-											<div class="flex justify-between text-xs font-mono mt-1">
-												<span class="text-gray-400">Reserve 0: {Number(pool.reserve0).toLocaleString()}</span>
-												<span class="text-gray-400">Reserve 1: {Number(pool.reserve1).toLocaleString()}</span>
-											</div>
+										<div class="pool-card">
+											<button
+												class="pool-card-header cursor-pointer"
+												onclick={() => {
+													if (!poolAddAmounts[pool.pairAddress]) poolAddAmounts[pool.pairAddress] = { baseAmount: '', tokenAmount: '', expanded: false };
+													poolAddAmounts[pool.pairAddress].expanded = !poolAddAmounts[pool.pairAddress].expanded;
+												}}
+											>
+												<div class="flex items-center gap-3">
+													<div class="pool-pair-badge syne">{tokenInfo.symbol}/{pool.baseSymbol}</div>
+													<div class="flex flex-col">
+														{#if isEmptyPool(pool)}
+															<span class="text-amber-400 text-sm font-mono">Empty pool - set initial price</span>
+														{:else}
+															<span class="text-white text-sm font-mono">1 {tokenInfo.symbol} = {pool.pricePerToken < 0.000001 ? pool.pricePerToken.toExponential(4) : pool.pricePerToken.toFixed(6)} {pool.baseSymbol}</span>
+														{/if}
+														<span class="text-gray-500 text-[10px] font-mono">{shortAddr(pool.pairAddress)}</span>
+													</div>
+												</div>
+												<div class="flex items-center gap-3">
+													<div class="flex flex-col items-end">
+														{#if isEmptyPool(pool)}
+															<span class="badge badge-amber" style="font-size:10px;">Empty</span>
+														{:else}
+															<span class="text-gray-400 text-[10px] font-mono uppercase">Liquidity</span>
+															<span class="text-gray-300 text-xs font-mono">{pool.tokenReserve.toLocaleString(undefined, {maximumFractionDigits: 2})} / {pool.baseReserve.toLocaleString(undefined, {maximumFractionDigits: 4})}</span>
+														{/if}
+													</div>
+													<span class="pool-expand-icon {poolAddAmounts[pool.pairAddress]?.expanded ? 'expanded' : ''}">v</span>
+												</div>
+											</button>
+
+											{#if poolAddAmounts[pool.pairAddress]?.expanded}
+												<div class="pool-card-body">
+													{#if isEmptyPool(pool)}
+														<div class="empty-pool-hint">
+															<span class="text-amber-400 text-xs font-mono font-bold">Empty Pool</span>
+															<span class="text-gray-400 text-xs font-mono">This pool has no liquidity yet. Enter both amounts to set the initial price ratio.</span>
+														</div>
+													{/if}
+													<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+														<div class="field-group">
+															<label class="label-text" for="pool-base-{pool.pairAddress}">{pool.baseSymbol} Amount</label>
+															<div class="input-with-badge">
+																<input
+																	id="pool-base-{pool.pairAddress}"
+																	class="input-field"
+																	type="number"
+																	min="0"
+																	step="any"
+																	bind:value={poolAddAmounts[pool.pairAddress].baseAmount}
+																	oninput={() => onPoolBaseInput(pool)}
+																	placeholder="0.0"
+																/>
+																<span class="input-badge">{pool.baseSymbol}</span>
+															</div>
+														</div>
+														<div class="field-group">
+															<label class="label-text" for="pool-token-{pool.pairAddress}">{tokenInfo.symbol} Amount</label>
+															<div class="input-with-badge">
+																<input
+																	id="pool-token-{pool.pairAddress}"
+																	class="input-field"
+																	type="number"
+																	min="0"
+																	step="any"
+																	bind:value={poolAddAmounts[pool.pairAddress].tokenAmount}
+																	oninput={() => onPoolTokenInput(pool)}
+																	placeholder="0.0"
+																/>
+																<span class="input-badge">{tokenInfo.symbol}</span>
+															</div>
+														</div>
+													</div>
+
+													{#if poolTokenPct(pool, poolAddAmounts[pool.pairAddress]?.tokenAmount) > 0}
+														<div class="liq-pct-bar">
+															<div class="flex justify-between text-xs font-mono mb-1">
+																<span class="text-gray-500">Supply allocated to liquidity</span>
+																<span class="text-cyan-400">{poolTokenPct(pool, poolAddAmounts[pool.pairAddress].tokenAmount).toFixed(1)}%</span>
+															</div>
+															<div class="pct-track">
+																<div class="pct-fill" style="width: {Math.min(poolTokenPct(pool, poolAddAmounts[pool.pairAddress].tokenAmount), 100)}%"></div>
+															</div>
+														</div>
+													{/if}
+
+													<div class="liq-info-box">
+														{#if !isEmptyPool(pool)}
+															<div class="liq-info-row">
+																<span class="text-gray-500 font-mono text-xs">Current Price</span>
+																<span class="text-cyan-300 font-mono text-xs">1 {tokenInfo.symbol} = {pool.pricePerToken < 0.000001 ? pool.pricePerToken.toExponential(4) : pool.pricePerToken.toFixed(6)} {pool.baseSymbol}</span>
+															</div>
+														{/if}
+														<div class="liq-info-row">
+															<span class="text-gray-500 font-mono text-xs">Slippage Tolerance</span>
+															<span class="text-cyan-300 font-mono text-xs">5%</span>
+														</div>
+														<div class="liq-info-row">
+															<span class="text-gray-500 font-mono text-xs">LP Tokens go to</span>
+															<span class="text-cyan-300 font-mono text-xs">{userAddress ? shortAddr(userAddress) : 'Your wallet'}</span>
+														</div>
+													</div>
+
+													<button
+														onclick={() => doAddToExistingPool(pool)}
+														disabled={poolAddLoading[pool.pairAddress] || !poolAddAmounts[pool.pairAddress]?.tokenAmount || !poolAddAmounts[pool.pairAddress]?.baseAmount}
+														class="action-btn liq-btn syne cursor-pointer"
+													>
+														{poolAddLoading[pool.pairAddress] ? 'Adding Liquidity...' : `Add to ${tokenInfo.symbol}/${pool.baseSymbol} Pool`}
+													</button>
+												</div>
+											{/if}
 										</div>
 									{/each}
 								</div>
-							{:else if !poolsLoading}
-								<p class="text-gray-600 text-xs font-mono">Click "Lookup Pools" to check for existing pools.</p>
 							{/if}
 						</div>
 
-						<!-- Mode Toggle -->
-						<div class="mode-toggle">
+						<!-- Create New Pool -->
+						<div class="sub-panel">
 							<button
-								onclick={() => (liqMode = 'manual')}
-								class="mode-btn {liqMode === 'manual' ? 'active' : ''} cursor-pointer"
-							>Manual Amounts</button>
-							<button
-								onclick={() => (liqMode = 'price')}
-								class="mode-btn {liqMode === 'price' ? 'active' : ''} cursor-pointer"
-							>Price-Based</button>
-						</div>
+								class="flex items-center justify-between w-full cursor-pointer"
+								style="background: none; border: none; padding: 0;"
+								onclick={() => (showNewPool = !showNewPool)}
+							>
+								<h4 class="syne text-sm font-bold text-white">Create New Pool</h4>
+								<span class="pool-expand-icon {showNewPool ? 'expanded' : ''}">v</span>
+							</button>
 
-						{#if liqMode === 'manual'}
-							<!-- Manual: enter token and base amounts directly -->
-							<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-								<div class="field-group">
-									<label class="label-text" for="liq-token">Token Amount</label>
-									<div class="input-with-badge">
-										<input
-											id="liq-token"
-											class="input-field"
-											type="number"
-											min="0"
-											bind:value={liqTokenAmount}
-											placeholder="100000"
-										/>
-										<span class="input-badge">{tokenInfo.symbol}</span>
+							{#if showNewPool}
+								<div class="flex flex-col gap-4 mt-4">
+									<!-- Base Coin Selection -->
+									<div class="field-group">
+										<label class="label-text" for="new-pool-base">Base Coin</label>
+										<select id="new-pool-base" class="input-field" bind:value={newPoolBaseCoin}>
+											{#each getBaseCoinOptions() as opt}
+												<option value={opt.key}>{opt.symbol}</option>
+											{/each}
+										</select>
 									</div>
-								</div>
-								<div class="field-group">
-									<label class="label-text" for="liq-base">{selectedBase?.symbol ?? 'Base'} Amount</label>
-									<div class="input-with-badge">
-										<input
-											id="liq-base"
-											class="input-field"
-											type="number"
-											min="0"
-											bind:value={liqBaseAmount}
-											placeholder="0.5"
-										/>
-										<span class="input-badge">{selectedBase?.symbol ?? ''}</span>
-									</div>
-								</div>
-							</div>
-						{:else}
-							<!-- Price-based: user enters price per token + base amount to list -->
-							<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-								<div class="field-group">
-									<label class="label-text" for="price-per-token">Price per Token ({selectedBase?.symbol})</label>
-									<div class="input-with-badge">
-										<input
-											id="price-per-token"
-											class="input-field"
-											type="number"
-											min="0"
-											step="any"
-											bind:value={pricePerToken}
-											placeholder="1.00"
-										/>
-										<span class="input-badge">{selectedBase?.symbol ?? ''}</span>
-									</div>
-									<span class="field-hint font-mono">How much 1 {tokenInfo.symbol} costs</span>
-								</div>
-								<div class="field-group">
-									<label class="label-text" for="list-base-amt">Amount of {selectedBase?.symbol} to List</label>
-									<div class="input-with-badge">
-										<input
-											id="list-base-amt"
-											class="input-field"
-											type="number"
-											min="0"
-											step="any"
-											bind:value={listBaseAmount}
-											placeholder="100"
-										/>
-										<span class="input-badge">{selectedBase?.symbol ?? ''}</span>
-									</div>
-								</div>
-							</div>
 
-							{#if calculatedTokenAmount()}
-								<div class="calc-result">
-									<span class="text-gray-500 text-xs font-mono">Calculated token amount:</span>
-									<span class="text-white text-sm font-mono font-bold">
-										{Number(calculatedTokenAmount()).toLocaleString()} {tokenInfo.symbol}
-									</span>
+									<!-- Mode Toggle -->
+									<div class="mode-toggle">
+										<button
+											onclick={() => (newPoolMode = 'manual')}
+											class="mode-btn {newPoolMode === 'manual' ? 'active' : ''} cursor-pointer"
+										>Manual Amounts</button>
+										<button
+											onclick={() => (newPoolMode = 'price')}
+											class="mode-btn {newPoolMode === 'price' ? 'active' : ''} cursor-pointer"
+										>Price-Based</button>
+									</div>
+
+									{#if newPoolMode === 'manual'}
+										<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+											<div class="field-group">
+												<label class="label-text" for="new-liq-token">Token Amount</label>
+												<div class="input-with-badge">
+													<input
+														id="new-liq-token"
+														class="input-field"
+														type="number"
+														min="0"
+														bind:value={newPoolTokenAmount}
+														placeholder="100000"
+													/>
+													<span class="input-badge">{tokenInfo.symbol}</span>
+												</div>
+											</div>
+											<div class="field-group">
+												<label class="label-text" for="new-liq-base">{newPoolSelectedBase?.symbol ?? 'Base'} Amount</label>
+												<div class="input-with-badge">
+													<input
+														id="new-liq-base"
+														class="input-field"
+														type="number"
+														min="0"
+														bind:value={newPoolBaseAmount}
+														placeholder="0.5"
+													/>
+													<span class="input-badge">{newPoolSelectedBase?.symbol ?? ''}</span>
+												</div>
+											</div>
+										</div>
+									{:else}
+										<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+											<div class="field-group">
+												<label class="label-text" for="new-price-per-token">Price per Token ({newPoolSelectedBase?.symbol})</label>
+												<div class="input-with-badge">
+													<input
+														id="new-price-per-token"
+														class="input-field"
+														type="number"
+														min="0"
+														step="any"
+														bind:value={newPoolPricePerToken}
+														placeholder="1.00"
+													/>
+													<span class="input-badge">{newPoolSelectedBase?.symbol ?? ''}</span>
+												</div>
+												<span class="field-hint font-mono">How much 1 {tokenInfo.symbol} costs</span>
+											</div>
+											<div class="field-group">
+												<label class="label-text" for="new-list-base-amt">Amount of {newPoolSelectedBase?.symbol} to List</label>
+												<div class="input-with-badge">
+													<input
+														id="new-list-base-amt"
+														class="input-field"
+														type="number"
+														min="0"
+														step="any"
+														bind:value={newPoolListBaseAmount}
+														placeholder="100"
+													/>
+													<span class="input-badge">{newPoolSelectedBase?.symbol ?? ''}</span>
+												</div>
+											</div>
+										</div>
+
+										{#if newPoolCalculatedTokenAmount()}
+											<div class="calc-result">
+												<span class="text-gray-500 text-xs font-mono">Calculated token amount:</span>
+												<span class="text-white text-sm font-mono font-bold">
+													{Number(newPoolCalculatedTokenAmount()).toLocaleString()} {tokenInfo.symbol}
+												</span>
+											</div>
+										{/if}
+									{/if}
+
+									{#if newPoolTokenPct() > 0}
+										<div class="liq-pct-bar">
+											<div class="flex justify-between text-xs font-mono mb-1">
+												<span class="text-gray-500">Supply allocated to liquidity</span>
+												<span class="text-cyan-400">{newPoolTokenPct().toFixed(1)}%</span>
+											</div>
+											<div class="pct-track">
+												<div class="pct-fill" style="width: {Math.min(newPoolTokenPct(), 100)}%"></div>
+											</div>
+										</div>
+									{/if}
+
+									<div class="liq-info-box">
+										<div class="liq-info-row">
+											<span class="text-gray-500 font-mono text-xs">Slippage Tolerance</span>
+											<span class="text-cyan-300 font-mono text-xs">5%</span>
+										</div>
+										<div class="liq-info-row">
+											<span class="text-gray-500 font-mono text-xs">Transaction Deadline</span>
+											<span class="text-cyan-300 font-mono text-xs">20 minutes</span>
+										</div>
+										<div class="liq-info-row">
+											<span class="text-gray-500 font-mono text-xs">LP Tokens go to</span>
+											<span class="text-cyan-300 font-mono text-xs">{userAddress ? shortAddr(userAddress) : 'Your wallet'}</span>
+										</div>
+									</div>
+
+									<button
+										onclick={doCreateNewPool}
+										disabled={actionLoading || (newPoolMode === 'manual' ? (!newPoolTokenAmount || !newPoolBaseAmount) : (!newPoolPricePerToken || !newPoolListBaseAmount))}
+										class="action-btn liq-btn syne cursor-pointer"
+									>
+										{actionLoading ? 'Creating Pool...' : 'Create Pool & Add Liquidity'}
+									</button>
 								</div>
 							{/if}
-						{/if}
-
-						<div class="liq-info-box">
-							<div class="liq-info-row">
-								<span class="text-gray-500 font-mono text-xs">Slippage Tolerance</span>
-								<span class="text-cyan-300 font-mono text-xs">5%</span>
-							</div>
-							<div class="liq-info-row">
-								<span class="text-gray-500 font-mono text-xs">Transaction Deadline</span>
-								<span class="text-cyan-300 font-mono text-xs">20 minutes</span>
-							</div>
-							<div class="liq-info-row">
-								<span class="text-gray-500 font-mono text-xs">LP Tokens go to</span>
-								<span class="text-cyan-300 font-mono text-xs">{userAddress ? shortAddr(userAddress) : 'Your wallet'}</span>
-							</div>
 						</div>
-
-						<button
-							onclick={doAddLiquidity}
-							disabled={actionLoading || (liqMode === 'manual' ? (!liqTokenAmount || !liqBaseAmount) : (!pricePerToken || !listBaseAmount))}
-							class="action-btn liq-btn syne cursor-pointer"
-						>
-							{actionLoading ? 'Adding Liquidity...' : 'Add Liquidity to DEX'}
-						</button>
 					</div>
 				</div>
 			{/if}
 		</div>
 	{/if}
 </div>
+
+<!-- Deposit Modal -->
+{#if showDepositModal && depositInfo}
+	<div
+		class="fixed inset-0 z-[80] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
+		onclick={closeDepositModal}
+	>
+		<div
+			class="deposit-modal w-full max-w-md rounded-2xl border border-white/10 bg-[#0d0d14] shadow-2xl overflow-hidden"
+			onclick={(e) => e.stopPropagation()}
+		>
+			<!-- Header -->
+			<div class="deposit-modal-header">
+				<div class="flex items-center gap-3">
+					<div class="deposit-icon-circle">
+						<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+							<path d="M12 2v20M2 12h20"/>
+						</svg>
+					</div>
+					<div>
+						<h2 class="syne text-lg font-bold text-white">Deposit Required</h2>
+						<p class="text-gray-500 text-[11px] font-mono">{depositInfo.networkName} Network</p>
+					</div>
+				</div>
+				<button onclick={closeDepositModal} class="deposit-close-btn cursor-pointer">
+					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+						<path d="M18 6L6 18M6 6l12 12"/>
+					</svg>
+				</button>
+			</div>
+
+			<!-- Amount Summary -->
+			<div class="deposit-amount-section">
+				<div class="deposit-amount-row">
+					<span class="text-gray-500 text-xs font-mono">Required</span>
+					<span class="text-white text-sm font-mono font-bold">{Number(depositInfo.required).toLocaleString()} {depositInfo.symbol}</span>
+				</div>
+				<div class="deposit-amount-row">
+					<span class="text-gray-500 text-xs font-mono">Your Balance</span>
+					<span class="text-gray-300 text-sm font-mono">{Number(depositInfo.userBalance).toLocaleString()} {depositInfo.symbol}</span>
+				</div>
+				<div class="deposit-divider"></div>
+				<div class="deposit-amount-row">
+					<span class="text-amber-400 text-xs font-mono font-bold">Amount to Deposit</span>
+					<span class="text-amber-300 text-lg font-mono font-bold">{Number(depositInfo.deficit).toLocaleString()} {depositInfo.symbol}</span>
+				</div>
+			</div>
+
+			<!-- QR Code -->
+			<div class="deposit-qr-section">
+				<div class="deposit-qr-frame">
+					<img
+						src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data={userAddress}&bgcolor=0d0d14&color=00d2ff"
+						alt="Deposit address"
+						class="deposit-qr-img"
+					/>
+				</div>
+			</div>
+
+			<!-- Address -->
+			<div class="deposit-address-section">
+				<label class="text-gray-500 text-[10px] font-mono uppercase tracking-wider">Deposit Address</label>
+				<div class="deposit-address-row">
+					<span class="text-cyan-400 text-xs font-mono break-all flex-1">{userAddress}</span>
+					<button onclick={copyAddress} class="deposit-copy-btn cursor-pointer">
+						{addressCopied ? 'Copied!' : 'Copy'}
+					</button>
+				</div>
+			</div>
+
+			<!-- Warning -->
+			<div class="deposit-warning">
+				<svg class="flex-shrink-0 mt-0.5" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+					<path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+					<line x1="12" y1="9" x2="12" y2="13"/>
+					<line x1="12" y1="17" x2="12.01" y2="17"/>
+				</svg>
+				<span class="text-gray-400 text-[11px] font-mono">
+					Only send <strong class="text-white">{depositInfo.symbol}</strong> on <strong class="text-white">{depositInfo.networkName}</strong>. Sending other tokens or using a different network may result in permanent loss.
+				</span>
+			</div>
+
+			<!-- Footer -->
+			<div class="deposit-footer">
+				<div class="flex items-center gap-2">
+					<div class="spinner-sm w-3.5 h-3.5 rounded-full border-2 border-white/10 border-t-cyan-400"></div>
+					<span class="text-gray-500 text-[11px] font-mono">Monitoring for deposit...</span>
+				</div>
+				<button onclick={closeDepositModal} class="btn-secondary text-xs px-4 py-2 cursor-pointer">Cancel</button>
+			</div>
+		</div>
+	</div>
+{/if}
 
 <style>
 	.spinner { animation: spin 0.8s linear infinite; }
@@ -1793,6 +2345,85 @@
 		border-radius: 8px;
 	}
 
+	.pool-card {
+		border: 1px solid rgba(255,255,255,0.07);
+		border-radius: 12px;
+		overflow: hidden;
+		transition: border-color 0.2s;
+	}
+	.pool-card:hover {
+		border-color: rgba(139,92,246,0.25);
+	}
+
+	.pool-card-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		width: 100%;
+		padding: 14px 16px;
+		background: rgba(255,255,255,0.02);
+		border: none;
+		color: inherit;
+		gap: 12px;
+	}
+	.pool-card-header:hover {
+		background: rgba(255,255,255,0.04);
+	}
+
+	.pool-pair-badge {
+		font-size: 11px;
+		font-weight: 700;
+		padding: 4px 10px;
+		border-radius: 6px;
+		background: rgba(139,92,246,0.15);
+		color: #a78bfa;
+		white-space: nowrap;
+	}
+
+	.pool-expand-icon {
+		color: #6b7280;
+		font-size: 14px;
+		transition: transform 0.2s;
+	}
+	.pool-expand-icon.expanded {
+		transform: rotate(180deg);
+	}
+
+	.pool-card-body {
+		display: flex;
+		flex-direction: column;
+		gap: 14px;
+		padding: 16px;
+		border-top: 1px solid rgba(255,255,255,0.05);
+		background: rgba(255,255,255,0.01);
+	}
+
+	.empty-pool-hint {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		padding: 10px 14px;
+		background: rgba(245,158,11,0.06);
+		border: 1px solid rgba(245,158,11,0.15);
+		border-radius: 8px;
+	}
+
+	.liq-pct-bar {
+		padding: 10px 0;
+	}
+	.pct-track {
+		height: 4px;
+		background: rgba(255,255,255,0.06);
+		border-radius: 999px;
+		overflow: hidden;
+	}
+	.pct-fill {
+		height: 100%;
+		background: linear-gradient(90deg, #10b981, #00d2ff);
+		border-radius: 999px;
+		transition: width 0.3s;
+	}
+
 	.liq-info-box {
 		padding: 14px;
 		background: rgba(139,92,246,0.05);
@@ -1909,4 +2540,145 @@
 		background: rgba(245,158,11,0.05);
 		border-color: rgba(245,158,11,0.2);
 	}
+
+	/* Deposit Modal */
+	.deposit-modal {
+		animation: modalSlideIn 0.25s ease-out;
+	}
+	@keyframes modalSlideIn {
+		from { opacity: 0; transform: scale(0.95) translateY(10px); }
+		to { opacity: 1; transform: scale(1) translateY(0); }
+	}
+
+	.deposit-modal-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 20px 24px;
+		border-bottom: 1px solid rgba(255,255,255,0.06);
+	}
+
+	.deposit-icon-circle {
+		width: 40px;
+		height: 40px;
+		border-radius: 12px;
+		background: rgba(245,158,11,0.15);
+		color: #f59e0b;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+	}
+
+	.deposit-close-btn {
+		width: 32px;
+		height: 32px;
+		border-radius: 8px;
+		border: none;
+		background: rgba(255,255,255,0.05);
+		color: #6b7280;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		transition: all 0.15s;
+	}
+	.deposit-close-btn:hover {
+		background: rgba(255,255,255,0.1);
+		color: white;
+	}
+
+	.deposit-amount-section {
+		padding: 20px 24px;
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+	}
+
+	.deposit-amount-row {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+	}
+
+	.deposit-divider {
+		border: none;
+		border-top: 1px dashed rgba(255,255,255,0.08);
+		margin: 4px 0;
+	}
+
+	.deposit-qr-section {
+		display: flex;
+		justify-content: center;
+		padding: 0 24px 20px;
+	}
+
+	.deposit-qr-frame {
+		padding: 12px;
+		background: rgba(255,255,255,0.03);
+		border: 1px solid rgba(255,255,255,0.08);
+		border-radius: 16px;
+	}
+
+	.deposit-qr-img {
+		width: 180px;
+		height: 180px;
+		border-radius: 8px;
+	}
+
+	.deposit-address-section {
+		padding: 0 24px 16px;
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+
+	.deposit-address-row {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 10px 12px;
+		background: rgba(255,255,255,0.03);
+		border: 1px solid rgba(255,255,255,0.07);
+		border-radius: 10px;
+	}
+
+	.deposit-copy-btn {
+		padding: 4px 12px;
+		border-radius: 6px;
+		border: 1px solid rgba(0,210,255,0.3);
+		background: rgba(0,210,255,0.08);
+		color: #00d2ff;
+		font-size: 11px;
+		font-family: 'Space Mono', monospace;
+		font-weight: 600;
+		transition: all 0.15s;
+		white-space: nowrap;
+		flex-shrink: 0;
+	}
+	.deposit-copy-btn:hover {
+		background: rgba(0,210,255,0.15);
+		border-color: rgba(0,210,255,0.5);
+	}
+
+	.deposit-warning {
+		display: flex;
+		gap: 8px;
+		margin: 0 24px 16px;
+		padding: 10px 14px;
+		background: rgba(245,158,11,0.06);
+		border: 1px solid rgba(245,158,11,0.15);
+		border-radius: 10px;
+		color: #f59e0b;
+	}
+
+	.deposit-footer {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 16px 24px;
+		border-top: 1px solid rgba(255,255,255,0.06);
+		background: rgba(255,255,255,0.01);
+	}
+
+	.spinner-sm { animation: spin 0.8s linear infinite; }
 </style>

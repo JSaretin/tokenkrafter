@@ -382,6 +382,7 @@
 
 <svelte:head>
 	<title>Admin Dashboard | TokenKrafter</title>
+	<meta name="description" content="TokenKrafter admin panel — manage platform settings, supported networks, fee configurations, and monitor deployed tokens." />
 </svelte:head>
 
 <div class="page-wrap">

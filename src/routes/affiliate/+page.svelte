@@ -131,6 +131,7 @@
 
 <svelte:head>
 	<title>Affiliate Program | TokenKrafter</title>
+	<meta name="description" content="Join the TokenKrafter affiliate program — earn commissions by referring users to create and deploy tokens on our platform." />
 </svelte:head>
 
 <div class="page-wrap">

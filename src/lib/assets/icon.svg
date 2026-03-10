@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="g1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00d2ff"/>
+      <stop offset="100%" stop-color="#3a7bd5"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#g1)"/>
+  <!-- Coin ring -->
+  <circle cx="32" cy="29" r="17" fill="none" stroke="rgba(255,255,255,0.4)" stroke-width="1.5"/>
+  <!-- Notches -->
+  <g stroke="rgba(255,255,255,0.5)" stroke-width="1.5" stroke-linecap="round">
+    <line x1="32" y1="11" x2="32" y2="13.5"/>
+    <line x1="32" y1="44.5" x2="32" y2="47"/>
+    <line x1="14" y1="29" x2="16.5" y2="29"/>
+    <line x1="47.5" y1="29" x2="50" y2="29"/>
+    <line x1="19.8" y1="16.8" x2="21.6" y2="18.6"/>
+    <line x1="44.2" y1="16.8" x2="42.4" y2="18.6"/>
+    <line x1="19.8" y1="41.2" x2="21.6" y2="39.4"/>
+    <line x1="44.2" y1="41.2" x2="42.4" y2="39.4"/>
+  </g>
+  <!-- TK -->
+  <text x="32" y="33" text-anchor="middle" font-family="'Arial Black', 'Helvetica', sans-serif" font-weight="900" font-size="16" fill="white" letter-spacing="-0.5">TK</text>
+  <!-- Anvil -->
+  <rect x="25" y="51" width="14" height="2.5" rx="1.2" fill="rgba(255,255,255,0.55)"/>
+  <rect x="28" y="49" width="8" height="3" rx="1" fill="rgba(255,255,255,0.4)"/>
+</svg>

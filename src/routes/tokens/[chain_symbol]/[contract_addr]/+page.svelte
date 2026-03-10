@@ -274,6 +274,11 @@
 	}
 </script>
 
+<svelte:head>
+	<title>{tokenInfo?.name ?? 'Token Details'} | TokenKrafter</title>
+	<meta name="description" content="View details for {tokenInfo?.name ?? 'this token'} ({tokenInfo?.symbol ?? ''}) — supply, holder info, and contract details on TokenKrafter." />
+</svelte:head>
+
 <div class="page-container max-w-6xl mx-auto px-4 sm:px-6 py-10">
 	{#if isLoading}
 		<div class="flex items-center justify-center min-h-[50vh]">
