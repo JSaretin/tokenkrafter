@@ -207,6 +207,13 @@
 			</div>
 		{/if}
 
+		<div class="protection-info">
+			<span class="protection-info-title syne">Free Protection Features</span>
+			<span class="protection-info-text">
+				After deployment, configure anti-whale limits, max wallet, max transaction, cooldown, and blacklist settings from the Protection tab — all free. Set them up before enabling trading.
+			</span>
+		</div>
+
 		<button type="submit" class="submit-btn w-full syne">
 			Review Transaction ->
 		</button>
@@ -454,4 +461,25 @@
 
 	select option { background: #0d0d14; color: white; }
 	.syne { font-family: 'Syne', sans-serif; }
+
+	.protection-info {
+		padding: 12px 14px;
+		background: rgba(16,185,129,0.05);
+		border: 1px solid rgba(16,185,129,0.15);
+		border-radius: 10px;
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+	}
+	.protection-info-title {
+		font-size: 12px;
+		font-weight: 700;
+		color: #34d399;
+	}
+	.protection-info-text {
+		font-size: 11px;
+		color: #9ca3af;
+		font-family: 'Space Mono', monospace;
+		line-height: 1.5;
+	}
 </style>

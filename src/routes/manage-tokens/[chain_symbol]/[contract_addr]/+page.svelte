@@ -30,6 +30,13 @@
 		sellTaxBps?: number;
 		transferTaxBps?: number;
 		userBalance?: string;
+		// Protection features
+		tradingEnabled?: boolean;
+		maxWalletAmount?: string;
+		maxTransactionAmount?: string;
+		cooldownTime?: number;
+		blacklistWindow?: number;
+		tradingEnabledAt?: number;
 	};
 
 	let tokenInfo: ExtendedTokenInfo | null = $state(null);
@@ -37,7 +44,7 @@
 	let isLoading = $state(true);
 	let network: SupportedNetwork | null = $state(null);
 	let contractAddress = $state('');
-	let activeTab = $state<'overview' | 'mint' | 'burn' | 'tax' | 'pools' | 'liquidity'>('overview');
+	let activeTab = $state<'overview' | 'mint' | 'burn' | 'tax' | 'pools' | 'liquidity' | 'protection'>('overview');
 	let isOwner = $state(false);
 
 	// Form states
@@ -58,6 +65,20 @@
 	let poolAddressInput = $state('');
 	let poolCheckAddr = $state('');
 	let poolCheckResult: boolean | null = $state(null);
+
+	// Protection features
+	let maxWalletInput = $state('');
+	let maxTxInput = $state('');
+	let cooldownInput = $state('');
+	let blacklistWindowInput = $state('');
+	let blacklistAddrInput = $state('');
+	let blacklistAction = $state(true);
+	let excludeLimitsAddrInput = $state('');
+	let excludeLimitsAction = $state(true);
+	let blacklistCheckAddr = $state('');
+	let blacklistCheckResult: boolean | null = $state(null);
+	let excludedCheckAddr = $state('');
+	let excludedCheckResult: boolean | null = $state(null);
 
 	// Liquidity states
 	let liqBaseCoin = $state<'native' | 'usdt' | 'usdc'>('native');
@@ -158,11 +179,33 @@
 				} catch {}
 			}
 
+			// Load protection features
+			let tradingEnabled_: boolean | undefined;
+			let maxWalletAmount_: string | undefined;
+			let maxTransactionAmount_: string | undefined;
+			let cooldownTime_: number | undefined;
+			let blacklistWindow_: number | undefined;
+			let tradingEnabledAt_: number | undefined;
+			const dec = ethers.toNumber(decimals);
+
+			try { tradingEnabled_ = await contract.tradingEnabled(); } catch {}
+			try { maxWalletAmount_ = ethers.formatUnits(await contract.maxWalletAmount(), dec); } catch {}
+			try { maxTransactionAmount_ = ethers.formatUnits(await contract.maxTransactionAmount(), dec); } catch {}
+			try { cooldownTime_ = Number(await contract.cooldownTime()); } catch {}
+			try { blacklistWindow_ = Number(await contract.blacklistWindow()); } catch {}
+			try { tradingEnabledAt_ = Number(await contract.tradingEnabledAt()); } catch {}
+
 			tokenInfo = {
 				name, symbol,
-				decimals: ethers.toNumber(decimals),
-				totalSupply: ethers.formatUnits(totalSupply, ethers.toNumber(decimals)),
-				owner, isMintable, isTaxable, isPartner, buyTaxBps, sellTaxBps, transferTaxBps, userBalance
+				decimals: dec,
+				totalSupply: ethers.formatUnits(totalSupply, dec),
+				owner, isMintable, isTaxable, isPartner, buyTaxBps, sellTaxBps, transferTaxBps, userBalance,
+				tradingEnabled: tradingEnabled_,
+				maxWalletAmount: maxWalletAmount_,
+				maxTransactionAmount: maxTransactionAmount_,
+				cooldownTime: cooldownTime_,
+				blacklistWindow: blacklistWindow_,
+				tradingEnabledAt: tradingEnabledAt_
 			};
 
 			isOwner = !!(owner && userAddress && owner.toLowerCase() === userAddress.toLowerCase());
@@ -458,12 +501,152 @@
 		} finally { actionLoading = false; }
 	}
 
+	// Protection action functions
+	async function doEnableTrading() {
+		const s = await ensureSigner();
+		if (!s) return;
+		actionLoading = true;
+		try {
+			const contract = new ethers.Contract(contractAddress, TOKEN_ABI, s);
+			const tx = await contract.enableTrading();
+			addFeedback({ message: 'Enabling trading...', type: 'info' });
+			await tx.wait();
+			addFeedback({ message: 'Trading enabled! Protections are now locked.', type: 'success' });
+			await loadToken();
+		} catch (e: any) {
+			addFeedback({ message: e.shortMessage || e.message || 'Enable trading failed', type: 'error' });
+		} finally { actionLoading = false; }
+	}
+
+	async function doSetMaxWallet() {
+		const s = await ensureSigner();
+		if (!s) return;
+		actionLoading = true;
+		try {
+			const contract = new ethers.Contract(contractAddress, TOKEN_ABI, s);
+			const amount = maxWalletInput ? ethers.parseUnits(String(Number(maxWalletInput)), tokenInfo?.decimals ?? 18) : 0n;
+			const tx = await contract.setMaxWalletAmount(amount);
+			addFeedback({ message: 'Setting max wallet...', type: 'info' });
+			await tx.wait();
+			addFeedback({ message: amount === 0n ? 'Max wallet disabled!' : 'Max wallet updated!', type: 'success' });
+			await loadToken();
+		} catch (e: any) {
+			addFeedback({ message: e.shortMessage || e.message || 'Max wallet update failed', type: 'error' });
+		} finally { actionLoading = false; }
+	}
+
+	async function doSetMaxTx() {
+		const s = await ensureSigner();
+		if (!s) return;
+		actionLoading = true;
+		try {
+			const contract = new ethers.Contract(contractAddress, TOKEN_ABI, s);
+			const amount = maxTxInput ? ethers.parseUnits(String(Number(maxTxInput)), tokenInfo?.decimals ?? 18) : 0n;
+			const tx = await contract.setMaxTransactionAmount(amount);
+			addFeedback({ message: 'Setting max transaction...', type: 'info' });
+			await tx.wait();
+			addFeedback({ message: amount === 0n ? 'Max transaction disabled!' : 'Max transaction updated!', type: 'success' });
+			await loadToken();
+		} catch (e: any) {
+			addFeedback({ message: e.shortMessage || e.message || 'Max tx update failed', type: 'error' });
+		} finally { actionLoading = false; }
+	}
+
+	async function doSetCooldown() {
+		const s = await ensureSigner();
+		if (!s) return;
+		actionLoading = true;
+		try {
+			const contract = new ethers.Contract(contractAddress, TOKEN_ABI, s);
+			const seconds = cooldownInput ? Number(cooldownInput) : 0;
+			const tx = await contract.setCooldownTime(seconds);
+			addFeedback({ message: 'Setting cooldown...', type: 'info' });
+			await tx.wait();
+			addFeedback({ message: seconds === 0 ? 'Cooldown disabled!' : 'Cooldown updated!', type: 'success' });
+			await loadToken();
+		} catch (e: any) {
+			addFeedback({ message: e.shortMessage || e.message || 'Cooldown update failed', type: 'error' });
+		} finally { actionLoading = false; }
+	}
+
+	async function doSetBlacklistWindow() {
+		const s = await ensureSigner();
+		if (!s) return;
+		actionLoading = true;
+		try {
+			const contract = new ethers.Contract(contractAddress, TOKEN_ABI, s);
+			const seconds = blacklistWindowInput ? Number(blacklistWindowInput) : 0;
+			const tx = await contract.setBlacklistWindow(seconds);
+			addFeedback({ message: 'Setting blacklist window...', type: 'info' });
+			await tx.wait();
+			addFeedback({ message: seconds === 0 ? 'Blacklist disabled!' : 'Blacklist window set!', type: 'success' });
+			await loadToken();
+		} catch (e: any) {
+			addFeedback({ message: e.shortMessage || e.message || 'Blacklist window update failed', type: 'error' });
+		} finally { actionLoading = false; }
+	}
+
+	async function doSetBlacklisted() {
+		const s = await ensureSigner();
+		if (!s || !blacklistAddrInput) return;
+		actionLoading = true;
+		try {
+			const contract = new ethers.Contract(contractAddress, TOKEN_ABI, s);
+			const tx = await contract.setBlacklisted(blacklistAddrInput, blacklistAction);
+			addFeedback({ message: `${blacklistAction ? 'Blacklisting' : 'Unblacklisting'} address...`, type: 'info' });
+			await tx.wait();
+			addFeedback({ message: `Address ${blacklistAction ? 'blacklisted' : 'removed from blacklist'}!`, type: 'success' });
+			blacklistAddrInput = '';
+		} catch (e: any) {
+			addFeedback({ message: e.shortMessage || e.message || 'Blacklist update failed', type: 'error' });
+		} finally { actionLoading = false; }
+	}
+
+	async function doSetExcludedFromLimits() {
+		const s = await ensureSigner();
+		if (!s || !excludeLimitsAddrInput) return;
+		actionLoading = true;
+		try {
+			const contract = new ethers.Contract(contractAddress, TOKEN_ABI, s);
+			const tx = await contract.setExcludedFromLimits(excludeLimitsAddrInput, excludeLimitsAction);
+			addFeedback({ message: 'Updating limit exclusion...', type: 'info' });
+			await tx.wait();
+			addFeedback({ message: `Address ${excludeLimitsAction ? 'excluded from' : 'included in'} limits!`, type: 'success' });
+			excludeLimitsAddrInput = '';
+		} catch (e: any) {
+			addFeedback({ message: e.shortMessage || e.message || 'Exclusion update failed', type: 'error' });
+		} finally { actionLoading = false; }
+	}
+
+	async function doCheckBlacklist() {
+		if (!blacklistCheckAddr || !network) return;
+		try {
+			const provider = getProvider() ?? new ethers.JsonRpcProvider(network.rpc);
+			const contract = new ethers.Contract(contractAddress, TOKEN_ABI, provider);
+			blacklistCheckResult = await contract.blacklisted(blacklistCheckAddr);
+		} catch (e: any) {
+			addFeedback({ message: e.shortMessage || e.message || 'Check failed', type: 'error' });
+		}
+	}
+
+	async function doCheckExcluded() {
+		if (!excludedCheckAddr || !network) return;
+		try {
+			const provider = getProvider() ?? new ethers.JsonRpcProvider(network.rpc);
+			const contract = new ethers.Contract(contractAddress, TOKEN_ABI, provider);
+			excludedCheckResult = await contract.isExcludedFromLimits(excludedCheckAddr);
+		} catch (e: any) {
+			addFeedback({ message: e.shortMessage || e.message || 'Check failed', type: 'error' });
+		}
+	}
+
 	function shortAddr(addr: string) {
 		return addr.slice(0, 8) + '...' + addr.slice(-6);
 	}
 
 	const tabs = [
 		{ id: 'overview', label: 'Overview', icon: 'O' },
+		{ id: 'protection', label: 'Protection', icon: '#' },
 		{ id: 'mint', label: 'Mint', icon: '+', requires: 'mintable' as const },
 		{ id: 'burn', label: 'Burn', icon: 'x', requires: 'mintable' as const },
 		{ id: 'tax', label: 'Tax', icon: '%', requires: 'taxable' as const },
@@ -988,6 +1171,258 @@
 			{/if}
 
 			<!-- LIQUIDITY TAB -->
+			{#if activeTab === 'protection'}
+				<div class="panel">
+					<div class="panel-header">
+						<div>
+							<h3 class="syne text-lg font-bold text-white">Token Protection</h3>
+							<p class="text-sm text-gray-500 font-mono mt-1">
+								Configure anti-whale, cooldown, and blacklist settings.
+							</p>
+						</div>
+						{#if tokenInfo.tradingEnabled}
+							<span class="badge badge-emerald">Trading Live</span>
+						{:else}
+							<span class="badge badge-amber">Pre-Trading</span>
+						{/if}
+					</div>
+
+					{#if !tokenInfo.tradingEnabled}
+						<div class="protection-notice mb-4">
+							<span class="text-cyan-400 text-xs font-mono font-bold">Pre-Trading Mode</span>
+							<span class="text-gray-400 text-xs font-mono">
+								You can freely configure all protection settings. Once you enable trading, settings can only be relaxed (never tightened). Only the owner can transfer tokens before trading is enabled.
+							</span>
+						</div>
+					{:else}
+						<div class="protection-notice relax-only mb-4">
+							<span class="text-emerald-400 text-xs font-mono font-bold">Trading is Live</span>
+							<span class="text-gray-400 text-xs font-mono">
+								Protections are locked. You can only relax limits (increase max wallet/tx, decrease cooldown) or disable them entirely.
+							</span>
+						</div>
+					{/if}
+
+					<!-- Current Status -->
+					<div class="sub-panel mb-4">
+						<h4 class="syne text-sm font-bold text-white mb-3">Current Settings</h4>
+						<div class="flex flex-col gap-2">
+							<div class="protection-stat-row">
+								<span class="text-gray-500 text-xs font-mono">Trading</span>
+								<span class="text-xs font-mono {tokenInfo.tradingEnabled ? 'text-emerald-400' : 'text-amber-400'}">
+									{tokenInfo.tradingEnabled ? 'Enabled' : 'Not enabled'}
+								</span>
+							</div>
+							<div class="protection-stat-row">
+								<span class="text-gray-500 text-xs font-mono">Max Wallet</span>
+								<span class="text-xs font-mono {Number(tokenInfo.maxWalletAmount ?? 0) > 0 ? 'text-cyan-300' : 'text-gray-600'}">
+									{Number(tokenInfo.maxWalletAmount ?? 0) > 0 ? `${Number(tokenInfo.maxWalletAmount).toLocaleString()} ${tokenInfo.symbol}` : 'No limit'}
+								</span>
+							</div>
+							<div class="protection-stat-row">
+								<span class="text-gray-500 text-xs font-mono">Max Transaction</span>
+								<span class="text-xs font-mono {Number(tokenInfo.maxTransactionAmount ?? 0) > 0 ? 'text-cyan-300' : 'text-gray-600'}">
+									{Number(tokenInfo.maxTransactionAmount ?? 0) > 0 ? `${Number(tokenInfo.maxTransactionAmount).toLocaleString()} ${tokenInfo.symbol}` : 'No limit'}
+								</span>
+							</div>
+							<div class="protection-stat-row">
+								<span class="text-gray-500 text-xs font-mono">Cooldown</span>
+								<span class="text-xs font-mono {(tokenInfo.cooldownTime ?? 0) > 0 ? 'text-cyan-300' : 'text-gray-600'}">
+									{(tokenInfo.cooldownTime ?? 0) > 0 ? `${tokenInfo.cooldownTime}s` : 'Disabled'}
+								</span>
+							</div>
+							<div class="protection-stat-row">
+								<span class="text-gray-500 text-xs font-mono">Blacklist</span>
+								<span class="text-xs font-mono {(tokenInfo.blacklistWindow ?? 0) > 0 ? 'text-cyan-300' : 'text-gray-600'}">
+									{#if (tokenInfo.blacklistWindow ?? 0) === 0}
+										Disabled
+									{:else if tokenInfo.tradingEnabled && tokenInfo.tradingEnabledAt}
+										{@const expiresAt = tokenInfo.tradingEnabledAt + (tokenInfo.blacklistWindow ?? 0)}
+										{@const now = Math.floor(Date.now() / 1000)}
+										{now > expiresAt ? 'Expired' : `Active (expires in ${Math.round((expiresAt - now) / 3600)}h)`}
+									{:else}
+										Window: {Math.round((tokenInfo.blacklistWindow ?? 0) / 3600)}h after trading starts
+									{/if}
+								</span>
+							</div>
+						</div>
+					</div>
+
+					{#if isOwner}
+						<div class="form-fields">
+							<!-- Enable Trading -->
+							{#if !tokenInfo.tradingEnabled}
+								<div class="sub-panel trading-enable-box">
+									<h4 class="syne text-sm font-bold text-white mb-2">Enable Trading</h4>
+									<p class="text-gray-500 text-xs font-mono mb-3">
+										This action is irreversible. Once enabled, protection settings can only be relaxed. Make sure all settings are configured before enabling.
+									</p>
+									<button
+										onclick={doEnableTrading}
+										disabled={actionLoading}
+										class="action-btn syne cursor-pointer w-full"
+									>
+										{actionLoading ? 'Enabling...' : 'Enable Trading'}
+									</button>
+								</div>
+							{/if}
+
+							<!-- Max Wallet -->
+							<div class="field-group">
+								<label class="label-text" for="max-wallet">Max Wallet Amount</label>
+								<div class="input-with-badge">
+									<input
+										id="max-wallet"
+										class="input-field"
+										type="number"
+										min="0"
+										bind:value={maxWalletInput}
+										placeholder={tokenInfo.tradingEnabled && Number(tokenInfo.maxWalletAmount ?? 0) > 0 ? `Current: ${Number(tokenInfo.maxWalletAmount).toLocaleString()} (can only increase)` : 'e.g. 10000'}
+									/>
+									<span class="input-badge">{tokenInfo.symbol}</span>
+								</div>
+								<span class="field-hint font-mono">Set to 0 or leave empty to disable. {tokenInfo.tradingEnabled ? 'Can only increase after trading.' : ''}</span>
+								<button onclick={doSetMaxWallet} disabled={actionLoading} class="action-btn mt-2 syne cursor-pointer">
+									{actionLoading ? 'Setting...' : 'Set Max Wallet'}
+								</button>
+							</div>
+
+							<!-- Max Transaction -->
+							<div class="field-group">
+								<label class="label-text" for="max-tx">Max Transaction Amount</label>
+								<div class="input-with-badge">
+									<input
+										id="max-tx"
+										class="input-field"
+										type="number"
+										min="0"
+										bind:value={maxTxInput}
+										placeholder={tokenInfo.tradingEnabled && Number(tokenInfo.maxTransactionAmount ?? 0) > 0 ? `Current: ${Number(tokenInfo.maxTransactionAmount).toLocaleString()} (can only increase)` : 'e.g. 5000'}
+									/>
+									<span class="input-badge">{tokenInfo.symbol}</span>
+								</div>
+								<span class="field-hint font-mono">Set to 0 or leave empty to disable. {tokenInfo.tradingEnabled ? 'Can only increase after trading.' : ''}</span>
+								<button onclick={doSetMaxTx} disabled={actionLoading} class="action-btn mt-2 syne cursor-pointer">
+									{actionLoading ? 'Setting...' : 'Set Max Transaction'}
+								</button>
+							</div>
+
+							<!-- Cooldown -->
+							<div class="field-group">
+								<label class="label-text" for="cooldown">Cooldown Time (seconds)</label>
+								<div class="input-with-badge">
+									<input
+										id="cooldown"
+										class="input-field"
+										type="number"
+										min="0"
+										bind:value={cooldownInput}
+										placeholder={tokenInfo.tradingEnabled && (tokenInfo.cooldownTime ?? 0) > 0 ? `Current: ${tokenInfo.cooldownTime}s (can only decrease)` : 'e.g. 30'}
+									/>
+									<span class="input-badge">sec</span>
+								</div>
+								<span class="field-hint font-mono">Set to 0 to disable. {tokenInfo.tradingEnabled ? 'Can only decrease after trading.' : ''} Common: 15-60 seconds.</span>
+								<button onclick={doSetCooldown} disabled={actionLoading} class="action-btn mt-2 syne cursor-pointer">
+									{actionLoading ? 'Setting...' : 'Set Cooldown'}
+								</button>
+							</div>
+
+							<!-- Blacklist Window (only before trading) -->
+							{#if !tokenInfo.tradingEnabled}
+								<div class="field-group">
+									<label class="label-text" for="bl-window">Blacklist Window (seconds)</label>
+									<div class="input-with-badge">
+										<input
+											id="bl-window"
+											class="input-field"
+											type="number"
+											min="0"
+											max="259200"
+											bind:value={blacklistWindowInput}
+											placeholder="e.g. 86400 (24 hours)"
+										/>
+										<span class="input-badge">sec</span>
+									</div>
+									<span class="field-hint font-mono">Duration after trading starts during which you can blacklist addresses. Max: 259200 (72h). Set to 0 to disable.</span>
+									<button onclick={doSetBlacklistWindow} disabled={actionLoading} class="action-btn mt-2 syne cursor-pointer">
+										{actionLoading ? 'Setting...' : 'Set Blacklist Window'}
+									</button>
+								</div>
+							{/if}
+
+							<!-- Blacklist Management -->
+							{#if (tokenInfo.blacklistWindow ?? 0) > 0}
+								<div class="sub-panel">
+									<h4 class="syne text-sm font-bold text-white mb-3">Blacklist Management</h4>
+									<div class="field-group">
+										<label class="label-text" for="bl-addr">Address</label>
+										<input id="bl-addr" class="input-field" bind:value={blacklistAddrInput} placeholder="0x..." />
+									</div>
+									<div class="flex gap-2 mt-2">
+										<select class="input-field" style="max-width: 150px;" bind:value={blacklistAction}>
+											<option value={true}>Blacklist</option>
+											<option value={false}>Unblacklist</option>
+										</select>
+										<button onclick={doSetBlacklisted} disabled={actionLoading || !blacklistAddrInput} class="action-btn syne cursor-pointer flex-1">
+											{actionLoading ? 'Updating...' : blacklistAction ? 'Block Address' : 'Unblock Address'}
+										</button>
+									</div>
+
+									<!-- Check if address is blacklisted -->
+									<div class="mt-3">
+										<div class="flex gap-2">
+											<input class="input-field flex-1" bind:value={blacklistCheckAddr} placeholder="Check address..." />
+											<button onclick={doCheckBlacklist} class="btn-secondary text-xs px-3 py-1.5 cursor-pointer">Check</button>
+										</div>
+										{#if blacklistCheckResult !== null}
+											<div class="text-xs font-mono mt-1 {blacklistCheckResult ? 'text-red-400' : 'text-emerald-400'}">
+												{blacklistCheckResult ? 'BLACKLISTED' : 'Not blacklisted'}
+											</div>
+										{/if}
+									</div>
+								</div>
+							{/if}
+
+							<!-- Exclude from Limits -->
+							<div class="sub-panel">
+								<h4 class="syne text-sm font-bold text-white mb-3">Limit Exclusions</h4>
+								<p class="text-gray-500 text-xs font-mono mb-3">Exclude addresses from max wallet, max transaction, and cooldown checks (e.g. DEX routers, presale contracts).</p>
+								<div class="field-group">
+									<label class="label-text" for="exclude-addr">Address</label>
+									<input id="exclude-addr" class="input-field" bind:value={excludeLimitsAddrInput} placeholder="0x..." />
+								</div>
+								<div class="flex gap-2 mt-2">
+									<select class="input-field" style="max-width: 150px;" bind:value={excludeLimitsAction}>
+										<option value={true}>Exclude</option>
+										<option value={false}>Include</option>
+									</select>
+									<button onclick={doSetExcludedFromLimits} disabled={actionLoading || !excludeLimitsAddrInput} class="action-btn syne cursor-pointer flex-1">
+										{actionLoading ? 'Updating...' : excludeLimitsAction ? 'Exclude from Limits' : 'Include in Limits'}
+									</button>
+								</div>
+
+								<!-- Check if excluded -->
+								<div class="mt-3">
+									<div class="flex gap-2">
+										<input class="input-field flex-1" bind:value={excludedCheckAddr} placeholder="Check address..." />
+										<button onclick={doCheckExcluded} class="btn-secondary text-xs px-3 py-1.5 cursor-pointer">Check</button>
+									</div>
+									{#if excludedCheckResult !== null}
+										<div class="text-xs font-mono mt-1 {excludedCheckResult ? 'text-cyan-300' : 'text-gray-400'}">
+											{excludedCheckResult ? 'EXCLUDED from limits' : 'Subject to limits'}
+										</div>
+									{/if}
+								</div>
+							</div>
+						</div>
+					{:else}
+						<div class="text-center py-6">
+							<p class="text-gray-500 font-mono text-sm">Only the token owner can configure protection settings.</p>
+						</div>
+					{/if}
+				</div>
+			{/if}
+
 			{#if activeTab === 'liquidity'}
 				<div class="panel">
 					<div class="panel-header">
@@ -1446,4 +1881,32 @@
 	}
 	.input-field:disabled { opacity: 0.4; cursor: not-allowed; }
 	.input-field::placeholder { color: rgba(255,255,255,0.2); }
+
+	.protection-notice {
+		padding: 12px 14px;
+		background: rgba(0,210,255,0.05);
+		border: 1px solid rgba(0,210,255,0.15);
+		border-radius: 10px;
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+	}
+	.protection-notice.relax-only {
+		background: rgba(16,185,129,0.05);
+		border-color: rgba(16,185,129,0.15);
+	}
+
+	.protection-stat-row {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 6px 0;
+		border-bottom: 1px solid rgba(255,255,255,0.03);
+	}
+	.protection-stat-row:last-child { border-bottom: none; }
+
+	.trading-enable-box {
+		background: rgba(245,158,11,0.05);
+		border-color: rgba(245,158,11,0.2);
+	}
 </style>

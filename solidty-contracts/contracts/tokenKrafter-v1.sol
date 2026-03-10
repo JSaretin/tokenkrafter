@@ -49,12 +49,14 @@ interface IToken {
     /// @param totalSupply Initial total supply (already scaled by decimals)
     /// @param decimals Number of decimal places (max 18)
     /// @param creator Address that will own the token and receive initial supply
+    /// @param factory The TokenFactory address for protection override functions
     function initialize(
         string calldata name,
         string calldata symbol,
         uint256 totalSupply,
         uint8 decimals,
-        address creator
+        address creator,
+        address factory
     ) external;
 }
 
@@ -94,8 +96,12 @@ interface IPoolManagedToken {
 /// @title BasicTokenImpl
 /// @notice Base ERC20 token implementation using OpenZeppelin upgradeable proxies.
 ///         Deployed as a singleton and cloned via minimal proxy (EIP-1167) for each new token.
+///         Includes optional protection features: max wallet, max transaction, cooldown, and blacklist.
 /// @dev All derived token types inherit from this contract. The constructor disables
 ///      initializers on the implementation contract itself to prevent misuse.
+///      Protection features are freely configurable before trading is enabled.
+///      Once trading is enabled, restrictions can only be relaxed (never tightened).
+///      The factory address can force-relax or disable protections for consumer safety.
 contract BasicTokenImpl is ERC20Upgradeable, OwnableUpgradeable {
     /// @dev Locks the implementation contract so it cannot be initialized directly.
     constructor() {
@@ -104,8 +110,50 @@ contract BasicTokenImpl is ERC20Upgradeable, OwnableUpgradeable {
 
     uint8 private decimals_;
 
+    // =============================================================
+    // PROTECTION FEATURES
+    // =============================================================
+
+    /// @notice Whether trading is enabled. Before trading, owner can freely configure protections.
+    ///         Once enabled, protections can only be relaxed, never tightened. Irreversible.
+    bool public tradingEnabled;
+
+    /// @notice Maximum tokens a single wallet can hold. 0 = no limit.
+    uint256 public maxWalletAmount;
+
+    /// @notice Maximum tokens per transaction. 0 = no limit.
+    uint256 public maxTransactionAmount;
+
+    /// @notice Minimum seconds between transfers per wallet. 0 = no cooldown.
+    uint256 public cooldownTime;
+
+    /// @notice Duration in seconds after trading is enabled during which blacklist can be used. 0 = blacklist disabled.
+    uint256 public blacklistWindow;
+
+    /// @notice Timestamp when trading was enabled. Used to compute blacklist expiry.
+    uint256 public tradingEnabledAt;
+
+    /// @notice Addresses excluded from max wallet, max tx, and cooldown checks (owner, router, pairs, etc.).
+    mapping(address => bool) public isExcludedFromLimits;
+
+    /// @notice Blocked addresses. Can only be modified within the blacklist window after trading starts.
+    mapping(address => bool) public blacklisted;
+
+    /// @notice Last transfer timestamp per wallet for cooldown enforcement.
+    mapping(address => uint256) public lastTransferTime;
+
+    /// @notice The factory that created this token. Can force-relax protections.
+    address public tokenFactory;
+
+    event TradingEnabled(uint256 timestamp);
+    event MaxWalletAmountUpdated(uint256 amount);
+    event MaxTransactionAmountUpdated(uint256 amount);
+    event CooldownTimeUpdated(uint256 seconds_);
+    event BlacklistWindowUpdated(uint256 seconds_);
+    event BlacklistUpdated(address indexed account, bool blocked);
+    event ExcludedFromLimitsUpdated(address indexed account, bool excluded);
+
     /// @notice Shared initialization logic for all token types.
-    /// @dev Includes a double-guard: both `initializer` modifier and manual `owner() == address(0)` check.
     /// @param name Token name
     /// @param symbol Token ticker symbol
     /// @param totalSupply Initial total supply (pre-scaled by decimals)
@@ -123,22 +171,21 @@ contract BasicTokenImpl is ERC20Upgradeable, OwnableUpgradeable {
         decimals_ = _decimals;
         __Ownable_init(creator);
         _mint(creator, totalSupply);
+        // Owner is excluded from limits by default
+        isExcludedFromLimits[creator] = true;
     }
 
     /// @notice Initializes a basic (non-taxable, non-partner) token clone.
-    /// @param name Token name
-    /// @param symbol Token ticker symbol
-    /// @param totalSupply Initial total supply (pre-scaled by decimals)
-    /// @param _decimals Number of decimal places (max 18)
-    /// @param creator Address that receives ownership and initial supply
     function initialize(
         string calldata name,
         string calldata symbol,
         uint256 totalSupply,
         uint8 _decimals,
-        address creator
+        address creator,
+        address _factory
     ) public virtual initializer {
         _baseInit(name, symbol, totalSupply, _decimals, creator);
+        _setFactory(_factory);
     }
 
     /// @notice Returns the number of decimals for the token.
@@ -146,6 +193,188 @@ contract BasicTokenImpl is ERC20Upgradeable, OwnableUpgradeable {
         return decimals_;
     }
 
+    // =============================================================
+    // PROTECTION: TRADING CONTROL
+    // =============================================================
+
+    /// @notice Enables trading. Irreversible. Locks protection configuration to relax-only mode.
+    function enableTrading() external onlyOwner {
+        require(!tradingEnabled, "Already enabled");
+        tradingEnabled = true;
+        tradingEnabledAt = block.timestamp;
+        emit TradingEnabled(block.timestamp);
+    }
+
+    // =============================================================
+    // PROTECTION: SETTERS (owner + factory)
+    // =============================================================
+
+    modifier onlyOwnerOrFactory() {
+        require(msg.sender == owner() || msg.sender == tokenFactory, "Not authorized");
+        _;
+    }
+
+    /// @notice Sets the factory address. Can only be set once (during initialization by derived contracts).
+    function _setFactory(address _factory) internal {
+        tokenFactory = _factory;
+    }
+
+    /// @notice Sets max wallet amount. Before trading: any value. After trading: can only increase or disable (0).
+    function setMaxWalletAmount(uint256 amount) external onlyOwner {
+        if (tradingEnabled) {
+            require(amount == 0 || amount >= maxWalletAmount, "Can only relax after trading");
+        }
+        maxWalletAmount = amount;
+        emit MaxWalletAmountUpdated(amount);
+    }
+
+    /// @notice Sets max transaction amount. Before trading: any value. After trading: can only increase or disable (0).
+    function setMaxTransactionAmount(uint256 amount) external onlyOwner {
+        if (tradingEnabled) {
+            require(amount == 0 || amount >= maxTransactionAmount, "Can only relax after trading");
+        }
+        maxTransactionAmount = amount;
+        emit MaxTransactionAmountUpdated(amount);
+    }
+
+    /// @notice Sets cooldown time in seconds. Before trading: any value. After trading: can only decrease or disable (0).
+    function setCooldownTime(uint256 _seconds) external onlyOwner {
+        if (tradingEnabled) {
+            require(_seconds <= cooldownTime, "Can only relax after trading");
+        }
+        cooldownTime = _seconds;
+        emit CooldownTimeUpdated(_seconds);
+    }
+
+    /// @notice Sets the blacklist window duration. Can only be set before trading is enabled.
+    /// @param _seconds Duration after trading starts during which blacklisting is allowed. Max 259200 (72 hours).
+    function setBlacklistWindow(uint256 _seconds) external onlyOwner {
+        require(!tradingEnabled, "Cannot change after trading");
+        require(_seconds <= 259200, "Max 72 hours");
+        blacklistWindow = _seconds;
+        emit BlacklistWindowUpdated(_seconds);
+    }
+
+    /// @notice Adds or removes an address from the blacklist. Only usable within the blacklist window.
+    function setBlacklisted(address account, bool blocked) external onlyOwner {
+        require(blacklistWindow > 0, "Blacklist not enabled");
+        if (tradingEnabled) {
+            require(block.timestamp <= tradingEnabledAt + blacklistWindow, "Blacklist window expired");
+        }
+        blacklisted[account] = blocked;
+        emit BlacklistUpdated(account, blocked);
+    }
+
+    /// @notice Excludes or includes an address from protection limits (max wallet, max tx, cooldown).
+    function setExcludedFromLimits(address account, bool excluded) external onlyOwner {
+        isExcludedFromLimits[account] = excluded;
+        emit ExcludedFromLimitsUpdated(account, excluded);
+    }
+
+    // =============================================================
+    // PROTECTION: FACTORY OVERRIDES (relax only)
+    // =============================================================
+
+    /// @notice Factory can force-remove an address from the blacklist.
+    function forceUnblacklist(address account) external {
+        require(msg.sender == tokenFactory, "Only factory");
+        blacklisted[account] = false;
+        emit BlacklistUpdated(account, false);
+    }
+
+    /// @notice Factory can force-increase max wallet or disable it.
+    function forceRelaxMaxWallet(uint256 amount) external {
+        require(msg.sender == tokenFactory, "Only factory");
+        require(amount == 0 || amount > maxWalletAmount, "Can only relax");
+        maxWalletAmount = amount;
+        emit MaxWalletAmountUpdated(amount);
+    }
+
+    /// @notice Factory can force-increase max tx or disable it.
+    function forceRelaxMaxTransaction(uint256 amount) external {
+        require(msg.sender == tokenFactory, "Only factory");
+        require(amount == 0 || amount > maxTransactionAmount, "Can only relax");
+        maxTransactionAmount = amount;
+        emit MaxTransactionAmountUpdated(amount);
+    }
+
+    /// @notice Factory can force-reduce or disable cooldown.
+    function forceRelaxCooldown(uint256 _seconds) external {
+        require(msg.sender == tokenFactory, "Only factory");
+        require(_seconds < cooldownTime, "Can only relax");
+        cooldownTime = _seconds;
+        emit CooldownTimeUpdated(_seconds);
+    }
+
+    /// @notice Factory can force-disable the blacklist entirely by setting window to 0.
+    function forceDisableBlacklist() external {
+        require(msg.sender == tokenFactory, "Only factory");
+        blacklistWindow = 0;
+        emit BlacklistWindowUpdated(0);
+    }
+
+    // =============================================================
+    // PROTECTION: TRANSFER CHECKS
+    // =============================================================
+
+    /// @dev Override _update to enforce protection checks before any transfer.
+    function _update(address from, address to, uint256 value) internal virtual override {
+        // Mint/burn bypass all checks
+        if (from == address(0) || to == address(0)) {
+            super._update(from, to, value);
+            return;
+        }
+
+        // Trading gate: before trading is enabled, only owner can transfer
+        if (!tradingEnabled) {
+            require(from == owner() || to == owner() || isExcludedFromLimits[from] || isExcludedFromLimits[to], "Trading not enabled");
+        }
+
+        // Blacklist check
+        require(!blacklisted[from] && !blacklisted[to], "Blacklisted");
+
+        // Apply limits only to non-excluded addresses
+        if (!isExcludedFromLimits[from] && !isExcludedFromLimits[to]) {
+            // Max transaction check
+            if (maxTransactionAmount > 0) {
+                require(value <= maxTransactionAmount, "Exceeds max transaction");
+            }
+
+            // Max wallet check (skip if recipient is excluded — handled above)
+            if (maxWalletAmount > 0) {
+                require(balanceOf(to) + value <= maxWalletAmount, "Exceeds max wallet");
+            }
+
+            // Cooldown check on sender
+            if (cooldownTime > 0) {
+                require(block.timestamp >= lastTransferTime[from] + cooldownTime, "Cooldown active");
+                lastTransferTime[from] = block.timestamp;
+            }
+        }
+
+        super._update(from, to, value);
+    }
+
+    // =============================================================
+    // WITHDRAW STUCK TOKENS
+    // =============================================================
+
+    /// @notice Withdraws tokens accidentally sent to this contract. Cannot withdraw the token's own supply.
+    /// @dev Use address(0) to withdraw native currency (BNB/ETH).
+    /// @param token The token address to withdraw, or address(0) for native
+    function withdrawToken(address token) external onlyOwner {
+        if (token == address(0)) {
+            uint256 bal = address(this).balance;
+            require(bal > 0, "No balance");
+            (bool ok, ) = msg.sender.call{value: bal}("");
+            require(ok, "Transfer failed");
+        } else {
+            require(token != address(this), "Cannot withdraw own token");
+            uint256 bal = IERC20(token).balanceOf(address(this));
+            require(bal > 0, "No balance");
+            SafeERC20.safeTransfer(IERC20(token), msg.sender, bal);
+        }
+    }
 }
 
 // =============================================================
@@ -200,30 +429,36 @@ contract PoolManaged is BasicTokenImpl {
     /// @param _factory The TokenFactory contract address
     function _initPoolManager(address _factory) internal {
         poolFactory = _factory;
+        _setFactory(_factory);
     }
 
     /// @notice Batch-registers DEX pool addresses. Can only be called once, by the factory.
     /// @dev Called automatically by the factory after creating DEX pairs during token creation.
+    ///      Registered pools are auto-excluded from protection limits.
     /// @param pools Array of DEX pair addresses to register
     function setupPools(address[] calldata pools) external {
         require(msg.sender == poolFactory, "Only factory");
         require(!_poolsInitialized, "Already initialized");
         _poolsInitialized = true;
+        // Exclude factory from limits
+        isExcludedFromLimits[poolFactory] = true;
         uint256 len = pools.length;
         for (uint256 i; i < len;) {
             if (pools[i] != address(0)) {
                 isPool[pools[i]] = true;
+                isExcludedFromLimits[pools[i]] = true;
                 emit PoolUpdated(pools[i], true);
             }
             unchecked { ++i; }
         }
     }
 
-    /// @notice Registers a new DEX pool for tax detection.
+    /// @notice Registers a new DEX pool for tax detection. Auto-excludes from protection limits.
     /// @param pool The DEX pair address to add
     function addPool(address pool) external onlyOwner {
         require(pool != address(0), "Invalid pool");
         isPool[pool] = true;
+        isExcludedFromLimits[pool] = true;
         emit PoolUpdated(pool, true);
     }
 
@@ -272,12 +507,6 @@ contract TaxableTokenImpl is PoolManaged {
     event TaxExemptUpdated(address indexed account, bool exempt);
 
     /// @notice Initializes a taxable token clone with pool management.
-    /// @param name Token name
-    /// @param symbol Token ticker symbol
-    /// @param totalSupply Initial total supply (pre-scaled by decimals)
-    /// @param _decimals Number of decimal places (max 18)
-    /// @param creator Address that receives ownership and initial supply
-    /// @param _factory The TokenFactory address for pool management
     function initialize(
         string calldata name,
         string calldata symbol,
@@ -285,7 +514,7 @@ contract TaxableTokenImpl is PoolManaged {
         uint8 _decimals,
         address creator,
         address _factory
-    ) public virtual initializer {
+    ) public virtual override initializer {
         _baseInit(name, symbol, totalSupply, _decimals, creator);
         _initPoolManager(_factory);
     }
@@ -449,7 +678,7 @@ contract PartnerTokenImpl is PoolManaged {
         uint8 _decimals,
         address creator,
         address _factory
-    ) public virtual initializer {
+    ) public virtual override initializer {
         _baseInit(name, symbol, totalSupply, _decimals, creator);
         _initPoolManager(_factory);
     }
@@ -1002,7 +1231,7 @@ contract TokenFactory is Ownable, ReentrancyGuard {
             _setupPools(tokenAddress);
         } else {
             IToken(tokenAddress).initialize(
-                p.name, p.symbol, supply, p.decimals, creator
+                p.name, p.symbol, supply, p.decimals, creator, address(this)
             );
         }
 
@@ -1415,6 +1644,40 @@ contract TokenFactory is Ownable, ReentrancyGuard {
             require(bal > 0, "No balance");
             IERC20(token).safeTransfer(msg.sender, bal);
         }
+    }
+
+    // =============================================================
+    // PROTECTION OVERRIDES (factory owner can relax token protections)
+    // =============================================================
+
+    /// @notice Force-removes an address from a token's blacklist. Only factory owner.
+    function forceUnblacklist(address token, address account) external onlyOwner {
+        require(tokenInfo[token].creator != address(0), "Not a factory token");
+        BasicTokenImpl(token).forceUnblacklist(account);
+    }
+
+    /// @notice Force-increases or disables a token's max wallet limit. Only factory owner.
+    function forceRelaxMaxWallet(address token, uint256 amount) external onlyOwner {
+        require(tokenInfo[token].creator != address(0), "Not a factory token");
+        BasicTokenImpl(token).forceRelaxMaxWallet(amount);
+    }
+
+    /// @notice Force-increases or disables a token's max transaction limit. Only factory owner.
+    function forceRelaxMaxTransaction(address token, uint256 amount) external onlyOwner {
+        require(tokenInfo[token].creator != address(0), "Not a factory token");
+        BasicTokenImpl(token).forceRelaxMaxTransaction(amount);
+    }
+
+    /// @notice Force-reduces or disables a token's cooldown. Only factory owner.
+    function forceRelaxCooldown(address token, uint256 _seconds) external onlyOwner {
+        require(tokenInfo[token].creator != address(0), "Not a factory token");
+        BasicTokenImpl(token).forceRelaxCooldown(_seconds);
+    }
+
+    /// @notice Force-disables a token's blacklist entirely. Only factory owner.
+    function forceDisableBlacklist(address token) external onlyOwner {
+        require(tokenInfo[token].creator != address(0), "Not a factory token");
+        BasicTokenImpl(token).forceDisableBlacklist();
     }
 
     /// @dev Allows the factory to receive native currency (BNB/ETH) for fee payments and refunds.

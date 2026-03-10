@@ -49,7 +49,27 @@ export const FACTORY_ABI = [
 	// Admin - Referral
 	'function setReferralLevels(uint8 levels) external',
 	'function setReferralPercents(uint256[] percents) external',
-	'function setAutoDistributeReward(bool enabled) external'
+	'function setAutoDistributeReward(bool enabled) external',
+
+	// Admin - Factory management
+	'function owner() view returns (address)',
+	'function setImplementation(uint8 tokenType, address impl) external',
+	'function implementations(uint8) view returns (address)',
+	'function setCreationFee(uint8 tokenType, uint256 fee) external',
+	'function creationFee(uint8) view returns (uint256)',
+	'function setDexRouter(address _dexRouter) external',
+	'function dexRouter() view returns (address)',
+	'function usdt() view returns (address)',
+	'function addPaymentToken(address token) external',
+	'function removePaymentToken(address token) external',
+	'function withdrawToken(address token) external',
+
+	// Admin - Protection overrides
+	'function forceUnblacklist(address token, address account) external',
+	'function forceRelaxMaxWallet(address token, uint256 amount) external',
+	'function forceRelaxMaxTransaction(address token, uint256 amount) external',
+	'function forceRelaxCooldown(address token, uint256 seconds_) external',
+	'function forceDisableBlacklist(address token) external'
 ];
 
 export const TOKEN_ABI = [
@@ -76,7 +96,25 @@ export const TOKEN_ABI = [
 	'function poolFactory() view returns (address)',
 	'function setupPools(address[] pools) external',
 	'function approve(address spender, uint256 amount) returns (bool)',
-	'function allowance(address owner, address spender) view returns (uint256)'
+	'function allowance(address owner, address spender) view returns (uint256)',
+	// Protection features
+	'function tradingEnabled() view returns (bool)',
+	'function maxWalletAmount() view returns (uint256)',
+	'function maxTransactionAmount() view returns (uint256)',
+	'function cooldownTime() view returns (uint256)',
+	'function blacklistWindow() view returns (uint256)',
+	'function tradingEnabledAt() view returns (uint256)',
+	'function blacklisted(address) view returns (bool)',
+	'function isExcludedFromLimits(address) view returns (bool)',
+	'function enableTrading() external',
+	'function setMaxWalletAmount(uint256 amount) external',
+	'function setMaxTransactionAmount(uint256 amount) external',
+	'function setCooldownTime(uint256 seconds_) external',
+	'function setBlacklistWindow(uint256 seconds_) external',
+	'function setBlacklisted(address account, bool blocked) external',
+	'function setExcludedFromLimits(address account, bool excluded) external',
+	// Withdraw stuck tokens
+	'function withdrawToken(address token) external'
 ];
 
 export const ROUTER_ABI = [
