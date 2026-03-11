@@ -92,7 +92,8 @@
 	}
 
 	function getEthereum() {
-		return (window as any).ethereum;
+		const w = window as any;
+		return w.ethereum || w.trustwallet?.provider || w.BinanceChain || w.coinbaseWalletExtension;
 	}
 
 	function formatAddress(addr: string) {
@@ -305,8 +306,39 @@
 				<button onclick={() => (showWalletPicker = false)} class="text-gray-400 hover:text-white cursor-pointer text-lg">x</button>
 			</div>
 			<div class="p-4">
-				<p class="text-xs text-gray-400 font-mono mb-4">Open this page in your wallet's browser, or use WalletConnect:</p>
+				<p class="text-xs text-gray-400 font-mono mb-4">Already in a wallet browser? Tap below, or open this page in your wallet:</p>
 				<div class="flex flex-col gap-2">
+					<!-- Browser wallet (for DApp browsers where ethereum was injected late) -->
+					<button
+						onclick={async () => {
+							const eth = getEthereum();
+							if (eth) {
+								showWalletPicker = false;
+								isConnecting = true;
+								try {
+									provider = new ethers.BrowserProvider(eth);
+									await provider.send('eth_requestAccounts', []);
+									signer = await provider.getSigner();
+									userAddress = await signer.getAddress();
+									addFeedback({ message: 'Wallet connected!', type: 'success' });
+								} catch {
+									addFeedback({ message: 'Connection failed. Try again.', type: 'error' });
+								} finally {
+									isConnecting = false;
+								}
+							} else {
+								addFeedback({ message: 'No wallet detected. Open this page in your wallet app.', type: 'error' });
+							}
+						}}
+						class="flex items-center gap-3 p-3 rounded-xl border border-cyan-500/20 bg-cyan-500/5 hover:border-cyan-500/40 hover:bg-cyan-500/10 transition text-white cursor-pointer w-full text-left"
+					>
+						<span class="w-8 h-8 flex-shrink-0 rounded-lg bg-gradient-to-br from-cyan-400 to-blue-600 flex items-center justify-center">
+							<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M20 12V8H6a2 2 0 0 1-2-2c0-1.1.9-2 2-2h12v4"/><path d="M4 6v12c0 1.1.9 2 2 2h14v-4"/><circle cx="18" cy="16" r="2" fill="white"/></svg>
+						</span>
+						<span class="font-mono text-sm">Browser Wallet</span>
+						<span class="ml-auto text-cyan-400 text-xs">Connect</span>
+					</button>
+					<div class="border-b border-white/5 my-1"></div>
 					{#each getWalletDeepLinks() as wallet}
 						<a
 							href={wallet.href}
