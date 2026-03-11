@@ -1,11 +1,7 @@
-import { createAppKit } from '@reown/appkit';
-import { EthersAdapter } from '@reown/appkit-adapter-ethers';
-import { mainnet, bsc } from '@reown/appkit/networks';
-import { UniversalProvider } from '@walletconnect/universal-provider';
 import { browser } from '$app/environment';
 import { env } from '$env/dynamic/public';
 
-let modal: ReturnType<typeof createAppKit> | null = null;
+let modal: any = null;
 
 export async function initAppKit() {
 	if (modal || !browser) return modal;
@@ -18,10 +14,15 @@ export async function initAppKit() {
 
 	const relayUrl = env.PUBLIC_WC_RELAY_PROXY;
 
+	const { createAppKit } = await import('@reown/appkit');
+	const { EthersAdapter } = await import('@reown/appkit-adapter-ethers');
+	const { mainnet, bsc } = await import('@reown/appkit/networks');
+	const { UniversalProvider } = await import('@walletconnect/universal-provider');
+
 	const metadata = {
 		name: 'TokenKrafter',
 		description: 'Deploy Custom ERC-20 Tokens Across Multiple Chains',
-		url: typeof window !== 'undefined' ? window.location.origin : 'https://tokencrafter.com',
+		url: window.location.origin,
 		icons: ['/favicon.svg']
 	};
 
