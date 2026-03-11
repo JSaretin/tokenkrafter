@@ -60,14 +60,22 @@
 	let mobileMenuOpen = $state(false);
 	let showWalletPicker = $state(false);
 
+	const WALLET_SVG = {
+		metamask: '<svg viewBox="0 0 35 33" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M32.958 1l-13.134 9.718 2.442-5.727L32.958 1z" fill="#E17726" stroke="#E17726" stroke-width=".25" stroke-linecap="round" stroke-linejoin="round"/><path d="M2.066 1l13.002 9.81L12.76 4.99 2.066 1zM28.229 23.533l-3.495 5.339 7.483 2.06 2.143-7.282-6.131-.117zM.624 23.65l2.13 7.282 7.47-2.06-3.481-5.339-6.12.117z" fill="#E27625" stroke="#E27625" stroke-width=".25" stroke-linecap="round" stroke-linejoin="round"/><path d="M9.867 14.578l-2.079 3.136 7.405.337-.247-7.969-5.079 4.496zM25.157 14.578l-5.144-4.588-.17 8.06 7.393-.336-2.08-3.136zM10.224 28.872l4.476-2.164-3.862-3.012-.614 5.176zM20.325 26.708l4.463 2.164-.6-5.176-3.863 3.012z" fill="#E27625" stroke="#E27625" stroke-width=".25" stroke-linecap="round" stroke-linejoin="round"/><path d="M24.788 28.872l-4.463-2.164.365 2.903-.04 1.227 4.138-1.966zM10.224 28.872l4.151 1.966-.026-1.227.35-2.903-4.475 2.164z" fill="#D5BFB2" stroke="#D5BFB2" stroke-width=".25" stroke-linecap="round" stroke-linejoin="round"/><path d="M14.453 21.93l-3.726-1.097 2.63-1.205 1.096 2.302zM20.57 21.93l1.097-2.302 2.644 1.205-3.74 1.097z" fill="#233447" stroke="#233447" stroke-width=".25" stroke-linecap="round" stroke-linejoin="round"/><path d="M10.224 28.872l.64-5.339-4.12.117 3.48 5.222zM24.16 23.533l.628 5.339 3.48-5.222-4.108-.117zM27.237 17.714l-7.393.337.688 3.879 1.097-2.303 2.644 1.206 2.964-3.119zM10.727 20.833l2.63-1.206 1.096 2.303.689-3.88-7.354-.336 2.94 3.119z" fill="#CC6228" stroke="#CC6228" stroke-width=".25" stroke-linecap="round" stroke-linejoin="round"/><path d="M7.788 17.714l3.068 5.98-.104-2.86-2.964-3.12zM24.273 20.833l-.117 2.861 3.08-5.98-2.963 3.119zM15.193 18.051l-.689 3.879.87 4.496.195-5.922-.376-2.453zM19.844 18.051l-.363 2.44.182 5.935.87-4.496-.689-3.879z" fill="#E27525" stroke="#E27525" stroke-width=".25" stroke-linecap="round" stroke-linejoin="round"/><path d="M20.533 21.93l-.87 4.496.625.44 3.862-3.012.117-2.86-3.734.937zM10.727 20.833l.104 2.861 3.862 3.012.626-.44-.87-4.496-3.722-.937z" fill="#F5841F" stroke="#F5841F" stroke-width=".25" stroke-linecap="round" stroke-linejoin="round"/><path d="M20.598 30.838l.04-1.227-.338-.285h-5.575l-.325.285.026 1.227-4.151-1.966 1.452 1.189 2.943 2.035h5.667l2.957-2.035 1.438-1.189-4.134 1.966z" fill="#C0AC9D" stroke="#C0AC9D" stroke-width=".25" stroke-linecap="round" stroke-linejoin="round"/><path d="M20.325 26.708l-.626-.44h-4.373l-.626.44-.35 2.903.324-.285h5.576l.338.285-.263-2.903z" fill="#161616" stroke="#161616" stroke-width=".25" stroke-linecap="round" stroke-linejoin="round"/><path d="M33.517 11.353l1.114-5.36L32.958 1l-12.633 9.356 4.832 4.222 6.853 1.997 1.517-1.763-.66-.48 1.049-.956-.807-.622 1.049-.8-.689-.467zM.394 5.993l1.127 5.36-.72.467 1.063.8-.806.622 1.049.956-.66.48 1.504 1.763 6.852-1.997 4.833-4.222L2.066 1 .394 5.993z" fill="#763E1A" stroke="#763E1A" stroke-width=".25" stroke-linecap="round" stroke-linejoin="round"/><path d="M32.01 16.575l-6.853-1.997 2.08 3.136-3.081 5.98 4.069-.052h6.131l-2.346-7.067zM9.867 14.578L3.014 16.575.68 23.65h6.12l4.055.052-3.068-5.98 2.079-3.136v-.008zM19.844 18.051l.43-7.538 1.992-5.524H12.76l1.979 5.524.443 7.538.17 2.466.013 5.91h4.373l.026-5.91.182-2.466z" fill="#F5841F" stroke="#F5841F" stroke-width=".25" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+		trust: '<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="tw" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse"><stop stop-color="#0500FF"/><stop offset="1" stop-color="#0500FF"/></linearGradient></defs><rect width="32" height="32" rx="6" fill="url(#tw)"/><path d="M16 6c3.2 2.4 6.8 3.6 10 3.2 0 6-1.2 13.2-10 17.2-8.8-4-10-11.2-10-17.2 3.2.4 6.8-.8 10-3.2z" stroke="white" stroke-width="1.5" fill="none"/></svg>',
+		binance: '<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><rect width="32" height="32" rx="6" fill="#F0B90B"/><path d="M16 7l2.5 2.5-4.8 4.8-2.5-2.5L16 7zm5.3 5.3l2.5 2.5-2.5 2.5-2.5-2.5 2.5-2.5zm-10.6 0l2.5 2.5-2.5 2.5-2.5-2.5 2.5-2.5zM16 17.6l2.5 2.5L16 22.6l-2.5-2.5L16 17.6zm0-5.3l2.5 2.5L16 17.3l-2.5-2.5L16 12.3z" fill="white"/></svg>',
+		safepal: '<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><rect width="32" height="32" rx="6" fill="#4A21EF"/><path d="M8 11h7v3H8v-3zm0 5h7v3H8v-3zm9-5h7v3h-7v-3zm0 5h7v3h-7v-3zm-9 5h16v3H8v-3z" fill="white"/></svg>',
+		walletconnect: '<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><rect width="32" height="32" rx="6" fill="#3B99FC"/><path d="M10.5 13.2c3-3 7.9-3 10.9 0l.4.4c.15.15.15.4 0 .5l-1.2 1.2c-.08.07-.2.07-.27 0l-.5-.5c-2.1-2.1-5.5-2.1-7.6 0l-.6.5c-.08.07-.2.07-.27 0l-1.2-1.2c-.15-.15-.15-.4 0-.5l.3-.4zm13.5 2.5l1.1 1.1c.15.15.15.4 0 .5l-4.8 4.7c-.15.15-.4.15-.55 0l-3.4-3.3c-.04-.04-.1-.04-.14 0l-3.4 3.3c-.15.15-.4.15-.55 0L7.4 17.3c-.15-.15-.15-.4 0-.5l1.1-1.1c.15-.15.4-.15.55 0l3.4 3.3c.04.04.1.04.14 0l3.4-3.3c.15-.15.4-.15.55 0l3.4 3.3c.04.04.1.04.14 0l3.4-3.3c.15-.15.4-.15.55 0z" fill="white"/></svg>'
+	};
+
 	function getWalletDeepLinks(): { name: string; icon: string; href: string }[] {
 		const currentUrl = window.location.href;
 		const stripped = currentUrl.replace(/^https?:\/\//, '');
 		return [
-			{ name: 'MetaMask', icon: '🦊', href: `https://metamask.app.link/dapp/${stripped}` },
-			{ name: 'Trust Wallet', icon: '🛡️', href: `https://link.trustwallet.com/open_url?coin_id=56&url=${encodeURIComponent(currentUrl)}` },
-			{ name: 'Binance Wallet', icon: '💛', href: `https://app.binance.com/cedefi/dapp-web-view?dappUrl=${encodeURIComponent(currentUrl)}` },
-			{ name: 'SafePal', icon: '🔐', href: `https://link.safepal.io/open_url?url=${encodeURIComponent(currentUrl)}` }
+			{ name: 'MetaMask', icon: WALLET_SVG.metamask, href: `https://metamask.app.link/dapp/${stripped}` },
+			{ name: 'Trust Wallet', icon: WALLET_SVG.trust, href: `https://link.trustwallet.com/open_url?coin_id=56&url=${encodeURIComponent(currentUrl)}` },
+			{ name: 'Binance Wallet', icon: WALLET_SVG.binance, href: `https://app.binance.com/cedefi/dapp-web-view?dappUrl=${encodeURIComponent(currentUrl)}` },
+			{ name: 'SafePal', icon: WALLET_SVG.safepal, href: `https://link.safepal.io/open_url?url=${encodeURIComponent(currentUrl)}` }
 		];
 	}
 
@@ -304,7 +312,7 @@
 							href={wallet.href}
 							class="flex items-center gap-3 p-3 rounded-xl border border-white/5 bg-white/3 hover:border-cyan-500/30 hover:bg-cyan-500/5 transition text-white no-underline"
 						>
-							<span class="text-2xl">{wallet.icon}</span>
+							<span class="w-8 h-8 flex-shrink-0">{@html wallet.icon}</span>
 							<span class="font-mono text-sm">{wallet.name}</span>
 							<span class="ml-auto text-gray-500 text-xs">Open</span>
 						</a>
@@ -315,7 +323,7 @@
 						disabled={wcCheckingInProgress}
 						class="flex items-center gap-3 p-3 rounded-xl border border-white/5 bg-white/3 hover:border-blue-500/30 hover:bg-blue-500/5 transition text-white cursor-pointer w-full text-left disabled:opacity-50 disabled:cursor-not-allowed"
 					>
-						<span class="text-2xl">🔗</span>
+						<span class="w-8 h-8 flex-shrink-0">{@html WALLET_SVG.walletconnect}</span>
 						<span class="font-mono text-sm">WalletConnect</span>
 						{#if wcCheckingInProgress}
 							<span class="ml-auto text-gray-500 text-xs">Checking...</span>
