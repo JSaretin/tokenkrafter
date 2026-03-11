@@ -20,8 +20,8 @@ function patchWalletConnectProxy() {
 	const OriginalWebSocket = window.WebSocket;
 	const PatchedWebSocket = function (url: string | URL, protocols?: string | string[]) {
 		const urlStr = typeof url === 'string' ? url : url.toString();
-		if (urlStr.includes('relay.walletconnect.com')) {
-			url = urlStr.replace('relay.walletconnect.com', relayProxy);
+		if (urlStr.includes('relay.walletconnect.com') || urlStr.includes('relay.walletconnect.org')) {
+			url = urlStr.replace(/relay\.walletconnect\.(com|org)/, relayProxy);
 		}
 		return new OriginalWebSocket(url, protocols);
 	} as unknown as typeof WebSocket;
@@ -32,16 +32,28 @@ function patchWalletConnectProxy() {
 	PatchedWebSocket.CLOSED = OriginalWebSocket.CLOSED;
 	window.WebSocket = PatchedWebSocket;
 
-	// Patch fetch for AppKit / Web3Modal API calls
+	// Patch fetch for all WalletConnect HTTP services
+	const proxyMap: Record<string, string> = {
+		'https://api.web3modal.org/': `https://${relayProxy}/w3m-api/`,
+		'https://pulse.walletconnect.org/': `https://${relayProxy}/pulse/`,
+		'https://verify.walletconnect.org/': `https://${relayProxy}/verify/`
+	};
+
 	const originalFetch = window.fetch;
 	window.fetch = function (input: RequestInfo | URL, init?: RequestInit) {
-		if (typeof input === 'string' && input.includes('api.web3modal.org')) {
-			input = input.replace('https://api.web3modal.org/', `https://${relayProxy}/w3m-api/`);
-		} else if (input instanceof URL && input.href.includes('api.web3modal.org')) {
-			input = new URL(input.href.replace('https://api.web3modal.org/', `https://${relayProxy}/w3m-api/`));
-		} else if (input instanceof Request && input.url.includes('api.web3modal.org')) {
-			const newUrl = input.url.replace('https://api.web3modal.org/', `https://${relayProxy}/w3m-api/`);
-			input = new Request(newUrl, input);
+		let url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+		for (const [origin, proxy] of Object.entries(proxyMap)) {
+			if (url.includes(origin)) {
+				const newUrl = url.replace(origin, proxy);
+				if (typeof input === 'string') {
+					input = newUrl;
+				} else if (input instanceof URL) {
+					input = new URL(newUrl);
+				} else {
+					input = new Request(newUrl, input);
+				}
+				break;
+			}
 		}
 		return originalFetch.call(window, input, init);
 	};
