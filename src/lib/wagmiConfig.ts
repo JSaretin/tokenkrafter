@@ -3,9 +3,24 @@ import { env } from '$env/dynamic/public';
 
 let modal: any = null;
 
-function installWsProxy(proxyUrl: string) {
-	const OrigWebSocket = window.WebSocket;
+// Route map: blocked WC domains → proxy paths on relay.tokenkrafter.com
+const WC_PROXY_ROUTES: Record<string, string> = {
+	'relay.walletconnect.org': '',       // WebSocket: proxied at root
+	'relay.walletconnect.com': '',       // WebSocket: proxied at root
+	'api.web3modal.org': '/w3m-api',     // HTTP: wallet list, explorer
+	'api.web3modal.com': '/w3m-api',
+	'pulse.walletconnect.org': '/pulse', // HTTP: analytics/telemetry
+	'pulse.walletconnect.com': '/pulse',
+	'verify.walletconnect.org': '/verify', // HTTP: domain attestation
+	'verify.walletconnect.com': '/verify'
+};
+
+function installWcProxy(proxyUrl: string) {
+	const proxyOrigin = new URL(proxyUrl).origin.replace('wss:', 'https:');
 	const proxyHost = new URL(proxyUrl).host;
+
+	// Proxy WebSocket connections (relay)
+	const OrigWebSocket = window.WebSocket;
 	// @ts-ignore
 	window.WebSocket = function (url: string | URL, protocols?: string | string[]) {
 		let targetUrl = typeof url === 'string' ? url : url.toString();
@@ -23,6 +38,23 @@ function installWsProxy(proxyUrl: string) {
 	window.WebSocket.OPEN = OrigWebSocket.OPEN;
 	window.WebSocket.CLOSING = OrigWebSocket.CLOSING;
 	window.WebSocket.CLOSED = OrigWebSocket.CLOSED;
+
+	// Proxy HTTP fetch calls (api, pulse, verify)
+	const origFetch = window.fetch;
+	window.fetch = function (input: RequestInfo | URL, init?: RequestInit) {
+		let url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+		for (const [domain, path] of Object.entries(WC_PROXY_ROUTES)) {
+			if (url.includes(domain) && !domain.startsWith('relay.')) {
+				const parsed = new URL(url);
+				const newUrl = `${proxyOrigin}${path}${parsed.pathname}${parsed.search}`;
+				if (typeof input === 'string' || input instanceof URL) {
+					return origFetch.call(window, newUrl, init);
+				}
+				return origFetch.call(window, new Request(newUrl, input), init);
+			}
+		}
+		return origFetch.call(window, input, init);
+	};
 }
 
 export async function initAppKit() {
@@ -36,7 +68,7 @@ export async function initAppKit() {
 
 	const relayProxy = env.PUBLIC_WC_RELAY_PROXY;
 	if (relayProxy) {
-		installWsProxy(relayProxy);
+		installWcProxy(relayProxy);
 	}
 
 	const { createAppKit } = await import('@reown/appkit');
