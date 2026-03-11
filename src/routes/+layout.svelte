@@ -58,22 +58,6 @@
 	let isConnecting = $state(false);
 	let isLoading = $state(true);
 	let mobileMenuOpen = $state(false);
-	let showWalletPicker = $state(false);
-
-	function isMobile(): boolean {
-		return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-	}
-
-	function hasInjectedWallet(): boolean {
-		return !!(window as any).ethereum;
-	}
-
-	const walletDeepLinks = [
-		{ name: 'MetaMask', icon: '🦊', getLink: (url: string) => `https://metamask.app.link/dapp/${url.replace(/^https?:\/\//, '')}` },
-		{ name: 'Trust Wallet', icon: '🛡️', getLink: (url: string) => `https://link.trustwallet.com/open_url?coin_id=56&url=${encodeURIComponent(url)}` },
-		{ name: 'Binance Wallet', icon: '💛', getLink: (url: string) => `https://app.binance.com/cedefi/dapp-web-view?dappUrl=${encodeURIComponent(url)}` },
-		{ name: 'Coinbase Wallet', icon: '🔵', getLink: (url: string) => `https://go.cb-w.com/dapp?cb_url=${encodeURIComponent(url)}` }
-	];
 
 	function addFeedback(feedback: { message: string; type: string }) {
 		const id = feedbackCounter++;
@@ -106,8 +90,13 @@
 	}
 
 	async function connectWallet() {
-		// If injected wallet is available (desktop extension or wallet in-app browser), use it directly
-		if (hasInjectedWallet()) {
+		const kit = getAppKit();
+		if (!kit) {
+			// Fallback to direct MetaMask if AppKit not initialized
+			if (!getEthereum()) {
+				addFeedback({ message: 'No wallet detected. Please install MetaMask.', type: 'error' });
+				return false;
+			}
 			isConnecting = true;
 			try {
 				provider = new ethers.BrowserProvider(getEthereum());
@@ -123,21 +112,7 @@
 				isConnecting = false;
 			}
 		}
-
-		// Mobile without injected wallet: show deep link picker
-		if (isMobile()) {
-			showWalletPicker = true;
-			return false;
-		}
-
-		// Desktop without extension: try AppKit modal (WalletConnect QR)
-		const kit = getAppKit();
-		if (kit) {
-			await kit.open();
-			return false;
-		}
-
-		addFeedback({ message: 'No wallet detected. Please install MetaMask or open this site in your wallet app.', type: 'error' });
+		await kit.open();
 		return false;
 	}
 
@@ -255,37 +230,6 @@
 		</div>
 	{/each}
 </div>
-
-<!-- Mobile Wallet Picker Modal -->
-{#if showWalletPicker}
-	<div
-		class="fixed inset-0 z-[90] bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-4"
-		role="dialog"
-		aria-label="Choose wallet"
-	>
-		<div class="w-full max-w-sm rounded-2xl border border-white/10 bg-[#0d0d14] shadow-2xl overflow-hidden">
-			<div class="flex items-center justify-between p-4 border-b border-white/5">
-				<h3 class="syne font-bold text-white">Connect Wallet</h3>
-				<button onclick={() => (showWalletPicker = false)} class="text-gray-400 hover:text-white cursor-pointer text-lg">x</button>
-			</div>
-			<div class="p-4">
-				<p class="text-xs text-gray-400 font-mono mb-4">Open this site in your wallet's built-in browser for the best experience:</p>
-				<div class="flex flex-col gap-2">
-					{#each walletDeepLinks as wallet}
-						<a
-							href={wallet.getLink(window.location.href)}
-							class="flex items-center gap-3 p-3 rounded-xl border border-white/5 bg-white/3 hover:border-cyan-500/30 hover:bg-cyan-500/5 transition text-white no-underline"
-						>
-							<span class="text-2xl">{wallet.icon}</span>
-							<span class="font-mono text-sm">{wallet.name}</span>
-							<span class="ml-auto text-gray-500 text-xs">Open</span>
-						</a>
-					{/each}
-				</div>
-			</div>
-		</div>
-	</div>
-{/if}
 
 <!-- App Shell -->
 <div class="app-shell min-h-screen w-full overflow-x-hidden">
