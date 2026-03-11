@@ -1,7 +1,11 @@
+import { createAppKit } from '@reown/appkit';
+import { EthersAdapter } from '@reown/appkit-adapter-ethers';
+import { mainnet, bsc } from '@reown/appkit/networks';
+import { UniversalProvider } from '@walletconnect/universal-provider';
 import { browser } from '$app/environment';
 import { env } from '$env/dynamic/public';
 
-let modal: any = null;
+let modal: ReturnType<typeof createAppKit> | null = null;
 
 export async function initAppKit() {
 	if (modal || !browser) return modal;
@@ -12,20 +16,27 @@ export async function initAppKit() {
 		return null;
 	}
 
-	const { createAppKit } = await import('@reown/appkit');
-	const { EthersAdapter } = await import('@reown/appkit-adapter-ethers');
-	const { mainnet, bsc } = await import('@reown/appkit/networks');
+	const relayUrl = env.PUBLIC_WC_RELAY_PROXY;
+
+	const metadata = {
+		name: 'TokenKrafter',
+		description: 'Deploy Custom ERC-20 Tokens Across Multiple Chains',
+		url: typeof window !== 'undefined' ? window.location.origin : 'https://tokencrafter.com',
+		icons: ['/favicon.svg']
+	};
+
+	const universalProvider = await UniversalProvider.init({
+		projectId,
+		metadata,
+		...(relayUrl && { relayUrl })
+	});
 
 	modal = createAppKit({
 		adapters: [new EthersAdapter()],
 		networks: [bsc, mainnet],
 		projectId,
-		metadata: {
-			name: 'TokenKrafter',
-			description: 'Deploy Custom ERC-20 Tokens Across Multiple Chains',
-			url: typeof window !== 'undefined' ? window.location.origin : 'https://tokencrafter.com',
-			icons: ['/favicon.svg']
-		},
+		universalProvider,
+		metadata,
 		features: {
 			analytics: false
 		},
