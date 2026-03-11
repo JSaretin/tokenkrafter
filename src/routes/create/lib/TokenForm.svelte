@@ -132,13 +132,76 @@
 		supportedNetworks,
 		addFeedback,
 		updateTokenInfo,
-		onPreviewChange
+		onPreviewChange,
+		initialData,
+		autoSubmit
 	}: {
 		supportedNetworks: SupportedNetwork[];
 		addFeedback: (feedback: { message: string; type: string }) => void;
 		updateTokenInfo: (tokenInfo: TokenFormData) => void;
 		onPreviewChange?: (state: PreviewState) => void;
+		initialData?: Partial<TokenFormData>;
+		autoSubmit?: boolean;
 	} = $props();
+
+	// Populate form from initialData (e.g. from URL params)
+	if (initialData) {
+		if (initialData.name) name = initialData.name;
+		if (initialData.symbol) symbol = initialData.symbol;
+		if (initialData.totalSupply) totalSupply = initialData.totalSupply;
+		if (initialData.decimals != null) decimals = initialData.decimals;
+		if (initialData.network) chainId = initialData.network.chain_id;
+		if (initialData.isMintable != null) isMintable = initialData.isMintable;
+		if (initialData.isTaxable != null) isTaxable = initialData.isTaxable;
+		if (initialData.isPartner != null) isPartner = initialData.isPartner;
+		if (initialData.launch?.enabled != null) {
+			launchEnabled = initialData.launch.enabled;
+			if (initialData.launch.tokensForLaunchPct) launchTokensPct = initialData.launch.tokensForLaunchPct;
+			if (initialData.launch.curveType != null) launchCurveType = initialData.launch.curveType;
+			if (initialData.launch.softCap) launchSoftCap = initialData.launch.softCap;
+			if (initialData.launch.hardCap) launchHardCap = initialData.launch.hardCap;
+			if (initialData.launch.durationDays) launchDurationDays = initialData.launch.durationDays;
+			if (initialData.launch.maxBuyBps) launchMaxBuyBps = initialData.launch.maxBuyBps;
+			if (initialData.launch.creatorAllocationBps) launchCreatorAllocBps = initialData.launch.creatorAllocationBps;
+			if (initialData.launch.vestingDays) launchVestingDays = initialData.launch.vestingDays;
+		}
+		if (initialData.protection) {
+			if (initialData.protection.maxWalletPct !== '0' || initialData.protection.maxTransactionPct !== '0') {
+				protectionEnabled = true;
+			}
+			if (initialData.protection.maxWalletPct) maxWalletPct = initialData.protection.maxWalletPct;
+			if (initialData.protection.maxTransactionPct) maxTransactionPct = initialData.protection.maxTransactionPct;
+			if (initialData.protection.cooldownSeconds) cooldownSeconds = initialData.protection.cooldownSeconds;
+		}
+		if (initialData.tax) {
+			if (initialData.tax.buyTaxPct) buyTaxPct = initialData.tax.buyTaxPct;
+			if (initialData.tax.sellTaxPct) sellTaxPct = initialData.tax.sellTaxPct;
+			if (initialData.tax.transferTaxPct) transferTaxPct = initialData.tax.transferTaxPct;
+			if (initialData.tax.wallets?.length) taxWallets = initialData.tax.wallets;
+		}
+		if (initialData.listing?.enabled != null) {
+			listingEnabled = initialData.listing.enabled;
+			if (initialData.listing.baseCoin) listingBaseCoin = initialData.listing.baseCoin;
+			if (initialData.listing.mode) listingMode = initialData.listing.mode;
+			if (initialData.listing.tokenAmount) listingTokenAmount = initialData.listing.tokenAmount;
+			if (initialData.listing.baseAmount) listingBaseAmount = initialData.listing.baseAmount;
+			if (initialData.listing.pricePerToken) listingPricePerToken = initialData.listing.pricePerToken;
+			if (initialData.listing.listBaseAmount) listingListBaseAmount = initialData.listing.listBaseAmount;
+		}
+		// Jump to last step if auto-submitting
+		if (autoSubmit && name && symbol && totalSupply && chainId) {
+			wizardStep = launchEnabled ? 'launch' : isTaxable ? 'tax' : 'features';
+		}
+	}
+
+	// Auto-submit after initial render if requested
+	let didAutoSubmit = false;
+	$effect(() => {
+		if (autoSubmit && !didAutoSubmit && name && symbol && totalSupply && chainId) {
+			didAutoSubmit = true;
+			submit();
+		}
+	});
 
 	let selectedNetwork = $derived(supportedNetworks.find((n) => n.chain_id == chainId));
 	let nativeCoinSymbol = $derived(selectedNetwork?.native_coin ?? 'ETH');

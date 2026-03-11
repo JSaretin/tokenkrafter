@@ -29,8 +29,8 @@
 			native_coin: 'BNB',
 			usdt_address: '0x55d398326f99059ff775485246999027b3197955',
 			usdc_address: '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d',
-			platform_address: '0x6128fd6CE07E5dE33B71691284B18B20e0a50cdC',
-			launchpad_address: '0xf2f50D4CD7Ad9c27e2033F289bD6bf0a2880F2d8',
+			platform_address: '0xf8953948561d3047b15006915669d2814b9f0e5d',
+			launchpad_address: '0x9a7c5e6a4343E881152d3D4A8709289B4f46E071',
 			dex_router: '0x10ED43C718714eb63d5aA57B78B54704E256024E',
 			rpc: 'https://bsc-dataseed.binance.org/'
 		}
@@ -58,6 +58,18 @@
 	let isConnecting = $state(false);
 	let isLoading = $state(true);
 	let mobileMenuOpen = $state(false);
+	let showWalletPicker = $state(false);
+
+	function getWalletDeepLinks(): { name: string; icon: string; href: string }[] {
+		const currentUrl = window.location.href;
+		const stripped = currentUrl.replace(/^https?:\/\//, '');
+		return [
+			{ name: 'MetaMask', icon: '🦊', href: `https://metamask.app.link/dapp/${stripped}` },
+			{ name: 'Trust Wallet', icon: '🛡️', href: `https://link.trustwallet.com/open_url?coin_id=56&url=${encodeURIComponent(currentUrl)}` },
+			{ name: 'Binance Wallet', icon: '💛', href: `https://app.binance.com/cedefi/dapp-web-view?dappUrl=${encodeURIComponent(currentUrl)}` },
+			{ name: 'Coinbase Wallet', icon: '🔵', href: `https://go.cb-w.com/dapp?cb_url=${encodeURIComponent(currentUrl)}` }
+		];
+	}
 
 	function addFeedback(feedback: { message: string; type: string }) {
 		const id = feedbackCounter++;
@@ -89,14 +101,28 @@
 		}
 	}
 
+	let wcReachable: boolean | null = null;
+
+	async function checkWcReachable(): Promise<boolean> {
+		if (wcReachable !== null) return wcReachable;
+		try {
+			const controller = new AbortController();
+			setTimeout(() => controller.abort(), 3000);
+			await fetch('https://relay.walletconnect.org', {
+				method: 'HEAD',
+				mode: 'no-cors',
+				signal: controller.signal
+			});
+			wcReachable = true;
+		} catch {
+			wcReachable = false;
+		}
+		return wcReachable;
+	}
+
 	async function connectWallet() {
-		const kit = getAppKit();
-		if (!kit) {
-			// Fallback to direct MetaMask if AppKit not initialized
-			if (!getEthereum()) {
-				addFeedback({ message: 'No wallet detected. Please install MetaMask.', type: 'error' });
-				return false;
-			}
+		// If injected wallet available (extension or in-app browser), use it directly
+		if (getEthereum()) {
 			isConnecting = true;
 			try {
 				provider = new ethers.BrowserProvider(getEthereum());
@@ -112,7 +138,21 @@
 				isConnecting = false;
 			}
 		}
-		await kit.open();
+
+		// Check if WalletConnect relay is reachable
+		const reachable = await checkWcReachable();
+
+		if (reachable) {
+			// WC not blocked — use AppKit modal (QR code, wallet list)
+			const kit = getAppKit();
+			if (kit) {
+				await kit.open();
+				return false;
+			}
+		}
+
+		// WC blocked or AppKit not ready — show wallet picker with deep links
+		showWalletPicker = true;
 		return false;
 	}
 
@@ -174,6 +214,7 @@
 	setContext('signer', () => signer);
 	setContext('userAddress', () => userAddress);
 	setContext('connectWallet', connectWallet);
+	setContext('checkWcReachable', checkWcReachable);
 	setContext('supportedNetworks', supportedNetworks);
 	setContext('networkProviders', () => networkProviders);
 	setContext('providersReady', () => providersReady);
@@ -230,6 +271,38 @@
 		</div>
 	{/each}
 </div>
+
+<!-- Wallet Picker Modal (shown when WC is blocked and no injected wallet) -->
+{#if showWalletPicker}
+	<div
+		class="fixed inset-0 z-[90] bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-4"
+		role="dialog"
+		aria-label="Choose wallet"
+		onclick={() => (showWalletPicker = false)}
+	>
+		<div class="w-full max-w-sm rounded-2xl border border-white/10 bg-[#0d0d14] shadow-2xl overflow-hidden" onclick={(e) => e.stopPropagation()}>
+			<div class="flex items-center justify-between p-4 border-b border-white/5">
+				<h3 class="syne font-bold text-white">Open in Wallet</h3>
+				<button onclick={() => (showWalletPicker = false)} class="text-gray-400 hover:text-white cursor-pointer text-lg">x</button>
+			</div>
+			<div class="p-4">
+				<p class="text-xs text-gray-400 font-mono mb-4">Open this page in your wallet's built-in browser to connect:</p>
+				<div class="flex flex-col gap-2">
+					{#each getWalletDeepLinks() as wallet}
+						<a
+							href={wallet.href}
+							class="flex items-center gap-3 p-3 rounded-xl border border-white/5 bg-white/3 hover:border-cyan-500/30 hover:bg-cyan-500/5 transition text-white no-underline"
+						>
+							<span class="text-2xl">{wallet.icon}</span>
+							<span class="font-mono text-sm">{wallet.name}</span>
+							<span class="ml-auto text-gray-500 text-xs">Open</span>
+						</a>
+					{/each}
+				</div>
+			</div>
+		</div>
+	</div>
+{/if}
 
 <!-- App Shell -->
 <div class="app-shell min-h-screen w-full overflow-x-hidden">

@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { ethers } from 'ethers';
 	import { getContext, onDestroy } from 'svelte';
+	import { page } from '$app/stores';
+	import { browser } from '$app/environment';
 	import type { SupportedNetwork, PaymentOption } from '$lib/structure';
 	import { FACTORY_ABI, ROUTER_ABI, ERC20_ABI, ZERO_ADDRESS } from '$lib/tokenCrafter';
 	import TokenForm from './lib/TokenForm.svelte';
@@ -16,6 +18,128 @@
 	let getNetworkProviders: () => Map<number, ethers.JsonRpcProvider> = getContext('networkProviders');
 	let getProvidersReady: () => boolean = getContext('providersReady');
 	let getPaymentOptions: (network: SupportedNetwork) => PaymentOption[] = getContext('getPaymentOptions');
+	let checkWcReachable: () => Promise<boolean> = getContext('checkWcReachable');
+
+	// ── URL param helpers for deep link flow ──
+
+	function parseFormFromUrl(): { data: Partial<TokenFormData>; autoCreate: boolean } | null {
+		if (!browser) return null;
+		const params = new URLSearchParams(window.location.search);
+		if (!params.has('name')) return null;
+
+		const network = supportedNetworks.find(n => n.chain_id === Number(params.get('chainId')));
+
+		const data: Partial<TokenFormData> = {
+			name: params.get('name') || '',
+			symbol: params.get('symbol') || '',
+			totalSupply: params.get('totalSupply') || '',
+			decimals: Number(params.get('decimals') || '18'),
+			isMintable: params.get('isMintable') === '1',
+			isTaxable: params.get('isTaxable') === '1',
+			isPartner: params.get('isPartner') === '1',
+			network,
+			tax: {
+				buyTaxPct: params.get('buyTax') || '0',
+				sellTaxPct: params.get('sellTax') || '0',
+				transferTaxPct: params.get('transferTax') || '0',
+				wallets: params.get('taxWallets')
+					? params.get('taxWallets')!.split(';').map(w => {
+						const [address, sharePct] = w.split(':');
+						return { address, sharePct: sharePct || '100' };
+					})
+					: []
+			},
+			launch: {
+				enabled: params.get('launchEnabled') === '1',
+				tokensForLaunchPct: Number(params.get('launchTokensPct') || '40'),
+				curveType: Number(params.get('curveType') || '0'),
+				softCap: params.get('softCap') || '5',
+				hardCap: params.get('hardCap') || '50',
+				durationDays: params.get('durationDays') || '30',
+				maxBuyBps: params.get('maxBuyBps') || '200',
+				creatorAllocationBps: params.get('creatorAllocBps') || '0',
+				vestingDays: params.get('vestingDays') || '0',
+				launchPaymentToken: ZERO_ADDRESS
+			},
+			protection: {
+				maxWalletPct: params.get('maxWalletPct') || '0',
+				maxTransactionPct: params.get('maxTxPct') || '0',
+				cooldownSeconds: params.get('cooldown') || '0'
+			},
+			listing: {
+				enabled: params.get('listingEnabled') === '1',
+				baseCoin: (params.get('listBaseCoin') as 'native' | 'usdt' | 'usdc') || 'native',
+				mode: (params.get('listMode') as 'manual' | 'price') || 'manual',
+				tokenAmount: params.get('listTokenAmt') || '',
+				baseAmount: params.get('listBaseAmt') || '',
+				pricePerToken: params.get('listPrice') || '',
+				listBaseAmount: params.get('listBaseTotal') || ''
+			}
+		};
+
+		return { data, autoCreate: params.get('connectAndCreate') === '1' };
+	}
+
+	function formDataToParams(info: TokenFormData): URLSearchParams {
+		const p = new URLSearchParams();
+		p.set('name', info.name);
+		p.set('symbol', info.symbol);
+		p.set('totalSupply', info.totalSupply);
+		p.set('decimals', String(info.decimals));
+		p.set('chainId', String(info.network.chain_id));
+		if (info.isMintable) p.set('isMintable', '1');
+		if (info.isTaxable) p.set('isTaxable', '1');
+		if (info.isPartner) p.set('isPartner', '1');
+		if (info.isTaxable) {
+			if (info.tax.buyTaxPct && info.tax.buyTaxPct !== '0') p.set('buyTax', info.tax.buyTaxPct);
+			if (info.tax.sellTaxPct && info.tax.sellTaxPct !== '0') p.set('sellTax', info.tax.sellTaxPct);
+			if (info.tax.transferTaxPct && info.tax.transferTaxPct !== '0') p.set('transferTax', info.tax.transferTaxPct);
+			if (info.tax.wallets.length) {
+				p.set('taxWallets', info.tax.wallets.map(w => `${w.address}:${w.sharePct}`).join(';'));
+			}
+		}
+		if (info.launch.enabled) {
+			p.set('launchEnabled', '1');
+			p.set('launchTokensPct', String(info.launch.tokensForLaunchPct));
+			p.set('curveType', String(info.launch.curveType));
+			p.set('softCap', info.launch.softCap);
+			p.set('hardCap', info.launch.hardCap);
+			p.set('durationDays', info.launch.durationDays);
+			p.set('maxBuyBps', info.launch.maxBuyBps);
+			p.set('creatorAllocBps', info.launch.creatorAllocationBps);
+			p.set('vestingDays', info.launch.vestingDays);
+		}
+		if (info.protection.maxWalletPct !== '0') p.set('maxWalletPct', info.protection.maxWalletPct);
+		if (info.protection.maxTransactionPct !== '0') p.set('maxTxPct', info.protection.maxTransactionPct);
+		if (info.protection.cooldownSeconds !== '0') p.set('cooldown', info.protection.cooldownSeconds);
+		if (info.listing.enabled) {
+			p.set('listingEnabled', '1');
+			p.set('listBaseCoin', info.listing.baseCoin);
+			p.set('listMode', info.listing.mode);
+			if (info.listing.tokenAmount) p.set('listTokenAmt', info.listing.tokenAmount);
+			if (info.listing.baseAmount) p.set('listBaseAmt', info.listing.baseAmount);
+			if (info.listing.pricePerToken) p.set('listPrice', info.listing.pricePerToken);
+			if (info.listing.listBaseAmount) p.set('listBaseTotal', info.listing.listBaseAmount);
+		}
+		p.set('connectAndCreate', '1');
+		return p;
+	}
+
+	function getDeepLinks(info: TokenFormData): { name: string; icon: string; href: string }[] {
+		const params = formDataToParams(info);
+		const createUrl = `${window.location.origin}/create?${params}`;
+		const stripped = createUrl.replace(/^https?:\/\//, '');
+		return [
+			{ name: 'MetaMask', icon: '🦊', href: `https://metamask.app.link/dapp/${stripped}` },
+			{ name: 'Trust Wallet', icon: '🛡️', href: `https://link.trustwallet.com/open_url?coin_id=56&url=${encodeURIComponent(createUrl)}` },
+			{ name: 'Binance Wallet', icon: '💛', href: `https://app.binance.com/cedefi/dapp-web-view?dappUrl=${encodeURIComponent(createUrl)}` },
+			{ name: 'Coinbase Wallet', icon: '🔵', href: `https://go.cb-w.com/dapp?cb_url=${encodeURIComponent(createUrl)}` }
+		];
+	}
+
+	const urlFormData = parseFormFromUrl();
+	let initialData = urlFormData?.data;
+	let autoSubmit = urlFormData?.autoCreate ?? false;
 
 	let provider = $derived(getProvider());
 	let signer = $derived(getSigner());
@@ -24,6 +148,8 @@
 	let providersReady = $derived(getProvidersReady());
 
 	let showPreview = $state(false);
+	let showWalletPicker = $state(false);
+	let walletDeepLinks: { name: string; icon: string; href: string }[] = $state([]);
 	let isCreating = $state(false);
 	let step = $state<'idle' | 'review' | 'checking-balance' | 'waiting-deposit' | 'approving' | 'creating' | 'approving-listing' | 'adding-liquidity' | 'done'>('idle');
 	let deployAfterConnect = $state(false);
@@ -134,6 +260,15 @@
 	$effect(() => {
 		if (deployAfterConnect && signer && userAddress) {
 			deployAfterConnect = false;
+			confirmAndDeploy();
+		}
+	});
+
+	// Auto-trigger deploy when opened via deep link with connectAndCreate
+	let autoCreateTriggered = false;
+	$effect(() => {
+		if (autoSubmit && tokenInfo && step === 'review' && !autoCreateTriggered) {
+			autoCreateTriggered = true;
 			confirmAndDeploy();
 		}
 	});
@@ -512,7 +647,19 @@
 		if (!tokenInfo) return;
 		if (!signer || !userAddress) {
 			deployAfterConnect = true;
-			connectWallet();
+			const connected = await connectWallet();
+			if (connected) return; // will trigger via $effect
+
+			// connectWallet returned false without connecting:
+			// either WC is blocked, or user closed the modal, or no wallet
+			if (!(window as any).ethereum) {
+				const reachable = await checkWcReachable();
+				if (!reachable) {
+					// WC blocked — show deep links with form data
+					walletDeepLinks = getDeepLinks(tokenInfo);
+					showWalletPicker = true;
+				}
+			}
 			return;
 		}
 
@@ -594,6 +741,39 @@
 	<title>Create Token | TokenKrafter</title>
 	<meta name="description" content="Deploy your own ERC-20 token in minutes. Configure supply, decimals, minting, taxes, and anti-whale protection. Add DEX liquidity on launch." />
 </svelte:head>
+
+<!-- Wallet Picker Modal (deep links for mobile users without injected wallet) -->
+{#if showWalletPicker}
+	<div
+		class="fixed inset-0 z-[90] bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-4"
+		role="dialog"
+		aria-label="Choose wallet"
+		onclick={() => (showWalletPicker = false)}
+	>
+		<div class="w-full max-w-sm rounded-2xl border border-white/10 bg-[#0d0d14] shadow-2xl overflow-hidden" onclick={(e) => e.stopPropagation()}>
+			<div class="flex items-center justify-between p-4 border-b border-white/5">
+				<h3 class="syne font-bold text-white">Open in Wallet</h3>
+				<button onclick={() => (showWalletPicker = false)} class="text-gray-400 hover:text-white cursor-pointer text-lg">x</button>
+			</div>
+			<div class="p-4">
+				<p class="text-xs text-gray-400 font-mono mb-4">Your token config is saved in the link. Pick your wallet to continue:</p>
+				<div class="flex flex-col gap-2">
+					{#each walletDeepLinks as wallet}
+						<a
+							href={wallet.href}
+							class="flex items-center gap-3 p-3 rounded-xl border border-white/5 bg-white/3 hover:border-cyan-500/30 hover:bg-cyan-500/5 transition text-white no-underline"
+						>
+							<span class="text-2xl">{wallet.icon}</span>
+							<span class="font-mono text-sm">{wallet.name}</span>
+							<span class="ml-auto text-gray-500 text-xs">Open</span>
+						</a>
+					{/each}
+				</div>
+				<p class="text-[11px] text-gray-500 font-mono mt-3 text-center">Your form data will auto-fill in the wallet browser</p>
+			</div>
+		</div>
+	</div>
+{/if}
 
 <!-- Review Modal -->
 {#if showPreview && tokenInfo}
@@ -990,7 +1170,7 @@
 			<h1 class="syne text-3xl sm:text-4xl font-bold text-white mt-4 mb-2">Create Your Token</h1>
 			<p class="text-gray-400 font-mono text-sm mb-8">Deploy a new ERC-20 token in minutes.</p>
 
-			<TokenForm {supportedNetworks} {addFeedback} {updateTokenInfo} onPreviewChange={handlePreviewChange} />
+			<TokenForm {supportedNetworks} {addFeedback} {updateTokenInfo} onPreviewChange={handlePreviewChange} {initialData} {autoSubmit} />
 		</div>
 
 		<!-- Right: Live Preview -->
