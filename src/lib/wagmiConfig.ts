@@ -3,6 +3,28 @@ import { env } from '$env/dynamic/public';
 
 let modal: any = null;
 
+function installWsProxy(proxyUrl: string) {
+	const OrigWebSocket = window.WebSocket;
+	const proxyHost = new URL(proxyUrl).host;
+	// @ts-ignore
+	window.WebSocket = function (url: string | URL, protocols?: string | string[]) {
+		let targetUrl = typeof url === 'string' ? url : url.toString();
+		if (targetUrl.includes('relay.walletconnect.org') || targetUrl.includes('relay.walletconnect.com')) {
+			targetUrl = targetUrl
+				.replace('relay.walletconnect.org', proxyHost)
+				.replace('relay.walletconnect.com', proxyHost);
+		}
+		return protocols !== undefined
+			? new OrigWebSocket(targetUrl, protocols)
+			: new OrigWebSocket(targetUrl);
+	} as any;
+	window.WebSocket.prototype = OrigWebSocket.prototype;
+	window.WebSocket.CONNECTING = OrigWebSocket.CONNECTING;
+	window.WebSocket.OPEN = OrigWebSocket.OPEN;
+	window.WebSocket.CLOSING = OrigWebSocket.CLOSING;
+	window.WebSocket.CLOSED = OrigWebSocket.CLOSED;
+}
+
 export async function initAppKit() {
 	if (modal || !browser) return modal;
 
@@ -12,12 +34,14 @@ export async function initAppKit() {
 		return null;
 	}
 
-	const relayUrl = env.PUBLIC_WC_RELAY_PROXY;
+	const relayProxy = env.PUBLIC_WC_RELAY_PROXY;
+	if (relayProxy) {
+		installWsProxy(relayProxy);
+	}
 
 	const { createAppKit } = await import('@reown/appkit');
 	const { EthersAdapter } = await import('@reown/appkit-adapter-ethers');
 	const { mainnet, bsc } = await import('@reown/appkit/networks');
-	const { UniversalProvider } = await import('@walletconnect/universal-provider');
 
 	const metadata = {
 		name: 'TokenKrafter',
@@ -26,17 +50,10 @@ export async function initAppKit() {
 		icons: ['/favicon.svg']
 	};
 
-	const universalProvider = await UniversalProvider.init({
-		projectId,
-		metadata,
-		...(relayUrl && { relayUrl })
-	});
-
 	modal = createAppKit({
 		adapters: [new EthersAdapter()],
 		networks: [bsc, mainnet],
 		projectId,
-		universalProvider,
 		metadata,
 		features: {
 			analytics: false
