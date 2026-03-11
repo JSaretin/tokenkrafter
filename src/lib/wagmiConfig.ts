@@ -4,13 +4,31 @@ import { env } from '$env/dynamic/public';
 let modal: any = null;
 
 /**
- * Patch WebSocket and fetch to route WalletConnect traffic through a custom proxy.
+ * Rewrite a URL if it matches any blocked WalletConnect domain.
+ * Returns the rewritten URL or null if no match.
+ */
+function rewriteWcUrl(url: string, relayProxy: string): string | null {
+	const domainMap: Record<string, string> = {
+		'api.web3modal.org': `${relayProxy}/w3m-api`,
+		'api.web3modal.com': `${relayProxy}/w3m-api`,
+		'pulse.walletconnect.org': `${relayProxy}/pulse`,
+		'pulse.walletconnect.com': `${relayProxy}/pulse`,
+		'verify.walletconnect.org': `${relayProxy}/verify`,
+		'verify.walletconnect.com': `${relayProxy}/verify`
+	};
+	for (const [domain, proxyPath] of Object.entries(domainMap)) {
+		if (url.includes(domain)) {
+			return url.replace(`https://${domain}`, `https://${proxyPath}`).replace(`http://${domain}`, `https://${proxyPath}`);
+		}
+	}
+	return null;
+}
+
+/**
+ * Patch WebSocket, fetch, sendBeacon, and XMLHttpRequest to route
+ * WalletConnect traffic through a custom proxy.
  * This allows users in regions where WalletConnect services are blocked
  * to connect without a VPN.
- *
- * Proxied services:
- * - relay.walletconnect.com (WebSocket) → relay proxy domain
- * - api.web3modal.org (HTTP API) → relay proxy domain /w3m-api/
  */
 function patchWalletConnectProxy() {
 	const relayProxy = env.PUBLIC_WC_RELAY_PROXY;
@@ -33,29 +51,38 @@ function patchWalletConnectProxy() {
 	window.WebSocket = PatchedWebSocket;
 
 	// Patch fetch for all WalletConnect HTTP services
-	const proxyMap: Record<string, string> = {
-		'https://api.web3modal.org/': `https://${relayProxy}/w3m-api/`,
-		'https://pulse.walletconnect.org/': `https://${relayProxy}/pulse/`,
-		'https://verify.walletconnect.org/': `https://${relayProxy}/verify/`
-	};
-
 	const originalFetch = window.fetch;
 	window.fetch = function (input: RequestInfo | URL, init?: RequestInit) {
-		let url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-		for (const [origin, proxy] of Object.entries(proxyMap)) {
-			if (url.includes(origin)) {
-				const newUrl = url.replace(origin, proxy);
-				if (typeof input === 'string') {
-					input = newUrl;
-				} else if (input instanceof URL) {
-					input = new URL(newUrl);
-				} else {
-					input = new Request(newUrl, input);
-				}
-				break;
+		const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+		const rewritten = rewriteWcUrl(url, relayProxy);
+		if (rewritten) {
+			if (typeof input === 'string') {
+				input = rewritten;
+			} else if (input instanceof URL) {
+				input = new URL(rewritten);
+			} else {
+				input = new Request(rewritten, input);
 			}
 		}
 		return originalFetch.call(window, input, init);
+	};
+
+	// Patch sendBeacon (used by pulse analytics)
+	if (navigator.sendBeacon) {
+		const originalSendBeacon = navigator.sendBeacon.bind(navigator);
+		navigator.sendBeacon = function (url: string, data?: BodyInit | null) {
+			const rewritten = rewriteWcUrl(url, relayProxy);
+			return originalSendBeacon(rewritten ?? url, data);
+		};
+	}
+
+	// Patch XMLHttpRequest (fallback for some WC services)
+	const OriginalXHR = window.XMLHttpRequest;
+	const originalOpen = OriginalXHR.prototype.open;
+	OriginalXHR.prototype.open = function (method: string, url: string | URL, ...rest: any[]) {
+		const urlStr = typeof url === 'string' ? url : url.toString();
+		const rewritten = rewriteWcUrl(urlStr, relayProxy);
+		return originalOpen.call(this, method, rewritten ?? urlStr, ...rest);
 	};
 }
 
