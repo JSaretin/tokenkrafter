@@ -67,7 +67,7 @@
 			{ name: 'MetaMask', icon: '🦊', href: `https://metamask.app.link/dapp/${stripped}` },
 			{ name: 'Trust Wallet', icon: '🛡️', href: `https://link.trustwallet.com/open_url?coin_id=56&url=${encodeURIComponent(currentUrl)}` },
 			{ name: 'Binance Wallet', icon: '💛', href: `https://app.binance.com/cedefi/dapp-web-view?dappUrl=${encodeURIComponent(currentUrl)}` },
-			{ name: 'Coinbase Wallet', icon: '🔵', href: `https://go.cb-w.com/dapp?cb_url=${encodeURIComponent(currentUrl)}` }
+			{ name: 'SafePal', icon: '🔐', href: `https://link.safepal.io/open_url?url=${encodeURIComponent(currentUrl)}` }
 		];
 	}
 
@@ -120,6 +120,8 @@
 		return wcReachable;
 	}
 
+	let wcCheckingInProgress = $state(false);
+
 	async function connectWallet() {
 		// If injected wallet available (extension or in-app browser), use it directly
 		if (getEthereum()) {
@@ -139,21 +141,27 @@
 			}
 		}
 
-		// Check if WalletConnect relay is reachable
-		const reachable = await checkWcReachable();
-
-		if (reachable) {
-			// WC not blocked — use AppKit modal (QR code, wallet list)
-			const kit = getAppKit();
-			if (kit) {
-				await kit.open();
-				return false;
-			}
-		}
-
-		// WC blocked or AppKit not ready — show wallet picker with deep links
+		// No injected wallet — show wallet picker and check WC in background
 		showWalletPicker = true;
+		if (wcReachable === null) {
+			wcCheckingInProgress = true;
+			await checkWcReachable();
+			wcCheckingInProgress = false;
+		}
 		return false;
+	}
+
+	async function connectViaWalletConnect() {
+		const reachable = await checkWcReachable();
+		if (!reachable) {
+			addFeedback({ message: 'WalletConnect is unavailable in your region.', type: 'error' });
+			return;
+		}
+		showWalletPicker = false;
+		const kit = getAppKit();
+		if (kit) {
+			await kit.open();
+		}
 	}
 
 	function disconnectWallet() {
@@ -215,6 +223,9 @@
 	setContext('userAddress', () => userAddress);
 	setContext('connectWallet', connectWallet);
 	setContext('checkWcReachable', checkWcReachable);
+	setContext('connectViaWalletConnect', connectViaWalletConnect);
+	setContext('getWalletDeepLinks', getWalletDeepLinks);
+	setContext('wcState', () => ({ wcReachable, wcCheckingInProgress }));
 	setContext('supportedNetworks', supportedNetworks);
 	setContext('networkProviders', () => networkProviders);
 	setContext('providersReady', () => providersReady);
@@ -272,7 +283,7 @@
 	{/each}
 </div>
 
-<!-- Wallet Picker Modal (shown when WC is blocked and no injected wallet) -->
+<!-- Wallet Picker Modal -->
 {#if showWalletPicker}
 	<div
 		class="fixed inset-0 z-[90] bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-4"
@@ -282,11 +293,11 @@
 	>
 		<div class="w-full max-w-sm rounded-2xl border border-white/10 bg-[#0d0d14] shadow-2xl overflow-hidden" onclick={(e) => e.stopPropagation()}>
 			<div class="flex items-center justify-between p-4 border-b border-white/5">
-				<h3 class="syne font-bold text-white">Open in Wallet</h3>
+				<h3 class="syne font-bold text-white">Connect Wallet</h3>
 				<button onclick={() => (showWalletPicker = false)} class="text-gray-400 hover:text-white cursor-pointer text-lg">x</button>
 			</div>
 			<div class="p-4">
-				<p class="text-xs text-gray-400 font-mono mb-4">Open this page in your wallet's built-in browser to connect:</p>
+				<p class="text-xs text-gray-400 font-mono mb-4">Open this page in your wallet's browser, or use WalletConnect:</p>
 				<div class="flex flex-col gap-2">
 					{#each getWalletDeepLinks() as wallet}
 						<a
@@ -298,6 +309,22 @@
 							<span class="ml-auto text-gray-500 text-xs">Open</span>
 						</a>
 					{/each}
+					<!-- WalletConnect option -->
+					<button
+						onclick={connectViaWalletConnect}
+						disabled={wcCheckingInProgress}
+						class="flex items-center gap-3 p-3 rounded-xl border border-white/5 bg-white/3 hover:border-blue-500/30 hover:bg-blue-500/5 transition text-white cursor-pointer w-full text-left disabled:opacity-50 disabled:cursor-not-allowed"
+					>
+						<span class="text-2xl">🔗</span>
+						<span class="font-mono text-sm">WalletConnect</span>
+						{#if wcCheckingInProgress}
+							<span class="ml-auto text-gray-500 text-xs">Checking...</span>
+						{:else if wcReachable === false}
+							<span class="ml-auto text-red-400 text-xs">Unavailable</span>
+						{:else}
+							<span class="ml-auto text-gray-500 text-xs">QR Code</span>
+						{/if}
+					</button>
 				</div>
 			</div>
 		</div>
