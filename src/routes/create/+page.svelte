@@ -4,7 +4,8 @@
 	import type { SupportedNetwork, PaymentOption } from '$lib/structure';
 	import { FACTORY_ABI, ROUTER_ABI, ERC20_ABI, ZERO_ADDRESS } from '$lib/tokenCrafter';
 	import TokenForm from './lib/TokenForm.svelte';
-	import type { ListingConfig, TokenFormData } from './lib/TokenForm.svelte';
+	import type { ListingConfig, LaunchConfig, ProtectionConfig, TaxConfig, TokenFormData, PreviewState } from './lib/TokenForm.svelte';
+	import DisplayPreview from './lib/DisplayPreview.svelte';
 
 	let getProvider: () => ethers.BrowserProvider | null = getContext('provider');
 	let getSigner: () => ethers.Signer | null = getContext('signer');
@@ -27,7 +28,13 @@
 	let step = $state<'idle' | 'review' | 'checking-balance' | 'waiting-deposit' | 'approving' | 'creating' | 'approving-listing' | 'adding-liquidity' | 'done'>('idle');
 	let deployAfterConnect = $state(false);
 	let deployedTokenAddress: string | null = $state(null);
+	let deployedLaunchAddress: string | null = $state(null);
 	let deployTxHash: string | null = $state(null);
+
+	let previewState: PreviewState | null = $state(null);
+	function handlePreviewChange(state: PreviewState) {
+		previewState = state;
+	}
 
 	const EXPLORER_URLS: Record<number, string> = {
 		1: 'https://etherscan.io',
@@ -279,11 +286,11 @@
 			}
 		}
 
-		// Create token
+		// Create token (or token + launch)
 		step = 'creating';
 		try {
 			const factory = new ethers.Contract(tokenInfo.network.platform_address, FACTORY_ABI, signer);
-			const params = {
+			const tokenParams = {
 				name: tokenInfo.name,
 				symbol: tokenInfo.symbol,
 				totalSupply: BigInt(tokenInfo.totalSupply),
@@ -294,31 +301,96 @@
 				paymentToken: selectedPayment.address
 			};
 
-			addFeedback({ message: 'Deploying token...', type: 'info' });
-			const txOptions = isNativePayment ? { value: selectedFee } : {};
 			const storedRef = localStorage.getItem('referral');
 			const referral = storedRef && ethers.isAddress(storedRef) ? storedRef : ZERO_ADDRESS;
-			const tx = await factory.createToken(params, referral, txOptions);
-			deployTxHash = tx.hash;
-			const receipt = await tx.wait();
 
-			// Extract token address from TokenCreated event
-			const createdEvent = receipt?.logs?.find((log: any) => {
-				try {
-					const parsed = factory.interface.parseLog({ topics: [...log.topics], data: log.data });
-					return parsed?.name === 'TokenCreated';
-				} catch { return false; }
-			});
-			if (createdEvent) {
-				const parsed = factory.interface.parseLog({ topics: [...createdEvent.topics], data: createdEvent.data });
-				deployedTokenAddress = parsed?.args?.tokenAddress ?? null;
-			}
+			if (tokenInfo.launch?.enabled) {
+				// One-click: createTokenAndLaunch
+				const supply = BigInt(tokenInfo.totalSupply) * (10n ** BigInt(tokenInfo.decimals));
+				const tokensForLaunch = (supply * BigInt(tokenInfo.launch.tokensForLaunchPct)) / 100n;
 
-			addFeedback({ message: 'Token created successfully!', type: 'success' });
+				const launchParams = {
+					tokensForLaunch,
+					curveType: BigInt(tokenInfo.launch.curveType),
+					softCap: ethers.parseUnits(String(tokenInfo.launch.softCap), 18),
+					hardCap: ethers.parseUnits(String(tokenInfo.launch.hardCap), 18),
+					durationDays: BigInt(tokenInfo.launch.durationDays),
+					maxBuyBps: BigInt(tokenInfo.launch.maxBuyBps),
+					creatorAllocationBps: BigInt(tokenInfo.launch.creatorAllocationBps),
+					vestingDays: BigInt(tokenInfo.launch.vestingDays),
+					launchPaymentToken: ZERO_ADDRESS // native payment for launch fee
+				};
 
-			// If listing is enabled, add liquidity
-			if (tokenInfo.listing?.enabled && deployedTokenAddress) {
-				await addListingLiquidity(deployedTokenAddress);
+				// Anti-whale protection: convert % of supply to token amounts
+				const prot = tokenInfo.protection;
+				const protectionParams = {
+					maxWalletAmount: prot.maxWalletPct !== '0'
+						? (supply * BigInt(Math.round(parseFloat(prot.maxWalletPct) * 100))) / 10000n
+						: 0n,
+					maxTransactionAmount: prot.maxTransactionPct !== '0'
+						? (supply * BigInt(Math.round(parseFloat(prot.maxTransactionPct) * 100))) / 10000n
+						: 0n,
+					cooldownSeconds: BigInt(prot.cooldownSeconds)
+				};
+
+				// Tax configuration: convert % to basis points
+				const tax = tokenInfo.tax;
+				const taxParams = {
+					buyTaxBps: BigInt(Math.round((parseFloat(tax.buyTaxPct) || 0) * 100)),
+					sellTaxBps: BigInt(Math.round((parseFloat(tax.sellTaxPct) || 0) * 100)),
+					transferTaxBps: BigInt(Math.round((parseFloat(tax.transferTaxPct) || 0) * 100)),
+					taxWallets: tax.wallets.map((w) => w.address),
+					taxSharesBps: tax.wallets.map((w) => Math.round(parseFloat(w.sharePct) * 100))
+				};
+
+				addFeedback({ message: 'Creating token & launching...', type: 'info' });
+				const txOptions = isNativePayment ? { value: selectedFee } : {};
+				// For launch fee via native: user sends extra ETH. The factory forwards remainder to launchpad.
+				// For simplicity, we use native coin for launch fee in the one-click flow.
+				const tx = await factory.createTokenAndLaunch(tokenParams, launchParams, protectionParams, taxParams, referral, txOptions);
+				deployTxHash = tx.hash;
+				const receipt = await tx.wait();
+
+				// Extract from TokenCreatedAndLaunched event
+				const launchEvent = receipt?.logs?.find((log: any) => {
+					try {
+						const parsed = factory.interface.parseLog({ topics: [...log.topics], data: log.data });
+						return parsed?.name === 'TokenCreatedAndLaunched';
+					} catch { return false; }
+				});
+				if (launchEvent) {
+					const parsed = factory.interface.parseLog({ topics: [...launchEvent.topics], data: launchEvent.data });
+					deployedTokenAddress = parsed?.args?.token ?? null;
+					deployedLaunchAddress = parsed?.args?.launch ?? null;
+				}
+
+				addFeedback({ message: 'Token created & launch activated!', type: 'success' });
+			} else {
+				// Standard: createToken
+				addFeedback({ message: 'Deploying token...', type: 'info' });
+				const txOptions = isNativePayment ? { value: selectedFee } : {};
+				const tx = await factory.createToken(tokenParams, referral, txOptions);
+				deployTxHash = tx.hash;
+				const receipt = await tx.wait();
+
+				// Extract token address from TokenCreated event
+				const createdEvent = receipt?.logs?.find((log: any) => {
+					try {
+						const parsed = factory.interface.parseLog({ topics: [...log.topics], data: log.data });
+						return parsed?.name === 'TokenCreated';
+					} catch { return false; }
+				});
+				if (createdEvent) {
+					const parsed = factory.interface.parseLog({ topics: [...createdEvent.topics], data: createdEvent.data });
+					deployedTokenAddress = parsed?.args?.tokenAddress ?? null;
+				}
+
+				addFeedback({ message: 'Token created successfully!', type: 'success' });
+
+				// If listing is enabled, add liquidity
+				if (tokenInfo.listing?.enabled && deployedTokenAddress) {
+					await addListingLiquidity(deployedTokenAddress);
+				}
 			}
 
 			step = 'done';
@@ -483,6 +555,7 @@
 		isCreating = false;
 		deployAfterConnect = false;
 		deployedTokenAddress = null;
+		deployedLaunchAddress = null;
 		deployTxHash = null;
 		stopBalancePolling();
 	}
@@ -536,10 +609,19 @@
 				<div class="text-center py-8">
 					<div class="text-5xl mb-4 syne font-bold text-emerald-400">Done!</div>
 					<h2 class="syne text-2xl font-bold text-white mb-2">
-						{tokenInfo.listing?.enabled ? 'Token Deployed & Listed!' : 'Token Deployed!'}
+						{tokenInfo.launch?.enabled
+							? 'Token Created & Launched!'
+							: tokenInfo.listing?.enabled
+								? 'Token Deployed & Listed!'
+								: 'Token Deployed!'}
 					</h2>
 					<p class="text-gray-400 font-mono text-sm mb-4">
-						Your token is now live on {tokenInfo.network.name}.{tokenInfo.listing?.enabled ? ' Liquidity has been added to the DEX.' : ''}
+						Your token is now live on {tokenInfo.network.name}.
+						{tokenInfo.launch?.enabled
+							? ' Bonding curve launch is active.'
+							: tokenInfo.listing?.enabled
+								? ' Liquidity has been added to the DEX.'
+								: ''}
 					</p>
 
 					{#if deployedTokenAddress}
@@ -566,8 +648,13 @@
 						</div>
 					{/if}
 
-					<div class="flex gap-3 justify-center">
-						<a href="/manage-tokens" class="btn-primary text-sm px-5 py-2.5 no-underline">
+					<div class="flex gap-3 justify-center flex-wrap">
+						{#if deployedLaunchAddress}
+							<a href="/launchpad/{deployedLaunchAddress}" class="btn-primary text-sm px-5 py-2.5 no-underline">
+								View Launch ->
+							</a>
+						{/if}
+						<a href="/manage-tokens" class="btn-secondary text-sm px-5 py-2.5 no-underline">
 							Manage Tokens ->
 						</a>
 						<button onclick={closePreview} class="btn-secondary text-sm px-5 py-2.5 cursor-pointer">
@@ -712,6 +799,100 @@
 					</div>
 				</div>
 
+				<!-- Tax Details -->
+				{#if tokenInfo.isTaxable && (parseFloat(tokenInfo.tax?.buyTaxPct) > 0 || parseFloat(tokenInfo.tax?.sellTaxPct) > 0 || parseFloat(tokenInfo.tax?.transferTaxPct) > 0)}
+					<div class="modal-section">
+						<div class="label-text mb-3">Tax Configuration</div>
+						<div class="detail-grid">
+							{#if parseFloat(tokenInfo.tax.buyTaxPct) > 0}
+								<div class="detail-row">
+									<span class="detail-label">Buy tax</span>
+									<span class="detail-value">{tokenInfo.tax.buyTaxPct}%</span>
+								</div>
+							{/if}
+							{#if parseFloat(tokenInfo.tax.sellTaxPct) > 0}
+								<div class="detail-row">
+									<span class="detail-label">Sell tax</span>
+									<span class="detail-value">{tokenInfo.tax.sellTaxPct}%</span>
+								</div>
+							{/if}
+							{#if parseFloat(tokenInfo.tax.transferTaxPct) > 0}
+								<div class="detail-row">
+									<span class="detail-label">Transfer tax</span>
+									<span class="detail-value">{tokenInfo.tax.transferTaxPct}%</span>
+								</div>
+							{/if}
+							{#if tokenInfo.tax.wallets.length > 0}
+								<div class="detail-row" style="flex-direction: column; align-items: flex-start; gap: 4px;">
+									<span class="detail-label">Distribution</span>
+									{#each tokenInfo.tax.wallets as w}
+										<span class="detail-value text-xs" style="word-break: break-all;">
+											{w.address.slice(0, 10)}...{w.address.slice(-6)} — {w.sharePct}%
+										</span>
+									{/each}
+								</div>
+							{/if}
+						</div>
+					</div>
+				{/if}
+
+				<!-- Launch Details -->
+				{#if tokenInfo.launch?.enabled}
+					<div class="modal-section">
+						<div class="label-text mb-3">Launchpad Configuration</div>
+						<div class="detail-grid">
+							<div class="detail-row">
+								<span class="detail-label">Tokens for launch</span>
+								<span class="detail-value">{tokenInfo.launch.tokensForLaunchPct}% of supply</span>
+							</div>
+							<div class="detail-row">
+								<span class="detail-label">Curve</span>
+								<span class="detail-value">{['Linear', 'Square Root', 'Quadratic', 'Exponential'][tokenInfo.launch.curveType]}</span>
+							</div>
+							<div class="detail-row">
+								<span class="detail-label">Soft Cap</span>
+								<span class="detail-value">{tokenInfo.launch.softCap} USDT</span>
+							</div>
+							<div class="detail-row">
+								<span class="detail-label">Hard Cap</span>
+								<span class="detail-value">{tokenInfo.launch.hardCap} USDT</span>
+							</div>
+							<div class="detail-row">
+								<span class="detail-label">Duration</span>
+								<span class="detail-value">{tokenInfo.launch.durationDays} days</span>
+							</div>
+							<div class="detail-row">
+								<span class="detail-label">Max buy per wallet</span>
+								<span class="detail-value">{(parseInt(tokenInfo.launch.maxBuyBps) / 100).toFixed(1)}%</span>
+							</div>
+							{#if parseInt(tokenInfo.launch.creatorAllocationBps) > 0}
+								<div class="detail-row">
+									<span class="detail-label">Creator allocation</span>
+									<span class="detail-value">{(parseInt(tokenInfo.launch.creatorAllocationBps) / 100).toFixed(1)}% (vested {tokenInfo.launch.vestingDays}d)</span>
+								</div>
+							{/if}
+							{#if tokenInfo.protection.maxWalletPct !== '0'}
+								<div class="detail-row">
+									<span class="detail-label">Max wallet</span>
+									<span class="detail-value text-amber-300">{tokenInfo.protection.maxWalletPct}% of supply</span>
+								</div>
+							{/if}
+							{#if tokenInfo.protection.maxTransactionPct !== '0'}
+								<div class="detail-row">
+									<span class="detail-label">Max transaction</span>
+									<span class="detail-value text-amber-300">{tokenInfo.protection.maxTransactionPct}% of supply</span>
+								</div>
+							{/if}
+							{#if tokenInfo.protection.cooldownSeconds !== '0'}
+								<div class="detail-row">
+									<span class="detail-label">Cooldown</span>
+									<span class="detail-value text-amber-300">{tokenInfo.protection.cooldownSeconds}s</span>
+								</div>
+							{/if}
+						</div>
+					</div>
+				{/if}
+
 				<!-- Listing Details -->
 				{#if tokenInfo.listing?.enabled}
 					{@const listTokenAmt = tokenInfo.listing.mode === 'price'
@@ -804,25 +985,28 @@
 		<!-- Left: Form -->
 		<div class="form-col">
 			<div class="page-label">
-				<span class="badge badge-cyan">Step 1 of 1</span>
+				<span class="badge badge-cyan">Create</span>
 			</div>
 			<h1 class="syne text-3xl sm:text-4xl font-bold text-white mt-4 mb-2">Create Your Token</h1>
 			<p class="text-gray-400 font-mono text-sm mb-8">Deploy a new ERC-20 token in minutes.</p>
 
-			<TokenForm {supportedNetworks} {addFeedback} {updateTokenInfo} />
+			<TokenForm {supportedNetworks} {addFeedback} {updateTokenInfo} onPreviewChange={handlePreviewChange} />
 		</div>
 
-		<!-- Right: Info Panel -->
+		<!-- Right: Live Preview -->
 		<div class="info-col">
-			<div class="info-card card p-6">
-				<h3 class="syne font-bold text-white mb-4">Deployment Checklist</h3>
+			{#if previewState}
+				<DisplayPreview {...previewState} />
+			{/if}
+
+			<div class="info-card card p-6 mt-4">
+				<h3 class="syne font-bold text-white mb-4">Quick Info</h3>
 				<ul class="check-list">
 					{#each [
-						'Wallet connected to correct network',
-						'Sufficient balance for creation fee',
-						'Token name is unique and memorable',
-						'Supply matches your tokenomics',
-						'Verify feature flags before deploying'
+						'Pay with USDT, USDC, or native coin',
+						'Token deploys instantly on-chain',
+						'You own the token contract',
+						'Fees shown before confirmation'
 					] as item}
 						<li class="check-item font-mono">
 							<span class="check-icon">v</span>
@@ -830,28 +1014,6 @@
 						</li>
 					{/each}
 				</ul>
-			</div>
-
-			<div class="info-card card p-6 mt-4">
-				<h3 class="syne font-bold text-white mb-4">Supported Networks</h3>
-				{#each supportedNetworks as net}
-					<div class="network-row">
-						<div class="net-dot"></div>
-						<div>
-							<div class="text-sm text-white font-semibold">{net.name}</div>
-							<div class="text-xs text-gray-500 font-mono">{net.native_coin}</div>
-						</div>
-					</div>
-				{/each}
-			</div>
-
-			<div class="info-card card p-6 mt-4">
-				<h3 class="syne font-bold text-white mb-4">Payment Methods</h3>
-				<div class="text-xs text-gray-400 font-mono leading-relaxed">
-					Pay with <strong class="text-white">USDT</strong>, <strong class="text-white">USDC</strong>,
-					or the network's native coin (<strong class="text-white">ETH/BNB</strong>).
-					Fees are denominated in USD and auto-converted.
-				</div>
 			</div>
 		</div>
 	</div>

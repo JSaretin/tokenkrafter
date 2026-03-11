@@ -161,7 +161,7 @@
 		actionLoading = true;
 		try {
 			const contract = new ethers.Contract(contractAddress, IERC20_EXT, s);
-			const amount = ethers.parseUnits(mintAmount, tokenInfo?.decimals ?? 18);
+			const amount = ethers.parseUnits(String(mintAmount), tokenInfo?.decimals ?? 18);
 			const tx = await contract.mint(mintTo || userAddress, amount);
 			addFeedback({ message: 'Minting...', type: 'info' });
 			await tx.wait();
@@ -179,7 +179,7 @@
 		actionLoading = true;
 		try {
 			const contract = new ethers.Contract(contractAddress, IERC20_EXT, s);
-			const amount = ethers.parseUnits(burnAmount, tokenInfo?.decimals ?? 18);
+			const amount = ethers.parseUnits(String(burnAmount), tokenInfo?.decimals ?? 18);
 			const tx = await contract.burn(amount);
 			addFeedback({ message: 'Burning tokens...', type: 'info' });
 			await tx.wait();
@@ -222,8 +222,8 @@
 		actionLoading = true;
 		try {
 			const tokenContract = new ethers.Contract(contractAddress, IERC20_EXT, s);
-			const tokenAmount = ethers.parseUnits(liqTokenAmount, tokenInfo?.decimals ?? 18);
-			const ethAmount = ethers.parseEther(liqEthAmount);
+			const tokenAmount = ethers.parseUnits(String(liqTokenAmount), tokenInfo?.decimals ?? 18);
+			const ethAmount = ethers.parseEther(String(liqEthAmount));
 
 			// Approve router
 			const allowance = await tokenContract.allowance(userAddress, selectedRouter);

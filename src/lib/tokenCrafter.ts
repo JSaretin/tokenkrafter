@@ -18,6 +18,12 @@ export const FACTORY_ABI = [
 	'function createToken(tuple(string name, string symbol, uint256 totalSupply, uint8 decimals, bool isTaxable, bool isMintable, bool isPartner, address paymentToken) p, address referral) external payable returns (address)',
 	'function ownerCreateToken(address creator, tuple(string name, string symbol, uint256 totalSupply, uint8 decimals, bool isTaxable, bool isMintable, bool isPartner, address paymentToken) p, address referral) external payable returns (address)',
 
+	// Token creation + launch
+	'function createTokenAndLaunch(tuple(string name, string symbol, uint256 totalSupply, uint8 decimals, bool isTaxable, bool isMintable, bool isPartner, address paymentToken) p, tuple(uint256 tokensForLaunch, uint8 curveType, uint256 softCap, uint256 hardCap, uint256 durationDays, uint256 maxBuyBps, uint256 creatorAllocationBps, uint256 vestingDays, address launchPaymentToken) launch, tuple(uint256 maxWalletAmount, uint256 maxTransactionAmount, uint256 cooldownSeconds) protection, tuple(uint256 buyTaxBps, uint256 sellTaxBps, uint256 transferTaxBps, address[] taxWallets, uint16[] taxSharesBps) tax, address referral) external payable returns (address tokenAddress, address launchAddress)',
+
+	// Events
+	'event TokenCreatedAndLaunched(address indexed creator, address indexed token, address indexed launch)',
+
 	// View functions
 	'function getCreationFee(bool isTaxable, bool isMintable, bool isPartner) external view returns (address[] tokens, uint256[] fees)',
 	'function getCreatedTokens(address creator) external view returns (address[])',
@@ -27,6 +33,8 @@ export const FACTORY_ABI = [
 	'function predictTokenAddress(address creator, bool isTaxable, bool isMintable, bool isPartner) external view returns (address)',
 	'function totalTokensCreated() view returns (uint256)',
 	'function creatorNonce(address) view returns (uint256)',
+	'function totalFeeEarnedUsdt() view returns (uint256)',
+	'function getDailyStats(uint256 fromDay, uint256 toDay) view returns (tuple(uint256 basic, uint256 mintable, uint256 taxable, uint256 taxMintable, uint256 partner, uint256 partnerMint, uint256 partnerTax, uint256 partnerTaxMint, uint256 total, uint256 totalFeeUsdt)[])',
 
 	// Tax processing
 	'function convertTaxToStable() view returns (bool)',

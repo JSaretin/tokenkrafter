@@ -18,6 +18,7 @@
 			usdt_address: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
 			usdc_address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
 			platform_address: '0x',
+			launchpad_address: '0x',
 			dex_router: '0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D',
 			rpc: 'https://eth.llamarpc.com'
 		},
@@ -28,7 +29,8 @@
 			native_coin: 'BNB',
 			usdt_address: '0x55d398326f99059ff775485246999027b3197955',
 			usdc_address: '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d',
-			platform_address: '0x292ec5eEF8f0f5805574cD613b0C210936469Ba3',
+			platform_address: '0x6128fd6CE07E5dE33B71691284B18B20e0a50cdC',
+			launchpad_address: '0xf2f50D4CD7Ad9c27e2033F289bD6bf0a2880F2d8',
 			dex_router: '0x10ED43C718714eb63d5aA57B78B54704E256024E',
 			rpc: 'https://bsc-dataseed.binance.org/'
 		}
@@ -180,6 +182,7 @@
 	const navLinks = [
 		{ href: '/', label: 'Home' },
 		{ href: '/create', label: 'Create Token' },
+		{ href: '/launchpad', label: 'Launchpad' },
 		{ href: '/manage-tokens', label: 'My Tokens' },
 		{ href: '/tokens', label: 'Explore' },
 		{ href: '/affiliate', label: 'Affiliate' }

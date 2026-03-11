@@ -219,27 +219,42 @@ contract BasicTokenImpl is ERC20Upgradeable, OwnableUpgradeable {
         tokenFactory = _factory;
     }
 
-    /// @notice Sets max wallet amount. Before trading: any value. After trading: can only increase or disable (0).
+    /// @notice Sets max wallet amount. Before trading: any value.
+    /// After trading: if currently 0 (disabled), cannot be set (no new restrictions).
+    /// If currently set, can only increase (relax) or set to 0 (remove limit).
     function setMaxWalletAmount(uint256 amount) external onlyOwner {
         if (tradingEnabled) {
+            if (maxWalletAmount == 0) {
+                revert("Cannot add limit after trading");
+            }
             require(amount == 0 || amount >= maxWalletAmount, "Can only relax after trading");
         }
         maxWalletAmount = amount;
         emit MaxWalletAmountUpdated(amount);
     }
 
-    /// @notice Sets max transaction amount. Before trading: any value. After trading: can only increase or disable (0).
+    /// @notice Sets max transaction amount. Before trading: any value.
+    /// After trading: if currently 0 (disabled), cannot be set (no new restrictions).
+    /// If currently set, can only increase (relax) or set to 0 (remove limit).
     function setMaxTransactionAmount(uint256 amount) external onlyOwner {
         if (tradingEnabled) {
+            if (maxTransactionAmount == 0) {
+                revert("Cannot add limit after trading");
+            }
             require(amount == 0 || amount >= maxTransactionAmount, "Can only relax after trading");
         }
         maxTransactionAmount = amount;
         emit MaxTransactionAmountUpdated(amount);
     }
 
-    /// @notice Sets cooldown time in seconds. Before trading: any value. After trading: can only decrease or disable (0).
+    /// @notice Sets cooldown time in seconds. Before trading: any value.
+    /// After trading: if currently 0 (disabled), cannot be set (no new restrictions).
+    /// If currently set, can only decrease (relax) or set to 0 (remove cooldown).
     function setCooldownTime(uint256 _seconds) external onlyOwner {
         if (tradingEnabled) {
+            if (cooldownTime == 0) {
+                revert("Cannot add cooldown after trading");
+            }
             require(_seconds <= cooldownTime, "Can only relax after trading");
         }
         cooldownTime = _seconds;
@@ -255,10 +270,12 @@ contract BasicTokenImpl is ERC20Upgradeable, OwnableUpgradeable {
         emit BlacklistWindowUpdated(_seconds);
     }
 
-    /// @notice Adds or removes an address from the blacklist. Only usable within the blacklist window.
+    /// @notice Adds or removes an address from the blacklist.
+    ///         Adding to blacklist is only allowed within the blacklist window after trading starts.
+    ///         Removing from blacklist (unblocking) is always allowed.
     function setBlacklisted(address account, bool blocked) external onlyOwner {
         require(blacklistWindow > 0, "Blacklist not enabled");
-        if (tradingEnabled) {
+        if (blocked && tradingEnabled) {
             require(block.timestamp <= tradingEnabledAt + blacklistWindow, "Blacklist window expired");
         }
         blacklisted[account] = blocked;
@@ -317,14 +334,11 @@ contract BasicTokenImpl is ERC20Upgradeable, OwnableUpgradeable {
     // PROTECTION: TRANSFER CHECKS
     // =============================================================
 
-    /// @dev Override _update to enforce protection checks before any transfer.
-    function _update(address from, address to, uint256 value) internal virtual override {
-        // Mint/burn bypass all checks
-        if (from == address(0) || to == address(0)) {
-            super._update(from, to, value);
-            return;
-        }
-
+    /// @dev Enforces trading gate, blacklist, and anti-whale protection checks.
+    ///      Extracted as a separate function so PartnerTaxableTokenImpl can call it
+    ///      without going through the full _update override chain.
+    ///      Virtual so PoolManaged subclasses can add pool-aware max wallet skipping.
+    function _enforceProtections(address from, address to, uint256 value) internal virtual {
         // Trading gate: before trading is enabled, only owner can transfer
         if (!tradingEnabled) {
             require(from == owner() || to == owner() || isExcludedFromLimits[from] || isExcludedFromLimits[to], "Trading not enabled");
@@ -340,17 +354,28 @@ contract BasicTokenImpl is ERC20Upgradeable, OwnableUpgradeable {
                 require(value <= maxTransactionAmount, "Exceeds max transaction");
             }
 
-            // Max wallet check (skip if recipient is excluded — handled above)
+            // Max wallet check
             if (maxWalletAmount > 0) {
                 require(balanceOf(to) + value <= maxWalletAmount, "Exceeds max wallet");
             }
 
-            // Cooldown check on sender
+            // Cooldown check
             if (cooldownTime > 0) {
                 require(block.timestamp >= lastTransferTime[from] + cooldownTime, "Cooldown active");
                 lastTransferTime[from] = block.timestamp;
             }
         }
+    }
+
+    /// @dev Override _update to enforce protection checks before any transfer.
+    function _update(address from, address to, uint256 value) internal virtual override {
+        // Mint/burn bypass all checks
+        if (from == address(0) || to == address(0)) {
+            super._update(from, to, value);
+            return;
+        }
+
+        _enforceProtections(from, to, value);
 
         super._update(from, to, value);
     }
@@ -462,10 +487,11 @@ contract PoolManaged is BasicTokenImpl {
         emit PoolUpdated(pool, true);
     }
 
-    /// @notice Unregisters a DEX pool from tax detection.
+    /// @notice Unregisters a DEX pool from tax detection and removes its limit exclusion.
     /// @param pool The DEX pair address to remove
     function removePool(address pool) external onlyOwner {
         isPool[pool] = false;
+        isExcludedFromLimits[pool] = false;
         emit PoolUpdated(pool, false);
     }
 }
@@ -535,6 +561,7 @@ contract TaxableTokenImpl is PoolManaged {
         uint256 oldLen = taxWallets.length;
         for (uint256 i; i < oldLen;) {
             isTaxFree[taxWallets[i]] = false;
+            isExcludedFromLimits[taxWallets[i]] = false;
             unchecked { ++i; }
         }
 
@@ -555,6 +582,7 @@ contract TaxableTokenImpl is PoolManaged {
             taxWallets.push(wallets[i]);
             taxSharesBps.push(sharesBps[i]);
             isTaxFree[wallets[i]] = true;
+            isExcludedFromLimits[wallets[i]] = true;
             unchecked { ++i; }
         }
 
@@ -592,14 +620,18 @@ contract TaxableTokenImpl is PoolManaged {
     ///      Tax logic: mint/burn/zero-value pass through untaxed. Tax-free addresses are exempt.
     ///      Pool interactions trigger buy/sell tax; all others trigger transfer tax.
     ///      Tax is split among taxWallets per their sharesBps; remainder is burned.
+    ///      Protection checks (maxTransaction, maxWallet) are enforced on the FULL pre-tax value.
     function _update(address from, address to, uint256 value) internal virtual override {
         if (from == address(0) || to == address(0) || value == 0) {
             super._update(from, to, value);
             return;
         }
 
+        // Enforce protections on FULL pre-tax value
+        _enforceProtections(from, to, value);
+
         if (isTaxFree[from] || isTaxFree[to]) {
-            super._update(from, to, value);
+            ERC20Upgradeable._update(from, to, value);
             return;
         }
 
@@ -613,7 +645,7 @@ contract TaxableTokenImpl is PoolManaged {
         }
 
         if (tax == 0) {
-            super._update(from, to, value);
+            ERC20Upgradeable._update(from, to, value);
             return;
         }
 
@@ -623,17 +655,17 @@ contract TaxableTokenImpl is PoolManaged {
         for (uint256 i; i < len;) {
             uint256 amount = (tax * taxSharesBps[i]) / 10000;
             if (amount > 0) {
-                super._update(from, taxWallets[i], amount);
+                ERC20Upgradeable._update(from, taxWallets[i], amount);
                 remaining -= amount;
             }
             unchecked { ++i; }
         }
 
         if (remaining > 0) {
-            super._update(from, address(0), remaining);
+            ERC20Upgradeable._update(from, address(0), remaining);
         }
 
-        super._update(from, to, value - tax);
+        ERC20Upgradeable._update(from, to, value - tax);
     }
 }
 
@@ -670,6 +702,17 @@ contract PartnerTokenImpl is PoolManaged {
     /// @notice Fixed partnership tax rate: 100 bps (1%) on all pool interactions (buys/sells).
     uint16 public constant PARTNERSHIP_BPS = 100;
 
+    /// @notice Addresses exempt from partnership tax (e.g., launch contracts).
+    mapping(address => bool) public isTaxFree;
+
+    event TaxExemptUpdated(address indexed account, bool exempt);
+
+    /// @notice Exempts or un-exempts an address from partnership tax.
+    function excludeFromTax(address account, bool exempt) external onlyOwner {
+        isTaxFree[account] = exempt;
+        emit TaxExemptUpdated(account, exempt);
+    }
+
     /// @notice Initializes a partner token clone with pool management.
     function initialize(
         string calldata name,
@@ -685,19 +728,26 @@ contract PartnerTokenImpl is PoolManaged {
 
     /// @dev Overrides `_update` to deduct 1% partnership tax on pool interactions.
     ///      After deducting, calls `processTax` on the factory (wrapped in try-catch for safety).
-    ///      Factory address is exempt to prevent reentrancy during DEX swaps.
+    ///      Factory address and isTaxFree addresses are exempt.
+    ///      Protection checks (maxTransaction, maxWallet) are enforced on the FULL pre-tax value.
     function _update(address from, address to, uint256 value) internal virtual override {
         if (from != address(0) && to != address(0) && value > 0
             && from != poolFactory && to != poolFactory
+            && !isTaxFree[from] && !isTaxFree[to]
             && (isPool[from] || isPool[to]))
         {
+            // Enforce protections on FULL pre-tax value
+            _enforceProtections(from, to, value);
+
             uint256 pTax = (value * PARTNERSHIP_BPS) / 10000;
             if (pTax > 0) {
-                super._update(from, poolFactory, pTax);
-                super._update(from, to, value - pTax);
+                ERC20Upgradeable._update(from, poolFactory, pTax);
+                ERC20Upgradeable._update(from, to, value - pTax);
                 try ITokenFactory(poolFactory).processTax(address(this)) {} catch {}
                 return;
             }
+            ERC20Upgradeable._update(from, to, value);
+            return;
         }
         super._update(from, to, value);
     }
@@ -756,8 +806,9 @@ contract PartnerTaxableTokenImpl is TaxableTokenImpl {
         transferTaxBps = _transferTaxBps;
     }
 
-    /// @dev Overrides `_update` to apply both partnership and user taxes in a single pass.
-    ///      Order: (1) partnership tax to factory, (2) user tax to wallets, (3) remainder to recipient.
+    /// @dev Overrides `_update` to apply both partnership and user taxes in a single pass,
+    ///      while preserving BasicTokenImpl protection checks (trading gate, blacklist, anti-whale).
+    ///      Order: (1) protection checks, (2) partnership tax to factory, (3) user tax to wallets, (4) remainder to recipient.
     ///      Factory address is fully exempt from all taxes. After deductions on pool interactions,
     ///      calls processTax on the factory (try-catch for graceful failure).
     function _update(address from, address to, uint256 value) internal virtual override {
@@ -766,6 +817,9 @@ contract PartnerTaxableTokenImpl is TaxableTokenImpl {
             ERC20Upgradeable._update(from, to, value);
             return;
         }
+
+        // Enforce protection checks (trading gate, blacklist, anti-whale limits)
+        _enforceProtections(from, to, value);
 
         // Factory always exempt from all taxes
         if (from == poolFactory || to == poolFactory) {
@@ -777,6 +831,15 @@ contract PartnerTaxableTokenImpl is TaxableTokenImpl {
         bool isSell = isPool[to];
         uint256 totalDeducted = 0;
 
+        // Tax-free addresses skip all taxes (partnership + user)
+        if (isTaxFree[from] || isTaxFree[to]) {
+            ERC20Upgradeable._update(from, to, value);
+            if ((isBuy || isSell)) {
+                try ITokenFactory(poolFactory).processTax(address(this)) {} catch {}
+            }
+            return;
+        }
+
         // Partnership tax (buys/sells only)
         if (isBuy || isSell) {
             uint256 pTax = (value * PARTNERSHIP_BPS) / 10000;
@@ -786,8 +849,8 @@ contract PartnerTaxableTokenImpl is TaxableTokenImpl {
             }
         }
 
-        // User tax (skip if either side is tax-free)
-        if (!isTaxFree[from] && !isTaxFree[to]) {
+        // User tax
+        {
             uint256 taxBps;
             if (isBuy) taxBps = buyTaxBps;
             else if (isSell) taxBps = sellTaxBps;
@@ -927,6 +990,33 @@ contract TokenFactory is Ownable, ReentrancyGuard {
     /// @notice When true, `processTax` will swap accumulated tax tokens to USDT via the best DEX route.
     bool public convertTaxToStable;
 
+    /// @notice Slippage tolerance for processTax swaps in basis points (e.g. 300 = 3%). Default 500 (5%).
+    uint256 public taxSlippageBps = 500;
+
+    // =============================================================
+    // DAILY STATS
+    // =============================================================
+
+    /// @notice Daily creation statistics for charting on the admin dashboard.
+    struct DayStats {
+        uint256 basic;          // type 0
+        uint256 mintable;       // type 1
+        uint256 taxable;        // type 2
+        uint256 taxMintable;    // type 3
+        uint256 partner;        // type 4
+        uint256 partnerMint;    // type 5
+        uint256 partnerTax;     // type 6
+        uint256 partnerTaxMint; // type 7
+        uint256 total;
+        uint256 totalFeeUsdt;   // cumulative fees earned (USDT equivalent)
+    }
+
+    /// @notice Daily stats keyed by day number (block.timestamp / 86400).
+    mapping(uint256 => DayStats) public dailyStats;
+
+    /// @notice Cumulative total fee earned in USDT equivalent (all time).
+    uint256 public totalFeeEarnedUsdt;
+
     // =============================================================
     // REFERRAL / AFFILIATE PROGRAM
     // =============================================================
@@ -953,6 +1043,9 @@ contract TokenFactory is Ownable, ReentrancyGuard {
 
     /// @notice Claimable reward balance per user per payment token (used when autoDistributeReward is false).
     mapping(address => mapping(address => uint256)) public pendingRewards;
+
+    /// @notice Total pending rewards across all referrers, per payment token. Protects rewards from owner withdrawal.
+    mapping(address => uint256) public totalPendingRewards;
 
     /// @param creator The address that created the token
     /// @param tokenAddress The deployed token clone address
@@ -1079,15 +1172,18 @@ contract TokenFactory is Ownable, ReentrancyGuard {
     }
 
     /// @dev Collects the creation fee from `payer` in the specified `paymentToken`.
-    ///      For native payments, refunds any excess. For ERC20 payments, uses safeTransferFrom.
+    ///      For native payments, refunds any excess unless `skipRefund` is true
+    ///      (used by createTokenAndLaunch where remaining native value is forwarded to launchpad).
     /// @param payer The address paying the fee
     /// @param paymentToken The payment token address (address(0) for native)
     /// @param typeKey The token type key to look up the fee amount
+    /// @param skipRefund If true, do not refund excess native value (caller will use it)
     /// @return amount The actual fee amount collected in `paymentToken` units
     function _collectFeeFrom(
         address payer,
         address paymentToken,
-        uint8 typeKey
+        uint8 typeKey,
+        bool skipRefund
     ) internal returns (uint256 amount) {
         uint256 baseFee = creationFee[typeKey];
         if (baseFee == 0) return 0;
@@ -1099,10 +1195,12 @@ contract TokenFactory is Ownable, ReentrancyGuard {
 
         if (paymentToken == address(0)) {
             require(msg.value >= amount, "Insufficient native payment");
-            uint256 excess = msg.value - amount;
-            if (excess > 0) {
-                (bool ok, ) = msg.sender.call{value: excess}("");
-                require(ok, "Refund failed");
+            if (!skipRefund) {
+                uint256 excess = msg.value - amount;
+                if (excess > 0) {
+                    (bool ok, ) = msg.sender.call{value: excess}("");
+                    require(ok, "Refund failed");
+                }
             }
         } else {
             IERC20(paymentToken).safeTransferFrom(payer, address(this), amount);
@@ -1153,6 +1251,37 @@ contract TokenFactory is Ownable, ReentrancyGuard {
         }
     }
 
+    /// @dev Records a token creation in daily stats with fee tracking.
+    /// @param typeKey The token type key (0-7)
+    /// @param paymentToken The token used to pay the fee
+    /// @param feeAmount The fee amount collected in paymentToken units
+    function _recordDailyStats(uint8 typeKey, address paymentToken, uint256 feeAmount) internal {
+        uint256 day = block.timestamp / 86400;
+        DayStats storage ds = dailyStats[day];
+        ds.total++;
+
+        if (typeKey == 0) ds.basic++;
+        else if (typeKey == 1) ds.mintable++;
+        else if (typeKey == 2) ds.taxable++;
+        else if (typeKey == 3) ds.taxMintable++;
+        else if (typeKey == 4) ds.partner++;
+        else if (typeKey == 5) ds.partnerMint++;
+        else if (typeKey == 6) ds.partnerTax++;
+        else if (typeKey == 7) ds.partnerTaxMint++;
+
+        // Convert fee to USDT equivalent for tracking
+        if (feeAmount > 0) {
+            uint256 feeUsdt;
+            if (paymentToken == usdt) {
+                feeUsdt = feeAmount;
+            } else {
+                feeUsdt = creationFee[typeKey]; // use the base USDT fee as the canonical value
+            }
+            ds.totalFeeUsdt += feeUsdt;
+            totalFeeEarnedUsdt += feeUsdt;
+        }
+    }
+
     /// @dev Processes the referral chain: records the referral relationship, then walks up the chain
     ///      distributing rewards at each level. Rewards are either sent immediately or accumulated
     ///      for claiming, depending on `autoDistributeReward`.
@@ -1167,7 +1296,16 @@ contract TokenFactory is Ownable, ReentrancyGuard {
         uint256 feeAmount
     ) internal {
         if (referral == address(0) || referral == creator) return;
-        require(referrals[referral] != creator, "Circular referral");
+
+        // Walk the referral chain to detect cycles up to referralLevels deep
+        {
+            address walker = referral;
+            for (uint8 j = 0; j < referralLevels; j++) {
+                if (walker == address(0)) break;
+                require(walker != creator, "Circular referral");
+                walker = referrals[walker];
+            }
+        }
 
         // Record referral if creator doesn't already have one
         if (referrals[creator] == address(0)) {
@@ -1194,12 +1332,14 @@ contract TokenFactory is Ownable, ReentrancyGuard {
                         (bool ok, ) = ref.call{value: reward}("");
                         if (!ok) {
                             pendingRewards[ref][paymentToken] += reward;
+                            totalPendingRewards[paymentToken] += reward;
                         }
                     } else {
                         IERC20(paymentToken).safeTransfer(ref, reward);
                     }
                 } else {
                     pendingRewards[ref][paymentToken] += reward;
+                    totalPendingRewards[paymentToken] += reward;
                 }
 
                 totalEarned[ref][paymentToken] += reward;
@@ -1256,6 +1396,13 @@ contract TokenFactory is Ownable, ReentrancyGuard {
     // TOKEN CREATION
     // =============================================================
 
+    /// @dev Calculates native value to forward for the launch fee, avoiding address(this).balance.
+    function _nativeForLaunch(address creationPayToken, address launchPayToken, uint8 typeKey) internal view returns (uint256) {
+        if (launchPayToken != address(0)) return 0;
+        uint256 creationFeeNative = (creationPayToken == address(0)) ? _convertFee(creationFee[typeKey], address(0)) : 0;
+        return msg.value > creationFeeNative ? msg.value - creationFeeNative : 0;
+    }
+
     /// @dev Generates a deterministic salt from the creator address and their nonce, then increments the nonce.
     /// @param creator The token creator address
     /// @return salt The computed salt for cloneDeterministic
@@ -1280,8 +1427,9 @@ contract TokenFactory is Ownable, ReentrancyGuard {
         address impl = implementations[typeKey];
         require(impl != address(0), "Token type not supported");
 
-        uint256 feeAmount = _collectFeeFrom(msg.sender, p.paymentToken, typeKey);
+        uint256 feeAmount = _collectFeeFrom(msg.sender, p.paymentToken, typeKey, false);
         _processReferral(msg.sender, referral, p.paymentToken, feeAmount);
+        _recordDailyStats(typeKey, p.paymentToken, feeAmount);
 
         bytes32 salt = _computeSalt(msg.sender);
         tokenAddress = Clones.cloneDeterministic(impl, salt);
@@ -1307,8 +1455,9 @@ contract TokenFactory is Ownable, ReentrancyGuard {
         address impl = implementations[typeKey];
         require(impl != address(0), "Token type not supported");
 
-        uint256 feeAmount = _collectFeeFrom(creator, p.paymentToken, typeKey);
+        uint256 feeAmount = _collectFeeFrom(creator, p.paymentToken, typeKey, false);
         _processReferral(creator, referral, p.paymentToken, feeAmount);
+        _recordDailyStats(typeKey, p.paymentToken, feeAmount);
 
         bytes32 salt = _computeSalt(creator);
         tokenAddress = Clones.cloneDeterministic(impl, salt);
@@ -1360,6 +1509,23 @@ contract TokenFactory is Ownable, ReentrancyGuard {
     /// @notice Returns all supported payment token addresses. address(0) represents native currency.
     function getSupportedPaymentTokens() external view returns (address[] memory) {
         return _supportedTokens;
+    }
+
+    /// @notice Returns daily stats for a range of days.
+    /// @param fromDay Start day number (block.timestamp / 86400)
+    /// @param toDay End day number (inclusive)
+    /// @return stats Array of DayStats for each day in the range
+    function getDailyStats(uint256 fromDay, uint256 toDay)
+        external view returns (DayStats[] memory stats)
+    {
+        require(toDay >= fromDay, "Invalid range");
+        uint256 count = toDay - fromDay + 1;
+        require(count <= 365, "Max 365 days");
+        stats = new DayStats[](count);
+        for (uint256 i; i < count;) {
+            stats[i] = dailyStats[fromDay + i];
+            unchecked { ++i; }
+        }
     }
 
     /// @notice Returns factory-wide token creation statistics.
@@ -1458,6 +1624,7 @@ contract TokenFactory is Ownable, ReentrancyGuard {
         require(amount > 0, "No rewards");
 
         pendingRewards[msg.sender][paymentToken] = 0;
+        totalPendingRewards[paymentToken] -= amount;
 
         if (paymentToken == address(0)) {
             (bool ok, ) = msg.sender.call{value: amount}("");
@@ -1522,8 +1689,7 @@ contract TokenFactory is Ownable, ReentrancyGuard {
         address[] memory bestPath = isDirect ? directPath : wethPath;
         uint256 expectedOut = isDirect ? directOut : wethOut;
 
-        // 5% slippage tolerance to prevent sandwich attacks
-        uint256 amountOutMin = (expectedOut * 95) / 100;
+        uint256 amountOutMin = (expectedOut * (10000 - taxSlippageBps)) / 10000;
 
         IERC20(token).forceApprove(address(dexRouter), balance);
 
@@ -1557,6 +1723,13 @@ contract TokenFactory is Ownable, ReentrancyGuard {
     function setConvertTaxToStable(bool _enabled) external onlyOwner {
         convertTaxToStable = _enabled;
         emit ConvertTaxToStableUpdated(_enabled);
+    }
+
+    /// @notice Sets the slippage tolerance for processTax swaps.
+    /// @param _bps Slippage in basis points (e.g. 300 = 3%). Max 1000 (10%).
+    function setTaxSlippage(uint256 _bps) external onlyOwner {
+        require(_bps <= 1000, "Max 10%");
+        taxSlippageBps = _bps;
     }
 
     /// @notice Updates the USDT-denominated creation fee for a token type.
@@ -1632,17 +1805,21 @@ contract TokenFactory is Ownable, ReentrancyGuard {
 
     /// @notice Withdraws accumulated tokens or native currency from the factory to the owner.
     /// @dev Use address(0) to withdraw native currency (BNB/ETH).
+    ///      Reserves funds owed to referrers as pending rewards.
     /// @param token The token address to withdraw, or address(0) for native
     function withdrawToken(address token) external onlyOwner {
+        uint256 reserved = totalPendingRewards[token];
         if (token == address(0)) {
             uint256 bal = address(this).balance;
-            require(bal > 0, "No balance");
-            (bool ok, ) = msg.sender.call{value: bal}("");
+            uint256 withdrawable = bal > reserved ? bal - reserved : 0;
+            require(withdrawable > 0, "No withdrawable balance");
+            (bool ok, ) = msg.sender.call{value: withdrawable}("");
             require(ok, "Transfer failed");
         } else {
             uint256 bal = IERC20(token).balanceOf(address(this));
-            require(bal > 0, "No balance");
-            IERC20(token).safeTransfer(msg.sender, bal);
+            uint256 withdrawable = bal > reserved ? bal - reserved : 0;
+            require(withdrawable > 0, "No withdrawable balance");
+            IERC20(token).safeTransfer(msg.sender, withdrawable);
         }
     }
 
@@ -1680,6 +1857,240 @@ contract TokenFactory is Ownable, ReentrancyGuard {
         BasicTokenImpl(token).forceDisableBlacklist();
     }
 
+    // =============================================================
+    // LAUNCHPAD INTEGRATION
+    // =============================================================
+
+    /// @notice Address of the approved LaunchpadFactory contract.
+    address public launchpadFactory;
+
+    event LaunchpadFactoryUpdated(address indexed launchpad);
+    event TokenCreatedAndLaunched(address indexed creator, address indexed token, address indexed launch);
+
+    /// @notice Sets the approved LaunchpadFactory address. Only owner.
+    function setLaunchpadFactory(address _launchpad) external onlyOwner {
+        launchpadFactory = _launchpad;
+        emit LaunchpadFactoryUpdated(_launchpad);
+    }
+
+    /// @notice Anti-whale protection settings applied before enableTrading().
+    ///         All values are optional (0 = disabled/no limit).
+    ///         Once trading is enabled, disabled limits cannot be added later.
+    struct ProtectionParams {
+        uint256 maxWalletAmount;         // Max tokens a wallet can hold (0 = no limit)
+        uint256 maxTransactionAmount;    // Max tokens per transaction (0 = no limit)
+        uint256 cooldownSeconds;         // Cooldown between buys in seconds (0 = disabled)
+    }
+
+    /// @notice Tax configuration applied during createTokenAndLaunch.
+    ///         Only relevant for taxable or partner tokens. All zero = skip tax setup.
+    struct TaxParams {
+        uint256 buyTaxBps;         // Buy tax in basis points (max 1000 = 10%, or 900 for partner)
+        uint256 sellTaxBps;        // Sell tax in basis points (max 1000 = 10%, or 900 for partner)
+        uint256 transferTaxBps;    // Transfer tax in basis points (max 500 = 5%)
+        address[] taxWallets;      // Tax recipient wallets (max 10)
+        uint16[] taxSharesBps;     // Share per wallet in basis points (sum <= 10000; remainder is burned)
+    }
+
+    /// @notice Parameters for creating a token and launching it in one transaction.
+    struct LaunchParams {
+        uint256 tokensForLaunch;         // How many tokens (with decimals) to allocate to the launch
+        uint8 curveType;                 // 0=Linear, 1=SquareRoot, 2=Quadratic, 3=Exponential
+        uint256 softCap;                 // Soft cap in USDT
+        uint256 hardCap;                 // Hard cap in USDT
+        uint256 durationDays;            // 7-90 days
+        uint256 maxBuyBps;               // Max buy per wallet (50-500 BPS of curve supply)
+        uint256 creatorAllocationBps;    // Creator vesting allocation (0-500 BPS)
+        uint256 vestingDays;             // 0, 30, 60, or 90
+        address launchPaymentToken;      // Payment token for launch fee (address(0) for native)
+    }
+
+    /// @notice Creates a token and immediately sets up a bonding curve launch.
+    ///         One transaction: create token → create launch → deposit tokens → activate.
+    ///         Tokens are minted to this factory, split between launch and creator, then
+    ///         ownership is transferred to the creator.
+    /// @param p Token creation parameters (same as createToken)
+    /// @param launch Launch configuration parameters
+    /// @param referral Referral address (address(0) if none)
+    /// @return tokenAddress The deployed token address
+    /// @return launchAddress The LaunchInstance contract address
+    function createTokenAndLaunch(
+        CreateTokenParams calldata p,
+        LaunchParams calldata launch,
+        ProtectionParams calldata protection,
+        TaxParams calldata tax,
+        address referral
+    ) external payable nonReentrant returns (address tokenAddress, address launchAddress) {
+        require(launchpadFactory != address(0), "Launchpad not configured");
+        require(p.totalSupply > 0 && p.decimals <= 18
+            && bytes(p.name).length > 0 && bytes(p.symbol).length > 0);
+
+        uint8 typeKey = _tokenTypeKey(p.isTaxable, p.isMintable, p.isPartner);
+        address impl = implementations[typeKey];
+        require(impl != address(0), "Token type not supported");
+
+        uint256 supply = p.totalSupply * 10 ** p.decimals;
+        require(launch.tokensForLaunch > 0 && launch.tokensForLaunch <= supply, "Invalid launch token amount");
+
+        // Collect creation fee
+        uint256 feeAmount = _collectFeeFrom(msg.sender, p.paymentToken, typeKey, true);
+        _processReferral(msg.sender, referral, p.paymentToken, feeAmount);
+        _recordDailyStats(typeKey, p.paymentToken, feeAmount);
+
+        // Create token — mint to THIS contract (factory) so we can distribute without approval
+        bytes32 salt = _computeSalt(msg.sender);
+        tokenAddress = Clones.cloneDeterministic(impl, salt);
+
+        if (p.isPartner || p.isTaxable) {
+            IPoolManagedToken(tokenAddress).initialize(
+                p.name, p.symbol, supply, p.decimals, address(this), address(this)
+            );
+            _setupPools(tokenAddress);
+        } else {
+            IToken(tokenAddress).initialize(
+                p.name, p.symbol, supply, p.decimals, address(this), address(this)
+            );
+        }
+
+        // Record under the real creator
+        createdTokens[msg.sender].push(tokenAddress);
+        tokenInfo[tokenAddress] = TokenInfo({
+            creator: msg.sender,
+            isMintable: p.isMintable,
+            isTaxable: p.isTaxable,
+            isPartnership: p.isPartner
+        });
+        totalTokensCreated++;
+        tokensCreatedByType[typeKey]++;
+
+        emit TokenCreated(
+            msg.sender, tokenAddress, typeKey,
+            p.name, p.symbol, p.totalSupply, p.decimals
+        );
+
+        // Create launch via LaunchpadFactory
+        ILaunchpadFactory lpFactory = ILaunchpadFactory(launchpadFactory);
+
+        // If launch fee is paid with ERC20, pull from user and approve LaunchpadFactory
+        // (user approved TokenFactory, not LaunchpadFactory, so we relay the fee)
+        if (launch.launchPaymentToken != address(0)) {
+            uint256 launchFeeAmt = lpFactory.getLaunchFee(launch.launchPaymentToken);
+            if (launchFeeAmt > 0) {
+                IERC20(launch.launchPaymentToken).safeTransferFrom(msg.sender, address(this), launchFeeAmt);
+                IERC20(launch.launchPaymentToken).forceApprove(launchpadFactory, launchFeeAmt);
+            }
+        }
+
+        // Forward only the user's remaining native value for launch fee (not entire factory balance)
+        launchAddress = lpFactory.createLaunchFor{value: _nativeForLaunch(p.paymentToken, launch.launchPaymentToken, typeKey)}(
+            msg.sender,
+            tokenAddress,
+            launch.tokensForLaunch,
+            launch.curveType,
+            launch.softCap,
+            launch.hardCap,
+            launch.durationDays,
+            launch.maxBuyBps,
+            launch.creatorAllocationBps,
+            launch.vestingDays,
+            launch.launchPaymentToken
+        );
+
+        // Transfer launch tokens to the launch instance
+        IERC20(tokenAddress).safeTransfer(launchAddress, launch.tokensForLaunch);
+
+        // Notify via LaunchpadFactory (which forwards to LaunchInstance)
+        lpFactory.notifyDeposit(launchAddress, launch.tokensForLaunch);
+
+        // Exclude the real creator and launch instance from token limits
+        // (factory is currently the token owner so it can call these)
+        IProtectedToken(tokenAddress).setExcludedFromLimits(msg.sender, true);
+        IProtectedToken(tokenAddress).setExcludedFromLimits(launchAddress, true);
+
+        // Exempt launch instance from tax so bonding curve buys/refunds aren't taxed
+        // Covers both user tax (TaxableTokenImpl) and partnership tax (PartnerTokenImpl)
+        if (p.isTaxable || p.isPartner) {
+            ITaxableToken(tokenAddress).excludeFromTax(launchAddress, true);
+        }
+
+        // Apply anti-whale protection settings BEFORE enabling trading.
+        // After enableTrading(), disabled limits (0) become permanently locked.
+        if (protection.maxWalletAmount > 0) {
+            IProtectedToken(tokenAddress).setMaxWalletAmount(protection.maxWalletAmount);
+        }
+        if (protection.maxTransactionAmount > 0) {
+            IProtectedToken(tokenAddress).setMaxTransactionAmount(protection.maxTransactionAmount);
+        }
+        if (protection.cooldownSeconds > 0) {
+            IProtectedToken(tokenAddress).setCooldownTime(protection.cooldownSeconds);
+        }
+
+        // Configure taxes if token is taxable (partner-only tokens have a fixed 1% fee with no setTaxes)
+        if (p.isTaxable && (tax.buyTaxBps > 0 || tax.sellTaxBps > 0 || tax.transferTaxBps > 0)) {
+            ITaxableToken(tokenAddress).setTaxes(tax.buyTaxBps, tax.sellTaxBps, tax.transferTaxBps);
+            if (tax.taxWallets.length > 0) {
+                ITaxableToken(tokenAddress).setTaxDistribution(tax.taxWallets, tax.taxSharesBps);
+            }
+        }
+
+        // Enable trading so buyers can purchase tokens on the bonding curve.
+        // After this call, protection limits are locked to relax-only mode.
+        IProtectedToken(tokenAddress).enableTrading();
+
+        // Transfer remaining tokens to the creator
+        uint256 remaining = IERC20(tokenAddress).balanceOf(address(this));
+        if (remaining > 0) {
+            IERC20(tokenAddress).safeTransfer(msg.sender, remaining);
+        }
+
+        // Transfer token ownership to the real creator
+        IOwnableToken(tokenAddress).transferOwnership(msg.sender);
+
+        emit TokenCreatedAndLaunched(msg.sender, tokenAddress, launchAddress);
+    }
+
     /// @dev Allows the factory to receive native currency (BNB/ETH) for fee payments and refunds.
     receive() external payable {}
+}
+
+/// @notice Interface for the LaunchpadFactory to create launches and notify deposits.
+interface ILaunchpadFactory {
+    function createLaunchFor(
+        address creator,
+        address token,
+        uint256 totalTokens,
+        uint8 curveType,
+        uint256 softCap,
+        uint256 hardCap,
+        uint256 durationDays,
+        uint256 maxBuyBps,
+        uint256 creatorAllocationBps,
+        uint256 vestingDays,
+        address paymentToken
+    ) external payable returns (address);
+
+    function notifyDeposit(address launch, uint256 amount) external;
+
+    function getLaunchFee(address paymentToken) external view returns (uint256);
+}
+
+/// @notice Interface for transferring token ownership after factory-initiated creation.
+interface IOwnableToken {
+    function transferOwnership(address newOwner) external;
+}
+
+/// @notice Interface for setting token protection exclusions during launch setup.
+interface IProtectedToken {
+    function setExcludedFromLimits(address account, bool excluded) external;
+    function setMaxWalletAmount(uint256 amount) external;
+    function setMaxTransactionAmount(uint256 amount) external;
+    function setCooldownTime(uint256 _seconds) external;
+    function enableTrading() external;
+}
+
+/// @notice Interface for exempting addresses from token tax during launch.
+interface ITaxableToken {
+    function excludeFromTax(address account, bool exempt) external;
+    function setTaxes(uint256 buyTaxBps, uint256 sellTaxBps, uint256 transferTaxBps) external;
+    function setTaxDistribution(address[] calldata wallets, uint16[] calldata sharesBps) external;
 }

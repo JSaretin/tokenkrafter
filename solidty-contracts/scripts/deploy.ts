@@ -1,10 +1,15 @@
-import { ethers } from "hardhat";
+import { ethers, run, network } from "hardhat";
+import * as fs from "fs";
+import * as path from "path";
 
 /**
  * Network-specific addresses.
  * Add/update entries as needed before deploying to a new chain.
  */
-const NETWORK_CONFIG: Record<string, { usdt: string; dexRouter: string; usdc?: string }> = {
+const NETWORK_CONFIG: Record<
+  string,
+  { usdt: string; dexRouter: string; usdc?: string }
+> = {
   bsc: {
     usdt: "0x55d398326f99059fF775485246999027B3197955",
     dexRouter: "0x10ED43C718714eb63d5aA57B78B54704E256024E", // PancakeSwap V2
@@ -47,21 +52,73 @@ const IMPL_CONTRACTS: { typeKey: number; name: string }[] = [
   { typeKey: 7, name: "PartnerTaxableMintableTokenImpl" },
 ];
 
+/** Attempt to verify a contract, swallowing "already verified" errors */
+async function verify(address: string, constructorArguments: any[] = []) {
+  if (network.name === "hardhat" || network.name === "localhost") return;
+  console.log(`  Verifying ${address}...`);
+  try {
+    await run("verify:verify", { address, constructorArguments });
+    console.log(`  ✓ Verified`);
+  } catch (e: any) {
+    if (e.message?.toLowerCase().includes("already verified")) {
+      console.log(`  ✓ Already verified`);
+    } else {
+      console.log(`  ✗ Verification failed: ${e.message}`);
+    }
+  }
+}
+
+/** Save deployed addresses to a JSON file for frontend consumption */
+function saveDeployment(
+  networkName: string,
+  data: Record<string, string>
+) {
+  const deploymentsDir = path.join(__dirname, "..", "deployments");
+  if (!fs.existsSync(deploymentsDir)) fs.mkdirSync(deploymentsDir);
+  const filePath = path.join(deploymentsDir, `${networkName}.json`);
+  fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+  console.log(`\nDeployment saved to: ${filePath}`);
+}
+
+/** Save Hardhat build info (standard JSON input) for the verification endpoint */
+function saveBuildInfo(networkName: string) {
+  const buildInfoDir = path.join(__dirname, "..", "artifacts", "build-info");
+  const deploymentsDir = path.join(__dirname, "..", "deployments");
+
+  if (!fs.existsSync(buildInfoDir)) {
+    console.log("  No build-info directory found, skipping.");
+    return;
+  }
+
+  const files = fs.readdirSync(buildInfoDir).filter((f) => f.endsWith(".json"));
+  if (files.length === 0) {
+    console.log("  No build-info files found, skipping.");
+    return;
+  }
+
+  // Copy the latest build info
+  const latestFile = files[files.length - 1];
+  const destFile = path.join(deploymentsDir, `${networkName}-build-info.json`);
+  fs.copyFileSync(path.join(buildInfoDir, latestFile), destFile);
+  console.log(`Build info saved to: ${destFile}`);
+}
+
 async function main() {
   const [deployer] = await ethers.getSigners();
-  const networkName = (await ethers.provider.getNetwork()).name;
+  const networkName = network.name;
   const chainId = (await ethers.provider.getNetwork()).chainId;
 
   console.log("=".repeat(60));
-  console.log("TokenKrafter V1 - Deployment Script");
+  console.log("TokenKrafter V1 — Full Deployment");
   console.log("=".repeat(60));
   console.log(`Network:  ${networkName} (chainId: ${chainId})`);
   console.log(`Deployer: ${deployer.address}`);
-  console.log(`Balance:  ${ethers.formatEther(await ethers.provider.getBalance(deployer.address))} ETH/BNB`);
+  console.log(
+    `Balance:  ${ethers.formatEther(await ethers.provider.getBalance(deployer.address))} native`
+  );
   console.log("-".repeat(60));
 
-  // Resolve network config
-  // hardhat local fork might report chain name differently
+  // ── Resolve network config ──
   const configKey = Object.keys(NETWORK_CONFIG).find(
     (k) => networkName.includes(k) || k === networkName
   );
@@ -76,7 +133,6 @@ async function main() {
     dexRouter = cfg.dexRouter;
     usdc = cfg.usdc;
   } else {
-    // Fallback: read from environment
     usdt = process.env.USDT_ADDRESS!;
     dexRouter = process.env.DEX_ROUTER_ADDRESS!;
     usdc = process.env.USDC_ADDRESS;
@@ -87,50 +143,137 @@ async function main() {
     }
   }
 
-  console.log(`USDT:       ${usdt}`);
-  console.log(`DEX Router: ${dexRouter}`);
-  if (usdc) console.log(`USDC:       ${usdc}`);
+  const platformWallet =
+    process.env.PLATFORM_WALLET || deployer.address;
+
+  console.log(`USDT:            ${usdt}`);
+  console.log(`DEX Router:      ${dexRouter}`);
+  console.log(`Platform Wallet: ${platformWallet}`);
+  if (usdc) console.log(`USDC:            ${usdc}`);
   console.log("-".repeat(60));
 
-  // ──────────────────────────────────────────────
-  // Step 1: Deploy all token implementations
-  // ──────────────────────────────────────────────
-  console.log("\n[1/3] Deploying token implementations...\n");
+  const deployedAddresses: Record<string, string> = {};
+
+  // ══════════════════════════════════════════════════
+  // Step 1: Deploy BondingCurve library
+  // ══════════════════════════════════════════════════
+  console.log("\n[1/6] Deploying BondingCurve library...\n");
+
+  let bondingCurveAddr = process.env.BONDING_CURVE_ADDRESS;
+
+  if (bondingCurveAddr) {
+    console.log(
+      `  Using existing BondingCurve from .env: ${bondingCurveAddr}`
+    );
+  } else {
+    const BondingCurveFactory = await ethers.getContractFactory(
+      "BondingCurve"
+    );
+    const bondingCurve = await BondingCurveFactory.deploy();
+    await bondingCurve.waitForDeployment();
+    bondingCurveAddr = await bondingCurve.getAddress();
+    console.log(`  BondingCurve deployed at: ${bondingCurveAddr}`);
+    console.log(
+      `  → Save this to .env as BONDING_CURVE_ADDRESS=${bondingCurveAddr}`
+    );
+  }
+  deployedAddresses["BondingCurve"] = bondingCurveAddr;
+
+  // ══════════════════════════════════════════════════
+  // Step 2: Deploy all 8 token implementations
+  // ══════════════════════════════════════════════════
+  console.log("\n[2/6] Deploying token implementations...\n");
 
   const implAddresses: Record<number, string> = {};
 
   for (const impl of IMPL_CONTRACTS) {
-    process.stdout.write(`  Deploying ${impl.name} (type ${impl.typeKey})... `);
+    process.stdout.write(
+      `  Deploying ${impl.name} (type ${impl.typeKey})... `
+    );
     const Factory = await ethers.getContractFactory(impl.name);
     const contract = await Factory.deploy();
     await contract.waitForDeployment();
     const addr = await contract.getAddress();
     implAddresses[impl.typeKey] = addr;
+    deployedAddresses[impl.name] = addr;
     console.log(addr);
   }
 
-  // ──────────────────────────────────────────────
-  // Step 2: Deploy TokenFactory
-  // ──────────────────────────────────────────────
-  console.log("\n[2/3] Deploying TokenFactory...\n");
+  // ══════════════════════════════════════════════════
+  // Step 3: Deploy TokenFactory
+  // ══════════════════════════════════════════════════
+  console.log("\n[3/6] Deploying TokenFactory...\n");
 
-  const TokenFactoryFactory = await ethers.getContractFactory("TokenFactory");
+  const TokenFactoryFactory = await ethers.getContractFactory(
+    "TokenFactory"
+  );
   const tokenFactory = await TokenFactoryFactory.deploy(usdt, dexRouter);
   await tokenFactory.waitForDeployment();
-  const factoryAddr = await tokenFactory.getAddress();
-  console.log(`  TokenFactory deployed at: ${factoryAddr}`);
+  const tokenFactoryAddr = await tokenFactory.getAddress();
+  deployedAddresses["TokenFactory"] = tokenFactoryAddr;
+  console.log(`  TokenFactory deployed at: ${tokenFactoryAddr}`);
 
-  // ──────────────────────────────────────────────
-  // Step 3: Register implementations + payment tokens
-  // ──────────────────────────────────────────────
-  console.log("\n[3/3] Configuring factory...\n");
+  // ══════════════════════════════════════════════════
+  // Step 4: Deploy LaunchpadFactory (linked to BondingCurve)
+  // ══════════════════════════════════════════════════
+  console.log("\n[4/6] Deploying LaunchpadFactory...\n");
 
+  // Link BondingCurve library to LaunchpadFactory and LaunchInstance
+  const LaunchpadFactoryFactory = await ethers.getContractFactory(
+    "LaunchpadFactory",
+    {
+      libraries: {
+        BondingCurve: bondingCurveAddr,
+      },
+    }
+  );
+  const launchpadFactory = await LaunchpadFactoryFactory.deploy(
+    platformWallet,
+    dexRouter,
+    usdt
+  );
+  await launchpadFactory.waitForDeployment();
+  const launchpadFactoryAddr = await launchpadFactory.getAddress();
+  deployedAddresses["LaunchpadFactory"] = launchpadFactoryAddr;
+  console.log(
+    `  LaunchpadFactory deployed at: ${launchpadFactoryAddr}`
+  );
+
+  // ══════════════════════════════════════════════════
+  // Step 5: Configure factories
+  // ══════════════════════════════════════════════════
+  console.log("\n[5/6] Configuring factories...\n");
+
+  // Register implementations
   for (const impl of IMPL_CONTRACTS) {
-    process.stdout.write(`  setImplementation(${impl.typeKey}, ${implAddresses[impl.typeKey]})... `);
-    const tx = await tokenFactory.setImplementation(impl.typeKey, implAddresses[impl.typeKey]);
+    process.stdout.write(
+      `  setImplementation(${impl.typeKey}, ${implAddresses[impl.typeKey]})... `
+    );
+    const tx = await tokenFactory.setImplementation(
+      impl.typeKey,
+      implAddresses[impl.typeKey]
+    );
     await tx.wait();
     console.log("done");
   }
+
+  // Set launchpad factory on token factory
+  process.stdout.write(
+    `  setLaunchpadFactory(${launchpadFactoryAddr})... `
+  );
+  const lpTx = await tokenFactory.setLaunchpadFactory(
+    launchpadFactoryAddr
+  );
+  await lpTx.wait();
+  console.log("done");
+
+  // Set token factory on launchpad factory
+  process.stdout.write(
+    `  setTokenFactory(${tokenFactoryAddr})... `
+  );
+  const tfTx = await launchpadFactory.setTokenFactory(tokenFactoryAddr);
+  await tfTx.wait();
+  console.log("done");
 
   // Add USDC as payment token if available
   if (usdc) {
@@ -140,26 +283,69 @@ async function main() {
     console.log("done");
   }
 
-  // ──────────────────────────────────────────────
+  // ══════════════════════════════════════════════════
+  // Step 6: Verify all contracts on explorer
+  // ══════════════════════════════════════════════════
+  console.log("\n[6/6] Verifying contracts on explorer...\n");
+
+  // Wait for explorer to index (BSCScan needs ~15s)
+  if (network.name !== "hardhat" && network.name !== "localhost") {
+    console.log("  Waiting 15s for explorer indexing...");
+    await new Promise((r) => setTimeout(r, 15000));
+  }
+
+  // Verify BondingCurve library
+  await verify(bondingCurveAddr);
+
+  // Verify implementations (no constructor args)
+  for (const impl of IMPL_CONTRACTS) {
+    await verify(implAddresses[impl.typeKey]);
+  }
+
+  // Verify TokenFactory
+  await verify(tokenFactoryAddr, [usdt, dexRouter]);
+
+  // Verify LaunchpadFactory
+  await verify(launchpadFactoryAddr, [platformWallet, dexRouter, usdt]);
+
+  // ══════════════════════════════════════════════════
   // Summary
-  // ──────────────────────────────────────────────
+  // ══════════════════════════════════════════════════
   console.log("\n" + "=".repeat(60));
   console.log("DEPLOYMENT COMPLETE");
   console.log("=".repeat(60));
-  console.log(`\nTokenFactory: ${factoryAddr}\n`);
+
+  console.log(`\nBondingCurve:     ${bondingCurveAddr}`);
+  console.log(`TokenFactory:     ${tokenFactoryAddr}`);
+  console.log(`LaunchpadFactory: ${launchpadFactoryAddr}\n`);
+
   console.log("Implementations:");
   for (const impl of IMPL_CONTRACTS) {
-    console.log(`  [${impl.typeKey}] ${impl.name}: ${implAddresses[impl.typeKey]}`);
+    console.log(
+      `  [${impl.typeKey}] ${impl.name}: ${implAddresses[impl.typeKey]}`
+    );
   }
-  console.log("\nSupported payment tokens:");
+
+  console.log("\nPayment tokens:");
   console.log(`  USDT (auto):   ${usdt}`);
-  console.log(`  Native (auto): 0x0000000000000000000000000000000000000000`);
+  console.log(
+    `  Native (auto): 0x0000000000000000000000000000000000000000`
+  );
   if (usdc) console.log(`  USDC (added):  ${usdc}`);
 
   console.log("\n" + "-".repeat(60));
-  console.log("Update your frontend SupportedNetwork.platform_address with:");
-  console.log(`  "${factoryAddr}"`);
+  console.log("Add to .env:");
+  console.log(`  BONDING_CURVE_ADDRESS=${bondingCurveAddr}`);
+  console.log("\nUpdate frontend SupportedNetwork:");
+  console.log(`  platform_address:  "${tokenFactoryAddr}"`);
+  console.log(`  launchpad_address: "${launchpadFactoryAddr}"`);
   console.log("-".repeat(60));
+
+  // Save deployment JSON
+  saveDeployment(networkName, deployedAddresses);
+
+  // Save build info for verification endpoint
+  saveBuildInfo(networkName);
 }
 
 main().catch((error) => {

@@ -6,6 +6,7 @@ export interface SupportedNetwork {
 	usdt_address: string;
 	usdc_address: string;
 	platform_address: string;
+	launchpad_address: string;
 	dex_router: string;
 	rpc: string;
 }

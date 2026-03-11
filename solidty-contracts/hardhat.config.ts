@@ -8,6 +8,7 @@ const config: HardhatUserConfig = {
   solidity: {
     version: "0.8.20",
     settings: {
+      viaIR: true,
       optimizer: { enabled: true, runs: 200 },
     },
   },
@@ -33,6 +34,9 @@ const config: HardhatUserConfig = {
       chainId: 11155111,
       accounts: [DEPLOYER_KEY],
     },
+  },
+  etherscan: {
+    apiKey: process.env.ETHERSCAN_API_KEY || "",
   },
   paths: {
     sources: "./contracts",

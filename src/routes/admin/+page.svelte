@@ -2,6 +2,7 @@
 	import { getContext, onMount } from 'svelte';
 	import { ethers } from 'ethers';
 	import { TokenFactory, FACTORY_ABI, ERC20_ABI, ZERO_ADDRESS } from '$lib/tokenCrafter';
+	import { LAUNCHPAD_FACTORY_ABI } from '$lib/launchpad';
 	import type { SupportedNetworks, SupportedNetwork, PaymentOption } from '$lib/structure';
 
 	let connectWallet: () => Promise<boolean> = getContext('connectWallet');
@@ -20,7 +21,7 @@
 	let selectedNetworkIdx = $state(0);
 	let selectedNetwork = $derived(supportedNetworks[selectedNetworkIdx]);
 
-	type TabKey = 'stats' | 'implementations' | 'fees' | 'payments' | 'referral' | 'tax' | 'protection' | 'withdraw';
+	type TabKey = 'stats' | 'implementations' | 'fees' | 'payments' | 'referral' | 'tax' | 'protection' | 'withdraw' | 'launchpad';
 	let activeTab = $state<TabKey>('stats');
 
 	// Auth
@@ -68,6 +69,24 @@
 	// Withdraw
 	let withdrawTokenAddr = $state('');
 
+	// Launchpad
+	let lpTotalLaunches = $state(0n);
+	let lpTotalFeeUsdt = $state(0n);
+	let lpLaunchFee = $state('0');
+	let lpPlatformWallet = $state('');
+	let lpDexRouter = $state('');
+	let lpTokenFactory = $state('');
+	let lpUsdtAddr = $state('');
+	let lpPaymentTokens = $state<string[]>([]);
+	let lpOwner = $state('');
+	let lpNewFee = $state('');
+	let lpNewPlatformWallet = $state('');
+	let lpNewDexRouter = $state('');
+	let lpNewTokenFactory = $state('');
+	let lpAddPaymentInput = $state('');
+	let lpRemovePaymentInput = $state('');
+	let lpWithdrawTokenAddr = $state('');
+
 	// DEX Router
 	let dexRouterAddr = $state('');
 	let newDexRouter = $state('');
@@ -83,7 +102,8 @@
 		{ key: 'referral', label: 'Referral' },
 		{ key: 'tax', label: 'Tax Config' },
 		{ key: 'protection', label: 'Protection' },
-		{ key: 'withdraw', label: 'Withdraw' }
+		{ key: 'withdraw', label: 'Withdraw' },
+		{ key: 'launchpad', label: 'Launchpad' }
 	];
 
 	function formatAddress(addr: string) {
@@ -93,6 +113,10 @@
 
 	function getContract(signerOrProvider: ethers.ContractRunner) {
 		return new ethers.Contract(selectedNetwork.platform_address, FACTORY_ABI, signerOrProvider);
+	}
+
+	function getLpContract(signerOrProvider: ethers.ContractRunner) {
+		return new ethers.Contract(selectedNetwork.launchpad_address, LAUNCHPAD_FACTORY_ABI, signerOrProvider);
 	}
 
 	async function loadData() {
@@ -163,6 +187,35 @@
 				refPercents = [...percents].map((p: bigint) => String(Number(p) / 100));
 			} catch { refPercents = []; }
 
+			// Load launchpad factory data
+			if (selectedNetwork.launchpad_address && selectedNetwork.launchpad_address !== '0x') {
+				try {
+					const lpContract = getLpContract(provider);
+					const [lpOwner_, lpTotal, lpFeeUsdt, lpFee, lpPW, lpRouter, lpTF, lpUsdt, lpSupported] = await Promise.all([
+						lpContract.owner(),
+						lpContract.totalLaunches(),
+						lpContract.totalLaunchFeeEarnedUsdt(),
+						lpContract.launchFee(),
+						lpContract.platformWallet(),
+						lpContract.dexRouter(),
+						lpContract.tokenFactory(),
+						lpContract.usdt(),
+						lpContract.getSupportedPaymentTokens()
+					]);
+					lpOwner = lpOwner_;
+					lpTotalLaunches = lpTotal;
+					lpTotalFeeUsdt = lpFeeUsdt;
+					lpLaunchFee = ethers.formatUnits(lpFee, usdtDecimals);
+					lpPlatformWallet = lpPW;
+					lpDexRouter = lpRouter;
+					lpTokenFactory = lpTF;
+					lpUsdtAddr = lpUsdt;
+					lpPaymentTokens = [...lpSupported];
+				} catch (e: any) {
+					console.warn('Failed to load launchpad data:', e.message);
+				}
+			}
+
 		} catch (e: any) {
 			addFeedback({ message: `Failed to load: ${e.message?.slice(0, 80)}`, type: 'error' });
 		} finally {
@@ -179,7 +232,7 @@
 		busy = true;
 		try {
 			const contract = getContract(signer);
-			const tx = await contract.setImplementation(implInput.typeKey, implInput.address);
+			const tx = await contract.setImplementation(BigInt(implInput.typeKey), implInput.address);
 			await tx.wait();
 			addFeedback({ message: `Implementation set for type ${implInput.typeKey}`, type: 'success' });
 			implInput.address = '';
@@ -194,8 +247,8 @@
 		busy = true;
 		try {
 			const contract = getContract(signer);
-			const amount = ethers.parseUnits(feeInput.amount, usdtDecimals);
-			const tx = await contract.setCreationFee(feeInput.typeKey, amount);
+			const amount = ethers.parseUnits(String(feeInput.amount), usdtDecimals);
+			const tx = await contract.setCreationFee(BigInt(feeInput.typeKey), amount);
 			await tx.wait();
 			addFeedback({ message: `Fee set for type ${feeInput.typeKey}`, type: 'success' });
 			feeInput.amount = '';
@@ -240,7 +293,7 @@
 		busy = true;
 		try {
 			const contract = getContract(signer);
-			const tx = await contract.setReferralLevels(Number(newRefLevels));
+			const tx = await contract.setReferralLevels(BigInt(newRefLevels));
 			await tx.wait();
 			addFeedback({ message: 'Referral levels updated', type: 'success' });
 			loadData();
@@ -254,7 +307,7 @@
 		busy = true;
 		try {
 			const contract = getContract(signer);
-			const percents = newRefPercents.split(',').map(p => Math.round(parseFloat(p.trim()) * 100));
+			const percents = newRefPercents.split(',').map(p => BigInt(Math.round(parseFloat(p.trim()) * 100)));
 			const tx = await contract.setReferralPercents(percents);
 			await tx.wait();
 			addFeedback({ message: 'Referral percents updated', type: 'success' });
@@ -333,13 +386,13 @@
 					tx = await contract.forceUnblacklist(protTokenAddr, protAccountAddr);
 					break;
 				case 'relaxMaxWallet':
-					tx = await contract.forceRelaxMaxWallet(protTokenAddr, ethers.parseUnits(protAmount || '0', 18));
+					tx = await contract.forceRelaxMaxWallet(protTokenAddr, ethers.parseUnits(String(protAmount || '0'), 18));
 					break;
 				case 'relaxMaxTx':
-					tx = await contract.forceRelaxMaxTransaction(protTokenAddr, ethers.parseUnits(protAmount || '0', 18));
+					tx = await contract.forceRelaxMaxTransaction(protTokenAddr, ethers.parseUnits(String(protAmount || '0'), 18));
 					break;
 				case 'relaxCooldown':
-					tx = await contract.forceRelaxCooldown(protTokenAddr, protAmount || '0');
+					tx = await contract.forceRelaxCooldown(protTokenAddr, BigInt(protAmount || '0'));
 					break;
 				case 'disableBlacklist':
 					tx = await contract.forceDisableBlacklist(protTokenAddr);
@@ -362,6 +415,114 @@
 			await tx.wait();
 			addFeedback({ message: 'Withdrawal successful', type: 'success' });
 			withdrawTokenAddr = '';
+		} catch (e: any) {
+			addFeedback({ message: e.reason || e.message?.slice(0, 80), type: 'error' });
+		} finally { busy = false; }
+	}
+
+	// ── Launchpad Admin Actions ──
+
+	async function lpSetFee() {
+		if (!signer) return;
+		busy = true;
+		try {
+			const contract = getLpContract(signer);
+			const amount = ethers.parseUnits(String(lpNewFee), usdtDecimals);
+			const tx = await contract.setLaunchFee(amount);
+			await tx.wait();
+			addFeedback({ message: 'Launch fee updated', type: 'success' });
+			lpNewFee = '';
+			loadData();
+		} catch (e: any) {
+			addFeedback({ message: e.reason || e.message?.slice(0, 80), type: 'error' });
+		} finally { busy = false; }
+	}
+
+	async function lpSetPlatformWallet() {
+		if (!signer || !lpNewPlatformWallet) return;
+		busy = true;
+		try {
+			const contract = getLpContract(signer);
+			const tx = await contract.setPlatformWallet(lpNewPlatformWallet);
+			await tx.wait();
+			addFeedback({ message: 'Platform wallet updated', type: 'success' });
+			lpNewPlatformWallet = '';
+			loadData();
+		} catch (e: any) {
+			addFeedback({ message: e.reason || e.message?.slice(0, 80), type: 'error' });
+		} finally { busy = false; }
+	}
+
+	async function lpSetDexRouter() {
+		if (!signer || !lpNewDexRouter) return;
+		busy = true;
+		try {
+			const contract = getLpContract(signer);
+			const tx = await contract.setDexRouter(lpNewDexRouter);
+			await tx.wait();
+			addFeedback({ message: 'Launchpad DEX router updated', type: 'success' });
+			lpNewDexRouter = '';
+			loadData();
+		} catch (e: any) {
+			addFeedback({ message: e.reason || e.message?.slice(0, 80), type: 'error' });
+		} finally { busy = false; }
+	}
+
+	async function lpSetTokenFactory() {
+		if (!signer || !lpNewTokenFactory) return;
+		busy = true;
+		try {
+			const contract = getLpContract(signer);
+			const tx = await contract.setTokenFactory(lpNewTokenFactory);
+			await tx.wait();
+			addFeedback({ message: 'Token factory updated', type: 'success' });
+			lpNewTokenFactory = '';
+			loadData();
+		} catch (e: any) {
+			addFeedback({ message: e.reason || e.message?.slice(0, 80), type: 'error' });
+		} finally { busy = false; }
+	}
+
+	async function lpAddPayment() {
+		if (!signer) return;
+		busy = true;
+		try {
+			const contract = getLpContract(signer);
+			const tx = await contract.addPaymentToken(lpAddPaymentInput);
+			await tx.wait();
+			addFeedback({ message: 'Launchpad payment token added', type: 'success' });
+			lpAddPaymentInput = '';
+			loadData();
+		} catch (e: any) {
+			addFeedback({ message: e.reason || e.message?.slice(0, 80), type: 'error' });
+		} finally { busy = false; }
+	}
+
+	async function lpRemovePayment() {
+		if (!signer) return;
+		busy = true;
+		try {
+			const contract = getLpContract(signer);
+			const tx = await contract.removePaymentToken(lpRemovePaymentInput);
+			await tx.wait();
+			addFeedback({ message: 'Launchpad payment token removed', type: 'success' });
+			lpRemovePaymentInput = '';
+			loadData();
+		} catch (e: any) {
+			addFeedback({ message: e.reason || e.message?.slice(0, 80), type: 'error' });
+		} finally { busy = false; }
+	}
+
+	async function lpWithdrawFees() {
+		if (!signer) return;
+		busy = true;
+		try {
+			const contract = getLpContract(signer);
+			const addr = lpWithdrawTokenAddr.trim() || ZERO_ADDRESS;
+			const tx = await contract.withdrawFees(addr === '' ? ZERO_ADDRESS : addr);
+			await tx.wait();
+			addFeedback({ message: 'Launchpad withdrawal successful', type: 'success' });
+			lpWithdrawTokenAddr = '';
 		} catch (e: any) {
 			addFeedback({ message: e.reason || e.message?.slice(0, 80), type: 'error' });
 		} finally { busy = false; }
@@ -758,6 +919,157 @@
 						</button>
 					</div>
 				</div>
+
+			<!-- LAUNCHPAD TAB -->
+			{:else if activeTab === 'launchpad'}
+				{#if !selectedNetwork.launchpad_address || selectedNetwork.launchpad_address === '0x'}
+					<div class="card p-8 text-center">
+						<p class="text-gray-400">Launchpad not deployed on {selectedNetwork.name} yet.</p>
+					</div>
+				{:else}
+					<!-- Launchpad Stats -->
+					<div class="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-6">
+						<div class="card p-4 text-center">
+							<div class="text-2xl font-bold text-purple-400 syne">{lpTotalLaunches.toString()}</div>
+							<div class="text-xs text-gray-500 mt-1">Total Launches</div>
+						</div>
+						<div class="card p-4 text-center">
+							<div class="text-2xl font-bold text-cyan-400 syne">${lpLaunchFee}</div>
+							<div class="text-xs text-gray-500 mt-1">Launch Fee (USDT)</div>
+						</div>
+						<div class="card p-4 text-center">
+							<div class="text-2xl font-bold text-emerald-400 syne">${ethers.formatUnits(lpTotalFeeUsdt, usdtDecimals)}</div>
+							<div class="text-xs text-gray-500 mt-1">Total Fee Earned</div>
+						</div>
+					</div>
+
+					<!-- Launchpad Info -->
+					<div class="card p-5 mb-4">
+						<h3 class="section-title mb-3">Launchpad Factory Info</h3>
+						<div class="info-grid">
+							<div class="info-row">
+								<span class="text-gray-500 text-xs">Contract</span>
+								<span class="text-white text-xs font-mono">{selectedNetwork.launchpad_address}</span>
+							</div>
+							<div class="info-row">
+								<span class="text-gray-500 text-xs">Owner</span>
+								<span class="text-white text-xs font-mono">{lpOwner}</span>
+							</div>
+							<div class="info-row">
+								<span class="text-gray-500 text-xs">Platform Wallet</span>
+								<span class="text-cyan-400 text-xs font-mono">{formatAddress(lpPlatformWallet)}</span>
+							</div>
+							<div class="info-row">
+								<span class="text-gray-500 text-xs">DEX Router</span>
+								<span class="text-cyan-400 text-xs font-mono">{formatAddress(lpDexRouter)}</span>
+							</div>
+							<div class="info-row">
+								<span class="text-gray-500 text-xs">Token Factory</span>
+								<span class="text-cyan-400 text-xs font-mono">{formatAddress(lpTokenFactory)}</span>
+							</div>
+							<div class="info-row">
+								<span class="text-gray-500 text-xs">USDT</span>
+								<span class="text-cyan-400 text-xs font-mono">{formatAddress(lpUsdtAddr)}</span>
+							</div>
+						</div>
+					</div>
+
+					<!-- Launch Fee -->
+					<div class="card p-5 mb-4">
+						<h3 class="section-title mb-3">Set Launch Fee</h3>
+						<div class="flex flex-col sm:flex-row gap-3">
+							<input class="input-field flex-1" type="number" placeholder="Fee in USDT (e.g. 50)" bind:value={lpNewFee} />
+							<button class="btn-primary text-xs px-5 py-2 cursor-pointer" disabled={busy} onclick={lpSetFee}>
+								{busy ? 'Setting...' : 'Update Fee'}
+							</button>
+						</div>
+					</div>
+
+					<!-- Platform Wallet -->
+					<div class="card p-5 mb-4">
+						<h3 class="section-title mb-3">Platform Wallet</h3>
+						<div class="info-row mb-3">
+							<span class="text-gray-500 text-xs">Current</span>
+							<span class="text-cyan-400 text-xs font-mono">{lpPlatformWallet}</span>
+						</div>
+						<div class="flex flex-col sm:flex-row gap-3">
+							<input class="input-field flex-1" placeholder="New platform wallet (0x...)" bind:value={lpNewPlatformWallet} />
+							<button class="btn-primary text-xs px-5 py-2 cursor-pointer" disabled={busy} onclick={lpSetPlatformWallet}>
+								{busy ? 'Setting...' : 'Update'}
+							</button>
+						</div>
+					</div>
+
+					<!-- DEX Router & Token Factory -->
+					<div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+						<div class="card p-5">
+							<h3 class="section-title mb-3">DEX Router</h3>
+							<div class="flex flex-col gap-3">
+								<input class="input-field" placeholder="New router (0x...)" bind:value={lpNewDexRouter} />
+								<button class="btn-primary text-xs px-5 py-2 cursor-pointer" disabled={busy} onclick={lpSetDexRouter}>
+									{busy ? 'Setting...' : 'Update Router'}
+								</button>
+							</div>
+						</div>
+						<div class="card p-5">
+							<h3 class="section-title mb-3">Token Factory</h3>
+							<div class="flex flex-col gap-3">
+								<input class="input-field" placeholder="New factory (0x...)" bind:value={lpNewTokenFactory} />
+								<button class="btn-primary text-xs px-5 py-2 cursor-pointer" disabled={busy} onclick={lpSetTokenFactory}>
+									{busy ? 'Setting...' : 'Update Factory'}
+								</button>
+							</div>
+						</div>
+					</div>
+
+					<!-- Launchpad Payment Tokens -->
+					<div class="card p-5 mb-4">
+						<h3 class="section-title mb-4">Launchpad Payment Tokens</h3>
+						<div class="flex flex-col gap-2 mb-4">
+							{#each lpPaymentTokens as token}
+								<div class="info-row">
+									<span class="font-mono text-xs text-cyan-400">{token === ZERO_ADDRESS ? `Native (${selectedNetwork.native_coin})` : token}</span>
+								</div>
+							{/each}
+							{#if lpPaymentTokens.length === 0}
+								<p class="text-gray-500 text-sm">No payment tokens configured.</p>
+							{/if}
+						</div>
+						<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+							<div>
+								<div class="flex flex-col gap-3">
+									<input class="input-field" placeholder="Add token (0x...)" bind:value={lpAddPaymentInput} />
+									<button class="btn-primary text-xs px-5 py-2 cursor-pointer" disabled={busy} onclick={lpAddPayment}>
+										{busy ? 'Adding...' : 'Add Token'}
+									</button>
+								</div>
+							</div>
+							<div>
+								<div class="flex flex-col gap-3">
+									<input class="input-field" placeholder="Remove token (0x...)" bind:value={lpRemovePaymentInput} />
+									<button class="btn-danger text-xs px-5 py-2 cursor-pointer" disabled={busy} onclick={lpRemovePayment}>
+										{busy ? 'Removing...' : 'Remove Token'}
+									</button>
+								</div>
+							</div>
+						</div>
+					</div>
+
+					<!-- Launchpad Withdraw -->
+					<div class="card p-5">
+						<h3 class="section-title mb-2">Withdraw Launchpad Fees</h3>
+						<p class="text-xs text-gray-500 mb-4">Withdraw collected fees from the LaunchpadFactory contract.</p>
+						<div class="flex flex-col gap-4">
+							<div>
+								<label class="label-text">Token Address</label>
+								<input class="input-field" placeholder="Token address, or leave empty for native ({selectedNetwork.native_coin})" bind:value={lpWithdrawTokenAddr} />
+							</div>
+							<button class="btn-primary text-xs px-5 py-2 cursor-pointer" disabled={busy} onclick={lpWithdrawFees}>
+								{busy ? 'Withdrawing...' : 'Withdraw All'}
+							</button>
+						</div>
+					</div>
+				{/if}
 			{/if}
 		{/if}
 	</section>
