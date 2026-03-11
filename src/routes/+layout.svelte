@@ -144,7 +144,7 @@
 		initProviders();
 
 		// Initialize AppKit (Reown) for wallet connections
-		const kit = initAppKit();
+		const kit = await initAppKit();
 		if (kit) {
 			kit.subscribeAccount(async (account: any) => {
 				if (account.isConnected && account.address) {

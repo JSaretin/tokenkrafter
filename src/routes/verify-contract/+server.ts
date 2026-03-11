@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { ETHERSCAN_API_KEYS, VERIFICATION_SECRET } from '$env/static/private';
+import { env } from '$env/dynamic/private';
 
 // ── Etherscan V2 Unified API ──
 // Single API key works across all 60+ chains — just change the chainid parameter.
@@ -12,10 +12,10 @@ function parseKeys(raw: string | undefined): string[] {
 	return raw?.split(',').map((k) => k.trim()).filter(Boolean) ?? [];
 }
 
-const apiKeys = parseKeys(ETHERSCAN_API_KEYS);
 let keyCounter = 0;
 
 function getNextApiKey(): string {
+	const apiKeys = parseKeys(env.ETHERSCAN_API_KEYS);
 	if (apiKeys.length === 0) {
 		throw new Error('No ETHERSCAN_API_KEYS configured');
 	}
@@ -43,7 +43,7 @@ interface VerifyRequest {
 
 export const POST: RequestHandler = async ({ request }) => {
 	const authHeader = request.headers.get('authorization');
-	if (VERIFICATION_SECRET && authHeader !== `Bearer ${VERIFICATION_SECRET}`) {
+	if (env.VERIFICATION_SECRET && authHeader !== `Bearer ${env.VERIFICATION_SECRET}`) {
 		return json({ success: false, message: 'Unauthorized' }, { status: 401 });
 	}
 

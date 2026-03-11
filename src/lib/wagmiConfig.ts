@@ -1,12 +1,9 @@
-import { createAppKit } from '@reown/appkit';
-import { EthersAdapter } from '@reown/appkit-adapter-ethers';
-import { mainnet, bsc } from '@reown/appkit/networks';
 import { browser } from '$app/environment';
 import { env } from '$env/dynamic/public';
 
-let modal: ReturnType<typeof createAppKit> | null = null;
+let modal: any = null;
 
-export function initAppKit() {
+export async function initAppKit() {
 	if (modal || !browser) return modal;
 
 	const projectId = env.PUBLIC_WALLET_CONNECT_PROJECT_ID;
@@ -14,6 +11,10 @@ export function initAppKit() {
 		console.warn('Missing PUBLIC_WALLET_CONNECT_PROJECT_ID');
 		return null;
 	}
+
+	const { createAppKit } = await import('@reown/appkit');
+	const { EthersAdapter } = await import('@reown/appkit-adapter-ethers');
+	const { mainnet, bsc } = await import('@reown/appkit/networks');
 
 	modal = createAppKit({
 		adapters: [new EthersAdapter()],
