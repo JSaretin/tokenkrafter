@@ -18,10 +18,9 @@
 	let getNetworkProviders: () => Map<number, ethers.JsonRpcProvider> = getContext('networkProviders');
 	let getProvidersReady: () => boolean = getContext('providersReady');
 	let getPaymentOptions: (network: SupportedNetwork) => PaymentOption[] = getContext('getPaymentOptions');
-	let checkWcReachable: () => Promise<boolean> = getContext('checkWcReachable');
 	let connectViaWalletConnect: () => Promise<void> = getContext('connectViaWalletConnect');
 	let getLayoutWalletDeepLinks: () => { name: string; icon: string; href: string }[] = getContext('getWalletDeepLinks');
-	let getWcState: () => { wcReachable: boolean | null; wcCheckingInProgress: boolean } = getContext('wcState');
+	let getEthereumFromLayout: () => any = getContext('getEthereum');
 
 	// ── URL param helpers for deep link flow ──
 
@@ -142,7 +141,7 @@
 		const stripped = createUrl.replace(/^https?:\/\//, '');
 		return [
 			{ name: 'MetaMask', icon: WALLET_SVG.metamask, href: `https://metamask.app.link/dapp/${stripped}` },
-			{ name: 'Trust Wallet', icon: WALLET_SVG.trust, href: `https://link.trustwallet.com/open_url?coin_id=56&url=${encodeURIComponent(createUrl)}` },
+			{ name: 'Trust Wallet', icon: WALLET_SVG.trust, href: `trust://open_url?coin_id=56&url=${encodeURIComponent(createUrl)}` },
 			{ name: 'Binance Wallet', icon: WALLET_SVG.binance, href: `https://app.binance.com/cedefi/dapp-web-view?dappUrl=${encodeURIComponent(createUrl)}` },
 			{ name: 'SafePal', icon: WALLET_SVG.safepal, href: `https://link.safepal.io/open_url?url=${encodeURIComponent(createUrl)}` }
 		];
@@ -186,7 +185,7 @@
 	}
 
 	async function switchNetwork(chainId: number): Promise<boolean> {
-		const ethereum = (window as any).ethereum;
+		const ethereum = getEthereumFromLayout();
 		if (!ethereum) return false;
 		try {
 			await ethereum.request({
@@ -287,13 +286,22 @@
 
 	// Auto-connect wallet when opened via deep link (in DApp browser with injected wallet)
 	let autoConnectTriggered = false;
+	let autoConnectRetries = 0;
 	$effect(() => {
 		if (autoSubmit && !autoConnectTriggered && !signer && tokenInfo && typeof window !== 'undefined') {
-			const w = window as any;
-			const eth = w.ethereum || w.trustwallet?.provider || w.BinanceChain || w.coinbaseWalletExtension;
+			const eth = getEthereumFromLayout();
 			if (eth) {
 				autoConnectTriggered = true;
 				connectWallet();
+			} else if (autoConnectRetries < 10) {
+				// Some DApp browsers inject the provider late — retry with delay
+				autoConnectRetries++;
+				setTimeout(() => {
+					// Re-request EIP-6963 providers in case they announce late
+					window.dispatchEvent(new Event('eip6963:requestProvider'));
+					// Trigger reactivity by touching autoConnectRetries
+					autoConnectRetries = autoConnectRetries;
+				}, 500);
 			}
 		}
 	});
@@ -669,11 +677,6 @@
 	}
 
 	async function connectViaWcFromCreate() {
-		const reachable = await checkWcReachable();
-		if (!reachable) {
-			addFeedback({ message: 'WalletConnect is unavailable in your region.', type: 'error' });
-			return;
-		}
 		showWalletPicker = false;
 		const { getAppKit } = await import('$lib/wagmiConfig');
 		const kit = getAppKit();
@@ -687,9 +690,8 @@
 		if (!signer || !userAddress) {
 			deployAfterConnect = true;
 
-			// If injected wallet, connect directly
-			const w = window as any;
-			const eth = w.ethereum || w.trustwallet?.provider || w.BinanceChain || w.coinbaseWalletExtension;
+			// If injected wallet (including EIP-6963), connect directly
+			const eth = getEthereumFromLayout();
 			if (eth) {
 				const connected = await connectWallet();
 				if (connected) return;
@@ -699,15 +701,12 @@
 			// No injected wallet — show wallet picker with form-data deep links
 			walletDeepLinks = getDeepLinks(tokenInfo);
 			showWalletPicker = true;
-			if (getWcState().wcReachable === null) {
-				await checkWcReachable();
-			}
 			return;
 		}
 
 		// Ensure wallet is on the correct network
 		try {
-			const walletProvider = new ethers.BrowserProvider((window as any).ethereum);
+			const walletProvider = new ethers.BrowserProvider(getEthereumFromLayout());
 			const walletNetwork = await walletProvider.getNetwork();
 			if (Number(walletNetwork.chainId) !== tokenInfo.network.chain_id) {
 				addFeedback({ message: `Switching to ${tokenInfo.network.name}...`, type: 'info' });
@@ -786,7 +785,6 @@
 
 <!-- Wallet Picker Modal (deep links with form data for mobile users) -->
 {#if showWalletPicker}
-	{@const wc = getWcState()}
 	<div
 		class="fixed inset-0 z-[90] bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-4"
 		role="dialog"
@@ -834,18 +832,11 @@
 					<!-- WalletConnect option -->
 					<button
 						onclick={connectViaWcFromCreate}
-						disabled={wc.wcCheckingInProgress}
-						class="flex items-center gap-3 p-3 rounded-xl border border-white/5 bg-white/3 hover:border-blue-500/30 hover:bg-blue-500/5 transition text-white cursor-pointer w-full text-left disabled:opacity-50 disabled:cursor-not-allowed"
+						class="flex items-center gap-3 p-3 rounded-xl border border-white/5 bg-white/3 hover:border-blue-500/30 hover:bg-blue-500/5 transition text-white cursor-pointer w-full text-left"
 					>
 						<span class="w-8 h-8 flex-shrink-0">{@html WALLET_SVG.walletconnect}</span>
 						<span class="font-mono text-sm">WalletConnect</span>
-						{#if wc.wcCheckingInProgress}
-							<span class="ml-auto text-gray-500 text-xs">Checking...</span>
-						{:else if wc.wcReachable === false}
-							<span class="ml-auto text-red-400 text-xs">Unavailable</span>
-						{:else}
-							<span class="ml-auto text-gray-500 text-xs">QR Code</span>
-						{/if}
+						<span class="ml-auto text-gray-500 text-xs">QR Code</span>
 					</button>
 				</div>
 				<p class="text-[11px] text-gray-500 font-mono mt-3 text-center">Your form data will auto-fill in the wallet browser</p>
