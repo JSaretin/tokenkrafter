@@ -1179,8 +1179,8 @@
 
 	.max-buy-info {
 		padding: 8px 12px;
-		background: rgba(255, 255, 255, 0.02);
-		border: 1px solid rgba(255, 255, 255, 0.06);
+		background: var(--bg-surface);
+		border: 1px solid var(--bg-surface-hover);
 		border-radius: 8px;
 	}
 
@@ -1208,7 +1208,7 @@
 	}
 	.detail-value {
 		font-size: 13px;
-		color: #e2e8f0;
+		color: var(--text);
 		font-family: 'Space Mono', monospace;
 		font-weight: 600;
 	}
@@ -1216,7 +1216,7 @@
 	.progress-track {
 		width: 100%;
 		height: 8px;
-		background: rgba(255, 255, 255, 0.06);
+		background: var(--bg-surface-hover);
 		border-radius: 4px;
 		overflow: hidden;
 	}
@@ -1284,8 +1284,8 @@
 		padding: 16px;
 	}
 	.modal-card {
-		background: #0d0d14;
-		border: 1px solid rgba(255, 255, 255, 0.08);
+		background: var(--select-bg);
+		border: 1px solid var(--border);
 		border-radius: 16px;
 		padding: 24px;
 		max-width: 420px;
@@ -1298,8 +1298,8 @@
 	}
 	.qr-box {
 		padding: 12px;
-		background: rgba(255, 255, 255, 0.03);
-		border: 1px solid rgba(255, 255, 255, 0.1);
+		background: var(--bg-surface);
+		border: 1px solid var(--border-input);
 		border-radius: 12px;
 	}
 	.qr-img {
@@ -1318,7 +1318,7 @@
 	.spinner-sm {
 		width: 14px;
 		height: 14px;
-		border: 2px solid rgba(255, 255, 255, 0.1);
+		border: 2px solid var(--border-input);
 		border-top-color: #00d2ff;
 		border-radius: 50%;
 		animation: spin 0.8s linear infinite;
@@ -1378,6 +1378,6 @@
 	}
 
 	select option {
-		background: #0d0d14;
+		background: var(--select-bg);
 	}
 </style>

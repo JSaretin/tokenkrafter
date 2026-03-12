@@ -109,7 +109,7 @@
 				y1={tick.y}
 				x2={pad.left + plotW}
 				y2={tick.y}
-				stroke="rgba(255,255,255,0.05)"
+				stroke="var(--border-subtle)"
 				stroke-width="1"
 			/>
 			<text x={pad.left - 6} y={tick.y + 3} class="axis-label" text-anchor="end">
@@ -123,7 +123,7 @@
 				y1={pad.top}
 				x2={tick.x}
 				y2={pad.top + plotH}
-				stroke="rgba(255,255,255,0.05)"
+				stroke="var(--border-subtle)"
 				stroke-width="1"
 			/>
 			<text x={tick.x} y={pad.top + plotH + 16} class="axis-label" text-anchor="middle">

@@ -326,7 +326,7 @@
 	.progress-track {
 		width: 100%;
 		height: 6px;
-		background: rgba(255, 255, 255, 0.06);
+		background: var(--bg-surface-hover);
 		border-radius: 3px;
 		overflow: hidden;
 	}
@@ -357,7 +357,7 @@
 		animation: skeletonPulse 1.5s ease-in-out infinite;
 	}
 	.skeleton-line {
-		background: rgba(255, 255, 255, 0.06);
+		background: var(--bg-surface-hover);
 		border-radius: 4px;
 		animation: skeletonShimmer 1.5s ease-in-out infinite;
 	}
@@ -366,8 +366,8 @@
 		50% { opacity: 0.6; }
 	}
 	@keyframes skeletonShimmer {
-		0%, 100% { background: rgba(255, 255, 255, 0.06); }
-		50% { background: rgba(255, 255, 255, 0.1); }
+		0%, 100% { background: var(--bg-surface-hover); }
+		50% { background: var(--border-input); }
 	}
 
 	.empty-state {

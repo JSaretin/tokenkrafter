@@ -632,7 +632,7 @@
 	}
 	.detail-value {
 		font-size: 13px;
-		color: #e2e8f0;
+		color: var(--text);
 		font-family: 'Space Mono', monospace;
 		font-weight: 600;
 	}
@@ -674,7 +674,7 @@
 	}
 	.divider {
 		border: none;
-		border-top: 1px solid rgba(255, 255, 255, 0.06);
+		border-top: 1px solid var(--bg-surface-hover);
 		margin: 20px 0;
 	}
 
@@ -689,8 +689,8 @@
 		font-family: 'Space Mono', monospace;
 		font-weight: 600;
 		color: #94a3b8;
-		background: rgba(255, 255, 255, 0.04);
-		border: 1px solid rgba(255, 255, 255, 0.08);
+		background: var(--bg-surface-hover);
+		border: 1px solid var(--border);
 		border-radius: 6px;
 		cursor: pointer;
 		transition: all 0.15s ease;
@@ -720,7 +720,7 @@
 	.progress-track {
 		width: 100%;
 		height: 6px;
-		background: rgba(255, 255, 255, 0.06);
+		background: var(--bg-surface-hover);
 		border-radius: 3px;
 		overflow: hidden;
 	}

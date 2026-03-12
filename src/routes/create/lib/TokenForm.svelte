@@ -992,9 +992,9 @@
 		font-size: 12px;
 		font-weight: 700;
 		font-family: 'Space Mono', monospace;
-		background: rgba(255,255,255,0.06);
-		color: #4b5563;
-		border: 2px solid rgba(255,255,255,0.08);
+		background: var(--bg-surface-hover);
+		color: var(--text-dim);
+		border: 2px solid var(--border);
 		transition: all 0.2s;
 	}
 	.step-dot.active .step-num {
@@ -1011,7 +1011,7 @@
 	.step-label {
 		font-size: 10px;
 		font-family: 'Space Mono', monospace;
-		color: #4b5563;
+		color: var(--text-dim);
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
 	}
@@ -1021,7 +1021,7 @@
 	.step-line {
 		flex: 1;
 		height: 2px;
-		background: rgba(255,255,255,0.06);
+		background: var(--bg-surface-hover);
 		margin: 0 4px;
 		margin-bottom: 18px;
 		transition: background 0.3s;
@@ -1030,8 +1030,8 @@
 
 	/* Wizard step content */
 	.wizard-step {
-		background: rgba(255,255,255,0.02);
-		border: 1px solid rgba(255,255,255,0.07);
+		background: var(--bg-surface);
+		border: 1px solid var(--border);
 		border-radius: 20px;
 		padding: 14px;
 	}
@@ -1046,12 +1046,12 @@
 	.subsection-title {
 		font-size: 13px;
 		font-weight: 700;
-		color: #e2e8f0;
+		color: var(--text);
 	}
 
 	.section-divider {
 		height: 1px;
-		background: rgba(255,255,255,0.06);
+		background: var(--bg-surface-hover);
 		margin: 4px 0;
 	}
 
@@ -1059,14 +1059,14 @@
 	.field-group { position: relative; display: flex; flex-direction: column; gap: 4px; }
 	.field-hint {
 		font-size: 11px;
-		color: #4b5563;
+		color: var(--text-dim);
 		font-family: 'Space Mono', monospace;
 	}
 
 	/* Educational tips */
 	.tip {
 		font-size: 11px;
-		color: #6b7280;
+		color: var(--text-muted);
 		font-family: 'Space Mono', monospace;
 		line-height: 1.5;
 		padding: 0 2px;
@@ -1095,14 +1095,14 @@
 		border: 1px solid rgba(139,92,246,0.12);
 	}
 	.edu-box.subtle {
-		background: rgba(255,255,255,0.02);
-		border: 1px solid rgba(255,255,255,0.06);
+		background: var(--bg-surface);
+		border: 1px solid var(--bg-surface-hover);
 	}
 	.edu-title {
 		font-family: 'Syne', sans-serif;
 		font-size: 12px;
 		font-weight: 700;
-		color: #e2e8f0;
+		color: var(--text);
 	}
 	.edu-box.cyan .edu-title { color: #67e8f9; }
 	.edu-box.amber .edu-title { color: #fbbf24; }
@@ -1122,10 +1122,10 @@
 		justify-content: space-between;
 		padding: 14px;
 		border-radius: 10px;
-		border: 1px solid rgba(255,255,255,0.07);
+		border: 1px solid var(--border);
 		cursor: pointer;
 		transition: all 0.2s;
-		background: rgba(255,255,255,0.02);
+		background: var(--bg-surface);
 	}
 	.toggle-card:hover { border-color: rgba(0,210,255,0.25); background: rgba(0,210,255,0.03); }
 	.toggle-card.active {
@@ -1186,7 +1186,7 @@
 		align-items: center;
 		justify-content: center;
 		border-radius: 8px;
-		background: rgba(255,255,255,0.05);
+		background: var(--bg-surface-hover);
 		color: #94a3b8;
 	}
 
@@ -1194,7 +1194,7 @@
 		width: 36px;
 		height: 20px;
 		border-radius: 999px;
-		background: rgba(255,255,255,0.1);
+		background: var(--border-input);
 		position: relative;
 		transition: all 0.2s;
 		flex-shrink: 0;
@@ -1221,8 +1221,8 @@
 		align-items: center;
 		gap: 6px;
 		padding: 8px 12px;
-		background: rgba(255,255,255,0.02);
-		border: 1px solid rgba(255,255,255,0.06);
+		background: var(--bg-surface);
+		border: 1px solid var(--bg-surface-hover);
 		border-radius: 8px;
 		margin-top: 4px;
 	}
@@ -1250,7 +1250,7 @@
 		top: 50%;
 		transform: translateY(-50%);
 		font-size: 11px;
-		color: #4b5563;
+		color: var(--text-dim);
 		pointer-events: none;
 		font-family: 'Space Mono', monospace;
 	}
@@ -1274,9 +1274,9 @@
 	.add-wallet-btn {
 		padding: 8px 14px;
 		border-radius: 8px;
-		background: rgba(255,255,255,0.03);
-		border: 1px dashed rgba(255,255,255,0.1);
-		color: #6b7280;
+		background: var(--bg-surface);
+		border: 1px dashed var(--btn-secondary-border);
+		color: var(--text-muted);
 		font-family: 'Space Mono', monospace;
 		font-size: 12px;
 		cursor: pointer;
@@ -1311,11 +1311,11 @@
 		border: none;
 	}
 	.nav-btn.back {
-		background: rgba(255,255,255,0.05);
+		background: var(--bg-surface-hover);
 		color: #94a3b8;
 		font-family: 'Space Mono', monospace;
 	}
-	.nav-btn.back:hover { background: rgba(255,255,255,0.08); color: white; }
+	.nav-btn.back:hover { background: var(--border); color: var(--text-heading); }
 	.nav-btn.next {
 		background: linear-gradient(135deg, #00d2ff, #3a7bd5);
 		color: white;
@@ -1371,7 +1371,7 @@
 		border-width: 0;
 	}
 
-	select option { background: #0d0d14; color: white; }
+	select option { background: var(--select-bg); color: var(--text); }
 	.syne { font-family: 'Syne', sans-serif; }
 
 	@keyframes fadeIn {

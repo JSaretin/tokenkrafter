@@ -2073,7 +2073,7 @@
 		onclick={closeDepositModal}
 	>
 		<div
-			class="deposit-modal w-full max-w-md rounded-2xl border border-white/10 bg-[#0d0d14] shadow-2xl overflow-hidden"
+			class="deposit-modal w-full max-w-md rounded-2xl border shadow-2xl overflow-hidden" style="border-color: var(--border-input); background: var(--bg)"
 			onclick={(e) => e.stopPropagation()}
 		>
 			<!-- Header -->
@@ -2169,32 +2169,32 @@
 		width: 60px; height: 60px;
 		border-radius: 16px;
 		background: linear-gradient(135deg, rgba(0,210,255,0.2), rgba(99,102,241,0.2));
-		border: 1px solid rgba(255,255,255,0.1);
+		border: 1px solid var(--border-input);
 		display: flex; align-items: center; justify-content: center;
-		font-size: 20px; font-weight: 800; color: white;
+		font-size: 20px; font-weight: 800; color: var(--text-heading);
 		flex-shrink: 0;
 	}
 
 	.contract-addr-bar {
 		padding: 10px 14px;
-		background: rgba(255,255,255,0.02);
-		border: 1px solid rgba(255,255,255,0.05);
+		background: var(--bg-surface);
+		border: 1px solid var(--bg-surface-hover);
 		border-radius: 8px;
 		overflow-x: auto;
 		white-space: nowrap;
 	}
 
 	.stat-card {
-		background: rgba(255,255,255,0.02);
-		border: 1px solid rgba(255,255,255,0.07);
+		background: var(--bg-surface);
+		border: 1px solid var(--border);
 		border-radius: 12px;
 	}
 	.stat-label { font-size: 11px; color: #6b7280; font-family: 'Space Mono', monospace; text-transform: uppercase; letter-spacing: 0.05em; }
-	.stat-value { font-size: 18px; font-weight: 800; color: white; margin: 4px 0 2px; }
-	.stat-unit { font-size: 11px; color: #4b5563; font-family: 'Space Mono', monospace; }
+	.stat-value { font-size: 18px; font-weight: 800; color: var(--text-heading); margin: 4px 0 2px; }
+	.stat-unit { font-size: 11px; color: var(--text-dim); font-family: 'Space Mono', monospace; }
 
 	.tabs-bar {
-		border-bottom: 1px solid rgba(255,255,255,0.06);
+		border-bottom: 1px solid var(--bg-surface-hover);
 		padding-bottom: 0;
 	}
 
@@ -2211,7 +2211,7 @@
 		white-space: nowrap;
 		margin-bottom: -1px;
 	}
-	.tab-btn:hover { color: #e2e8f0; }
+	.tab-btn:hover { color: var(--text); }
 	.tab-btn.active {
 		color: #00d2ff;
 		border-bottom-color: #00d2ff;
@@ -2219,15 +2219,15 @@
 	}
 
 	.panel {
-		background: rgba(255,255,255,0.02);
-		border: 1px solid rgba(255,255,255,0.07);
+		background: var(--bg-surface);
+		border: 1px solid var(--border);
 		border-radius: 16px;
 		padding: 24px;
 	}
 
 	.sub-panel {
-		background: rgba(255,255,255,0.02);
-		border: 1px solid rgba(255,255,255,0.05);
+		background: var(--bg-surface);
+		border: 1px solid var(--bg-surface-hover);
 		border-radius: 12px;
 		padding: 16px;
 	}
@@ -2255,12 +2255,12 @@
 		font-size: 11px;
 		font-family: 'Space Mono', monospace;
 		color: #6b7280;
-		background: rgba(255,255,255,0.05);
+		background: var(--bg-surface-hover);
 		padding: 2px 8px;
 		border-radius: 4px;
 	}
 
-	.field-hint { font-size: 11px; color: #4b5563; font-family: 'Space Mono', monospace; }
+	.field-hint { font-size: 11px; color: var(--text-dim); font-family: 'Space Mono', monospace; }
 	.field-hint-btn {
 		font-size: 11px;
 		color: #00d2ff;
@@ -2280,12 +2280,12 @@
 		justify-content: space-between;
 		align-items: center;
 		padding: 10px 0;
-		border-bottom: 1px solid rgba(255,255,255,0.04);
+		border-bottom: 1px solid var(--bg-surface-hover);
 		gap: 12px;
 	}
 	.info-row:last-child { border-bottom: none; }
 	.info-key { font-size: 12px; color: #6b7280; font-family: 'Space Mono', monospace; flex-shrink: 0; }
-	.info-val { font-size: 13px; color: #e2e8f0; text-align: right; word-break: break-all; }
+	.info-val { font-size: 13px; color: var(--text); text-align: right; word-break: break-all; }
 
 	.owner-warning {
 		display: flex; align-items: center;
@@ -2308,7 +2308,7 @@
 	.mode-toggle {
 		display: flex;
 		gap: 0;
-		border: 1px solid rgba(255,255,255,0.1);
+		border: 1px solid var(--border-input);
 		border-radius: 10px;
 		overflow: hidden;
 	}
@@ -2326,7 +2326,7 @@
 		color: #00d2ff;
 		background: rgba(0,210,255,0.08);
 	}
-	.mode-btn:hover:not(.active) { color: #e2e8f0; background: rgba(255,255,255,0.03); }
+	.mode-btn:hover:not(.active) { color: var(--text); background: var(--bg-surface); }
 
 	.calc-result {
 		display: flex;
@@ -2340,13 +2340,13 @@
 
 	.pool-row {
 		padding: 10px 12px;
-		background: rgba(255,255,255,0.02);
-		border: 1px solid rgba(255,255,255,0.05);
+		background: var(--bg-surface);
+		border: 1px solid var(--bg-surface-hover);
 		border-radius: 8px;
 	}
 
 	.pool-card {
-		border: 1px solid rgba(255,255,255,0.07);
+		border: 1px solid var(--border);
 		border-radius: 12px;
 		overflow: hidden;
 		transition: border-color 0.2s;
@@ -2361,13 +2361,13 @@
 		align-items: center;
 		width: 100%;
 		padding: 14px 16px;
-		background: rgba(255,255,255,0.02);
+		background: var(--bg-surface);
 		border: none;
 		color: inherit;
 		gap: 12px;
 	}
 	.pool-card-header:hover {
-		background: rgba(255,255,255,0.04);
+		background: var(--bg-surface-hover);
 	}
 
 	.pool-pair-badge {
@@ -2394,8 +2394,8 @@
 		flex-direction: column;
 		gap: 14px;
 		padding: 16px;
-		border-top: 1px solid rgba(255,255,255,0.05);
-		background: rgba(255,255,255,0.01);
+		border-top: 1px solid var(--bg-surface-hover);
+		background: var(--bg-surface);
 	}
 
 	.empty-pool-hint {
@@ -2413,7 +2413,7 @@
 	}
 	.pct-track {
 		height: 4px;
-		background: rgba(255,255,255,0.06);
+		background: var(--bg-surface-hover);
 		border-radius: 999px;
 		overflow: hidden;
 	}
@@ -2492,15 +2492,15 @@
 	.no-underline { text-decoration: none; }
 	a.no-underline { text-decoration: none; }
 
-	select option { background: #0d0d14; }
+	select option { background: var(--select-bg); }
 
 	.input-field {
 		width: 100%;
-		background: rgba(255,255,255,0.04);
-		border: 1px solid rgba(255,255,255,0.1);
+		background: var(--bg-surface-hover);
+		border: 1px solid var(--border-input);
 		border-radius: 10px;
 		padding: 12px 16px;
-		color: #e2e8f0;
+		color: var(--text);
 		font-family: 'Space Mono', monospace;
 		font-size: 14px;
 		transition: all 0.2s;
@@ -2511,7 +2511,7 @@
 		box-shadow: 0 0 0 3px rgba(0,210,255,0.08);
 	}
 	.input-field:disabled { opacity: 0.4; cursor: not-allowed; }
-	.input-field::placeholder { color: rgba(255,255,255,0.2); }
+	.input-field::placeholder { color: var(--placeholder); }
 
 	.protection-notice {
 		padding: 12px 14px;
@@ -2532,7 +2532,7 @@
 		justify-content: space-between;
 		align-items: center;
 		padding: 6px 0;
-		border-bottom: 1px solid rgba(255,255,255,0.03);
+		border-bottom: 1px solid var(--bg-surface);
 	}
 	.protection-stat-row:last-child { border-bottom: none; }
 
@@ -2555,7 +2555,7 @@
 		justify-content: space-between;
 		align-items: center;
 		padding: 20px 24px;
-		border-bottom: 1px solid rgba(255,255,255,0.06);
+		border-bottom: 1px solid var(--bg-surface-hover);
 	}
 
 	.deposit-icon-circle {
@@ -2575,7 +2575,7 @@
 		height: 32px;
 		border-radius: 8px;
 		border: none;
-		background: rgba(255,255,255,0.05);
+		background: var(--bg-surface-hover);
 		color: #6b7280;
 		display: flex;
 		align-items: center;
@@ -2583,8 +2583,8 @@
 		transition: all 0.15s;
 	}
 	.deposit-close-btn:hover {
-		background: rgba(255,255,255,0.1);
-		color: white;
+		background: var(--border-input);
+		color: var(--text-heading);
 	}
 
 	.deposit-amount-section {
@@ -2602,7 +2602,7 @@
 
 	.deposit-divider {
 		border: none;
-		border-top: 1px dashed rgba(255,255,255,0.08);
+		border-top: 1px dashed var(--border);
 		margin: 4px 0;
 	}
 
@@ -2614,8 +2614,8 @@
 
 	.deposit-qr-frame {
 		padding: 12px;
-		background: rgba(255,255,255,0.03);
-		border: 1px solid rgba(255,255,255,0.08);
+		background: var(--bg-surface);
+		border: 1px solid var(--border);
 		border-radius: 16px;
 	}
 
@@ -2637,8 +2637,8 @@
 		align-items: center;
 		gap: 8px;
 		padding: 10px 12px;
-		background: rgba(255,255,255,0.03);
-		border: 1px solid rgba(255,255,255,0.07);
+		background: var(--bg-surface);
+		border: 1px solid var(--border);
 		border-radius: 10px;
 	}
 
@@ -2676,8 +2676,8 @@
 		justify-content: space-between;
 		align-items: center;
 		padding: 16px 24px;
-		border-top: 1px solid rgba(255,255,255,0.06);
-		background: rgba(255,255,255,0.01);
+		border-top: 1px solid var(--bg-surface-hover);
+		background: var(--bg-surface);
 	}
 
 	.spinner-sm { animation: spin 0.8s linear infinite; }

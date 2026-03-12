@@ -1079,11 +1079,11 @@
 	.page-wrap { padding-bottom: 40px; }
 
 	.tab-btn {
-		background: rgba(255,255,255,0.03);
-		border: 1px solid rgba(255,255,255,0.06);
+		background: var(--bg-surface);
+		border: 1px solid var(--bg-surface-hover);
 		color: #94a3b8;
 	}
-	.tab-btn:hover { background: rgba(255,255,255,0.06); color: #e2e8f0; }
+	.tab-btn:hover { background: var(--bg-surface-hover); color: var(--text); }
 	.tab-btn.active {
 		background: rgba(0,210,255,0.1);
 		border-color: rgba(0,210,255,0.3);
@@ -1096,7 +1096,7 @@
 		justify-content: space-between;
 		align-items: center;
 		padding: 8px 0;
-		border-bottom: 1px solid rgba(255,255,255,0.03);
+		border-bottom: 1px solid var(--bg-surface);
 	}
 	.info-row:last-child { border-bottom: none; }
 
@@ -1107,5 +1107,5 @@
 	}
 	@keyframes spin { to { transform: rotate(360deg); } }
 
-	select option { background: #0d0d14; }
+	select option { background: var(--select-bg); }
 </style>

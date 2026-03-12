@@ -226,7 +226,7 @@
 		font-size: clamp(2.5rem, 6vw, 4.5rem);
 		font-weight: 800;
 		line-height: 1.1;
-		color: white;
+		color: var(--text-heading);
 		margin-bottom: 20px;
 	}
 
@@ -291,7 +291,7 @@
 	/* Pricing */
 	.pricing-card {
 		transition: all 0.2s;
-		border-color: rgba(255,255,255,0.07);
+		border-color: var(--border);
 	}
 	.pricing-card:hover {
 		border-color: rgba(0,210,255,0.2);
@@ -315,7 +315,7 @@
 	.btn-partner {
 		display: inline-block;
 		background: linear-gradient(135deg, #8b5cf6, #a78bfa);
-		color: white;
+		color: var(--text-heading);
 		font-weight: 700;
 		padding: 12px 24px;
 		border-radius: 10px;

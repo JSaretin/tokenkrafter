@@ -173,8 +173,8 @@
 
 <style>
 	.preview-card {
-		background: rgba(255,255,255,0.02);
-		border: 1px solid rgba(255,255,255,0.07);
+		background: var(--bg-surface);
+		border: 1px solid var(--border);
 		border-radius: 16px;
 		padding: 20px;
 		position: sticky;
@@ -187,7 +187,7 @@
 		gap: 12px;
 		margin-bottom: 16px;
 		padding-bottom: 16px;
-		border-bottom: 1px solid rgba(255,255,255,0.05);
+		border-bottom: 1px solid var(--border-subtle);
 	}
 
 	.token-icon {
@@ -214,14 +214,14 @@
 	.token-name {
 		font-size: 16px;
 		font-weight: 700;
-		color: #e2e8f0;
+		color: var(--text);
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
 	}
 	.token-symbol {
 		font-size: 12px;
-		color: #64748b;
+		color: var(--text-muted);
 		font-family: 'Space Mono', monospace;
 	}
 
@@ -233,14 +233,14 @@
 	}
 	.stat {
 		padding: 8px 10px;
-		background: rgba(255,255,255,0.025);
+		background: var(--bg-surface);
 		border-radius: 8px;
-		border: 1px solid rgba(255,255,255,0.04);
+		border: 1px solid var(--border-subtle);
 	}
 	.stat-label {
 		display: block;
 		font-size: 10px;
-		color: #4b5563;
+		color: var(--text-dim);
 		font-family: 'Space Mono', monospace;
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
@@ -249,7 +249,7 @@
 	.stat-value {
 		display: block;
 		font-size: 13px;
-		color: #e2e8f0;
+		color: var(--text);
 		font-family: 'Space Mono', monospace;
 		font-weight: 600;
 	}
@@ -278,16 +278,16 @@
 	.detail-section {
 		margin-bottom: 12px;
 		padding: 10px;
-		background: rgba(255,255,255,0.02);
+		background: var(--bg-surface);
 		border-radius: 8px;
-		border: 1px solid rgba(255,255,255,0.04);
+		border: 1px solid var(--border-subtle);
 	}
 	.detail-title {
 		font-size: 10px;
 		font-weight: 600;
 		text-transform: uppercase;
 		letter-spacing: 0.06em;
-		color: #64748b;
+		color: var(--text-muted);
 		font-family: 'Space Mono', monospace;
 		margin-bottom: 6px;
 	}
@@ -299,9 +299,9 @@
 		justify-content: space-between;
 		font-size: 12px;
 		font-family: 'Space Mono', monospace;
-		color: #6b7280;
+		color: var(--text-muted);
 	}
-	.detail-row .val { color: #e2e8f0; font-weight: 600; }
+	.detail-row .val { color: var(--text); font-weight: 600; }
 	.detail-row .val.amber { color: #f59e0b; }
 
 	.partner-note {
@@ -317,11 +317,11 @@
 
 	.step-hint {
 		font-size: 11px;
-		color: #4b5563;
+		color: var(--text-dim);
 		font-family: 'Space Mono', monospace;
 		text-align: center;
 		padding-top: 12px;
-		border-top: 1px solid rgba(255,255,255,0.04);
+		border-top: 1px solid var(--border-subtle);
 		margin-top: 4px;
 	}
 

@@ -846,8 +846,8 @@
 	}
 
 	.review-modal {
-		background: #0d0d14;
-		border: 1px solid rgba(255,255,255,0.1);
+		background: var(--bg);
+		border: 1px solid var(--border-input);
 		border-radius: 20px;
 		padding: 16px;
 		animation: modalIn 0.2s ease-out;
@@ -873,21 +873,21 @@
 	.close-btn {
 		width: 32px; height: 32px;
 		border-radius: 8px;
-		background: rgba(255,255,255,0.06);
+		background: var(--bg-surface-hover);
 		border: none;
-		color: #94a3b8;
+		color: var(--text-muted);
 		display: flex; align-items: center; justify-content: center;
 		transition: all 0.15s;
 		font-size: 14px;
 	}
-	.close-btn:hover { background: rgba(255,255,255,0.12); color: white; }
+	.close-btn:hover { background: var(--bg-surface-hover); color: var(--text-heading); }
 
-	.modal-section { margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px solid rgba(255,255,255,0.05); }
+	.modal-section { margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px solid var(--bg-surface-hover); }
 
 	.detail-grid { display: flex; flex-direction: column; gap: 8px; }
 	.detail-row { display: flex; justify-content: space-between; align-items: center; }
 	.detail-label { font-size: 12px; color: #6b7280; font-family: 'Space Mono', monospace; }
-	.detail-value { font-size: 13px; color: #e2e8f0; font-family: 'Space Mono', monospace; font-weight: 600; }
+	.detail-value { font-size: 13px; color: var(--text); font-family: 'Space Mono', monospace; font-weight: 600; }
 
 	.fee-section { background: rgba(0,210,255,0.03); border-radius: 10px; padding: 14px; border-color: rgba(0,210,255,0.1); }
 
@@ -904,7 +904,7 @@
 		width: 100%;
 		padding: 14px;
 		background: linear-gradient(135deg, #00d2ff, #3a7bd5);
-		color: white;
+		color: var(--text-heading);
 		font-weight: 700;
 		font-size: 15px;
 		border: none;
@@ -929,8 +929,8 @@
 	.qr-section { display: flex; flex-direction: column; align-items: center; }
 	.qr-placeholder {
 		padding: 12px;
-		background: rgba(255,255,255,0.03);
-		border: 1px solid rgba(255,255,255,0.1);
+		background: var(--bg-surface);
+		border: 1px solid var(--border-input);
 		border-radius: 12px;
 	}
 	.qr-img {
@@ -979,7 +979,7 @@
 	.badge-amber { background: rgba(245,158,11,0.1); color: #f59e0b; border: 1px solid rgba(245,158,11,0.2); }
 	.badge-emerald { background: rgba(16,185,129,0.1); color: #10b981; border: 1px solid rgba(16,185,129,0.2); }
 	.badge-purple { background: rgba(139,92,246,0.1); color: #8b5cf6; border: 1px solid rgba(139,92,246,0.2); }
-	.label-text { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #94a3b8; display: block; }
+	.label-text { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); display: block; }
 
-	select option { background: #0d0d14; color: white; }
+	select option { background: var(--select-bg); color: var(--text-heading); }
 </style>

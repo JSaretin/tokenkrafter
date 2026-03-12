@@ -33,13 +33,13 @@
 	.syne { font-family: 'Syne', sans-serif; }
 	.no-underline { text-decoration: none; }
 	a.no-underline { text-decoration: none; }
-	.card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07); border-radius: 16px; }
+	.card { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 16px; }
 	.card-hover:hover { border-color: rgba(0,210,255,0.2); background: rgba(0,210,255,0.03); transform: translateY(-2px); }
 	.net-icon {
 		width: 48px; height: 48px; border-radius: 12px;
 		background: linear-gradient(135deg, rgba(0,210,255,0.2), rgba(99,102,241,0.2));
-		border: 1px solid rgba(255,255,255,0.1);
+		border: 1px solid var(--border-input);
 		display: flex; align-items: center; justify-content: center;
-		font-size: 14px; font-weight: 800; color: white;
+		font-size: 14px; font-weight: 800; color: var(--text-heading);
 	}
 </style>

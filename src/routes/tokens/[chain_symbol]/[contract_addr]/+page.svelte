@@ -710,32 +710,32 @@
 		width: 60px; height: 60px;
 		border-radius: 16px;
 		background: linear-gradient(135deg, rgba(0,210,255,0.2), rgba(99,102,241,0.2));
-		border: 1px solid rgba(255,255,255,0.1);
+		border: 1px solid var(--border-input);
 		display: flex; align-items: center; justify-content: center;
-		font-size: 20px; font-weight: 800; color: white;
+		font-size: 20px; font-weight: 800; color: var(--text-heading);
 		flex-shrink: 0;
 	}
 
 	.contract-addr-bar {
 		padding: 10px 14px;
-		background: rgba(255,255,255,0.02);
-		border: 1px solid rgba(255,255,255,0.05);
+		background: var(--bg-surface);
+		border: 1px solid var(--bg-surface-hover);
 		border-radius: 8px;
 		overflow-x: auto;
 		white-space: nowrap;
 	}
 
 	.stat-card {
-		background: rgba(255,255,255,0.02);
-		border: 1px solid rgba(255,255,255,0.07);
+		background: var(--bg-surface);
+		border: 1px solid var(--border);
 		border-radius: 12px;
 	}
 	.stat-label { font-size: 11px; color: #6b7280; font-family: 'Space Mono', monospace; text-transform: uppercase; letter-spacing: 0.05em; }
-	.stat-value { font-size: 20px; font-weight: 800; color: white; margin: 4px 0 2px; }
-	.stat-unit { font-size: 11px; color: #4b5563; font-family: 'Space Mono', monospace; }
+	.stat-value { font-size: 20px; font-weight: 800; color: var(--text-heading); margin: 4px 0 2px; }
+	.stat-unit { font-size: 11px; color: var(--text-dim); font-family: 'Space Mono', monospace; }
 
 	.tabs-bar {
-		border-bottom: 1px solid rgba(255,255,255,0.06);
+		border-bottom: 1px solid var(--bg-surface-hover);
 		padding-bottom: 0;
 	}
 
@@ -752,7 +752,7 @@
 		white-space: nowrap;
 		margin-bottom: -1px;
 	}
-	.tab-btn:hover { color: #e2e8f0; }
+	.tab-btn:hover { color: var(--text); }
 	.tab-btn.active {
 		color: #00d2ff;
 		border-bottom-color: #00d2ff;
@@ -760,8 +760,8 @@
 	}
 
 	.panel {
-		background: rgba(255,255,255,0.02);
-		border: 1px solid rgba(255,255,255,0.07);
+		background: var(--bg-surface);
+		border: 1px solid var(--border);
 		border-radius: 16px;
 		padding: 24px;
 	}
@@ -789,12 +789,12 @@
 		font-size: 11px;
 		font-family: 'Space Mono', monospace;
 		color: #6b7280;
-		background: rgba(255,255,255,0.05);
+		background: var(--bg-surface-hover);
 		padding: 2px 8px;
 		border-radius: 4px;
 	}
 
-	.field-hint { font-size: 11px; color: #4b5563; font-family: 'Space Mono', monospace; }
+	.field-hint { font-size: 11px; color: var(--text-dim); font-family: 'Space Mono', monospace; }
 	.field-hint-btn {
 		font-size: 11px;
 		color: #00d2ff;
@@ -814,12 +814,12 @@
 		justify-content: space-between;
 		align-items: center;
 		padding: 10px 0;
-		border-bottom: 1px solid rgba(255,255,255,0.04);
+		border-bottom: 1px solid var(--bg-surface-hover);
 		gap: 12px;
 	}
 	.info-row:last-child { border-bottom: none; }
 	.info-key { font-size: 12px; color: #6b7280; font-family: 'Space Mono', monospace; flex-shrink: 0; }
-	.info-val { font-size: 13px; color: #e2e8f0; text-align: right; word-break: break-all; }
+	.info-val { font-size: 13px; color: var(--text); text-align: right; word-break: break-all; }
 
 	.owner-warning {
 		display: flex; align-items: center;
@@ -841,8 +841,8 @@
 
 	.tax-info-box {
 		padding: 12px 14px;
-		background: rgba(255,255,255,0.02);
-		border: 1px solid rgba(255,255,255,0.06);
+		background: var(--bg-surface);
+		border: 1px solid var(--bg-surface-hover);
 		border-radius: 8px;
 	}
 
@@ -914,15 +914,15 @@
 	.no-underline { text-decoration: none; }
 	a.no-underline { text-decoration: none; }
 
-	select option { background: #0d0d14; }
+	select option { background: var(--select-bg); }
 
 	.input-field {
 		width: 100%;
-		background: rgba(255,255,255,0.04);
-		border: 1px solid rgba(255,255,255,0.1);
+		background: var(--bg-surface-hover);
+		border: 1px solid var(--border-input);
 		border-radius: 10px;
 		padding: 12px 16px;
-		color: #e2e8f0;
+		color: var(--text);
 		font-family: 'Space Mono', monospace;
 		font-size: 14px;
 		transition: all 0.2s;
@@ -933,5 +933,5 @@
 		box-shadow: 0 0 0 3px rgba(0,210,255,0.08);
 	}
 	.input-field:disabled { opacity: 0.4; cursor: not-allowed; }
-	.input-field::placeholder { color: rgba(255,255,255,0.2); }
+	.input-field::placeholder { color: var(--placeholder); }
 </style>

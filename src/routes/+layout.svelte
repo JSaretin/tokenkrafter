@@ -29,8 +29,8 @@
 			native_coin: 'BNB',
 			usdt_address: '0x55d398326f99059ff775485246999027b3197955',
 			usdc_address: '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d',
-			platform_address: '0x292ec5eEF8f0f5805574cD613b0C210936469Ba3',
-			launchpad_address: '0xf2f50D4CD7Ad9c27e2033F289bD6bf0a2880F2d8',
+			platform_address: '0xf8953948561d3047b15006915669d2814b9f0e5d',
+			launchpad_address: '0x9a7c5e6a4343E881152d3D4A8709289B4f46E071',
 			dex_router: '0x10ED43C718714eb63d5aA57B78B54704E256024E',
 			rpc: 'https://bsc-dataseed.binance.org/'
 		}
@@ -55,9 +55,9 @@
 	let provider: ethers.BrowserProvider | null = $state(null);
 	let signer: ethers.Signer | null = $state(null);
 	let userAddress: string | null = $state(null);
-	let isConnecting = $state(false);
 	let isLoading = $state(true);
 	let mobileMenuOpen = $state(false);
+	let theme: 'dark' | 'light' = $state('dark');
 
 	function addFeedback(feedback: { message: string; type: string }) {
 		const id = feedbackCounter++;
@@ -71,12 +71,16 @@
 		feedbacks = feedbacks.filter((f) => f.id !== id);
 	}
 
-	function getEthereum() {
-		return (window as any).ethereum;
+	function applyTheme(t: 'dark' | 'light') {
+		theme = t;
+		document.documentElement.classList.toggle('light', t === 'light');
+		localStorage.setItem('theme', t);
+		const kit = getAppKit();
+		if (kit) kit.setThemeMode(t);
 	}
 
-	function formatAddress(addr: string) {
-		return addr.slice(0, 6) + '...' + addr.slice(-4);
+	function toggleTheme() {
+		applyTheme(theme === 'dark' ? 'light' : 'dark');
 	}
 
 	async function setupEthersFromProvider(ethProvider: any) {
@@ -91,40 +95,10 @@
 
 	async function connectWallet() {
 		const kit = getAppKit();
-		if (!kit) {
-			// Fallback to direct MetaMask if AppKit not initialized
-			if (!getEthereum()) {
-				addFeedback({ message: 'No wallet detected. Please install MetaMask.', type: 'error' });
-				return false;
-			}
-			isConnecting = true;
-			try {
-				provider = new ethers.BrowserProvider(getEthereum());
-				await provider.send('eth_requestAccounts', []);
-				signer = await provider.getSigner();
-				userAddress = await signer.getAddress();
-				addFeedback({ message: 'Wallet connected!', type: 'success' });
-				return true;
-			} catch {
-				addFeedback({ message: 'Connection failed. Try again.', type: 'error' });
-				return false;
-			} finally {
-				isConnecting = false;
-			}
-		}
-		await kit.open();
-		return false;
-	}
-
-	function disconnectWallet() {
-		const kit = getAppKit();
 		if (kit) {
-			kit.disconnect();
+			await kit.open();
 		}
-		provider = null;
-		signer = null;
-		userAddress = null;
-		addFeedback({ message: 'Wallet disconnected.', type: 'info' });
+		return false;
 	}
 
 	function initProviders() {
@@ -140,12 +114,17 @@
 
 	onMount(async () => {
 		isLoading = false;
+		// Restore theme from localStorage
+		const saved = localStorage.getItem('theme') as 'dark' | 'light' | null;
+		if (saved === 'light') applyTheme('light');
+
 		// Initialize providers in background
 		initProviders();
 
 		// Initialize AppKit (Reown) for wallet connections
 		const kit = await initAppKit();
 		if (kit) {
+			if (theme === 'light') kit.setThemeMode('light');
 			kit.subscribeAccount(async (account: any) => {
 				if (account.isConnected && account.address) {
 					const walletProvider = kit.getWalletProvider();
@@ -181,6 +160,7 @@
 	const navLinks = [
 		{ href: '/', label: 'Home' },
 		{ href: '/create', label: 'Create Token' },
+		{ href: '/launchpad', label: 'Launchpad' },
 		{ href: '/manage-tokens', label: 'My Tokens' },
 		{ href: '/tokens', label: 'Explore' },
 		{ href: '/affiliate', label: 'Affiliate' }
@@ -197,6 +177,7 @@
 </script>
 
 <svelte:head>
+	{@html '<script>try{if(localStorage.getItem("theme")==="light")document.documentElement.classList.add("light")}catch(e){}</script>'}
 	<link rel="icon" href={favicon} />
 	<link rel="preconnect" href="https://fonts.googleapis.com" />
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
@@ -238,13 +219,13 @@
 	<div class="glow-orb-2 fixed bottom-[-20%] right-[10%] w-[500px] h-[500px] pointer-events-none z-0"></div>
 
 	<!-- Navbar -->
-	<nav class="nav-bar fixed top-0 left-0 right-0 z-50 border-b border-white/5 backdrop-blur-xl">
+	<nav class="nav-bar fixed top-0 left-0 right-0 z-50 border-b backdrop-blur-xl" style="border-color: var(--border-subtle)">
 		<div class="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
 			<a href="/" class="flex items-center gap-2 flex-shrink-0 group">
 				<div class="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-400 to-blue-600 flex items-center justify-center group-hover:shadow-lg group-hover:shadow-cyan-500/30 transition">
 					<span class="text-black font-bold text-xs">TK</span>
 				</div>
-				<span class="syne font-bold text-white text-lg hidden sm:block tracking-tight">TokenKrafter</span>
+				<span class="syne font-bold text-lg hidden sm:block tracking-tight">TokenKrafter</span>
 			</a>
 
 			<div class="hidden md:flex items-center gap-1">
@@ -260,31 +241,23 @@
 			</div>
 
 			<div class="flex items-center gap-2">
-				{#if userAddress}
-					<div class="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
-						<div class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></div>
-						<span class="text-emerald-300 text-sm font-mono">{formatAddress(userAddress)}</span>
-					</div>
-					<button
-						onclick={disconnectWallet}
-						class="px-3 py-1.5 rounded-lg text-sm text-gray-400 hover:text-red-400 hover:bg-red-500/10 border border-transparent hover:border-red-500/20 transition cursor-pointer font-mono"
-					>Disconnect</button>
-				{:else}
-					<button
-						onclick={connectWallet}
-						class="connect-btn px-4 py-2 rounded-lg text-sm font-semibold cursor-pointer syne"
-					>Connect Wallet</button>
-				{/if}
+				<appkit-button size="sm" />
 
 				<button
 					onclick={() => (mobileMenuOpen = !mobileMenuOpen)}
-					class="md:hidden p-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition cursor-pointer"
-				>{#if mobileMenuOpen}x{:else}={/if}</button>
+					class="md:hidden p-2.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition cursor-pointer"
+				>
+					{#if mobileMenuOpen}
+						<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+					{:else}
+						<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+					{/if}
+				</button>
 			</div>
 		</div>
 
 		{#if mobileMenuOpen}
-			<div class="md:hidden border-t border-white/5 bg-[#0a0a0f]/95 backdrop-blur-xl">
+			<div class="md:hidden border-t backdrop-blur-xl" style="border-color: var(--border-subtle); background: var(--bg-mobile-menu)">
 				<div class="px-4 py-3 flex flex-col gap-1">
 					{#each navLinks as link}
 						<a
@@ -296,12 +269,9 @@
 								: 'text-gray-400 hover:text-white hover:bg-white/5'}"
 						>{link.label}</a>
 					{/each}
-					{#if userAddress}
-						<div class="px-3 py-2 text-sm text-emerald-400 font-mono flex items-center gap-2">
-							<div class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></div>
-							{formatAddress(userAddress)}
-						</div>
-					{/if}
+					<div class="px-3 py-2">
+						<appkit-button size="sm" />
+					</div>
 				</div>
 			</div>
 		{/if}
@@ -321,7 +291,7 @@
 	</main>
 
 	<!-- Footer -->
-	<footer class="footer border-t border-white/5 mt-auto">
+	<footer class="footer border-t mt-auto" style="border-color: var(--border-subtle)">
 		<div class="max-w-7xl mx-auto px-4 sm:px-6 py-12">
 			<div class="grid grid-cols-1 sm:grid-cols-3 gap-10 sm:gap-8">
 				<!-- Brand -->
@@ -330,7 +300,7 @@
 						<div class="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-400 to-blue-600 flex items-center justify-center group-hover:shadow-lg group-hover:shadow-cyan-500/30 transition">
 							<span class="text-black font-bold text-xs">TK</span>
 						</div>
-						<span class="syne font-bold text-white text-lg tracking-tight">TokenKrafter</span>
+						<span class="syne font-bold text-lg tracking-tight">TokenKrafter</span>
 					</a>
 					<p class="text-sm text-gray-500 font-mono leading-relaxed max-w-xs">
 						Deploy custom ERC-20 tokens across multiple chains. No coding required.
@@ -339,7 +309,7 @@
 
 				<!-- Quick Links -->
 				<div>
-					<h4 class="syne font-bold text-white text-sm mb-4">Quick Links</h4>
+					<h4 class="syne font-bold text-sm mb-4">Quick Links</h4>
 					<div class="flex flex-col gap-2">
 						{#each navLinks as link}
 							<a href={link.href} class="text-sm text-gray-400 hover:text-cyan-400 transition font-mono">{link.label}</a>
@@ -349,7 +319,7 @@
 
 				<!-- Community -->
 				<div>
-					<h4 class="syne font-bold text-white text-sm mb-4">Community</h4>
+					<h4 class="syne font-bold text-sm mb-4">Community</h4>
 					<div class="flex flex-wrap gap-2">
 						{#each socials as social}
 							<a
@@ -370,17 +340,31 @@
 			<hr class="divider mt-10 mb-6" />
 
 			<div class="flex flex-col sm:flex-row items-center justify-between gap-4">
-				<p class="text-xs text-gray-600 font-mono">&copy; {new Date().getFullYear()} TokenKrafter. All rights reserved.</p>
-				<div class="flex items-center gap-3">
-					{#each socials as social}
-						<a
-							href={social.href}
-							target="_blank"
-							rel="noopener noreferrer"
-							class="text-gray-600 hover:text-cyan-400 transition"
-							title={social.label}
-						><svg class="social-svg-sm" viewBox="0 0 24 24" fill="currentColor">{@html social.svg}</svg></a>
-					{/each}
+				<p class="text-xs font-mono" style="color: var(--text-dim)">&copy; {new Date().getFullYear()} TokenKrafter. All rights reserved.</p>
+				<div class="flex items-center gap-4">
+					<button
+						onclick={toggleTheme}
+						class="theme-toggle"
+						title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+					>
+						{#if theme === 'dark'}
+							<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+						{:else}
+							<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+						{/if}
+						<span>{theme === 'dark' ? 'Light' : 'Dark'}</span>
+					</button>
+					<div class="flex items-center gap-3">
+						{#each socials as social}
+							<a
+								href={social.href}
+								target="_blank"
+								rel="noopener noreferrer"
+								class="footer-social-icon"
+								title={social.label}
+							><svg class="social-svg-sm" viewBox="0 0 24 24" fill="currentColor">{@html social.svg}</svg></a>
+						{/each}
+					</div>
 				</div>
 			</div>
 		</div>
@@ -390,8 +374,8 @@
 <style>
 	:global(*) { box-sizing: border-box; }
 	:global(body) {
-		background: #07070d;
-		color: #e2e8f0;
+		background: var(--bg);
+		color: var(--text);
 		font-family: 'Space Mono', monospace;
 		margin: 0;
 	}
@@ -400,29 +384,19 @@
 
 	.grid-bg {
 		background-image:
-			linear-gradient(rgba(0,255,255,0.018) 1px, transparent 1px),
-			linear-gradient(90deg, rgba(0,255,255,0.018) 1px, transparent 1px);
+			linear-gradient(var(--grid-line) 1px, transparent 1px),
+			linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
 		background-size: 60px 60px;
 	}
 	.glow-orb {
-		background: radial-gradient(circle, rgba(0,210,255,0.07) 0%, transparent 70%);
+		background: radial-gradient(circle, var(--glow-1) 0%, transparent 70%);
 		border-radius: 50%;
 	}
 	.glow-orb-2 {
-		background: radial-gradient(circle, rgba(99,102,241,0.06) 0%, transparent 70%);
+		background: radial-gradient(circle, var(--glow-2) 0%, transparent 70%);
 		border-radius: 50%;
 	}
-	.nav-bar { background: rgba(7,7,13,0.85); }
-	.connect-btn {
-		background: linear-gradient(135deg, #00d2ff, #3a7bd5);
-		color: white;
-		transition: all 0.2s;
-	}
-	.connect-btn:hover {
-		opacity: 0.9;
-		transform: translateY(-1px);
-		box-shadow: 0 4px 24px rgba(0,210,255,0.35);
-	}
+	.nav-bar { background: var(--bg-nav); }
 	.toast { animation: slideIn 0.3s ease-out; }
 	@keyframes slideIn {
 		from { opacity: 0; transform: translateX(20px); }
@@ -431,7 +405,7 @@
 	.spinner { animation: spin 0.8s linear infinite; }
 	@keyframes spin { to { transform: rotate(360deg); } }
 
-	.footer { background: rgba(7,7,13,0.9); }
+	.footer { background: var(--bg-footer); }
 	.social-link {
 		text-decoration: none;
 	}
@@ -443,5 +417,31 @@
 	.social-svg-sm {
 		width: 14px;
 		height: 14px;
+	}
+	.theme-toggle {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		padding: 5px 12px;
+		border-radius: 8px;
+		border: 1px solid var(--border);
+		background: var(--bg-surface);
+		color: var(--text-muted);
+		font-family: 'Space Mono', monospace;
+		font-size: 12px;
+		cursor: pointer;
+		transition: all 0.2s;
+	}
+	.theme-toggle:hover {
+		border-color: rgba(0,210,255,0.3);
+		color: #00d2ff;
+		background: rgba(0,210,255,0.05);
+	}
+	.footer-social-icon {
+		color: var(--text-dim);
+		transition: color 0.2s;
+	}
+	.footer-social-icon:hover {
+		color: #00d2ff;
 	}
 </style>

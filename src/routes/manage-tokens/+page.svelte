@@ -182,7 +182,7 @@
 		display: inline-block;
 		padding: 10px 20px;
 		background: linear-gradient(135deg, #00d2ff, #3a7bd5);
-		color: white;
+		color: var(--text-heading);
 		border-radius: 10px;
 		font-weight: 700;
 		font-size: 14px;
@@ -203,7 +203,7 @@
 		display: inline-block;
 		padding: 12px 28px;
 		background: linear-gradient(135deg, #00d2ff, #3a7bd5);
-		color: white;
+		color: var(--text-heading);
 		border: none;
 		border-radius: 10px;
 		font-weight: 700;
@@ -260,9 +260,9 @@
 		width: 44px; height: 44px;
 		border-radius: 12px;
 		background: linear-gradient(135deg, rgba(0,210,255,0.2), rgba(99,102,241,0.2));
-		border: 1px solid rgba(255,255,255,0.1);
+		border: 1px solid var(--border-input);
 		display: flex; align-items: center; justify-content: center;
-		font-size: 14px; font-weight: 800; color: white;
+		font-size: 14px; font-weight: 800; color: var(--text-heading);
 		flex-shrink: 0;
 	}
 
@@ -288,8 +288,8 @@
 	.badge-purple { background: rgba(139,92,246,0.1); color: #a78bfa; border: 1px solid rgba(139,92,246,0.2); }
 
 	.card {
-		background: rgba(255,255,255,0.03);
-		border: 1px solid rgba(255,255,255,0.07);
+		background: var(--bg-surface);
+		border: 1px solid var(--border);
 	}
 	.card-hover { transition: all 0.2s; }
 	.card-hover:hover {
@@ -298,14 +298,14 @@
 	}
 
 	.btn-secondary {
-		background: rgba(255,255,255,0.05);
-		color: #e2e8f0;
+		background: var(--bg-surface-hover);
+		color: var(--text);
 		padding: 10px 20px;
 		border-radius: 10px;
-		border: 1px solid rgba(255,255,255,0.1);
+		border: 1px solid var(--border-input);
 		cursor: pointer;
 		transition: all 0.2s;
 		font-size: 13px;
 	}
-	.btn-secondary:hover { background: rgba(255,255,255,0.08); }
+	.btn-secondary:hover { background: var(--border); }
 </style>

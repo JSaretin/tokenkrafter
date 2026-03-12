@@ -258,8 +258,8 @@
 			<div class="card p-6 mb-4">
 				<div class="label-text mb-3">Your Referral Link</div>
 				<div class="flex gap-2 items-stretch">
-					<div class="ref-link-box flex-1 flex items-center px-4 py-3 rounded-lg bg-white/4 border border-white/10 overflow-hidden">
-						<span class="text-sm font-mono text-gray-300 truncate">{referralLink}</span>
+					<div class="ref-link-box flex-1 flex items-center px-4 py-3 rounded-lg overflow-hidden" style="background: var(--bg-surface-input); border: 1px solid var(--border-input)">
+						<span class="text-sm font-mono truncate" style="color: var(--text)">{referralLink}</span>
 					</div>
 					<button onclick={copyLink} class="btn-primary text-sm px-5 flex-shrink-0 cursor-pointer">
 						{copied ? 'Copied!' : 'Copy'}
@@ -447,7 +447,7 @@
 		font-size: clamp(2.5rem, 6vw, 4.5rem);
 		font-weight: 800;
 		line-height: 1.1;
-		color: white;
+		color: var(--text-heading);
 		margin-bottom: 20px;
 	}
 
@@ -509,8 +509,8 @@
 		display: inline-block;
 		width: 12px;
 		height: 12px;
-		border: 2px solid rgba(255,255,255,0.2);
-		border-top-color: white;
+		border: 2px solid var(--border-input);
+		border-top-color: #00d2ff;
 		border-radius: 50%;
 		animation: spin 0.6s linear infinite;
 	}
