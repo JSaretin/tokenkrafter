@@ -26,8 +26,10 @@ export async function initAppKit() {
 			url: typeof window !== 'undefined' ? window.location.origin : 'https://tokencrafter.com',
 			icons: ['/favicon.svg']
 		},
+		allWallets: 'SHOW',
 		features: {
-			analytics: false
+			analytics: false,
+			allWallets: true
 		},
 		themeMode: 'dark'
 	});
