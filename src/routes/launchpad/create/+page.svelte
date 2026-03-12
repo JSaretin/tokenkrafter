@@ -137,7 +137,7 @@
 		}
 	}
 
-	let launchPercent = $derived(() => {
+	let launchPercent = $derived.by(() => {
 		if (!tokensForLaunch || tokenBalance === 0n) return 0;
 		try {
 			const launch = tokensForLaunchBigInt();
@@ -501,7 +501,7 @@
 							<button
 								type="button"
 								class="pct-btn"
-								class:pct-btn-active={launchPercent() === pct}
+								class:pct-btn-active={launchPercent === pct}
 								onclick={() => setLaunchPercent(pct)}
 							>
 								{pct === 100 ? 'MAX' : pct + '%'}
@@ -510,7 +510,7 @@
 					</div>
 				{/if}
 				{#if tokenBalance > 0n && tokensForLaunch}
-					{@const pct = launchPercent()}
+					{@const pct = launchPercent}
 					{@const exceeds = tokensForLaunchBigInt() > tokenBalance}
 					<div class="supply-bar mt-2" class:supply-bar-error={exceeds}>
 						<div class="flex justify-between text-[10px] font-mono mb-1">

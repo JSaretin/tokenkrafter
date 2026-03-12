@@ -31,27 +31,77 @@
 	let launches: (LaunchInfo & { network: SupportedNetwork })[] = $state([]);
 	let loading = $state(true);
 	let selectedNetwork = $state<'all' | number>('all');
-	let selectedState = $state<'all' | LaunchState>('all');
+	let activeTab = $state<'live' | 'upcoming' | 'graduated' | 'all'>('live');
+	let sortBy = $state<'newest' | 'ending' | 'raised' | 'progress'>('newest');
 	let showMyLaunches = $state(false);
 
-	let filteredLaunches = $derived(() => {
-		let result = launches;
-		if (selectedNetwork !== 'all') {
-			result = result.filter((l) => l.network.chain_id === selectedNetwork);
+	// Countdown ticker
+	let tickNow = $state(Date.now());
+	let tickInterval: ReturnType<typeof setInterval> | null = null;
+
+	$effect(() => {
+		if (!tickInterval) {
+			tickInterval = setInterval(() => { tickNow = Date.now(); }, 1000);
 		}
-		if (selectedState !== 'all') {
-			result = result.filter((l) => l.state === selectedState);
+		return () => { if (tickInterval) { clearInterval(tickInterval); tickInterval = null; } };
+	});
+
+	function countdownStr(deadline: bigint): string {
+		const ms = Number(deadline) * 1000 - tickNow;
+		if (ms <= 0) return 'Ended';
+		const d = Math.floor(ms / 86400000);
+		const h = Math.floor((ms % 86400000) / 3600000);
+		const m = Math.floor((ms % 3600000) / 60000);
+		const s = Math.floor((ms % 60000) / 1000);
+		if (d > 0) return `${String(d).padStart(2, '0')}:${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+		return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+	}
+
+	let filteredLaunches = $derived.by(() => {
+		let result = launches;
+
+		// Tab filter
+		if (activeTab === 'live') result = result.filter(l => l.state === 1);
+		else if (activeTab === 'upcoming') result = result.filter(l => l.state === 0);
+		else if (activeTab === 'graduated') result = result.filter(l => l.state === 2 || l.state === 3);
+
+		if (selectedNetwork !== 'all') {
+			result = result.filter(l => l.network.chain_id === selectedNetwork);
 		}
 		if (showMyLaunches && userAddress) {
 			const addr = userAddress.toLowerCase();
-			result = result.filter(
-				(l) => l.creator.toLowerCase() === addr
-			);
+			result = result.filter(l => l.creator.toLowerCase() === addr);
 		}
+
+		// Sort
+		result = [...result];
+		if (sortBy === 'newest') {
+			result.sort((a, b) => Number(b.deadline - a.deadline));
+		} else if (sortBy === 'ending') {
+			const now = BigInt(Math.floor(Date.now() / 1000));
+			result.sort((a, b) => {
+				const aLeft = a.deadline > now ? Number(a.deadline - now) : Infinity;
+				const bLeft = b.deadline > now ? Number(b.deadline - now) : Infinity;
+				return aLeft - bLeft;
+			});
+		} else if (sortBy === 'raised') {
+			result.sort((a, b) => Number(b.totalBaseRaised - a.totalBaseRaised));
+		} else if (sortBy === 'progress') {
+			result.sort((a, b) => {
+				const pA = a.hardCap > 0n ? Number((a.totalBaseRaised * 10000n) / a.hardCap) : 0;
+				const pB = b.hardCap > 0n ? Number((b.totalBaseRaised * 10000n) / b.hardCap) : 0;
+				return pB - pA;
+			});
+		}
+
 		return result;
 	});
 
-	// Database row → LaunchInfo mapper
+	// Stats
+	let liveCount = $derived(launches.filter(l => l.state === 1).length);
+	let totalRaised = $derived(launches.reduce((sum, l) => sum + l.totalBaseRaised, 0n));
+
+	// Database row mapper
 	function dbRowToLaunch(row: any): (LaunchInfo & { network: SupportedNetwork }) | null {
 		const net = supportedNetworks.find((n) => n.chain_id === row.chain_id);
 		if (!net) return null;
@@ -83,182 +133,180 @@
 			twitter: row.twitter,
 			telegram: row.telegram,
 			discord: row.discord,
+			badges: [] as string[],
 			network: net
 		} as any;
 	}
 
-	// Try loading from database API first, fallback to on-chain
 	async function loadFromApi(): Promise<boolean> {
 		try {
 			const res = await fetch('/api/launches?limit=50');
 			if (!res.ok) return false;
 			const rows = await res.json();
 			if (!rows || rows.length === 0) return false;
-
 			const mapped = rows.map(dbRowToLaunch).filter(Boolean) as (LaunchInfo & { network: SupportedNetwork })[];
 			mapped.sort((a, b) => Number(b.deadline - a.deadline));
 			launches = mapped;
 			return true;
-		} catch {
-			return false;
-		}
+		} catch { return false; }
 	}
 
 	async function loadFromChain() {
-		const nets = supportedNetworks.filter(
-			(n) => n.launchpad_address && n.launchpad_address !== '0x'
-		);
-
+		const nets = supportedNetworks.filter(n => n.launchpad_address && n.launchpad_address !== '0x');
 		const allLaunches: (LaunchInfo & { network: SupportedNetwork })[] = [];
-
 		for (const net of nets) {
 			const provider = networkProviders.get(net.chain_id);
 			if (!provider) continue;
-
 			try {
-				const factory = new ethers.Contract(
-					net.launchpad_address,
-					LAUNCHPAD_FACTORY_ABI,
-					provider
-				);
+				const factory = new ethers.Contract(net.launchpad_address, LAUNCHPAD_FACTORY_ABI, provider);
 				const total = await factory.totalLaunches();
 				const count = Number(total);
-
 				const limit = Math.min(count, 50);
 				const offset = Math.max(0, count - limit);
-
 				for (let i = offset; i < count; i++) {
 					try {
 						const addr = await factory.launches(i);
 						const info = await fetchLaunchInfo(addr, provider);
 						const meta = await fetchTokenMeta(info.token, provider);
-						allLaunches.push({
-							...info,
-							tokenName: meta.name,
-							tokenSymbol: meta.symbol,
-							tokenDecimals: meta.decimals,
-							network: net
-						});
-					} catch (e) {
-						console.warn(`Failed to load launch ${i}:`, e);
-					}
+						allLaunches.push({ ...info, tokenName: meta.name, tokenSymbol: meta.symbol, tokenDecimals: meta.decimals, network: net });
+					} catch (e) { console.warn(`Failed to load launch ${i}:`, e); }
 				}
-			} catch (e) {
-				console.warn(`Failed to load launches from ${net.name}:`, e);
-			}
+			} catch (e) { console.warn(`Failed to load launches from ${net.name}:`, e); }
 		}
-
 		allLaunches.sort((a, b) => Number(b.deadline - a.deadline));
 		launches = allLaunches;
+	}
+
+	async function loadBadges() {
+		try {
+			const res = await fetch('/api/badges');
+			if (!res.ok) return;
+			const rows: { launch_address: string; chain_id: number; badge_type: string }[] = await res.json();
+			const badgeMap = new Map<string, string[]>();
+			for (const r of rows) {
+				const key = `${r.launch_address.toLowerCase()}-${r.chain_id}`;
+				if (!badgeMap.has(key)) badgeMap.set(key, []);
+				badgeMap.get(key)!.push(r.badge_type);
+			}
+			for (const l of launches) {
+				const key = `${l.address.toLowerCase()}-${(l as any).network.chain_id}`;
+				(l as any).badges = badgeMap.get(key) ?? [];
+			}
+			launches = [...launches];
+		} catch {}
 	}
 
 	async function loadLaunches() {
 		loading = true;
 		launches = [];
-
-		// Try database first (fast), fallback to chain (slow)
 		const fromApi = await loadFromApi();
-		if (!fromApi) {
-			await loadFromChain();
-		}
-
+		if (!fromApi) await loadFromChain();
+		await loadBadges();
 		loading = false;
 	}
 
 	$effect(() => {
-		if (providersReady) {
-			loadLaunches();
-		}
+		if (providersReady) loadLaunches();
 	});
+
+	const BADGE_META: Record<string, { label: string; cls: string }> = {
+		audit: { label: 'AUDIT', cls: 'badge-list-cyan' },
+		kyc: { label: 'KYC', cls: 'badge-list-emerald' },
+		partner: { label: 'Partner', cls: 'badge-list-purple' },
+		doxxed: { label: 'Doxxed', cls: 'badge-list-amber' },
+		safu: { label: 'SAFU', cls: 'badge-list-blue' }
+	};
 </script>
 
 <svelte:head>
 	<title>Launchpad | TokenKrafter</title>
-	<meta
-		name="description"
-		content="Discover and invest in new token launches on bonding curves. Buy early, earn from price discovery, and auto-graduate to DEX liquidity."
-	/>
+	<meta name="description" content="Discover and invest in new token launches on bonding curves. Buy early, earn from price discovery, and auto-graduate to DEX liquidity." />
 </svelte:head>
 
-<div class="page-wrap max-w-7xl mx-auto px-4 sm:px-6 py-12">
-	<!-- Hero -->
-	<div class="text-center mb-12">
-		<div
-			class="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-cyan-500/25 bg-cyan-500/8 mb-6"
-		>
-			<div class="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"></div>
-			<span class="text-cyan-400 text-xs font-mono uppercase tracking-widest">Bonding Curve Launches</span>
+<div class="page-wrap max-w-7xl mx-auto px-4 sm:px-6 py-8">
+	<!-- Header row -->
+	<div class="flex flex-wrap items-end justify-between gap-4 mb-6">
+		<div>
+			<h1 class="syne text-2xl sm:text-3xl font-bold text-white">Launchpad</h1>
+			<p class="text-gray-500 font-mono text-xs mt-1">Bonding curve token launches</p>
 		</div>
-		<h1 class="syne text-3xl sm:text-4xl font-bold text-white mb-3">Token Launchpad</h1>
-		<p class="text-gray-400 font-mono text-sm max-w-lg mx-auto">
-			Discover new token launches on bonding curves. Buy early at low prices, and tokens
-			auto-graduate to DEX with permanent liquidity.
-		</p>
-
-		<div class="flex flex-wrap gap-3 justify-center mt-8">
-			<a href="/launchpad/create" class="btn-primary text-sm px-5 py-2.5 no-underline">
-				Create Launch
-			</a>
-			<a href="/create" class="btn-secondary text-sm px-5 py-2.5 no-underline">
-				Create Token + Launch
-			</a>
+		<div class="flex gap-2">
+			<a href="/launchpad/create" class="btn-primary text-xs px-4 py-2 no-underline">Create Launch</a>
+			<a href="/create" class="btn-secondary text-xs px-4 py-2 no-underline">Create Token</a>
 		</div>
 	</div>
 
-	<!-- Filters -->
-	<div class="filters card p-4 mb-8 flex flex-wrap gap-3 items-center">
-		<select class="input-field w-auto" bind:value={selectedNetwork}>
-			<option value="all">All Networks</option>
-			{#each supportedNetworks.filter((n) => n.launchpad_address && n.launchpad_address !== '0x') as net}
+	<!-- Stats bar -->
+	<div class="stats-bar mb-6">
+		<div class="stat-item">
+			<span class="stat-value">{liveCount}</span>
+			<span class="stat-label">Live</span>
+		</div>
+		<div class="stat-item">
+			<span class="stat-value">{launches.length}</span>
+			<span class="stat-label">Total</span>
+		</div>
+		<div class="stat-item">
+			<span class="stat-value">{formatUsdt(totalRaised)}</span>
+			<span class="stat-label">Total Raised</span>
+		</div>
+	</div>
+
+	<!-- Tabs + filters row -->
+	<div class="flex flex-wrap items-center gap-3 mb-6">
+		<!-- State tabs -->
+		<div class="tab-row">
+			<button class="tab-btn {activeTab === 'live' ? 'tab-active' : ''}" onclick={() => activeTab = 'live'}>Live</button>
+			<button class="tab-btn {activeTab === 'upcoming' ? 'tab-active' : ''}" onclick={() => activeTab = 'upcoming'}>Upcoming</button>
+			<button class="tab-btn {activeTab === 'graduated' ? 'tab-active' : ''}" onclick={() => activeTab = 'graduated'}>Graduated</button>
+			<button class="tab-btn {activeTab === 'all' ? 'tab-active' : ''}" onclick={() => activeTab = 'all'}>All</button>
+		</div>
+
+		<div class="flex-1"></div>
+
+		<!-- Sort -->
+		<select class="filter-select" bind:value={sortBy}>
+			<option value="newest">Newest</option>
+			<option value="ending">Ending Soon</option>
+			<option value="raised">Most Raised</option>
+			<option value="progress">Most Progress</option>
+		</select>
+
+		<!-- Network -->
+		<select class="filter-select" bind:value={selectedNetwork}>
+			<option value="all">All Chains</option>
+			{#each supportedNetworks.filter(n => n.launchpad_address && n.launchpad_address !== '0x') as net}
 				<option value={net.chain_id}>{net.name}</option>
 			{/each}
 		</select>
 
-		<select class="input-field w-auto" bind:value={selectedState}>
-			<option value="all">All States</option>
-			<option value={1}>Active</option>
-			<option value={0}>Pending</option>
-			<option value={2}>Graduated</option>
-			<option value={3}>Refunding</option>
-		</select>
-
 		{#if userAddress}
 			<button
-				onclick={() => (showMyLaunches = !showMyLaunches)}
-				class="text-sm font-mono px-4 py-2.5 rounded-lg border transition cursor-pointer
-					{showMyLaunches
-					? 'border-cyan-500/40 bg-cyan-500/10 text-cyan-400'
-					: 'border-white/10 bg-white/5 text-gray-400 hover:text-white hover:border-white/20'}"
-			>
-				My Launches
-			</button>
+				onclick={() => showMyLaunches = !showMyLaunches}
+				class="filter-btn {showMyLaunches ? 'filter-btn-active' : ''}"
+			>My Launches</button>
 		{/if}
-
-		<div class="ml-auto text-gray-500 text-xs font-mono">
-			{filteredLaunches().length} launch{filteredLaunches().length !== 1 ? 'es' : ''}
-		</div>
 	</div>
 
-	<!-- Launch Grid -->
+	<!-- Results count -->
+	<div class="text-gray-600 text-xs font-mono mb-4">
+		{filteredLaunches.length} launch{filteredLaunches.length !== 1 ? 'es' : ''}
+	</div>
+
+	<!-- Grid -->
 	{#if loading}
-		<!-- Skeleton loading grid -->
 		<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
 			{#each Array(6) as _}
 				<div class="skeleton-card card p-5">
-					<div class="flex items-start justify-between mb-3">
-						<div>
+					<div class="flex items-start gap-3 mb-3">
+						<div class="skeleton-line w-10 h-10 rounded-full"></div>
+						<div class="flex-1">
 							<div class="skeleton-line w-28 h-4 mb-2"></div>
 							<div class="skeleton-line w-36 h-3"></div>
 						</div>
-						<div class="skeleton-line w-16 h-5 rounded-full"></div>
 					</div>
-					<div class="mb-3">
-						<div class="skeleton-line w-full h-1.5 rounded-full mb-2"></div>
-						<div class="flex justify-between">
-							<div class="skeleton-line w-8 h-3"></div>
-							<div class="skeleton-line w-24 h-3"></div>
-						</div>
-					</div>
+					<div class="skeleton-line w-full h-2.5 rounded-full mb-3"></div>
+					<div class="skeleton-line w-full h-10 mb-3"></div>
 					<div class="flex justify-between">
 						<div class="skeleton-line w-20 h-3"></div>
 						<div class="skeleton-line w-16 h-3"></div>
@@ -266,7 +314,7 @@
 				</div>
 			{/each}
 		</div>
-	{:else if filteredLaunches().length === 0}
+	{:else if filteredLaunches.length === 0}
 		<div class="empty-state text-center py-16">
 			<div class="empty-icon mx-auto mb-6">
 				<svg width="64" height="64" viewBox="0 0 64 64" fill="none">
@@ -277,98 +325,80 @@
 			</div>
 			{#if showMyLaunches}
 				<h3 class="syne text-lg font-bold text-white mb-2">No launches yet</h3>
-				<p class="text-gray-500 font-mono text-sm mb-2 max-w-sm mx-auto">
-					You haven't created any launches. Create a token with a bonding curve to get started.
-				</p>
-			{:else if selectedState !== 'all'}
-				<h3 class="syne text-lg font-bold text-white mb-2">No matching launches</h3>
-				<p class="text-gray-500 font-mono text-sm mb-2 max-w-sm mx-auto">
-					No launches match your current filters. Try adjusting the network or state filter.
-				</p>
+				<p class="text-gray-500 font-mono text-sm max-w-sm mx-auto">You haven't created any launches.</p>
 			{:else}
-				<h3 class="syne text-lg font-bold text-white mb-2">No launches yet</h3>
-				<p class="text-gray-500 font-mono text-sm mb-2 max-w-sm mx-auto">
-					Be the first to launch a token with a bonding curve. Early buyers get the best price — auto-graduates to DEX when the cap is hit.
-				</p>
+				<h3 class="syne text-lg font-bold text-white mb-2">No matching launches</h3>
+				<p class="text-gray-500 font-mono text-sm max-w-sm mx-auto">Try adjusting your filters or be the first to launch.</p>
 			{/if}
 			<div class="flex gap-3 justify-center mt-6">
-				<a href="/launchpad/create" class="btn-primary text-sm px-5 py-2.5 no-underline">
-					Create Launch
-				</a>
-				<a href="/create" class="btn-secondary text-sm px-5 py-2.5 no-underline">
-					Create Token
-				</a>
+				<a href="/launchpad/create" class="btn-primary text-sm px-5 py-2.5 no-underline">Create Launch</a>
 			</div>
 		</div>
 	{:else}
 		<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-			{#each filteredLaunches() as launch}
+			{#each filteredLaunches as launch}
 				{@const progress = progressPercent(launch.totalBaseRaised, launch.hardCap)}
 				{@const color = stateColor(launch.state)}
-				<a
-					href="/launchpad/{launch.address}"
-					class="launch-card card card-hover p-5 block no-underline group"
-				>
-					<!-- Header -->
-					<div class="flex items-start justify-between mb-3">
-						<div class="flex items-center gap-3">
+				{@const ud = (launch as any).usdtDecimals ?? 18}
+				<a href="/launchpad/{launch.address}" class="launch-card card p-0 block no-underline group">
+					<!-- Card header -->
+					<div class="card-head p-4 pb-3">
+						<div class="flex items-start gap-3">
 							{#if (launch as any).logoUrl}
-								<img src={(launch as any).logoUrl} alt="" class="w-9 h-9 rounded-full object-cover" />
+								<img src={(launch as any).logoUrl} alt="" class="card-logo" />
 							{:else}
-								<div class="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold syne"
-									style="background: rgba(0,210,255,0.1); color: #00d2ff; border: 1px solid rgba(0,210,255,0.2);">
+								<div class="card-logo card-logo-placeholder">
 									{(launch.tokenSymbol || '?').charAt(0)}
 								</div>
 							{/if}
-							<div>
-								<div class="syne font-bold text-white group-hover:text-cyan-300 transition">
-									{launch.tokenName || 'Unknown Token'}
+							<div class="flex-1 min-w-0">
+								<div class="flex items-center gap-2 mb-0.5">
+									<span class="syne font-bold text-white text-sm group-hover:text-cyan-300 transition truncate">{launch.tokenName || 'Unknown'}</span>
+									<span class="text-gray-600 text-xs font-mono flex-shrink-0">{launch.tokenSymbol || '???'}</span>
 								</div>
-								<div class="text-xs text-gray-500 font-mono">
-									{launch.tokenSymbol || '???'} · {launch.network.symbol} · {CURVE_TYPES[launch.curveType]}
+								<div class="flex items-center gap-1.5">
+									<span class="state-dot state-dot-{color}"></span>
+									<span class="text-xs font-mono state-text-{color}">{stateLabel(launch.state)}</span>
 								</div>
 							</div>
 						</div>
-						<span class="badge badge-{color}">
-							{stateLabel(launch.state)}
-						</span>
 					</div>
 
-					<!-- Progress Bar -->
-					<div class="mb-3">
-						<div class="progress-track">
-							<div
-								class="progress-fill progress-{color}"
-								style="width: {progress}%"
-							></div>
+					<!-- Description preview -->
+					{#if (launch as any).description}
+						<div class="px-4 pb-2">
+							<p class="text-gray-400 text-xs font-mono leading-relaxed line-clamp-2">{(launch as any).description}</p>
 						</div>
-						<div class="flex justify-between mt-1.5">
-							<span class="text-xs text-gray-500 font-mono">{progress}%</span>
-							<span class="text-xs text-gray-400 font-mono">
-								{formatUsdt(launch.totalBaseRaised)} / {formatUsdt(launch.hardCap)}
-							</span>
-						</div>
-					</div>
+					{/if}
 
-					<!-- Details -->
-					<div class="flex justify-between text-xs font-mono">
-						<div>
-							{#if launch.state === 1}
-								<span class="text-gray-500">Price:</span>
-								<span class="text-white ml-1">{formatUsdt(launch.currentPrice)}</span>
-							{:else if launch.state === 2}
-								<span class="text-purple-400">Graduated</span>
-							{:else if launch.state === 3}
-								<span class="text-red-400">Refunds available</span>
-							{:else}
-								<span class="text-amber-400">Awaiting deposit</span>
-							{/if}
-						</div>
-						<div>
+					<!-- Raised + countdown row -->
+					<div class="px-4 pb-2">
+						<div class="flex justify-between items-baseline mb-1.5">
+							<span class="text-white text-xs font-mono font-semibold">Raised {progress}%</span>
 							{#if launch.state <= 1}
-								<span class="text-gray-500">{timeRemaining(launch.deadline)}</span>
+								<span class="countdown-text">{countdownStr(launch.deadline)}</span>
 							{/if}
 						</div>
+						<div class="progress-track">
+							<div class="progress-fill progress-{color}" style="width: {progress}%"></div>
+						</div>
+						<div class="flex justify-between mt-1">
+							<span class="text-gray-500 text-[10px] font-mono">{formatUsdt(launch.totalBaseRaised, ud)}</span>
+							<span class="text-gray-500 text-[10px] font-mono">{formatUsdt(launch.hardCap, ud)}</span>
+						</div>
+					</div>
+
+					<!-- Card footer: badges + type -->
+					<div class="card-foot px-4 py-2.5">
+						<div class="flex items-center gap-1.5 flex-wrap flex-1 min-w-0">
+							{#each ((launch as any).badges ?? []) as badge}
+								{#if BADGE_META[badge]}
+									<span class="badge-pill {BADGE_META[badge].cls}">{BADGE_META[badge].label}</span>
+								{/if}
+							{/each}
+							<span class="badge-pill badge-pill-lp">LP Burned</span>
+						</div>
+						<span class="text-gray-600 text-[10px] font-mono flex-shrink-0">{CURVE_TYPES[launch.curveType]}</span>
 					</div>
 				</a>
 			{/each}
@@ -377,22 +407,164 @@
 </div>
 
 <style>
-	.page-wrap {
-		padding-bottom: 40px;
+	.page-wrap { padding-bottom: 40px; }
+	.no-underline { text-decoration: none; }
+
+	/* Stats bar */
+	.stats-bar {
+		display: flex;
+		gap: 1px;
+		background: var(--bg-surface-hover);
+		border: 1px solid var(--bg-surface-hover);
+		border-radius: 10px;
+		overflow: hidden;
+	}
+	.stat-item {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 2px;
+		padding: 12px 8px;
+		background: var(--bg-surface);
+	}
+	.stat-value {
+		font-size: 16px;
+		font-weight: 700;
+		color: #fff;
+		font-family: 'Space Mono', monospace;
+	}
+	.stat-label {
+		font-size: 10px;
+		color: #6b7280;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		font-family: 'Space Mono', monospace;
 	}
 
-	.no-underline {
-		text-decoration: none;
+	/* Tabs */
+	.tab-row {
+		display: flex;
+		gap: 2px;
+		background: var(--bg-surface);
+		border: 1px solid var(--bg-surface-hover);
+		border-radius: 10px;
+		padding: 3px;
+	}
+	.tab-btn {
+		font-size: 12px;
+		font-family: 'Space Mono', monospace;
+		padding: 6px 14px;
+		border-radius: 8px;
+		border: none;
+		background: transparent;
+		color: #6b7280;
+		cursor: pointer;
+		transition: all 0.15s ease;
+		white-space: nowrap;
+	}
+	.tab-btn:hover { color: #d1d5db; }
+	.tab-active {
+		background: rgba(0, 210, 255, 0.1);
+		color: #00d2ff;
+		font-weight: 600;
 	}
 
+	/* Filter controls */
+	.filter-select {
+		font-size: 11px;
+		font-family: 'Space Mono', monospace;
+		padding: 6px 12px;
+		border-radius: 8px;
+		border: 1px solid var(--bg-surface-hover);
+		background: var(--bg-surface);
+		color: #9ca3af;
+		cursor: pointer;
+		min-width: 120px;
+	}
+	.filter-select:focus { border-color: rgba(0, 210, 255, 0.3); outline: none; }
+	.filter-select option { background: var(--select-bg); }
+	.filter-btn {
+		font-size: 11px;
+		font-family: 'Space Mono', monospace;
+		padding: 6px 14px;
+		border-radius: 8px;
+		border: 1px solid var(--bg-surface-hover);
+		background: var(--bg-surface);
+		color: #6b7280;
+		cursor: pointer;
+		transition: all 0.15s ease;
+	}
+	.filter-btn:hover { color: #d1d5db; border-color: rgba(255,255,255,0.15); }
+	.filter-btn-active {
+		border-color: rgba(0, 210, 255, 0.4);
+		background: rgba(0, 210, 255, 0.08);
+		color: #00d2ff;
+	}
+
+	/* Launch card */
 	.launch-card {
-		transition: all 0.2s;
+		overflow: hidden;
+		transition: all 0.2s ease;
 	}
 	.launch-card:hover {
 		transform: translateY(-2px);
 		box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
 	}
 
+	.card-logo {
+		width: 40px;
+		height: 40px;
+		border-radius: 50%;
+		object-fit: cover;
+		flex-shrink: 0;
+		border: 1px solid var(--bg-surface-hover);
+	}
+	.card-logo-placeholder {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: rgba(0, 210, 255, 0.08);
+		color: #00d2ff;
+		font-size: 15px;
+		font-weight: 700;
+		font-family: 'Syne', sans-serif;
+		border: 1px solid rgba(0, 210, 255, 0.15);
+	}
+
+	/* State dot */
+	.state-dot {
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		flex-shrink: 0;
+	}
+	.state-dot-cyan { background: #00d2ff; box-shadow: 0 0 6px rgba(0,210,255,0.5); }
+	.state-dot-amber { background: #f59e0b; }
+	.state-dot-purple { background: #a78bfa; }
+	.state-dot-red { background: #f87171; }
+	.state-text-cyan { color: #00d2ff; }
+	.state-text-amber { color: #f59e0b; }
+	.state-text-purple { color: #a78bfa; }
+	.state-text-red { color: #f87171; }
+
+	/* Description clamp */
+	.line-clamp-2 {
+		display: -webkit-box;
+		-webkit-line-clamp: 2;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
+	}
+
+	/* Countdown */
+	.countdown-text {
+		font-size: 11px;
+		font-family: 'Space Mono', monospace;
+		color: #f87171;
+		font-weight: 600;
+	}
+
+	/* Progress */
 	.progress-track {
 		width: 100%;
 		height: 6px;
@@ -405,40 +577,48 @@
 		border-radius: 3px;
 		transition: width 0.3s ease;
 	}
-	.progress-cyan {
-		background: linear-gradient(90deg, #00d2ff, #3a7bd5);
-	}
-	.progress-amber {
-		background: linear-gradient(90deg, #f59e0b, #d97706);
-	}
-	.progress-purple {
-		background: linear-gradient(90deg, #8b5cf6, #a78bfa);
-	}
-	.progress-red {
-		background: linear-gradient(90deg, #ef4444, #f87171);
+	.progress-cyan { background: linear-gradient(90deg, #00d2ff, #3a7bd5); }
+	.progress-amber { background: linear-gradient(90deg, #f59e0b, #d97706); }
+	.progress-purple { background: linear-gradient(90deg, #8b5cf6, #a78bfa); }
+	.progress-red { background: linear-gradient(90deg, #ef4444, #f87171); }
+
+	/* Card footer */
+	.card-foot {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px;
+		border-top: 1px solid var(--bg-surface-hover);
 	}
 
-	.filters select {
-		min-width: 140px;
+	/* Badge pills */
+	.badge-pill {
+		font-size: 9px;
+		font-weight: 600;
+		font-family: 'Space Mono', monospace;
+		text-transform: uppercase;
+		letter-spacing: 0.03em;
+		padding: 2px 6px;
+		border-radius: 3px;
+		border: 1px solid;
+		white-space: nowrap;
 	}
+	.badge-list-cyan { background: rgba(0, 210, 255, 0.08); color: #00d2ff; border-color: rgba(0, 210, 255, 0.2); }
+	.badge-list-emerald { background: rgba(16, 185, 129, 0.08); color: #34d399; border-color: rgba(16, 185, 129, 0.2); }
+	.badge-list-purple { background: rgba(139, 92, 246, 0.08); color: #a78bfa; border-color: rgba(139, 92, 246, 0.2); }
+	.badge-list-amber { background: rgba(245, 158, 11, 0.08); color: #fbbf24; border-color: rgba(245, 158, 11, 0.2); }
+	.badge-list-blue { background: rgba(59, 130, 246, 0.08); color: #60a5fa; border-color: rgba(59, 130, 246, 0.2); }
+	.badge-pill-lp { background: rgba(16, 185, 129, 0.08); color: #34d399; border-color: rgba(16, 185, 129, 0.2); }
 
-	/* Skeleton loading */
-	.skeleton-card {
-		animation: skeletonPulse 1.5s ease-in-out infinite;
-	}
+	/* Skeleton */
+	.skeleton-card { animation: skeletonPulse 1.5s ease-in-out infinite; }
 	.skeleton-line {
 		background: var(--bg-surface-hover);
 		border-radius: 4px;
 		animation: skeletonShimmer 1.5s ease-in-out infinite;
 	}
-	@keyframes skeletonPulse {
-		0%, 100% { opacity: 1; }
-		50% { opacity: 0.6; }
-	}
-	@keyframes skeletonShimmer {
-		0%, 100% { background: var(--bg-surface-hover); }
-		50% { background: var(--border-input); }
-	}
+	@keyframes skeletonPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+	@keyframes skeletonShimmer { 0%, 100% { background: var(--bg-surface-hover); } 50% { background: var(--border-input); } }
 
 	.empty-state {
 		min-height: 300px;
@@ -448,37 +628,5 @@
 		justify-content: center;
 	}
 
-	.syne {
-		font-family: 'Syne', sans-serif;
-	}
-	.badge {
-		display: inline-flex;
-		align-items: center;
-		padding: 3px 10px;
-		border-radius: 999px;
-		font-size: 11px;
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.04em;
-	}
-	.badge-cyan {
-		background: rgba(0, 210, 255, 0.1);
-		color: #00d2ff;
-		border: 1px solid rgba(0, 210, 255, 0.2);
-	}
-	.badge-amber {
-		background: rgba(245, 158, 11, 0.1);
-		color: #f59e0b;
-		border: 1px solid rgba(245, 158, 11, 0.2);
-	}
-	.badge-purple {
-		background: rgba(139, 92, 246, 0.1);
-		color: #a78bfa;
-		border: 1px solid rgba(139, 92, 246, 0.2);
-	}
-	.badge-red {
-		background: rgba(239, 68, 68, 0.1);
-		color: #f87171;
-		border: 1px solid rgba(239, 68, 68, 0.2);
-	}
+	.syne { font-family: 'Syne', sans-serif; }
 </style>

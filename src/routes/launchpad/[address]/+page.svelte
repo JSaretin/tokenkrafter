@@ -3,7 +3,7 @@
 	import { getContext, onDestroy } from 'svelte';
 	import { page } from '$app/state';
 	import type { SupportedNetwork } from '$lib/structure';
-	import { ERC20_ABI, ZERO_ADDRESS } from '$lib/tokenCrafter';
+	import { ERC20_ABI, ZERO_ADDRESS, FACTORY_ABI } from '$lib/tokenCrafter';
 	import {
 		LAUNCH_INSTANCE_ABI,
 		type LaunchInfo,
@@ -54,7 +54,127 @@
 	let isEnablingTrading = $state(false);
 
 	// Off-chain metadata from database
-	let metadata: { description?: string; logo_url?: string; website?: string; twitter?: string; telegram?: string; discord?: string } = $state({});
+	type Metadata = {
+		description?: string; logo_url?: string; website?: string;
+		twitter?: string; telegram?: string; discord?: string;
+		video_url?: string;
+	};
+	let metadata: Metadata = $state({});
+
+	// Badges (from separate table + chain detection)
+	let badges: string[] = $state([]);
+	const BADGE_META: Record<string, { label: string; color: string }> = {
+		audit: { label: 'Audit', color: 'cyan' },
+		kyc: { label: 'KYC', color: 'emerald' },
+		partner: { label: 'Partner', color: 'purple' },
+		doxxed: { label: 'Doxxed', color: 'amber' },
+		safu: { label: 'SAFU', color: 'blue' }
+	};
+
+	// Inline editing
+	let isEditing = $state(false);
+	let isSavingMeta = $state(false);
+	let isUploadingLogo = $state(false);
+	let editDescription = $state('');
+	let editWebsite = $state('');
+	let editTwitter = $state('');
+	let editTelegram = $state('');
+	let editDiscord = $state('');
+	let editVideoUrl = $state('');
+
+	let isCreator = $derived(
+		!!userAddress && !!launch && userAddress.toLowerCase() === launch.creator.toLowerCase()
+	);
+
+	function startEditing() {
+		editDescription = metadata.description ?? '';
+		editWebsite = metadata.website ?? '';
+		editTwitter = metadata.twitter ?? '';
+		editTelegram = metadata.telegram ?? '';
+		editDiscord = metadata.discord ?? '';
+		editVideoUrl = metadata.video_url ?? '';
+		isEditing = true;
+	}
+
+	function cancelEditing() {
+		isEditing = false;
+	}
+
+	async function handleLogoUpload(event: Event) {
+		const input = event.target as HTMLInputElement;
+		const file = input.files?.[0];
+		if (!file || !userAddress || !network) return;
+
+		if (file.size > 512 * 1024) {
+			addFeedback({ message: 'Image too large. Max 512 KB.', type: 'error' });
+			input.value = '';
+			return;
+		}
+
+		isUploadingLogo = true;
+		try {
+			const fd = new FormData();
+			fd.append('file', file);
+			fd.append('address', launchAddress);
+			fd.append('chain_id', String(network.chain_id));
+			fd.append('wallet_address', userAddress);
+
+			const res = await fetch('/api/launches/upload', { method: 'POST', body: fd });
+			if (!res.ok) {
+				const err = await res.json().catch(() => ({ message: 'Upload failed' }));
+				throw new Error(err.message || 'Upload failed');
+			}
+			const { logo_url } = await res.json();
+			metadata = { ...metadata, logo_url };
+			addFeedback({ message: 'Logo uploaded!', type: 'success' });
+		} catch (e: any) {
+			addFeedback({ message: e.message || 'Upload failed', type: 'error' });
+		} finally {
+			isUploadingLogo = false;
+			input.value = '';
+		}
+	}
+
+	async function saveMetadata() {
+		if (!userAddress || !network || !launch) return;
+		isSavingMeta = true;
+		try {
+			const res = await fetch('/api/launches/metadata', {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					address: launchAddress,
+					chain_id: network.chain_id,
+					wallet_address: userAddress,
+					description: editDescription,
+					website: editWebsite,
+					twitter: editTwitter,
+					telegram: editTelegram,
+					discord: editDiscord,
+					video_url: editVideoUrl
+				})
+			});
+			if (!res.ok) {
+				const err = await res.json().catch(() => ({ message: 'Failed to save' }));
+				throw new Error(err.message || 'Failed to save');
+			}
+			metadata = {
+				...metadata,
+				description: editDescription || undefined,
+				website: editWebsite || undefined,
+				twitter: editTwitter || undefined,
+				telegram: editTelegram || undefined,
+				discord: editDiscord || undefined,
+				video_url: editVideoUrl || undefined
+			};
+			isEditing = false;
+			addFeedback({ message: 'Token info updated!', type: 'success' });
+		} catch (e: any) {
+			addFeedback({ message: e.message || 'Failed to save metadata', type: 'error' });
+		} finally {
+			isSavingMeta = false;
+		}
+	}
 
 	// User position
 	let userBasePaid = $state(0n);
@@ -104,6 +224,30 @@
 		buyPaymentMethod === 'usdt' ? 'USDT' : 'USDC'
 	);
 
+	// Countdown timer
+	let countdownNow = $state(Date.now());
+	let countdownInterval: ReturnType<typeof setInterval> | null = null;
+	let countdown = $derived.by(() => {
+		if (!launch) return null;
+		const deadlineMs = Number(launch.deadline) * 1000;
+		const diff = deadlineMs - countdownNow;
+		if (diff <= 0) return { days: 0, hours: 0, minutes: 0, seconds: 0, ended: true };
+		const days = Math.floor(diff / 86400000);
+		const hours = Math.floor((diff % 86400000) / 3600000);
+		const minutes = Math.floor((diff % 3600000) / 60000);
+		const seconds = Math.floor((diff % 60000) / 1000);
+		return { days, hours, minutes, seconds, ended: false };
+	});
+
+	$effect(() => {
+		if (launch && !countdownInterval) {
+			countdownInterval = setInterval(() => { countdownNow = Date.now(); }, 1000);
+		}
+		return () => {
+			if (countdownInterval) { clearInterval(countdownInterval); countdownInterval = null; }
+		};
+	});
+
 	let refreshInterval: ReturnType<typeof setInterval> | null = null;
 
 	async function loadLaunch() {
@@ -123,19 +267,6 @@
 				usdtDecimals = usdtMeta.decimals;
 				launch = { ...info, tokenName: meta.name, tokenSymbol: meta.symbol, tokenDecimals: meta.decimals, usdtDecimals: usdtMeta.decimals };
 
-				console.log('Launch data:', {
-					tokensForCurve: ethers.formatUnits(info.tokensForCurve, meta.decimals),
-					tokensForCurveRaw: info.tokensForCurve.toString(),
-					tokensSold: info.tokensSold.toString(),
-					softCap: ethers.formatUnits(info.softCap, usdtMeta.decimals),
-					hardCap: ethers.formatUnits(info.hardCap, usdtMeta.decimals),
-					currentPrice: ethers.formatUnits(info.currentPrice, usdtMeta.decimals),
-					curveType: info.curveType,
-					state: info.state,
-					usdtDecimals: usdtMeta.decimals,
-					tokenDecimals: meta.decimals
-				});
-
 				// Check if trading is enabled
 				try {
 					const tokenC = new ethers.Contract(info.token, PROTECTED_TOKEN_ABI, prov);
@@ -149,23 +280,44 @@
 					await loadUserPosition(prov);
 				}
 
-				// Fetch off-chain metadata from database (best-effort)
-				try {
-					const res = await fetch(`/api/launches?address=${launchAddress}`);
-					if (res.ok) {
-						const rows = await res.json();
-						if (rows?.[0]) {
-							metadata = {
-								description: rows[0].description,
-								logo_url: rows[0].logo_url,
-								website: rows[0].website,
-								twitter: rows[0].twitter,
-								telegram: rows[0].telegram,
-								discord: rows[0].discord
-							};
-						}
+				// Fetch off-chain metadata + badges + partner detection (best-effort, parallel)
+				const [metaRes, badgeRes, partnerInfo] = await Promise.all([
+					fetch(`/api/launches?address=${launchAddress}`).catch(() => null),
+					fetch(`/api/badges?address=${launchAddress}&chain_id=${net.chain_id}`).catch(() => null),
+					(async () => {
+						try {
+							const factory = new ethers.Contract(net.platform_address, FACTORY_ABI, prov);
+							const tokenInfo = await factory.getTokenInfo(info.token);
+							return tokenInfo.isPartnership as boolean;
+						} catch { return false; }
+					})()
+				]);
+
+				if (metaRes?.ok) {
+					const rows = await metaRes.json();
+					if (rows?.[0]) {
+						metadata = {
+							description: rows[0].description,
+							logo_url: rows[0].logo_url,
+							website: rows[0].website,
+							twitter: rows[0].twitter,
+							telegram: rows[0].telegram,
+							discord: rows[0].discord,
+							video_url: rows[0].video_url
+						};
 					}
-				} catch {}
+				}
+
+				// Merge DB badges + chain-detected partner
+				const dbBadges: string[] = [];
+				if (badgeRes?.ok) {
+					const rows = await badgeRes.json();
+					for (const r of rows) dbBadges.push(r.badge_type);
+				}
+				if (partnerInfo && !dbBadges.includes('partner')) {
+					dbBadges.push('partner');
+				}
+				badges = dbBadges;
 
 				loading = false;
 				return;
@@ -733,56 +885,414 @@
 		{@const ud = usdtDecimals}
 
 		<!-- Header -->
-		<div class="flex flex-wrap items-start justify-between gap-4 mb-4">
-			<div class="flex items-center gap-4">
-				{#if metadata.logo_url}
-					<img src={metadata.logo_url} alt="" class="w-12 h-12 rounded-full object-cover" />
-				{/if}
-				<div>
-					<h1 class="syne text-2xl sm:text-3xl font-bold text-white">
-						{launch.tokenName || 'Unknown Token'}
-						<span class="text-gray-500 text-lg">({launch.tokenSymbol || '???'})</span>
-					</h1>
-					<div class="text-sm text-gray-500 font-mono mt-1">
-						{network.name} · {CURVE_TYPES[launch.curveType]} Curve · Creator: {shortAddr(launch.creator)}
+		<div class="token-header mb-6">
+			<div class="token-header-top">
+				<div class="token-identity">
+					<div class="logo-upload-wrap">
+						{#if metadata.logo_url}
+							<img src={metadata.logo_url} alt="" class="token-logo" />
+						{:else}
+							<div class="token-logo token-logo-placeholder">
+								<span>{(launch.tokenSymbol || '?')[0]}</span>
+							</div>
+						{/if}
+						{#if isCreator}
+							<label class="logo-upload-overlay" title="Upload logo (max 512 KB)">
+								<input type="file" accept="image/*" class="hidden" onchange={handleLogoUpload} disabled={isUploadingLogo} />
+								{#if isUploadingLogo}
+									<span class="text-[10px]">...</span>
+								{:else}
+									<span class="text-[10px]">Upload</span>
+								{/if}
+							</label>
+						{/if}
+					</div>
+					<div>
+						<div class="flex items-center gap-3 flex-wrap">
+							<h1 class="syne text-2xl sm:text-3xl font-bold text-white leading-tight">
+								{launch.tokenName || 'Unknown Token'}
+							</h1>
+							<span class="token-symbol-badge">{launch.tokenSymbol || '???'}</span>
+							<span class="badge badge-{color} text-xs px-3 py-1">
+								{stateLabel(launch.state)}
+							</span>
+							<!-- Badges -->
+							{#each badges as badge}
+								{#if BADGE_META[badge]}
+									<span class="launch-badge badge-{BADGE_META[badge].color}">
+										{BADGE_META[badge].label}
+									</span>
+								{/if}
+							{/each}
+						</div>
+						<div class="flex items-center gap-2 mt-2 flex-wrap">
+							<span class="header-tag">{network.name}</span>
+							<span class="header-tag">{CURVE_TYPES[launch.curveType]} Curve</span>
+							<span class="header-tag">Creator: {shortAddr(launch.creator)}</span>
+						</div>
+						<!-- Social icons inline -->
+						{#if metadata.website || metadata.twitter || metadata.telegram || metadata.discord}
+							<div class="header-socials mt-2">
+								{#if metadata.website}
+									<a href={metadata.website} target="_blank" rel="noopener" class="header-social-icon" title="Website">🌐</a>
+								{/if}
+								{#if metadata.twitter}
+									<a href={metadata.twitter.startsWith('http') ? metadata.twitter : `https://x.com/${metadata.twitter.replace('@', '')}`} target="_blank" rel="noopener" class="header-social-icon" title="Twitter">𝕏</a>
+								{/if}
+								{#if metadata.telegram}
+									<a href={metadata.telegram.startsWith('http') ? metadata.telegram : `https://t.me/${metadata.telegram.replace('@', '')}`} target="_blank" rel="noopener" class="header-social-icon" title="Telegram">✈</a>
+								{/if}
+								{#if metadata.discord}
+									<a href={metadata.discord.startsWith('http') ? metadata.discord : `https://discord.gg/${metadata.discord}`} target="_blank" rel="noopener" class="header-social-icon" title="Discord">💬</a>
+								{/if}
+							</div>
+						{/if}
 					</div>
 				</div>
 			</div>
-			<span class="badge badge-{color} text-sm px-4 py-1.5">
-				{stateLabel(launch.state)}
-			</span>
 		</div>
 
-		<!-- Metadata -->
-		{#if metadata.description || metadata.website || metadata.twitter || metadata.telegram || metadata.discord}
-			<div class="card p-5 mb-8">
-				{#if metadata.description}
-					<p class="text-gray-300 font-mono text-sm leading-relaxed mb-3">{metadata.description}</p>
-				{/if}
-				{#if metadata.website || metadata.twitter || metadata.telegram || metadata.discord}
-					<div class="flex flex-wrap gap-3">
-						{#if metadata.website}
-							<a href={metadata.website} target="_blank" rel="noopener" class="text-xs font-mono text-cyan-400 hover:text-cyan-300 transition no-underline">Website ↗</a>
+		<div class="page-grid">
+			<!-- Left: Token-focused content -->
+			<div class="left-col">
+				<!-- About / Inline Editor -->
+				<div class="card p-6 mb-4">
+					{#if isEditing}
+						<!-- Inline edit mode -->
+						<div class="flex justify-between items-center mb-4">
+							<h3 class="syne font-bold text-white">Edit Token Info</h3>
+							<button onclick={cancelEditing} class="text-gray-500 hover:text-white text-xs font-mono cursor-pointer">Cancel</button>
+						</div>
+
+						<div class="flex flex-col gap-4">
+							<div>
+								<label class="label-text" for="edit-desc">Description</label>
+								<textarea id="edit-desc" class="input-field" rows="5" placeholder="Tell users about your token, its utility, roadmap..." bind:value={editDescription}></textarea>
+							</div>
+
+							<div>
+								<label class="label-text" for="edit-video">Video (YouTube / X link)</label>
+								<input id="edit-video" type="url" class="input-field" placeholder="https://youtube.com/watch?v=... or https://x.com/.../video" bind:value={editVideoUrl} />
+							</div>
+
+							<div class="grid grid-cols-2 gap-3">
+								<div>
+									<label class="label-text" for="edit-website">Website</label>
+									<input id="edit-website" type="url" class="input-field" placeholder="https://..." bind:value={editWebsite} />
+								</div>
+								<div>
+									<label class="label-text" for="edit-twitter">Twitter</label>
+									<input id="edit-twitter" class="input-field" placeholder="@handle or URL" bind:value={editTwitter} />
+								</div>
+							</div>
+							<div class="grid grid-cols-2 gap-3">
+								<div>
+									<label class="label-text" for="edit-telegram">Telegram</label>
+									<input id="edit-telegram" class="input-field" placeholder="@group or URL" bind:value={editTelegram} />
+								</div>
+								<div>
+									<label class="label-text" for="edit-discord">Discord</label>
+									<input id="edit-discord" class="input-field" placeholder="Invite code or URL" bind:value={editDiscord} />
+								</div>
+							</div>
+
+							<div class="flex gap-3">
+								<button onclick={cancelEditing} class="btn-secondary flex-1 py-2.5 text-sm cursor-pointer">Cancel</button>
+								<button onclick={saveMetadata} disabled={isSavingMeta} class="btn-primary flex-1 py-2.5 text-sm cursor-pointer">
+									{isSavingMeta ? 'Saving...' : 'Save Changes'}
+								</button>
+							</div>
+						</div>
+					{:else}
+						<!-- View mode -->
+						<div class="flex justify-between items-center mb-3">
+							<h3 class="syne font-bold text-white">About</h3>
+							{#if isCreator}
+								<button onclick={startEditing} class="text-gray-500 hover:text-cyan-400 text-xs font-mono transition cursor-pointer">
+									{metadata.description ? 'Edit info' : '+ Add info'}
+								</button>
+							{/if}
+						</div>
+						{#if metadata.description}
+							<p class="text-gray-300 font-mono text-sm leading-relaxed whitespace-pre-line">{metadata.description}</p>
+						{:else if isCreator}
+							<button onclick={startEditing} class="empty-state-btn">
+								<span class="text-gray-500 text-sm">Add a description, links, and badges to attract buyers</span>
+							</button>
+						{:else}
+							<p class="text-gray-600 font-mono text-sm italic">No description provided yet.</p>
 						{/if}
-						{#if metadata.twitter}
-							<a href={metadata.twitter.startsWith('http') ? metadata.twitter : `https://x.com/${metadata.twitter.replace('@', '')}`} target="_blank" rel="noopener" class="text-xs font-mono text-cyan-400 hover:text-cyan-300 transition no-underline">Twitter ↗</a>
+
+						<!-- Video embed -->
+						{#if metadata.video_url}
+							<div class="video-embed mt-4">
+								{#if metadata.video_url.includes('youtube.com') || metadata.video_url.includes('youtu.be')}
+									{@const videoId = metadata.video_url.includes('youtu.be')
+										? metadata.video_url.split('/').pop()?.split('?')[0]
+										: new URL(metadata.video_url).searchParams.get('v')}
+									{#if videoId}
+										<iframe
+											src="https://www.youtube.com/embed/{videoId}"
+											title="Video"
+											class="video-iframe"
+											allowfullscreen
+											frameborder="0"
+										></iframe>
+									{/if}
+								{:else}
+									<a href={metadata.video_url} target="_blank" rel="noopener" class="video-link-card">
+										<span class="text-lg">▶</span>
+										<span class="text-gray-300 text-sm font-mono">Watch Video</span>
+									</a>
+								{/if}
+							</div>
 						{/if}
-						{#if metadata.telegram}
-							<a href={metadata.telegram.startsWith('http') ? metadata.telegram : `https://t.me/${metadata.telegram.replace('@', '')}`} target="_blank" rel="noopener" class="text-xs font-mono text-cyan-400 hover:text-cyan-300 transition no-underline">Telegram ↗</a>
+					{/if}
+				</div>
+
+				<!-- Tokenomics -->
+				<div class="card p-6 mb-4">
+					<h3 class="syne font-bold text-white mb-4">Tokenomics</h3>
+					{#if launch}
+					{@const totalTokens = launch.tokensForCurve + launch.tokensForLP + (launch.totalTokensRequired > 0n ? (launch.totalTokensRequired - launch.tokensForCurve - launch.tokensForLP) : 0n)}
+					{@const curvePct = totalTokens > 0n ? Number((launch.tokensForCurve * 10000n) / totalTokens) / 100 : 0}
+					{@const lpPct = totalTokens > 0n ? Number((launch.tokensForLP * 10000n) / totalTokens) / 100 : 0}
+					{@const creatorPct = Number(launch.creatorAllocationBps) / 100}
+					{@const remainPct = Math.max(0, 100 - curvePct - lpPct)}
+
+					<!-- Allocation bar -->
+					<div class="alloc-bar mb-4">
+						{#if curvePct > 0}
+							<div class="alloc-segment alloc-cyan" style="width: {curvePct}%" title="Curve: {curvePct}%"></div>
 						{/if}
-						{#if metadata.discord}
-							<a href={metadata.discord.startsWith('http') ? metadata.discord : `https://discord.gg/${metadata.discord}`} target="_blank" rel="noopener" class="text-xs font-mono text-cyan-400 hover:text-cyan-300 transition no-underline">Discord ↗</a>
+						{#if lpPct > 0}
+							<div class="alloc-segment alloc-purple" style="width: {lpPct}%" title="Liquidity: {lpPct}%"></div>
+						{/if}
+						{#if remainPct > 0}
+							<div class="alloc-segment alloc-amber" style="width: {remainPct}%" title="Creator: {remainPct}%"></div>
+						{/if}
+					</div>
+
+					<div class="alloc-legend mb-5">
+						<div class="legend-item">
+							<span class="legend-dot bg-cyan-400"></span>
+							<span class="legend-label">Curve Sale</span>
+							<span class="legend-value">{curvePct}%</span>
+						</div>
+						<div class="legend-item">
+							<span class="legend-dot bg-purple-400"></span>
+							<span class="legend-label">Liquidity Pool</span>
+							<span class="legend-value">{lpPct}%</span>
+						</div>
+						{#if remainPct > 0}
+							<div class="legend-item">
+								<span class="legend-dot bg-amber-400"></span>
+								<span class="legend-label">Creator</span>
+								<span class="legend-value">{remainPct}%</span>
+							</div>
+						{/if}
+					</div>
+
+					<div class="detail-grid">
+						<div class="detail-row">
+							<span class="detail-label">Tokens for Curve</span>
+							<span class="detail-value">{formatTokens(launch.tokensForCurve, tokenMeta.decimals)}</span>
+						</div>
+						<div class="detail-row">
+							<span class="detail-label">Tokens for LP</span>
+							<span class="detail-value">{formatTokens(launch.tokensForLP, tokenMeta.decimals)}</span>
+						</div>
+						{#if creatorPct > 0}
+							<div class="detail-row">
+								<span class="detail-label">Creator Allocation</span>
+								<span class="detail-value">{creatorPct}%</span>
+							</div>
+						{/if}
+						<div class="detail-row">
+							<span class="detail-label">Total Required</span>
+							<span class="detail-value">{formatTokens(launch.totalTokensRequired, tokenMeta.decimals)}</span>
+						</div>
+					</div>
+					{/if}
+				</div>
+
+				<!-- Bonding Curve -->
+				<div class="card p-6 mb-4">
+					<BondingCurveChart curveType={launch.curveType} progress={tokenProgress} />
+				</div>
+
+				<!-- Sale Details -->
+				<div class="card p-6 mb-4">
+					<h3 class="syne font-bold text-white mb-4">Sale Details</h3>
+					<div class="detail-grid">
+						<div class="detail-row">
+							<span class="detail-label">Curve Type</span>
+							<span class="detail-value">{CURVE_TYPES[launch.curveType]}</span>
+						</div>
+						<div class="detail-row">
+							<span class="detail-label">Current Price</span>
+							<span class="detail-value">{formatUsdt(launch.currentPrice, ud, 6)}</span>
+						</div>
+						<div class="detail-row">
+							<span class="detail-label">Soft Cap</span>
+							<span class="detail-value">{formatUsdt(launch.softCap, ud)}</span>
+						</div>
+						<div class="detail-row">
+							<span class="detail-label">Hard Cap</span>
+							<span class="detail-value">{formatUsdt(launch.hardCap, ud)}</span>
+						</div>
+						<div class="detail-row">
+							<span class="detail-label">Deadline</span>
+							<span class="detail-value">{timeRemaining(launch.deadline)}</span>
+						</div>
+						<div class="detail-row">
+							<span class="detail-label">Max Buy / Wallet</span>
+							<span class="detail-value">{maxBuyPerWallet > 0n ? formatTokens(maxBuyPerWallet, tokenMeta.decimals) + ' (' + maxBuyPct + '%)' : 'No limit'}</span>
+						</div>
+						<div class="detail-row">
+							<span class="detail-label">Buy Fee</span>
+							<span class="detail-value">1%</span>
+						</div>
+						<div class="detail-row">
+							<span class="detail-label">Graduation Fee</span>
+							<span class="detail-value">3%</span>
+						</div>
+						<div class="detail-row">
+							<span class="detail-label">DEX Listing</span>
+							<span class="detail-value">{network.symbol === 'BSC' ? 'PancakeSwap' : 'Uniswap'}</span>
+						</div>
+						<div class="detail-row">
+							<span class="detail-label">LP</span>
+							<span class="detail-value">Burned (permanent)</span>
+						</div>
+					</div>
+				</div>
+
+				<!-- Token Contract -->
+				<div class="card p-6 mb-4">
+					<h3 class="syne font-bold text-white mb-4">Token Contract</h3>
+					<div class="detail-grid">
+						<div class="detail-row">
+							<span class="detail-label">Name</span>
+							<span class="detail-value">{launch.tokenName}</span>
+						</div>
+						<div class="detail-row">
+							<span class="detail-label">Symbol</span>
+							<span class="detail-value">{launch.tokenSymbol}</span>
+						</div>
+						<div class="detail-row">
+							<span class="detail-label">Decimals</span>
+							<span class="detail-value">{tokenMeta.decimals}</span>
+						</div>
+						<div class="detail-row">
+							<span class="detail-label">Token Address</span>
+							<span class="detail-value addr-value">{launch.token}</span>
+						</div>
+						<div class="detail-row">
+							<span class="detail-label">Launch Address</span>
+							<span class="detail-value addr-value">{launch.address}</span>
+						</div>
+						<div class="detail-row">
+							<span class="detail-label">Creator</span>
+							<span class="detail-value addr-value">{launch.creator}</span>
+						</div>
+						<div class="detail-row">
+							<span class="detail-label">Network</span>
+							<span class="detail-value text-cyan-300">{network.name}</span>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<!-- Right: Actions & Progress -->
+			<div class="right-col">
+				<!-- Countdown Timer -->
+				{#if countdown && launch.state === 1}
+					<div class="card p-5 mb-4">
+						<div class="text-center mb-3">
+							<span class="text-gray-400 text-xs font-mono uppercase tracking-wider">
+								{countdown.ended ? 'Sale Ended' : 'Sale Ends In'}
+							</span>
+						</div>
+						{#if !countdown.ended}
+							<div class="countdown-grid">
+								<div class="countdown-box">
+									<span class="countdown-num">{String(countdown.days).padStart(2, '0')}</span>
+									<span class="countdown-label">Days</span>
+								</div>
+								<div class="countdown-box">
+									<span class="countdown-num">{String(countdown.hours).padStart(2, '0')}</span>
+									<span class="countdown-label">Hours</span>
+								</div>
+								<div class="countdown-box">
+									<span class="countdown-num">{String(countdown.minutes).padStart(2, '0')}</span>
+									<span class="countdown-label">Min</span>
+								</div>
+								<div class="countdown-box">
+									<span class="countdown-num">{String(countdown.seconds).padStart(2, '0')}</span>
+									<span class="countdown-label">Sec</span>
+								</div>
+							</div>
+						{:else}
+							<div class="text-center text-red-400 text-sm font-mono">Deadline reached</div>
 						{/if}
 					</div>
 				{/if}
-			</div>
-		{:else}
-			<div class="mb-8"></div>
-		{/if}
 
-		<div class="page-grid">
-			<!-- Left: Buy Box + Chart + Position -->
-			<div class="left-col">
+				<!-- Progress -->
+				<div class="card p-5 mb-4">
+					<!-- Progress bars -->
+					<div class="mb-3">
+						<div class="flex justify-between text-xs font-mono mb-1.5">
+							<span class="text-gray-300 font-semibold">{formatUsdt(launch.totalBaseRaised, ud)}</span>
+							<span class="text-gray-500">{formatUsdt(launch.hardCap, ud)}</span>
+						</div>
+						<div class="progress-track progress-track-lg">
+							<div class="progress-fill progress-cyan" style="width: {progress}%"></div>
+						</div>
+						<div class="flex justify-between text-[10px] font-mono mt-1">
+							<span class="text-gray-500">{progress}% raised</span>
+							{#if launch.totalBaseRaised < launch.softCap}
+								<span class="text-amber-400">Soft cap: {progressPercent(launch.totalBaseRaised, launch.softCap)}%</span>
+							{:else}
+								<span class="text-emerald-400">Soft cap reached</span>
+							{/if}
+						</div>
+					</div>
+
+					<div class="mb-4">
+						<div class="flex justify-between text-xs font-mono mb-1.5">
+							<span class="text-gray-300 font-semibold">{formatTokens(launch.tokensSold, tokenMeta.decimals)}</span>
+							<span class="text-gray-500">{formatTokens(launch.tokensForCurve, tokenMeta.decimals)}</span>
+						</div>
+						<div class="progress-track">
+							<div class="progress-fill progress-purple" style="width: {tokenProgress}%"></div>
+						</div>
+						<div class="text-right text-[10px] text-gray-500 font-mono mt-1">{tokenProgress}% tokens sold</div>
+					</div>
+
+					<!-- Sale info summary -->
+					<div class="sale-info-divider"></div>
+					<div class="detail-grid mt-4">
+						<div class="detail-row">
+							<span class="detail-label">Status</span>
+							<span class="detail-value status-{color}">{stateLabel(launch.state)}</span>
+						</div>
+						<div class="detail-row">
+							<span class="detail-label">Sale Type</span>
+							<span class="detail-value">Fair Launch</span>
+						</div>
+						<div class="detail-row">
+							<span class="detail-label">Current Rate</span>
+							<span class="detail-value">1 USDT = {launch.currentPrice > 0n ? formatTokens((BigInt(10 ** usdtDecimals) * BigInt(10 ** tokenMeta.decimals)) / launch.currentPrice, tokenMeta.decimals) : '0'} {launch.tokenSymbol}</span>
+						</div>
+						<div class="detail-row">
+							<span class="detail-label">Current Raised</span>
+							<span class="detail-value">{formatUsdt(launch.totalBaseRaised, ud)}</span>
+						</div>
+					</div>
+				</div>
+
 				<!-- Deposit Box (Pending) -->
 				{#if launch.state === 0 && userAddress?.toLowerCase() === launch.creator.toLowerCase()}
 					{@const remaining = launch.totalTokensRequired - launch.totalTokensDeposited}
@@ -998,9 +1508,12 @@
 								{/if}
 							</button>
 						{:else}
-							<button onclick={connectWallet} class="btn-primary w-full py-3 text-sm cursor-pointer">
-								Connect Wallet to Buy
-							</button>
+							<div class="connect-cta">
+								<p class="text-gray-500 text-xs font-mono mb-3 text-center">Connect your wallet to participate</p>
+								<button onclick={connectWallet} class="btn-primary w-full py-3 text-sm cursor-pointer font-semibold">
+									Connect Wallet
+								</button>
+							</div>
 						{/if}
 					</div>
 				{/if}
@@ -1037,11 +1550,6 @@
 						</div>
 					{/if}
 				{/if}
-
-				<!-- Bonding Curve -->
-				<div class="card p-6 mb-4">
-					<BondingCurveChart curveType={launch.curveType} progress={tokenProgress} />
-				</div>
 
 				<!-- User Position -->
 				{#if userAddress && (userBasePaid > 0n || userTokensBought > 0n)}
@@ -1083,111 +1591,31 @@
 						{/if}
 					</div>
 				{/if}
-			</div>
 
-			<!-- Right: Launch Info -->
-			<div class="right-col">
-				<!-- Progress -->
-				<div class="card p-6 mb-4">
-					<h3 class="syne font-bold text-white mb-4">Progress</h3>
-
-					<div class="mb-4">
-						<div class="flex justify-between text-xs font-mono mb-1.5">
-							<span class="text-gray-500">Base Raised</span>
-							<span class="text-gray-300">{formatUsdt(launch.totalBaseRaised, ud)} / {formatUsdt(launch.hardCap, ud)}</span>
-						</div>
-						<div class="progress-track">
-							<div class="progress-fill progress-cyan" style="width: {progress}%"></div>
-						</div>
-						<div class="text-right text-[10px] text-gray-600 font-mono mt-1">{progress}%</div>
+				<!-- Share -->
+				<div class="card p-5 mb-4">
+					<p class="text-gray-400 text-xs font-mono text-center mb-3">Share this launch</p>
+					<div class="share-row">
+						<a
+							href={`https://x.com/intent/tweet?text=${encodeURIComponent(`Check out $${launch.tokenSymbol} on TokenCrafter!`)}&url=${encodeURIComponent(typeof window !== 'undefined' ? window.location.href : '')}`}
+							target="_blank"
+							rel="noopener"
+							class="share-btn"
+							title="Share on X"
+						>𝕏</a>
+						<a
+							href={`https://t.me/share/url?url=${encodeURIComponent(typeof window !== 'undefined' ? window.location.href : '')}&text=${encodeURIComponent(`Check out $${launch.tokenSymbol} on TokenCrafter!`)}`}
+							target="_blank"
+							rel="noopener"
+							class="share-btn"
+							title="Share on Telegram"
+						>✈</a>
+						<button
+							class="share-btn"
+							title="Copy link"
+							onclick={() => { if (typeof navigator !== 'undefined') { navigator.clipboard.writeText(window.location.href); addFeedback({ message: 'Link copied!', type: 'success' }); } }}
+						>🔗</button>
 					</div>
-
-					<div class="mb-4">
-						<div class="flex justify-between text-xs font-mono mb-1.5">
-							<span class="text-gray-500">Tokens Sold</span>
-							<span class="text-gray-300">
-								{formatTokens(launch.tokensSold, tokenMeta.decimals)} / {formatTokens(launch.tokensForCurve, tokenMeta.decimals)}
-							</span>
-						</div>
-						<div class="progress-track">
-							<div class="progress-fill progress-purple" style="width: {tokenProgress}%"></div>
-						</div>
-						<div class="text-right text-[10px] text-gray-600 font-mono mt-1">{tokenProgress}%</div>
-					</div>
-
-					{#if launch.totalBaseRaised < launch.softCap}
-						<div class="soft-cap-notice">
-							<span class="text-amber-400 text-xs font-mono">
-								Soft cap: {formatUsdt(launch.softCap, ud)}
-								({progressPercent(launch.totalBaseRaised, launch.softCap)}%)
-							</span>
-						</div>
-					{:else}
-						<div class="soft-cap-notice reached">
-							<span class="text-emerald-400 text-xs font-mono">Soft cap reached</span>
-						</div>
-					{/if}
-				</div>
-
-				<!-- Launch Info -->
-				<div class="card p-6 mb-4">
-					<h3 class="syne font-bold text-white mb-4">Launch Info</h3>
-					<div class="detail-grid">
-						<div class="detail-row">
-							<span class="detail-label">Curve</span>
-							<span class="detail-value">{CURVE_TYPES[launch.curveType]}</span>
-						</div>
-						<div class="detail-row">
-							<span class="detail-label">Current Price</span>
-							<span class="detail-value">{formatUsdt(launch.currentPrice, ud, 6)}</span>
-						</div>
-						<div class="detail-row">
-							<span class="detail-label">Soft Cap</span>
-							<span class="detail-value">{formatUsdt(launch.softCap, ud)}</span>
-						</div>
-						<div class="detail-row">
-							<span class="detail-label">Hard Cap</span>
-							<span class="detail-value">{formatUsdt(launch.hardCap, ud)}</span>
-						</div>
-						<div class="detail-row">
-							<span class="detail-label">Deadline</span>
-							<span class="detail-value">{timeRemaining(launch.deadline)}</span>
-						</div>
-						<div class="detail-row">
-							<span class="detail-label">Tokens for Curve</span>
-							<span class="detail-value">{formatTokens(launch.tokensForCurve, tokenMeta.decimals)}</span>
-						</div>
-						<div class="detail-row">
-							<span class="detail-label">Tokens for LP</span>
-							<span class="detail-value">{formatTokens(launch.tokensForLP, tokenMeta.decimals)}</span>
-						</div>
-						<div class="detail-row">
-							<span class="detail-label">Creator Alloc</span>
-							<span class="detail-value">{Number(launch.creatorAllocationBps) / 100}%</span>
-						</div>
-						<div class="detail-row">
-							<span class="detail-label">Max Buy</span>
-							<span class="detail-value">{maxBuyPerWallet > 0n ? formatTokens(maxBuyPerWallet, tokenMeta.decimals) + ' (' + maxBuyPct + '%)' : 'No limit'}</span>
-						</div>
-						<div class="detail-row">
-							<span class="detail-label">Network</span>
-							<span class="detail-value text-cyan-300">{network.name}</span>
-						</div>
-					</div>
-				</div>
-
-				<!-- Graduation info -->
-				<div class="card p-6">
-					<h3 class="syne font-bold text-white mb-3">How Graduation Works</h3>
-					<ul class="info-list">
-						<li>Enter amount in USDT — pay with USDT, USDC, or {nativeCoin}</li>
-						<li>When hard cap is reached or all curve tokens are sold, the launch auto-graduates</li>
-						<li>Raised USDT + LP tokens are paired as TOKEN/USDT on {network.symbol === 'BSC' ? 'PancakeSwap' : 'Uniswap'}</li>
-						<li>LP tokens are burned for permanent liquidity</li>
-						<li>3% platform fee on graduation</li>
-						<li>Creator can also graduate manually after soft cap</li>
-						<li>Refunds are in USDT. Buy fee (1%) is non-refundable</li>
-					</ul>
 				</div>
 			</div>
 		</div>
@@ -1209,8 +1637,16 @@
 	}
 	@media (min-width: 1024px) {
 		.page-grid {
-			grid-template-columns: 1fr 380px;
+			grid-template-columns: 1fr 400px;
 			align-items: start;
+		}
+		.right-col {
+			position: sticky;
+			top: 24px;
+			max-height: calc(100vh - 48px);
+			overflow-y: auto;
+			scrollbar-width: thin;
+			scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
 		}
 	}
 
@@ -1288,40 +1724,141 @@
 		background: linear-gradient(90deg, #f59e0b, #fbbf24);
 	}
 
-	.soft-cap-notice {
-		padding: 8px 12px;
-		background: rgba(245, 158, 11, 0.06);
-		border: 1px solid rgba(245, 158, 11, 0.15);
-		border-radius: 8px;
-		text-align: center;
+.status-cyan { color: #00d2ff; }
+	.status-amber { color: #f59e0b; }
+	.status-purple { color: #a78bfa; }
+	.status-red { color: #f87171; }
+
+	/* Token header */
+	.token-header {
+		border-bottom: 1px solid var(--bg-surface-hover);
+		padding-bottom: 20px;
 	}
-	.soft-cap-notice.reached {
-		background: rgba(16, 185, 129, 0.06);
-		border-color: rgba(16, 185, 129, 0.15);
+	.token-header-top {
+		display: flex;
+		justify-content: space-between;
+		align-items: flex-start;
+		gap: 16px;
+	}
+	.token-identity {
+		display: flex;
+		align-items: flex-start;
+		gap: 16px;
+	}
+	.token-logo {
+		width: 56px;
+		height: 56px;
+		border-radius: 50%;
+		object-fit: cover;
+		flex-shrink: 0;
+		border: 2px solid var(--bg-surface-hover);
+	}
+	.token-logo-placeholder {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: linear-gradient(135deg, rgba(0, 210, 255, 0.15), rgba(139, 92, 246, 0.15));
+		font-size: 22px;
+		font-weight: 700;
+		color: #00d2ff;
+		font-family: 'Syne', sans-serif;
+	}
+	.token-symbol-badge {
+		font-size: 13px;
+		font-family: 'Space Mono', monospace;
+		color: #6b7280;
+		background: var(--bg-surface);
+		border: 1px solid var(--bg-surface-hover);
+		padding: 2px 10px;
+		border-radius: 6px;
+	}
+	.header-tag {
+		font-size: 11px;
+		font-family: 'Space Mono', monospace;
+		color: #4b5563;
+		background: rgba(255, 255, 255, 0.03);
+		border: 1px solid rgba(255, 255, 255, 0.06);
+		padding: 2px 8px;
+		border-radius: 4px;
+	}
+	.header-socials {
+		display: flex;
+		gap: 6px;
+	}
+	.header-social-icon {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 30px;
+		height: 30px;
+		border-radius: 8px;
+		background: var(--bg-surface);
+		border: 1px solid var(--bg-surface-hover);
+		font-size: 14px;
+		text-decoration: none;
+		transition: all 0.15s ease;
+	}
+	.header-social-icon:hover {
+		border-color: rgba(0, 210, 255, 0.4);
+		background: rgba(0, 210, 255, 0.06);
 	}
 
-	.info-list {
-		list-style: none;
-		padding: 0;
-		margin: 0;
+	/* Tokenomics allocation bar */
+	.alloc-bar {
 		display: flex;
-		flex-direction: column;
-		gap: 8px;
+		height: 12px;
+		border-radius: 6px;
+		overflow: hidden;
+		background: var(--bg-surface-hover);
 	}
-	.info-list li {
+	.alloc-segment {
+		height: 100%;
+		min-width: 2px;
+		transition: width 0.3s ease;
+	}
+	.alloc-cyan {
+		background: linear-gradient(90deg, #00d2ff, #3a7bd5);
+	}
+	.alloc-purple {
+		background: linear-gradient(90deg, #8b5cf6, #a78bfa);
+	}
+	.alloc-amber {
+		background: linear-gradient(90deg, #f59e0b, #fbbf24);
+	}
+
+	.alloc-legend {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 16px;
+	}
+	.legend-item {
+		display: flex;
+		align-items: center;
+		gap: 6px;
 		font-size: 12px;
-		color: #94a3b8;
 		font-family: 'Space Mono', monospace;
-		padding-left: 16px;
-		position: relative;
-		line-height: 1.5;
 	}
-	.info-list li::before {
-		content: '·';
-		position: absolute;
-		left: 4px;
-		color: #00d2ff;
-		font-weight: bold;
+	.legend-dot {
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		flex-shrink: 0;
+	}
+	.legend-label {
+		color: #6b7280;
+	}
+	.legend-value {
+		color: var(--text);
+		font-weight: 600;
+	}
+
+	/* Address truncation */
+	.addr-value {
+		font-size: 11px !important;
+		max-width: 200px;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	/* Modal */
@@ -1428,6 +1965,168 @@
 		background: rgba(239, 68, 68, 0.1);
 		color: #f87171;
 		border: 1px solid rgba(239, 68, 68, 0.2);
+	}
+
+	/* Logo upload overlay */
+	.logo-upload-wrap {
+		position: relative;
+		flex-shrink: 0;
+	}
+	.logo-upload-overlay {
+		position: absolute;
+		inset: 0;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: rgba(0, 0, 0, 0.6);
+		border-radius: 50%;
+		opacity: 0;
+		transition: opacity 0.15s ease;
+		cursor: pointer;
+		color: #fff;
+		font-family: 'Space Mono', monospace;
+	}
+	.logo-upload-wrap:hover .logo-upload-overlay {
+		opacity: 1;
+	}
+	.logo-upload-overlay input[type="file"] {
+		display: none;
+	}
+
+	/* Launch badges */
+	.launch-badge {
+		font-size: 10px;
+		font-weight: 600;
+		font-family: 'Space Mono', monospace;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		padding: 2px 8px;
+		border-radius: 4px;
+	}
+	.badge-cyan { background: rgba(0, 210, 255, 0.12); color: #00d2ff; border: 1px solid rgba(0, 210, 255, 0.25); }
+	.badge-emerald { background: rgba(16, 185, 129, 0.12); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.25); }
+	.badge-purple { background: rgba(139, 92, 246, 0.12); color: #a78bfa; border: 1px solid rgba(139, 92, 246, 0.25); }
+	.badge-amber { background: rgba(245, 158, 11, 0.12); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.25); }
+	.badge-blue { background: rgba(59, 130, 246, 0.12); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.25); }
+
+	/* Video embed */
+	.video-embed {
+		border-radius: 12px;
+		overflow: hidden;
+	}
+	.video-iframe {
+		width: 100%;
+		aspect-ratio: 16 / 9;
+		border-radius: 12px;
+		border: 1px solid var(--bg-surface-hover);
+	}
+	.video-link-card {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		padding: 14px 16px;
+		background: var(--bg-surface);
+		border: 1px solid var(--bg-surface-hover);
+		border-radius: 12px;
+		text-decoration: none;
+		transition: border-color 0.15s ease;
+	}
+	.video-link-card:hover {
+		border-color: rgba(0, 210, 255, 0.3);
+	}
+
+	/* Empty state prompt */
+	.empty-state-btn {
+		width: 100%;
+		padding: 20px;
+		background: rgba(0, 210, 255, 0.03);
+		border: 1px dashed rgba(0, 210, 255, 0.15);
+		border-radius: 10px;
+		cursor: pointer;
+		transition: all 0.15s ease;
+		text-align: center;
+	}
+	.empty-state-btn:hover {
+		background: rgba(0, 210, 255, 0.06);
+		border-color: rgba(0, 210, 255, 0.3);
+	}
+
+	/* Countdown timer */
+	.countdown-grid {
+		display: grid;
+		grid-template-columns: repeat(4, 1fr);
+		gap: 8px;
+	}
+	.countdown-box {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 4px;
+		padding: 10px 4px;
+		background: linear-gradient(135deg, rgba(0, 210, 255, 0.08), rgba(139, 92, 246, 0.08));
+		border: 1px solid rgba(0, 210, 255, 0.15);
+		border-radius: 10px;
+	}
+	.countdown-num {
+		font-size: 22px;
+		font-weight: 700;
+		color: #fff;
+		font-family: 'Space Mono', monospace;
+		line-height: 1;
+	}
+	.countdown-label {
+		font-size: 9px;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		color: #6b7280;
+		font-family: 'Space Mono', monospace;
+	}
+
+	/* Progress bar large variant */
+	.progress-track-lg {
+		height: 12px;
+		border-radius: 6px;
+	}
+
+	/* Sale info divider */
+	.sale-info-divider {
+		height: 1px;
+		background: var(--bg-surface-hover);
+		margin: 0;
+	}
+
+	/* Share section */
+	.share-row {
+		display: flex;
+		justify-content: center;
+		gap: 10px;
+	}
+	.share-btn {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 40px;
+		height: 40px;
+		border-radius: 50%;
+		background: var(--bg-surface);
+		border: 1px solid var(--bg-surface-hover);
+		font-size: 16px;
+		cursor: pointer;
+		transition: all 0.15s ease;
+		text-decoration: none;
+		color: inherit;
+	}
+	.share-btn:hover {
+		border-color: rgba(0, 210, 255, 0.4);
+		background: rgba(0, 210, 255, 0.06);
+		transform: scale(1.05);
+	}
+
+	/* Connect CTA */
+	.connect-cta {
+		padding-top: 8px;
+		border-top: 1px solid var(--bg-surface-hover);
+		margin-top: 8px;
 	}
 
 	select option {

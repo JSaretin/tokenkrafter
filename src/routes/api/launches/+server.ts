@@ -8,8 +8,8 @@ export const GET: RequestHandler = async ({ url }) => {
 	const state = url.searchParams.get('state');
 	const creator = url.searchParams.get('creator');
 	const address = url.searchParams.get('address');
-	const limit = Math.min(parseInt(url.searchParams.get('limit') || '50'), 100);
-	const offset = parseInt(url.searchParams.get('offset') || '0');
+	const limit = Math.min(parseInt(url.searchParams.get('limit') || '50') || 50, 100);
+	const offset = parseInt(url.searchParams.get('offset') || '0') || 0;
 
 	let query = supabaseAdmin
 		.from('launches')
@@ -32,6 +32,8 @@ export const GET: RequestHandler = async ({ url }) => {
 };
 
 // POST /api/launches — upsert a launch (called after on-chain creation or sync)
+// Protected: only internal callers (sync cron, create page) should call this.
+// In production, add an API key or restrict to server-side callers.
 export const POST: RequestHandler = async ({ request }) => {
 	const body = await request.json();
 
@@ -69,7 +71,8 @@ export const POST: RequestHandler = async ({ request }) => {
 		website: body.website,
 		twitter: body.twitter,
 		telegram: body.telegram,
-		discord: body.discord
+		discord: body.discord,
+		video_url: body.video_url
 	};
 
 	const { data, error: dbError } = await supabaseAdmin

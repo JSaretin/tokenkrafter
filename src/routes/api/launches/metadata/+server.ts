@@ -27,13 +27,14 @@ export const PATCH: RequestHandler = async ({ request }) => {
 		return error(403, 'Only the launch creator can update metadata');
 	}
 
-	const updates: Record<string, string | undefined> = {};
-	if (body.description !== undefined) updates.description = body.description;
-	if (body.logo_url !== undefined) updates.logo_url = body.logo_url;
-	if (body.website !== undefined) updates.website = body.website;
-	if (body.twitter !== undefined) updates.twitter = body.twitter;
-	if (body.telegram !== undefined) updates.telegram = body.telegram;
-	if (body.discord !== undefined) updates.discord = body.discord;
+	const updates: Record<string, string | null> = {};
+	if (body.description !== undefined) updates.description = body.description || null;
+	if (body.logo_url !== undefined) updates.logo_url = body.logo_url || null;
+	if (body.website !== undefined) updates.website = body.website || null;
+	if (body.twitter !== undefined) updates.twitter = body.twitter || null;
+	if (body.telegram !== undefined) updates.telegram = body.telegram || null;
+	if (body.discord !== undefined) updates.discord = body.discord || null;
+	if (body.video_url !== undefined) updates.video_url = body.video_url || null;
 
 	if (Object.keys(updates).length === 0) {
 		return error(400, 'No metadata fields provided');

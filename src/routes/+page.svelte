@@ -1,4 +1,39 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
+	import { formatUsdt, progressPercent, stateLabel, stateColor, CURVE_TYPES } from '$lib/launchpad';
+
+	// Live launches from API
+	let liveLaunches: any[] = $state([]);
+	let launchesLoading = $state(true);
+	let tickNow = $state(Date.now());
+	let tickInterval: ReturnType<typeof setInterval> | null = null;
+
+	onMount(async () => {
+		tickInterval = setInterval(() => { tickNow = Date.now(); }, 1000);
+
+		try {
+			const res = await fetch('/api/launches?state=1&limit=6');
+			if (res.ok) {
+				const rows = await res.json();
+				liveLaunches = rows ?? [];
+			}
+		} catch {}
+		launchesLoading = false;
+
+		return () => { if (tickInterval) clearInterval(tickInterval); };
+	});
+
+	function countdownStr(deadline: number): string {
+		const ms = deadline * 1000 - tickNow;
+		if (ms <= 0) return 'Ended';
+		const d = Math.floor(ms / 86400000);
+		const h = Math.floor((ms % 86400000) / 3600000);
+		const m = Math.floor((ms % 3600000) / 60000);
+		const s = Math.floor((ms % 60000) / 1000);
+		if (d > 0) return `${d}d ${String(h).padStart(2, '0')}h ${String(m).padStart(2, '0')}m`;
+		return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+	}
+
 	const features = [
 		{
 			icon: '~',
@@ -116,6 +151,115 @@
 				</div>
 			{/each}
 		</div>
+	</section>
+
+	<!-- Active Launches -->
+	<section class="section max-w-6xl mx-auto px-4 sm:px-6">
+		<div class="flex flex-wrap items-end justify-between gap-4 mb-10">
+			<div>
+				<div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-cyan-500/25 bg-cyan-500/8 mb-4">
+					<div class="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"></div>
+					<span class="text-cyan-400 text-[10px] font-mono uppercase tracking-widest">Live Now</span>
+				</div>
+				<h2 class="syne text-3xl sm:text-4xl font-bold text-white">Active Launches</h2>
+				<p class="text-gray-400 mt-2 font-mono text-sm">Get in early on bonding curve launches happening right now.</p>
+			</div>
+			<a href="/launchpad" class="btn-secondary text-sm px-5 py-2.5 no-underline">
+				View All Launches →
+			</a>
+		</div>
+
+		{#if launchesLoading}
+			<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+				{#each Array(3) as _}
+					<div class="card p-5">
+						<div class="flex items-start gap-3 mb-4">
+							<div class="skeleton-line w-10 h-10 rounded-full"></div>
+							<div class="flex-1">
+								<div class="skeleton-line w-28 h-4 mb-2"></div>
+								<div class="skeleton-line w-20 h-3"></div>
+							</div>
+						</div>
+						<div class="skeleton-line w-full h-2 rounded-full mb-3"></div>
+						<div class="flex justify-between">
+							<div class="skeleton-line w-16 h-3"></div>
+							<div class="skeleton-line w-20 h-3"></div>
+						</div>
+					</div>
+				{/each}
+			</div>
+		{:else if liveLaunches.length === 0}
+			<div class="card p-10 text-center">
+				<p class="text-gray-500 font-mono text-sm mb-4">No active launches right now.</p>
+				<a href="/launchpad/create" class="btn-primary text-sm px-5 py-2.5 no-underline inline-block">
+					Be the First to Launch →
+				</a>
+			</div>
+		{:else}
+			<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+				{#each liveLaunches as launch}
+					{@const ud = launch.usdt_decimals ?? 18}
+					{@const raised = BigInt(launch.total_base_raised || '0')}
+					{@const hardCap = BigInt(launch.hard_cap || '0')}
+					{@const progress = progressPercent(raised, hardCap)}
+					{@const deadline = Number(launch.deadline || 0)}
+					<a href="/launchpad/{launch.address}" class="live-launch-card card p-0 block no-underline group">
+						<div class="p-4 pb-3">
+							<div class="flex items-start gap-3">
+								{#if launch.logo_url}
+									<img src={launch.logo_url} alt="" class="live-card-logo" />
+								{:else}
+									<div class="live-card-logo live-card-logo-placeholder">
+										{(launch.token_symbol || '?').charAt(0)}
+									</div>
+								{/if}
+								<div class="flex-1 min-w-0">
+									<div class="flex items-center gap-2 mb-0.5">
+										<span class="syne font-bold text-white text-sm group-hover:text-cyan-300 transition truncate">{launch.token_name || 'Unknown'}</span>
+										<span class="text-gray-600 text-xs font-mono shrink-0">{launch.token_symbol || '???'}</span>
+									</div>
+									<div class="flex items-center gap-1.5">
+										<span class="live-dot"></span>
+										<span class="text-xs font-mono text-cyan-400">Active</span>
+										{#if deadline > 0}
+											<span class="text-gray-600 text-[10px] font-mono ml-auto">{countdownStr(deadline)}</span>
+										{/if}
+									</div>
+								</div>
+							</div>
+						</div>
+
+						{#if launch.description}
+							<div class="px-4 pb-2">
+								<p class="text-gray-500 text-xs font-mono leading-relaxed line-clamp-2">{launch.description}</p>
+							</div>
+						{/if}
+
+						<div class="px-4 pb-3">
+							<div class="flex justify-between items-baseline mb-1.5">
+								<span class="text-white text-xs font-mono font-semibold">{progress}% raised</span>
+								<span class="text-gray-500 text-[10px] font-mono">{formatUsdt(hardCap, ud)}</span>
+							</div>
+							<div class="live-progress-track">
+								<div class="live-progress-fill" style="width: {progress}%"></div>
+							</div>
+							<div class="flex justify-between mt-1.5">
+								<span class="text-gray-600 text-[10px] font-mono">{formatUsdt(raised, ud)} raised</span>
+								<span class="text-gray-600 text-[10px] font-mono">{CURVE_TYPES[launch.curve_type] ?? 'Linear'}</span>
+							</div>
+						</div>
+					</a>
+				{/each}
+			</div>
+
+			{#if liveLaunches.length >= 6}
+				<div class="text-center mt-8">
+					<a href="/launchpad" class="btn-primary text-sm px-6 py-3 no-underline inline-block">
+						Explore All Launches →
+					</a>
+				</div>
+			{/if}
+		{/if}
 	</section>
 
 	<!-- Pricing -->
@@ -329,4 +473,75 @@
 	}
 
 	a.no-underline { text-decoration: none; }
+
+	/* Live launches */
+	.live-launch-card {
+		overflow: hidden;
+		transition: all 0.2s ease;
+	}
+	.live-launch-card:hover {
+		transform: translateY(-2px);
+		box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+	}
+
+	.live-card-logo {
+		width: 40px;
+		height: 40px;
+		border-radius: 50%;
+		object-fit: cover;
+		flex-shrink: 0;
+		border: 1px solid var(--bg-surface-hover);
+	}
+	.live-card-logo-placeholder {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: rgba(0, 210, 255, 0.08);
+		color: #00d2ff;
+		font-size: 15px;
+		font-weight: 700;
+		font-family: 'Syne', sans-serif;
+		border: 1px solid rgba(0, 210, 255, 0.15);
+	}
+
+	.live-dot {
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		background: #00d2ff;
+		box-shadow: 0 0 6px rgba(0, 210, 255, 0.5);
+		flex-shrink: 0;
+	}
+
+	.live-progress-track {
+		width: 100%;
+		height: 6px;
+		background: var(--bg-surface-hover);
+		border-radius: 3px;
+		overflow: hidden;
+	}
+	.live-progress-fill {
+		height: 100%;
+		border-radius: 3px;
+		background: linear-gradient(90deg, #00d2ff, #3a7bd5);
+		transition: width 0.3s ease;
+	}
+
+	.line-clamp-2 {
+		display: -webkit-box;
+		-webkit-line-clamp: 2;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
+	}
+
+	/* Skeleton */
+	.skeleton-line {
+		background: var(--bg-surface-hover);
+		border-radius: 4px;
+		animation: skeletonShimmer 1.5s ease-in-out infinite;
+	}
+	@keyframes skeletonShimmer {
+		0%, 100% { opacity: 0.6; }
+		50% { opacity: 1; }
+	}
 </style>
