@@ -4,7 +4,8 @@
 	import type { SupportedNetwork, PaymentOption } from '$lib/structure';
 	import { FACTORY_ABI, ROUTER_ABI, ERC20_ABI, ZERO_ADDRESS } from '$lib/tokenCrafter';
 	import TokenForm from './lib/TokenForm.svelte';
-	import type { ListingConfig, TokenFormData } from './lib/TokenForm.svelte';
+	import type { ListingConfig, TokenFormData, PreviewState } from './lib/TokenForm.svelte';
+	import DisplayPreview from './lib/DisplayPreview.svelte';
 
 	let getProvider: () => ethers.BrowserProvider | null = getContext('provider');
 	let getSigner: () => ethers.Signer | null = getContext('signer');
@@ -21,6 +22,11 @@
 	let userAddress = $derived(getUserAddress());
 	let networkProviders = $derived(getNetworkProviders());
 	let providersReady = $derived(getProvidersReady());
+
+	let previewState: PreviewState | null = $state(null);
+	function handlePreviewChange(state: PreviewState) {
+		previewState = state;
+	}
 
 	let showPreview = $state(false);
 	let isCreating = $state(false);
@@ -525,7 +531,7 @@
 <!-- Review Modal -->
 {#if showPreview && tokenInfo}
 	<div
-		class="modal-backdrop fixed inset-0 z-[80] flex items-center justify-center p-4"
+		class="modal-backdrop fixed inset-0 z-[80] flex items-center justify-center p-2 sm:p-4"
 		onclick={closePreview}
 	>
 		<div
@@ -799,7 +805,7 @@
 {/if}
 
 <!-- Page -->
-<div class="page-container max-w-7xl mx-auto px-4 sm:px-6 py-12">
+<div class="page-container max-w-7xl mx-auto px-3 sm:px-6 py-6 sm:py-12">
 	<div class="page-grid">
 		<!-- Left: Form -->
 		<div class="form-col">
@@ -809,50 +815,14 @@
 			<h1 class="syne text-3xl sm:text-4xl font-bold text-white mt-4 mb-2">Create Your Token</h1>
 			<p class="text-gray-400 font-mono text-sm mb-8">Deploy a new ERC-20 token in minutes.</p>
 
-			<TokenForm {supportedNetworks} {addFeedback} {updateTokenInfo} />
+			<TokenForm {supportedNetworks} {addFeedback} {updateTokenInfo} onPreviewChange={handlePreviewChange} />
 		</div>
 
-		<!-- Right: Info Panel -->
-		<div class="info-col">
-			<div class="info-card card p-6">
-				<h3 class="syne font-bold text-white mb-4">Deployment Checklist</h3>
-				<ul class="check-list">
-					{#each [
-						'Wallet connected to correct network',
-						'Sufficient balance for creation fee',
-						'Token name is unique and memorable',
-						'Supply matches your tokenomics',
-						'Verify feature flags before deploying'
-					] as item}
-						<li class="check-item font-mono">
-							<span class="check-icon">v</span>
-							{item}
-						</li>
-					{/each}
-				</ul>
-			</div>
-
-			<div class="info-card card p-6 mt-4">
-				<h3 class="syne font-bold text-white mb-4">Supported Networks</h3>
-				{#each supportedNetworks as net}
-					<div class="network-row">
-						<div class="net-dot"></div>
-						<div>
-							<div class="text-sm text-white font-semibold">{net.name}</div>
-							<div class="text-xs text-gray-500 font-mono">{net.native_coin}</div>
-						</div>
-					</div>
-				{/each}
-			</div>
-
-			<div class="info-card card p-6 mt-4">
-				<h3 class="syne font-bold text-white mb-4">Payment Methods</h3>
-				<div class="text-xs text-gray-400 font-mono leading-relaxed">
-					Pay with <strong class="text-white">USDT</strong>, <strong class="text-white">USDC</strong>,
-					or the network's native coin (<strong class="text-white">ETH/BNB</strong>).
-					Fees are denominated in USD and auto-converted.
-				</div>
-			</div>
+		<!-- Right: Live Preview (hidden on mobile) -->
+		<div class="info-col hidden lg:block">
+			{#if previewState}
+				<DisplayPreview {...previewState} />
+			{/if}
 		</div>
 	</div>
 </div>
@@ -865,7 +835,7 @@
 	}
 	@media (min-width: 1024px) {
 		.page-grid {
-			grid-template-columns: 1fr 340px;
+			grid-template-columns: 1fr 320px;
 			align-items: start;
 		}
 	}
@@ -879,8 +849,14 @@
 		background: #0d0d14;
 		border: 1px solid rgba(255,255,255,0.1);
 		border-radius: 20px;
-		padding: 24px;
+		padding: 16px;
 		animation: modalIn 0.2s ease-out;
+		scrollbar-width: none;
+		-ms-overflow-style: none;
+	}
+	.review-modal::-webkit-scrollbar { display: none; }
+	@media (min-width: 640px) {
+		.review-modal { padding: 24px; }
 	}
 	@keyframes modalIn {
 		from { opacity:0; transform: scale(0.95) translateY(8px); }
@@ -980,26 +956,6 @@
 		display: flex;
 		flex-direction: column;
 		gap: 4px;
-	}
-
-	.check-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 10px; }
-	.check-item { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; color: #94a3b8; line-height: 1.4; }
-	.check-icon { color: #10b981; font-size: 12px; margin-top: 1px; flex-shrink: 0; }
-
-	.network-row {
-		display: flex;
-		align-items: center;
-		gap: 10px;
-		padding: 10px 0;
-		border-bottom: 1px solid rgba(255,255,255,0.04);
-	}
-	.network-row:last-child { border-bottom: none; }
-	.net-dot {
-		width: 8px; height: 8px;
-		border-radius: 50%;
-		background: #10b981;
-		flex-shrink: 0;
-		box-shadow: 0 0 6px rgba(16,185,129,0.5);
 	}
 
 	.spinner { animation: spin 0.8s linear infinite; }

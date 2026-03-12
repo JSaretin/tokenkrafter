@@ -1033,7 +1033,10 @@
 		background: rgba(255,255,255,0.02);
 		border: 1px solid rgba(255,255,255,0.07);
 		border-radius: 20px;
-		padding: 28px;
+		padding: 14px;
+	}
+	@media (min-width: 640px) {
+		.wizard-step { padding: 28px; }
 	}
 
 	.step-header { margin-bottom: 20px; }
