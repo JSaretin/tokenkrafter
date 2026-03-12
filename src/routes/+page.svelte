@@ -1,53 +1,47 @@
 <script lang="ts">
-	import { getContext } from 'svelte';
-
-	let connectWallet: () => Promise<boolean> = getContext('connectWallet');
-	let getUserAddress: () => string | null = getContext('userAddress');
-	let userAddress = $derived(getUserAddress());
-
 	const features = [
 		{
-			icon: 'T',
-			title: 'Basic ERC-20',
-			desc: 'Standard token with custom name, symbol, supply, and decimals. Fully yours from day one.',
+			icon: '~',
+			title: 'Bonding Curves',
+			desc: "Choose from multiple curve types — linear, exponential, or flat — to shape your token's price discovery.",
 			color: 'cyan'
 		},
 		{
-			icon: '+',
-			title: 'Mint & Burn',
-			desc: 'Expand supply by minting new tokens or let holders burn theirs to create scarcity.',
+			icon: '#',
+			title: 'Soft & Hard Caps',
+			desc: 'Set fundraising goals with soft and hard caps. Launches finalize when the hard cap is reached.',
 			color: 'orange'
 		},
 		{
 			icon: '%',
-			title: 'Custom Tax System',
-			desc: 'Set buy, sell, and transfer tax rates up to 25%. Split tax revenue across up to 10 wallets.',
+			title: 'Anti-Whale Limits',
+			desc: 'Cap individual buy amounts to prevent whales from dominating your launch and ensure fair distribution.',
 			color: 'emerald'
 		},
 		{
-			icon: 'P',
-			title: 'Partnership Program',
-			desc: 'Get featured across our platform, auto-created DEX pools, and priority marketing support.',
+			icon: 'V',
+			title: 'Built-In Vesting',
+			desc: 'Lock creator allocations with configurable vesting periods so the community knows tokens are safe.',
 			color: 'purple'
 		},
 		{
-			icon: '#',
-			title: '8 Token Configurations',
-			desc: 'Mix and match features freely — basic, mintable, taxable, partner, or any combination.',
+			icon: 'T',
+			title: 'Token Creation',
+			desc: "Don't have a token yet? Create custom ERC-20 tokens with mintable, taxable, and partner features.",
 			color: 'cyan'
 		},
 		{
 			icon: '$',
 			title: 'Flexible Payments',
-			desc: 'Pay creation fees with native tokens, USDT, or USDC. Prices quoted in real-time via DEX.',
+			desc: 'Participants can contribute with native tokens, USDT, or USDC. Real-time pricing via DEX.',
 			color: 'emerald'
 		}
 	];
 
 	const steps = [
-		{ n: '01', label: 'Configure', desc: 'Pick your network, set token details, and toggle features like mintable, taxable, or partner.' },
-		{ n: '02', label: 'Deploy', desc: 'Connect your wallet, review the fee, and deploy. We handle network switching automatically.' },
-		{ n: '03', label: 'Manage', desc: 'Mint, burn, set taxes, add DEX liquidity, and grow your token — all from your dashboard.' }
+		{ n: '01', label: 'Create', desc: 'Set up your token and configure your launch — bonding curve, caps, duration, and anti-whale limits.' },
+		{ n: '02', label: 'Launch', desc: 'Deposit tokens and go live. Participants buy in along the bonding curve at fair, transparent prices.' },
+		{ n: '03', label: 'Finalize', desc: 'Once the hard cap or deadline is reached, finalize the launch and distribute tokens to all participants.' }
 	];
 
 	const tokenTypes = [
@@ -63,8 +57,8 @@
 </script>
 
 <svelte:head>
-	<title>TokenKrafter - Deploy Custom ERC-20 Tokens Across Multiple Chains</title>
-	<meta name="description" content="Create and deploy custom ERC-20 tokens on Ethereum, BSC, and more. No coding required. Mintable, taxable, and partner tokens with built-in DEX liquidity and anti-whale protection." />
+	<title>TokenKrafter - Fair Launch Your Token With Bonding Curves</title>
+	<meta name="description" content="Launch your token with bonding curve pricing, soft/hard caps, anti-whale limits, and vesting. Fair, transparent token launches on BSC and more." />
 </svelte:head>
 
 <div class="page-wrap">
@@ -73,50 +67,44 @@
 		<div class="max-w-4xl mx-auto text-center px-4 sm:px-6">
 			<div class="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-cyan-500/25 bg-cyan-500/8 mb-8">
 				<div class="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"></div>
-				<span class="text-cyan-400 text-xs font-mono uppercase tracking-widest">Multi-Chain Token Factory</span>
+				<span class="text-cyan-400 text-xs font-mono uppercase tracking-widest">Fair Token Launchpad</span>
 			</div>
 
 			<h1 class="hero-title syne">
-				Launch Your Token<br /><span class="gradient-text">Without Writing Code</span>
+				Fair Launch Your Token<br /><span class="gradient-text">With Bonding Curves</span>
 			</h1>
 
 			<p class="hero-sub font-mono">
-				Deploy custom ERC-20 tokens across multiple chains in minutes. Mintable supply, configurable tax system, partnership promotion, and DEX integration — all from one interface.
+				Launch your token with transparent bonding curve pricing, built-in soft/hard caps, anti-whale limits, and vesting — giving every participant a fair shot.
 			</p>
 
 			<div class="flex flex-wrap gap-4 justify-center mt-10">
-				<a href="/create" class="btn-primary text-sm px-6 py-3 no-underline">
-					Create Token →
+				<a href="/launchpad" class="btn-primary text-sm px-6 py-3 no-underline">
+					Explore Launches →
 				</a>
-				{#if userAddress}
-					<a href="/manage-tokens" class="btn-secondary text-sm px-6 py-3 no-underline">
-						My Tokens
-					</a>
-				{:else}
-					<button onclick={connectWallet} class="btn-secondary text-sm px-6 py-3 cursor-pointer">
-						Connect Wallet
-					</button>
-				{/if}
+				<a href="/launchpad/create" class="btn-secondary text-sm px-6 py-3 no-underline">
+					Start a Launch
+				</a>
 			</div>
 
 			<!-- Stats Bar -->
 			<div class="stats-bar mt-16 grid grid-cols-2 sm:grid-cols-4 gap-4">
-				{#each [['Multi', 'Chain Support'], ['8', 'Token Types'], ['3+', 'Payment Options'], ['Instant', 'Deployment']] as [val, label]}
+				{#each [['Fair', 'Bonding Curves'], ['Anti-Whale', 'Buy Limits'], ['Vesting', 'Built-In'], ['Multi', 'Chain Support']] as [val, label]}
 					<div class="stat-item card p-4 text-center">
 						<div class="syne text-2xl font-bold text-white">{val}</div>
 						<div class="text-xs text-gray-500 mt-1 font-mono">{label}</div>
 					</div>
 				{/each}
 			</div>
-			<p class="text-xs text-gray-600 mt-2 font-mono">Pay with native tokens, USDT, or USDC — fees start from $10 USDT equivalent</p>
+			<p class="text-xs text-gray-600 mt-2 font-mono">Transparent launches with bonding curve pricing — no presales, no insider advantages</p>
 		</div>
 	</section>
 
 	<!-- Features -->
 	<section class="section max-w-6xl mx-auto px-4 sm:px-6">
 		<div class="text-center mb-12">
-			<h2 class="syne text-3xl sm:text-4xl font-bold text-white">Everything You Need</h2>
-			<p class="text-gray-400 mt-3 font-mono text-sm">A complete toolkit for token creation and management across chains.</p>
+			<h2 class="syne text-3xl sm:text-4xl font-bold text-white">Built for Fair Launches</h2>
+			<p class="text-gray-400 mt-3 font-mono text-sm">Everything you need to run a transparent, community-driven token launch.</p>
 		</div>
 
 		<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -133,8 +121,8 @@
 	<!-- Pricing -->
 	<section class="section max-w-5xl mx-auto px-4 sm:px-6">
 		<div class="text-center mb-12">
-			<h2 class="syne text-3xl sm:text-4xl font-bold text-white">Transparent Pricing</h2>
-			<p class="text-gray-400 mt-3 font-mono text-sm">One-time creation fee in USDT equivalent. No hidden costs, no recurring charges.</p>
+			<h2 class="syne text-3xl sm:text-4xl font-bold text-white">Token Creation Pricing</h2>
+			<p class="text-gray-400 mt-3 font-mono text-sm">Need a token first? One-time creation fee in USDT equivalent. No hidden costs.</p>
 		</div>
 
 		<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -155,7 +143,7 @@
 	<section class="section max-w-5xl mx-auto px-4 sm:px-6">
 		<div class="text-center mb-12">
 			<h2 class="syne text-3xl sm:text-4xl font-bold text-white">How It Works</h2>
-			<p class="text-gray-400 mt-3 font-mono text-sm">From idea to live token in three steps.</p>
+			<p class="text-gray-400 mt-3 font-mono text-sm">From idea to fair launch in three steps.</p>
 		</div>
 
 		<div class="grid grid-cols-1 sm:grid-cols-3 gap-4 relative">
@@ -178,9 +166,9 @@
 				<div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-purple-500/30 bg-purple-500/10 mb-5">
 					<span class="text-purple-400 text-xs font-mono uppercase tracking-widest">Partnership Program</span>
 				</div>
-				<h2 class="syne text-2xl sm:text-3xl font-bold text-white mb-3">Launch With a Boost</h2>
+				<h2 class="syne text-2xl sm:text-3xl font-bold text-white mb-3">Boost Your Launch</h2>
 				<p class="text-gray-400 font-mono text-sm mb-6 leading-relaxed max-w-xl">
-					Enable the Partner feature and your token gets featured across our platform, auto-created DEX liquidity pools, and priority marketing support. In exchange, a 1% fee applies on buy and sell trades.
+					Create a partner token and get featured across our launchpad, auto-created DEX liquidity pools, and priority marketing support. In exchange, a 1% fee applies on buy and sell trades.
 				</p>
 				<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
 					{#each [
@@ -196,7 +184,7 @@
 					{/each}
 				</div>
 				<a href="/create" class="btn-partner mt-8 inline-block no-underline">
-					Create Partner Token →
+					Create a Partner Token →
 				</a>
 			</div>
 		</div>
@@ -207,9 +195,9 @@
 		<div class="cta-card card p-10 sm:p-14 relative overflow-hidden">
 			<div class="cta-glow absolute inset-0 pointer-events-none"></div>
 			<h2 class="syne text-3xl sm:text-4xl font-bold text-white mb-4 relative">Ready to Launch?</h2>
-			<p class="text-gray-400 font-mono text-sm mb-8 relative">Pick your chain, configure your token, and deploy. No coding required.</p>
-			<a href="/create" class="btn-primary text-sm px-8 py-3 no-underline inline-block relative">
-				Create Your Token →
+			<p class="text-gray-400 font-mono text-sm mb-8 relative">Set up your bonding curve, configure your caps, and go live. Fair launches start here.</p>
+			<a href="/launchpad/create" class="btn-primary text-sm px-8 py-3 no-underline inline-block relative">
+				Start Your Launch →
 			</a>
 		</div>
 	</section>

@@ -51,10 +51,60 @@
 		return result;
 	});
 
-	async function loadLaunches() {
-		loading = true;
-		launches = [];
+	// Database row → LaunchInfo mapper
+	function dbRowToLaunch(row: any): (LaunchInfo & { network: SupportedNetwork }) | null {
+		const net = supportedNetworks.find((n) => n.chain_id === row.chain_id);
+		if (!net) return null;
+		return {
+			address: row.address,
+			token: row.token_address,
+			creator: row.creator,
+			curveType: row.curve_type,
+			state: row.state,
+			softCap: BigInt(row.soft_cap || '0'),
+			hardCap: BigInt(row.hard_cap || '0'),
+			deadline: BigInt(row.deadline || 0),
+			totalBaseRaised: BigInt(row.total_base_raised || '0'),
+			tokensSold: BigInt(row.tokens_sold || '0'),
+			tokensForCurve: BigInt(row.tokens_for_curve || '0'),
+			tokensForLP: BigInt(row.tokens_for_lp || '0'),
+			creatorAllocationBps: BigInt(row.creator_allocation_bps || 0),
+			currentPrice: BigInt(row.current_price || '0'),
+			usdtAddress: '',
+			totalTokensRequired: BigInt(row.total_tokens_required || '0'),
+			totalTokensDeposited: BigInt(row.total_tokens_deposited || '0'),
+			tokenName: row.token_name,
+			tokenSymbol: row.token_symbol,
+			tokenDecimals: row.token_decimals ?? 18,
+			usdtDecimals: row.usdt_decimals ?? 18,
+			description: row.description,
+			logoUrl: row.logo_url,
+			website: row.website,
+			twitter: row.twitter,
+			telegram: row.telegram,
+			discord: row.discord,
+			network: net
+		} as any;
+	}
 
+	// Try loading from database API first, fallback to on-chain
+	async function loadFromApi(): Promise<boolean> {
+		try {
+			const res = await fetch('/api/launches?limit=50');
+			if (!res.ok) return false;
+			const rows = await res.json();
+			if (!rows || rows.length === 0) return false;
+
+			const mapped = rows.map(dbRowToLaunch).filter(Boolean) as (LaunchInfo & { network: SupportedNetwork })[];
+			mapped.sort((a, b) => Number(b.deadline - a.deadline));
+			launches = mapped;
+			return true;
+		} catch {
+			return false;
+		}
+	}
+
+	async function loadFromChain() {
 		const nets = supportedNetworks.filter(
 			(n) => n.launchpad_address && n.launchpad_address !== '0x'
 		);
@@ -74,7 +124,6 @@
 				const total = await factory.totalLaunches();
 				const count = Number(total);
 
-				// Load last 50 launches (paginated)
 				const limit = Math.min(count, 50);
 				const offset = Math.max(0, count - limit);
 
@@ -99,9 +148,20 @@
 			}
 		}
 
-		// Sort by most recent (highest deadline = newest)
 		allLaunches.sort((a, b) => Number(b.deadline - a.deadline));
 		launches = allLaunches;
+	}
+
+	async function loadLaunches() {
+		loading = true;
+		launches = [];
+
+		// Try database first (fast), fallback to chain (slow)
+		const fromApi = await loadFromApi();
+		if (!fromApi) {
+			await loadFromChain();
+		}
+
 		loading = false;
 	}
 
@@ -251,12 +311,22 @@
 				>
 					<!-- Header -->
 					<div class="flex items-start justify-between mb-3">
-						<div>
-							<div class="syne font-bold text-white group-hover:text-cyan-300 transition">
-								{launch.tokenName || 'Unknown Token'}
-							</div>
-							<div class="text-xs text-gray-500 font-mono">
-								{launch.tokenSymbol || '???'} · {launch.network.symbol} · {CURVE_TYPES[launch.curveType]}
+						<div class="flex items-center gap-3">
+							{#if (launch as any).logoUrl}
+								<img src={(launch as any).logoUrl} alt="" class="w-9 h-9 rounded-full object-cover" />
+							{:else}
+								<div class="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold syne"
+									style="background: rgba(0,210,255,0.1); color: #00d2ff; border: 1px solid rgba(0,210,255,0.2);">
+									{(launch.tokenSymbol || '?').charAt(0)}
+								</div>
+							{/if}
+							<div>
+								<div class="syne font-bold text-white group-hover:text-cyan-300 transition">
+									{launch.tokenName || 'Unknown Token'}
+								</div>
+								<div class="text-xs text-gray-500 font-mono">
+									{launch.tokenSymbol || '???'} · {launch.network.symbol} · {CURVE_TYPES[launch.curveType]}
+								</div>
 							</div>
 						</div>
 						<span class="badge badge-{color}">

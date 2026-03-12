@@ -53,6 +53,9 @@
 	let tradingEnabled = $state(true); // assume true unless we detect otherwise
 	let isEnablingTrading = $state(false);
 
+	// Off-chain metadata from database
+	let metadata: { description?: string; logo_url?: string; website?: string; twitter?: string; telegram?: string; discord?: string } = $state({});
+
 	// User position
 	let userBasePaid = $state(0n);
 	let userTokensBought = $state(0n);
@@ -145,6 +148,24 @@
 				if (userAddress) {
 					await loadUserPosition(prov);
 				}
+
+				// Fetch off-chain metadata from database (best-effort)
+				try {
+					const res = await fetch(`/api/launches?address=${launchAddress}`);
+					if (res.ok) {
+						const rows = await res.json();
+						if (rows?.[0]) {
+							metadata = {
+								description: rows[0].description,
+								logo_url: rows[0].logo_url,
+								website: rows[0].website,
+								twitter: rows[0].twitter,
+								telegram: rows[0].telegram,
+								discord: rows[0].discord
+							};
+						}
+					}
+				} catch {}
 
 				loading = false;
 				return;
@@ -712,20 +733,52 @@
 		{@const ud = usdtDecimals}
 
 		<!-- Header -->
-		<div class="flex flex-wrap items-start justify-between gap-4 mb-8">
-			<div>
-				<h1 class="syne text-2xl sm:text-3xl font-bold text-white">
-					{launch.tokenName || 'Unknown Token'}
-					<span class="text-gray-500 text-lg">({launch.tokenSymbol || '???'})</span>
-				</h1>
-				<div class="text-sm text-gray-500 font-mono mt-1">
-					{network.name} · {CURVE_TYPES[launch.curveType]} Curve · Creator: {shortAddr(launch.creator)}
+		<div class="flex flex-wrap items-start justify-between gap-4 mb-4">
+			<div class="flex items-center gap-4">
+				{#if metadata.logo_url}
+					<img src={metadata.logo_url} alt="" class="w-12 h-12 rounded-full object-cover" />
+				{/if}
+				<div>
+					<h1 class="syne text-2xl sm:text-3xl font-bold text-white">
+						{launch.tokenName || 'Unknown Token'}
+						<span class="text-gray-500 text-lg">({launch.tokenSymbol || '???'})</span>
+					</h1>
+					<div class="text-sm text-gray-500 font-mono mt-1">
+						{network.name} · {CURVE_TYPES[launch.curveType]} Curve · Creator: {shortAddr(launch.creator)}
+					</div>
 				</div>
 			</div>
 			<span class="badge badge-{color} text-sm px-4 py-1.5">
 				{stateLabel(launch.state)}
 			</span>
 		</div>
+
+		<!-- Metadata -->
+		{#if metadata.description || metadata.website || metadata.twitter || metadata.telegram || metadata.discord}
+			<div class="card p-5 mb-8">
+				{#if metadata.description}
+					<p class="text-gray-300 font-mono text-sm leading-relaxed mb-3">{metadata.description}</p>
+				{/if}
+				{#if metadata.website || metadata.twitter || metadata.telegram || metadata.discord}
+					<div class="flex flex-wrap gap-3">
+						{#if metadata.website}
+							<a href={metadata.website} target="_blank" rel="noopener" class="text-xs font-mono text-cyan-400 hover:text-cyan-300 transition no-underline">Website ↗</a>
+						{/if}
+						{#if metadata.twitter}
+							<a href={metadata.twitter.startsWith('http') ? metadata.twitter : `https://x.com/${metadata.twitter.replace('@', '')}`} target="_blank" rel="noopener" class="text-xs font-mono text-cyan-400 hover:text-cyan-300 transition no-underline">Twitter ↗</a>
+						{/if}
+						{#if metadata.telegram}
+							<a href={metadata.telegram.startsWith('http') ? metadata.telegram : `https://t.me/${metadata.telegram.replace('@', '')}`} target="_blank" rel="noopener" class="text-xs font-mono text-cyan-400 hover:text-cyan-300 transition no-underline">Telegram ↗</a>
+						{/if}
+						{#if metadata.discord}
+							<a href={metadata.discord.startsWith('http') ? metadata.discord : `https://discord.gg/${metadata.discord}`} target="_blank" rel="noopener" class="text-xs font-mono text-cyan-400 hover:text-cyan-300 transition no-underline">Discord ↗</a>
+						{/if}
+					</div>
+				{/if}
+			</div>
+		{:else}
+			<div class="mb-8"></div>
+		{/if}
 
 		<div class="page-grid">
 			<!-- Left: Buy Box + Chart + Position -->

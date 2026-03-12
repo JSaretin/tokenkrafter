@@ -45,6 +45,14 @@
 	let vestingDays = $state('0');
 	let selectedPaymentIdx = $state(0);
 
+	// Off-chain metadata
+	let description = $state('');
+	let logoUrl = $state('');
+	let website = $state('');
+	let twitter = $state('');
+	let telegram = $state('');
+	let discord = $state('');
+
 	let isCreating = $state(false);
 	let step = $state<'form' | 'review' | 'creating' | 'depositing' | 'done'>('form');
 	let launchAddress = $state('');
@@ -250,6 +258,39 @@
 			await depositTx.wait();
 
 			addFeedback({ message: 'Launch is live!', type: 'success' });
+
+			// Save to database (best-effort, don't block on failure)
+			try {
+				await fetch('/api/launches', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						address: launchAddress,
+						chain_id: selectedNetwork.chain_id,
+						token_address: tokenAddress,
+						creator: userAddress,
+						curve_type: curveType,
+						state: 1,
+						soft_cap: ethers.parseUnits(String(softCap), 18).toString(),
+						hard_cap: ethers.parseUnits(String(hardCap), 18).toString(),
+						tokens_for_curve: tokensForLaunchBigInt().toString(),
+						creator_allocation_bps: parseInt(creatorAllocationBps),
+						deadline: Math.floor(Date.now() / 1000) + parseInt(durationDays) * 86400,
+						total_tokens_required: tokensForLaunchBigInt().toString(),
+						total_tokens_deposited: tokensForLaunchBigInt().toString(),
+						token_name: tokenName,
+						token_symbol: tokenSymbol,
+						token_decimals: tokenDecimals,
+						description: description || undefined,
+						logo_url: logoUrl || undefined,
+						website: website || undefined,
+						twitter: twitter || undefined,
+						telegram: telegram || undefined,
+						discord: discord || undefined
+					})
+				});
+			} catch {}
+
 			step = 'done';
 		} catch (e: any) {
 			const errData = String(e?.data || e?.message || e?.shortMessage || '');
@@ -363,6 +404,20 @@
 					<div class="detail-row">
 						<span class="detail-label">Vesting</span>
 						<span class="detail-value">{vestingDays} days</span>
+					</div>
+				{/if}
+				{#if description}
+					<div class="detail-row">
+						<span class="detail-label">Description</span>
+						<span class="detail-value text-sm" style="max-width: 60%; text-align: right;">{description.slice(0, 80)}{description.length > 80 ? '...' : ''}</span>
+					</div>
+				{/if}
+				{#if website || twitter || telegram || discord}
+					<div class="detail-row">
+						<span class="detail-label">Socials</span>
+						<span class="detail-value text-xs">
+							{[website && 'Web', twitter && 'Twitter', telegram && 'TG', discord && 'Discord'].filter(Boolean).join(' · ')}
+						</span>
 					</div>
 				{/if}
 			</div>
@@ -559,6 +614,53 @@
 						</select>
 					</div>
 				{/if}
+			</div>
+
+			<hr class="divider" />
+
+			<!-- Project Metadata (optional) -->
+			<div class="mb-1">
+				<span class="label-text">Project Info (optional)</span>
+				<p class="text-gray-600 text-[10px] font-mono mb-4">Help participants learn about your project. Shown on your launch page.</p>
+			</div>
+
+			<div class="field-group mb-4">
+				<label class="label-text" for="description">Description</label>
+				<textarea
+					id="description"
+					class="input-field"
+					rows="3"
+					placeholder="What is your token about?"
+					bind:value={description}
+					style="resize: vertical; min-height: 60px;"
+				></textarea>
+			</div>
+
+			<div class="field-group mb-4">
+				<label class="label-text" for="logo-url">Logo URL</label>
+				<input id="logo-url" type="url" class="input-field" placeholder="https://example.com/logo.png" bind:value={logoUrl} />
+			</div>
+
+			<div class="grid grid-cols-2 gap-4 mb-4">
+				<div class="field-group">
+					<label class="label-text" for="website">Website</label>
+					<input id="website" type="url" class="input-field" placeholder="https://..." bind:value={website} />
+				</div>
+				<div class="field-group">
+					<label class="label-text" for="twitter">Twitter / X</label>
+					<input id="twitter" type="text" class="input-field" placeholder="@handle or URL" bind:value={twitter} />
+				</div>
+			</div>
+
+			<div class="grid grid-cols-2 gap-4 mb-5">
+				<div class="field-group">
+					<label class="label-text" for="telegram">Telegram</label>
+					<input id="telegram" type="text" class="input-field" placeholder="t.me/group or @handle" bind:value={telegram} />
+				</div>
+				<div class="field-group">
+					<label class="label-text" for="discord">Discord</label>
+					<input id="discord" type="text" class="input-field" placeholder="discord.gg/invite" bind:value={discord} />
+				</div>
 			</div>
 
 			<hr class="divider" />
