@@ -148,10 +148,9 @@
 		if (kit) {
 			kit.subscribeAccount(async (account: any) => {
 				if (account.isConnected && account.address) {
-					// Get the underlying provider from AppKit
-					const ethProvider = getEthereum();
-					if (ethProvider) {
-						await setupEthersFromProvider(ethProvider);
+					const walletProvider = kit.getWalletProvider();
+					if (walletProvider) {
+						await setupEthersFromProvider(walletProvider);
 					}
 				} else if (!account.isConnected) {
 					provider = null;
