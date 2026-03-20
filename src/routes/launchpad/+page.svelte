@@ -358,7 +358,11 @@
 								</div>
 								<div class="flex items-center gap-1.5">
 									<span class="state-dot state-dot-{color}"></span>
-									<span class="text-xs font-mono state-text-{color}">{stateLabel(launch.state)}</span>
+									{#if launch.state === 1 && launch.startTimestamp > 0n && launch.startTimestamp > BigInt(Math.floor(Date.now() / 1000))}
+										<span class="text-xs font-mono text-amber-400">Scheduled</span>
+									{:else}
+										<span class="text-xs font-mono state-text-{color}">{stateLabel(launch.state)}</span>
+									{/if}
 								</div>
 							</div>
 						</div>

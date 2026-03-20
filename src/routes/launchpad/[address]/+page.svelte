@@ -1145,6 +1145,18 @@
 							<span class="detail-label">Deadline</span>
 							<span class="detail-value">{timeRemaining(launch.deadline)}</span>
 						</div>
+						{#if launch.startTimestamp > 0n}
+							{@const startTs = Number(launch.startTimestamp)}
+							{@const nowTs = Math.floor(Date.now() / 1000)}
+							<div class="detail-row">
+								<span class="detail-label">Scheduled Start</span>
+								<span class="detail-value {startTs > nowTs ? 'text-amber-400' : 'text-emerald-400'}">
+									{startTs > nowTs
+										? new Date(startTs * 1000).toLocaleString()
+										: 'Started'}
+								</span>
+							</div>
+						{/if}
 						<div class="detail-row">
 							<span class="detail-label">Max Buy / Wallet</span>
 							<span class="detail-value">{maxBuyPerWallet > 0n ? formatTokens(maxBuyPerWallet, tokenMeta.decimals) + ' (' + maxBuyPct + '%)' : 'No limit'}</span>
@@ -1388,7 +1400,20 @@
 
 				<!-- Buy Box -->
 				{#if launch.state === 1}
-					<div class="card p-6 mb-4">
+					{@const notStartedYet = launch.startTimestamp > 0n && BigInt(Math.floor(Date.now() / 1000)) < launch.startTimestamp}
+					{#if notStartedYet}
+						{@const diff = Number(launch.startTimestamp) - Math.floor(Date.now() / 1000)}
+						<div class="card p-6 mb-4 text-center">
+							<h3 class="syne font-bold text-amber-400 mb-2">Scheduled Launch</h3>
+							<p class="text-gray-400 font-mono text-sm mb-1">
+								Buying opens {new Date(Number(launch.startTimestamp) * 1000).toLocaleString()}
+							</p>
+							<p class="text-white font-mono text-lg font-bold">
+								{Math.floor(diff / 86400)}d {Math.floor((diff % 86400) / 3600)}h {Math.floor((diff % 3600) / 60)}m
+							</p>
+						</div>
+					{/if}
+					<div class="card p-6 mb-4" class:opacity-50={notStartedYet} class:pointer-events-none={notStartedYet}>
 						<h3 class="syne font-bold text-white mb-4">Buy Tokens</h3>
 
 						<!-- Amount in USDT -->

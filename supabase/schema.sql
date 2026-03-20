@@ -19,6 +19,7 @@ create table if not exists launches (
   creator_allocation_bps integer not null default 0,
   current_price text not null default '0',
   deadline bigint not null default 0,
+  start_timestamp bigint not null default 0,
   total_tokens_required text not null default '0',
   total_tokens_deposited text not null default '0',
 

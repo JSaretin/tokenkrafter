@@ -60,6 +60,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		creator_allocation_bps: body.creator_allocation_bps ?? 0,
 		current_price: body.current_price ?? '0',
 		deadline: body.deadline ?? 0,
+		start_timestamp: body.start_timestamp ?? 0,
 		total_tokens_required: body.total_tokens_required ?? '0',
 		total_tokens_deposited: body.total_tokens_deposited ?? '0',
 		token_name: body.token_name,

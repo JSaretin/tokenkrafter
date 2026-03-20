@@ -44,6 +44,8 @@
 	let creatorAllocationBps = $state('0');
 	let vestingDays = $state('0');
 	let selectedPaymentIdx = $state(0);
+	let scheduledStart = $state(false);
+	let startDate = $state('');
 
 	// Off-chain metadata
 	let description = $state('');
@@ -154,6 +156,12 @@
 		tokensForLaunch = ethers.formatUnits(amount, tokenDecimals);
 	}
 
+	let startTimestampValue = $derived.by(() => {
+		if (!scheduledStart || !startDate) return 0n;
+		const ts = Math.floor(new Date(startDate).getTime() / 1000);
+		return ts > 0 ? BigInt(ts) : 0n;
+	});
+
 	function validate(): string | null {
 		if (!ethers.isAddress(tokenAddress)) return 'Invalid token address';
 		if (!tokenName) return 'Could not fetch token info';
@@ -162,6 +170,10 @@
 		if (!softCap || parseFloat(softCap) <= 0) return 'Enter soft cap';
 		if (!hardCap || parseFloat(hardCap) <= 0) return 'Enter hard cap';
 		if (parseFloat(hardCap) < parseFloat(softCap)) return 'Hard cap must be >= soft cap';
+		if (scheduledStart) {
+			if (!startDate) return 'Select a start date';
+			if (startTimestampValue <= BigInt(Math.floor(Date.now() / 1000))) return 'Start date must be in the future';
+		}
 		return null;
 	}
 
@@ -220,6 +232,7 @@
 				BigInt(creatorAllocationBps),
 				BigInt(vestingDays),
 				payOpt.address,
+				startTimestampValue,
 				txOptions
 			);
 			const receipt = await tx.wait();
@@ -276,6 +289,7 @@
 						tokens_for_curve: tokensForLaunchBigInt().toString(),
 						creator_allocation_bps: parseInt(creatorAllocationBps),
 						deadline: Math.floor(Date.now() / 1000) + parseInt(durationDays) * 86400,
+						start_timestamp: Number(startTimestampValue),
 						total_tokens_required: tokensForLaunchBigInt().toString(),
 						total_tokens_deposited: tokensForLaunchBigInt().toString(),
 						token_name: tokenName,
@@ -396,6 +410,12 @@
 					<span class="detail-label">Max buy</span>
 					<span class="detail-value">{(parseInt(maxBuyBps) / 100).toFixed(1)}% of curve</span>
 				</div>
+				{#if scheduledStart && startDate}
+					<div class="detail-row">
+						<span class="detail-label">Starts</span>
+						<span class="detail-value">{new Date(startDate).toLocaleString()}</span>
+					</div>
+				{/if}
 				<div class="detail-row">
 					<span class="detail-label">Creator alloc</span>
 					<span class="detail-value">{(parseInt(creatorAllocationBps) / 100).toFixed(1)}%</span>
@@ -588,6 +608,32 @@
 						<option value="500">5%</option>
 					</select>
 				</div>
+			</div>
+
+			<!-- Scheduled Start -->
+			<div class="field-group mb-5">
+				<label class="label-text">
+					<input type="checkbox" bind:checked={scheduledStart} class="mr-2 accent-cyan-400" />
+					Schedule future start
+				</label>
+				<span class="text-gray-600 text-[10px] font-mono mt-1">
+					If enabled, buying won't start until the scheduled date. Otherwise it starts immediately after token deposit.
+				</span>
+				{#if scheduledStart}
+					<input
+						type="datetime-local"
+						class="input-field mt-2"
+						bind:value={startDate}
+						min={new Date(Date.now() + 60000).toISOString().slice(0, 16)}
+					/>
+					{#if startDate}
+						{@const ts = Math.floor(new Date(startDate).getTime() / 1000)}
+						{@const now = Math.floor(Date.now() / 1000)}
+						<span class="text-gray-500 text-[10px] font-mono mt-1">
+							{ts > now ? `Starts in ${Math.floor((ts - now) / 86400)}d ${Math.floor(((ts - now) % 86400) / 3600)}h` : 'Must be in the future'}
+						</span>
+					{/if}
+				{/if}
 			</div>
 
 			<hr class="divider" />

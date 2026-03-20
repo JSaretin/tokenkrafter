@@ -3,9 +3,18 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/math/Math.sol";
+
+// =============================================================
+// LAUNCHPAD FACTORY INTERFACE (minimal — avoids circular import)
+// =============================================================
+
+interface ILaunchpadFactory {
+    function platformWallet() external view returns (address);
+    function recordGraduation(address launch_) external;
+    function clearTokenLaunch(address token_) external;
+}
 
 // =============================================================
 // BONDING CURVE LIBRARY
@@ -192,6 +201,8 @@ contract LaunchInstance is ReentrancyGuard {
     error DeadlineNotReached();
     error SoftCapAlreadyReached();
     error InsufficientTokensOut();
+    error LaunchNotStarted();
+    error InvalidStartTimestamp();
 
     // ── Enums ──────────────────────────────────────────────────
     enum CurveType { Linear, SquareRoot, Quadratic, Exponential }
@@ -210,7 +221,9 @@ contract LaunchInstance is ReentrancyGuard {
 
     uint256 public immutable softCap;    // in USDT
     uint256 public immutable hardCap;    // in USDT
-    uint256 public immutable deadline;
+    uint256 public immutable durationSeconds;
+    uint256 public deadline;             // set on activation (or startTimestamp), not deployment
+    uint256 public immutable startTimestamp; // 0 = start immediately on activation
     uint256 public immutable maxBuyPerWallet;
 
     // ── Creator vesting ────────────────────────────────────────
@@ -276,7 +289,8 @@ contract LaunchInstance is ReentrancyGuard {
         uint256 creatorAllocationBps_,
         uint256 vestingDays_,
         address dexRouter_,
-        address usdt_
+        address usdt_,
+        uint256 startTimestamp_
     ) {
         if (token_ == address(0)) revert InvalidToken();
         if (usdt_ == address(0)) revert InvalidUsdt();
@@ -286,6 +300,7 @@ contract LaunchInstance is ReentrancyGuard {
         if (creatorAllocationBps_ > 500) revert InvalidCreatorAlloc();
         if (vestingDays_ != 0 && vestingDays_ != 30 && vestingDays_ != 60 && vestingDays_ != 90) revert InvalidVesting();
         if (creatorAllocationBps_ != 0 && vestingDays_ == 0) revert CreatorAllocRequiresVesting();
+        if (startTimestamp_ != 0 && startTimestamp_ <= block.timestamp) revert InvalidStartTimestamp();
 
         factory = payable(msg.sender);
         creator = creator_;
@@ -296,7 +311,8 @@ contract LaunchInstance is ReentrancyGuard {
         curveParam2 = curveParam2_;
         softCap = softCap_;
         hardCap = hardCap_;
-        deadline = block.timestamp + (durationDays_ * 1 days);
+        durationSeconds = durationDays_ * 1 days;
+        startTimestamp = startTimestamp_;
         dexRouter = IUniswapV2Router02(dexRouter_);
 
         // Token distribution from the deposited amount:
@@ -339,6 +355,8 @@ contract LaunchInstance is ReentrancyGuard {
         // Auto-activate when fully funded
         if (totalTokensDeposited >= totalTokensRequired) {
             state = LaunchState.Active;
+            uint256 start = startTimestamp > block.timestamp ? startTimestamp : block.timestamp;
+            deadline = start + durationSeconds;
             emit LaunchActivated();
         }
     }
@@ -361,6 +379,8 @@ contract LaunchInstance is ReentrancyGuard {
         // Auto-activate when fully funded
         if (totalTokensDeposited >= totalTokensRequired) {
             state = LaunchState.Active;
+            uint256 start = startTimestamp > block.timestamp ? startTimestamp : block.timestamp;
+            deadline = start + durationSeconds;
             emit LaunchActivated();
         }
     }
@@ -385,6 +405,7 @@ contract LaunchInstance is ReentrancyGuard {
     /// @param minTokensOut Minimum tokens to receive from bonding curve (slippage protection)
     function buy(uint256 minUsdtOut, uint256 minTokensOut) external payable nonReentrant onlyActive {
         if (msg.value == 0) revert SendNativeCoin();
+        if (startTimestamp > 0 && block.timestamp < startTimestamp) revert LaunchNotStarted();
         if (block.timestamp >= deadline) revert LaunchExpired();
 
         // Swap native coin → USDT via DEX
@@ -397,7 +418,7 @@ contract LaunchInstance is ReentrancyGuard {
             minUsdtOut,
             path,
             address(this),
-            block.timestamp
+            block.timestamp + 300
         );
 
         uint256 usdtReceived = amounts[amounts.length - 1];
@@ -411,6 +432,7 @@ contract LaunchInstance is ReentrancyGuard {
     /// @param minTokensOut Minimum tokens to receive from bonding curve (slippage protection)
     function buyWithToken(address paymentToken, uint256 amount, uint256 minUsdtOut, uint256 minTokensOut) external nonReentrant onlyActive {
         if (amount == 0) revert ZeroAmount();
+        if (startTimestamp > 0 && block.timestamp < startTimestamp) revert LaunchNotStarted();
         if (block.timestamp >= deadline) revert LaunchExpired();
 
         IERC20(paymentToken).safeTransferFrom(msg.sender, address(this), amount);
@@ -428,7 +450,7 @@ contract LaunchInstance is ReentrancyGuard {
             directPath[1] = address(usdt);
 
             try dexRouter.swapExactTokensForTokens(
-                amount, minUsdtOut, directPath, address(this), block.timestamp
+                amount, minUsdtOut, directPath, address(this), block.timestamp + 300
             ) returns (uint256[] memory amounts) {
                 usdtAmount = amounts[amounts.length - 1];
             } catch {
@@ -438,7 +460,7 @@ contract LaunchInstance is ReentrancyGuard {
                 wethPath[1] = dexRouter.WETH();
                 wethPath[2] = address(usdt);
                 uint256[] memory amounts = dexRouter.swapExactTokensForTokens(
-                    amount, minUsdtOut, wethPath, address(this), block.timestamp
+                    amount, minUsdtOut, wethPath, address(this), block.timestamp + 300
                 );
                 usdtAmount = amounts[amounts.length - 1];
             }
@@ -524,7 +546,7 @@ contract LaunchInstance is ReentrancyGuard {
         uint256 tokensForDexLP = tokensForLP - platformTokenFee;
 
         // Send platform fees
-        address platformWallet = LaunchpadFactory(factory).platformWallet();
+        address platformWallet = ILaunchpadFactory(factory).platformWallet();
 
         // Send USDT platform fee
         if (platformBaseFee > 0) {
@@ -544,8 +566,8 @@ contract LaunchInstance is ReentrancyGuard {
             address(usdt),
             tokensForDexLP,
             usdtForLP,
-            (tokensForDexLP * 98) / 100,
-            (usdtForLP * 98) / 100,
+            (tokensForDexLP * 995) / 1000,
+            (usdtForLP * 995) / 1000,
             address(0xdead),               // Burn LP tokens — permanent liquidity
             block.timestamp + 300
         );
@@ -574,7 +596,7 @@ contract LaunchInstance is ReentrancyGuard {
         emit Graduated(pair, amountUsdt, amountToken, platformBaseFee, platformTokenFee);
 
         // Record graduation in factory daily stats
-        try LaunchpadFactory(factory).recordGraduation(address(this)) {} catch {}
+        try ILaunchpadFactory(factory).recordGraduation(address(this)) {} catch {}
     }
 
     // ── Refund ─────────────────────────────────────────────────
@@ -629,7 +651,7 @@ contract LaunchInstance is ReentrancyGuard {
         token.safeTransfer(creator, balance);
 
         // Clear tokenToLaunch in factory to allow relaunching this token
-        try LaunchpadFactory(factory).clearTokenLaunch(address(token)) {} catch {}
+        try ILaunchpadFactory(factory).clearTokenLaunch(address(token)) {} catch {}
 
         emit CreatorWithdraw(creator, balance);
     }
@@ -751,7 +773,8 @@ contract LaunchInstance is ReentrancyGuard {
         uint256 tokensForLP_,
         uint256 creatorAllocationBps_,
         uint256 currentPrice_,
-        address usdt_
+        address usdt_,
+        uint256 startTimestamp_
     ) {
         return (
             address(token),
@@ -767,7 +790,8 @@ contract LaunchInstance is ReentrancyGuard {
             tokensForLP,
             creatorAllocationBps,
             state == LaunchState.Active || state == LaunchState.Pending ? getCurrentPrice() : 0,
-            address(usdt)
+            address(usdt),
+            startTimestamp
         );
     }
 
@@ -798,16 +822,31 @@ contract LaunchInstance is ReentrancyGuard {
             if (low > high) break;
             uint256 mid = (low + high) / 2;
             if (mid == 0) break;
-            uint256 cost = _getCostForTokens(mid);
-            if (cost <= baseAmount) {
-                bestAmount = mid;
-                low = mid + 1;
-            } else {
+            // Use _tryCostForTokens to handle overflow for extreme curve params
+            (bool ok, uint256 cost) = _tryCostForTokens(mid);
+            if (!ok || cost > baseAmount) {
                 if (mid == 0) break;
                 high = mid - 1;
+            } else {
+                bestAmount = mid;
+                low = mid + 1;
             }
         }
         return bestAmount;
+    }
+
+    /// @dev Wraps _getCostForTokens to catch overflow/revert for extreme curve parameters.
+    function _tryCostForTokens(uint256 amount) internal view returns (bool success, uint256 cost) {
+        try this.getCostForTokensExternal(amount) returns (uint256 result) {
+            return (true, result);
+        } catch {
+            return (false, 0);
+        }
+    }
+
+    /// @dev External wrapper needed for try/catch on internal view function.
+    function getCostForTokensExternal(uint256 amount) external view returns (uint256) {
+        return _getCostForTokens(amount);
     }
 
     /// @notice Recover accidentally sent ETH. Only callable by creator.
@@ -816,558 +855,6 @@ contract LaunchInstance is ReentrancyGuard {
         if (bal == 0) revert NoETH();
         (bool ok, ) = creator.call{value: bal}("");
         if (!ok) revert TransferFailed();
-    }
-
-    receive() external payable {}
-}
-
-// =============================================================
-// LAUNCHPAD FACTORY
-// =============================================================
-
-/// @title LaunchpadFactory
-/// @notice Deploys LaunchInstance contracts for tokens created by TokenKrafter's TokenFactory.
-contract LaunchpadFactory is Ownable, ReentrancyGuard {
-    using SafeERC20 for IERC20;
-
-    // ── Custom Errors ───────────────────────────────────────────
-    error InvalidAddress();
-    error InvalidUsdt();
-    error InvalidToken();
-    error ZeroTokens();
-    error TokenAlreadyHasLaunch();
-    error InvalidCurveParam();
-    error OnlyTokenFactory();
-    error InvalidRange();
-    error MaxDaysExceeded();
-    error AlreadySupported();
-    error NotSupported();
-    error NoBalance();
-    error WithdrawFailed();
-    error UnsupportedPaymentToken();
-    error CannotDetermineFee();
-    error InsufficientNativePayment();
-    error RefundFailed();
-    error NotTokenOwner();
-    error NotRegisteredLaunch();
-    error OnlyLaunch();
-    error NotGraduated();
-    error NotRefunding();
-
-    address public platformWallet;
-    address public dexRouter;
-    address public tokenFactory;  // Authorized TokenFactory for createLaunchFor
-
-    // ── Launch Fee ──────────────────────────────────────────
-    uint256 public launchFee;                              // Fee in USDT base units (e.g. 50e18 = $50)
-    address[] internal _supportedPaymentTokens;            // address(0) = native coin
-    mapping(address => bool) public isPaymentSupported;
-    mapping(address => address) public tokenPriceFeeds;    // optional: for price conversion
-
-    // ── DEX for fee conversion ──────────────────────────────
-    address public usdt;                                   // USDT address (base unit for fee)
-
-    LaunchInstance[] public launches;
-    mapping(address => LaunchInstance[]) public creatorLaunches;
-    mapping(address => LaunchInstance) public tokenToLaunch;
-
-    // ── Daily Stats ─────────────────────────────────────────────
-    struct LaunchDayStats {
-        uint256 created;
-        uint256 graduated;
-        uint256 totalFeeUsdt;
-    }
-
-    /// @notice Daily launch stats keyed by day number (block.timestamp / 86400).
-    mapping(uint256 => LaunchDayStats) public dailyLaunchStats;
-
-    /// @notice Cumulative total launch fee earned in USDT equivalent.
-    uint256 public totalLaunchFeeEarnedUsdt;
-
-    struct CurveDefaults {
-        uint256 linearSlope;
-        uint256 linearIntercept;
-        uint256 sqrtCoefficient;
-        uint256 quadraticCoefficient;
-        uint256 expBase;
-        uint256 expKFactor;
-    }
-    CurveDefaults public curveDefaults;
-
-    event LaunchCreated(
-        address indexed launch,
-        address indexed token,
-        address indexed creator,
-        LaunchInstance.CurveType curveType,
-        uint256 softCap,
-        uint256 hardCap,
-        uint256 totalTokens
-    );
-    event PlatformWalletUpdated(address newWallet);
-    event DexRouterUpdated(address newRouter);
-    event CurveDefaultsUpdated();
-    event TokenFactoryUpdated(address newFactory);
-    event LaunchFeeUpdated(uint256 newFee);
-    event PaymentTokenAdded(address token);
-    event PaymentTokenRemoved(address token);
-    event LaunchFeePaid(address indexed payer, address indexed paymentToken, uint256 amount);
-
-    constructor(
-        address platformWallet_,
-        address dexRouter_,
-        address usdt_
-    ) Ownable(msg.sender) {
-        if (platformWallet_ == address(0)) revert InvalidAddress();
-        if (dexRouter_ == address(0)) revert InvalidAddress();
-        if (usdt_ == address(0)) revert InvalidUsdt();
-        platformWallet = platformWallet_;
-        dexRouter = dexRouter_;
-        usdt = usdt_;
-
-        // Native coin is supported by default
-        _supportedPaymentTokens.push(address(0));
-        isPaymentSupported[address(0)] = true;
-
-        curveDefaults = CurveDefaults({
-            linearSlope: 1e9,
-            linearIntercept: 1e12,
-            sqrtCoefficient: 1e14,
-            quadraticCoefficient: 1e6,
-            expBase: 1e12,
-            expKFactor: 1e12
-        });
-    }
-
-    /// @notice Create a launch for an existing TokenKrafter token.
-    ///         After calling this, the creator must call depositTokens() on the
-    ///         returned LaunchInstance to fund and activate the launch.
-    function createLaunch(
-        address token_,
-        uint256 totalTokens_,
-        LaunchInstance.CurveType curveType_,
-        uint256 softCap_,
-        uint256 hardCap_,
-        uint256 durationDays_,
-        uint256 maxBuyBps_,
-        uint256 creatorAllocationBps_,
-        uint256 vestingDays_,
-        address paymentToken_
-    ) external payable nonReentrant returns (address) {
-        if (token_ == address(0)) revert InvalidToken();
-        if (totalTokens_ == 0) revert ZeroTokens();
-        if (address(tokenToLaunch[token_]) != address(0)) revert TokenAlreadyHasLaunch();
-        // Only token owner can create a launch (prevents griefing by occupying tokenToLaunch)
-        if (IOwnable(token_).owner() != msg.sender) revert NotTokenOwner();
-
-        // Collect launch fee
-        _collectLaunchFee(msg.sender, paymentToken_);
-
-        (uint256 param1, uint256 param2) = _getCurveParams(curveType_);
-
-        LaunchInstance instance = new LaunchInstance(
-            msg.sender,
-            token_,
-            totalTokens_,
-            curveType_,
-            param1,
-            param2,
-            softCap_,
-            hardCap_,
-            durationDays_,
-            maxBuyBps_,
-            creatorAllocationBps_,
-            vestingDays_,
-            dexRouter,
-            usdt
-        );
-
-        launches.push(instance);
-        creatorLaunches[msg.sender].push(instance);
-        tokenToLaunch[token_] = instance;
-
-        emit LaunchCreated(
-            address(instance),
-            token_,
-            msg.sender,
-            curveType_,
-            softCap_,
-            hardCap_,
-            totalTokens_
-        );
-
-        _recordLaunchCreated();
-        return address(instance);
-    }
-
-    /// @notice Create a launch with custom curve parameters.
-    function createLaunchCustomCurve(
-        address token_,
-        uint256 totalTokens_,
-        LaunchInstance.CurveType curveType_,
-        uint256 curveParam1_,
-        uint256 curveParam2_,
-        uint256 softCap_,
-        uint256 hardCap_,
-        uint256 durationDays_,
-        uint256 maxBuyBps_,
-        uint256 creatorAllocationBps_,
-        uint256 vestingDays_,
-        address paymentToken_
-    ) external payable nonReentrant returns (address) {
-        if (token_ == address(0)) revert InvalidToken();
-        if (totalTokens_ == 0) revert ZeroTokens();
-        if (address(tokenToLaunch[token_]) != address(0)) revert TokenAlreadyHasLaunch();
-        if (curveParam1_ == 0) revert InvalidCurveParam();
-        // Only token owner can create a launch (prevents griefing by occupying tokenToLaunch)
-        if (IOwnable(token_).owner() != msg.sender) revert NotTokenOwner();
-
-        // Collect launch fee
-        _collectLaunchFee(msg.sender, paymentToken_);
-
-        LaunchInstance instance = new LaunchInstance(
-            msg.sender,
-            token_,
-            totalTokens_,
-            curveType_,
-            curveParam1_,
-            curveParam2_,
-            softCap_,
-            hardCap_,
-            durationDays_,
-            maxBuyBps_,
-            creatorAllocationBps_,
-            vestingDays_,
-            dexRouter,
-            usdt
-        );
-
-        launches.push(instance);
-        creatorLaunches[msg.sender].push(instance);
-        tokenToLaunch[token_] = instance;
-
-        emit LaunchCreated(
-            address(instance),
-            token_,
-            msg.sender,
-            curveType_,
-            softCap_,
-            hardCap_,
-            totalTokens_
-        );
-
-        _recordLaunchCreated();
-        return address(instance);
-    }
-
-    /// @notice Create a launch on behalf of a creator. Only callable by the authorized TokenFactory.
-    ///         Used by TokenFactory.createTokenAndLaunch() for one-click token creation + launch.
-    function createLaunchFor(
-        address creator_,
-        address token_,
-        uint256 totalTokens_,
-        uint8 curveType_,
-        uint256 softCap_,
-        uint256 hardCap_,
-        uint256 durationDays_,
-        uint256 maxBuyBps_,
-        uint256 creatorAllocationBps_,
-        uint256 vestingDays_,
-        address paymentToken_
-    ) external payable nonReentrant returns (address) {
-        if (msg.sender != tokenFactory) revert OnlyTokenFactory();
-        if (token_ == address(0)) revert InvalidToken();
-        if (totalTokens_ == 0) revert ZeroTokens();
-        if (address(tokenToLaunch[token_]) != address(0)) revert TokenAlreadyHasLaunch();
-
-        // Collect launch fee (forwarded from TokenFactory)
-        _collectLaunchFee(creator_, paymentToken_);
-
-        LaunchInstance.CurveType ct = LaunchInstance.CurveType(curveType_);
-        (uint256 param1, uint256 param2) = _getCurveParams(ct);
-
-        LaunchInstance instance = new LaunchInstance(
-            creator_,
-            token_,
-            totalTokens_,
-            ct,
-            param1,
-            param2,
-            softCap_,
-            hardCap_,
-            durationDays_,
-            maxBuyBps_,
-            creatorAllocationBps_,
-            vestingDays_,
-            dexRouter,
-            usdt
-        );
-
-        launches.push(instance);
-        creatorLaunches[creator_].push(instance);
-        tokenToLaunch[token_] = instance;
-
-        emit LaunchCreated(
-            address(instance),
-            token_,
-            creator_,
-            ct,
-            softCap_,
-            hardCap_,
-            totalTokens_
-        );
-
-        _recordLaunchCreated();
-        return address(instance);
-    }
-
-    /// @notice Forwards a deposit notification to a LaunchInstance. Only callable by the TokenFactory.
-    function notifyDeposit(address launch_, uint256 amount) external {
-        if (msg.sender != tokenFactory) revert OnlyTokenFactory();
-        LaunchInstance(payable(launch_)).notifyDeposit(amount);
-    }
-
-    // ── View ───────────────────────────────────────────────────
-
-    function totalLaunches() external view returns (uint256) {
-        return launches.length;
-    }
-
-    function getCreatorLaunches(address creator_) external view returns (LaunchInstance[] memory) {
-        return creatorLaunches[creator_];
-    }
-
-    function getActiveLaunches(uint256 offset, uint256 limit)
-        external view returns (address[] memory result, uint256 total)
-    {
-        total = launches.length;
-        uint256 end = offset + limit > total ? total : offset + limit;
-
-        uint256 count = 0;
-        for (uint256 i = offset; i < end; i++) {
-            LaunchInstance.LaunchState s = launches[i].state();
-            if (s == LaunchInstance.LaunchState.Active || s == LaunchInstance.LaunchState.Pending) count++;
-        }
-
-        result = new address[](count);
-        uint256 idx = 0;
-        for (uint256 i = offset; i < end; i++) {
-            LaunchInstance.LaunchState s = launches[i].state();
-            if (s == LaunchInstance.LaunchState.Active || s == LaunchInstance.LaunchState.Pending) {
-                result[idx++] = address(launches[i]);
-            }
-        }
-    }
-
-    /// @notice Returns daily launch stats for a range of days.
-    function getDailyLaunchStats(uint256 fromDay, uint256 toDay)
-        external view returns (LaunchDayStats[] memory stats)
-    {
-        if (toDay < fromDay) revert InvalidRange();
-        uint256 count = toDay - fromDay + 1;
-        if (count > 365) revert MaxDaysExceeded();
-        stats = new LaunchDayStats[](count);
-        for (uint256 i; i < count;) {
-            stats[i] = dailyLaunchStats[fromDay + i];
-            unchecked { ++i; }
-        }
-    }
-
-    // ── Admin ──────────────────────────────────────────────────
-
-    function setPlatformWallet(address wallet_) external onlyOwner {
-        if (wallet_ == address(0)) revert InvalidAddress();
-        platformWallet = wallet_;
-        emit PlatformWalletUpdated(wallet_);
-    }
-
-    function setDexRouter(address router_) external onlyOwner {
-        if (router_ == address(0)) revert InvalidAddress();
-        dexRouter = router_;
-        emit DexRouterUpdated(router_);
-    }
-
-    function setCurveDefaults(CurveDefaults calldata defaults_) external onlyOwner {
-        curveDefaults = defaults_;
-        emit CurveDefaultsUpdated();
-    }
-
-    function setTokenFactory(address factory_) external onlyOwner {
-        tokenFactory = factory_;
-        emit TokenFactoryUpdated(factory_);
-    }
-
-    // ── Fee Management ───────────────────────────────────────
-
-    function setLaunchFee(uint256 fee_) external onlyOwner {
-        launchFee = fee_;
-        emit LaunchFeeUpdated(fee_);
-    }
-
-    function setUsdt(address usdt_) external onlyOwner {
-        if (usdt_ == address(0)) revert InvalidUsdt();
-        usdt = usdt_;
-    }
-
-    function addPaymentToken(address token_) external onlyOwner {
-        if (isPaymentSupported[token_]) revert AlreadySupported();
-        _supportedPaymentTokens.push(token_);
-        isPaymentSupported[token_] = true;
-        emit PaymentTokenAdded(token_);
-    }
-
-    function removePaymentToken(address token_) external onlyOwner {
-        if (!isPaymentSupported[token_]) revert NotSupported();
-        isPaymentSupported[token_] = false;
-        // Remove from array
-        for (uint256 i = 0; i < _supportedPaymentTokens.length; i++) {
-            if (_supportedPaymentTokens[i] == token_) {
-                _supportedPaymentTokens[i] = _supportedPaymentTokens[_supportedPaymentTokens.length - 1];
-                _supportedPaymentTokens.pop();
-                break;
-            }
-        }
-        emit PaymentTokenRemoved(token_);
-    }
-
-    function getSupportedPaymentTokens() external view returns (address[] memory) {
-        return _supportedPaymentTokens;
-    }
-
-    /// @notice Get the launch fee amount in a specific payment token.
-    function getLaunchFee(address paymentToken) external view returns (uint256) {
-        if (launchFee == 0) return 0;
-        return _convertFee(launchFee, paymentToken);
-    }
-
-    /// @notice Withdraw collected fees. Owner only.
-    function withdrawFees(address token_) external onlyOwner {
-        if (token_ == address(0)) {
-            uint256 bal = address(this).balance;
-            if (bal == 0) revert NoBalance();
-            (bool ok, ) = owner().call{value: bal}("");
-            if (!ok) revert WithdrawFailed();
-        } else {
-            uint256 bal = IERC20(token_).balanceOf(address(this));
-            if (bal == 0) revert NoBalance();
-            SafeERC20.safeTransfer(IERC20(token_), owner(), bal);
-        }
-    }
-
-    // ── Internal ───────────────────────────────────────────────
-
-    /// @dev Collect launch fee from payer. Returns the fee amount collected.
-    ///      For native payments, excess is refunded to the payer (not msg.sender,
-    ///      since msg.sender may be TokenFactory forwarding on behalf of the user).
-    function _collectLaunchFee(address payer, address paymentToken) internal returns (uint256 amount) {
-        if (launchFee == 0) return 0;
-
-        if (!isPaymentSupported[paymentToken]) revert UnsupportedPaymentToken();
-
-        amount = _convertFee(launchFee, paymentToken);
-        if (amount == 0) revert CannotDetermineFee();
-
-        if (paymentToken == address(0)) {
-            if (msg.value < amount) revert InsufficientNativePayment();
-            uint256 excess = msg.value - amount;
-            if (excess > 0) {
-                // Refund excess to the actual payer (not msg.sender which may be TokenFactory)
-                (bool ok, ) = payer.call{value: excess}("");
-                if (!ok) revert RefundFailed();
-            }
-        } else {
-            // Pull from msg.sender (for direct calls msg.sender == payer;
-            // for createLaunchFor, msg.sender is TokenFactory which relays the fee)
-            IERC20(paymentToken).safeTransferFrom(msg.sender, address(this), amount);
-        }
-
-        // Track daily stats
-        uint256 day = block.timestamp / 86400;
-        uint256 feeUsdt = paymentToken == usdt ? amount : launchFee;
-        dailyLaunchStats[day].totalFeeUsdt += feeUsdt;
-        totalLaunchFeeEarnedUsdt += feeUsdt;
-
-        emit LaunchFeePaid(payer, paymentToken, amount);
-    }
-
-    /// @dev Record a launch creation in daily stats.
-    function _recordLaunchCreated() internal {
-        uint256 day = block.timestamp / 86400;
-        dailyLaunchStats[day].created++;
-    }
-
-    /// @notice Clear tokenToLaunch mapping after a failed launch (refund completed).
-    ///         Only callable by the registered launch contract for that token.
-    function clearTokenLaunch(address token_) external {
-        LaunchInstance launch = tokenToLaunch[token_];
-        if (address(launch) == address(0)) revert NotRegisteredLaunch();
-        if (msg.sender != address(launch)) revert OnlyLaunch();
-        if (launch.state() != LaunchInstance.LaunchState.Refunding) revert NotRefunding();
-        delete tokenToLaunch[token_];
-    }
-
-    /// @notice Record a graduation. Called by LaunchInstance on graduation.
-    ///         Only callable by registered launch contracts that have actually graduated.
-    function recordGraduation(address launch_) external {
-        if (address(tokenToLaunch[address(LaunchInstance(payable(launch_)).token())]) != launch_) revert NotRegisteredLaunch();
-        if (msg.sender != launch_) revert OnlyLaunch();
-        if (LaunchInstance(payable(launch_)).state() != LaunchInstance.LaunchState.Graduated) revert NotGraduated();
-        uint256 day = block.timestamp / 86400;
-        dailyLaunchStats[day].graduated++;
-    }
-
-    /// @dev Convert USDT-denominated fee to the equivalent amount in paymentToken.
-    function _convertFee(uint256 baseFeeUsdt, address paymentToken) internal view returns (uint256) {
-        // If paying in USDT, return as-is
-        if (paymentToken == usdt) return baseFeeUsdt;
-
-        // Use DEX to get conversion rate
-        IUniswapV2Router02 router = IUniswapV2Router02(dexRouter);
-        address weth = router.WETH();
-
-        if (paymentToken == address(0)) {
-            // Native coin: USDT → WETH path
-            address[] memory path = new address[](2);
-            path[0] = usdt;
-            path[1] = weth;
-            try router.getAmountsOut(baseFeeUsdt, path) returns (uint256[] memory amounts) {
-                return amounts[1];
-            } catch {
-                return 0;
-            }
-        } else {
-            // ERC20: USDT → paymentToken (try direct, then via WETH)
-            address[] memory directPath = new address[](2);
-            directPath[0] = usdt;
-            directPath[1] = paymentToken;
-            try router.getAmountsOut(baseFeeUsdt, directPath) returns (uint256[] memory amounts) {
-                return amounts[1];
-            } catch {
-                // Try via WETH
-                address[] memory path = new address[](3);
-                path[0] = usdt;
-                path[1] = weth;
-                path[2] = paymentToken;
-                try router.getAmountsOut(baseFeeUsdt, path) returns (uint256[] memory amounts) {
-                    return amounts[2];
-                } catch {
-                    return 0;
-                }
-            }
-        }
-    }
-
-    function _getCurveParams(LaunchInstance.CurveType curveType_)
-        internal view returns (uint256 param1, uint256 param2)
-    {
-        if (curveType_ == LaunchInstance.CurveType.Linear) {
-            return (curveDefaults.linearSlope, curveDefaults.linearIntercept);
-        } else if (curveType_ == LaunchInstance.CurveType.SquareRoot) {
-            return (curveDefaults.sqrtCoefficient, 0);
-        } else if (curveType_ == LaunchInstance.CurveType.Quadratic) {
-            return (curveDefaults.quadraticCoefficient, 0);
-        } else {
-            return (curveDefaults.expBase, curveDefaults.expKFactor);
-        }
     }
 
     receive() external payable {}

@@ -203,6 +203,8 @@
 					{@const hardCap = BigInt(launch.hard_cap || '0')}
 					{@const progress = progressPercent(raised, hardCap)}
 					{@const deadline = Number(launch.deadline || 0)}
+					{@const startTs = Number(launch.start_timestamp || 0)}
+					{@const isScheduled = startTs > 0 && startTs * 1000 > tickNow}
 					<a href="/launchpad/{launch.address}" class="live-launch-card card p-0 block no-underline group">
 						<div class="p-4 pb-3">
 							<div class="flex items-start gap-3">
@@ -219,10 +221,15 @@
 										<span class="text-gray-600 text-xs font-mono shrink-0">{launch.token_symbol || '???'}</span>
 									</div>
 									<div class="flex items-center gap-1.5">
-										<span class="live-dot"></span>
-										<span class="text-xs font-mono text-cyan-400">Active</span>
-										{#if deadline > 0}
-											<span class="text-gray-600 text-[10px] font-mono ml-auto">{countdownStr(deadline)}</span>
+										{#if isScheduled}
+											<span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+											<span class="text-xs font-mono text-amber-400">Starts {countdownStr(startTs)}</span>
+										{:else}
+											<span class="live-dot"></span>
+											<span class="text-xs font-mono text-cyan-400">Active</span>
+											{#if deadline > 0}
+												<span class="text-gray-600 text-[10px] font-mono ml-auto">{countdownStr(deadline)}</span>
+											{/if}
 										{/if}
 									</div>
 								</div>

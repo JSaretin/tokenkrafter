@@ -2,7 +2,7 @@ import { ethers } from 'ethers';
 
 export const LAUNCHPAD_FACTORY_ABI = [
 	// Launch creation
-	'function createLaunch(address token_, uint256 totalTokens_, uint8 curveType_, uint256 softCap_, uint256 hardCap_, uint256 durationDays_, uint256 maxBuyBps_, uint256 creatorAllocationBps_, uint256 vestingDays_, address paymentToken_) external payable returns (address)',
+	'function createLaunch(address token_, uint256 totalTokens_, uint8 curveType_, uint256 softCap_, uint256 hardCap_, uint256 durationDays_, uint256 maxBuyBps_, uint256 creatorAllocationBps_, uint256 vestingDays_, address paymentToken_, uint256 startTimestamp_) external payable returns (address)',
 
 	// View functions
 	'function totalLaunches() view returns (uint256)',
@@ -75,7 +75,8 @@ export const LAUNCH_INSTANCE_ABI = [
 	'function previewBuy(uint256 baseAmount) view returns (uint256 tokensOut, uint256 fee, uint256 priceImpactBps)',
 	'function progressBps() view returns (uint256 softCapBps, uint256 hardCapBps)',
 	'function vestingInfo() view returns (uint256 total, uint256 claimed, uint256 claimable, uint256 nextClaimTimestamp)',
-	'function getLaunchInfo() view returns (address token_, address creator_, uint8 curveType_, uint8 state_, uint256 softCap_, uint256 hardCap_, uint256 deadline_, uint256 totalBaseRaised_, uint256 tokensSold_, uint256 tokensForCurve_, uint256 tokensForLP_, uint256 creatorAllocationBps_, uint256 currentPrice_, address usdt_)',
+	'function startTimestamp() view returns (uint256)',
+	'function getLaunchInfo() view returns (address token_, address creator_, uint8 curveType_, uint8 state_, uint256 softCap_, uint256 hardCap_, uint256 deadline_, uint256 totalBaseRaised_, uint256 tokensSold_, uint256 tokensForCurve_, uint256 tokensForLP_, uint256 creatorAllocationBps_, uint256 currentPrice_, address usdt_, uint256 startTimestamp_)',
 
 	// Events
 	'event TokenBought(address indexed buyer, uint256 tokenAmount, uint256 basePaid, uint256 newPrice)',
@@ -107,6 +108,7 @@ export interface LaunchInfo {
 	creatorAllocationBps: bigint;
 	currentPrice: bigint;  // in USDT per token
 	usdtAddress: string;
+	startTimestamp: bigint; // 0 = immediate, >0 = scheduled start
 	totalTokensRequired: bigint;
 	totalTokensDeposited: bigint;
 	// Token metadata (fetched separately)
@@ -162,6 +164,7 @@ export async function fetchLaunchInfo(
 		creatorAllocationBps: info.creatorAllocationBps_,
 		currentPrice: info.currentPrice_,
 		usdtAddress: info.usdt_,
+		startTimestamp: info.startTimestamp_,
 		totalTokensRequired,
 		totalTokensDeposited
 	};
