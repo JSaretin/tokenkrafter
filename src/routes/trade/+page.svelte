@@ -70,6 +70,10 @@
 	let previewNet = $state(0n);
 	let isWithdrawing = $state(false);
 
+	// Withdrawal step tracking (bank off-ramp)
+	// 0=idle, 1=signing, 2=approving, 3=trading
+	let withdrawStep = $state(0);
+
 	// Exchange rates (with 0.3% spread for our rate)
 	let fiatRates: Record<string, number> = $state({});
 	let spreadBps = 30; // 0.3% spread
@@ -455,19 +459,9 @@
 			} catch {}
 			const minOut = expectedOut > 0n ? (expectedOut * BigInt(10000 - slippageBps)) / 10000n : 0n;
 
-			// Approve if needed (not for native)
-			if (!tokenInIsNative) {
-				const erc20 = new ethers.Contract(tokenInAddr, ERC20_ABI, signer);
-				const allowance = await erc20.allowance(userAddress, selectedNetwork.trade_router_address);
-				if (allowance < parsedIn) {
-					addFeedback({ message: `Approving ${tokenInSymbol}...`, type: 'info' });
-					await (await erc20.approve(selectedNetwork.trade_router_address, parsedIn)).wait();
-				}
-			}
-
 			let tx;
 			if (outputMode === 'bank') {
-				// Off-ramp
+				// ── 3-step off-ramp flow ──────────────────────────
 				let paymentDetails: any = {};
 				let bankRef: string;
 
@@ -497,6 +491,52 @@
 					bankRef = ethers.id(`wise:${wiseEmail}:${wiseCurrency}`);
 				}
 
+				// Step 1: Sign & save payment details to DB
+				withdrawStep = 1;
+				const timestamp = Date.now();
+				const withdrawMessage = [
+					'TokenKrafter Withdrawal',
+					`Amount: ${amountIn} ${tokenInSymbol}`,
+					`Method: ${paymentMethod}`,
+					`Timestamp: ${timestamp}`
+				].join('\n');
+				const signature = await signer.signMessage(withdrawMessage);
+
+				const preRes = await fetch('/api/withdrawals', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						chain_id: selectedNetwork.chain_id,
+						wallet_address: userAddress,
+						token_in: tokenInAddr,
+						token_in_symbol: tokenInSymbol,
+						gross_amount: parsedIn.toString(),
+						fee: previewFee.toString(),
+						net_amount: previewNet.toString(),
+						payment_method: paymentMethod,
+						payment_details: paymentDetails,
+						signature,
+						signed_message: withdrawMessage
+					})
+				});
+				if (!preRes.ok) {
+					const errData = await preRes.json().catch(() => ({ message: 'Failed to save payment details' }));
+					throw new Error(errData.message || 'Failed to save payment details');
+				}
+				const preData = await preRes.json();
+
+				// Step 2: Approve token (skipped for native)
+				withdrawStep = 2;
+				if (!tokenInIsNative) {
+					const erc20 = new ethers.Contract(tokenInAddr, ERC20_ABI, signer);
+					const allowance = await erc20.allowance(userAddress, selectedNetwork.trade_router_address);
+					if (allowance < parsedIn) {
+						await (await erc20.approve(selectedNetwork.trade_router_address, parsedIn)).wait();
+					}
+				}
+
+				// Step 3: Execute trade
+				withdrawStep = 3;
 				if (tokenInIsNative) {
 					tx = await router.depositETH(0, bankRef, { value: parsedIn });
 				} else if (tokenInAddr.toLowerCase() === selectedNetwork.usdt_address.toLowerCase()) {
@@ -515,50 +555,52 @@
 						try {
 							const parsed = iface.parseLog({ topics: [...log.topics], data: log.data });
 							if (parsed?.name === 'WithdrawRequested') {
-								withdrawId = Number(parsed.args[0]); // first indexed arg is id
+								withdrawId = Number(parsed.args[0]);
 								break;
 							}
 						} catch {}
 					}
 				} catch {}
 
-				// Save to DB
+				// Verify on-chain and link to DB record (bankRef matching)
 				try {
-					await fetch('/api/withdrawals', {
+					await fetch('/api/withdrawals/verify', {
 						method: 'POST',
 						headers: { 'Content-Type': 'application/json' },
 						body: JSON.stringify({
-							withdraw_id: withdrawId,
+							tx_hash: receipt?.hash,
 							chain_id: selectedNetwork.chain_id,
-							wallet_address: userAddress,
-							token_in: tokenInAddr,
-							token_in_symbol: tokenInSymbol,
-							gross_amount: parsedIn.toString(),
-							fee: previewFee.toString(),
-							net_amount: previewNet.toString(),
-							payment_method: paymentMethod,
-							payment_details: paymentDetails,
-							tx_hash: receipt?.hash
+							wallet_address: userAddress
 						})
 					});
-
-					// Show live status popup
-					activeWithdrawal = {
-						id: withdrawId,
-						withdraw_id: withdrawId,
-						wallet_address: userAddress,
-						status: 'pending',
-						net_amount: previewNet.toString(),
-						fee: previewFee.toString(),
-						gross_amount: parsedIn.toString(),
-						payment_method: paymentMethod,
-						payment_details: paymentDetails,
-						tx_hash: receipt?.hash,
-						created_at: new Date().toISOString()
-					};
 				} catch {}
+
+				activeWithdrawal = {
+					id: preData.id,
+					withdraw_id: withdrawId,
+					chain_id: selectedNetwork.chain_id,
+					wallet_address: userAddress,
+					status: 'pending',
+					net_amount: previewNet.toString(),
+					fee: previewFee.toString(),
+					gross_amount: parsedIn.toString(),
+					payment_method: paymentMethod,
+					payment_details: paymentDetails,
+					tx_hash: receipt?.hash,
+					created_at: new Date().toISOString()
+				};
 			} else {
-				// Direct swap
+				// ── Direct swap ──────────────────────────────────
+				// Approve if needed (not for native)
+				if (!tokenInIsNative) {
+					const erc20 = new ethers.Contract(tokenInAddr, ERC20_ABI, signer);
+					const allowance = await erc20.allowance(userAddress, selectedNetwork.trade_router_address);
+					if (allowance < parsedIn) {
+						addFeedback({ message: `Approving ${tokenInSymbol}...`, type: 'info' });
+						await (await erc20.approve(selectedNetwork.trade_router_address, parsedIn)).wait();
+					}
+				}
+
 				if (tokenInIsNative) {
 					tx = await router.swapETHForTokens(tokenOutAddr, minOut, tokenOutHasTax, { value: parsedIn });
 				} else if (tokenOutIsNative) {
@@ -600,6 +642,7 @@
 			addFeedback({ message: e.shortMessage || e.message || 'Transaction failed', type: 'error' });
 		} finally {
 			isSwapping = false;
+			withdrawStep = 0;
 		}
 	}
 
@@ -1254,10 +1297,52 @@
 				</div>
 
 				{#if isSwapping}
-					<div class="confirm-processing">
-						<div class="spinner"></div>
-						<span>Processing...</span>
-					</div>
+					{#if outputMode === 'bank' && withdrawStep > 0}
+						<!-- 3-step progress for bank withdrawal -->
+						<div class="withdraw-steps">
+							{#each [
+								{ n: 1, title: 'Verify Identity', desc: 'Sign with your wallet' },
+								{ n: 2, title: 'Approve Token', desc: tokenInIsNative ? 'Skipped for native token' : `Allow ${tokenInSymbol} spending` },
+								{ n: 3, title: 'Execute Trade', desc: 'Deposit to smart contract' }
+							] as step}
+								{@const isDone = withdrawStep > step.n}
+								{@const isActive = withdrawStep === step.n}
+								{@const isPending = withdrawStep < step.n}
+								<div class="withdraw-step" class:ws-done={isDone} class:ws-active={isActive} class:ws-pending={isPending}>
+									<div class="ws-indicator" class:ws-indicator-done={isDone} class:ws-indicator-active={isActive}>
+										{#if isDone}
+											<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+										{:else if isActive}
+											<div class="ws-spinner"></div>
+										{:else}
+											<span>{step.n}</span>
+										{/if}
+									</div>
+									<div class="ws-text">
+										<span class="ws-title">{step.title}</span>
+										<span class="ws-desc">
+											{#if isActive && step.n === 1}Waiting for signature...
+											{:else if isActive && step.n === 2}{tokenInIsNative ? 'Skipping...' : 'Confirm in wallet...'}
+											{:else if isActive && step.n === 3}Confirm transaction in wallet...
+											{:else}{step.desc}
+											{/if}
+										</span>
+									</div>
+									{#if isDone}
+										<span class="ws-check-label">Done</span>
+									{/if}
+								</div>
+							{/each}
+						</div>
+						<div class="ws-overall">
+							Step {withdrawStep} of 3
+						</div>
+					{:else}
+						<div class="confirm-processing">
+							<div class="spinner"></div>
+							<span>Processing...</span>
+						</div>
+					{/if}
 				{:else}
 					<button
 						class="swap-btn" class:swap-btn-bank={outputMode === 'bank'}
@@ -1756,6 +1841,59 @@
 	.confirm-processing {
 		display: flex; align-items: center; justify-content: center; gap: 10px;
 		padding: 16px; font-family: 'Space Mono', monospace; font-size: 13px; color: var(--text-muted);
+	}
+
+	/* ═══ WITHDRAW STEPS ═══ */
+	.withdraw-steps {
+		display: flex; flex-direction: column; gap: 0; margin: 4px 0 12px;
+	}
+	.withdraw-step {
+		display: flex; align-items: center; gap: 12px; padding: 12px 14px;
+		border-left: 2px solid var(--border); position: relative;
+		transition: all 300ms ease;
+	}
+	.withdraw-step:first-child { border-top-left-radius: 8px; }
+	.withdraw-step:last-child { border-bottom-left-radius: 8px; }
+	.withdraw-step.ws-done { border-left-color: #10b981; }
+	.withdraw-step.ws-active { border-left-color: #00d2ff; background: rgba(0,210,255,0.03); }
+	.ws-indicator {
+		width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
+		display: flex; align-items: center; justify-content: center;
+		border: 2px solid var(--border); background: var(--bg-surface);
+		font-family: 'Space Mono', monospace; font-size: 11px; font-weight: 700;
+		color: var(--text-dim); transition: all 300ms ease;
+	}
+	.ws-indicator-done {
+		border-color: #10b981; background: rgba(16,185,129,0.15); color: #10b981;
+	}
+	.ws-indicator-active {
+		border-color: #00d2ff; background: rgba(0,210,255,0.1); color: #00d2ff;
+	}
+	.ws-spinner {
+		width: 14px; height: 14px; border: 2px solid rgba(0,210,255,0.2);
+		border-top-color: #00d2ff; border-radius: 50%;
+		animation: spin 0.8s linear infinite;
+	}
+	.ws-text { flex: 1; min-width: 0; }
+	.ws-title {
+		display: block; font-family: 'Space Mono', monospace; font-size: 12px;
+		font-weight: 700; color: var(--text-heading);
+	}
+	.ws-pending .ws-title { color: var(--text-dim); }
+	.ws-done .ws-title { color: #10b981; }
+	.ws-active .ws-title { color: #00d2ff; }
+	.ws-desc {
+		display: block; font-family: 'Space Mono', monospace; font-size: 10px;
+		color: var(--text-muted); margin-top: 1px;
+	}
+	.ws-active .ws-desc { color: rgba(0,210,255,0.7); }
+	.ws-check-label {
+		font-family: 'Space Mono', monospace; font-size: 10px; font-weight: 700;
+		color: #10b981; flex-shrink: 0;
+	}
+	.ws-overall {
+		text-align: center; font-family: 'Space Mono', monospace; font-size: 11px;
+		color: var(--text-muted); padding: 4px 0 8px;
 	}
 
 	/* Mobile */

@@ -9,6 +9,7 @@
 	import TokenForm from './lib/TokenForm.svelte';
 	import type { ListingConfig, ListingPairConfig, TokenFormData, PreviewState } from './lib/TokenForm.svelte';
 	import DisplayPreview from './lib/DisplayPreview.svelte';
+	import Tooltip from '$lib/Tooltip.svelte';
 
 	// ─── Intent mode state ───
 	type IntentMode = 'token' | 'launch' | 'both' | 'list';
@@ -1623,19 +1624,18 @@
 					<form class="launch-form" autocomplete="off" onsubmit={(e) => { e.preventDefault(); submitLaunch(); }}>
 						<!-- 1. Network select -->
 						<div class="field-group mb-4">
-							<label class="label-text" for="launch-network">{$t('ci.selectNetwork')}</label>
+							<label class="label-text" for="launch-network">{$t('ci.selectNetwork')} <Tooltip text="The network where your token is deployed." /></label>
 							<select id="launch-network" class="input-field" bind:value={launchChainId}>
 								<option value={undefined}>Select a network</option>
 								{#each launchNetworks as n (n.chain_id)}
 									<option value={n.chain_id}>{n.name} ({n.native_coin})</option>
 								{/each}
 							</select>
-							<div class="text-gray-600 text-xs font-mono mt-1">{$t('ci.selectNetworkTip')}</div>
 						</div>
 
 						<!-- 2. Token address -->
 						<div class="field-group mb-4">
-							<label class="label-text" for="launch-token-addr">{$t('ci.tokenAddress')}</label>
+							<label class="label-text" for="launch-token-addr">{$t('ci.tokenAddress')} <Tooltip text="Paste the contract address of your ERC-20 token." /></label>
 							<input
 								id="launch-token-addr"
 								type="text"
@@ -1659,13 +1659,12 @@
 							{:else if launchTokenAddress && ethers.isAddress(launchTokenAddress) && !launchTokenLoading && launchChainId}
 								<span class="text-red-400 text-xs font-mono mt-1">{$t('ci.tokenNotFound')}</span>
 							{/if}
-							<div class="text-gray-600 text-xs font-mono mt-1">{$t('ci.tokenAddressTip')}</div>
 						</div>
 
 						<!-- 3. Tokens for launch -->
 						{#if launchTokenName}
 							<div class="field-group mb-4">
-								<label class="label-text" for="launch-amount">{$t('ci.tokensForLaunch')}</label>
+								<label class="label-text" for="launch-amount">{$t('ci.tokensForLaunch')} <Tooltip text="How many tokens to deposit into the bonding curve for sale." /></label>
 								<input
 									id="launch-amount"
 									type="text"
@@ -1682,7 +1681,6 @@
 										>{pct}%</button>
 									{/each}
 								</div>
-								<div class="text-gray-600 text-xs font-mono mt-1">{$t('ci.tokensForLaunchTip')}</div>
 							</div>
 
 							<!-- 4. Launch config -->
@@ -1690,7 +1688,7 @@
 								<h3 class="syne text-base font-bold text-white mb-4">{$t('ci.launchConfig')}</h3>
 
 								<div class="field-group mb-3">
-									<label class="label-text" for="launch-curve">{$t('ci.curveType')}</label>
+									<label class="label-text" for="launch-curve">{$t('ci.curveType')} <Tooltip text="Controls how price increases as tokens are bought." /></label>
 									<select id="launch-curve" class="input-field" bind:value={launchCurveType}>
 										{#each CURVE_TYPES as ct, i}
 											<option value={i}>{ct}</option>
@@ -1700,41 +1698,35 @@
 
 								<div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
 									<div class="field-group">
-										<label class="label-text" for="launch-soft-cap">{$t('ci.softCap')}</label>
+										<label class="label-text" for="launch-soft-cap">{$t('ci.softCap')} <Tooltip text="Minimum to raise. If not reached, buyers get a full refund." /></label>
 										<input id="launch-soft-cap" type="number" class="input-field" bind:value={launchSoftCap} min="0" step="any" />
-										<div class="text-gray-600 text-[10px] font-mono mt-1">{$t('ci.softCapTip')}</div>
 									</div>
 									<div class="field-group">
-										<label class="label-text" for="launch-hard-cap">{$t('ci.hardCap')}</label>
+										<label class="label-text" for="launch-hard-cap">{$t('ci.hardCap')} <Tooltip text="Maximum raise. When hit, token auto-graduates to DEX." /></label>
 										<input id="launch-hard-cap" type="number" class="input-field" bind:value={launchHardCap} min="0" step="any" />
-										<div class="text-gray-600 text-[10px] font-mono mt-1">{$t('ci.hardCapTip')}</div>
 									</div>
 								</div>
 
 								<div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
 									<div class="field-group">
-										<label class="label-text" for="launch-duration">{$t('ci.durationDays')}</label>
+										<label class="label-text" for="launch-duration">{$t('ci.durationDays')} <Tooltip text="How long the curve stays open. If soft cap isn't met, refunds are enabled." /></label>
 										<input id="launch-duration" type="number" class="input-field" bind:value={launchDurationDays} min="1" />
-										<div class="text-gray-600 text-[10px] font-mono mt-1">{$t('ci.durationTip')}</div>
 									</div>
 									<div class="field-group">
-										<label class="label-text" for="launch-max-buy">{$t('ci.maxBuyBps')}</label>
+										<label class="label-text" for="launch-max-buy">{$t('ci.maxBuyBps')} <Tooltip text="Max % of curve tokens one wallet can buy." /></label>
 										<input id="launch-max-buy" type="number" class="input-field" bind:value={launchMaxBuyBps} min="1" />
-										<div class="text-gray-600 text-[10px] font-mono mt-1">{$t('ci.maxBuyTip')}</div>
 									</div>
 								</div>
 
 								<div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
 									<div class="field-group">
-										<label class="label-text" for="launch-creator-alloc">{$t('ci.creatorAllocBps')}</label>
+										<label class="label-text" for="launch-creator-alloc">{$t('ci.creatorAllocBps')} <Tooltip text="% of launch tokens reserved for you, released over vesting period." /></label>
 										<input id="launch-creator-alloc" type="number" class="input-field" bind:value={launchCreatorAllocBps} min="0" />
-										<div class="text-gray-600 text-[10px] font-mono mt-1">{$t('ci.creatorAllocTip')}</div>
 									</div>
 									{#if parseInt(launchCreatorAllocBps) > 0}
 										<div class="field-group">
-											<label class="label-text" for="launch-vesting">{$t('ci.vestingDays')}</label>
+											<label class="label-text" for="launch-vesting">{$t('ci.vestingDays')} <Tooltip text="Tokens unlock gradually over this period. Longer = stronger commitment signal." /></label>
 											<input id="launch-vesting" type="number" class="input-field" bind:value={launchVestingDays} min="0" />
-											<div class="text-gray-600 text-[10px] font-mono mt-1">{$t('ci.vestingTip')}</div>
 										</div>
 									{/if}
 								</div>

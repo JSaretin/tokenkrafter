@@ -3,6 +3,7 @@
 	import { ethers } from 'ethers';
 	import type { SupportedNetwork } from '$lib/structure';
 	import BondingCurveChart from '$lib/BondingCurveChart.svelte';
+	import Tooltip from '$lib/Tooltip.svelte';
 
 	export type ListingPairConfig = {
 		base: 'native' | 'usdt' | 'usdc';
@@ -578,14 +579,14 @@
 
 {#snippet networkSelect()}
 	<div class="field-group">
-		<label class="label-text" for="token-network">Network</label>
+		<label class="label-text" for="token-network">Network <Tooltip text="Which blockchain to deploy on. BSC has low fees and fast transactions." /></label>
 		<select id="token-network" required class="input-field" class:field-error={networkError} bind:value={chainId} onblur={() => markTouched('network')}>
 			<option value="">Select a network</option>
 			{#each supportedNetworks.filter((n) => n.platform_address.length > 2) as n (n.chain_id)}
 				<option value={n.chain_id}>{n.name} ({n.native_coin})</option>
 			{/each}
 		</select>
-		{#if networkError}<span class="field-error-text">{networkError}</span>{:else}<div class="tip">{useExistingToken ? 'The network where your token is deployed.' : 'Which blockchain to deploy on. BSC has low fees and fast transactions.'}</div>{/if}
+		{#if networkError}<span class="field-error-text">{networkError}</span>{/if}
 	</div>
 {/snippet}
 
@@ -639,7 +640,7 @@
 
 					<!-- Existing token address input -->
 					<div class="field-group">
-						<label class="label-text" for="existing-token-addr">Token Contract Address</label>
+						<label class="label-text" for="existing-token-addr">Token Contract Address <Tooltip text="Paste the contract address of your existing ERC-20 token." /></label>
 						<input
 							id="existing-token-addr"
 							type="text"
@@ -663,34 +664,32 @@
 						{:else if existingTokenAddress && ethers.isAddress(existingTokenAddress) && !existingTokenLoading}
 							<span class="text-red-400 text-xs font-mono mt-1">Could not fetch token info. Check address and network.</span>
 						{/if}
-						<div class="tip">Paste the contract address of your existing ERC-20 token. The launchpad will be created for this token.</div>
-					</div>
+						</div>
 				{:else}
 					<!-- New token creation fields first -->
 					<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 						<div class="field-group">
-							<label class="label-text" for="token-name">Token Name</label>
+							<label class="label-text" for="token-name">Token Name <Tooltip text="The full name shown on explorers and wallets." /></label>
 							<input id="token-name" required class="input-field" class:field-error={nameError} bind:value={name} onblur={() => markTouched('name')} placeholder="My Awesome Token" />
-							{#if nameError}<span class="field-error-text">{nameError}</span>{:else}<div class="tip">The full name shown on explorers and wallets. Pick something memorable and unique.</div>{/if}
+							{#if nameError}<span class="field-error-text">{nameError}</span>{/if}
 						</div>
 						<div class="field-group">
-							<label class="label-text" for="token-symbol">Symbol</label>
+							<label class="label-text" for="token-symbol">Symbol <Tooltip text="3-5 character ticker symbol (like BTC, ETH)." /></label>
 							<input id="token-symbol" required class="input-field" class:field-error={symbolError} bind:value={symbol} onblur={() => markTouched('symbol')} placeholder="MAT" maxlength="8" />
-							{#if symbolError}<span class="field-error-text">{symbolError}</span>{:else}<div class="tip">The ticker symbol (like BTC, ETH). 3-5 characters is standard.</div>{/if}
+							{#if symbolError}<span class="field-error-text">{symbolError}</span>{/if}
 							<span class="field-hint">{symbol.length}/8 chars</span>
 						</div>
 					</div>
 
 					<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 						<div class="field-group">
-							<label class="label-text" for="token-supply">Total Supply</label>
+							<label class="label-text" for="token-supply">Total Supply <Tooltip text="How many tokens exist. Common: 1M, 100M, 1B." /></label>
 							<input id="token-supply" required class="input-field" class:field-error={supplyError} bind:value={totalSupply} onblur={() => markTouched('supply')} placeholder="1,000,000" type="number" min="1" />
-							{#if supplyError}<span class="field-error-text">{supplyError}</span>{:else}<div class="tip">How many tokens exist in total. Common amounts: 1M, 100M, 1B.</div>{/if}
+							{#if supplyError}<span class="field-error-text">{supplyError}</span>{/if}
 						</div>
 						<div class="field-group">
-							<label class="label-text" for="token-decimals">Decimals</label>
+							<label class="label-text" for="token-decimals">Decimals <Tooltip text="How divisible the token is. 18 is standard (like ETH)." /></label>
 							<input id="token-decimals" required class="input-field" bind:value={decimals} type="number" min="0" max="18" />
-							<div class="tip">How divisible your token is. 18 is standard (like ETH).</div>
 							<span class="field-hint">Standard: 18</span>
 						</div>
 					</div>
@@ -847,19 +846,19 @@
 
 					<div class="grid grid-cols-3 gap-3">
 						<div class="field-group">
-							<label class="label-text" for="tax-buy">Buy Tax %</label>
+							<label class="label-text" for="tax-buy">Buy Tax % <Tooltip text="Charged when someone buys on a DEX. Typical: 2-5%." /></label>
 							<input id="tax-buy" type="number" class="input-field" class:field-error={buyTaxError()} bind:value={buyTaxPct} onblur={() => markTouched('buyTax')} min="0" max={maxBuyTax} step="0.5" placeholder="0" />
-							{#if buyTaxError()}<span class="field-error-text">{buyTaxError()}</span>{:else}<div class="tip">Charged when someone buys on a DEX. Typical: 2-5%.</div>{/if}
+							{#if buyTaxError()}<span class="field-error-text">{buyTaxError()}</span>{/if}
 						</div>
 						<div class="field-group">
-							<label class="label-text" for="tax-sell">Sell Tax %</label>
+							<label class="label-text" for="tax-sell">Sell Tax % <Tooltip text="Charged on sells. Higher discourages selling but can deter new buyers." /></label>
 							<input id="tax-sell" type="number" class="input-field" class:field-error={sellTaxError()} bind:value={sellTaxPct} onblur={() => markTouched('sellTax')} min="0" max={maxSellTax} step="0.5" placeholder="0" />
-							{#if sellTaxError()}<span class="field-error-text">{sellTaxError()}</span>{:else}<div class="tip">Charged when someone sells. Higher = discourages selling, but can deter new buyers.</div>{/if}
+							{#if sellTaxError()}<span class="field-error-text">{sellTaxError()}</span>{/if}
 						</div>
 						<div class="field-group">
-							<label class="label-text" for="tax-transfer">Transfer %</label>
+							<label class="label-text" for="tax-transfer">Transfer % <Tooltip text="On wallet-to-wallet transfers. Usually 0." /></label>
 							<input id="tax-transfer" type="number" class="input-field" class:field-error={transferTaxError()} bind:value={transferTaxPct} onblur={() => markTouched('transferTax')} min="0" max="5" step="0.5" placeholder="0" />
-							{#if transferTaxError()}<span class="field-error-text">{transferTaxError()}</span>{:else}<div class="tip">On wallet-to-wallet transfers. Usually 0 unless you want to discourage OTC trading.</div>{/if}
+							{#if transferTaxError()}<span class="field-error-text">{transferTaxError()}</span>{/if}
 						</div>
 					</div>
 
@@ -913,9 +912,6 @@
 											<button type="button" class="remove-wallet-btn" onclick={() => removeTaxWallet(i)}>x</button>
 										{/if}
 									</div>
-									{#if i === 0}
-										<div class="tip">Paste a wallet address. This could be your marketing wallet, a multi-sig, or any address.</div>
-									{/if}
 								</div>
 							{/each}
 						</div>
@@ -964,7 +960,7 @@
 			<div class="step-body">
 				<!-- Tokens % -->
 				<div class="field-group">
-					<label class="label-text" for="launch-pct">Tokens for Launch ({launchTokensPct}%)</label>
+					<label class="label-text" for="launch-pct">Tokens for Launch ({launchTokensPct}%) <Tooltip text="% of total supply for the bonding curve. 70% sold on curve, 30% to DEX liquidity + creator allocation." /></label>
 					<input
 						id="launch-pct"
 						type="range"
@@ -977,12 +973,11 @@
 						<span class="text-cyan-400">{launchTokensAmount()} {symbol || 'tokens'} (70% curve / 30% LP+alloc)</span>
 						<span>90%</span>
 					</div>
-					<div class="tip">How much of the total supply goes into the bonding curve. The rest goes to your wallet. 70% of launch tokens are sold on the curve, 30% goes to DEX liquidity + creator allocation.</div>
 				</div>
 
 				<!-- Curve Type -->
 				<div class="field-group">
-					<label class="label-text" for="launch-curve">Bonding Curve Shape</label>
+					<label class="label-text" for="launch-curve">Bonding Curve Shape <Tooltip text="Controls how price increases as tokens are bought. Linear is simplest; exponential rewards early buyers most." /></label>
 					<select id="launch-curve" class="input-field" bind:value={launchCurveType}>
 						{#each CURVE_TYPES_LABEL as ct, i}
 							<option value={i}>{ct}</option>
@@ -991,46 +986,32 @@
 					<div class="mt-2">
 						<BondingCurveChart curveType={launchCurveType} width={240} height={130} />
 					</div>
-					<div class="tip">
-						{#if launchCurveType === 0}
-							<strong>Linear:</strong> Price increases at a constant rate. Simplest and most predictable. Good for steady, fair launches.
-						{:else if launchCurveType === 1}
-							<strong>Square Root:</strong> Price rises fast early, then slows down. Rewards early buyers more, but later buyers still get a reasonable price.
-						{:else if launchCurveType === 2}
-							<strong>Quadratic:</strong> Price starts slow, then accelerates sharply. Gives latecomers time to buy, but final price can be high.
-						{:else}
-							<strong>Exponential:</strong> Price grows exponentially. Creates a strong FOMO effect. Biggest reward for very early buyers.
-						{/if}
-					</div>
 				</div>
 
 				<!-- Caps -->
 				<div class="grid grid-cols-2 gap-3">
 					<div class="field-group">
-						<label class="label-text" for="launch-soft">Soft Cap (USDT)</label>
+						<label class="label-text" for="launch-soft">Soft Cap (USDT) <Tooltip text="Minimum to raise. If not reached, all buyers get a full refund." /></label>
 						<input id="launch-soft" type="number" class="input-field" bind:value={launchSoftCap} step="any" min="0" placeholder="500" />
-						<div class="tip">Minimum to raise. If not reached by deadline, all buyers get a full refund.</div>
 					</div>
 					<div class="field-group">
-						<label class="label-text" for="launch-hard">Hard Cap (USDT)</label>
+						<label class="label-text" for="launch-hard">Hard Cap (USDT) <Tooltip text="Maximum raise. When hit, token auto-graduates to DEX with liquidity." /></label>
 						<input id="launch-hard" type="number" class="input-field" bind:value={launchHardCap} step="any" min="0" placeholder="5000" />
-						<div class="tip">Maximum raise. When hit, the token auto-graduates to a DEX with liquidity.</div>
 					</div>
 				</div>
 
 				<!-- Duration + Max Buy -->
 				<div class="grid grid-cols-2 gap-3">
 					<div class="field-group">
-						<label class="label-text" for="launch-dur">Duration</label>
+						<label class="label-text" for="launch-dur">Duration <Tooltip text="How long the curve stays open. If soft cap isn't met by deadline, refunds are enabled." /></label>
 						<select id="launch-dur" class="input-field" bind:value={launchDurationDays}>
 							{#each [7, 14, 21, 30, 45, 60, 90] as d}
 								<option value={String(d)}>{d} days</option>
 							{/each}
 						</select>
-						<div class="tip">How long the bonding curve stays open. After this, if soft cap isn't met, refunds are enabled.</div>
 					</div>
 					<div class="field-group">
-						<label class="label-text" for="launch-max">Max Buy / Wallet</label>
+						<label class="label-text" for="launch-max">Max Buy / Wallet <Tooltip text="Max % of curve tokens one wallet can buy. Prevents one buyer from taking the entire launch." /></label>
 						<select id="launch-max" class="input-field" bind:value={launchMaxBuyBps}>
 							<option value="50">0.5%</option>
 							<option value="100">1%</option>
@@ -1038,14 +1019,13 @@
 							<option value="300">3%</option>
 							<option value="500">5%</option>
 						</select>
-						<div class="tip">Max % of curve tokens one wallet can buy. Prevents one person from buying the entire launch.</div>
 					</div>
 				</div>
 
 				<!-- Creator Alloc + Vesting -->
 				<div class="grid grid-cols-2 gap-3">
 					<div class="field-group">
-						<label class="label-text" for="launch-alloc">Creator Allocation</label>
+						<label class="label-text" for="launch-alloc">Creator Allocation <Tooltip text="% of launch tokens reserved for you, released over the vesting period. Builds investor trust." /></label>
 						<select id="launch-alloc" class="input-field" bind:value={launchCreatorAllocBps} onchange={() => { if (launchCreatorAllocBps !== '0' && launchVestingDays === '0') launchVestingDays = '30'; }}>
 							<option value="0">None</option>
 							<option value="100">1%</option>
@@ -1053,17 +1033,15 @@
 							<option value="300">3%</option>
 							<option value="500">5%</option>
 						</select>
-						<div class="tip">% of launch tokens reserved for you (the creator), released over the vesting period. Builds investor trust via locked tokens.</div>
 					</div>
 					{#if launchCreatorAllocBps !== '0'}
 						<div class="field-group">
-							<label class="label-text" for="launch-vest">Vesting Period</label>
+							<label class="label-text" for="launch-vest">Vesting Period <Tooltip text="Tokens unlock gradually over this period. Longer vesting signals stronger commitment." /></label>
 							<select id="launch-vest" class="input-field" bind:value={launchVestingDays}>
 								<option value="30">30 days</option>
 								<option value="60">60 days</option>
 								<option value="90">90 days</option>
 							</select>
-							<div class="tip">Your allocated tokens unlock gradually over this period. Longer vesting signals stronger commitment.</div>
 						</div>
 					{/if}
 				</div>
@@ -1094,7 +1072,7 @@
 
 						<div class="grid grid-cols-2 gap-3">
 							<div class="field-group">
-								<label class="label-text" for="prot-wallet">Max Wallet (%)</label>
+								<label class="label-text" for="prot-wallet">Max Wallet (%) <Tooltip text="Max tokens one wallet can hold. 2% = no one holds more than 2% of supply." /></label>
 								<select id="prot-wallet" class="input-field" bind:value={maxWalletPct}>
 									<option value="0">No limit</option>
 									<option value="1">1%</option>
@@ -1103,10 +1081,9 @@
 									<option value="5">5%</option>
 									<option value="10">10%</option>
 								</select>
-								<div class="tip">Max tokens one wallet can hold. 2% = no one can hold more than 2% of supply.</div>
 							</div>
 							<div class="field-group">
-								<label class="label-text" for="prot-tx">Max Transaction (%)</label>
+								<label class="label-text" for="prot-tx">Max Transaction (%) <Tooltip text="Max tokens per transaction. Prevents large buys/sells that could crash the price." /></label>
 								<select id="prot-tx" class="input-field" bind:value={maxTransactionPct}>
 									<option value="0">No limit</option>
 									<option value="0.5">0.5%</option>
@@ -1115,21 +1092,19 @@
 									<option value="3">3%</option>
 									<option value="5">5%</option>
 								</select>
-								<div class="tip">Max tokens per transaction. Prevents large single buys or sells that could crash the price.</div>
 							</div>
 						</div>
 						<div class="field-group">
-							<label class="label-text" for="prot-cool">Buy Cooldown</label>
+							<label class="label-text" for="prot-cool">Buy Cooldown <Tooltip text="Time between buys from the same wallet. Slows down bots and snipers." /></label>
 							<select id="prot-cool" class="input-field" bind:value={cooldownSeconds}>
 								<option value="0">Disabled</option>
 								<option value="30">30 seconds</option>
 								<option value="60">1 minute</option>
 								<option value="300">5 minutes</option>
 							</select>
-							<div class="tip">Time between buys from the same wallet. Slows down bots that try to frontrun or snipe.</div>
 						</div>
 					{:else}
-						<div class="tip mt-2">No whale protection — anyone can buy or hold any amount. You can't add limits later since trading is enabled at launch.</div>
+						<div class="tip mt-2">No whale protection — anyone can buy or hold any amount.</div>
 					{/if}
 				</div>
 			{/if}
@@ -1150,12 +1125,11 @@
 			<div class="step-body">
 				<!-- Token Price -->
 				<div class="field-group">
-					<label class="label-text" for="listing-price">Token Price (USDT)</label>
+					<label class="label-text" for="listing-price">Token Price (USDT) <Tooltip text="This price applies to all pairs. The contract calculates token amounts based on price and liquidity provided." /></label>
 					<div class="input-with-suffix">
 						<input id="listing-price" type="text" class="input-field" bind:value={listingPricePerToken} placeholder="0.001" />
 						<span class="input-suffix">USDT per {symbol || 'token'}</span>
 					</div>
-					<div class="tip">This price applies to all pairs below. The contract calculates how many tokens to list based on this price and the amount you provide.</div>
 				</div>
 
 				<!-- Liquidity Pairs -->
@@ -1402,7 +1376,6 @@
 		line-height: 1.5;
 		padding: 0 2px;
 	}
-	.tip strong { color: #9ca3af; }
 
 	.edu-box {
 		padding: 12px 14px;
