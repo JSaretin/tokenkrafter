@@ -13,6 +13,14 @@ contract MockUSDT is ERC20 {
     function mint(address to, uint256 amount) external { _mint(to, amount); }
 }
 
+/// @dev 18-decimal mock USDT for local frontend testing (matches BSC USDT decimals)
+contract MockUSDT18 is ERC20 {
+    constructor() ERC20("Mock USDT", "USDT") {
+        _mint(msg.sender, 1_000_000_000 * 1e18);
+    }
+    function mint(address to, uint256 amount) external { _mint(to, amount); }
+}
+
 /// @dev Mock WETH for testing
 contract MockWETH is ERC20 {
     constructor() ERC20("Wrapped ETH", "WETH") {}

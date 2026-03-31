@@ -1,11 +1,309 @@
 <script lang="ts">
 	import { ethers } from 'ethers';
+	import { t } from '$lib/i18n';
 	import { getContext, onDestroy } from 'svelte';
+	import { page } from '$app/state';
 	import type { SupportedNetwork, PaymentOption } from '$lib/structure';
-	import { FACTORY_ABI, ROUTER_ABI, ERC20_ABI, ZERO_ADDRESS } from '$lib/tokenCrafter';
+	import { FACTORY_ABI, PLATFORM_ROUTER_ABI, ROUTER_ABI, ERC20_ABI, ZERO_ADDRESS } from '$lib/tokenCrafter';
+	import { LAUNCHPAD_FACTORY_ABI, LAUNCH_INSTANCE_ABI, CURVE_TYPES, type CurveType } from '$lib/launchpad';
 	import TokenForm from './lib/TokenForm.svelte';
-	import type { ListingConfig, TokenFormData, PreviewState } from './lib/TokenForm.svelte';
+	import type { ListingConfig, ListingPairConfig, TokenFormData, PreviewState } from './lib/TokenForm.svelte';
 	import DisplayPreview from './lib/DisplayPreview.svelte';
+
+	// ─── Intent mode state ───
+	type IntentMode = 'token' | 'launch' | 'both' | 'list';
+	let mode: IntentMode | null = $state(null);
+
+	// Read URL params for pre-filling
+	let modeFromUrl = $derived(page.url.searchParams.get('mode') as IntentMode | null);
+	let launchFromUrl = $derived(page.url.searchParams.get('launch') === 'true');
+	let tokenFromUrl = $derived(page.url.searchParams.get('token') || '');
+	let chainFromUrl = $derived(page.url.searchParams.get('chain') || '');
+
+	// Resolve initial mode from URL params
+	$effect(() => {
+		if (mode !== null) return; // already set by user click
+		if (tokenFromUrl) {
+			mode = 'launch';
+			launchTokenAddress = tokenFromUrl;
+		} else if (modeFromUrl === 'token' || modeFromUrl === 'launch' || modeFromUrl === 'both' || modeFromUrl === 'list') {
+			mode = modeFromUrl;
+		} else if (launchFromUrl) {
+			mode = 'both';
+		}
+	});
+
+	function selectMode(m: IntentMode) {
+		mode = m;
+	}
+
+	function backToSelection() {
+		mode = null;
+		// Reset launch form state
+		launchTokenAddress = '';
+		launchTokenName = '';
+		launchTokenSymbol = '';
+		launchTokenDecimals = 18;
+		launchTokenBalance = 0n;
+		launchTokenSupply = 0n;
+		launchTokenLoading = false;
+		launchAmount = '';
+		launchChainId = undefined;
+		launchCurveType = 0;
+		launchSoftCap = '5';
+		launchHardCap = '50';
+		launchDurationDays = '30';
+		launchMaxBuyBps = '200';
+		launchCreatorAllocBps = '0';
+		launchVestingDays = '0';
+		launchSubmitting = false;
+		launchStep = 'idle';
+		launchDeployedAddress = null;
+	}
+
+	let initialFormData = $derived.by(() => {
+		const data: any = {};
+		if (mode === 'both' || mode === 'launch' || launchFromUrl) {
+			data.launch = { enabled: true, tokensForLaunchPct: 80, curveType: 0, softCap: '', hardCap: '', durationDays: '30', maxBuyBps: '200', creatorAllocationBps: '0', vestingDays: '0', launchPaymentToken: '' };
+		}
+		if (mode === 'list') {
+			data.listing = { enabled: true, baseCoin: 'native', mode: 'manual', tokenAmount: '', baseAmount: '', pricePerToken: '', listBaseAmount: '' };
+		}
+		if (mode === 'launch' && tokenFromUrl) {
+			data.existingTokenAddress = tokenFromUrl;
+		}
+		if (chainFromUrl) {
+			const net = supportedNetworks.find(n => n.symbol === chainFromUrl || String(n.chain_id) === chainFromUrl);
+			if (net) data.chainId = net.chain_id;
+		}
+		return Object.keys(data).length > 0 ? data : undefined;
+	});
+
+	// Derived page title
+	let pageTitle = $derived(
+		mode === 'token' ? $t('ci.titleToken') :
+		mode === 'launch' ? $t('ci.titleLaunch') :
+		mode === 'both' ? $t('ci.titleBoth') :
+		mode === 'list' ? 'Create & List on DEX' :
+		$t('ci.pageTitle')
+	);
+
+	// ─── Launch Existing Token form state ───
+	let launchTokenAddress = $state(tokenFromUrl || '');
+	let launchTokenName = $state('');
+	let launchTokenSymbol = $state('');
+	let launchTokenDecimals = $state(18);
+	let launchTokenBalance = $state(0n);
+	let launchTokenSupply = $state(0n);
+	let launchTokenLoading = $state(false);
+	let launchAmount = $state('');
+	let launchChainId: number | undefined = $state(undefined);
+	let launchCurveType = $state<number>(0);
+	let launchSoftCap = $state('5');
+	let launchHardCap = $state('50');
+	let launchDurationDays = $state('30');
+	let launchMaxBuyBps = $state('200');
+	let launchCreatorAllocBps = $state('0');
+	let launchVestingDays = $state('0');
+	let launchSubmitting = $state(false);
+	let launchStep = $state<'idle' | 'fee' | 'approving-fee' | 'creating' | 'approving-tokens' | 'depositing' | 'saving' | 'done'>('idle');
+	let launchDeployedAddress: string | null = $state(null);
+
+	let launchNetwork = $derived(supportedNetworks.find((n) => n.chain_id == launchChainId));
+	let launchNetworks = $derived(supportedNetworks.filter((n) => n.launchpad_address && n.launchpad_address !== '0x'));
+
+	// Auto-fetch token info when address + network change
+	let launchTokenTimeout: ReturnType<typeof setTimeout> | null = null;
+	$effect(() => {
+		if (launchTokenTimeout) clearTimeout(launchTokenTimeout);
+		const addr = launchTokenAddress;
+		const net = launchNetwork;
+		if (!addr || !ethers.isAddress(addr) || !net) return;
+		launchTokenTimeout = setTimeout(async () => {
+			launchTokenLoading = true;
+			try {
+				const pro = networkProviders.get(net.chain_id) ?? new ethers.JsonRpcProvider(net.rpc);
+				const token = new ethers.Contract(addr, [
+					'function name() view returns (string)',
+					'function symbol() view returns (string)',
+					'function decimals() view returns (uint8)',
+					'function balanceOf(address) view returns (uint256)',
+					'function totalSupply() view returns (uint256)'
+				], pro);
+				const ua = userAddress;
+				const [n, s, d, bal, supply] = await Promise.all([
+					token.name().catch(() => ''),
+					token.symbol().catch(() => ''),
+					token.decimals().catch(() => 18),
+					ua ? token.balanceOf(ua).catch(() => 0n) : Promise.resolve(0n),
+					token.totalSupply().catch(() => 0n)
+				]);
+				launchTokenName = n;
+				launchTokenSymbol = s;
+				launchTokenDecimals = Number(d);
+				launchTokenBalance = bal;
+				launchTokenSupply = supply;
+			} catch {
+				launchTokenName = '';
+				launchTokenSymbol = '';
+			} finally {
+				launchTokenLoading = false;
+			}
+		}, 500);
+	});
+
+	function setLaunchAmountPct(pct: number) {
+		if (launchTokenBalance <= 0n) return;
+		const amt = (launchTokenBalance * BigInt(pct)) / 100n;
+		launchAmount = ethers.formatUnits(amt, launchTokenDecimals);
+	}
+
+	async function submitLaunch() {
+		if (!launchNetwork) { addFeedback({ message: 'Select a network.', type: 'error' }); return; }
+		if (!ethers.isAddress(launchTokenAddress)) { addFeedback({ message: 'Invalid token address.', type: 'error' }); return; }
+		if (!launchTokenName) { addFeedback({ message: 'Could not fetch token info.', type: 'error' }); return; }
+		if (!launchAmount || parseFloat(launchAmount) <= 0) { addFeedback({ message: 'Enter token amount.', type: 'error' }); return; }
+		if (!launchSoftCap || !launchHardCap || parseFloat(launchHardCap) < parseFloat(launchSoftCap)) { addFeedback({ message: 'Hard cap must be >= soft cap.', type: 'error' }); return; }
+
+		if (!signer || !userAddress) {
+			connectWallet();
+			return;
+		}
+
+		// Ensure correct network
+		try {
+			const walletProvider = new ethers.BrowserProvider((window as any).ethereum);
+			const walletNetwork = await walletProvider.getNetwork();
+			if (Number(walletNetwork.chainId) !== launchNetwork.chain_id) {
+				addFeedback({ message: `Switching to ${launchNetwork.name}...`, type: 'info' });
+				const switched = await switchNetwork(launchNetwork.chain_id);
+				if (!switched) return;
+			}
+		} catch {
+			addFeedback({ message: 'Could not verify wallet network.', type: 'error' });
+			return;
+		}
+
+		launchSubmitting = true;
+		launchStep = 'fee';
+
+		try {
+			const factory = new ethers.Contract(launchNetwork.launchpad_address, LAUNCHPAD_FACTORY_ABI, signer);
+			const launchPaymentTokens: string[] = await factory.getSupportedPaymentTokens();
+			const paymentToken = launchPaymentTokens.length > 0 ? launchPaymentTokens[0] : ZERO_ADDRESS;
+			const isNativeFee = paymentToken === ZERO_ADDRESS;
+
+			// Get fee
+			const launchFee: bigint = await factory.getLaunchFee(paymentToken);
+
+			// Approve fee if ERC20
+			if (!isNativeFee && launchFee > 0n) {
+				launchStep = 'approving-fee';
+				addFeedback({ message: $t('ci.approvingFee'), type: 'info' });
+				const erc20 = new ethers.Contract(paymentToken, ERC20_ABI, signer);
+				const allowance = await erc20.allowance(userAddress, launchNetwork.launchpad_address);
+				if (allowance < launchFee) {
+					const approveTx = await erc20.approve(launchNetwork.launchpad_address, launchFee);
+					await approveTx.wait();
+				}
+			}
+
+			// Get USDT decimals
+			let usdtDec = 18;
+			try {
+				const usdtC = new ethers.Contract(launchNetwork.usdt_address, ['function decimals() view returns (uint8)'], signer);
+				usdtDec = Number(await usdtC.decimals());
+			} catch {}
+
+			const tokensForLaunch = ethers.parseUnits(launchAmount, launchTokenDecimals);
+			const txOptions = isNativeFee && launchFee > 0n ? { value: launchFee } : {};
+
+			launchStep = 'creating';
+			addFeedback({ message: 'Creating launch...', type: 'info' });
+			const tx = await factory.createLaunch(
+				launchTokenAddress,
+				tokensForLaunch,
+				BigInt(launchCurveType),
+				ethers.parseUnits(launchSoftCap, usdtDec),
+				ethers.parseUnits(launchHardCap, usdtDec),
+				BigInt(launchDurationDays),
+				BigInt(launchMaxBuyBps),
+				BigInt(launchCreatorAllocBps),
+				BigInt(launchVestingDays),
+				paymentToken,
+				0n, // startTimestamp = immediate
+				txOptions
+			);
+			const receipt = await tx.wait();
+
+			// Extract launch address from event
+			let launchAddr: string | null = null;
+			const createdEvent = receipt?.logs?.find((log: any) => {
+				try {
+					const parsed = factory.interface.parseLog({ topics: [...log.topics], data: log.data });
+					return parsed?.name === 'LaunchCreated';
+				} catch { return false; }
+			});
+			if (createdEvent) {
+				const parsed = factory.interface.parseLog({ topics: [...createdEvent.topics], data: createdEvent.data });
+				launchAddr = parsed?.args?.launch ?? null;
+			}
+
+			if (launchAddr) {
+				// Approve + deposit tokens
+				launchStep = 'approving-tokens';
+				addFeedback({ message: $t('ci.approvingTokens'), type: 'info' });
+				const tokenContract = new ethers.Contract(launchTokenAddress, ERC20_ABI, signer);
+				const allowance = await tokenContract.allowance(userAddress, launchAddr);
+				if (allowance < tokensForLaunch) {
+					const approveTx = await tokenContract.approve(launchAddr, tokensForLaunch);
+					await approveTx.wait();
+				}
+
+				launchStep = 'depositing';
+				addFeedback({ message: $t('ci.depositingTokens'), type: 'info' });
+				const instance = new ethers.Contract(launchAddr, LAUNCH_INSTANCE_ABI, signer);
+				const depositTx = await instance.depositTokens(tokensForLaunch);
+				await depositTx.wait();
+
+				// Save to DB
+				launchStep = 'saving';
+				try {
+					await fetch('/api/launches', {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify({
+							address: launchAddr.toLowerCase(),
+							chain_id: launchNetwork.chain_id,
+							token_address: launchTokenAddress.toLowerCase(),
+							creator: userAddress.toLowerCase(),
+							curve_type: launchCurveType,
+							state: 1,
+							soft_cap: ethers.parseUnits(launchSoftCap, usdtDec).toString(),
+							hard_cap: ethers.parseUnits(launchHardCap, usdtDec).toString(),
+							tokens_for_curve: ((tokensForLaunch * 7000n) / 10000n).toString(),
+							creator_allocation_bps: Number(launchCreatorAllocBps),
+							total_tokens_required: tokensForLaunch.toString(),
+							total_tokens_deposited: tokensForLaunch.toString(),
+							token_name: launchTokenName,
+							token_symbol: launchTokenSymbol,
+							token_decimals: launchTokenDecimals
+						})
+					});
+				} catch {}
+
+				launchDeployedAddress = launchAddr;
+				launchStep = 'done';
+				addFeedback({ message: $t('ci.launchSuccess'), type: 'success' });
+			}
+		} catch (e: any) {
+			const msg = e.shortMessage || e.message || 'Transaction failed';
+			addFeedback({ message: `Error: ${msg}`, type: 'error' });
+			launchStep = 'idle';
+		} finally {
+			launchSubmitting = false;
+		}
+	}
 
 	let getProvider: () => ethers.BrowserProvider | null = getContext('provider');
 	let getSigner: () => ethers.Signer | null = getContext('signer');
@@ -73,12 +371,13 @@
 	let selectedPaymentIndex = $state(0);
 	let paymentOptions: PaymentOption[] = $state([]);
 
-	// Preloaded fee cache: keyed by "chainId-isTaxable-isMintable-isPartner"
-	let feeCache = new Map<string, { tokens: string[]; fees: bigint[] }>();
+	// Preloaded fee cache: keyed by "chainId-typeKey"
+	let feeCache = new Map<string, { tokens: string[]; fees: bigint[]; launchFees: bigint[] }>();
 	let feeCacheReady = $state(false);
 
 	function feeCacheKey(chainId: number, isTaxable: boolean, isMintable: boolean, isPartner: boolean) {
-		return `${chainId}-${isTaxable}-${isMintable}-${isPartner}`;
+		const typeKey = (isPartner ? 4 : 0) | (isTaxable ? 2 : 0) | (isMintable ? 1 : 0);
+		return `${chainId}-${typeKey}`;
 	}
 
 	function matchFeesToPayments(tokens: string[], fees: bigint[], options: PaymentOption[]) {
@@ -102,15 +401,18 @@
 		for (const net of networks) {
 			const pro = networkProviders.get(net.chain_id) ?? new ethers.JsonRpcProvider(net.rpc);
 			const factory = new ethers.Contract(net.platform_address, FACTORY_ABI, pro);
+			const lpAddr = net.launchpad_address && net.launchpad_address !== '0x'
+				? net.launchpad_address
+				: ZERO_ADDRESS;
 
 			for (const taxable of [false, true]) {
 				for (const mintable of [false, true]) {
 					for (const partner of [false, true]) {
 						const key = feeCacheKey(net.chain_id, taxable, mintable, partner);
 						promises.push(
-							factory.getCreationFee(taxable, mintable, partner)
-								.then(([tokens, fees]: [string[], bigint[]]) => {
-									feeCache.set(key, { tokens: [...tokens], fees: [...fees] });
+							factory.getCreationFees(taxable, mintable, partner, lpAddr)
+								.then(([tokens, fees, launchFees]: [string[], bigint[], bigint[]]) => {
+									feeCache.set(key, { tokens: [...tokens], fees: [...fees], launchFees: [...launchFees] });
 								})
 								.catch((e: any) => console.warn(`Fee preload failed for ${key}:`, e))
 						);
@@ -179,14 +481,18 @@
 		const options = getPaymentOptions(info!.network);
 		paymentOptions = options;
 
-		// Try to use preloaded cache
+		const isExistingToken = !!(info as any).existingTokenAddress;
+
+		// For existing tokens: show launch fee only
+		// For new tokens: show creation fee (+ launch fee is included in the router tx)
 		const key = feeCacheKey(info!.network.chain_id, info!.isTaxable, info!.isMintable, info!.isPartner);
 		const cached = feeCache.get(key);
 
 		if (cached) {
 			feeTokens = cached.tokens;
-			feeAmounts = cached.fees;
-			const { matchedOptions, matchedFees } = matchFeesToPayments(cached.tokens, cached.fees, options);
+			feeAmounts = isExistingToken ? cached.launchFees : cached.fees;
+			const feesToMatch = isExistingToken ? cached.launchFees : cached.fees;
+			const { matchedOptions, matchedFees } = matchFeesToPayments(cached.tokens, feesToMatch, options);
 			if (matchedOptions.length > 0) {
 				paymentOptions = matchedOptions;
 				feeAmounts = matchedFees;
@@ -201,21 +507,49 @@
 		feeAmounts = [];
 
 		try {
-			const pro = getProviderForNetwork(info!.network.chain_id)
-				?? new ethers.JsonRpcProvider(info!.network.rpc);
-			const factory = new ethers.Contract(info!.network.platform_address, FACTORY_ABI, pro);
-			const [tokens, fees] = await factory.getCreationFee(info!.isTaxable, info!.isMintable, info!.isPartner);
+			if (isExistingToken) {
+				// Fetch launch fee directly from LaunchpadFactory
+				const pro = getProviderForNetwork(info!.network.chain_id)
+					?? new ethers.JsonRpcProvider(info!.network.rpc);
+				const { LAUNCHPAD_FACTORY_ABI } = await import('$lib/launchpad');
+				const lpFactory = new ethers.Contract(info!.network.launchpad_address, LAUNCHPAD_FACTORY_ABI, pro);
+				const supported = options.map(o => o.address);
+				const tokens: string[] = [];
+				const fees: bigint[] = [];
+				for (const pt of supported) {
+					try {
+						const fee = await lpFactory.getLaunchFee(pt);
+						tokens.push(pt);
+						fees.push(fee);
+					} catch {}
+				}
+				feeTokens = tokens;
+				feeAmounts = fees;
+				const { matchedOptions, matchedFees } = matchFeesToPayments(tokens, fees, options);
+				if (matchedOptions.length > 0) {
+					paymentOptions = matchedOptions;
+					feeAmounts = matchedFees;
+				}
+			} else {
+				const pro = getProviderForNetwork(info!.network.chain_id)
+					?? new ethers.JsonRpcProvider(info!.network.rpc);
+				const factory = new ethers.Contract(info!.network.platform_address, FACTORY_ABI, pro);
+				const lpAddr = info!.network.launchpad_address && info!.network.launchpad_address !== '0x'
+					? info!.network.launchpad_address
+					: ZERO_ADDRESS;
+				const [tokens, fees, launchFees] = await factory.getCreationFees(
+					info!.isTaxable, info!.isMintable, info!.isPartner, lpAddr
+				);
 
-			feeTokens = [...tokens];
-			feeAmounts = [...fees];
+				feeTokens = [...tokens];
+				feeAmounts = [...fees];
+				feeCache.set(key, { tokens: [...tokens], fees: [...fees], launchFees: [...launchFees] });
 
-			// Cache for next time
-			feeCache.set(key, { tokens: [...tokens], fees: [...fees] });
-
-			const { matchedOptions, matchedFees } = matchFeesToPayments([...tokens], [...fees], options);
-			if (matchedOptions.length > 0) {
-				paymentOptions = matchedOptions;
-				feeAmounts = matchedFees;
+				const { matchedOptions, matchedFees } = matchFeesToPayments([...tokens], [...fees], options);
+				if (matchedOptions.length > 0) {
+					paymentOptions = matchedOptions;
+					feeAmounts = matchedFees;
+				}
 			}
 		} catch (e) {
 			console.error('Fee fetch error:', e);
@@ -269,11 +603,14 @@
 		if (!isNativePayment) {
 			step = 'approving';
 			try {
+				// When using router for launch or listing, approve the router; otherwise approve the factory
+				const usesRouter = (tokenInfo.launch?.enabled || tokenInfo.listing?.enabled) && tokenInfo.network.router_address && tokenInfo.network.router_address !== '0x';
+				const spender = usesRouter ? tokenInfo.network.router_address : tokenInfo.network.platform_address;
 				const erc20 = new ethers.Contract(selectedPayment.address, ERC20_ABI, signer);
-				const allowance = await erc20.allowance(userAddress, tokenInfo.network.platform_address);
+				const allowance = await erc20.allowance(userAddress, spender);
 				if (allowance < selectedFee) {
 					addFeedback({ message: `Approving ${selectedPayment.symbol} spend...`, type: 'info' });
-					const tx = await erc20.approve(tokenInfo.network.platform_address, selectedFee);
+					const tx = await erc20.approve(spender, selectedFee);
 					await tx.wait();
 					addFeedback({ message: `${selectedPayment.symbol} approved!`, type: 'success' });
 				}
@@ -285,14 +622,27 @@
 			}
 		}
 
-		// Create token
+		// Create token (with optional launch via PlatformRouter)
 		step = 'creating';
 		try {
-			const factory = new ethers.Contract(tokenInfo.network.platform_address, FACTORY_ABI, signer);
-			const params = {
+			const storedRef = localStorage.getItem('referral');
+			const referral = storedRef && ethers.isAddress(storedRef) ? storedRef : ZERO_ADDRESS;
+			const txOptions = isNativePayment ? { value: selectedFee } : {};
+
+			// For existing tokens, totalSupply is formatted (e.g. "1000000.0"), parse it back to wei
+			// For new tokens, totalSupply is a raw integer (e.g. "1000000"), contract scales internally
+			const isExisting = !!tokenInfo.existingTokenAddress;
+			const totalSupplyRaw = isExisting
+				? 0n // not used for existing token contract calls
+				: BigInt(Math.floor(Number(tokenInfo.totalSupply)));
+			const totalSupplyWei = isExisting
+				? ethers.parseUnits(tokenInfo.totalSupply, tokenInfo.decimals)
+				: totalSupplyRaw * (10n ** BigInt(tokenInfo.decimals));
+
+			const tokenParams = {
 				name: tokenInfo.name,
 				symbol: tokenInfo.symbol,
-				totalSupply: BigInt(tokenInfo.totalSupply),
+				totalSupply: totalSupplyRaw,
 				decimals: tokenInfo.decimals,
 				isTaxable: tokenInfo.isTaxable,
 				isMintable: tokenInfo.isMintable,
@@ -300,31 +650,325 @@
 				paymentToken: selectedPayment.address
 			};
 
-			addFeedback({ message: 'Deploying token...', type: 'info' });
-			const txOptions = isNativePayment ? { value: selectedFee } : {};
-			const storedRef = localStorage.getItem('referral');
-			const referral = storedRef && ethers.isAddress(storedRef) ? storedRef : ZERO_ADDRESS;
-			const tx = await factory.createToken(params, referral, txOptions);
-			deployTxHash = tx.hash;
-			const receipt = await tx.wait();
+			if (tokenInfo.existingTokenAddress && tokenInfo.launch?.enabled) {
+				// Existing token — use LaunchpadFactory.createLaunch directly
+				addFeedback({ message: 'Creating launch for existing token...', type: 'info' });
+				const { LAUNCHPAD_FACTORY_ABI, LAUNCH_INSTANCE_ABI } = await import('$lib/launchpad');
 
-			// Extract token address from TokenCreated event
-			const createdEvent = receipt?.logs?.find((log: any) => {
+				let usdtDec = 18;
 				try {
-					const parsed = factory.interface.parseLog({ topics: [...log.topics], data: log.data });
-					return parsed?.name === 'TokenCreated';
-				} catch { return false; }
-			});
-			if (createdEvent) {
-				const parsed = factory.interface.parseLog({ topics: [...createdEvent.topics], data: createdEvent.data });
-				deployedTokenAddress = parsed?.args?.tokenAddress ?? null;
-			}
+					const usdtC = new ethers.Contract(tokenInfo.network.usdt_address, ['function decimals() view returns (uint8)'], signer);
+					usdtDec = Number(await usdtC.decimals());
+				} catch {}
 
-			addFeedback({ message: 'Token created successfully!', type: 'success' });
+				const tokensForLaunch = (totalSupplyWei * BigInt(tokenInfo.launch.tokensForLaunchPct)) / 100n;
+				const factory = new ethers.Contract(tokenInfo.network.launchpad_address, LAUNCHPAD_FACTORY_ABI, signer);
 
-			// If listing is enabled, add liquidity
-			if (tokenInfo.listing?.enabled && deployedTokenAddress) {
-				await addListingLiquidity(deployedTokenAddress);
+				// Check and pay launch fee
+				const launchFee: bigint = await factory.getLaunchFee(selectedPayment.address);
+				const isNativeLaunchFee = selectedPayment.address === ZERO_ADDRESS;
+				if (!isNativeLaunchFee && launchFee > 0n) {
+					const erc20 = new ethers.Contract(selectedPayment.address, ERC20_ABI, signer);
+					const allowance = await erc20.allowance(userAddress, tokenInfo.network.launchpad_address);
+					if (allowance < launchFee) {
+						addFeedback({ message: `Approving ${selectedPayment.symbol} for launch fee...`, type: 'info' });
+						const approveTx = await erc20.approve(tokenInfo.network.launchpad_address, launchFee);
+						await approveTx.wait();
+					}
+				}
+
+				const txOptions = isNativeLaunchFee && launchFee > 0n ? { value: launchFee } : {};
+				const tx = await factory.createLaunch(
+					tokenInfo.existingTokenAddress,
+					tokensForLaunch,
+					BigInt(tokenInfo.launch.curveType),
+					ethers.parseUnits(String(tokenInfo.launch.softCap), usdtDec),
+					ethers.parseUnits(String(tokenInfo.launch.hardCap), usdtDec),
+					BigInt(tokenInfo.launch.durationDays),
+					BigInt(tokenInfo.launch.maxBuyBps),
+					BigInt(tokenInfo.launch.creatorAllocationBps),
+					BigInt(tokenInfo.launch.vestingDays),
+					selectedPayment.address,
+					0n, // startTimestamp
+					txOptions
+				);
+				deployTxHash = tx.hash;
+				const receipt = await tx.wait();
+
+				// Extract launch address
+				let launchAddr: string | null = null;
+				const createdEvent = receipt?.logs?.find((log: any) => {
+					try {
+						const parsed = factory.interface.parseLog({ topics: [...log.topics], data: log.data });
+						return parsed?.name === 'LaunchCreated';
+					} catch { return false; }
+				});
+				if (createdEvent) {
+					const parsed = factory.interface.parseLog({ topics: [...createdEvent.topics], data: createdEvent.data });
+					launchAddr = parsed?.args?.launch ?? null;
+				}
+
+				deployedTokenAddress = tokenInfo.existingTokenAddress ?? null;
+
+				if (launchAddr) {
+					// Approve + deposit tokens
+					addFeedback({ message: 'Depositing tokens into launch...', type: 'info' });
+					const tokenContract = new ethers.Contract(tokenInfo.existingTokenAddress!, ERC20_ABI, signer);
+					const allowance = await tokenContract.allowance(userAddress, launchAddr);
+					if (allowance < tokensForLaunch) {
+						addFeedback({ message: `Approving ${tokenInfo.symbol}...`, type: 'info' });
+						const approveTx = await tokenContract.approve(launchAddr, tokensForLaunch);
+						await approveTx.wait();
+					}
+					const instance = new ethers.Contract(launchAddr, LAUNCH_INSTANCE_ABI, signer);
+					const depositTx = await instance.depositTokens(tokensForLaunch);
+					await depositTx.wait();
+
+					addFeedback({ message: 'Launch is live!', type: 'success' });
+
+					// Save to DB
+					try {
+						await fetch('/api/launches', {
+							method: 'POST',
+							headers: { 'Content-Type': 'application/json' },
+							body: JSON.stringify({
+								address: launchAddr.toLowerCase(),
+								chain_id: tokenInfo.network.chain_id,
+								token_address: tokenInfo.existingTokenAddress!.toLowerCase(),
+								creator: userAddress!.toLowerCase(),
+								curve_type: tokenInfo.launch.curveType,
+								state: 1,
+								soft_cap: ethers.parseUnits(String(tokenInfo.launch.softCap), usdtDec).toString(),
+								hard_cap: ethers.parseUnits(String(tokenInfo.launch.hardCap), usdtDec).toString(),
+								tokens_for_curve: ((tokensForLaunch * 7000n) / 10000n).toString(),
+								creator_allocation_bps: Number(tokenInfo.launch.creatorAllocationBps),
+								total_tokens_required: tokensForLaunch.toString(),
+								total_tokens_deposited: tokensForLaunch.toString(),
+								token_name: tokenInfo.name,
+								token_symbol: tokenInfo.symbol,
+								token_decimals: tokenInfo.decimals
+							})
+						});
+					} catch {}
+				}
+
+			} else if (tokenInfo.launch?.enabled && tokenInfo.network.router_address && tokenInfo.network.router_address !== '0x') {
+				// Use PlatformRouter for atomic Create + Launch
+				addFeedback({ message: 'Creating token & launch...', type: 'info' });
+				const router = new ethers.Contract(tokenInfo.network.router_address, PLATFORM_ROUTER_ABI, signer);
+
+				const tokensForLaunch = (totalSupplyWei * BigInt(tokenInfo.launch.tokensForLaunchPct)) / 100n;
+
+				// Fetch USDT decimals for cap parsing
+				let usdtDec = 18;
+				try {
+					const usdtC = new ethers.Contract(tokenInfo.network.usdt_address, ['function decimals() view returns (uint8)'], signer);
+					usdtDec = Number(await usdtC.decimals());
+				} catch {}
+
+				const launchParams = {
+					tokensForLaunch,
+					curveType: tokenInfo.launch.curveType,
+					softCap: ethers.parseUnits(String(tokenInfo.launch.softCap), usdtDec),
+					hardCap: ethers.parseUnits(String(tokenInfo.launch.hardCap), usdtDec),
+					durationDays: BigInt(tokenInfo.launch.durationDays),
+					maxBuyBps: BigInt(tokenInfo.launch.maxBuyBps),
+					creatorAllocationBps: BigInt(tokenInfo.launch.creatorAllocationBps),
+					vestingDays: BigInt(tokenInfo.launch.vestingDays),
+					launchPaymentToken: selectedPayment.address,
+					startTimestamp: 0n
+				};
+
+				const protectionParams = {
+					maxWalletAmount: tokenInfo.protection?.maxWalletPct
+						? (totalSupplyWei * BigInt(Math.round(parseFloat(String(tokenInfo.protection.maxWalletPct)) * 100))) / 10000n
+						: 0n,
+					maxTransactionAmount: tokenInfo.protection?.maxTransactionPct
+						? (totalSupplyWei * BigInt(Math.round(parseFloat(String(tokenInfo.protection.maxTransactionPct)) * 100))) / 10000n
+						: 0n,
+					cooldownSeconds: BigInt(tokenInfo.protection?.cooldownSeconds || 0)
+				};
+
+				const taxParams = {
+					buyTaxBps: BigInt(Math.round(parseFloat(String(tokenInfo.tax?.buyTaxPct || '0')) * 100)),
+					sellTaxBps: BigInt(Math.round(parseFloat(String(tokenInfo.tax?.sellTaxPct || '0')) * 100)),
+					transferTaxBps: BigInt(Math.round(parseFloat(String(tokenInfo.tax?.transferTaxPct || '0')) * 100)),
+					taxWallets: tokenInfo.tax?.wallets?.map((w: any) => w.address).filter((a: string) => ethers.isAddress(a)) || [],
+					taxSharesBps: tokenInfo.tax?.wallets?.map((w: any) => Math.round(parseFloat(String(w.sharePct || '0')) * 100)) || []
+				};
+
+				const tx = await router.createTokenAndLaunch(tokenParams, launchParams, protectionParams, taxParams, referral, txOptions);
+				deployTxHash = tx.hash;
+				const receipt = await tx.wait();
+
+				// Extract from TokenCreatedAndLaunched event
+				const event = receipt?.logs?.find((log: any) => {
+					try {
+						const parsed = router.interface.parseLog({ topics: [...log.topics], data: log.data });
+						return parsed?.name === 'TokenCreatedAndLaunched';
+					} catch { return false; }
+				});
+				let launchAddr: string | null = null;
+				if (event) {
+					const parsed = router.interface.parseLog({ topics: [...event.topics], data: event.data });
+					deployedTokenAddress = parsed?.args?.token ?? null;
+					launchAddr = parsed?.args?.launch ?? null;
+				}
+
+				addFeedback({ message: 'Token created & launch activated!', type: 'success' });
+
+				// Save launch to database (best-effort)
+				if (launchAddr && deployedTokenAddress) {
+					try {
+						await fetch('/api/launches', {
+							method: 'POST',
+							headers: { 'Content-Type': 'application/json' },
+							body: JSON.stringify({
+								address: launchAddr.toLowerCase(),
+								chain_id: tokenInfo.network.chain_id,
+								token_address: deployedTokenAddress.toLowerCase(),
+								creator: userAddress!.toLowerCase(),
+								curve_type: tokenInfo.launch.curveType,
+								state: 1,
+								soft_cap: launchParams.softCap.toString(),
+								hard_cap: launchParams.hardCap.toString(),
+								tokens_for_curve: ((tokensForLaunch * 7000n) / 10000n).toString(),
+								creator_allocation_bps: Number(tokenInfo.launch.creatorAllocationBps),
+								total_tokens_required: tokensForLaunch.toString(),
+								total_tokens_deposited: tokensForLaunch.toString(),
+								token_name: tokenInfo.name,
+								token_symbol: tokenInfo.symbol,
+								token_decimals: tokenInfo.decimals,
+								is_partner: tokenInfo.isPartner ?? false
+							})
+						});
+					} catch {}
+				}
+			} else if (tokenInfo.listing?.enabled && tokenInfo.network.router_address && tokenInfo.network.router_address !== '0x') {
+				// Atomic Create + List via PlatformRouter
+				const listing = tokenInfo.listing;
+				const pairs = listing.pairs?.length > 0 ? listing.pairs : [{ base: listing.baseCoin || 'native', amount: listing.baseAmount || listing.listBaseAmount || '0' }];
+				const price = Number(listing.pricePerToken);
+
+				if (!price || price <= 0) {
+					addFeedback({ message: 'Invalid token price for listing.', type: 'error' });
+					step = 'review';
+					isCreating = false;
+					return;
+				}
+
+				const router = new ethers.Contract(tokenInfo.network.router_address, PLATFORM_ROUTER_ABI, signer);
+				const network = tokenInfo.network;
+
+				const hasNativePair = pairs.some((p: any) => p.base === 'native' && Number(p.amount) > 0);
+				const erc20Pairs = pairs.filter((p: any) => p.base !== 'native' && Number(p.amount) > 0);
+				const nativePair = pairs.find((p: any) => p.base === 'native' && Number(p.amount) > 0);
+
+				const protectionParams = {
+					maxWalletAmount: tokenInfo.protection?.maxWalletPct
+						? (totalSupplyWei * BigInt(Math.round(parseFloat(String(tokenInfo.protection.maxWalletPct)) * 100))) / 10000n
+						: 0n,
+					maxTransactionAmount: tokenInfo.protection?.maxTransactionPct
+						? (totalSupplyWei * BigInt(Math.round(parseFloat(String(tokenInfo.protection.maxTransactionPct)) * 100))) / 10000n
+						: 0n,
+					cooldownSeconds: BigInt(tokenInfo.protection?.cooldownSeconds || 0)
+				};
+
+				const taxParams = {
+					buyTaxBps: BigInt(Math.round(parseFloat(String(tokenInfo.tax?.buyTaxPct || '0')) * 100)),
+					sellTaxBps: BigInt(Math.round(parseFloat(String(tokenInfo.tax?.sellTaxPct || '0')) * 100)),
+					transferTaxBps: BigInt(Math.round(parseFloat(String(tokenInfo.tax?.transferTaxPct || '0')) * 100)),
+					taxWallets: tokenInfo.tax?.wallets?.map((w: any) => w.address).filter((a: string) => ethers.isAddress(a)) || [],
+					taxSharesBps: tokenInfo.tax?.wallets?.map((w: any) => Math.round(parseFloat(String(w.sharePct || '0')) * 100)) || []
+				};
+
+				// Approve base tokens for router
+				step = 'approving-listing';
+				for (const pair of erc20Pairs) {
+					const baseAddress = getBaseTokenAddress(network, pair.base);
+					const baseDecimals = getBaseDecimals(network, pair.base);
+					const parsedBaseAmount = ethers.parseUnits(String(pair.amount), baseDecimals);
+					const baseSymbol = getBaseSymbol(network, pair.base);
+
+					const baseContract = new ethers.Contract(baseAddress, ERC20_ABI, signer);
+					const balance = await baseContract.balanceOf(userAddress);
+					if (balance < parsedBaseAmount) {
+						addFeedback({ message: `Insufficient ${baseSymbol} balance. Need ${pair.amount} ${baseSymbol}.`, type: 'error' });
+						step = 'review';
+						isCreating = false;
+						return;
+					}
+					const allowance = await baseContract.allowance(userAddress, network.router_address);
+					if (allowance < parsedBaseAmount) {
+						addFeedback({ message: `Approving ${baseSymbol}...`, type: 'info' });
+						const approveTx = await baseContract.approve(network.router_address, parsedBaseAmount);
+						await approveTx.wait();
+					}
+				}
+
+				step = 'adding-liquidity';
+				addFeedback({ message: 'Creating token & adding liquidity...', type: 'info' });
+
+				// Always use createAndListWithEth — contract skips ETH pool if ethTokenAmount=0
+				const ethAmt = nativePair ? Number(nativePair.amount) : 0;
+				const ethTokenAmount = ethAmt > 0
+					? ethers.parseUnits((ethAmt / price).toFixed(6), tokenInfo.decimals)
+					: 0n;
+				const ethValue = ethAmt > 0 ? ethers.parseEther(String(ethAmt)) : 0n;
+
+				const extraBases: string[] = [];
+				const extraBaseAmounts: bigint[] = [];
+				const extraTokenAmounts: bigint[] = [];
+
+				for (const pair of erc20Pairs) {
+					const baseAddress = getBaseTokenAddress(network, pair.base);
+					const baseDecimals = getBaseDecimals(network, pair.base);
+					const baseAmt = Number(pair.amount);
+					extraBases.push(baseAddress);
+					extraBaseAmounts.push(ethers.parseUnits(String(baseAmt), baseDecimals));
+					extraTokenAmounts.push(ethers.parseUnits((baseAmt / price).toFixed(6), tokenInfo.decimals));
+				}
+
+				const nativeValue = (isNativePayment ? selectedFee : 0n) + ethValue;
+
+				const tx = await router.createAndListWithEth(
+					tokenParams, ethTokenAmount, extraBases, extraBaseAmounts, extraTokenAmounts,
+					protectionParams, taxParams, referral,
+					{ value: nativeValue }
+				);
+				deployTxHash = tx.hash;
+				const receipt = await tx.wait();
+
+				const event = receipt?.logs?.find((log: any) => {
+					try { return router.interface.parseLog({ topics: [...log.topics], data: log.data })?.name === 'TokenCreatedAndListed'; } catch { return false; }
+				});
+				if (event) {
+					const parsed = router.interface.parseLog({ topics: [...event.topics], data: event.data });
+					deployedTokenAddress = parsed?.args?.token ?? null;
+				}
+
+				addFeedback({ message: 'Token created & listed on DEX!', type: 'success' });
+			} else {
+				// Simple token creation (no launch, no listing)
+				const factory = new ethers.Contract(tokenInfo.network.platform_address, FACTORY_ABI, signer);
+
+				addFeedback({ message: 'Deploying token...', type: 'info' });
+				const tx = await factory.createToken(tokenParams, referral, txOptions);
+				deployTxHash = tx.hash;
+				const receipt = await tx.wait();
+
+				const createdEvent = receipt?.logs?.find((log: any) => {
+					try {
+						const parsed = factory.interface.parseLog({ topics: [...log.topics], data: log.data });
+						return parsed?.name === 'TokenCreated';
+					} catch { return false; }
+				});
+				if (createdEvent) {
+					const parsed = factory.interface.parseLog({ topics: [...createdEvent.topics], data: createdEvent.data });
+					deployedTokenAddress = parsed?.args?.tokenAddress ?? null;
+				}
+
+				addFeedback({ message: 'Token created successfully!', type: 'success' });
 			}
 
 			step = 'done';
@@ -363,82 +1007,100 @@
 			return;
 		}
 
-		const tokenAmt = listing.mode === 'price'
-			? (() => {
-				if (!listing.pricePerToken || !listing.listBaseAmount || Number(listing.pricePerToken) <= 0) return '0';
-				return (Number(listing.listBaseAmount) / Number(listing.pricePerToken)).toFixed(6);
-			})()
-			: listing.tokenAmount;
-		const baseAmt = listing.mode === 'price' ? listing.listBaseAmount : listing.baseAmount;
+		const pairs = listing.pairs?.length > 0 ? listing.pairs : [{ base: listing.baseCoin, amount: listing.baseAmount || listing.listBaseAmount }];
+		const price = Number(listing.pricePerToken);
 
-		if (!tokenAmt || !baseAmt || Number(tokenAmt) <= 0 || Number(baseAmt) <= 0) {
-			addFeedback({ message: 'Invalid listing amounts. Add liquidity manually from Manage Tokens.', type: 'error' });
+		if (!price || price <= 0) {
+			addFeedback({ message: 'Invalid token price. Add liquidity manually.', type: 'error' });
 			return;
 		}
 
-		const parsedTokenAmount = ethers.parseUnits(String(Number(tokenAmt)), tokenInfo.decimals);
-		const isNativeBase = listing.baseCoin === 'native';
-		const baseDecimals = getBaseDecimals(network, listing.baseCoin);
-		const baseSymbol = getBaseSymbol(network, listing.baseCoin);
+		const router = new ethers.Contract(routerAddress, ROUTER_ABI, signer);
+		const tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI, signer);
+		const deadline = Math.floor(Date.now() / 1000) + 1200;
 
 		try {
-			// Approve token for router
+			// Step 1: Check balances for all pairs
 			step = 'approving-listing';
-			const tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI, signer);
-			const allowance = await tokenContract.allowance(userAddress, routerAddress);
-			if (allowance < parsedTokenAmount) {
-				addFeedback({ message: `Approving ${tokenInfo.symbol} for DEX router...`, type: 'info' });
-				const approveTx = await tokenContract.approve(routerAddress, parsedTokenAmount);
-				await approveTx.wait();
+			for (const pair of pairs) {
+				const baseAmt = Number(pair.amount);
+				if (!baseAmt || baseAmt <= 0) continue;
+
+				const baseSymbol = getBaseSymbol(network, pair.base);
+				if (pair.base !== 'native') {
+					const baseAddress = getBaseTokenAddress(network, pair.base);
+					const baseDecimals = getBaseDecimals(network, pair.base);
+					const parsedBaseAmount = ethers.parseUnits(String(baseAmt), baseDecimals);
+
+					// Check and approve base token
+					const baseContract = new ethers.Contract(baseAddress, ERC20_ABI, signer);
+					const balance = await baseContract.balanceOf(userAddress);
+					if (balance < parsedBaseAmount) {
+						addFeedback({ message: `Insufficient ${baseSymbol} balance. Need ${baseAmt} ${baseSymbol}.`, type: 'error' });
+						return;
+					}
+					const allowance = await baseContract.allowance(userAddress, routerAddress);
+					if (allowance < parsedBaseAmount) {
+						addFeedback({ message: `Approving ${baseSymbol} for DEX router...`, type: 'info' });
+						const tx = await baseContract.approve(routerAddress, parsedBaseAmount);
+						await tx.wait();
+					}
+				}
 			}
 
-			const router = new ethers.Contract(routerAddress, ROUTER_ABI, signer);
-			const deadline = Math.floor(Date.now() / 1000) + 1200;
+			// Step 2: Calculate total tokens needed and approve
+			let totalTokensNeeded = 0n;
+			for (const pair of pairs) {
+				const baseAmt = Number(pair.amount);
+				if (!baseAmt || baseAmt <= 0) continue;
+				const tokensForPair = baseAmt / price;
+				totalTokensNeeded += ethers.parseUnits(tokensForPair.toFixed(6), tokenInfo.decimals);
+			}
 
-			step = 'adding-liquidity';
-			if (isNativeBase) {
-				const ethAmount = ethers.parseEther(String(Number(baseAmt)));
-				addFeedback({ message: `Adding ${tokenInfo.symbol}/${baseSymbol} liquidity...`, type: 'info' });
-				const tx = await router.addLiquidityETH(
-					tokenAddress,
-					parsedTokenAmount,
-					parsedTokenAmount * 95n / 100n,
-					ethAmount * 95n / 100n,
-					userAddress,
-					deadline,
-					{ value: ethAmount }
-				);
+			const tokenAllowance = await tokenContract.allowance(userAddress, routerAddress);
+			if (tokenAllowance < totalTokensNeeded) {
+				addFeedback({ message: `Approving ${tokenInfo.symbol} for DEX router...`, type: 'info' });
+				const tx = await tokenContract.approve(routerAddress, totalTokensNeeded);
 				await tx.wait();
-			} else {
-				const baseAddress = getBaseTokenAddress(network, listing.baseCoin);
-				const parsedBaseAmount = ethers.parseUnits(String(Number(baseAmt)), baseDecimals);
+			}
 
-				// Approve base token
-				const baseContract = new ethers.Contract(baseAddress, ERC20_ABI, signer);
-				const baseAllowance = await baseContract.allowance(userAddress, routerAddress);
-				if (baseAllowance < parsedBaseAmount) {
-					addFeedback({ message: `Approving ${baseSymbol}...`, type: 'info' });
-					const approveTx = await baseContract.approve(routerAddress, parsedBaseAmount);
-					await approveTx.wait();
+			// Step 3: Add liquidity for each pair
+			step = 'adding-liquidity';
+			for (const pair of pairs) {
+				const baseAmt = Number(pair.amount);
+				if (!baseAmt || baseAmt <= 0) continue;
+
+				const tokensForPair = baseAmt / price;
+				const parsedTokenAmount = ethers.parseUnits(tokensForPair.toFixed(6), tokenInfo.decimals);
+				const baseSymbol = getBaseSymbol(network, pair.base);
+
+				if (pair.base === 'native') {
+					const ethAmount = ethers.parseEther(String(baseAmt));
+					addFeedback({ message: `Adding ${tokenInfo.symbol}/${baseSymbol} liquidity...`, type: 'info' });
+					const tx = await router.addLiquidityETH(
+						tokenAddress, parsedTokenAmount, 0n, 0n, userAddress, deadline,
+						{ value: ethAmount }
+					);
+					await tx.wait();
+				} else {
+					const baseAddress = getBaseTokenAddress(network, pair.base);
+					const baseDecimals = getBaseDecimals(network, pair.base);
+					const parsedBaseAmount = ethers.parseUnits(String(baseAmt), baseDecimals);
+
+					addFeedback({ message: `Adding ${tokenInfo.symbol}/${baseSymbol} liquidity...`, type: 'info' });
+					const tx = await router.addLiquidity(
+						tokenAddress, baseAddress,
+						parsedTokenAmount, parsedBaseAmount, 0n, 0n, userAddress, deadline
+					);
+					await tx.wait();
 				}
 
-				addFeedback({ message: `Adding ${tokenInfo.symbol}/${baseSymbol} liquidity...`, type: 'info' });
-				const tx = await router.addLiquidity(
-					tokenAddress,
-					baseAddress,
-					parsedTokenAmount,
-					parsedBaseAmount,
-					parsedTokenAmount * 95n / 100n,
-					parsedBaseAmount * 95n / 100n,
-					userAddress,
-					deadline
-				);
-				await tx.wait();
+				addFeedback({ message: `${tokenInfo.symbol}/${baseSymbol} pair created!`, type: 'success' });
 			}
 
-			addFeedback({ message: 'Liquidity added successfully!', type: 'success' });
+			addFeedback({ message: `All ${pairs.length} liquidity pair${pairs.length > 1 ? 's' : ''} added!`, type: 'success' });
 		} catch (e: any) {
-			addFeedback({ message: `Liquidity failed: ${e.shortMessage || e.message || 'Unknown error'}. You can add it manually from Manage Tokens.`, type: 'error' });
+			addFeedback({ message: `Liquidity failed: ${e.shortMessage || e.message || 'Unknown error'}. You can add remaining pairs manually.`, type: 'error' });
 		}
 	}
 
@@ -499,14 +1161,14 @@
 
 	let deploySteps = $derived(() => {
 		const steps = [
-			{ key: 'checking-balance', label: 'Checking balance' },
-			{ key: 'approving', label: 'Approving token spend' },
-			{ key: 'creating', label: 'Deploying contract' }
+			{ key: 'checking-balance', label: $t('ct.stepCheckBalance') },
+			{ key: 'approving', label: $t('ct.approvingSpend') },
+			{ key: 'creating', label: $t('ct.deployingContract') }
 		];
 		if (tokenInfo?.listing?.enabled) {
 			steps.push(
-				{ key: 'approving-listing', label: 'Approving tokens for DEX' },
-				{ key: 'adding-liquidity', label: 'Adding liquidity' }
+				{ key: 'approving-listing', label: $t('ct.approvingDex') },
+				{ key: 'adding-liquidity', label: $t('ct.addingLiquidity') }
 			);
 		}
 		return steps;
@@ -524,40 +1186,44 @@
 </script>
 
 <svelte:head>
-	<title>Create Token | TokenKrafter</title>
-	<meta name="description" content="Deploy your own ERC-20 token in minutes. Configure supply, decimals, minting, taxes, and anti-whale protection. Add DEX liquidity on launch." />
+	<title>{pageTitle} | TokenKrafter</title>
+	<meta name="description" content={mode === 'token' ? $t('ci.metaToken') : mode === 'launch' ? $t('ci.metaLaunch') : mode === 'both' ? $t('ci.metaBoth') : 'Deploy your own ERC-20 token in minutes.'} />
 </svelte:head>
 
 <!-- Review Modal -->
 {#if showPreview && tokenInfo}
 	<div
-		class="modal-backdrop fixed inset-0 z-[80] flex items-center justify-center p-2 sm:p-4"
+		class="modal-backdrop fixed inset-0 z-[80] flex items-end sm:items-center justify-center sm:p-4"
 		onclick={closePreview}
 	>
 		<div
-			class="review-modal w-full max-w-md max-h-[90vh] overflow-y-auto"
+			class="review-modal w-full sm:max-w-md max-h-full sm:max-h-[90vh] overflow-y-auto"
 			onclick={(e) => e.stopPropagation()}
 		>
+			<!-- Mobile drag indicator -->
+			<div class="drag-indicator sm:hidden" onclick={closePreview}>
+				<div class="drag-bar"></div>
+			</div>
 			{#if step === 'done'}
 				<div class="text-center py-8">
-					<div class="text-5xl mb-4 syne font-bold text-emerald-400">Done!</div>
+					<div class="text-5xl mb-4 syne font-bold text-emerald-400">{$t('ct.done')}</div>
 					<h2 class="syne text-2xl font-bold text-white mb-2">
-						{tokenInfo.listing?.enabled ? 'Token Deployed & Listed!' : 'Token Deployed!'}
+						{tokenInfo.existingTokenAddress ? 'Launch Created!' : tokenInfo.listing?.enabled ? $t('ct.deployedListed') : tokenInfo.launch?.enabled ? 'Token Deployed & Launched!' : $t('ct.deployed')}
 					</h2>
 					<p class="text-gray-400 font-mono text-sm mb-4">
-						Your token is now live on {tokenInfo.network.name}.{tokenInfo.listing?.enabled ? ' Liquidity has been added to the DEX.' : ''}
+						{$t('ct.liveOn')} {tokenInfo.network.name}.{tokenInfo.listing?.enabled ? ' ' + $t('ct.liqAdded') : ''}
 					</p>
 
 					{#if deployedTokenAddress}
 						<div class="deployed-address-box mb-4">
-							<div class="text-gray-500 text-[11px] font-mono uppercase tracking-wider mb-1">Token Address</div>
+							<div class="text-gray-500 text-[11px] font-mono uppercase tracking-wider mb-1">{$t('ct.tokenAddress')}</div>
 							<div class="text-cyan-400 text-xs font-mono break-all mb-2">{deployedTokenAddress}</div>
 							<a
 								href={getExplorerUrl(tokenInfo.network.chain_id, 'address', deployedTokenAddress)}
 								target="_blank"
 								rel="noopener noreferrer"
 								class="text-cyan-500 text-xs font-mono hover:text-cyan-300 transition no-underline"
-							>View on Explorer -></a>
+							>{$t('ct.viewExplorer')} -></a>
 						</div>
 					{/if}
 
@@ -574,10 +1240,10 @@
 
 					<div class="flex gap-3 justify-center">
 						<a href="/manage-tokens" class="btn-primary text-sm px-5 py-2.5 no-underline">
-							Manage Tokens ->
+							{$t('ct.manageTokens')} ->
 						</a>
 						<button onclick={closePreview} class="btn-secondary text-sm px-5 py-2.5 cursor-pointer">
-							Close
+							{$t('ct.close')}
 						</button>
 					</div>
 				</div>
@@ -586,7 +1252,7 @@
 				<!-- Waiting for deposit - show QR code -->
 				<div class="text-center py-4">
 					<div class="modal-header mb-4">
-						<h2 class="syne text-xl font-bold text-white">Insufficient Balance</h2>
+						<h2 class="syne text-xl font-bold text-white">{$t('ct.insufficientBalance')}</h2>
 						<button onclick={closePreview} class="close-btn cursor-pointer">x</button>
 					</div>
 
@@ -595,7 +1261,7 @@
 							You need {selectedFeeFormatted} {selectedPayment?.symbol} but your balance is {parseFloat(ethers.formatUnits(userBalance, selectedPayment?.decimals ?? 18)).toFixed(4)} {selectedPayment?.symbol}.
 						</p>
 						<p class="text-gray-500 text-xs font-mono">
-							Please deposit the required amount to continue.
+							{$t('ct.depositRequired')}
 						</p>
 					</div>
 
@@ -614,21 +1280,20 @@
 					</div>
 
 					<div class="deposit-notice">
-						<span class="text-amber-400 text-xs font-mono font-bold">Important:</span>
+						<span class="text-amber-400 text-xs font-mono font-bold">{$t('ct.important')}</span>
 						<span class="text-gray-400 text-xs font-mono">
-							Only deposit <strong class="text-white">{selectedPayment?.symbol}</strong> on the
-							<strong class="text-white">{tokenInfo.network.name}</strong> network.
-							Depositing other tokens or using a different network may result in loss of funds.
+							{$t('ct.depositWarning1')} <strong class="text-white">{selectedPayment?.symbol}</strong> {$t('ct.depositWarning2')}
+							<strong class="text-white">{tokenInfo.network.name}</strong> {$t('ct.depositWarning3')}
 						</span>
 					</div>
 
 					<div class="mt-4 flex items-center justify-center gap-2">
 						<div class="spinner-sm w-4 h-4 rounded-full border-2 border-white/10 border-t-cyan-400"></div>
-						<span class="text-gray-500 text-xs font-mono">Checking for deposit every 5s...</span>
+						<span class="text-gray-500 text-xs font-mono">{$t('ct.checkingDeposit')}</span>
 					</div>
 
 					<button onclick={closePreview} class="btn-secondary text-sm px-5 py-2.5 mt-4 cursor-pointer w-full">
-						Cancel
+						{$t('ct.cancel')}
 					</button>
 				</div>
 
@@ -637,11 +1302,11 @@
 				<div class="text-center py-10">
 					<div class="spinner w-12 h-12 rounded-full border-2 border-white/10 border-t-cyan-400 mx-auto mb-6"></div>
 					<p class="text-cyan-300 font-mono text-sm mb-6">
-						{step === 'checking-balance' ? 'Checking balance...' :
-						 step === 'approving' ? `Approving ${selectedPayment?.symbol}...` :
-						 step === 'creating' ? 'Deploying contract...' :
-						 step === 'approving-listing' ? 'Approving tokens for DEX...' :
-						 step === 'adding-liquidity' ? 'Adding liquidity...' : 'Processing...'}
+						{step === 'checking-balance' ? $t('ct.checkingBalance') :
+						 step === 'approving' ? `${$t('ct.approvingSpend')} (${selectedPayment?.symbol})...` :
+						 step === 'creating' ? $t('ct.deployingContract') + '...' :
+						 step === 'approving-listing' ? $t('ct.approvingDex') + '...' :
+						 step === 'adding-liquidity' ? $t('ct.addingLiquidity') + '...' : $t('ct.processing')}
 					</p>
 					<div class="flex flex-col gap-2 text-left">
 						{#each deploySteps() as ds}
@@ -650,7 +1315,7 @@
 								<span class="w-4">{status === 'done' ? 'v' : status === 'active' ? 'o' : '-'}</span>
 								{ds.label}
 								{#if ds.key === 'approving' && isNativePayment}
-									<span class="text-gray-600 text-xs">(skipped)</span>
+									<span class="text-gray-600 text-xs">{$t('ct.skipped')}</span>
 								{/if}
 							</div>
 						{/each}
@@ -670,53 +1335,58 @@
 			{:else}
 				<!-- Review view -->
 				<div class="modal-header">
-					<h2 class="syne text-xl font-bold text-white">Review Transaction</h2>
+					<h2 class="syne text-xl font-bold text-white">{tokenInfo.existingTokenAddress ? 'Review Launch' : $t('ct.reviewTitle')}</h2>
 					<button onclick={closePreview} class="close-btn cursor-pointer">x</button>
 				</div>
 
 				<div class="modal-section">
-					<div class="label-text mb-3">Token Details</div>
+					<div class="label-text mb-3">{tokenInfo.existingTokenAddress ? 'Token' : $t('ct.tokenDetails')}</div>
 					<div class="detail-grid">
 						<div class="detail-row">
-							<span class="detail-label">Name</span>
-							<span class="detail-value">{tokenInfo.name}</span>
+							<span class="detail-label">{$t('ct.name')}</span>
+							<span class="detail-value">{tokenInfo.name} ({tokenInfo.symbol})</span>
 						</div>
+						{#if tokenInfo.existingTokenAddress}
+							<div class="detail-row">
+								<span class="detail-label">Contract</span>
+								<span class="detail-value text-cyan-300 text-xs">{tokenInfo.existingTokenAddress.slice(0, 10)}...{tokenInfo.existingTokenAddress.slice(-8)}</span>
+							</div>
+						{:else}
+							<div class="detail-row">
+								<span class="detail-label">{$t('ct.totalSupply')}</span>
+								<span class="detail-value">{Number(tokenInfo.totalSupply).toLocaleString()}</span>
+							</div>
+							<div class="detail-row">
+								<span class="detail-label">{$t('ct.decimals')}</span>
+								<span class="detail-value">{tokenInfo.decimals}</span>
+							</div>
+						{/if}
 						<div class="detail-row">
-							<span class="detail-label">Symbol</span>
-							<span class="detail-value">{tokenInfo.symbol}</span>
-						</div>
-						<div class="detail-row">
-							<span class="detail-label">Total Supply</span>
-							<span class="detail-value">{Number(tokenInfo.totalSupply).toLocaleString()}</span>
-						</div>
-						<div class="detail-row">
-							<span class="detail-label">Decimals</span>
-							<span class="detail-value">{tokenInfo.decimals}</span>
-						</div>
-						<div class="detail-row">
-							<span class="detail-label">Network</span>
+							<span class="detail-label">{$t('ct.network')}</span>
 							<span class="detail-value text-cyan-300">{tokenInfo.network.name}</span>
 						</div>
 					</div>
 				</div>
 
-				<div class="modal-section">
-					<div class="label-text mb-3">Features</div>
-					<div class="flex gap-2 flex-wrap">
-						{#if tokenInfo.isMintable}
-							<span class="badge badge-cyan">Mintable</span>
-						{/if}
-						{#if tokenInfo.isTaxable}
-							<span class="badge badge-amber">Taxable</span>
-						{/if}
-						{#if tokenInfo.isPartner}
-							<span class="badge badge-purple">Partner</span>
-						{/if}
-						{#if !tokenInfo.isMintable && !tokenInfo.isTaxable && !tokenInfo.isPartner}
-							<span class="badge badge-emerald">Standard ERC-20</span>
-						{/if}
+				{#if !tokenInfo.existingTokenAddress}
+					<div class="modal-section">
+						<div class="label-text mb-3">{$t('ct.features')}</div>
+						<div class="flex gap-2 flex-wrap">
+							{#if tokenInfo.isMintable}
+								<span class="badge badge-cyan">{$t('ct.mintable')}</span>
+							{/if}
+							{#if tokenInfo.isTaxable}
+								<span class="badge badge-amber">{$t('ct.taxable')}</span>
+							{/if}
+							{#if tokenInfo.isPartner}
+								<span class="badge badge-purple">{$t('ct.partner')}</span>
+							{/if}
+							{#if !tokenInfo.isMintable && !tokenInfo.isTaxable && !tokenInfo.isPartner}
+								<span class="badge badge-emerald">{$t('ct.standardErc20')}</span>
+							{/if}
+						</div>
 					</div>
-				</div>
+				{/if}
 
 				<!-- Listing Details -->
 				{#if tokenInfo.listing?.enabled}
@@ -728,14 +1398,14 @@
 						: tokenInfo.listing.baseAmount}
 					{@const baseSymbol = getBaseSymbol(tokenInfo.network, tokenInfo.listing.baseCoin)}
 					<div class="modal-section">
-						<div class="label-text mb-3">Initial Liquidity</div>
+						<div class="label-text mb-3">{$t('ct.initialLiquidity')}</div>
 						<div class="detail-grid">
 							<div class="detail-row">
-								<span class="detail-label">Pair</span>
+								<span class="detail-label">{$t('ct.pair')}</span>
 								<span class="detail-value text-emerald-400">{tokenInfo.symbol}/{baseSymbol}</span>
 							</div>
 							<div class="detail-row">
-								<span class="detail-label">Tokens</span>
+								<span class="detail-label">{$t('ct.tokens')}</span>
 								<span class="detail-value">{Number(listTokenAmt).toLocaleString()} {tokenInfo.symbol}</span>
 							</div>
 							<div class="detail-row">
@@ -744,7 +1414,7 @@
 							</div>
 							{#if tokenInfo.listing.mode === 'price'}
 								<div class="detail-row">
-									<span class="detail-label">Price</span>
+									<span class="detail-label">{$t('ct.price')}</span>
 									<span class="detail-value">{tokenInfo.listing.pricePerToken} {baseSymbol}/token</span>
 								</div>
 							{/if}
@@ -752,10 +1422,62 @@
 					</div>
 				{/if}
 
+				<!-- Launch Details -->
+				{#if tokenInfo.launch?.enabled}
+					<div class="modal-section">
+						<div class="label-text mb-3">Launchpad</div>
+						<div class="detail-grid">
+							<div class="detail-row">
+								<span class="detail-label">Curve</span>
+								<span class="detail-value">{['Linear', 'Square Root', 'Quadratic', 'Exponential'][tokenInfo.launch.curveType] ?? 'Linear'}</span>
+							</div>
+							<div class="detail-row">
+								<span class="detail-label">Tokens for Curve</span>
+								<span class="detail-value">{tokenInfo.launch.tokensForLaunchPct}% of supply</span>
+							</div>
+							<div class="detail-row">
+								<span class="detail-label">Soft Cap</span>
+								<span class="detail-value">${Number(tokenInfo.launch.softCap).toLocaleString()} USDT</span>
+							</div>
+							<div class="detail-row">
+								<span class="detail-label">Hard Cap</span>
+								<span class="detail-value">${Number(tokenInfo.launch.hardCap).toLocaleString()} USDT</span>
+							</div>
+							<div class="detail-row">
+								<span class="detail-label">Duration</span>
+								<span class="detail-value">{tokenInfo.launch.durationDays} days</span>
+							</div>
+							<div class="detail-row">
+								<span class="detail-label">Max Buy</span>
+								<span class="detail-value">{(parseInt(tokenInfo.launch.maxBuyBps) / 100).toFixed(1)}% of hard cap</span>
+							</div>
+							{#if parseInt(tokenInfo.launch.creatorAllocationBps) > 0}
+								<div class="detail-row">
+									<span class="detail-label">Creator Alloc</span>
+									<span class="detail-value">{(parseInt(tokenInfo.launch.creatorAllocationBps) / 100).toFixed(1)}% ({tokenInfo.launch.vestingDays}d vesting)</span>
+								</div>
+							{/if}
+							{#if tokenInfo.launch.startTimestamp}
+								<div class="detail-row">
+									<span class="detail-label">Starts</span>
+									<span class="detail-value text-amber-400">{new Date(tokenInfo.launch.startTimestamp * 1000).toLocaleString()}</span>
+								</div>
+							{/if}
+						</div>
+						<div class="mt-3 p-3 rounded-lg" style="background: rgba(0,210,255,0.04); border: 1px solid rgba(0,210,255,0.1);">
+							<div class="flex items-center gap-2 text-[10px] font-mono text-gray-500">
+								<span>Graduation fee: 3% USDT + 3% tokens</span>
+								<span class="text-gray-700">|</span>
+								<span>LP: auto-burned</span>
+							</div>
+						</div>
+					</div>
+				{/if}
+
 				<!-- Fee & Payment Method -->
 				<div class="modal-section fee-section">
 					<div class="flex justify-between items-center mb-3">
-						<span class="label-text mb-0">Creation Fee</span>
+						<span class="label-text mb-0">{$t('ct.creationFee')}</span>
 						{#if feeLoading}
 							<div class="spinner-sm w-5 h-5 rounded-full border-2 border-white/10 border-t-cyan-400"></div>
 						{:else}
@@ -767,7 +1489,7 @@
 
 					{#if !feeLoading && paymentOptions.length > 0}
 						<div class="field-group mt-3">
-							<label class="label-text" for="payment-method">Payment Method</label>
+							<label class="label-text" for="payment-method">{$t('ct.paymentMethod')}</label>
 							<select
 								id="payment-method"
 								class="input-field"
@@ -783,7 +1505,7 @@
 
 						<div class="payment-summary mt-3">
 							<div class="flex justify-between items-center">
-								<span class="text-gray-500 text-xs font-mono">You pay</span>
+								<span class="text-gray-500 text-xs font-mono">{$t('ct.youPay')}</span>
 								<span class="text-white text-sm font-mono font-bold">
 									{selectedFeeFormatted} {selectedPayment?.symbol}
 								</span>
@@ -797,7 +1519,7 @@
 					disabled={feeLoading || paymentOptions.length === 0}
 					class="create-btn w-full syne cursor-pointer"
 				>
-					{feeLoading ? 'Calculating fee...' : tokenInfo.listing?.enabled ? 'Deploy & Add Liquidity' : 'Confirm & Deploy Token'}
+					{feeLoading ? $t('ct.calculatingFee') : tokenInfo.existingTokenAddress ? 'Create Launch' : tokenInfo.listing?.enabled ? $t('ct.deployAndList') : tokenInfo.launch?.enabled ? 'Deploy & Launch' : $t('ct.confirmDeploy')}
 				</button>
 			{/if}
 		</div>
@@ -805,26 +1527,284 @@
 {/if}
 
 <!-- Page -->
-<div class="page-container max-w-7xl mx-auto px-3 sm:px-6 py-6 sm:py-12">
-	<div class="page-grid">
-		<!-- Left: Form -->
-		<div class="form-col">
-			<div class="page-label">
-				<span class="badge badge-cyan">Step 1 of 1</span>
+<div class="page-container max-w-6xl mx-auto px-3 sm:px-6 py-6 sm:py-12">
+
+	{#if mode === null}
+		<!-- ═══════ INTENT SELECTION SCREEN ═══════ -->
+		<div class="text-center mb-10">
+			<h1 class="syne text-3xl sm:text-4xl font-bold text-white mt-4 mb-2">{$t('ci.pageTitle')}</h1>
+			<p class="text-gray-400 font-mono text-sm">{$t('ci.pageSub')}</p>
+		</div>
+
+		<div class="intent-grid">
+			<!-- Create Token -->
+			<button class="intent-card card card-hover" onclick={() => selectMode('token')}>
+				<div class="intent-icon cyan">
+					<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v12M6 12h12"/></svg>
+				</div>
+				<h3 class="syne text-lg font-bold text-white mt-4 mb-1">{$t('ci.createToken')}</h3>
+				<p class="text-gray-400 font-mono text-xs">{$t('ci.createTokenSub')}</p>
+			</button>
+
+			<!-- Create & Launch (FEATURED) -->
+			<button class="intent-card intent-card-featured" onclick={() => selectMode('both')}>
+				<span class="badge badge-cyan intent-badge-top">{$t('ci.recommended')}</span>
+				<div class="intent-icon cyan">
+					<svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+				</div>
+				<h3 class="syne text-xl font-bold text-white mt-4 mb-1">{$t('ci.createAndLaunch')}</h3>
+				<p class="text-gray-500 font-mono text-xs leading-relaxed">{$t('ci.createAndLaunchSub')}</p>
+			</button>
+
+			<!-- Create & List on DEX -->
+			<button class="intent-card card card-hover" onclick={() => selectMode('list')}>
+				<div class="intent-icon" style="color: #f59e0b;">
+					<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+				</div>
+				<h3 class="syne text-lg font-bold text-white mt-4 mb-1">Create & List on DEX</h3>
+				<p class="text-gray-400 font-mono text-xs">Create token and add liquidity to DEX instantly. One click.</p>
+			</button>
+
+			<!-- Launch Existing Token -->
+			<button class="intent-card card card-hover" onclick={() => selectMode('launch')}>
+				<div class="intent-icon emerald">
+					<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="M12 15l-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg>
+				</div>
+				<h3 class="syne text-lg font-bold text-white mt-4 mb-1">{$t('ci.launchExisting')}</h3>
+				<p class="text-gray-400 font-mono text-xs">{$t('ci.launchExistingSub')}</p>
+			</button>
+		</div>
+
+	{:else if mode === 'token' || mode === 'both' || mode === 'launch' || mode === 'list'}
+		<!-- ═══════ TOKEN / BOTH / LAUNCH WIZARD ═══════ -->
+		<div class="form-wrapper">
+			<button class="back-link" onclick={backToSelection}>
+				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+				{$t('ci.backToSelection')}
+			</button>
+			<div class="form-header">
+				<span class="badge badge-cyan">{mode === 'token' ? $t('ci.titleToken') : mode === 'launch' ? $t('ci.titleLaunch') : $t('ci.titleBoth')}</span>
+				<h1 class="syne text-2xl sm:text-3xl font-bold text-white mt-3 mb-1">{pageTitle}</h1>
+				<p class="text-gray-500 font-mono text-sm">{mode === 'token' ? $t('ci.metaToken') : mode === 'launch' ? $t('ci.metaLaunch') : $t('ci.metaBoth')}</p>
 			</div>
-			<h1 class="syne text-3xl sm:text-4xl font-bold text-white mt-4 mb-2">Create Your Token</h1>
-			<p class="text-gray-400 font-mono text-sm mb-8">Deploy a new ERC-20 token in minutes.</p>
-
-			<TokenForm {supportedNetworks} {addFeedback} {updateTokenInfo} onPreviewChange={handlePreviewChange} />
+			<TokenForm {supportedNetworks} {addFeedback} {updateTokenInfo} onPreviewChange={handlePreviewChange} initialData={initialFormData} forceMode={mode === 'token' ? 'token' : mode === 'launch' ? 'launch' : mode === 'list' ? 'list' : 'both'} />
 		</div>
 
-		<!-- Right: Live Preview (hidden on mobile) -->
-		<div class="info-col hidden lg:block">
-			{#if previewState}
-				<DisplayPreview {...previewState} />
-			{/if}
+	{:else if mode === 'launch'}
+		<!-- ═══════ LAUNCH EXISTING TOKEN FORM ═══════ -->
+		<div class="form-wrapper">
+			<button class="back-link" onclick={backToSelection}>
+				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+				{$t('ci.backToSelection')}
+			</button>
+			<div class="form-header">
+				<span class="badge badge-cyan">{$t('ci.titleLaunch')}</span>
+				<h1 class="syne text-2xl sm:text-3xl font-bold text-white mt-3 mb-1">{$t('ci.titleLaunch')}</h1>
+				<p class="text-gray-500 font-mono text-sm">{$t('ci.metaLaunch')}</p>
+			</div>
+			<div class="form-box card p-5 sm:p-8">
+
+				{#if launchStep === 'done' && launchDeployedAddress}
+					<!-- Success state -->
+					<div class="card p-6 text-center">
+						<div class="text-4xl mb-4 syne font-bold text-emerald-400">Done</div>
+						<h2 class="syne text-xl font-bold text-white mb-2">{$t('ci.launchSuccess')}</h2>
+						<p class="text-gray-400 font-mono text-sm mb-4">{launchTokenName} ({launchTokenSymbol}) is now live on {launchNetwork?.name}.</p>
+						<div class="flex gap-3 justify-center flex-wrap">
+							<a href="/launchpad/{launchDeployedAddress}" class="btn-primary text-sm px-5 py-2.5 no-underline">
+								{$t('ci.viewLaunch')} ->
+							</a>
+							<button onclick={backToSelection} class="btn-secondary text-sm px-5 py-2.5 cursor-pointer">
+								{$t('common.back')}
+							</button>
+						</div>
+					</div>
+				{:else}
+					<form class="launch-form" autocomplete="off" onsubmit={(e) => { e.preventDefault(); submitLaunch(); }}>
+						<!-- 1. Network select -->
+						<div class="field-group mb-4">
+							<label class="label-text" for="launch-network">{$t('ci.selectNetwork')}</label>
+							<select id="launch-network" class="input-field" bind:value={launchChainId}>
+								<option value={undefined}>Select a network</option>
+								{#each launchNetworks as n (n.chain_id)}
+									<option value={n.chain_id}>{n.name} ({n.native_coin})</option>
+								{/each}
+							</select>
+							<div class="text-gray-600 text-xs font-mono mt-1">{$t('ci.selectNetworkTip')}</div>
+						</div>
+
+						<!-- 2. Token address -->
+						<div class="field-group mb-4">
+							<label class="label-text" for="launch-token-addr">{$t('ci.tokenAddress')}</label>
+							<input
+								id="launch-token-addr"
+								type="text"
+								class="input-field"
+								placeholder="0x..."
+								bind:value={launchTokenAddress}
+							/>
+							{#if launchTokenLoading}
+								<span class="text-gray-500 text-xs font-mono mt-1">{$t('ci.loadingTokenInfo')}</span>
+							{:else if launchTokenName && launchTokenAddress}
+								<div class="card p-3 mt-2">
+									<div class="flex justify-between items-center">
+										<span class="text-emerald-400 text-sm font-mono font-semibold">{launchTokenName} ({launchTokenSymbol})</span>
+										<span class="text-gray-500 text-xs font-mono">{launchTokenDecimals} decimals</span>
+									</div>
+									<div class="flex justify-between items-center mt-1">
+										<span class="text-gray-400 text-xs font-mono">{$t('ci.supply')}: {parseFloat(ethers.formatUnits(launchTokenSupply, launchTokenDecimals)).toLocaleString()}</span>
+										<span class="text-gray-400 text-xs font-mono">{$t('ci.balance')}: {launchTokenBalance > 0n ? parseFloat(ethers.formatUnits(launchTokenBalance, launchTokenDecimals)).toLocaleString() : '0'}</span>
+									</div>
+								</div>
+							{:else if launchTokenAddress && ethers.isAddress(launchTokenAddress) && !launchTokenLoading && launchChainId}
+								<span class="text-red-400 text-xs font-mono mt-1">{$t('ci.tokenNotFound')}</span>
+							{/if}
+							<div class="text-gray-600 text-xs font-mono mt-1">{$t('ci.tokenAddressTip')}</div>
+						</div>
+
+						<!-- 3. Tokens for launch -->
+						{#if launchTokenName}
+							<div class="field-group mb-4">
+								<label class="label-text" for="launch-amount">{$t('ci.tokensForLaunch')}</label>
+								<input
+									id="launch-amount"
+									type="text"
+									class="input-field"
+									placeholder="0"
+									bind:value={launchAmount}
+								/>
+								<div class="flex gap-2 mt-2">
+									{#each [25, 50, 75, 100] as pct}
+										<button
+											type="button"
+											class="btn-secondary text-xs px-3 py-1.5 cursor-pointer"
+											onclick={() => setLaunchAmountPct(pct)}
+										>{pct}%</button>
+									{/each}
+								</div>
+								<div class="text-gray-600 text-xs font-mono mt-1">{$t('ci.tokensForLaunchTip')}</div>
+							</div>
+
+							<!-- 4. Launch config -->
+							<div class="card p-4 mb-4">
+								<h3 class="syne text-base font-bold text-white mb-4">{$t('ci.launchConfig')}</h3>
+
+								<div class="field-group mb-3">
+									<label class="label-text" for="launch-curve">{$t('ci.curveType')}</label>
+									<select id="launch-curve" class="input-field" bind:value={launchCurveType}>
+										{#each CURVE_TYPES as ct, i}
+											<option value={i}>{ct}</option>
+										{/each}
+									</select>
+								</div>
+
+								<div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+									<div class="field-group">
+										<label class="label-text" for="launch-soft-cap">{$t('ci.softCap')}</label>
+										<input id="launch-soft-cap" type="number" class="input-field" bind:value={launchSoftCap} min="0" step="any" />
+										<div class="text-gray-600 text-[10px] font-mono mt-1">{$t('ci.softCapTip')}</div>
+									</div>
+									<div class="field-group">
+										<label class="label-text" for="launch-hard-cap">{$t('ci.hardCap')}</label>
+										<input id="launch-hard-cap" type="number" class="input-field" bind:value={launchHardCap} min="0" step="any" />
+										<div class="text-gray-600 text-[10px] font-mono mt-1">{$t('ci.hardCapTip')}</div>
+									</div>
+								</div>
+
+								<div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+									<div class="field-group">
+										<label class="label-text" for="launch-duration">{$t('ci.durationDays')}</label>
+										<input id="launch-duration" type="number" class="input-field" bind:value={launchDurationDays} min="1" />
+										<div class="text-gray-600 text-[10px] font-mono mt-1">{$t('ci.durationTip')}</div>
+									</div>
+									<div class="field-group">
+										<label class="label-text" for="launch-max-buy">{$t('ci.maxBuyBps')}</label>
+										<input id="launch-max-buy" type="number" class="input-field" bind:value={launchMaxBuyBps} min="1" />
+										<div class="text-gray-600 text-[10px] font-mono mt-1">{$t('ci.maxBuyTip')}</div>
+									</div>
+								</div>
+
+								<div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+									<div class="field-group">
+										<label class="label-text" for="launch-creator-alloc">{$t('ci.creatorAllocBps')}</label>
+										<input id="launch-creator-alloc" type="number" class="input-field" bind:value={launchCreatorAllocBps} min="0" />
+										<div class="text-gray-600 text-[10px] font-mono mt-1">{$t('ci.creatorAllocTip')}</div>
+									</div>
+									{#if parseInt(launchCreatorAllocBps) > 0}
+										<div class="field-group">
+											<label class="label-text" for="launch-vesting">{$t('ci.vestingDays')}</label>
+											<input id="launch-vesting" type="number" class="input-field" bind:value={launchVestingDays} min="0" />
+											<div class="text-gray-600 text-[10px] font-mono mt-1">{$t('ci.vestingTip')}</div>
+										</div>
+									{/if}
+								</div>
+							</div>
+
+							<!-- 5. Review -->
+							<div class="card p-4 mb-4">
+								<h3 class="syne text-base font-bold text-white mb-3">{$t('ci.reviewLaunch')}</h3>
+								<div class="detail-grid">
+									<div class="detail-row">
+										<span class="detail-label">Token</span>
+										<span class="detail-value text-cyan-300">{launchTokenName} ({launchTokenSymbol})</span>
+									</div>
+									<div class="detail-row">
+										<span class="detail-label">Network</span>
+										<span class="detail-value">{launchNetwork?.name ?? '-'}</span>
+									</div>
+									<div class="detail-row">
+										<span class="detail-label">Tokens for launch</span>
+										<span class="detail-value">{launchAmount ? parseFloat(launchAmount).toLocaleString() : '0'}</span>
+									</div>
+									<div class="detail-row">
+										<span class="detail-label">Curve</span>
+										<span class="detail-value">{CURVE_TYPES[launchCurveType as 0|1|2|3] ?? 'Linear'}</span>
+									</div>
+									<div class="detail-row">
+										<span class="detail-label">Soft / Hard Cap</span>
+										<span class="detail-value">${launchSoftCap} / ${launchHardCap}</span>
+									</div>
+									<div class="detail-row">
+										<span class="detail-label">Duration</span>
+										<span class="detail-value">{launchDurationDays} days</span>
+									</div>
+									<div class="detail-row">
+										<span class="detail-label">Max buy</span>
+										<span class="detail-value">{(parseInt(launchMaxBuyBps) / 100).toFixed(2)}%</span>
+									</div>
+									{#if parseInt(launchCreatorAllocBps) > 0}
+										<div class="detail-row">
+											<span class="detail-label">Creator alloc</span>
+											<span class="detail-value">{(parseInt(launchCreatorAllocBps) / 100).toFixed(2)}% ({launchVestingDays}d vesting)</span>
+										</div>
+									{/if}
+								</div>
+							</div>
+
+							<!-- 6. Submit -->
+							<button
+								type="submit"
+								class="btn-primary w-full py-3.5 text-base justify-center cursor-pointer"
+								disabled={launchSubmitting || !launchTokenName || !launchAmount || parseFloat(launchAmount) <= 0}
+							>
+								{#if launchSubmitting}
+									<span class="spinner-inline"></span>
+									{launchStep === 'fee' ? 'Fetching fee...' :
+									 launchStep === 'approving-fee' ? $t('ci.approvingFee') :
+									 launchStep === 'creating' ? $t('ci.creatingLaunch') :
+									 launchStep === 'approving-tokens' ? $t('ci.approvingTokens') :
+									 launchStep === 'depositing' ? $t('ci.depositingTokens') :
+									 launchStep === 'saving' ? 'Saving...' : $t('ci.creatingLaunch')}
+								{:else}
+									{$t('ci.createLaunch')}
+								{/if}
+							</button>
+						{/if}
+					</form>
+				{/if}
+			</div>
 		</div>
-	</div>
+	{/if}
 </div>
 
 <style>
@@ -835,8 +1815,12 @@
 	}
 	@media (min-width: 1024px) {
 		.page-grid {
-			grid-template-columns: 1fr 320px;
-			align-items: start;
+			grid-template-columns: 1fr;
+		}
+		.info-col {
+			align-self: stretch;
+			position: relative;
+			
 		}
 	}
 
@@ -848,15 +1832,39 @@
 	.review-modal {
 		background: var(--bg);
 		border: 1px solid var(--border-input);
-		border-radius: 20px;
+		border-radius: 20px 20px 0 0;
 		padding: 16px;
-		animation: modalIn 0.2s ease-out;
+		padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+		animation: modalSlideUp 0.25s ease-out;
 		scrollbar-width: none;
 		-ms-overflow-style: none;
+		min-height: 60vh;
 	}
 	.review-modal::-webkit-scrollbar { display: none; }
 	@media (min-width: 640px) {
-		.review-modal { padding: 24px; }
+		.review-modal {
+			padding: 24px;
+			border-radius: 20px;
+			min-height: auto;
+			animation: modalIn 0.2s ease-out;
+		}
+	}
+	@keyframes modalSlideUp {
+		from { opacity: 0; transform: translateY(100%); }
+		to   { opacity: 1; transform: translateY(0); }
+	}
+
+	.drag-indicator {
+		display: flex;
+		justify-content: center;
+		padding: 8px 0 4px;
+		cursor: pointer;
+	}
+	.drag-bar {
+		width: 36px;
+		height: 4px;
+		background: var(--border);
+		border-radius: 2px;
 	}
 	@keyframes modalIn {
 		from { opacity:0; transform: scale(0.95) translateY(8px); }
@@ -884,11 +1892,6 @@
 
 	.modal-section { margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px solid var(--bg-surface-hover); }
 
-	.detail-grid { display: flex; flex-direction: column; gap: 8px; }
-	.detail-row { display: flex; justify-content: space-between; align-items: center; }
-	.detail-label { font-size: 12px; color: #6b7280; font-family: 'Space Mono', monospace; }
-	.detail-value { font-size: 13px; color: var(--text); font-family: 'Space Mono', monospace; font-weight: 600; }
-
 	.fee-section { background: rgba(0,210,255,0.03); border-radius: 10px; padding: 14px; border-color: rgba(0,210,255,0.1); }
 
 	.payment-summary {
@@ -897,8 +1900,6 @@
 		border: 1px solid rgba(0,210,255,0.15);
 		border-radius: 8px;
 	}
-
-	.field-group { display: flex; flex-direction: column; gap: 6px; }
 
 	.create-btn {
 		width: 100%;
@@ -958,13 +1959,6 @@
 		gap: 4px;
 	}
 
-	.spinner { animation: spin 0.8s linear infinite; }
-	.spinner-sm { animation: spin 0.8s linear infinite; }
-	@keyframes spin { to { transform: rotate(360deg); } }
-
-	.no-underline { text-decoration: none; }
-	a.no-underline { text-decoration: none; }
-
 	.deployed-address-box {
 		padding: 12px 14px;
 		background: rgba(0,210,255,0.04);
@@ -973,13 +1967,124 @@
 		text-align: center;
 	}
 
-	.syne { font-family: 'Syne', sans-serif; }
-	.badge { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
-	.badge-cyan { background: rgba(0,210,255,0.1); color: #00d2ff; border: 1px solid rgba(0,210,255,0.2); }
-	.badge-amber { background: rgba(245,158,11,0.1); color: #f59e0b; border: 1px solid rgba(245,158,11,0.2); }
-	.badge-emerald { background: rgba(16,185,129,0.1); color: #10b981; border: 1px solid rgba(16,185,129,0.2); }
-	.badge-purple { background: rgba(139,92,246,0.1); color: #8b5cf6; border: 1px solid rgba(139,92,246,0.2); }
-	.label-text { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); display: block; }
-
 	select option { background: var(--select-bg); color: var(--text-heading); }
+
+	/* ─── Intent Selection Grid ─── */
+	.intent-grid {
+		display: grid;
+		grid-template-columns: 1fr;
+		gap: 16px;
+		max-width: 800px;
+		margin: 0 auto;
+	}
+	@media (min-width: 640px) {
+		.intent-grid {
+			grid-template-columns: 1fr 1.3fr 1fr;
+			gap: 20px;
+			align-items: stretch;
+		}
+	}
+
+	.intent-card {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		text-align: center;
+		padding: 28px 20px;
+		cursor: pointer;
+		transition: all 0.25s;
+		border: 1px solid var(--border);
+		background: var(--bg-surface);
+		border-radius: 16px;
+		position: relative;
+	}
+	.intent-card:hover {
+		transform: translateY(-3px);
+		box-shadow: 0 12px 40px rgba(0,0,0,0.3);
+		border-color: rgba(0,210,255,0.2);
+		background: rgba(0,210,255,0.03);
+	}
+
+	.intent-card-featured {
+		padding: 36px 24px;
+		border: 1.5px solid rgba(0, 210, 255, 0.3);
+		background: var(--bg-surface);
+		position: relative;
+		overflow: hidden;
+	}
+	.intent-card-featured::before {
+		content: '';
+		position: absolute;
+		inset: 0;
+		background: radial-gradient(ellipse at 50% 0%, rgba(0, 210, 255, 0.08), transparent 70%);
+		pointer-events: none;
+	}
+	.intent-card-featured:hover {
+		border-color: rgba(0, 210, 255, 0.5);
+		box-shadow: 0 0 40px rgba(0, 210, 255, 0.15), 0 12px 40px rgba(0, 0, 0, 0.3);
+		background: rgba(0, 210, 255, 0.03);
+	}
+
+	.intent-badge-top {
+		margin-bottom: 12px;
+	}
+
+	.intent-icon {
+		width: 56px;
+		height: 56px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: 14px;
+	}
+	.intent-icon.cyan {
+		background: rgba(0,210,255,0.1);
+		color: #00d2ff;
+		border: 1px solid rgba(0,210,255,0.2);
+	}
+	.intent-icon.emerald {
+		background: rgba(16,185,129,0.1);
+		color: #10b981;
+		border: 1px solid rgba(16,185,129,0.2);
+	}
+	.intent-icon.purple {
+		background: rgba(139,92,246,0.1);
+		color: #a78bfa;
+		border: 1px solid rgba(139,92,246,0.2);
+	}
+
+	.back-link {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		color: var(--text-muted);
+		font-size: 13px;
+		font-family: 'Space Mono', monospace;
+		background: none;
+		border: none;
+		cursor: pointer;
+		padding: 0;
+		transition: color 0.15s;
+	}
+	.back-link:hover {
+		color: #00d2ff;
+	}
+
+	.form-wrapper {
+		max-width: 640px;
+		margin: 0 auto;
+	}
+
+	.form-header {
+		margin: 16px 0 20px;
+	}
+
+	.form-box {
+		border-radius: 16px;
+	}
+
+	.launch-form {
+		display: flex;
+		flex-direction: column;
+	}
 </style>

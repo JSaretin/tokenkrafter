@@ -1035,7 +1035,7 @@ describe("Audit Findings PoC Tests", function () {
 
       // Verify the PLATFORM_FEE_BPS and the slippage constants
       expect(await launch.PLATFORM_FEE_BPS()).to.equal(300); // 3%
-      expect(await launch.BUY_FEE_BPS()).to.equal(100); // 1%
+      // No buy fee — platform earns from graduation only
 
       // The graduation code uses hardcoded:
       // (tokensForDexLP * 98) / 100  -> 2% slippage

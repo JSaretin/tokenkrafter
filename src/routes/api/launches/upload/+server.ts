@@ -2,7 +2,7 @@ import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { supabaseAdmin } from '$lib/supabaseServer';
 
-const MAX_FILE_SIZE = 512 * 1024; // 512 KB
+const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2 MB
 const ALLOWED_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/svg+xml'];
 const BUCKET = 'launch-logos';
 
@@ -23,7 +23,7 @@ export const POST: RequestHandler = async ({ request }) => {
 	}
 
 	if (file.size > MAX_FILE_SIZE) {
-		return error(400, `File too large. Max size is ${MAX_FILE_SIZE / 1024} KB`);
+		return error(400, `File too large. Max size is ${MAX_FILE_SIZE / (1024 * 1024)} MB`);
 	}
 
 	// Verify the caller is the creator

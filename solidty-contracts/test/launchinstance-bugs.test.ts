@@ -306,7 +306,7 @@ describe("LaunchInstance Bug PoCs", function () {
       // Setup: alice creates a token and launch
       const tokenAddress = await createBasicToken(alice);
       const launchAddress = await createAndActivateLaunch(alice, tokenAddress, {
-        softCap: BigInt(100) * BigInt(1e6),
+        softCap: BigInt(200) * BigInt(1e6), // $200 soft cap — two $50 buys won't reach it
         hardCap: BigInt(10000) * BigInt(1e6),
         maxBuyBps: 500, // 5% max buy per wallet
       });
@@ -1214,10 +1214,14 @@ describe("LaunchInstance Bug PoCs", function () {
       expect(await launch.state()).to.equal(2); // Graduated
     });
 
-    it("auto-graduates when hard cap is reached in a single buy", async function () {
+    it("auto-graduates when hard cap is reached", async function () {
       const {
         alice,
         bob,
+        charlie,
+        dave,
+        eve,
+        frank,
         usdt,
         createBasicToken,
         createAndActivateLaunch,
@@ -1228,23 +1232,27 @@ describe("LaunchInstance Bug PoCs", function () {
       const launchAddress = await createAndActivateLaunch(alice, tokenAddress, {
         softCap: BigInt(10) * BigInt(1e6),
         hardCap: BigInt(50) * BigInt(1e6), // low hard cap
-        maxBuyBps: 500,
+        maxBuyBps: 500, // 5% of hard cap = 2.5 USDT per wallet
       });
 
       const launch = await ethers.getContractAt("LaunchInstance", launchAddress);
+      const usdtAddr = await usdt.getAddress();
 
-      // Bob buys enough to hit hard cap in one go
-      await fundWithUsdt(bob, BigInt(200) * BigInt(1e6));
-      await usdt.connect(bob).approve(launchAddress, ethers.MaxUint256);
-
-      await launch
-        .connect(bob)
-        .buyWithToken(
-          await usdt.getAddress(),
-          BigInt(200) * BigInt(1e6),
-          0,
-          0
-        );
+      // maxBuyPerWallet = 50 * 500 / 10000 = 2.5 USDT
+      // Need many wallets to reach 50 USDT hard cap
+      const signers = await ethers.getSigners();
+      const buyAmount = BigInt(5) * BigInt(1e6); // 5 USDT (capped to ~2.5 per wallet)
+      for (let i = 0; i < 25; i++) {
+        await fundWithUsdt(signers[i], buyAmount);
+        await usdt.connect(signers[i]).approve(launchAddress, ethers.MaxUint256);
+        try {
+          await launch
+            .connect(signers[i])
+            .buyWithToken(usdtAddr, buyAmount, 0, 0);
+        } catch {
+          break; // May revert once hard cap is reached or all tokens sold
+        }
+      }
 
       // Should have auto-graduated
       expect(await launch.state()).to.equal(2); // Graduated
@@ -1269,23 +1277,28 @@ describe("LaunchInstance Bug PoCs", function () {
       const launchAddress = await createAndActivateLaunch(alice, tokenAddress, {
         softCap: BigInt(10) * BigInt(1e6),
         hardCap: BigInt(50) * BigInt(1e6),
+        maxBuyBps: 500, // 5% of hard cap = 2.5 USDT per wallet
         creatorAllocationBps: 500, // 5%
         vestingDays: 30,
       });
 
       const launch = await ethers.getContractAt("LaunchInstance", launchAddress);
+      const usdtAddr = await usdt.getAddress();
 
-      // Graduate
-      await fundWithUsdt(bob, BigInt(200) * BigInt(1e6));
-      await usdt.connect(bob).approve(launchAddress, ethers.MaxUint256);
-      await launch
-        .connect(bob)
-        .buyWithToken(
-          await usdt.getAddress(),
-          BigInt(200) * BigInt(1e6),
-          0,
-          0
-        );
+      // Graduate by buying from multiple wallets to reach hard cap
+      const signers = await ethers.getSigners();
+      const buyAmount = BigInt(5) * BigInt(1e6); // 5 USDT (capped to ~2.5 per wallet)
+      for (let i = 0; i < 25; i++) {
+        await fundWithUsdt(signers[i], buyAmount);
+        await usdt.connect(signers[i]).approve(launchAddress, ethers.MaxUint256);
+        try {
+          await launch
+            .connect(signers[i])
+            .buyWithToken(usdtAddr, buyAmount, 0, 0);
+        } catch {
+          break; // May revert once hard cap is reached or all tokens sold
+        }
+      }
 
       expect(await launch.state()).to.equal(2); // Graduated
 
@@ -1323,23 +1336,28 @@ describe("LaunchInstance Bug PoCs", function () {
       const launchAddress = await createAndActivateLaunch(alice, tokenAddress, {
         softCap: BigInt(10) * BigInt(1e6),
         hardCap: BigInt(50) * BigInt(1e6),
+        maxBuyBps: 500, // 5% of hard cap = 2.5 USDT per wallet
         creatorAllocationBps: 500,
         vestingDays: 30,
       });
 
       const launch = await ethers.getContractAt("LaunchInstance", launchAddress);
+      const usdtAddr = await usdt.getAddress();
 
-      // Graduate
-      await fundWithUsdt(bob, BigInt(200) * BigInt(1e6));
-      await usdt.connect(bob).approve(launchAddress, ethers.MaxUint256);
-      await launch
-        .connect(bob)
-        .buyWithToken(
-          await usdt.getAddress(),
-          BigInt(200) * BigInt(1e6),
-          0,
-          0
-        );
+      // Graduate by buying from multiple wallets to reach hard cap
+      const signers = await ethers.getSigners();
+      const buyAmount = BigInt(5) * BigInt(1e6); // 5 USDT (capped to ~2.5 per wallet)
+      for (let i = 0; i < 25; i++) {
+        await fundWithUsdt(signers[i], buyAmount);
+        await usdt.connect(signers[i]).approve(launchAddress, ethers.MaxUint256);
+        try {
+          await launch
+            .connect(signers[i])
+            .buyWithToken(usdtAddr, buyAmount, 0, 0);
+        } catch {
+          break; // May revert once hard cap is reached or all tokens sold
+        }
+      }
 
       // Past cliff + FULL vesting duration so everything is claimed at once
       await time.increase((7 + 30) * 24 * 3600 + 1);
@@ -1440,7 +1458,7 @@ describe("LaunchInstance Bug PoCs", function () {
         BigInt(10) * BigInt(1e6),
         BigInt(100000) * BigInt(1e6),
         30,
-        100, // 1% max buy = 4900 tokens (70% of 700k = 490k, 1% = 4900)
+        100, // 1% max buy = 1% of hardCap = 1000 USDT
         0,
         0,
         ethers.ZeroAddress,
@@ -1459,6 +1477,7 @@ describe("LaunchInstance Bug PoCs", function () {
       await launch.connect(alice).depositTokens(ethers.parseUnits("700000", 18));
 
       const maxBuy = await launch.maxBuyPerWallet();
+      // maxBuy = hardCap * maxBuyBps / BPS = 100000 * 100 / 10000 = 1000 USDT (1000_000_000 in 6 decimals)
       expect(maxBuy).to.be.gt(0);
 
       // Fund bob and buy in chunks
@@ -1470,7 +1489,7 @@ describe("LaunchInstance Bug PoCs", function () {
         try {
           await launch
             .connect(bob)
-            .buyWithToken(await usdt.getAddress(), BigInt(5000) * BigInt(1e6), 0, 0);
+            .buyWithToken(await usdt.getAddress(), BigInt(500) * BigInt(1e6), 0, 0);
         } catch {
           hitLimit = true;
           break;
@@ -1478,7 +1497,8 @@ describe("LaunchInstance Bug PoCs", function () {
       }
 
       expect(hitLimit).to.be.true;
-      expect(await launch.tokensBought(bob.address)).to.be.lte(maxBuy);
+      // maxBuyPerWallet is now in USDT value, so compare basePaid (USDT spent) against maxBuy
+      expect(await launch.basePaid(bob.address)).to.be.lte(maxBuy);
     });
 
     it("different wallets have independent limits (sybil is possible)", async function () {
@@ -1507,7 +1527,7 @@ describe("LaunchInstance Bug PoCs", function () {
         BigInt(10) * BigInt(1e6),
         BigInt(100000) * BigInt(1e6),
         30,
-        100, // 1% max buy per wallet
+        100, // 1% max buy per wallet = 1% of hardCap = 1000 USDT
         0,
         0,
         ethers.ZeroAddress,
@@ -1526,10 +1546,10 @@ describe("LaunchInstance Bug PoCs", function () {
       await launch.connect(alice).depositTokens(ethers.parseUnits("700000", 18));
 
       const maxBuy = await launch.maxBuyPerWallet();
+      // maxBuy = hardCap * maxBuyBps / BPS = 100000 * 100 / 10000 = 1000 USDT
 
-      // Each wallet buys a single purchase that gets some tokens
-      // Using the default curve helper to avoid exhausting supply
-      const buyAmt = BigInt(500) * BigInt(1e6);
+      // Each wallet buys a single purchase within the USDT limit
+      const buyAmt = BigInt(500) * BigInt(1e6); // 500 USDT (under 1000 USDT limit)
       for (const buyer of [bob, charlie, dave]) {
         await fundWithUsdt(buyer, buyAmt);
         await usdt.connect(buyer).approve(launchAddress, ethers.MaxUint256);
@@ -1538,26 +1558,26 @@ describe("LaunchInstance Bug PoCs", function () {
           .buyWithToken(await usdt.getAddress(), buyAmt, 0, 0);
       }
 
-      const bobBought = await launch.tokensBought(bob.address);
-      const charlieBought = await launch.tokensBought(charlie.address);
-      const daveBought = await launch.tokensBought(dave.address);
+      const bobPaid = await launch.basePaid(bob.address);
+      const charliePaid = await launch.basePaid(charlie.address);
+      const davePaid = await launch.basePaid(dave.address);
 
-      expect(bobBought).to.be.gt(0);
-      expect(charlieBought).to.be.gt(0);
-      expect(daveBought).to.be.gt(0);
+      expect(bobPaid).to.be.gt(0);
+      expect(charliePaid).to.be.gt(0);
+      expect(davePaid).to.be.gt(0);
 
-      // Each individual wallet is under the limit
-      expect(bobBought).to.be.lte(maxBuy);
-      expect(charlieBought).to.be.lte(maxBuy);
-      expect(daveBought).to.be.lte(maxBuy);
+      // Each individual wallet's USDT spent is under the limit
+      expect(bobPaid).to.be.lte(maxBuy);
+      expect(charliePaid).to.be.lte(maxBuy);
+      expect(davePaid).to.be.lte(maxBuy);
 
-      // Combined across 3 sybil wallets exceeds any single wallet's purchase
+      // Combined across 3 sybil wallets exceeds any single wallet's spend
       // This demonstrates the anti-whale is per-wallet, not global
-      const totalSybil = bobBought + charlieBought + daveBought;
-      // Each bought ~same amount, so 3x > any individual purchase
-      expect(totalSybil).to.be.gt(bobBought);
-      expect(totalSybil).to.be.gt(charlieBought);
-      expect(totalSybil).to.be.gt(daveBought);
+      const totalSybil = bobPaid + charliePaid + davePaid;
+      // Each paid ~same amount, so 3x > any individual spend
+      expect(totalSybil).to.be.gt(bobPaid);
+      expect(totalSybil).to.be.gt(charliePaid);
+      expect(totalSybil).to.be.gt(davePaid);
     });
   });
 

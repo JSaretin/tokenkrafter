@@ -27,3 +27,4 @@ vite.config.ts.timestamp-*
 solidty-contracts/artifacts
 solidty-contracts/cache
 solidty-contracts/typechain-types
+strategy/

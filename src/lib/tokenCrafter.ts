@@ -19,17 +19,17 @@ export const FACTORY_ABI = [
 	'function ownerCreateToken(address creator, tuple(string name, string symbol, uint256 totalSupply, uint8 decimals, bool isTaxable, bool isMintable, bool isPartner, address paymentToken) p, address referral) external payable returns (address)',
 
 	// Token creation + launch
-	'function createTokenAndLaunch(tuple(string name, string symbol, uint256 totalSupply, uint8 decimals, bool isTaxable, bool isMintable, bool isPartner, address paymentToken) p, tuple(uint256 tokensForLaunch, uint8 curveType, uint256 softCap, uint256 hardCap, uint256 durationDays, uint256 maxBuyBps, uint256 creatorAllocationBps, uint256 vestingDays, address launchPaymentToken) launch, tuple(uint256 maxWalletAmount, uint256 maxTransactionAmount, uint256 cooldownSeconds) protection, tuple(uint256 buyTaxBps, uint256 sellTaxBps, uint256 transferTaxBps, address[] taxWallets, uint16[] taxSharesBps) tax, address referral) external payable returns (address tokenAddress, address launchAddress)',
+	'function createTokenAndLaunch(tuple(string name, string symbol, uint256 totalSupply, uint8 decimals, bool isTaxable, bool isMintable, bool isPartner, address paymentToken) p, tuple(uint256 tokensForLaunch, uint8 curveType, uint256 softCap, uint256 hardCap, uint256 durationDays, uint256 maxBuyBps, uint256 creatorAllocationBps, uint256 vestingDays, address launchPaymentToken, uint256 startTimestamp) launch, tuple(uint256 maxWalletAmount, uint256 maxTransactionAmount, uint256 cooldownSeconds) protection, tuple(uint256 buyTaxBps, uint256 sellTaxBps, uint256 transferTaxBps, address[] taxWallets, uint16[] taxSharesBps) tax, address referral) external payable returns (address tokenAddress, address launchAddress)',
 
 	// Events
 	'event TokenCreatedAndLaunched(address indexed creator, address indexed token, address indexed launch)',
 
 	// View functions
-	'function getCreationFee(bool isTaxable, bool isMintable, bool isPartner) external view returns (address[] tokens, uint256[] fees)',
+	'function convertFee(uint256 usdtAmount, address paymentToken) external view returns (uint256)',
+	'function getCreationFees(bool isTaxable, bool isMintable, bool isPartner, address launchpadFactory) external view returns (address[] paymentTokens, uint256[] creationFees, uint256[] launchFees)',
 	'function getCreatedTokens(address creator) external view returns (address[])',
 	'function getSupportedPaymentTokens() external view returns (address[])',
-	'function getTokenInfo(address token) external view returns (tuple(address creator, bool isMintable, bool isTaxable, bool isPartnership))',
-	'function getStats() external view returns (uint256 total, uint256[8] byType)',
+	'function tokenInfo(address token) external view returns (address creator, bool isMintable, bool isTaxable, bool isPartnership)',
 	'function predictTokenAddress(address creator, bool isTaxable, bool isMintable, bool isPartner) external view returns (address)',
 	'function totalTokensCreated() view returns (uint256)',
 	'function creatorNonce(address) view returns (uint256)',
@@ -70,7 +70,7 @@ export const FACTORY_ABI = [
 	'function usdt() view returns (address)',
 	'function addPaymentToken(address token) external',
 	'function removePaymentToken(address token) external',
-	'function withdrawToken(address token) external',
+	'function withdrawFees(address token) external',
 
 	// Admin - Protection overrides
 	'function forceUnblacklist(address token, address account) external',
@@ -78,6 +78,21 @@ export const FACTORY_ABI = [
 	'function forceRelaxMaxTransaction(address token, uint256 amount) external',
 	'function forceRelaxCooldown(address token, uint256 seconds_) external',
 	'function forceDisableBlacklist(address token) external'
+];
+
+export const PLATFORM_ROUTER_ABI = [
+	// Create token + bonding curve launch (one-click)
+	'function createTokenAndLaunch(tuple(string name, string symbol, uint256 totalSupply, uint8 decimals, bool isTaxable, bool isMintable, bool isPartner, address paymentToken) p, tuple(uint256 tokensForLaunch, uint8 curveType, uint256 softCap, uint256 hardCap, uint256 durationDays, uint256 maxBuyBps, uint256 creatorAllocationBps, uint256 vestingDays, address launchPaymentToken, uint256 startTimestamp) launch, tuple(uint256 maxWalletAmount, uint256 maxTransactionAmount, uint256 cooldownSeconds) protection, tuple(uint256 buyTaxBps, uint256 sellTaxBps, uint256 transferTaxBps, address[] taxWallets, uint16[] taxSharesBps) tax, address referral) external payable returns (address tokenAddress, address launchAddress)',
+
+	// Create token + add liquidity to DEX pools (ERC20 base tokens)
+	'function createAndList(tuple(string name, string symbol, uint256 totalSupply, uint8 decimals, bool isTaxable, bool isMintable, bool isPartner, address paymentToken) p, tuple(address[] bases, uint256[] baseAmounts, uint256[] tokenAmounts) list, tuple(uint256 maxWalletAmount, uint256 maxTransactionAmount, uint256 cooldownSeconds) protection, tuple(uint256 buyTaxBps, uint256 sellTaxBps, uint256 transferTaxBps, address[] taxWallets, uint16[] taxSharesBps) tax, address referral) external payable returns (address tokenAddress)',
+
+	// Create token + native coin pool + optional extra ERC20 pools
+	'function createAndListWithEth(tuple(string name, string symbol, uint256 totalSupply, uint8 decimals, bool isTaxable, bool isMintable, bool isPartner, address paymentToken) p, uint256 ethTokenAmount, address[] extraBases, uint256[] extraBaseAmounts, uint256[] extraTokenAmounts, tuple(uint256 maxWalletAmount, uint256 maxTransactionAmount, uint256 cooldownSeconds) protection, tuple(uint256 buyTaxBps, uint256 sellTaxBps, uint256 transferTaxBps, address[] taxWallets, uint16[] taxSharesBps) tax, address referral) external payable returns (address tokenAddress)',
+
+	// Events
+	'event TokenCreatedAndLaunched(address indexed creator, address indexed token, address indexed launch)',
+	'event TokenCreatedAndListed(address indexed creator, address indexed token, uint256 poolCount)'
 ];
 
 export const TOKEN_ABI = [
@@ -189,9 +204,12 @@ export class TokenFactory {
 		this.contract = new ethers.Contract(address, FACTORY_ABI, signerOrProvider);
 	}
 
-	async getCreationFee(isTaxable: boolean, isMintable: boolean, isPartner: boolean): Promise<{ tokens: string[]; fees: bigint[] }> {
-		const [tokens, fees] = await this.contract.getCreationFee(isTaxable, isMintable, isPartner);
-		return { tokens: [...tokens], fees: [...fees] };
+	async getCreationFee(isTaxable: boolean, isMintable: boolean, isPartner: boolean, launchpadAddress?: string): Promise<{ tokens: string[]; fees: bigint[]; launchFees: bigint[] }> {
+		const [tokens, fees, launchFees] = await this.contract.getCreationFees(
+			isTaxable, isMintable, isPartner,
+			launchpadAddress || '0x0000000000000000000000000000000000000000'
+		);
+		return { tokens: [...tokens], fees: [...fees], launchFees: [...launchFees] };
 	}
 
 	async getCreatedTokens(creator: string): Promise<string[]> {
@@ -199,12 +217,13 @@ export class TokenFactory {
 	}
 
 	async getTokenInfo(token: string): Promise<{ creator: string; isMintable: boolean; isTaxable: boolean; isPartnership: boolean }> {
-		return await this.contract.getTokenInfo(token);
+		const [creator, isMintable, isTaxable, isPartnership] = await this.contract.tokenInfo(token);
+		return { creator, isMintable, isTaxable, isPartnership };
 	}
 
-	async getStats(): Promise<{ total: bigint; byType: bigint[] }> {
-		const [total, byType] = await this.contract.getStats();
-		return { total, byType: [...byType] };
+	async getStats(): Promise<{ total: bigint }> {
+		const total = await this.contract.totalTokensCreated();
+		return { total };
 	}
 
 	async predictTokenAddress(creator: string, isTaxable: boolean, isMintable: boolean, isPartner: boolean): Promise<string> {

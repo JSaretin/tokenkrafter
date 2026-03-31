@@ -2,6 +2,9 @@
 	import { ethers } from 'ethers';
 	import { getContext, onDestroy } from 'svelte';
 	import { page } from '$app/state';
+	import { t } from '$lib/i18n';
+	import { favorites, toggleFavorite } from '$lib/favorites';
+	import RecentTransactionsTicker from '$lib/RecentTransactionsTicker.svelte';
 	import type { SupportedNetwork } from '$lib/structure';
 	import { ERC20_ABI, ZERO_ADDRESS, FACTORY_ABI } from '$lib/tokenCrafter';
 	import {
@@ -20,6 +23,7 @@
 		CURVE_TYPES
 	} from '$lib/launchpad';
 	import BondingCurveChart from '$lib/BondingCurveChart.svelte';
+	import PriceProgressChart from '$lib/PriceProgressChart.svelte';
 
 	let getProvider: () => ethers.BrowserProvider | null = getContext('provider');
 	let getSigner: () => ethers.Signer | null = getContext('signer');
@@ -52,6 +56,8 @@
 	let isDepositing = $state(false);
 	let tradingEnabled = $state(true); // assume true unless we detect otherwise
 	let isEnablingTrading = $state(false);
+	let graduationDismissed = $state(false);
+	let linkCopiedFeedback = $state(false);
 
 	// Off-chain metadata from database
 	type Metadata = {
@@ -68,7 +74,10 @@
 		kyc: { label: 'KYC', color: 'emerald' },
 		partner: { label: 'Partner', color: 'purple' },
 		doxxed: { label: 'Doxxed', color: 'amber' },
-		safu: { label: 'SAFU', color: 'blue' }
+		safu: { label: 'SAFU', color: 'blue' },
+		mintable: { label: 'Mintable', color: 'orange' },
+		taxable: { label: 'Taxable', color: 'amber' },
+		renounced: { label: 'No Owner', color: 'emerald' }
 	};
 
 	// Inline editing
@@ -199,23 +208,31 @@
 			: 0;
 	});
 
-	let remainingBuyTokens = $derived.by(() => {
+	// maxBuyPerWallet is now in USDT value (% of hard cap)
+	let remainingBuyUsdt = $derived.by(() => {
 		if (maxBuyPerWallet === 0n) return -1n; // no limit
-		return maxBuyPerWallet > userTokensBought ? maxBuyPerWallet - userTokensBought : 0n;
+		return maxBuyPerWallet > userBasePaid ? maxBuyPerWallet - userBasePaid : 0n;
 	});
 
 	let exceedsMaxBuy = $derived.by(() => {
 		if (!preview || maxBuyPerWallet === 0n) return false;
-		return (userTokensBought + preview.tokensOut) > maxBuyPerWallet;
+		// Check if current buy amount would push basePaid over limit
+		const buyUsdt = buyAmount ? BigInt(Math.floor(parseFloat(String(buyAmount)) * (10 ** usdtDecimals))) : 0n;
+		return (userBasePaid + buyUsdt) > maxBuyPerWallet;
 	});
 
 	let maxBuyPct = $derived.by(() => {
 		const l = launch;
-		if (!l || l.tokensForCurve === 0n || maxBuyPerWallet === 0n) return 0;
-		return Number((maxBuyPerWallet * 10000n) / l.tokensForCurve) / 100;
+		if (!l || l.hardCap === 0n || maxBuyPerWallet === 0n) return 0;
+		return Number((maxBuyPerWallet * 10000n) / l.hardCap) / 100;
 	});
 
-	let atMaxBuy = $derived(maxBuyPerWallet > 0n && remainingBuyTokens === 0n);
+	let atMaxBuy = $derived(maxBuyPerWallet > 0n && remainingBuyUsdt === 0n);
+
+	let allocationPct = $derived.by(() => {
+		if (maxBuyPerWallet === 0n) return 0;
+		return Math.min(100, Number((userBasePaid * 10000n) / maxBuyPerWallet) / 100);
+	});
 
 	let highImpact = $derived(preview ? Number(preview.priceImpactBps) > 1500 : false); // >15%
 
@@ -227,10 +244,19 @@
 	// Countdown timer
 	let countdownNow = $state(Date.now());
 	let countdownInterval: ReturnType<typeof setInterval> | null = null;
+
+	// Determine if this is a scheduled launch that hasn't started yet
+	let isScheduled = $derived(
+		launch && launch.startTimestamp > 0n && Number(launch.startTimestamp) * 1000 > countdownNow
+	);
+
 	let countdown = $derived.by(() => {
 		if (!launch) return null;
-		const deadlineMs = Number(launch.deadline) * 1000;
-		const diff = deadlineMs - countdownNow;
+		// If scheduled and not started, count down to start time
+		const targetMs = isScheduled
+			? Number(launch.startTimestamp) * 1000
+			: Number(launch.deadline) * 1000;
+		const diff = targetMs - countdownNow;
 		if (diff <= 0) return { days: 0, hours: 0, minutes: 0, seconds: 0, ended: true };
 		const days = Math.floor(diff / 86400000);
 		const hours = Math.floor((diff % 86400000) / 3600000);
@@ -287,8 +313,8 @@
 					(async () => {
 						try {
 							const factory = new ethers.Contract(net.platform_address, FACTORY_ABI, prov);
-							const tokenInfo = await factory.getTokenInfo(info.token);
-							return tokenInfo.isPartnership as boolean;
+							const tInfo = await factory.tokenInfo(info.token);
+							return tInfo.isPartnership as boolean;
 						} catch { return false; }
 					})()
 				]);
@@ -395,7 +421,7 @@
 			const currentPrice: bigint = await instance.getCurrentPrice();
 			if (currentPrice === 0n) return null;
 
-			// fee = 1% (BUY_FEE_BPS = 100)
+			// No buy fee — platform earns from graduation only
 			const fee = (usdtWei * 100n) / 10000n;
 			const baseForTokens = usdtWei - fee;
 
@@ -436,7 +462,9 @@
 				if (!provider) return;
 				const instance = new ethers.Contract(launchAddress, LAUNCH_INSTANCE_ABI, provider);
 				const usdtWei = ethers.parseUnits(String(amt), usdtDecimals);
-				const result = await instance.previewBuy(usdtWei);
+				const result = userAddress
+					? await instance.previewBuyFor(userAddress, usdtWei)
+					: await instance.previewBuy(usdtWei);
 				const tokensOut = result[0];
 				const fee = result[1];
 				const priceImpactBps = result[2];
@@ -609,9 +637,16 @@
 			}
 
 			addFeedback({ message: 'Tokens purchased!', type: 'success' });
+			// Record transaction in activity feed (best effort)
+			const savedAmount = buyAmount;
+			const savedTokens = preview ? preview.tokensOut.toString() : '0';
 			buyAmount = '';
 			preview = null;
 			await refreshData();
+			recordTransaction(
+				ethers.parseUnits(String(savedAmount), usdtDecimals).toString(),
+				savedTokens
+			);
 		} catch (e: any) {
 			const errStr = String(e?.data || e?.message || e?.shortMessage || '');
 			if (errStr.includes('0x11') || errStr.includes('OVERFLOW') || errStr.includes('overflow')) {
@@ -806,6 +841,131 @@
 	function shortAddr(addr: string) {
 		return addr.slice(0, 6) + '...' + addr.slice(-4);
 	}
+
+	// ── Activity Feed ──
+	type Transaction = {
+		id: number;
+		launch_address: string;
+		chain_id: number;
+		buyer: string;
+		base_amount: string;
+		tokens_received: string;
+		tx_hash: string | null;
+		created_at: string;
+	};
+	let transactions: Transaction[] = $state([]);
+	let txLoading = $state(true);
+	let txRefreshInterval: ReturnType<typeof setInterval> | null = null;
+
+	function relativeTime(iso: string): string {
+		const diff = Date.now() - new Date(iso).getTime();
+		if (diff < 60000) return $t('lpd.justNow');
+		if (diff < 3600000) return $t('lpd.minutesAgo').replace('{n}', String(Math.floor(diff / 60000)));
+		if (diff < 86400000) return $t('lpd.hoursAgo').replace('{n}', String(Math.floor(diff / 3600000)));
+		return $t('lpd.daysAgo').replace('{n}', String(Math.floor(diff / 86400000)));
+	}
+
+	async function loadTransactions() {
+		try {
+			const res = await fetch(`/api/launches/transactions?address=${launchAddress}&limit=20`);
+			if (res.ok) transactions = await res.json();
+		} catch { /* best effort */ }
+		txLoading = false;
+	}
+
+	async function recordTransaction(baseAmount: string, tokensReceived: string, txHash?: string) {
+		if (!network) return;
+		try {
+			await fetch('/api/launches/transactions', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					launch_address: launchAddress,
+					chain_id: network.chain_id,
+					buyer: userAddress,
+					base_amount: baseAmount,
+					tokens_received: tokensReceived,
+					tx_hash: txHash || null
+				})
+			});
+			await loadTransactions();
+		} catch { /* best effort */ }
+	}
+
+	// Start activity feed polling when launch is active
+	$effect(() => {
+		if (launch && launch.state === 1) {
+			loadTransactions();
+			txRefreshInterval = setInterval(loadTransactions, 15000);
+		} else {
+			loadTransactions();
+		}
+		return () => {
+			if (txRefreshInterval) { clearInterval(txRefreshInterval); txRefreshInterval = null; }
+		};
+	});
+
+	onDestroy(() => {
+		if (txRefreshInterval) clearInterval(txRefreshInterval);
+	});
+
+	// ── Comments / Discussion ──
+	type Comment = {
+		id: number;
+		launch_address: string;
+		chain_id: number;
+		wallet_address: string;
+		message: string;
+		created_at: string;
+	};
+	let comments: Comment[] = $state([]);
+	let commentsLoading = $state(true);
+	let commentText = $state('');
+	let isPostingComment = $state(false);
+
+	async function loadComments() {
+		try {
+			const res = await fetch(`/api/launches/comments?address=${launchAddress}&limit=50`);
+			if (res.ok) comments = await res.json();
+		} catch { /* best effort */ }
+		commentsLoading = false;
+	}
+
+	async function postComment() {
+		if (!userAddress || !network || !commentText.trim()) return;
+		const msg = commentText.trim();
+		if (msg.length > 500) {
+			addFeedback({ message: $t('lpd.commentTooLong'), type: 'error' });
+			return;
+		}
+		isPostingComment = true;
+		try {
+			const res = await fetch('/api/launches/comments', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					launch_address: launchAddress,
+					chain_id: network.chain_id,
+					wallet_address: userAddress,
+					message: msg
+				})
+			});
+			if (!res.ok) {
+				const err = await res.json().catch(() => ({ message: 'Failed to post comment' }));
+				throw new Error(err.message || 'Failed to post comment');
+			}
+			commentText = '';
+			await loadComments();
+		} catch (e: any) {
+			addFeedback({ message: e.message || 'Failed to post comment', type: 'error' });
+		} finally {
+			isPostingComment = false;
+		}
+	}
+
+	$effect(() => {
+		if (launch) loadComments();
+	});
 </script>
 
 <svelte:head>
@@ -817,16 +977,16 @@
 	<div class="modal-overlay" onclick={() => { showDepositModal = false; stopBalancePolling(); }}>
 		<div class="modal-card" onclick={(e) => e.stopPropagation()}>
 			<div class="flex justify-between items-center mb-4">
-				<h2 class="syne text-xl font-bold text-white">Insufficient {paymentLabel} Balance</h2>
+				<h2 class="syne text-xl font-bold text-white">{$t('lpd.insufficientBalance').replace('{token}', paymentLabel)}</h2>
 				<button class="text-gray-500 hover:text-white text-lg cursor-pointer" onclick={() => { showDepositModal = false; stopBalancePolling(); }}>x</button>
 			</div>
 
 			<div class="text-center">
 				<p class="text-gray-400 text-sm font-mono mb-1">
-					You need <span class="text-cyan-400 font-semibold">{requiredAmount} {paymentLabel}</span> to complete this purchase.
+					{$t('lpd.youNeed')} <span class="text-cyan-400 font-semibold">{requiredAmount} {paymentLabel}</span> {$t('lpd.toComplete')}
 				</p>
 				<p class="text-gray-500 text-xs font-mono mb-4">
-					Current balance: {parseFloat(ethers.formatUnits(userPaymentBalance, paymentDecimals)).toFixed(4)} {paymentLabel}
+					{$t('lpd.currentBalance')}: {parseFloat(ethers.formatUnits(userPaymentBalance, paymentDecimals)).toFixed(4)} {paymentLabel}
 				</p>
 
 				<div class="qr-section mb-4">
@@ -844,17 +1004,17 @@
 						class="text-gray-500 hover:text-cyan-400 text-[10px] font-mono mt-2 cursor-pointer transition"
 						onclick={() => { navigator.clipboard.writeText(userAddress ?? ''); addFeedback({ message: 'Address copied!', type: 'success' }); }}
 					>
-						Copy Address
+						{$t('lpd.copyAddress')}
 					</button>
 				</div>
 
 				<p class="text-gray-600 text-[10px] font-mono">
-					Send {paymentLabel} to the address above on <span class="text-gray-400">{network.name}</span>. This page will auto-detect your deposit.
+					{$t('lpd.sendTo').replace('{token}', paymentLabel)} <span class="text-gray-400">{network.name}</span>. {$t('lpd.autoDetect')}
 				</p>
 
 				<div class="flex items-center justify-center gap-2 mt-4">
 					<div class="spinner-sm"></div>
-					<span class="text-gray-500 text-xs font-mono">Watching for deposit...</span>
+					<span class="text-gray-500 text-xs font-mono">{$t('lpd.watchingDeposit')}</span>
 				</div>
 			</div>
 		</div>
@@ -864,19 +1024,19 @@
 <div class="page-wrap max-w-6xl mx-auto px-4 sm:px-6 py-12">
 	<!-- Back link -->
 	<a href="/launchpad" class="text-gray-500 hover:text-cyan-400 text-sm font-mono transition no-underline mb-6 inline-block">
-		← Back to Launchpad
+		← {$t('lpd.backToLaunchpad')}
 	</a>
 
 	{#if loading}
 		<div class="flex flex-col items-center gap-4 py-20">
 			<div class="spinner w-10 h-10 rounded-full border-2 border-white/10 border-t-cyan-400"></div>
-			<p class="text-gray-500 text-sm font-mono">Loading launch data...</p>
+			<p class="text-gray-500 text-sm font-mono">{$t('lpd.loading')}</p>
 		</div>
 	{:else if !launch || !network}
 		<div class="text-center py-20">
-			<p class="text-gray-400 font-mono text-sm">Launch not found on any supported network.</p>
+			<p class="text-gray-400 font-mono text-sm">{$t('lpd.notFound')}</p>
 			<a href="/launchpad" class="btn-primary text-sm px-5 py-2.5 mt-4 inline-block no-underline">
-				Browse Launches
+				{$t('lpd.browseLaunches')}
 			</a>
 		</div>
 	{:else}
@@ -890,7 +1050,7 @@
 				<div class="token-identity">
 					<div class="logo-upload-wrap">
 						{#if metadata.logo_url}
-							<img src={metadata.logo_url} alt="" class="token-logo" />
+							<img src={metadata.logo_url} alt="" class="token-logo card-logo-adapt" />
 						{:else}
 							<div class="token-logo token-logo-placeholder">
 								<span>{(launch.tokenSymbol || '?')[0]}</span>
@@ -902,7 +1062,7 @@
 								{#if isUploadingLogo}
 									<span class="text-[10px]">...</span>
 								{:else}
-									<span class="text-[10px]">Upload</span>
+									<span class="text-[10px]">{$t('lpd.upload')}</span>
 								{/if}
 							</label>
 						{/if}
@@ -924,11 +1084,28 @@
 									</span>
 								{/if}
 							{/each}
+							<!-- Favorite + Share buttons -->
+							<button
+								class="detail-fav-btn"
+								onclick={() => toggleFavorite(launchAddress)}
+								title={$favorites.includes(launchAddress.toLowerCase()) ? 'Remove from favorites' : 'Add to favorites'}
+							>
+								<svg width="18" height="18" viewBox="0 0 24 24" fill={$favorites.includes(launchAddress.toLowerCase()) ? '#00d2ff' : 'none'} stroke={$favorites.includes(launchAddress.toLowerCase()) ? '#00d2ff' : 'currentColor'} stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
+							</button>
+							<a
+								href={`https://x.com/intent/tweet?text=${encodeURIComponent(`🚀 Check out $${launch.tokenSymbol} on TokenKrafter!`)}&url=${encodeURIComponent(typeof window !== 'undefined' ? window.location.href : '')}`}
+								target="_blank" rel="noopener" class="detail-fav-btn" title="Share on X"
+							>𝕏</a>
+							<button
+								class="detail-fav-btn"
+								title="Copy link"
+								onclick={() => { if (typeof navigator !== 'undefined') { navigator.clipboard.writeText(window.location.href); addFeedback({ message: 'Link copied!', type: 'success' }); } }}
+							>🔗</button>
 						</div>
 						<div class="flex items-center gap-2 mt-2 flex-wrap">
 							<span class="header-tag">{network.name}</span>
-							<span class="header-tag">{CURVE_TYPES[launch.curveType]} Curve</span>
-							<span class="header-tag">Creator: {shortAddr(launch.creator)}</span>
+							<span class="header-tag">{CURVE_TYPES[launch.curveType]} {$t('lpd.curve')}</span>
+							<span class="header-tag">{$t('lpd.creator')}: {shortAddr(launch.creator)}</span>
 						</div>
 						<!-- Social icons inline -->
 						{#if metadata.website || metadata.twitter || metadata.telegram || metadata.discord}
@@ -952,6 +1129,17 @@
 			</div>
 		</div>
 
+		<!-- Graduation Celebration Banner -->
+		{#if launch.state === 2 && !graduationDismissed}
+			<div class="graduation-banner mb-6">
+				<div class="graduation-particles"></div>
+				<div class="graduation-content">
+					<span class="graduation-text">🎉 {$t('lpd.graduatedBanner')}</span>
+					<button class="graduation-dismiss" onclick={() => { graduationDismissed = true; }} title={$t('lpd.dismissBanner')}>✕</button>
+				</div>
+			</div>
+		{/if}
+
 		<div class="page-grid">
 			<!-- Left: Token-focused content -->
 			<div class="left-col">
@@ -960,56 +1148,56 @@
 					{#if isEditing}
 						<!-- Inline edit mode -->
 						<div class="flex justify-between items-center mb-4">
-							<h3 class="syne font-bold text-white">Edit Token Info</h3>
-							<button onclick={cancelEditing} class="text-gray-500 hover:text-white text-xs font-mono cursor-pointer">Cancel</button>
+							<h3 class="syne font-bold text-white">{$t('lpd.editTokenInfo')}</h3>
+							<button onclick={cancelEditing} class="text-gray-500 hover:text-white text-xs font-mono cursor-pointer">{$t('common.cancel')}</button>
 						</div>
 
 						<div class="flex flex-col gap-4">
 							<div>
-								<label class="label-text" for="edit-desc">Description</label>
+								<label class="label-text" for="edit-desc">{$t('lpd.editDesc')}</label>
 								<textarea id="edit-desc" class="input-field" rows="5" placeholder="Tell users about your token, its utility, roadmap..." bind:value={editDescription}></textarea>
 							</div>
 
 							<div>
-								<label class="label-text" for="edit-video">Video (YouTube / X link)</label>
+								<label class="label-text" for="edit-video">{$t('lpd.editVideo')}</label>
 								<input id="edit-video" type="url" class="input-field" placeholder="https://youtube.com/watch?v=... or https://x.com/.../video" bind:value={editVideoUrl} />
 							</div>
 
 							<div class="grid grid-cols-2 gap-3">
 								<div>
-									<label class="label-text" for="edit-website">Website</label>
+									<label class="label-text" for="edit-website">{$t('lpd.editWebsite')}</label>
 									<input id="edit-website" type="url" class="input-field" placeholder="https://..." bind:value={editWebsite} />
 								</div>
 								<div>
-									<label class="label-text" for="edit-twitter">Twitter</label>
+									<label class="label-text" for="edit-twitter">{$t('lpd.editTwitter')}</label>
 									<input id="edit-twitter" class="input-field" placeholder="@handle or URL" bind:value={editTwitter} />
 								</div>
 							</div>
 							<div class="grid grid-cols-2 gap-3">
 								<div>
-									<label class="label-text" for="edit-telegram">Telegram</label>
+									<label class="label-text" for="edit-telegram">{$t('lpd.editTelegram')}</label>
 									<input id="edit-telegram" class="input-field" placeholder="@group or URL" bind:value={editTelegram} />
 								</div>
 								<div>
-									<label class="label-text" for="edit-discord">Discord</label>
+									<label class="label-text" for="edit-discord">{$t('lpd.editDiscord')}</label>
 									<input id="edit-discord" class="input-field" placeholder="Invite code or URL" bind:value={editDiscord} />
 								</div>
 							</div>
 
 							<div class="flex gap-3">
-								<button onclick={cancelEditing} class="btn-secondary flex-1 py-2.5 text-sm cursor-pointer">Cancel</button>
+								<button onclick={cancelEditing} class="btn-secondary flex-1 py-2.5 text-sm cursor-pointer">{$t('common.cancel')}</button>
 								<button onclick={saveMetadata} disabled={isSavingMeta} class="btn-primary flex-1 py-2.5 text-sm cursor-pointer">
-									{isSavingMeta ? 'Saving...' : 'Save Changes'}
+									{isSavingMeta ? $t('lpd.saving') : $t('lpd.saveChanges')}
 								</button>
 							</div>
 						</div>
 					{:else}
 						<!-- View mode -->
 						<div class="flex justify-between items-center mb-3">
-							<h3 class="syne font-bold text-white">About</h3>
+							<h3 class="syne font-bold text-white">{$t('lpd.about')}</h3>
 							{#if isCreator}
 								<button onclick={startEditing} class="text-gray-500 hover:text-cyan-400 text-xs font-mono transition cursor-pointer">
-									{metadata.description ? 'Edit info' : '+ Add info'}
+									{metadata.description ? $t('lpd.editInfo') : $t('lpd.addInfo')}
 								</button>
 							{/if}
 						</div>
@@ -1017,10 +1205,10 @@
 							<p class="text-gray-300 font-mono text-sm leading-relaxed whitespace-pre-line">{metadata.description}</p>
 						{:else if isCreator}
 							<button onclick={startEditing} class="empty-state-btn">
-								<span class="text-gray-500 text-sm">Add a description, links, and badges to attract buyers</span>
+								<span class="text-gray-500 text-sm">{$t('lpd.addDescription')}</span>
 							</button>
 						{:else}
-							<p class="text-gray-600 font-mono text-sm italic">No description provided yet.</p>
+							<p class="text-gray-600 font-mono text-sm italic">{$t('lpd.noDescription')}</p>
 						{/if}
 
 						<!-- Video embed -->
@@ -1042,7 +1230,7 @@
 								{:else}
 									<a href={metadata.video_url} target="_blank" rel="noopener" class="video-link-card">
 										<span class="text-lg">▶</span>
-										<span class="text-gray-300 text-sm font-mono">Watch Video</span>
+										<span class="text-gray-300 text-sm font-mono">{$t('lpd.watchVideo')}</span>
 									</a>
 								{/if}
 							</div>
@@ -1052,7 +1240,7 @@
 
 				<!-- Tokenomics -->
 				<div class="card p-6 mb-4">
-					<h3 class="syne font-bold text-white mb-4">Tokenomics</h3>
+					<h3 class="syne font-bold text-white mb-4">{$t('lpd.tokenomics')}</h3>
 					{#if launch}
 					{@const totalTokens = launch.tokensForCurve + launch.tokensForLP + (launch.totalTokensRequired > 0n ? (launch.totalTokensRequired - launch.tokensForCurve - launch.tokensForLP) : 0n)}
 					{@const curvePct = totalTokens > 0n ? Number((launch.tokensForCurve * 10000n) / totalTokens) / 100 : 0}
@@ -1076,18 +1264,18 @@
 					<div class="alloc-legend mb-5">
 						<div class="legend-item">
 							<span class="legend-dot bg-cyan-400"></span>
-							<span class="legend-label">Curve Sale</span>
+							<span class="legend-label">{$t('lpd.curveSale')}</span>
 							<span class="legend-value">{curvePct}%</span>
 						</div>
 						<div class="legend-item">
 							<span class="legend-dot bg-purple-400"></span>
-							<span class="legend-label">Liquidity Pool</span>
+							<span class="legend-label">{$t('lpd.liquidityPool')}</span>
 							<span class="legend-value">{lpPct}%</span>
 						</div>
 						{#if remainPct > 0}
 							<div class="legend-item">
 								<span class="legend-dot bg-amber-400"></span>
-								<span class="legend-label">Creator</span>
+								<span class="legend-label">{$t('lpd.creatorLabel')}</span>
 								<span class="legend-value">{remainPct}%</span>
 							</div>
 						{/if}
@@ -1095,124 +1283,166 @@
 
 					<div class="detail-grid">
 						<div class="detail-row">
-							<span class="detail-label">Tokens for Curve</span>
+							<span class="detail-label">{$t('lpd.tokensForCurve')}</span>
 							<span class="detail-value">{formatTokens(launch.tokensForCurve, tokenMeta.decimals)}</span>
 						</div>
 						<div class="detail-row">
-							<span class="detail-label">Tokens for LP</span>
+							<span class="detail-label">{$t('lpd.tokensForLP')}</span>
 							<span class="detail-value">{formatTokens(launch.tokensForLP, tokenMeta.decimals)}</span>
 						</div>
 						{#if creatorPct > 0}
 							<div class="detail-row">
-								<span class="detail-label">Creator Allocation</span>
+								<span class="detail-label">{$t('lpd.creatorAllocation')}</span>
 								<span class="detail-value">{creatorPct}%</span>
 							</div>
 						{/if}
 						<div class="detail-row">
-							<span class="detail-label">Total Required</span>
+							<span class="detail-label">{$t('lpd.totalRequired')}</span>
 							<span class="detail-value">{formatTokens(launch.totalTokensRequired, tokenMeta.decimals)}</span>
 						</div>
 					</div>
 					{/if}
 				</div>
 
-				<!-- Bonding Curve -->
+				<!-- Price Curve -->
 				<div class="card p-6 mb-4">
-					<BondingCurveChart curveType={launch.curveType} progress={tokenProgress} />
+					<div class="flex items-center justify-between mb-4">
+						<h3 class="syne font-bold text-white">{$t('lpd.priceCurve')}</h3>
+						<span class="text-gray-500 text-xs font-mono">{CURVE_TYPES[launch.curveType]}</span>
+					</div>
+					<PriceProgressChart
+						curveType={launch.curveType}
+						tokensForCurve={launch.tokensForCurve}
+						tokensSold={launch.tokensSold}
+						currentPrice={launch.currentPrice}
+						hardCap={launch.hardCap}
+						tokenDecimals={tokenMeta.decimals}
+						usdtDecimals={ud}
+					/>
 				</div>
 
-				<!-- Sale Details -->
+				<!-- Sale Rules & Contract Info -->
 				<div class="card p-6 mb-4">
-					<h3 class="syne font-bold text-white mb-4">Sale Details</h3>
-					<div class="detail-grid">
-						<div class="detail-row">
-							<span class="detail-label">Curve Type</span>
-							<span class="detail-value">{CURVE_TYPES[launch.curveType]}</span>
+					<h3 class="syne font-bold text-white mb-4">Launch Rules</h3>
+					<div class="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
+						<div class="rule-chip">
+							<span class="rule-chip-value text-emerald-400">0%</span>
+							<span class="rule-chip-label">Buy Fee</span>
 						</div>
-						<div class="detail-row">
-							<span class="detail-label">Current Price</span>
-							<span class="detail-value">{formatUsdt(launch.currentPrice, ud, 6)}</span>
+						<div class="rule-chip">
+							<span class="rule-chip-value">3%</span>
+							<span class="rule-chip-label">Graduation Fee</span>
 						</div>
-						<div class="detail-row">
-							<span class="detail-label">Soft Cap</span>
-							<span class="detail-value">{formatUsdt(launch.softCap, ud)}</span>
+						<div class="rule-chip">
+							<span class="rule-chip-value">{maxBuyPerWallet > 0n ? formatUsdt(maxBuyPerWallet, ud) : 'None'}</span>
+							<span class="rule-chip-label">Max Buy ({maxBuyPct}%)</span>
 						</div>
-						<div class="detail-row">
-							<span class="detail-label">Hard Cap</span>
-							<span class="detail-value">{formatUsdt(launch.hardCap, ud)}</span>
-						</div>
-						<div class="detail-row">
-							<span class="detail-label">Deadline</span>
-							<span class="detail-value">{timeRemaining(launch.deadline)}</span>
-						</div>
-						{#if launch.startTimestamp > 0n}
-							{@const startTs = Number(launch.startTimestamp)}
-							{@const nowTs = Math.floor(Date.now() / 1000)}
-							<div class="detail-row">
-								<span class="detail-label">Scheduled Start</span>
-								<span class="detail-value {startTs > nowTs ? 'text-amber-400' : 'text-emerald-400'}">
-									{startTs > nowTs
-										? new Date(startTs * 1000).toLocaleString()
-										: 'Started'}
-								</span>
-							</div>
-						{/if}
-						<div class="detail-row">
-							<span class="detail-label">Max Buy / Wallet</span>
-							<span class="detail-value">{maxBuyPerWallet > 0n ? formatTokens(maxBuyPerWallet, tokenMeta.decimals) + ' (' + maxBuyPct + '%)' : 'No limit'}</span>
-						</div>
-						<div class="detail-row">
-							<span class="detail-label">Buy Fee</span>
-							<span class="detail-value">1%</span>
-						</div>
-						<div class="detail-row">
-							<span class="detail-label">Graduation Fee</span>
-							<span class="detail-value">3%</span>
-						</div>
-						<div class="detail-row">
-							<span class="detail-label">DEX Listing</span>
-							<span class="detail-value">{network.symbol === 'BSC' ? 'PancakeSwap' : 'Uniswap'}</span>
-						</div>
-						<div class="detail-row">
-							<span class="detail-label">LP</span>
-							<span class="detail-value">Burned (permanent)</span>
+						<div class="rule-chip">
+							<span class="rule-chip-value">{network.symbol === 'BSC' ? 'PCS' : 'Uni'} V2</span>
+							<span class="rule-chip-label">DEX (LP Burned)</span>
 						</div>
 					</div>
-				</div>
 
-				<!-- Token Contract -->
-				<div class="card p-6 mb-4">
-					<h3 class="syne font-bold text-white mb-4">Token Contract</h3>
 					<div class="detail-grid">
 						<div class="detail-row">
-							<span class="detail-label">Name</span>
-							<span class="detail-value">{launch.tokenName}</span>
+							<span class="detail-label">Token</span>
+							<span class="detail-value addr-value text-cyan-400">{launch.token}</span>
 						</div>
 						<div class="detail-row">
-							<span class="detail-label">Symbol</span>
-							<span class="detail-value">{launch.tokenSymbol}</span>
-						</div>
-						<div class="detail-row">
-							<span class="detail-label">Decimals</span>
-							<span class="detail-value">{tokenMeta.decimals}</span>
-						</div>
-						<div class="detail-row">
-							<span class="detail-label">Token Address</span>
-							<span class="detail-value addr-value">{launch.token}</span>
-						</div>
-						<div class="detail-row">
-							<span class="detail-label">Launch Address</span>
+							<span class="detail-label">Launch</span>
 							<span class="detail-value addr-value">{launch.address}</span>
 						</div>
 						<div class="detail-row">
 							<span class="detail-label">Creator</span>
 							<span class="detail-value addr-value">{launch.creator}</span>
 						</div>
-						<div class="detail-row">
-							<span class="detail-label">Network</span>
-							<span class="detail-value text-cyan-300">{network.name}</span>
-						</div>
 					</div>
+				</div>
+
+				<!-- Global Transaction Ticker (social proof) -->
+				<div class="mb-4">
+					<RecentTransactionsTicker launchAddress={launchAddress} limit={10} />
+				</div>
+
+				<!-- Activity Feed -->
+				<div class="card p-6 mb-4">
+					<h3 class="syne font-bold text-white mb-4">{$t('lpd.recentActivity')}</h3>
+					{#if txLoading}
+						<div class="text-gray-500 text-xs font-mono text-center py-4">{$t('status.loading')}...</div>
+					{:else if transactions.length === 0}
+						<p class="text-gray-600 font-mono text-sm italic text-center py-4">{$t('lpd.noActivity')}</p>
+					{:else}
+						<div class="activity-list">
+							{#each transactions as tx, i}
+								<div class="activity-item" class:activity-latest={i === 0}>
+									{#if i === 0}
+										<span class="activity-pulse"></span>
+									{/if}
+									<div class="activity-content">
+										<span class="text-cyan-400 text-xs font-mono font-semibold">{shortAddr(tx.buyer)}</span>
+										<span class="text-gray-500 text-xs font-mono">
+											{$t('lpd.bought')} {formatUsdt(BigInt(tx.base_amount), usdtDecimals)}
+										</span>
+										<span class="text-gray-400 text-xs font-mono">
+											→ {formatTokens(BigInt(tx.tokens_received), tokenMeta.decimals)} {tokenMeta.symbol}
+										</span>
+									</div>
+									<span class="text-gray-600 text-[10px] font-mono whitespace-nowrap">{relativeTime(tx.created_at)}</span>
+								</div>
+							{/each}
+						</div>
+					{/if}
+				</div>
+
+				<!-- Discussion / Comments -->
+				<div class="card p-6 mb-4">
+					<h3 class="syne font-bold text-white mb-4">{$t('lpd.discussion')}</h3>
+
+					<!-- Post new comment -->
+					{#if userAddress}
+						<div class="comment-form mb-4">
+							<textarea
+								class="input-field comment-input"
+								rows="2"
+								maxlength="500"
+								placeholder={$t('lpd.commentPlaceholder')}
+								bind:value={commentText}
+							></textarea>
+							<div class="flex justify-between items-center mt-2">
+								<span class="text-gray-600 text-[10px] font-mono">{commentText.length}/500</span>
+								<button
+									onclick={postComment}
+									disabled={isPostingComment || !commentText.trim()}
+									class="btn-primary px-4 py-1.5 text-xs cursor-pointer"
+								>
+									{isPostingComment ? $t('lpd.posting') : $t('lpd.postComment')}
+								</button>
+							</div>
+						</div>
+					{:else}
+						<div class="text-center py-3 mb-4 border border-dashed border-gray-700 rounded-lg">
+							<p class="text-gray-500 text-xs font-mono">{$t('lpd.connectToComment')}</p>
+						</div>
+					{/if}
+
+					<!-- Comments list -->
+					{#if commentsLoading}
+						<div class="text-gray-500 text-xs font-mono text-center py-4">{$t('status.loading')}...</div>
+					{:else if comments.length === 0}
+						<p class="text-gray-600 font-mono text-sm italic text-center py-4">{$t('lpd.noComments')}</p>
+					{:else}
+						<div class="comments-list">
+							{#each comments as comment}
+								<div class="comment-item">
+									<div class="comment-header">
+										<span class="text-cyan-400 text-xs font-mono font-semibold">{shortAddr(comment.wallet_address)}</span>
+										<span class="text-gray-600 text-[10px] font-mono">{relativeTime(comment.created_at)}</span>
+									</div>
+									<p class="text-gray-300 text-sm font-mono leading-relaxed mt-1 whitespace-pre-line break-words">{comment.message}</p>
+								</div>
+							{/each}
+						</div>
+					{/if}
 				</div>
 			</div>
 
@@ -1220,33 +1450,38 @@
 			<div class="right-col">
 				<!-- Countdown Timer -->
 				{#if countdown && launch.state === 1}
-					<div class="card p-5 mb-4">
+					<div class="card p-5 mb-4" style={isScheduled ? 'border-color: rgba(245, 158, 11, 0.2)' : ''}>
 						<div class="text-center mb-3">
-							<span class="text-gray-400 text-xs font-mono uppercase tracking-wider">
-								{countdown.ended ? 'Sale Ended' : 'Sale Ends In'}
+							<span class="{isScheduled ? 'text-amber-400' : 'text-gray-400'} text-xs font-mono uppercase tracking-wider">
+								{#if isScheduled}
+									Sale Starts In
+								{:else}
+									{countdown.ended ? $t('lpd.saleEnded') : $t('lpd.saleEndsIn')}
+								{/if}
 							</span>
 						</div>
 						{#if !countdown.ended}
+							{@const numClass = isScheduled ? 'countdown-num countdown-num-amber' : 'countdown-num'}
 							<div class="countdown-grid">
 								<div class="countdown-box">
-									<span class="countdown-num">{String(countdown.days).padStart(2, '0')}</span>
-									<span class="countdown-label">Days</span>
+									<span class={numClass}>{String(countdown.days).padStart(2, '0')}</span>
+									<span class="countdown-label">{$t('lpd.days')}</span>
 								</div>
 								<div class="countdown-box">
-									<span class="countdown-num">{String(countdown.hours).padStart(2, '0')}</span>
-									<span class="countdown-label">Hours</span>
+									<span class={numClass}>{String(countdown.hours).padStart(2, '0')}</span>
+									<span class="countdown-label">{$t('lpd.hours')}</span>
 								</div>
 								<div class="countdown-box">
-									<span class="countdown-num">{String(countdown.minutes).padStart(2, '0')}</span>
-									<span class="countdown-label">Min</span>
+									<span class={numClass}>{String(countdown.minutes).padStart(2, '0')}</span>
+									<span class="countdown-label">{$t('lpd.min')}</span>
 								</div>
 								<div class="countdown-box">
-									<span class="countdown-num">{String(countdown.seconds).padStart(2, '0')}</span>
-									<span class="countdown-label">Sec</span>
+									<span class={numClass}>{String(countdown.seconds).padStart(2, '0')}</span>
+									<span class="countdown-label">{$t('lpd.sec')}</span>
 								</div>
 							</div>
 						{:else}
-							<div class="text-center text-red-400 text-sm font-mono">Deadline reached</div>
+							<div class="text-center text-red-400 text-sm font-mono">{$t('lpd.deadlineReached')}</div>
 						{/if}
 					</div>
 				{/if}
@@ -1263,11 +1498,11 @@
 							<div class="progress-fill progress-cyan" style="width: {progress}%"></div>
 						</div>
 						<div class="flex justify-between text-[10px] font-mono mt-1">
-							<span class="text-gray-500">{progress}% raised</span>
+							<span class="text-gray-500">{progress}% {$t('lpd.raised')}</span>
 							{#if launch.totalBaseRaised < launch.softCap}
-								<span class="text-amber-400">Soft cap: {progressPercent(launch.totalBaseRaised, launch.softCap)}%</span>
+								<span class="text-amber-400">{$t('lpd.softCapLabel')}: {progressPercent(launch.totalBaseRaised, launch.softCap)}%</span>
 							{:else}
-								<span class="text-emerald-400">Soft cap reached</span>
+								<span class="text-emerald-400">{$t('lpd.softCapReached')}</span>
 							{/if}
 						</div>
 					</div>
@@ -1280,26 +1515,26 @@
 						<div class="progress-track">
 							<div class="progress-fill progress-purple" style="width: {tokenProgress}%"></div>
 						</div>
-						<div class="text-right text-[10px] text-gray-500 font-mono mt-1">{tokenProgress}% tokens sold</div>
+						<div class="text-right text-[10px] text-gray-500 font-mono mt-1">{tokenProgress}% {$t('lpd.tokensSold')}</div>
 					</div>
 
 					<!-- Sale info summary -->
 					<div class="sale-info-divider"></div>
 					<div class="detail-grid mt-4">
 						<div class="detail-row">
-							<span class="detail-label">Status</span>
+							<span class="detail-label">{$t('lpd.status')}</span>
 							<span class="detail-value status-{color}">{stateLabel(launch.state)}</span>
 						</div>
 						<div class="detail-row">
-							<span class="detail-label">Sale Type</span>
-							<span class="detail-value">Fair Launch</span>
+							<span class="detail-label">{$t('lpd.saleType')}</span>
+							<span class="detail-value">{$t('lpd.fairLaunch')}</span>
 						</div>
 						<div class="detail-row">
-							<span class="detail-label">Current Rate</span>
+							<span class="detail-label">{$t('lpd.currentRate')}</span>
 							<span class="detail-value">1 USDT = {launch.currentPrice > 0n ? formatTokens((BigInt(10 ** usdtDecimals) * BigInt(10 ** tokenMeta.decimals)) / launch.currentPrice, tokenMeta.decimals) : '0'} {launch.tokenSymbol}</span>
 						</div>
 						<div class="detail-row">
-							<span class="detail-label">Current Raised</span>
+							<span class="detail-label">{$t('lpd.currentRaised')}</span>
 							<span class="detail-value">{formatUsdt(launch.totalBaseRaised, ud)}</span>
 						</div>
 					</div>
@@ -1310,29 +1545,29 @@
 					{@const remaining = launch.totalTokensRequired - launch.totalTokensDeposited}
 					{@const depositPct = launch.totalTokensRequired > 0n ? Number((launch.totalTokensDeposited * 100n) / launch.totalTokensRequired) : 0}
 					<div class="card p-6 mb-4 border border-amber-500/20">
-						<h3 class="syne font-bold text-amber-400 mb-2">Deposit Required</h3>
+						<h3 class="syne font-bold text-amber-400 mb-2">{$t('lpd.depositRequired')}</h3>
 						<p class="text-gray-400 text-xs font-mono mb-4">
-							Your launch is pending. Deposit tokens to activate it.
+							{$t('lpd.depositPendingMsg')}
 						</p>
 
 						<div class="detail-grid mb-4">
 							<div class="detail-row">
-								<span class="detail-label">Total Required</span>
+								<span class="detail-label">{$t('lpd.totalRequired')}</span>
 								<span class="detail-value">{formatTokens(launch.totalTokensRequired, tokenMeta.decimals)} {launch.tokenSymbol}</span>
 							</div>
 							<div class="detail-row">
-								<span class="detail-label">Deposited</span>
+								<span class="detail-label">{$t('lpd.deposited')}</span>
 								<span class="detail-value">{formatTokens(launch.totalTokensDeposited, tokenMeta.decimals)} {launch.tokenSymbol}</span>
 							</div>
 							<div class="detail-row">
-								<span class="detail-label">Remaining</span>
+								<span class="detail-label">{$t('lpd.remaining')}</span>
 								<span class="detail-value text-amber-400">{formatTokens(remaining, tokenMeta.decimals)} {launch.tokenSymbol}</span>
 							</div>
 						</div>
 
 						<div class="mb-4">
 							<div class="flex justify-between text-[10px] font-mono mb-1">
-								<span class="text-gray-500">Deposit Progress</span>
+								<span class="text-gray-500">{$t('lpd.depositProgress')}</span>
 								<span class="text-gray-400">{depositPct}%</span>
 							</div>
 							<div class="progress-track">
@@ -1346,24 +1581,24 @@
 								disabled={isDepositing}
 								class="btn-primary w-full py-3 text-sm cursor-pointer"
 							>
-								{isDepositing ? 'Depositing...' : `Approve & Deposit ${formatTokens(remaining, tokenMeta.decimals)} ${launch.tokenSymbol}`}
+								{isDepositing ? $t('lpd.depositing') : `${$t('lpd.approveDeposit')} ${formatTokens(remaining, tokenMeta.decimals)} ${launch.tokenSymbol}`}
 							</button>
 							<p class="text-gray-600 text-[10px] font-mono mt-2 text-center">
-								This will approve and transfer your tokens to the launch contract.
+								{$t('lpd.depositNotice')}
 							</p>
 						{:else}
-							<p class="text-emerald-400 text-xs font-mono text-center">All tokens deposited. Activating...</p>
+							<p class="text-emerald-400 text-xs font-mono text-center">{$t('lpd.allDeposited')}</p>
 						{/if}
 					</div>
 				{:else if launch.state === 0}
 					<div class="card p-6 mb-4 border border-amber-500/20">
-						<h3 class="syne font-bold text-amber-400 mb-2">Pending Launch</h3>
+						<h3 class="syne font-bold text-amber-400 mb-2">{$t('lpd.pendingLaunch')}</h3>
 						<p class="text-gray-400 text-xs font-mono">
-							This launch is waiting for the creator to deposit tokens. It will activate once fully funded.
+							{$t('lpd.pendingMsg')}
 						</p>
 						<div class="detail-grid mt-3">
 							<div class="detail-row">
-								<span class="detail-label">Deposited</span>
+								<span class="detail-label">{$t('lpd.deposited')}</span>
 								<span class="detail-value">
 									{formatTokens(launch.totalTokensDeposited, tokenMeta.decimals)} / {formatTokens(launch.totalTokensRequired, tokenMeta.decimals)}
 								</span>
@@ -1375,26 +1610,57 @@
 				<!-- Enable Trading Banner -->
 				{#if !tradingEnabled && launch.state === 1 && userAddress?.toLowerCase() === launch.creator.toLowerCase()}
 					<div class="card p-4 mb-4 border border-red-500/20">
-						<h3 class="syne font-bold text-red-400 mb-2 text-sm">Enable Trading to Activate Launch</h3>
+						<h3 class="syne font-bold text-red-400 mb-2 text-sm">{$t('lpd.enableTradingTitle')}</h3>
 						<p class="text-gray-400 text-xs font-mono mb-2">
-							Trading must be enabled for buyers to purchase and trade your token. This is required for the launchpad and DEX graduation to work.
+							{$t('lpd.enableTradingMsg')}
 						</p>
 						<p class="text-gray-500 text-[10px] font-mono mb-3">
-							Tax settings (rates, wallets) can still be configured after enabling. Anti-whale limits (max wallet, max tx) can be set freely. Only cooldown time gets locked at its current value.
+							{$t('lpd.enableTradingNote')}
 						</p>
 						<button
 							onclick={handleEnableTrading}
 							disabled={isEnablingTrading}
 							class="btn-primary w-full py-2.5 text-sm cursor-pointer"
 						>
-							{isEnablingTrading ? 'Enabling...' : 'Enable Trading'}
+							{isEnablingTrading ? $t('lpd.enabling') : $t('lpd.enableTrading')}
 						</button>
 					</div>
 				{:else if !tradingEnabled && launch.state === 1}
 					<div class="card p-4 mb-4 border border-red-500/20">
 						<p class="text-red-400 text-xs font-mono">
-							Trading is not enabled on this token yet. The creator needs to enable trading before purchases can be made.
+							{$t('lpd.tradingNotEnabled')}
 						</p>
+					</div>
+				{/if}
+
+				<!-- Your Position -->
+				{#if userAddress && (userTokensBought > 0n || userBasePaid > 0n)}
+					<div class="card p-5 mb-4">
+						<h3 class="syne font-bold text-white text-sm mb-3">Your Position</h3>
+						<div class="grid grid-cols-2 gap-3">
+							<div class="position-stat">
+								<span class="position-stat-value">{formatTokens(userTokensBought, tokenMeta.decimals)}</span>
+								<span class="position-stat-label">{tokenMeta.symbol} Bought</span>
+							</div>
+							<div class="position-stat">
+								<span class="position-stat-value">{formatUsdt(userBasePaid, ud)}</span>
+								<span class="position-stat-label">USDT Spent</span>
+							</div>
+						</div>
+						{#if maxBuyPerWallet > 0n}
+							<div class="mt-3">
+								<div class="flex justify-between text-[10px] font-mono mb-1">
+									<span class="text-gray-500">Buy Limit Used</span>
+									<span class="text-gray-400">{allocationPct.toFixed(1)}%</span>
+								</div>
+								<div class="progress-track">
+									<div class="progress-fill progress-purple" style="width: {allocationPct}%"></div>
+								</div>
+								<div class="text-right text-[10px] font-mono mt-1 text-gray-500">
+									{remainingBuyUsdt > 0n ? formatUsdt(remainingBuyUsdt, ud) + ' remaining' : 'Limit reached'}
+								</div>
+							</div>
+						{/if}
 					</div>
 				{/if}
 
@@ -1404,9 +1670,9 @@
 					{#if notStartedYet}
 						{@const diff = Number(launch.startTimestamp) - Math.floor(Date.now() / 1000)}
 						<div class="card p-6 mb-4 text-center">
-							<h3 class="syne font-bold text-amber-400 mb-2">Scheduled Launch</h3>
+							<h3 class="syne font-bold text-amber-400 mb-2">{$t('lpd.scheduledLaunch')}</h3>
 							<p class="text-gray-400 font-mono text-sm mb-1">
-								Buying opens {new Date(Number(launch.startTimestamp) * 1000).toLocaleString()}
+								{$t('lpd.buyingOpens')} {new Date(Number(launch.startTimestamp) * 1000).toLocaleString()}
 							</p>
 							<p class="text-white font-mono text-lg font-bold">
 								{Math.floor(diff / 86400)}d {Math.floor((diff % 86400) / 3600)}h {Math.floor((diff % 3600) / 60)}m
@@ -1414,11 +1680,37 @@
 						</div>
 					{/if}
 					<div class="card p-6 mb-4" class:opacity-50={notStartedYet} class:pointer-events-none={notStartedYet}>
-						<h3 class="syne font-bold text-white mb-4">Buy Tokens</h3>
+						<h3 class="syne font-bold text-white mb-4">{$t('lpd.buyTokens')}</h3>
+
+						<!-- Remaining Buy Indicator -->
+						{#if userAddress}
+							<div class="remaining-buy-indicator mb-4">
+								{#if maxBuyPerWallet === 0n}
+									<span class="text-gray-500 text-xs font-mono">{$t('lpd.noBuyLimit')}</span>
+								{:else if atMaxBuy}
+									<div class="remaining-buy-maxed">
+										<span class="text-red-400 text-xs font-mono font-semibold">{$t('lpd.maxAllocationReached')}</span>
+									</div>
+								{:else}
+									<div class="remaining-buy-detail">
+										<div class="flex justify-between text-[10px] font-mono mb-1.5">
+											<span class="text-gray-500">{$t('lpd.allocationUsed')}</span>
+											<span class="text-gray-400">{allocationPct.toFixed(1)}%</span>
+										</div>
+										<div class="remaining-buy-track">
+											<div class="remaining-buy-fill" style="width: {allocationPct}%"></div>
+										</div>
+										<div class="text-[10px] font-mono mt-1.5 text-gray-400">
+											{$t('lpd.remainingBuyUsdt').replace('{amount}', formatUsdt(remainingBuyUsdt, ud))}
+										</div>
+									</div>
+								{/if}
+							</div>
+						{/if}
 
 						<!-- Amount in USDT -->
 						<div class="mb-3">
-							<label class="label-text" for="buy-amount">Amount (USDT)</label>
+							<label class="label-text" for="buy-amount">{$t('lpd.amountUsdt')}</label>
 							<input
 								id="buy-amount"
 								type="number"
@@ -1432,11 +1724,11 @@
 
 						<!-- Payment method select -->
 						<div class="mb-3">
-							<label class="label-text" for="pay-method">Pay with</label>
+							<label class="label-text" for="pay-method">{$t('lpd.payWith')}</label>
 							<select id="pay-method" class="input-field" bind:value={buyPaymentMethod}>
 								<option value="usdt">USDT</option>
 								<option value="usdc">USDC</option>
-								<option value="native">{nativeCoin} (auto-converted to USDT)</option>
+								<option value="native">{nativeCoin} ({$t('lpd.autoConverted')})</option>
 							</select>
 						</div>
 
@@ -1445,22 +1737,22 @@
 							<div class="preview-box mb-4">
 								{#if previewError === 'estimate'}
 									<div class="text-amber-400 text-[10px] font-mono text-center pb-1">
-										Approximate estimate (curve math overflow)
+										{$t('lpd.approxEstimate')}
 									</div>
 								{/if}
 								<div class="preview-row">
-									<span class="text-gray-500">You receive</span>
+									<span class="text-gray-500">{$t('lpd.youReceive')}</span>
 									<span class="text-white font-semibold">
 										~{formatTokens(preview.tokensOut, tokenMeta.decimals)} {launch.tokenSymbol}
 									</span>
 								</div>
 								<div class="preview-row">
-									<span class="text-gray-500">Fee (1%)</span>
-									<span class="text-gray-300">{formatUsdt(preview.fee, ud)}</span>
+									<span class="text-gray-500">Buy Fee</span>
+									<span class="text-emerald-400">None</span>
 								</div>
 								{#if preview.priceImpactBps > 0n}
 									<div class="preview-row">
-										<span class="text-gray-500">Price impact</span>
+										<span class="text-gray-500">{$t('lpd.priceImpact')}</span>
 										<span
 											class="{Number(preview.priceImpactBps) > 500
 												? 'text-red-400'
@@ -1475,7 +1767,7 @@
 							</div>
 						{:else if previewLoading}
 							<div class="preview-box mb-4">
-								<div class="text-gray-500 text-xs font-mono text-center py-2">Calculating...</div>
+								<div class="text-gray-500 text-xs font-mono text-center py-2">{$t('lpd.calculating')}</div>
 							</div>
 						{:else if previewError && previewError !== 'estimate'}
 							<div class="exceed-warning mb-4">
@@ -1487,14 +1779,14 @@
 						{#if maxBuyPerWallet > 0n && userAddress}
 							<div class="max-buy-info mb-3">
 								<div class="flex justify-between text-[10px] font-mono">
-									<span class="text-gray-500">Max buy per wallet</span>
-									<span class="text-gray-400">{formatTokens(maxBuyPerWallet, tokenMeta.decimals)} {launch.tokenSymbol} ({maxBuyPct}%)</span>
+									<span class="text-gray-500">{$t('lpd.maxBuyPerWallet')}</span>
+									<span class="text-gray-400">{formatUsdt(maxBuyPerWallet, ud)} ({maxBuyPct}%)</span>
 								</div>
-								{#if userTokensBought > 0n}
+								{#if userBasePaid > 0n}
 									<div class="flex justify-between text-[10px] font-mono mt-1">
-										<span class="text-gray-500">Remaining</span>
-										<span class="{remainingBuyTokens === 0n ? 'text-red-400' : 'text-gray-400'}">
-											{remainingBuyTokens === 0n ? 'Limit reached' : formatTokens(remainingBuyTokens, tokenMeta.decimals) + ' ' + launch.tokenSymbol}
+										<span class="text-gray-500">{$t('lpd.remainingLabel')}</span>
+										<span class="{remainingBuyUsdt === 0n ? 'text-red-400' : 'text-gray-400'}">
+											{remainingBuyUsdt === 0n ? $t('lpd.limitReached') : formatUsdt(remainingBuyUsdt, ud) + ' remaining'}
 										</span>
 									</div>
 								{/if}
@@ -1504,14 +1796,14 @@
 						{#if exceedsMaxBuy}
 							<div class="exceed-warning mb-3">
 								<span class="text-red-400 text-xs font-mono">
-									This purchase would exceed the max buy limit ({maxBuyPct}% of curve tokens per wallet).
+									{$t('lpd.exceedsMaxBuy').replace('{pct}', String(maxBuyPct))}
 								</span>
 							</div>
 						{/if}
 						{#if highImpact}
 							<div class="exceed-warning mb-3">
 								<span class="text-red-400 text-xs font-mono">
-									Price impact is too high ({preview ? (Number(preview.priceImpactBps) / 100).toFixed(1) : 0}%). Try a smaller amount.
+									{$t('lpd.impactTooHigh').replace('{pct}', String(preview ? (Number(preview.priceImpactBps) / 100).toFixed(1) : 0))}
 								</span>
 							</div>
 						{/if}
@@ -1523,20 +1815,20 @@
 								class="btn-primary w-full py-3 text-sm cursor-pointer"
 							>
 								{#if atMaxBuy}
-									Max Buy Reached
+									{$t('lpd.maxBuyReached')}
 								{:else if exceedsMaxBuy}
-									Exceeds Max Buy
+									{$t('lpd.exceedsMaxBuyBtn')}
 								{:else if highImpact}
-									Impact Too High
+									{$t('lpd.impactTooHighBtn')}
 								{:else}
-									{isBuying ? "Buying..." : `Buy with ${paymentLabel}`}
+									{isBuying ? $t('lpd.buying') : `${$t('lpd.buyWith')} ${paymentLabel}`}
 								{/if}
 							</button>
 						{:else}
 							<div class="connect-cta">
-								<p class="text-gray-500 text-xs font-mono mb-3 text-center">Connect your wallet to participate</p>
+								<p class="text-gray-500 text-xs font-mono mb-3 text-center">{$t('lpd.connectToParticipate')}</p>
 								<button onclick={connectWallet} class="btn-primary w-full py-3 text-sm cursor-pointer font-semibold">
-									Connect Wallet
+									{$t('lpd.connectWallet')}
 								</button>
 							</div>
 						{/if}
@@ -1548,13 +1840,13 @@
 					{@const softCapReached = launch.totalBaseRaised >= launch.softCap}
 					{#if softCapReached}
 						<div class="card p-4 mb-4">
-							<p class="text-gray-400 text-xs font-mono mb-3">Soft cap reached. You can graduate early.</p>
+							<p class="text-gray-400 text-xs font-mono mb-3">{$t('lpd.softCapReachedGrad')}</p>
 							<button
 								onclick={handleGraduate}
 								disabled={isGraduating}
 								class="btn-primary w-full py-2.5 text-sm cursor-pointer"
 							>
-								{isGraduating ? 'Graduating...' : 'Graduate to DEX'}
+								{isGraduating ? $t('lpd.graduating') : $t('lpd.graduateToDex')}
 							</button>
 						</div>
 					{/if}
@@ -1565,12 +1857,12 @@
 					{@const deadlineMs = Number(launch.deadline) * 1000}
 					{#if Date.now() >= deadlineMs}
 						<div class="card p-4 mb-4 border-red-500/20">
-							<p class="text-red-300 text-xs font-mono mb-3">Deadline passed. Soft cap not reached.</p>
+							<p class="text-red-300 text-xs font-mono mb-3">{$t('lpd.deadlinePassed')}</p>
 							<button
 								onclick={handleEnableRefunds}
 								class="btn-danger w-full py-2.5 text-sm cursor-pointer"
 							>
-								Enable Refunds
+								{$t('lpd.enableRefunds')}
 							</button>
 						</div>
 					{/if}
@@ -1579,19 +1871,19 @@
 				<!-- User Position -->
 				{#if userAddress && (userBasePaid > 0n || userTokensBought > 0n)}
 					<div class="card p-6 mb-4">
-						<h3 class="syne font-bold text-white mb-4">Your Position</h3>
+						<h3 class="syne font-bold text-white mb-4">{$t('lpd.yourPosition')}</h3>
 						<div class="detail-grid">
 							<div class="detail-row">
-								<span class="detail-label">Tokens bought</span>
+								<span class="detail-label">{$t('lpd.tokensBought')}</span>
 								<span class="detail-value">{formatTokens(userTokensBought, tokenMeta.decimals)} {launch.tokenSymbol}</span>
 							</div>
 							<div class="detail-row">
-								<span class="detail-label">Total spent</span>
+								<span class="detail-label">{$t('lpd.totalSpent')}</span>
 								<span class="detail-value">{formatUsdt(userBasePaid, ud)}</span>
 							</div>
 							{#if userTokensBought > 0n && userBasePaid > 0n}
 								<div class="detail-row">
-									<span class="detail-label">Avg price</span>
+									<span class="detail-label">{$t('lpd.avgPrice')}</span>
 									<span class="detail-value">
 										{formatUsdt(
 											(userBasePaid * BigInt(10 ** tokenMeta.decimals)) / userTokensBought,
@@ -1608,53 +1900,22 @@
 								disabled={isRefunding}
 								class="btn-danger w-full py-2.5 text-sm mt-4 cursor-pointer"
 							>
-								{isRefunding ? 'Processing...' : `Refund ${formatUsdt(userBasePaid, ud)}`}
+								{isRefunding ? $t('lpd.processing') : `${$t('common.refund')} ${formatUsdt(userBasePaid, ud)}`}
 							</button>
 							<p class="text-gray-600 text-[10px] font-mono mt-2">
-								You must return all purchased tokens to get a refund (in USDT). Buy fee is non-refundable.
+								{$t('lpd.refundNotice')}
 							</p>
 						{/if}
 					</div>
 				{/if}
 
-				<!-- Share -->
-				<div class="card p-5 mb-4">
-					<p class="text-gray-400 text-xs font-mono text-center mb-3">Share this launch</p>
-					<div class="share-row">
-						<a
-							href={`https://x.com/intent/tweet?text=${encodeURIComponent(`Check out $${launch.tokenSymbol} on TokenCrafter!`)}&url=${encodeURIComponent(typeof window !== 'undefined' ? window.location.href : '')}`}
-							target="_blank"
-							rel="noopener"
-							class="share-btn"
-							title="Share on X"
-						>𝕏</a>
-						<a
-							href={`https://t.me/share/url?url=${encodeURIComponent(typeof window !== 'undefined' ? window.location.href : '')}&text=${encodeURIComponent(`Check out $${launch.tokenSymbol} on TokenCrafter!`)}`}
-							target="_blank"
-							rel="noopener"
-							class="share-btn"
-							title="Share on Telegram"
-						>✈</a>
-						<button
-							class="share-btn"
-							title="Copy link"
-							onclick={() => { if (typeof navigator !== 'undefined') { navigator.clipboard.writeText(window.location.href); addFeedback({ message: 'Link copied!', type: 'success' }); } }}
-						>🔗</button>
-					</div>
-				</div>
+				<!-- (Share buttons moved to top of page) -->
 			</div>
 		</div>
 	{/if}
 </div>
 
 <style>
-	.page-wrap {
-		padding-bottom: 40px;
-	}
-	.no-underline {
-		text-decoration: none;
-	}
-
 	.page-grid {
 		display: grid;
 		grid-template-columns: 1fr;
@@ -1667,12 +1928,16 @@
 		}
 		.right-col {
 			position: sticky;
-			top: 24px;
-			max-height: calc(100vh - 48px);
+			top: 80px;
 			overflow-y: auto;
+			overflow-x: hidden;
 			scrollbar-width: thin;
 			scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+			padding-bottom: 24px;
 		}
+		.right-col::-webkit-scrollbar { width: 4px; }
+		.right-col::-webkit-scrollbar-track { background: transparent; }
+		.right-col::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
 	}
 
 	.preview-box {
@@ -1705,51 +1970,16 @@
 		border-radius: 8px;
 	}
 
-	.detail-grid {
-		display: flex;
-		flex-direction: column;
-		gap: 10px;
-	}
-	.detail-row {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-	}
-	.detail-label {
-		font-size: 12px;
-		color: #6b7280;
-		font-family: 'Space Mono', monospace;
-	}
-	.detail-value {
-		font-size: 13px;
-		color: var(--text);
-		font-family: 'Space Mono', monospace;
-		font-weight: 600;
-	}
-
+	/* Override progress bar height for detail view */
 	.progress-track {
-		width: 100%;
 		height: 8px;
-		background: var(--bg-surface-hover);
 		border-radius: 4px;
-		overflow: hidden;
 	}
 	.progress-fill {
-		height: 100%;
 		border-radius: 4px;
-		transition: width 0.3s ease;
-	}
-	.progress-cyan {
-		background: linear-gradient(90deg, #00d2ff, #3a7bd5);
-	}
-	.progress-purple {
-		background: linear-gradient(90deg, #8b5cf6, #a78bfa);
-	}
-	.progress-amber {
-		background: linear-gradient(90deg, #f59e0b, #fbbf24);
 	}
 
-.status-cyan { color: #00d2ff; }
+	.status-cyan { color: #00d2ff; }
 	.status-amber { color: #f59e0b; }
 	.status-purple { color: #a78bfa; }
 	.status-red { color: #f87171; }
@@ -1886,6 +2116,54 @@
 		white-space: nowrap;
 	}
 
+	/* Rule chips */
+	.rule-chip {
+		text-align: center;
+		padding: 8px;
+		border-radius: 8px;
+		background: var(--bg-surface-hover);
+		border: 1px solid var(--border-subtle);
+	}
+	.rule-chip-value {
+		display: block;
+		font-size: 13px;
+		font-weight: 700;
+		color: var(--text-heading);
+		font-family: 'Space Mono', monospace;
+	}
+	.rule-chip-label {
+		display: block;
+		font-size: 9px;
+		color: var(--text-muted);
+		font-family: 'Space Mono', monospace;
+		margin-top: 2px;
+	}
+
+	/* Your Position */
+	.position-stat {
+		text-align: center;
+		padding: 10px 8px;
+		border-radius: 8px;
+		background: var(--bg-surface-hover);
+		border: 1px solid var(--border-subtle);
+	}
+	.position-stat-value {
+		display: block;
+		font-size: 14px;
+		font-weight: 700;
+		color: var(--text-heading);
+		font-family: 'Space Mono', monospace;
+	}
+	.position-stat-label {
+		display: block;
+		font-size: 9px;
+		color: var(--text-muted);
+		font-family: 'Space Mono', monospace;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		margin-top: 2px;
+	}
+
 	/* Modal */
 	.modal-overlay {
 		position: fixed;
@@ -1929,62 +2207,6 @@
 		border-radius: 8px;
 		max-width: 100%;
 		word-break: break-all;
-	}
-	.spinner-sm {
-		width: 14px;
-		height: 14px;
-		border: 2px solid var(--border-input);
-		border-top-color: #00d2ff;
-		border-radius: 50%;
-		animation: spin 0.8s linear infinite;
-	}
-
-	.spinner {
-		animation: spin 0.8s linear infinite;
-	}
-	@keyframes spin {
-		to {
-			transform: rotate(360deg);
-		}
-	}
-
-	.syne {
-		font-family: 'Syne', sans-serif;
-	}
-	.label-text {
-		font-size: 12px;
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		color: #94a3b8;
-		display: block;
-		margin-bottom: 6px;
-	}
-
-	.badge {
-		display: inline-flex;
-		align-items: center;
-		padding: 3px 10px;
-		border-radius: 999px;
-		font-size: 11px;
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.04em;
-	}
-	.badge-cyan {
-		background: rgba(0, 210, 255, 0.1);
-		color: #00d2ff;
-		border: 1px solid rgba(0, 210, 255, 0.2);
-	}
-	.badge-amber {
-		background: rgba(245, 158, 11, 0.1);
-		color: #f59e0b;
-		border: 1px solid rgba(245, 158, 11, 0.2);
-	}
-	.badge-purple {
-		background: rgba(139, 92, 246, 0.1);
-		color: #a78bfa;
-		border: 1px solid rgba(139, 92, 246, 0.2);
 	}
 	.badge-red {
 		background: rgba(239, 68, 68, 0.1);
@@ -2033,6 +2255,7 @@
 	.badge-purple { background: rgba(139, 92, 246, 0.12); color: #a78bfa; border: 1px solid rgba(139, 92, 246, 0.25); }
 	.badge-amber { background: rgba(245, 158, 11, 0.12); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.25); }
 	.badge-blue { background: rgba(59, 130, 246, 0.12); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.25); }
+	.badge-orange { background: rgba(249, 115, 22, 0.12); color: #fb923c; border: 1px solid rgba(249, 115, 22, 0.25); }
 
 	/* Video embed */
 	.video-embed {
@@ -2099,6 +2322,9 @@
 		font-family: 'Space Mono', monospace;
 		line-height: 1;
 	}
+	.countdown-num-amber {
+		color: #f59e0b;
+	}
 	.countdown-label {
 		font-size: 9px;
 		text-transform: uppercase;
@@ -2156,5 +2382,235 @@
 
 	select option {
 		background: var(--select-bg);
+	}
+
+	/* Favorite button on detail page header */
+	.detail-fav-btn {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		background: var(--bg-surface);
+		border: 1px solid var(--border);
+		border-radius: 50%;
+		width: 34px;
+		height: 34px;
+		cursor: pointer;
+		transition: all var(--transition-fast);
+		color: #6b7280;
+		flex-shrink: 0;
+	}
+	.detail-fav-btn:hover {
+		border-color: rgba(0, 210, 255, 0.4);
+		background: rgba(0, 210, 255, 0.08);
+		color: #00d2ff;
+	}
+
+	/* Activity Feed */
+	.activity-list {
+		display: flex;
+		flex-direction: column;
+		gap: 0;
+	}
+	.activity-item {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		padding: 10px 0;
+		border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+		position: relative;
+	}
+	.activity-item:last-child {
+		border-bottom: none;
+	}
+	.activity-content {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+		align-items: center;
+		flex: 1;
+		min-width: 0;
+	}
+	.activity-latest {
+		background: rgba(0, 210, 255, 0.03);
+		margin: 0 -24px;
+		padding: 10px 24px;
+		border-radius: 8px;
+	}
+	.activity-pulse {
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		background: #00d2ff;
+		flex-shrink: 0;
+		animation: pulse-dot 2s ease-in-out infinite;
+	}
+	@keyframes pulse-dot {
+		0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(0, 210, 255, 0.4); }
+		50% { opacity: 0.6; box-shadow: 0 0 0 6px rgba(0, 210, 255, 0); }
+	}
+
+	/* Comments / Discussion */
+	.comment-form {
+		border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+		padding-bottom: 16px;
+	}
+	.comment-input {
+		resize: vertical;
+		min-height: 48px;
+		max-height: 120px;
+	}
+	.comments-list {
+		display: flex;
+		flex-direction: column;
+		gap: 0;
+	}
+	.comment-item {
+		padding: 12px 0;
+		border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+	}
+	.comment-item:last-child {
+		border-bottom: none;
+	}
+	.comment-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+	}
+
+	/* Share buttons row (top of detail page) */
+	.share-buttons-row {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+	}
+	.share-buttons-group {
+		display: flex;
+		gap: 8px;
+	}
+	.share-icon-btn {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 32px;
+		height: 32px;
+		border-radius: 8px;
+		background: var(--bg-surface);
+		border: 1px solid var(--bg-surface-hover);
+		font-size: 14px;
+		cursor: pointer;
+		transition: all 0.15s ease;
+		text-decoration: none;
+		color: inherit;
+	}
+	.share-icon-btn:hover {
+		border-color: rgba(0, 210, 255, 0.4);
+		background: rgba(0, 210, 255, 0.06);
+		transform: scale(1.05);
+	}
+
+	/* Graduation celebration banner */
+	.graduation-banner {
+		position: relative;
+		overflow: hidden;
+		border-radius: 14px;
+		background: linear-gradient(135deg, rgba(16, 185, 129, 0.12), rgba(52, 211, 153, 0.08));
+		border: 1px solid rgba(16, 185, 129, 0.3);
+		padding: 16px 20px;
+	}
+	.graduation-content {
+		position: relative;
+		z-index: 1;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12px;
+	}
+	.graduation-text {
+		font-size: 14px;
+		font-family: 'Space Mono', monospace;
+		color: #34d399;
+		font-weight: 600;
+	}
+	.graduation-dismiss {
+		flex-shrink: 0;
+		width: 28px;
+		height: 28px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: 50%;
+		background: rgba(16, 185, 129, 0.1);
+		border: 1px solid rgba(16, 185, 129, 0.2);
+		color: #34d399;
+		font-size: 12px;
+		cursor: pointer;
+		transition: all 0.15s ease;
+	}
+	.graduation-dismiss:hover {
+		background: rgba(16, 185, 129, 0.2);
+		border-color: rgba(16, 185, 129, 0.4);
+	}
+	.graduation-particles {
+		position: absolute;
+		inset: 0;
+		overflow: hidden;
+		pointer-events: none;
+	}
+	.graduation-particles::before,
+	.graduation-particles::after {
+		content: '';
+		position: absolute;
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		opacity: 0;
+	}
+	.graduation-particles::before {
+		background: #34d399;
+		animation: sparkle1 2.5s ease-in-out infinite;
+		top: 20%;
+		left: 10%;
+	}
+	.graduation-particles::after {
+		background: #10b981;
+		animation: sparkle2 3s ease-in-out infinite 0.5s;
+		top: 60%;
+		right: 15%;
+	}
+	@keyframes sparkle1 {
+		0%, 100% { opacity: 0; transform: translateY(0) scale(0.5); }
+		25% { opacity: 0.8; transform: translateY(-12px) scale(1); }
+		50% { opacity: 0.4; transform: translateY(-20px) scale(0.7); }
+		75% { opacity: 0; transform: translateY(-28px) scale(0.3); }
+	}
+	@keyframes sparkle2 {
+		0%, 100% { opacity: 0; transform: translateY(0) scale(0.5); }
+		30% { opacity: 0.7; transform: translateY(-10px) scale(1.1); }
+		60% { opacity: 0.3; transform: translateY(-18px) scale(0.6); }
+		90% { opacity: 0; transform: translateY(-24px) scale(0.2); }
+	}
+
+	/* Remaining buy indicator */
+	.remaining-buy-indicator {
+		padding: 10px 12px;
+		background: var(--bg-surface);
+		border: 1px solid var(--bg-surface-hover);
+		border-radius: 10px;
+	}
+	.remaining-buy-maxed {
+		text-align: center;
+		padding: 4px 0;
+	}
+	.remaining-buy-track {
+		height: 6px;
+		border-radius: 3px;
+		background: rgba(255, 255, 255, 0.06);
+		overflow: hidden;
+	}
+	.remaining-buy-fill {
+		height: 100%;
+		border-radius: 3px;
+		background: linear-gradient(90deg, #00d2ff, #3a7bd5);
+		transition: width 0.3s ease;
 	}
 </style>

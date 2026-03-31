@@ -1,17 +1,18 @@
 <script lang="ts">
 	import type { SupportedNetworks } from '$lib/structure';
 	import { getContext } from 'svelte';
+	import { t } from '$lib/i18n';
 	const supportedNetworks: SupportedNetworks = getContext('supportedNetworks');
 </script>
 
 <svelte:head>
-	<title>Explore Tokens | TokenKrafter</title>
-	<meta name="description" content="Browse and explore tokens deployed on Ethereum, BSC, and other supported networks through TokenKrafter." />
+	<title>{$t('tk.pageTitle')} | TokenKrafter</title>
+	<meta name="description" content={$t('tk.metaDesc')} />
 </svelte:head>
 
-<div class="max-w-5xl mx-auto px-4 sm:px-6 py-12">
-	<h1 class="syne text-3xl sm:text-4xl font-bold text-white mb-2">Explore Tokens</h1>
-	<p class="text-gray-400 font-mono text-sm mb-8">Browse tokens deployed on supported networks.</p>
+<div class="max-w-6xl mx-auto px-4 sm:px-6 py-12">
+	<h1 class="syne text-3xl sm:text-4xl font-bold text-white mb-2">{$t('tk.pageTitle')}</h1>
+	<p class="text-gray-400 font-mono text-sm mb-8">{$t('tk.subtitle')}</p>
 
 	<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 		{#each supportedNetworks as net}
@@ -20,7 +21,7 @@
 					<div class="net-icon syne">{net.symbol.slice(0,2)}</div>
 					<div>
 						<div class="syne font-bold text-white group-hover:text-cyan-300 transition">{net.name}</div>
-						<div class="text-xs text-gray-500 font-mono mt-0.5">Chain ID: {net.chain_id}</div>
+						<div class="text-xs text-gray-500 font-mono mt-0.5">{$t('tk.chainId')}: {net.chain_id}</div>
 					</div>
 					<div class="ml-auto text-gray-600 group-hover:text-cyan-400 transition text-lg">→</div>
 				</div>

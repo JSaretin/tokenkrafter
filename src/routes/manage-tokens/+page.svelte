@@ -3,6 +3,7 @@
 	import { getContext, onMount } from 'svelte';
 	import type { SupportedNetworks } from '$lib/structure';
 	import { FACTORY_ABI, ERC20_ABI, TOKEN_ABI } from '$lib/tokenCrafter';
+	import { t } from '$lib/i18n';
 
 	let getUserAddress: () => string | null = getContext('userAddress');
 	let connectWallet: () => Promise<boolean> = getContext('connectWallet');
@@ -45,7 +46,7 @@
 						const [name, symbol, info] = await Promise.all([
 							contract.name(),
 							contract.symbol(),
-							platform.getTokenInfo(addr)
+							platform.tokenInfo(addr)
 						]);
 						tokens = [...tokens, {
 							address: addr, network: net, name, symbol,
@@ -66,10 +67,10 @@
 		isLoading = false;
 	}
 
-	onMount(async () => {
-		if (userAddress) {
-			await loadTokens();
-		} else {
+	$effect(() => {
+		if (userAddress && !hasLoaded) {
+			loadTokens();
+		} else if (!userAddress) {
 			isLoading = false;
 		}
 	});
@@ -85,33 +86,33 @@
 </script>
 
 <svelte:head>
-	<title>My Tokens | TokenKrafter</title>
-	<meta name="description" content="Manage your deployed tokens. Mint, burn, configure taxes, add DEX liquidity, and set up anti-whale protection." />
+	<title>{$t('mt.pageTitle')} | TokenKrafter</title>
+	<meta name="description" content={$t('mt.metaDesc')} />
 </svelte:head>
 
-<div class="max-w-5xl mx-auto px-4 sm:px-6 py-12">
+<div class="max-w-6xl mx-auto px-4 sm:px-6 py-12">
 	<!-- Header -->
 	<div class="flex items-start justify-between flex-wrap gap-4 mb-8">
 		<div>
-			<h1 class="syne text-3xl sm:text-4xl font-bold text-white">My Tokens</h1>
+			<h1 class="syne text-3xl sm:text-4xl font-bold text-white">{$t('mt.pageTitle')}</h1>
 			<p class="text-gray-400 font-mono text-sm mt-2">
 				{#if userAddress}
-					Tokens deployed by <span class="text-cyan-400">{shortAddr(userAddress)}</span>
+					{$t('mt.deployedBy')} <span class="text-cyan-400">{shortAddr(userAddress)}</span>
 				{:else}
-					Connect your wallet to view deployed tokens.
+					{$t('mt.connectPrompt')}
 				{/if}
 			</p>
 		</div>
-		<a href="/create" class="create-link syne">+ Create New Token</a>
+		<a href="/create" class="create-link syne">{$t('mt.createNew')}</a>
 	</div>
 
 	{#if !userAddress}
 		<!-- Not connected -->
 		<div class="empty-state">
 			<div class="text-5xl mb-4">🔗</div>
-			<h2 class="syne text-xl font-bold text-white mb-2">Wallet Not Connected</h2>
-			<p class="text-gray-400 font-mono text-sm mb-6">Connect your wallet to see your deployed tokens.</p>
-			<button onclick={handleConnect} class="connect-btn syne cursor-pointer">Connect Wallet</button>
+			<h2 class="syne text-xl font-bold text-white mb-2">{$t('mt.walletNotConnected')}</h2>
+			<p class="text-gray-400 font-mono text-sm mb-6">{$t('mt.connectToSee')}</p>
+			<button onclick={handleConnect} class="connect-btn syne cursor-pointer">{$t('common.connectWallet')}</button>
 		</div>
 	{:else if isLoading}
 		<div class="loading-grid">
@@ -122,9 +123,9 @@
 	{:else if tokens.length === 0}
 		<div class="empty-state">
 			<div class="text-5xl mb-4">🪙</div>
-			<h2 class="syne text-xl font-bold text-white mb-2">No Tokens Yet</h2>
-			<p class="text-gray-400 font-mono text-sm mb-6">You haven't deployed any tokens. Create your first one!</p>
-			<a href="/create" class="connect-btn syne no-underline">Create Your First Token</a>
+			<h2 class="syne text-xl font-bold text-white mb-2">{$t('mt.noTokensYet')}</h2>
+			<p class="text-gray-400 font-mono text-sm mb-6">{$t('mt.noTokensDesc')}</p>
+			<a href="/create" class="connect-btn syne no-underline">{$t('mt.createFirst')}</a>
 		</div>
 	{:else}
 		<div class="tokens-grid">
@@ -139,7 +140,7 @@
 						</div>
 						<div class="token-card-meta">
 							<div class="syne font-bold text-white group-hover:text-cyan-300 transition">
-								{token.name ?? 'Unknown Token'}
+								{token.name ?? $t('mt.unknownToken')}
 							</div>
 							<div class="text-xs text-gray-500 font-mono">{token.symbol ?? '—'}</div>
 						</div>
@@ -148,18 +149,18 @@
 
 					<div class="token-card-body">
 						<div class="token-info-row">
-							<span class="token-info-label">Network</span>
+							<span class="token-info-label">{$t('mt.network')}</span>
 							<span class="badge badge-emerald">{token.network.name}</span>
 						</div>
 						<div class="token-info-row">
-							<span class="token-info-label">Contract</span>
+							<span class="token-info-label">{$t('mt.contract')}</span>
 							<span class="token-info-val">{shortAddr(token.address)}</span>
 						</div>
 						{#if token.isMintable || token.isTaxable || token.isPartner}
 							<div class="token-badges">
-								{#if token.isMintable}<span class="badge badge-cyan">Mintable</span>{/if}
-								{#if token.isTaxable}<span class="badge badge-amber">Taxable</span>{/if}
-								{#if token.isPartner}<span class="badge badge-purple">Partner</span>{/if}
+								{#if token.isMintable}<span class="badge badge-cyan">{$t('mt.mintable')}</span>{/if}
+								{#if token.isTaxable}<span class="badge badge-amber">{$t('mt.taxable')}</span>{/if}
+								{#if token.isPartner}<span class="badge badge-purple">{$t('mt.partner')}</span>{/if}
 							</div>
 						{/if}
 					</div>
@@ -169,7 +170,7 @@
 
 		<div class="mt-6 text-center">
 			<button onclick={loadTokens} class="btn-secondary text-xs px-4 py-2 cursor-pointer font-mono">
-				↻ Refresh
+				↻ {$t('mt.refresh')}
 			</button>
 		</div>
 	{/if}

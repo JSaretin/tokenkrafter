@@ -14,11 +14,22 @@ export async function initAppKit() {
 
 	const { createAppKit } = await import('@reown/appkit');
 	const { EthersAdapter } = await import('@reown/appkit-adapter-ethers');
-	const { mainnet, bsc } = await import('@reown/appkit/networks');
+	const { mainnet, bsc, defineChain } = await import('@reown/appkit/networks');
+
+	const localhost = defineChain({
+		id: 31337,
+		caipNetworkId: 'eip155:31337',
+		chainNamespace: 'eip155',
+		name: 'Localhost',
+		nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+		rpcUrls: {
+			default: { http: ['http://127.0.0.1:8545'] }
+		}
+	});
 
 	modal = createAppKit({
 		adapters: [new EthersAdapter()],
-		networks: [bsc, mainnet],
+		networks: [localhost, mainnet],
 		projectId,
 		metadata: {
 			name: 'TokenKrafter',

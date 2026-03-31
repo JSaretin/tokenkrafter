@@ -13,7 +13,9 @@ const config: HardhatUserConfig = {
     },
   },
   networks: {
-    hardhat: {},
+    hardhat: {
+      accounts: { count: 30 },
+    },
     bsc: {
       url: "https://bsc-dataseed.binance.org/",
       chainId: 56,

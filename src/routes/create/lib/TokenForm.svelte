@@ -1,6 +1,13 @@
 <script lang="ts">
+	import { getContext } from 'svelte';
+	import { ethers } from 'ethers';
 	import type { SupportedNetwork } from '$lib/structure';
 	import BondingCurveChart from '$lib/BondingCurveChart.svelte';
+
+	export type ListingPairConfig = {
+		base: 'native' | 'usdt' | 'usdc';
+		amount: string;
+	};
 
 	export type ListingConfig = {
 		enabled: boolean;
@@ -10,6 +17,7 @@
 		baseAmount: string;
 		pricePerToken: string;
 		listBaseAmount: string;
+		pairs: ListingPairConfig[];
 	};
 
 	export type LaunchConfig = {
@@ -47,6 +55,7 @@
 		isTaxable: boolean;
 		isPartner: boolean;
 		network: SupportedNetwork;
+		existingTokenAddress?: string;
 		listing: ListingConfig;
 		launch: LaunchConfig;
 		protection: ProtectionConfig;
@@ -54,8 +63,14 @@
 	};
 
 	// --- State ---
-	type WizardStep = 'basics' | 'features' | 'tax' | 'launch';
+	type WizardStep = 'basics' | 'features' | 'tax' | 'launch' | 'listing';
 	let wizardStep = $state<WizardStep>('basics');
+
+	// Existing token mode — user already has a token, just wants to launch
+	let useExistingToken = $state(false);
+	let existingTokenAddress = $state('');
+	let existingTokenLoading = $state(false);
+	let existingTokenBalance = $state(0n);
 
 	// Step 1: Basics
 	let name = $state('');
@@ -94,14 +109,54 @@
 	let maxTransactionPct = $state('1');
 	let cooldownSeconds = $state('0');
 
-	// Listing (disabled for now)
+	// Listing
 	let listingEnabled = $state(false);
-	let listingBaseCoin = $state<'native' | 'usdt' | 'usdc'>('native');
-	let listingMode = $state<'manual' | 'price'>('manual');
-	let listingTokenAmount = $state('');
-	let listingBaseAmount = $state('');
-	let listingPricePerToken = $state('');
-	let listingListBaseAmount = $state('');
+	let listingPricePerToken = $state(''); // single price in USDT
+	type ListingPair = { base: 'native' | 'usdt' | 'usdc'; amount: string };
+	let listingPairs = $state<ListingPair[]>([{ base: 'native', amount: '' }]);
+
+	// Legacy compat (kept for submit function)
+	let listingBaseCoin = $derived(listingPairs[0]?.base ?? 'native');
+	let listingMode = 'price' as const;
+	let listingTokenAmount = $derived('');
+	let listingBaseAmount = $derived(listingPairs[0]?.amount ?? '');
+	let listingListBaseAmount = $derived(listingPairs[0]?.amount ?? '');
+
+	function addListingPair() {
+		// Find the next base not yet added
+		const used = new Set(listingPairs.map(p => p.base));
+		const next = (['native', 'usdt', 'usdc'] as const).find(b => !used.has(b));
+		if (next) listingPairs = [...listingPairs, { base: next, amount: '' }];
+	}
+
+	function removeListingPair(index: number) {
+		listingPairs = listingPairs.filter((_, i) => i !== index);
+	}
+
+	function updatePairBase(index: number, base: 'native' | 'usdt' | 'usdc') {
+		listingPairs = listingPairs.map((p, i) => i === index ? { ...p, base } : p);
+	}
+
+	function updatePairAmount(index: number, amount: string) {
+		listingPairs = listingPairs.map((p, i) => i === index ? { ...p, amount } : p);
+	}
+
+	function getBaseLabel(base: string): string {
+		if (base === 'native') return selectedNetwork?.native_coin || 'ETH';
+		return base.toUpperCase();
+	}
+
+	// Calculate tokens needed per pair based on price
+	function tokensForPair(pair: ListingPair): string {
+		const price = Number(listingPricePerToken);
+		const baseAmt = Number(pair.amount);
+		if (!price || price <= 0 || !baseAmt || baseAmt <= 0) return '0';
+		return (baseAmt / price).toFixed(2);
+	}
+
+	let totalTokensForListing = $derived(
+		listingPairs.reduce((sum, p) => sum + Number(tokensForPair(p)), 0)
+	);
 
 	const CURVE_TYPES_LABEL = ['Linear', 'Square Root', 'Quadratic', 'Exponential'] as const;
 
@@ -134,7 +189,8 @@
 		updateTokenInfo,
 		onPreviewChange,
 		initialData,
-		autoSubmit
+		autoSubmit,
+		forceMode
 	}: {
 		supportedNetworks: SupportedNetwork[];
 		addFeedback: (feedback: { message: string; type: string }) => void;
@@ -142,10 +198,35 @@
 		onPreviewChange?: (state: PreviewState) => void;
 		initialData?: Partial<TokenFormData>;
 		autoSubmit?: boolean;
+		forceMode?: 'token' | 'both' | 'launch' | 'list';
 	} = $props();
+
+	// Apply forceMode overrides
+	if (forceMode === 'token') {
+		useExistingToken = false;
+		launchEnabled = false;
+		listingEnabled = false;
+	} else if (forceMode === 'both') {
+		useExistingToken = false;
+		launchEnabled = true;
+		listingEnabled = false;
+	} else if (forceMode === 'launch') {
+		useExistingToken = true;
+		launchEnabled = true;
+		listingEnabled = false;
+	} else if (forceMode === 'list') {
+		useExistingToken = false;
+		launchEnabled = false;
+		listingEnabled = true;
+	}
 
 	// Populate form from initialData (e.g. from URL params)
 	if (initialData) {
+		if ((initialData as any).existingTokenAddress) {
+			useExistingToken = true;
+			existingTokenAddress = (initialData as any).existingTokenAddress;
+		}
+		if ((initialData as any).chainId) chainId = (initialData as any).chainId;
 		if (initialData.name) name = initialData.name;
 		if (initialData.symbol) symbol = initialData.symbol;
 		if (initialData.totalSupply) totalSupply = initialData.totalSupply;
@@ -205,6 +286,51 @@
 
 	let selectedNetwork = $derived(supportedNetworks.find((n) => n.chain_id == chainId));
 	let nativeCoinSymbol = $derived(selectedNetwork?.native_coin ?? 'ETH');
+
+	// Auto-fetch existing token metadata
+	let getNetworkProviders: () => Map<number, ethers.JsonRpcProvider> = getContext('networkProviders');
+	let getUserAddress: () => string | null = getContext('userAddress');
+	let existingTokenTimeout: ReturnType<typeof setTimeout> | null = null;
+
+	$effect(() => {
+		if (existingTokenTimeout) clearTimeout(existingTokenTimeout);
+		const addr = existingTokenAddress;
+		const net = selectedNetwork;
+		if (!useExistingToken || !addr || !ethers.isAddress(addr) || !net) return;
+		existingTokenTimeout = setTimeout(async () => {
+			existingTokenLoading = true;
+			try {
+				const providers = getNetworkProviders();
+				const provider = providers.get(net.chain_id);
+				if (!provider) return;
+				const token = new ethers.Contract(addr, [
+					'function name() view returns (string)',
+					'function symbol() view returns (string)',
+					'function decimals() view returns (uint8)',
+					'function balanceOf(address) view returns (uint256)',
+					'function totalSupply() view returns (uint256)'
+				], provider);
+				const userAddr = getUserAddress();
+				const [n, s, d, bal, supply] = await Promise.all([
+					token.name().catch(() => ''),
+					token.symbol().catch(() => ''),
+					token.decimals().catch(() => 18),
+					userAddr ? token.balanceOf(userAddr).catch(() => 0n) : Promise.resolve(0n),
+					token.totalSupply().catch(() => 0n)
+				]);
+				name = n;
+				symbol = s;
+				decimals = Number(d);
+				totalSupply = ethers.formatUnits(supply, Number(d));
+				existingTokenBalance = bal;
+			} catch {
+				name = '';
+				symbol = '';
+			} finally {
+				existingTokenLoading = false;
+			}
+		}, 500);
+	});
 
 	// Emit preview state on every change
 	$effect(() => {
@@ -268,18 +394,33 @@
 
 	// --- Step navigation ---
 	let stepList = $derived(() => {
+		if (forceMode === 'launch') {
+			// Existing token: just token address → launch config
+			return [
+				{ id: 'basics' as WizardStep, label: 'Token' },
+				{ id: 'launch' as WizardStep, label: 'Launch' }
+			];
+		}
 		const s: { id: WizardStep; label: string }[] = [
 			{ id: 'basics', label: 'Basics' },
 			{ id: 'features', label: 'Features' }
 		];
 		if (isTaxable) s.push({ id: 'tax', label: 'Tax' });
 		if (launchEnabled) s.push({ id: 'launch', label: 'Launch' });
+		if (listingEnabled && !launchEnabled) s.push({ id: 'listing', label: 'DEX Listing' });
 		return s;
 	});
 
 	let currentStepIndex = $derived(stepList().findIndex((s) => s.id === wizardStep));
 
 	function validateBasics(): boolean {
+		if (useExistingToken) {
+			if (!chainId) { addFeedback({ message: 'Please select a network', type: 'error' }); return false; }
+			if (!ethers.isAddress(existingTokenAddress)) { addFeedback({ message: 'Invalid token address', type: 'error' }); return false; }
+			if (!name) { addFeedback({ message: 'Could not fetch token info. Check the address.', type: 'error' }); return false; }
+			if (!launchEnabled) { addFeedback({ message: 'Enable launchpad to use an existing token', type: 'error' }); return false; }
+			return true;
+		}
 		touched = { ...touched, name: true, symbol: true, supply: true, network: true };
 		if (!name.trim()) { addFeedback({ message: 'Token name is required', type: 'error' }); return false; }
 		if (!symbol.trim()) { addFeedback({ message: 'Token symbol is required', type: 'error' }); return false; }
@@ -338,17 +479,25 @@
 	function nextStep() {
 		if (wizardStep === 'basics') {
 			if (!validateBasics()) return;
-			wizardStep = 'features';
+			if (forceMode === 'launch') {
+				wizardStep = 'launch';
+			} else {
+				wizardStep = 'features';
+			}
 		} else if (wizardStep === 'features') {
 			if (isTaxable) wizardStep = 'tax';
 			else if (launchEnabled) wizardStep = 'launch';
+			else if (listingEnabled) wizardStep = 'listing';
 			else submit();
 		} else if (wizardStep === 'tax') {
 			if (!validateTax()) return;
 			if (launchEnabled) wizardStep = 'launch';
+			else if (listingEnabled) wizardStep = 'listing';
 			else submit();
 		} else if (wizardStep === 'launch') {
 			if (!validateLaunch()) return;
+			submit();
+		} else if (wizardStep === 'listing') {
 			submit();
 		}
 	}
@@ -357,6 +506,14 @@
 		if (wizardStep === 'features') wizardStep = 'basics';
 		else if (wizardStep === 'tax') wizardStep = 'features';
 		else if (wizardStep === 'launch') {
+			if (forceMode === 'launch') {
+				wizardStep = 'basics';
+			} else if (isTaxable) {
+				wizardStep = 'tax';
+			} else {
+				wizardStep = 'features';
+			}
+		} else if (wizardStep === 'listing') {
 			if (isTaxable) wizardStep = 'tax';
 			else wizardStep = 'features';
 		}
@@ -381,14 +538,16 @@
 
 		updateTokenInfo({
 			name, symbol, totalSupply, decimals, isMintable, isTaxable, isPartner, network,
+			existingTokenAddress: useExistingToken ? existingTokenAddress : undefined,
 			listing: {
 				enabled: listingEnabled,
-				baseCoin: listingBaseCoin,
-				mode: listingMode,
-				tokenAmount: listingTokenAmount,
-				baseAmount: listingBaseAmount,
+				baseCoin: listingPairs[0]?.base ?? 'native',
+				mode: 'price',
+				tokenAmount: String(totalTokensForListing),
+				baseAmount: listingPairs[0]?.amount ?? '',
 				pricePerToken: listingPricePerToken,
-				listBaseAmount: listingListBaseAmount
+				listBaseAmount: listingPairs[0]?.amount ?? '',
+				pairs: listingPairs.filter(p => Number(p.amount) > 0),
 			},
 			launch: {
 				enabled: launchEnabled,
@@ -417,6 +576,19 @@
 	}
 </script>
 
+{#snippet networkSelect()}
+	<div class="field-group">
+		<label class="label-text" for="token-network">Network</label>
+		<select id="token-network" required class="input-field" class:field-error={networkError} bind:value={chainId} onblur={() => markTouched('network')}>
+			<option value="">Select a network</option>
+			{#each supportedNetworks.filter((n) => n.platform_address.length > 2) as n (n.chain_id)}
+				<option value={n.chain_id}>{n.name} ({n.native_coin})</option>
+			{/each}
+		</select>
+		{#if networkError}<span class="field-error-text">{networkError}</span>{:else}<div class="tip">{useExistingToken ? 'The network where your token is deployed.' : 'Which blockchain to deploy on. BSC has low fees and fast transactions.'}</div>{/if}
+	</div>
+{/snippet}
+
 <form class="wizard" autocomplete="off" onsubmit={(e) => e.preventDefault()}>
 	<!-- Step Indicator -->
 	<div class="step-indicator">
@@ -442,49 +614,90 @@
 	{#if wizardStep === 'basics'}
 		<div class="wizard-step" style="animation: fadeIn 0.2s ease-out">
 			<div class="step-header">
-				<h2 class="syne text-xl font-bold text-white">Token Basics</h2>
-				<p class="text-sm text-gray-500 font-mono mt-1">The identity of your token on the blockchain.</p>
+				<div class="flex items-center justify-between">
+					<div>
+						<h2 class="syne text-xl font-bold text-white">{useExistingToken ? 'Existing Token' : 'Token Basics'}</h2>
+						<p class="text-sm text-gray-500 font-mono mt-1">{useExistingToken ? 'Enter the address of your existing token to launch it.' : 'The identity of your token on the blockchain.'}</p>
+					</div>
+					{#if !forceMode}
+<button
+						type="button"
+						onclick={() => { useExistingToken = !useExistingToken; if (useExistingToken) { launchEnabled = true; } }}
+						class="text-xs font-mono transition cursor-pointer border-none bg-transparent shrink-0
+							{useExistingToken ? 'text-cyan-400' : 'text-gray-500 hover:text-cyan-400'}"
+					>
+						{useExistingToken ? '← Create new token' : 'I already have a token →'}
+					</button>
+{/if}
+				</div>
 			</div>
 
 			<div class="step-body">
-				<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-					<div class="field-group">
-						<label class="label-text" for="token-name">Token Name</label>
-						<input id="token-name" required class="input-field" class:field-error={nameError} bind:value={name} onblur={() => markTouched('name')} placeholder="My Awesome Token" />
-						{#if nameError}<span class="field-error-text">{nameError}</span>{:else}<div class="tip">The full name shown on explorers and wallets. Pick something memorable and unique.</div>{/if}
-					</div>
-					<div class="field-group">
-						<label class="label-text" for="token-symbol">Symbol</label>
-						<input id="token-symbol" required class="input-field" class:field-error={symbolError} bind:value={symbol} onblur={() => markTouched('symbol')} placeholder="MAT" maxlength="8" />
-						{#if symbolError}<span class="field-error-text">{symbolError}</span>{:else}<div class="tip">The ticker symbol (like BTC, ETH). 3-5 characters is standard. Shown in wallets and exchanges.</div>{/if}
-						<span class="field-hint">{symbol.length}/8 chars</span>
-					</div>
-				</div>
+				{#if useExistingToken}
+					<!-- Network first for existing token -->
+					{@render networkSelect()}
 
-				<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+					<!-- Existing token address input -->
 					<div class="field-group">
-						<label class="label-text" for="token-supply">Total Supply</label>
-						<input id="token-supply" required class="input-field" class:field-error={supplyError} bind:value={totalSupply} onblur={() => markTouched('supply')} placeholder="1,000,000" type="number" min="1" />
-						{#if supplyError}<span class="field-error-text">{supplyError}</span>{:else}<div class="tip">How many tokens exist in total. Common amounts: 1M, 100M, 1B. This is the maximum supply unless Mintable is enabled.</div>{/if}
+						<label class="label-text" for="existing-token-addr">Token Contract Address</label>
+						<input
+							id="existing-token-addr"
+							type="text"
+							class="input-field"
+							placeholder="0x..."
+							bind:value={existingTokenAddress}
+						/>
+						{#if existingTokenLoading}
+							<span class="text-gray-500 text-xs font-mono mt-1">Loading token info...</span>
+						{:else if name && existingTokenAddress}
+							<div class="existing-token-info mt-2">
+								<div class="flex justify-between items-center">
+									<span class="text-emerald-400 text-sm font-mono font-semibold">{name} ({symbol})</span>
+									<span class="text-gray-500 text-xs font-mono">{decimals} decimals</span>
+								</div>
+								<div class="flex justify-between items-center mt-1">
+									<span class="text-gray-400 text-xs font-mono">Supply: {Number(totalSupply).toLocaleString()}</span>
+									<span class="text-gray-400 text-xs font-mono">Balance: {existingTokenBalance > 0n ? parseFloat(ethers.formatUnits(existingTokenBalance, decimals)).toLocaleString() : '0'}</span>
+								</div>
+							</div>
+						{:else if existingTokenAddress && ethers.isAddress(existingTokenAddress) && !existingTokenLoading}
+							<span class="text-red-400 text-xs font-mono mt-1">Could not fetch token info. Check address and network.</span>
+						{/if}
+						<div class="tip">Paste the contract address of your existing ERC-20 token. The launchpad will be created for this token.</div>
 					</div>
-					<div class="field-group">
-						<label class="label-text" for="token-decimals">Decimals</label>
-						<input id="token-decimals" required class="input-field" bind:value={decimals} type="number" min="0" max="18" />
-						<div class="tip">How divisible your token is. 18 is standard (like ETH). Use less for non-fractional tokens (e.g. 0 for NFT-like items).</div>
-						<span class="field-hint">Standard: 18</span>
+				{:else}
+					<!-- New token creation fields first -->
+					<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+						<div class="field-group">
+							<label class="label-text" for="token-name">Token Name</label>
+							<input id="token-name" required class="input-field" class:field-error={nameError} bind:value={name} onblur={() => markTouched('name')} placeholder="My Awesome Token" />
+							{#if nameError}<span class="field-error-text">{nameError}</span>{:else}<div class="tip">The full name shown on explorers and wallets. Pick something memorable and unique.</div>{/if}
+						</div>
+						<div class="field-group">
+							<label class="label-text" for="token-symbol">Symbol</label>
+							<input id="token-symbol" required class="input-field" class:field-error={symbolError} bind:value={symbol} onblur={() => markTouched('symbol')} placeholder="MAT" maxlength="8" />
+							{#if symbolError}<span class="field-error-text">{symbolError}</span>{:else}<div class="tip">The ticker symbol (like BTC, ETH). 3-5 characters is standard.</div>{/if}
+							<span class="field-hint">{symbol.length}/8 chars</span>
+						</div>
 					</div>
-				</div>
 
-				<div class="field-group">
-					<label class="label-text" for="token-network">Network</label>
-					<select id="token-network" required class="input-field" class:field-error={networkError} bind:value={chainId} onblur={() => markTouched('network')}>
-						<option value="">Select a network</option>
-						{#each supportedNetworks.filter((n) => n.platform_address.length > 2) as n (n.chain_id)}
-							<option value={n.chain_id}>{n.name} ({n.native_coin})</option>
-						{/each}
-					</select>
-					{#if networkError}<span class="field-error-text">{networkError}</span>{:else}<div class="tip">Which blockchain to deploy on. BSC has low fees and fast transactions. Ethereum has the largest DeFi ecosystem.</div>{/if}
-				</div>
+					<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+						<div class="field-group">
+							<label class="label-text" for="token-supply">Total Supply</label>
+							<input id="token-supply" required class="input-field" class:field-error={supplyError} bind:value={totalSupply} onblur={() => markTouched('supply')} placeholder="1,000,000" type="number" min="1" />
+							{#if supplyError}<span class="field-error-text">{supplyError}</span>{:else}<div class="tip">How many tokens exist in total. Common amounts: 1M, 100M, 1B.</div>{/if}
+						</div>
+						<div class="field-group">
+							<label class="label-text" for="token-decimals">Decimals</label>
+							<input id="token-decimals" required class="input-field" bind:value={decimals} type="number" min="0" max="18" />
+							<div class="tip">How divisible your token is. 18 is standard (like ETH).</div>
+							<span class="field-hint">Standard: 18</span>
+						</div>
+					</div>
+
+					<!-- Network at bottom for new token -->
+					{@render networkSelect()}
+				{/if}
 			</div>
 		</div>
 
@@ -568,6 +781,7 @@
 						{/if}
 					</div>
 
+					{#if !forceMode}
 					<!-- Divider -->
 					<div class="section-divider"></div>
 
@@ -597,6 +811,7 @@
 							</div>
 						{/if}
 					</div>
+					{/if}
 				</div>
 
 				{#if isMintable || isTaxable || isPartner}
@@ -854,6 +1069,7 @@
 				</div>
 
 				<!-- Section divider -->
+				{#if forceMode !== 'launch'}
 				<div class="section-divider"></div>
 
 				<!-- Anti-Whale Protection -->
@@ -916,9 +1132,124 @@
 						<div class="tip mt-2">No whale protection — anyone can buy or hold any amount. You can't add limits later since trading is enabled at launch.</div>
 					{/if}
 				</div>
+			{/if}
 
 				<div class="edu-box subtle mt-2">
-					<div class="edu-text">Token is created and launched in one transaction. Remaining supply goes to your wallet. 1% buy fee + 3% graduation fee applies.</div>
+					<div class="edu-text">{forceMode === 'launch' ? 'Your token will be launched on a bonding curve. You\'ll need to approve and deposit tokens after creation. No buy fee — 3% platform fee on graduation only.' : 'Token is created and launched in one transaction. Remaining supply goes to your wallet. No buy fee — 3% platform fee on graduation only.'}</div>
+				</div>
+			</div>
+		</div>
+	<!-- ═══ STEP: LISTING ═══ -->
+	{:else if wizardStep === 'listing'}
+		<div class="wizard-step" style="animation: fadeIn 0.2s ease-out">
+			<div class="step-header">
+				<h2 class="syne text-xl font-bold text-white">DEX Listing</h2>
+				<p class="text-sm text-gray-500 font-mono mt-1">Set your price, pick your pairs, add liquidity — all in one transaction.</p>
+			</div>
+
+			<div class="step-body">
+				<!-- Token Price -->
+				<div class="field-group">
+					<label class="label-text" for="listing-price">Token Price (USDT)</label>
+					<div class="input-with-suffix">
+						<input id="listing-price" type="text" class="input-field" bind:value={listingPricePerToken} placeholder="0.001" />
+						<span class="input-suffix">USDT per {symbol || 'token'}</span>
+					</div>
+					<div class="tip">This price applies to all pairs below. The contract calculates how many tokens to list based on this price and the amount you provide.</div>
+				</div>
+
+				<!-- Liquidity Pairs -->
+				<div class="field-group">
+					<label class="label-text">Trading Pairs</label>
+
+					{#each listingPairs as pair, i}
+						<div class="pair-card">
+							<div class="pair-card-header">
+								<span class="pair-index">{i + 1}</span>
+								<span class="pair-label">{symbol || 'TOKEN'} / {getBaseLabel(pair.base)}</span>
+								{#if listingPairs.length > 1}
+									<button type="button" class="pair-remove" onclick={() => removeListingPair(i)} title="Remove pair">
+										<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+									</button>
+								{/if}
+							</div>
+
+							<div class="pair-card-body">
+								<div class="pair-field">
+									<label class="pair-field-label">Base Token</label>
+									<select
+										class="input-field"
+										value={pair.base}
+										onchange={(e) => updatePairBase(i, (e.target as HTMLSelectElement).value as any)}
+									>
+										<option value="native">{selectedNetwork?.native_coin || 'ETH'}</option>
+										<option value="usdt">USDT</option>
+										<option value="usdc">USDC</option>
+									</select>
+								</div>
+
+								<div class="pair-field">
+									<label class="pair-field-label">{getBaseLabel(pair.base)} to provide</label>
+									<input
+										type="text"
+										class="input-field"
+										value={pair.amount}
+										oninput={(e) => updatePairAmount(i, (e.target as HTMLInputElement).value)}
+										placeholder="0.00"
+									/>
+								</div>
+
+								<div class="pair-field">
+									<label class="pair-field-label">Tokens matched</label>
+									<div class="pair-token-amount">
+										{Number(tokensForPair(pair)) > 0 ? Number(tokensForPair(pair)).toLocaleString(undefined, { maximumFractionDigits: 0 }) : '—'}
+										<span class="pair-token-symbol">{symbol || 'TOKEN'}</span>
+									</div>
+								</div>
+							</div>
+						</div>
+					{/each}
+
+					{#if listingPairs.length < 3}
+						<button type="button" class="add-pair-btn" onclick={addListingPair}>
+							<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v8M8 12h8"/></svg>
+							Add Pair ({listingPairs.length}/3)
+						</button>
+					{/if}
+				</div>
+
+				<!-- Summary -->
+				{#if totalTokensForListing > 0 && Number(listingPricePerToken) > 0}
+					<div class="listing-summary">
+						<div class="listing-summary-row">
+							<span class="listing-summary-label">Price</span>
+							<span class="listing-summary-value">1 {symbol || 'TOKEN'} = {listingPricePerToken} USDT</span>
+						</div>
+						<div class="listing-summary-row">
+							<span class="listing-summary-label">Total tokens for LP</span>
+							<span class="listing-summary-value">{totalTokensForListing.toLocaleString(undefined, { maximumFractionDigits: 0 })} {symbol || 'TOKEN'}
+								{#if totalSupply && Number(totalSupply) > 0}
+									<span class="listing-summary-pct">({((totalTokensForListing / Number(totalSupply)) * 100).toFixed(1)}%)</span>
+								{/if}
+							</span>
+						</div>
+						{#each listingPairs as pair}
+							{#if Number(pair.amount) > 0}
+								<div class="listing-summary-row listing-summary-pair">
+									<span class="listing-summary-label">{getBaseLabel(pair.base)} pool</span>
+									<span class="listing-summary-value">{pair.amount} {getBaseLabel(pair.base)} ↔ {Number(tokensForPair(pair)).toLocaleString(undefined, { maximumFractionDigits: 0 })} {symbol || 'TOKEN'}</span>
+								</div>
+							{/if}
+						{/each}
+						<div class="listing-summary-row">
+							<span class="listing-summary-label">LP tokens</span>
+							<span class="listing-summary-value text-emerald-400">→ Your wallet</span>
+						</div>
+					</div>
+				{/if}
+
+				<div class="edu-box subtle">
+					<div class="edu-text">Token is created, liquidity added to {listingPairs.length > 1 ? `all ${listingPairs.length} pairs` : 'DEX'}, and trading enabled — all in one flow. Remaining supply goes to your wallet.</div>
 				</div>
 			</div>
 		</div>
@@ -936,7 +1267,7 @@
 
 		<button type="button" class="nav-btn next syne" onclick={nextStep}>
 			{#if wizardStep === stepList()[stepList().length - 1]?.id}
-				{launchEnabled ? 'Review Token & Launch' : 'Review Transaction'} ->
+				{launchEnabled ? 'Review Token & Launch' : listingEnabled ? 'Review Token & Listing' : 'Review Transaction'} ->
 			{:else}
 				Next ->
 			{/if}
@@ -1377,5 +1708,178 @@
 	@keyframes fadeIn {
 		from { opacity: 0; transform: translateY(-4px); }
 		to   { opacity: 1; transform: translateY(0); }
+	}
+
+	.existing-token-info {
+		padding: 10px 14px;
+		background: rgba(16, 185, 129, 0.05);
+		border: 1px solid rgba(16, 185, 129, 0.15);
+		border-radius: 8px;
+	}
+
+	/* ── Listing step ── */
+	.input-with-suffix {
+		position: relative;
+	}
+	.input-with-suffix .input-field {
+		padding-right: 140px;
+	}
+	.input-suffix {
+		position: absolute;
+		right: 12px;
+		top: 50%;
+		transform: translateY(-50%);
+		font-size: 11px;
+		font-family: monospace;
+		color: #6b7280;
+		pointer-events: none;
+	}
+
+	.pair-card {
+		border: 1px solid rgba(99, 102, 241, 0.15);
+		border-radius: 10px;
+		background: rgba(99, 102, 241, 0.03);
+		margin-bottom: 10px;
+		overflow: hidden;
+		transition: border-color 0.2s;
+	}
+	.pair-card:hover {
+		border-color: rgba(99, 102, 241, 0.3);
+	}
+	.pair-card-header {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 8px 12px;
+		background: rgba(99, 102, 241, 0.06);
+		border-bottom: 1px solid rgba(99, 102, 241, 0.1);
+	}
+	.pair-index {
+		width: 20px;
+		height: 20px;
+		border-radius: 50%;
+		background: rgba(99, 102, 241, 0.15);
+		color: #818cf8;
+		font-size: 11px;
+		font-weight: 700;
+		font-family: monospace;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+	.pair-label {
+		font-size: 13px;
+		font-weight: 600;
+		color: #e5e7eb;
+		flex: 1;
+		font-family: 'Syne', sans-serif;
+	}
+	.pair-remove {
+		color: #6b7280;
+		padding: 2px;
+		border-radius: 4px;
+		transition: color 0.15s;
+		background: none;
+		border: none;
+		cursor: pointer;
+	}
+	.pair-remove:hover {
+		color: #ef4444;
+	}
+	.pair-card-body {
+		display: grid;
+		grid-template-columns: 1fr 1fr 1fr;
+		gap: 10px;
+		padding: 12px;
+	}
+	.pair-field {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+	}
+	.pair-field-label {
+		font-size: 10px;
+		color: #6b7280;
+		font-family: monospace;
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+	}
+	.pair-token-amount {
+		font-size: 15px;
+		font-weight: 700;
+		font-family: monospace;
+		color: #22d3ee;
+		padding: 7px 0;
+		line-height: 1.4;
+	}
+	.pair-token-symbol {
+		font-size: 10px;
+		font-weight: 400;
+		color: #6b7280;
+		margin-left: 4px;
+	}
+
+	.add-pair-btn {
+		width: 100%;
+		padding: 10px;
+		border-radius: 8px;
+		border: 1px dashed rgba(99, 102, 241, 0.25);
+		background: transparent;
+		color: #6b7280;
+		font-size: 12px;
+		font-family: monospace;
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 6px;
+		transition: all 0.2s;
+	}
+	.add-pair-btn:hover {
+		border-color: rgba(34, 211, 238, 0.4);
+		color: #22d3ee;
+		background: rgba(34, 211, 238, 0.03);
+	}
+
+	.listing-summary {
+		border: 1px solid rgba(16, 185, 129, 0.15);
+		border-radius: 10px;
+		background: rgba(16, 185, 129, 0.03);
+		padding: 14px;
+		margin-top: 8px;
+	}
+	.listing-summary-row {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 5px 0;
+	}
+	.listing-summary-row + .listing-summary-row {
+		border-top: 1px solid rgba(255,255,255,0.04);
+	}
+	.listing-summary-pair {
+		padding-left: 12px;
+	}
+	.listing-summary-label {
+		font-size: 11px;
+		font-family: monospace;
+		color: #6b7280;
+	}
+	.listing-summary-value {
+		font-size: 12px;
+		font-family: monospace;
+		font-weight: 600;
+		color: #e5e7eb;
+	}
+	.listing-summary-pct {
+		font-size: 10px;
+		color: #6b7280;
+		font-weight: 400;
+	}
+
+	@media (max-width: 500px) {
+		.pair-card-body {
+			grid-template-columns: 1fr;
+		}
 	}
 </style>

@@ -1,21 +1,55 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { formatUsdt, progressPercent, stateLabel, stateColor, CURVE_TYPES } from '$lib/launchpad';
+	import { t } from '$lib/i18n';
+	import RecentTransactionsTicker from '$lib/RecentTransactionsTicker.svelte';
 
-	// Live launches from API
 	let liveLaunches: any[] = $state([]);
+	let scheduledLaunches: any[] = $state([]);
+	let graduatedLaunches: any[] = $state([]);
+	let partnerLaunches: any[] = $state([]);
 	let launchesLoading = $state(true);
 	let tickNow = $state(Date.now());
 	let tickInterval: ReturnType<typeof setInterval> | null = null;
+
+	// Platform stats
+	let totalLaunches = $state(0);
+	let totalRaised = $state(0n);
+	let graduatedCount = $state(0);
 
 	onMount(async () => {
 		tickInterval = setInterval(() => { tickNow = Date.now(); }, 1000);
 
 		try {
-			const res = await fetch('/api/launches?state=1&limit=6');
+			const res = await fetch('/api/launches?limit=50');
 			if (res.ok) {
 				const rows = await res.json();
-				liveLaunches = rows ?? [];
+				const all = rows ?? [];
+				const nowSec = Math.floor(Date.now() / 1000);
+				totalLaunches = all.length;
+				graduatedCount = all.filter((r: any) => r.state === 2).length;
+				totalRaised = all.reduce((sum: bigint, r: any) => sum + BigInt(r.total_base_raised || '0'), 0n);
+
+				// Active launches: state=1 and either no startTimestamp or startTimestamp has passed
+				const active = all.filter((r: any) => r.state === 1);
+				liveLaunches = active.filter((r: any) => {
+					const st = Number(r.start_timestamp || 0);
+					return st === 0 || st <= nowSec;
+				}).slice(0, 9);
+
+				// Scheduled: state=1 with future startTimestamp, OR state=0 (pending deposit)
+				scheduledLaunches = [
+					...active.filter((r: any) => {
+						const st = Number(r.start_timestamp || 0);
+						return st > 0 && st > nowSec;
+					}),
+					...all.filter((r: any) => r.state === 0)
+				].slice(0, 6);
+
+				graduatedLaunches = all.filter((r: any) => r.state === 2).slice(0, 6);
+
+				// Partner launches: active or graduated with is_partner flag
+				partnerLaunches = all.filter((r: any) => r.is_partner && (r.state === 1 || r.state === 2)).slice(0, 8);
 			}
 		} catch {}
 		launchesLoading = false;
@@ -23,72 +57,39 @@
 		return () => { if (tickInterval) clearInterval(tickInterval); };
 	});
 
-	function countdownStr(deadline: number): string {
-		const ms = deadline * 1000 - tickNow;
+	function countdownStr(ts: number): string {
+		const ms = ts * 1000 - tickNow;
 		if (ms <= 0) return 'Ended';
 		const d = Math.floor(ms / 86400000);
 		const h = Math.floor((ms % 86400000) / 3600000);
 		const m = Math.floor((ms % 3600000) / 60000);
 		const s = Math.floor((ms % 60000) / 1000);
-		if (d > 0) return `${d}d ${String(h).padStart(2, '0')}h ${String(m).padStart(2, '0')}m`;
-		return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+		const pad = (n: number) => String(n).padStart(2, '0');
+		if (d >= 30) return `${d}d ${pad(h)}h ${pad(m)}m ${pad(s)}s`;
+		if (d > 0) return `${d}d ${pad(h)}h ${pad(m)}m ${pad(s)}s`;
+		return `${pad(h)}:${pad(m)}:${pad(s)}`;
 	}
 
-	const features = [
-		{
-			icon: '~',
-			title: 'Bonding Curves',
-			desc: "Choose from multiple curve types — linear, exponential, or flat — to shape your token's price discovery.",
-			color: 'cyan'
-		},
-		{
-			icon: '#',
-			title: 'Soft & Hard Caps',
-			desc: 'Set fundraising goals with soft and hard caps. Launches finalize when the hard cap is reached.',
-			color: 'orange'
-		},
-		{
-			icon: '%',
-			title: 'Anti-Whale Limits',
-			desc: 'Cap individual buy amounts to prevent whales from dominating your launch and ensure fair distribution.',
-			color: 'emerald'
-		},
-		{
-			icon: 'V',
-			title: 'Built-In Vesting',
-			desc: 'Lock creator allocations with configurable vesting periods so the community knows tokens are safe.',
-			color: 'purple'
-		},
-		{
-			icon: 'T',
-			title: 'Token Creation',
-			desc: "Don't have a token yet? Create custom ERC-20 tokens with mintable, taxable, and partner features.",
-			color: 'cyan'
-		},
-		{
-			icon: '$',
-			title: 'Flexible Payments',
-			desc: 'Participants can contribute with native tokens, USDT, or USDC. Real-time pricing via DEX.',
-			color: 'emerald'
-		}
-	];
+	function countdownColor(deadline: number): string {
+		const ms = deadline * 1000 - tickNow;
+		if (ms <= 0) return 'text-gray-500';
+		if (ms < 900000) return 'text-red-400'; // <15min
+		if (ms < 3600000) return 'text-amber-400'; // <1h
+		return 'text-cyan-400';
+	}
 
-	const steps = [
-		{ n: '01', label: 'Create', desc: 'Set up your token and configure your launch — bonding curve, caps, duration, and anti-whale limits.' },
-		{ n: '02', label: 'Launch', desc: 'Deposit tokens and go live. Participants buy in along the bonding curve at fair, transparent prices.' },
-		{ n: '03', label: 'Finalize', desc: 'Once the hard cap or deadline is reached, finalize the launch and distribute tokens to all participants.' }
-	];
+	function isHot(launch: any): boolean {
+		if (launch.state !== 1) return false;
+		const raised = BigInt(launch.total_base_raised || '0');
+		const hardCap = BigInt(launch.hard_cap || '1');
+		return hardCap > 0n && (raised * 100n / hardCap) >= 50n;
+	}
 
-	const tokenTypes = [
-		{ label: 'Basic', fee: '10', desc: 'Standard ERC-20 token' },
-		{ label: 'Mintable', fee: '20', desc: 'Mint new tokens + burn' },
-		{ label: 'Taxable', fee: '25', desc: 'Custom buy/sell/transfer tax' },
-		{ label: 'Taxable + Mintable', fee: '35', desc: 'Full tax + mint & burn' },
-		{ label: 'Partner', fee: '15', desc: 'Featured + auto DEX pools' },
-		{ label: 'Partner + Mintable', fee: '25', desc: 'Partner perks + mint & burn' },
-		{ label: 'Partner + Taxable', fee: '30', desc: 'Partner perks + custom tax' },
-		{ label: 'Partner + Tax + Mint', fee: '40', desc: 'Every feature combined' }
-	];
+	function isNew(launch: any): boolean {
+		if (!launch.created_at) return false;
+		const created = new Date(launch.created_at).getTime();
+		return Date.now() - created < 24 * 60 * 60 * 1000; // <24h
+	}
 </script>
 
 <svelte:head>
@@ -96,82 +97,73 @@
 	<meta name="description" content="Launch your token with bonding curve pricing, soft/hard caps, anti-whale limits, and vesting. Fair, transparent token launches on BSC and more." />
 </svelte:head>
 
-<div class="page-wrap">
-	<!-- Hero -->
-	<section class="hero-section">
-		<div class="max-w-4xl mx-auto text-center px-4 sm:px-6">
-			<div class="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-cyan-500/25 bg-cyan-500/8 mb-8">
-				<div class="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"></div>
-				<span class="text-cyan-400 text-xs font-mono uppercase tracking-widest">Fair Token Launchpad</span>
-			</div>
-
-			<h1 class="hero-title syne">
-				Fair Launch Your Token<br /><span class="gradient-text">With Bonding Curves</span>
-			</h1>
-
-			<p class="hero-sub font-mono">
-				Launch your token with transparent bonding curve pricing, built-in soft/hard caps, anti-whale limits, and vesting — giving every participant a fair shot.
-			</p>
-
-			<div class="flex flex-wrap gap-4 justify-center mt-10">
-				<a href="/launchpad" class="btn-primary text-sm px-6 py-3 no-underline">
-					Explore Launches →
-				</a>
-				<a href="/launchpad/create" class="btn-secondary text-sm px-6 py-3 no-underline">
-					Start a Launch
-				</a>
-			</div>
-
-			<!-- Stats Bar -->
-			<div class="stats-bar mt-16 grid grid-cols-2 sm:grid-cols-4 gap-4">
-				{#each [['Fair', 'Bonding Curves'], ['Anti-Whale', 'Buy Limits'], ['Vesting', 'Built-In'], ['Multi', 'Chain Support']] as [val, label]}
-					<div class="stat-item card p-4 text-center">
-						<div class="syne text-2xl font-bold text-white">{val}</div>
-						<div class="text-xs text-gray-500 mt-1 font-mono">{label}</div>
-					</div>
-				{/each}
-			</div>
-			<p class="text-xs text-gray-600 mt-2 font-mono">Transparent launches with bonding curve pricing — no presales, no insider advantages</p>
-		</div>
-	</section>
-
-	<!-- Features -->
-	<section class="section max-w-6xl mx-auto px-4 sm:px-6">
-		<div class="text-center mb-12">
-			<h2 class="syne text-3xl sm:text-4xl font-bold text-white">Built for Fair Launches</h2>
-			<p class="text-gray-400 mt-3 font-mono text-sm">Everything you need to run a transparent, community-driven token launch.</p>
-		</div>
-
-		<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-			{#each features as f}
-				<div class="feature-card card card-hover p-6 group">
-					<div class="feature-icon-box {f.color} mb-4">{f.icon}</div>
-					<h3 class="syne font-bold text-white mb-2">{f.title}</h3>
-					<p class="text-sm text-gray-400 leading-relaxed font-mono">{f.desc}</p>
-				</div>
-			{/each}
-		</div>
-	</section>
-
-	<!-- Active Launches -->
-	<section class="section max-w-6xl mx-auto px-4 sm:px-6">
-		<div class="flex flex-wrap items-end justify-between gap-4 mb-10">
+<div class="page-wrap max-w-6xl mx-auto px-4 sm:px-6">
+	<!-- Compact Hero -->
+	<section class="compact-hero">
+		<div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
 			<div>
-				<div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-cyan-500/25 bg-cyan-500/8 mb-4">
-					<div class="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"></div>
-					<span class="text-cyan-400 text-[10px] font-mono uppercase tracking-widest">Live Now</span>
-				</div>
-				<h2 class="syne text-3xl sm:text-4xl font-bold text-white">Active Launches</h2>
-				<p class="text-gray-400 mt-2 font-mono text-sm">Get in early on bonding curve launches happening right now.</p>
+				<h1 class="syne text-2xl sm:text-3xl font-bold text-white">
+					{$t('home.heroTitle1')} <span class="gradient-text">{$t('home.heroTitle2')}</span>
+				</h1>
+				<p class="text-gray-400 font-mono text-sm mt-1 max-w-lg">{$t('home.statsTagline')}</p>
 			</div>
-			<a href="/launchpad" class="btn-secondary text-sm px-5 py-2.5 no-underline">
-				View All Launches →
+			<div class="flex gap-3 shrink-0">
+				<a href="/create?launch=true" class="btn-primary text-sm px-5 py-2.5 no-underline">
+					{$t('home.startLaunch')} →
+				</a>
+				<a href="/create" class="btn-secondary text-sm px-5 py-2.5 no-underline">
+					{$t('home.tokenBasic')}
+				</a>
+			</div>
+		</div>
+
+		<!-- Live Stats Strip -->
+		<div class="stats-strip">
+			<div class="stat-chip">
+				<span class="stat-chip-dot bg-cyan-400"></span>
+				<span class="stat-chip-value">{liveLaunches.length}</span>
+				<span class="stat-chip-label">Live Now</span>
+			</div>
+			{#if scheduledLaunches.length > 0}
+				<div class="stat-chip">
+					<span class="stat-chip-dot bg-amber-400"></span>
+					<span class="stat-chip-value">{scheduledLaunches.length}</span>
+					<span class="stat-chip-label">Upcoming</span>
+				</div>
+			{/if}
+			<div class="stat-chip">
+				<span class="stat-chip-value">{graduatedCount}</span>
+				<span class="stat-chip-label">Graduated</span>
+			</div>
+			<div class="stat-chip">
+				<span class="stat-chip-value">{formatUsdt(totalRaised)}</span>
+				<span class="stat-chip-label">Total Raised</span>
+			</div>
+		</div>
+	</section>
+
+	<!-- RECENT TRANSACTIONS TICKER — Social proof -->
+	<section class="mb-6">
+		<RecentTransactionsTicker />
+	</section>
+
+	<!-- LIVE LAUNCHES — The main content -->
+	<section class="mb-10">
+		<div class="flex items-center justify-between mb-5">
+			<div class="flex items-center gap-3">
+				<div class="live-badge">
+					<span class="live-badge-dot"></span>
+					<span class="syne font-bold text-sm text-white">{$t('home.activeLaunches')}</span>
+				</div>
+			</div>
+			<a href="/launchpad" class="text-cyan-400 text-xs font-mono hover:underline no-underline">
+				{$t('home.viewAllLaunches')} →
 			</a>
 		</div>
 
 		{#if launchesLoading}
 			<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-				{#each Array(3) as _}
+				{#each Array(6) as _}
 					<div class="card p-5">
 						<div class="flex items-start gap-3 mb-4">
 							<div class="skeleton-line w-10 h-10 rounded-full"></div>
@@ -189,10 +181,12 @@
 				{/each}
 			</div>
 		{:else if liveLaunches.length === 0}
-			<div class="card p-10 text-center">
-				<p class="text-gray-500 font-mono text-sm mb-4">No active launches right now.</p>
-				<a href="/launchpad/create" class="btn-primary text-sm px-5 py-2.5 no-underline inline-block">
-					Be the First to Launch →
+			<div class="empty-hero card p-12 text-center">
+				<div class="text-5xl mb-4 opacity-15">~</div>
+				<h3 class="syne text-lg font-bold text-white mb-2">{$t('home.noActiveLaunches')}</h3>
+				<p class="text-gray-500 font-mono text-sm mb-6 max-w-sm mx-auto">{$t('home.activeLaunchesSub')}</p>
+				<a href="/create?launch=true" class="btn-primary text-sm px-6 py-3 no-underline inline-block">
+					{$t('home.beFirst')} →
 				</a>
 			</div>
 		{:else}
@@ -203,34 +197,44 @@
 					{@const hardCap = BigInt(launch.hard_cap || '0')}
 					{@const progress = progressPercent(raised, hardCap)}
 					{@const deadline = Number(launch.deadline || 0)}
-					{@const startTs = Number(launch.start_timestamp || 0)}
-					{@const isScheduled = startTs > 0 && startTs * 1000 > tickNow}
-					<a href="/launchpad/{launch.address}" class="live-launch-card card p-0 block no-underline group">
+					{@const hot = isHot(launch)}
+					<a href="/launchpad/{launch.address}" class="launch-card card p-0 block no-underline group">
+						<!-- Countdown banner -->
+						{#if deadline > 0}
+							<div class="card-countdown {countdownColor(deadline)}">
+								<span class="font-mono text-xs font-bold">{countdownStr(deadline)}</span>
+								<div class="flex items-center gap-1.5">
+									{#if isNew(launch)}
+										<span class="new-badge">NEW</span>
+									{/if}
+									{#if hot}
+										<span class="hot-badge">HOT</span>
+									{/if}
+								</div>
+							</div>
+						{/if}
+
 						<div class="p-4 pb-3">
 							<div class="flex items-start gap-3">
 								{#if launch.logo_url}
-									<img src={launch.logo_url} alt="" class="live-card-logo" />
+									<img src={launch.logo_url} alt="" class="launch-logo card-logo-adapt" />
 								{:else}
-									<div class="live-card-logo live-card-logo-placeholder">
+									<div class="launch-logo launch-logo-placeholder">
 										{(launch.token_symbol || '?').charAt(0)}
 									</div>
 								{/if}
 								<div class="flex-1 min-w-0">
 									<div class="flex items-center gap-2 mb-0.5">
 										<span class="syne font-bold text-white text-sm group-hover:text-cyan-300 transition truncate">{launch.token_name || 'Unknown'}</span>
+										{#if launch.is_partner}
+											<span class="partner-verified" title="Partner">✓</span>
+										{/if}
 										<span class="text-gray-600 text-xs font-mono shrink-0">{launch.token_symbol || '???'}</span>
 									</div>
 									<div class="flex items-center gap-1.5">
-										{#if isScheduled}
-											<span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
-											<span class="text-xs font-mono text-amber-400">Starts {countdownStr(startTs)}</span>
-										{:else}
-											<span class="live-dot"></span>
-											<span class="text-xs font-mono text-cyan-400">Active</span>
-											{#if deadline > 0}
-												<span class="text-gray-600 text-[10px] font-mono ml-auto">{countdownStr(deadline)}</span>
-											{/if}
-										{/if}
+										<span class="live-dot"></span>
+										<span class="text-xs font-mono text-cyan-400">Active</span>
+										<span class="text-gray-600 text-[10px] font-mono ml-auto">{CURVE_TYPES[launch.curve_type] ?? 'Linear'}</span>
 									</div>
 								</div>
 							</div>
@@ -238,17 +242,110 @@
 
 						{#if launch.description}
 							<div class="px-4 pb-2">
-								<p class="text-gray-500 text-xs font-mono leading-relaxed line-clamp-2">{launch.description}</p>
+								<p class="text-gray-400 text-xs font-mono leading-relaxed line-clamp-2">{launch.description}</p>
 							</div>
 						{/if}
 
+						<div class="px-4 pb-4">
+							<div class="flex justify-between items-baseline mb-1.5">
+								<span class="text-white text-xs font-mono font-semibold">{progress}% {$t('home.raised')}</span>
+								<span class="text-gray-500 text-[10px] font-mono">{formatUsdt(hardCap, ud)}</span>
+							</div>
+							<div class="progress-track">
+								<div class="progress-fill progress-cyan" style="width: {progress}%"></div>
+							</div>
+							<div class="flex justify-between mt-1.5">
+								<span class="text-gray-600 text-[10px] font-mono">{formatUsdt(raised, ud)} {$t('home.raised')}</span>
+							</div>
+						</div>
+					</a>
+				{/each}
+			</div>
+
+			{#if liveLaunches.length >= 9}
+				<div class="text-center mt-6">
+					<a href="/launchpad" class="btn-secondary text-sm px-6 py-2.5 no-underline inline-block">
+						{$t('home.exploreAllLaunches')} →
+					</a>
+				</div>
+			{/if}
+		{/if}
+	</section>
+
+	<!-- Featured Partners -->
+	<section class="mb-10">
+		<div class="partner-section-header">
+			<div class="partner-section-glow"></div>
+			<div class="relative flex items-center justify-between p-4 sm:p-5">
+				<div class="flex items-center gap-3">
+					<div class="partner-section-icon">P</div>
+					<div>
+						<span class="syne font-bold text-base text-white">Featured Partners</span>
+						<p class="text-gray-500 text-[10px] font-mono mt-0.5">Verified projects with premium platform benefits</p>
+					</div>
+				</div>
+				<a href="/create" class="btn-partner text-xs px-4 py-2 no-underline shrink-0">
+					Become a Partner →
+				</a>
+			</div>
+		</div>
+
+		{#if partnerLaunches.length > 0}
+			<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+				{#each partnerLaunches as launch}
+					{@const ud = launch.usdt_decimals ?? 18}
+					{@const raised = BigInt(launch.total_base_raised || '0')}
+					{@const hardCap = BigInt(launch.hard_cap || '0')}
+					{@const progress = progressPercent(raised, hardCap)}
+					{@const deadline = Number(launch.deadline || 0)}
+					<a href="/launchpad/{launch.address}" class="partner-launch-card card p-0 block no-underline group">
+						<!-- Partner accent -->
+						<div class="partner-accent"></div>
+
+						<div class="p-4 pb-3">
+							<div class="flex items-start gap-3">
+								{#if launch.logo_url}
+									<img src={launch.logo_url} alt="" class="launch-logo card-logo-adapt" />
+								{:else}
+									<div class="launch-logo launch-logo-placeholder" style="background: rgba(139,92,246,0.08); color: #a78bfa; border-color: rgba(139,92,246,0.15);">
+										{(launch.token_symbol || '?').charAt(0)}
+									</div>
+								{/if}
+								<div class="flex-1 min-w-0">
+									<div class="flex items-center gap-1.5 mb-0.5">
+										<span class="syne font-bold text-white text-sm group-hover:text-purple-300 transition truncate">{launch.token_name || 'Unknown'}</span>
+										<span class="partner-verified" title="Verified Partner">✓</span>
+										<span class="text-gray-600 text-xs font-mono shrink-0">{launch.token_symbol || '???'}</span>
+									</div>
+									<div class="flex items-center gap-1.5">
+										{#if launch.state === 1}
+											<span class="live-dot" style="background: #a78bfa; box-shadow: 0 0 6px rgba(139,92,246,0.5);"></span>
+											<span class="text-xs font-mono text-purple-400">Partner Launch</span>
+										{:else}
+											<span class="text-xs font-mono text-emerald-400">Graduated</span>
+										{/if}
+										{#if deadline > 0 && launch.state === 1}
+											<span class="text-gray-600 text-[10px] font-mono ml-auto">{countdownStr(deadline)}</span>
+										{/if}
+									</div>
+								</div>
+							</div>
+						</div>
+
 						<div class="px-4 pb-3">
+							<!-- Partner benefits -->
+							<div class="flex flex-wrap gap-1.5 mb-3">
+								<span class="partner-pill">Featured</span>
+								<span class="partner-pill">Auto DEX</span>
+								<span class="partner-pill">Verified</span>
+							</div>
+
 							<div class="flex justify-between items-baseline mb-1.5">
 								<span class="text-white text-xs font-mono font-semibold">{progress}% raised</span>
 								<span class="text-gray-500 text-[10px] font-mono">{formatUsdt(hardCap, ud)}</span>
 							</div>
-							<div class="live-progress-track">
-								<div class="live-progress-fill" style="width: {progress}%"></div>
+							<div class="progress-track">
+								<div class="progress-fill" style="width: {progress}%; background: linear-gradient(90deg, #8b5cf6, #a78bfa);"></div>
 							</div>
 							<div class="flex justify-between mt-1.5">
 								<span class="text-gray-600 text-[10px] font-mono">{formatUsdt(raised, ud)} raised</span>
@@ -258,115 +355,152 @@
 					</a>
 				{/each}
 			</div>
-
-			{#if liveLaunches.length >= 6}
-				<div class="text-center mt-8">
-					<a href="/launchpad" class="btn-primary text-sm px-6 py-3 no-underline inline-block">
-						Explore All Launches →
-					</a>
+		{:else}
+			<div class="partner-cta card p-6 text-center">
+				<div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-purple-500/25 bg-purple-500/10 mb-3">
+					<span class="text-purple-400 text-[10px] font-mono uppercase tracking-widest">Partnership Program</span>
 				</div>
-			{/if}
+				<h3 class="syne font-bold text-white mb-2">Launch as a Partner</h3>
+				<p class="text-gray-500 font-mono text-xs mb-4 max-w-md mx-auto">
+					Get featured here, auto-created DEX pools, verified badge, and priority support. 1% platform fee on trades.
+				</p>
+				<a href="/create?launch=true" class="btn-partner text-sm px-6 py-2.5 no-underline inline-block">
+					Create a Partner Launch →
+				</a>
+			</div>
 		{/if}
 	</section>
 
-	<!-- Pricing -->
-	<section class="section max-w-5xl mx-auto px-4 sm:px-6">
-		<div class="text-center mb-12">
-			<h2 class="syne text-3xl sm:text-4xl font-bold text-white">Token Creation Pricing</h2>
-			<p class="text-gray-400 mt-3 font-mono text-sm">Need a token first? One-time creation fee in USDT equivalent. No hidden costs.</p>
-		</div>
-
-		<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-			{#each tokenTypes as t}
-				<div class="pricing-card card p-5">
-					<div class="text-xs text-gray-500 font-mono uppercase tracking-wide mb-1">{t.desc}</div>
-					<div class="syne font-bold text-white text-lg mb-1">{t.label}</div>
-					<div class="pricing-amount">
-						<span class="syne text-2xl font-black text-cyan-400">${t.fee}</span>
-						<span class="text-xs text-gray-500 font-mono ml-1">USDT</span>
-					</div>
+	<!-- Upcoming / Scheduled Launches -->
+	{#if scheduledLaunches.length > 0}
+		<section class="mb-10">
+			<div class="flex items-center justify-between mb-5">
+				<div class="flex items-center gap-2">
+					<span class="w-2 h-2 rounded-full bg-amber-400"></span>
+					<span class="syne font-bold text-sm text-white">Upcoming Launches</span>
 				</div>
-			{/each}
-		</div>
-	</section>
-
-	<!-- How it Works -->
-	<section class="section max-w-5xl mx-auto px-4 sm:px-6">
-		<div class="text-center mb-12">
-			<h2 class="syne text-3xl sm:text-4xl font-bold text-white">How It Works</h2>
-			<p class="text-gray-400 mt-3 font-mono text-sm">From idea to fair launch in three steps.</p>
-		</div>
-
-		<div class="grid grid-cols-1 sm:grid-cols-3 gap-4 relative">
-			{#each steps as step}
-				<div class="step-card card p-6 relative">
-					<div class="step-num syne text-5xl font-black text-white/5 absolute top-4 right-4">{step.n}</div>
-					<div class="text-cyan-400 text-xs font-mono uppercase tracking-widest mb-2">{step.n}</div>
-					<h3 class="syne font-bold text-white mb-2">{step.label}</h3>
-					<p class="text-sm text-gray-400 font-mono leading-relaxed">{step.desc}</p>
-				</div>
-			{/each}
-		</div>
-	</section>
-
-	<!-- Partner Highlight -->
-	<section class="section max-w-3xl mx-auto px-4 sm:px-6">
-		<div class="partner-highlight card p-8 sm:p-10 relative overflow-hidden">
-			<div class="partner-glow absolute inset-0 pointer-events-none"></div>
-			<div class="relative">
-				<div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-purple-500/30 bg-purple-500/10 mb-5">
-					<span class="text-purple-400 text-xs font-mono uppercase tracking-widest">Partnership Program</span>
-				</div>
-				<h2 class="syne text-2xl sm:text-3xl font-bold text-white mb-3">Boost Your Launch</h2>
-				<p class="text-gray-400 font-mono text-sm mb-6 leading-relaxed max-w-xl">
-					Create a partner token and get featured across our launchpad, auto-created DEX liquidity pools, and priority marketing support. In exchange, a 1% fee applies on buy and sell trades.
-				</p>
-				<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-					{#each [
-						'Featured on homepage & explore page',
-						'Auto-created DEX liquidity pools',
-						'Promoted across social channels',
-						'Priority support & marketing guidance'
-					] as perk}
-						<div class="flex items-start gap-2">
-							<span class="text-purple-400 font-bold text-sm mt-0.5">+</span>
-							<span class="text-sm text-purple-200/80 font-mono">{perk}</span>
-						</div>
-					{/each}
-				</div>
-				<a href="/create" class="btn-partner mt-8 inline-block no-underline">
-					Create a Partner Token →
+				<a href="/launchpad" class="text-cyan-400 text-xs font-mono hover:underline no-underline">
+					{$t('home.viewAllLaunches')} →
 				</a>
 			</div>
-		</div>
-	</section>
+			<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+				{#each scheduledLaunches as launch}
+					{@const ud = launch.usdt_decimals ?? 18}
+					{@const hardCap = BigInt(launch.hard_cap || '0')}
+					{@const softCap = BigInt(launch.soft_cap || '0')}
+					{@const startTs = Number(launch.start_timestamp || 0)}
+					{@const isPending = launch.state === 0}
+					<a href="/launchpad/{launch.address}" class="upcoming-card-full card p-0 block no-underline group">
+						<!-- Countdown banner -->
+						<div class="card-countdown-upcoming">
+							{#if isPending}
+								<span class="font-mono text-xs font-bold text-gray-400">Awaiting Deposit</span>
+								<span class="badge-amber text-[10px] px-2 py-0.5 rounded-full">Pending</span>
+							{:else if startTs > 0}
+								<span class="font-mono text-xs text-amber-400">Starts in</span>
+								<span class="font-mono text-xs font-bold text-amber-300">{countdownStr(startTs)}</span>
+							{/if}
+						</div>
 
-	<!-- CTA -->
-	<section class="section max-w-2xl mx-auto px-4 sm:px-6 text-center pb-24">
-		<div class="cta-card card p-10 sm:p-14 relative overflow-hidden">
-			<div class="cta-glow absolute inset-0 pointer-events-none"></div>
-			<h2 class="syne text-3xl sm:text-4xl font-bold text-white mb-4 relative">Ready to Launch?</h2>
-			<p class="text-gray-400 font-mono text-sm mb-8 relative">Set up your bonding curve, configure your caps, and go live. Fair launches start here.</p>
-			<a href="/launchpad/create" class="btn-primary text-sm px-8 py-3 no-underline inline-block relative">
-				Start Your Launch →
-			</a>
+						<div class="p-4 pb-3">
+							<div class="flex items-start gap-3">
+								{#if launch.logo_url}
+									<img src={launch.logo_url} alt="" class="launch-logo card-logo-adapt" />
+								{:else}
+									<div class="launch-logo launch-logo-placeholder launch-logo-upcoming">
+										{(launch.token_symbol || '?').charAt(0)}
+									</div>
+								{/if}
+								<div class="flex-1 min-w-0">
+									<div class="flex items-center gap-2 mb-0.5">
+										<span class="syne font-bold text-white text-sm group-hover:text-amber-300 transition truncate">{launch.token_name || 'Unknown'}</span>
+										<span class="text-gray-600 text-xs font-mono shrink-0">{launch.token_symbol || '???'}</span>
+									</div>
+									<div class="flex items-center gap-1.5">
+										<span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+										<span class="text-xs font-mono text-amber-400">Scheduled</span>
+										<span class="text-gray-600 text-[10px] font-mono ml-auto">{CURVE_TYPES[launch.curve_type] ?? 'Linear'}</span>
+									</div>
+								</div>
+							</div>
+						</div>
+
+						<div class="px-4 pb-4">
+							<div class="flex justify-between items-baseline mb-1.5">
+								<span class="text-gray-400 text-xs font-mono">Soft Cap</span>
+								<span class="text-gray-500 text-[10px] font-mono">{formatUsdt(softCap, ud)}</span>
+							</div>
+							<div class="flex justify-between items-baseline">
+								<span class="text-gray-400 text-xs font-mono">Hard Cap</span>
+								<span class="text-white text-[10px] font-mono font-semibold">{formatUsdt(hardCap, ud)}</span>
+							</div>
+						</div>
+					</a>
+				{/each}
+			</div>
+		</section>
+	{/if}
+
+	<!-- Recently Graduated -->
+	{#if graduatedLaunches.length > 0}
+		<section class="mb-10">
+			<div class="flex items-center justify-between mb-5">
+				<div class="flex items-center gap-2">
+					<span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+					<span class="syne font-bold text-sm text-white">Recently Graduated</span>
+				</div>
+				<a href="/launchpad" class="text-cyan-400 text-xs font-mono hover:underline no-underline">
+					{$t('home.viewAllLaunches')} →
+				</a>
+			</div>
+			<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+				{#each graduatedLaunches as launch}
+					{@const ud = launch.usdt_decimals ?? 18}
+					{@const raised = BigInt(launch.total_base_raised || '0')}
+					<a href="/launchpad/{launch.address}" class="graduated-card card p-4 block no-underline group">
+						<div class="flex items-center gap-3">
+							{#if launch.logo_url}
+								<img src={launch.logo_url} alt="" class="launch-logo-sm card-logo-adapt" />
+							{:else}
+								<div class="launch-logo-sm launch-logo-placeholder launch-logo-graduated">
+									{(launch.token_symbol || '?').charAt(0)}
+								</div>
+							{/if}
+							<div class="flex-1 min-w-0">
+								<span class="syne font-bold text-white text-sm group-hover:text-emerald-300 transition truncate block">{launch.token_name || 'Unknown'}</span>
+								<span class="text-gray-500 text-xs font-mono">{launch.token_symbol} · {formatUsdt(raised, ud)} {$t('home.raised')}</span>
+							</div>
+							<span class="badge-emerald text-[10px] px-2 py-0.5 rounded-full">{$t('lp.graduated')}</span>
+						</div>
+					</a>
+				{/each}
+			</div>
+		</section>
+	{/if}
+
+	<!-- Compact CTA Banner -->
+	<section class="mb-10">
+		<div class="cta-banner card p-6 sm:p-8 flex flex-col sm:flex-row items-center justify-between gap-4">
+			<div>
+				<h2 class="syne text-xl sm:text-2xl font-bold text-white mb-1">{$t('home.ctaTitle')}</h2>
+				<p class="text-gray-400 font-mono text-sm">{$t('home.ctaDesc')}</p>
+			</div>
+			<div class="flex gap-3 shrink-0">
+				<a href="/create?launch=true" class="btn-primary text-sm px-6 py-2.5 no-underline">
+					{$t('home.ctaButton')} →
+				</a>
+				<a href="/create" class="btn-secondary text-sm px-5 py-2.5 no-underline">
+					{$t('home.featureTokenCreation')}
+				</a>
+			</div>
 		</div>
 	</section>
 </div>
 
 <style>
-	.page-wrap { padding-bottom: 40px; }
-
-	.hero-section {
-		padding: 80px 0 60px;
-	}
-
-	.hero-title {
-		font-size: clamp(2.5rem, 6vw, 4.5rem);
-		font-weight: 800;
-		line-height: 1.1;
-		color: var(--text-heading);
-		margin-bottom: 20px;
+	/* Compact hero */
+	.compact-hero {
+		padding: 28px 0 20px;
 	}
 
 	.gradient-text {
@@ -376,139 +510,137 @@
 		background-clip: text;
 	}
 
-	.hero-sub {
-		font-size: 16px;
-		color: #94a3b8;
-		max-width: 560px;
-		margin: 0 auto;
-		line-height: 1.7;
+	/* Stats strip */
+	.stats-strip {
+		display: flex;
+		gap: 16px;
+		margin-top: 16px;
+		flex-wrap: wrap;
 	}
 
-	.section { margin: 60px auto; }
-
-	/* Feature icons */
-	.feature-icon-box {
-		width: 40px;
-		height: 40px;
-		display: flex;
+	.stat-chip {
+		display: inline-flex;
 		align-items: center;
-		justify-content: center;
-		border-radius: 10px;
-		font-size: 18px;
-		font-weight: 800;
-		font-family: 'Syne', sans-serif;
-	}
-	.feature-icon-box.cyan {
-		background: rgba(0,210,255,0.1);
-		color: #00d2ff;
-		border: 1px solid rgba(0,210,255,0.2);
-	}
-	.feature-icon-box.orange {
-		background: rgba(251,146,60,0.1);
-		color: #fb923c;
-		border: 1px solid rgba(251,146,60,0.2);
-	}
-	.feature-icon-box.emerald {
-		background: rgba(16,185,129,0.1);
-		color: #10b981;
-		border: 1px solid rgba(16,185,129,0.2);
-	}
-	.feature-icon-box.purple {
-		background: rgba(139,92,246,0.1);
-		color: #a78bfa;
-		border: 1px solid rgba(139,92,246,0.2);
+		gap: 6px;
+		font-family: 'Space Mono', monospace;
+		font-size: 12px;
 	}
 
-	.feature-card {
-		transition: all 0.25s;
-	}
-	.feature-card:hover {
-		transform: translateY(-3px);
-		box-shadow: 0 12px 40px rgba(0,0,0,0.3);
-	}
-
-	/* Pricing */
-	.pricing-card {
-		transition: all 0.2s;
-		border-color: var(--border);
-	}
-	.pricing-card:hover {
-		border-color: rgba(0,210,255,0.2);
-		background: rgba(0,210,255,0.03);
-		transform: translateY(-2px);
-	}
-	.pricing-amount {
-		margin-top: 8px;
-		display: flex;
-		align-items: baseline;
+	.stat-chip-dot {
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		animation: pulse 2s ease-in-out infinite;
 	}
 
-	/* Partner section */
-	.partner-highlight {
-		background: rgba(139,92,246,0.04);
-		border-color: rgba(139,92,246,0.2);
-	}
-	.partner-glow {
-		background: radial-gradient(ellipse at 50% 0%, rgba(139,92,246,0.1), transparent 70%);
-	}
-	.btn-partner {
-		display: inline-block;
-		background: linear-gradient(135deg, #8b5cf6, #a78bfa);
+	.stat-chip-value {
 		color: var(--text-heading);
 		font-weight: 700;
-		padding: 12px 24px;
-		border-radius: 10px;
-		border: none;
-		cursor: pointer;
-		transition: all 0.2s;
-		font-family: 'Syne', sans-serif;
-		font-size: 14px;
-	}
-	.btn-partner:hover {
-		transform: translateY(-1px);
-		box-shadow: 0 6px 28px rgba(139,92,246,0.35);
 	}
 
-	/* CTA */
-	.cta-card {
-		background: rgba(0,210,255,0.04);
-		border-color: rgba(0,210,255,0.15);
+	.stat-chip-label {
+		color: var(--text-muted);
 	}
 
-	.cta-glow {
-		background: radial-gradient(ellipse at 50% 0%, rgba(0,210,255,0.08), transparent 70%);
+	@keyframes pulse {
+		0%, 100% { opacity: 1; }
+		50% { opacity: 0.4; }
 	}
 
-	a.no-underline { text-decoration: none; }
+	/* Live badge */
+	.live-badge {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
 
-	/* Live launches */
-	.live-launch-card {
+	.live-badge-dot {
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		background: #00d2ff;
+		box-shadow: 0 0 8px rgba(0, 210, 255, 0.6);
+		animation: pulse 2s ease-in-out infinite;
+	}
+
+	/* Launch cards */
+	.launch-card {
 		overflow: hidden;
 		transition: all 0.2s ease;
 	}
-	.live-launch-card:hover {
-		transform: translateY(-2px);
-		box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+	.launch-card:hover {
+		transform: translateY(-3px);
+		box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+		border-color: rgba(0, 210, 255, 0.2);
 	}
 
-	.live-card-logo {
+	.card-countdown {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 6px 16px;
+		background: var(--bg-surface-hover);
+		border-bottom: 1px solid var(--border-subtle);
+	}
+
+	.hot-badge, .new-badge {
+		display: inline-flex;
+		align-items: center;
+		gap: 3px;
+		font-size: 10px;
+		font-weight: 700;
+		padding: 2px 8px;
+		border-radius: 999px;
+		font-family: 'Syne', sans-serif;
+		letter-spacing: 0.05em;
+	}
+	.hot-badge {
+		background: rgba(245, 158, 11, 0.15);
+		color: #f59e0b;
+	}
+	.new-badge {
+		background: rgba(0, 210, 255, 0.15);
+		color: #00d2ff;
+	}
+
+	.launch-logo {
 		width: 40px;
 		height: 40px;
 		border-radius: 50%;
 		object-fit: cover;
 		flex-shrink: 0;
-		border: 1px solid var(--bg-surface-hover);
 	}
-	.live-card-logo-placeholder {
+
+	.launch-logo-sm {
+		width: 32px;
+		height: 32px;
+		border-radius: 50%;
+		object-fit: cover;
+		flex-shrink: 0;
+	}
+
+	.launch-logo-placeholder {
 		display: flex;
 		align-items: center;
 		justify-content: center;
 		background: rgba(0, 210, 255, 0.08);
 		color: #00d2ff;
-		font-size: 15px;
+		font-size: 14px;
 		font-weight: 700;
 		font-family: 'Syne', sans-serif;
 		border: 1px solid rgba(0, 210, 255, 0.15);
+	}
+
+	.launch-logo-graduated {
+		background: rgba(16, 185, 129, 0.08);
+		color: #10b981;
+		border-color: rgba(16, 185, 129, 0.15);
+	}
+
+	.launch-logo-upcoming {
+		background: rgba(245, 158, 11, 0.08);
+		color: #f59e0b;
+		border-color: rgba(245, 158, 11, 0.15);
 	}
 
 	.live-dot {
@@ -520,35 +652,156 @@
 		flex-shrink: 0;
 	}
 
-	.live-progress-track {
-		width: 100%;
-		height: 6px;
-		background: var(--bg-surface-hover);
-		border-radius: 3px;
+	/* Upcoming cards (full size like active) */
+	.upcoming-card-full {
 		overflow: hidden;
+		transition: all 0.2s ease;
+		border-color: rgba(245, 158, 11, 0.1);
 	}
-	.live-progress-fill {
-		height: 100%;
-		border-radius: 3px;
-		background: linear-gradient(90deg, #00d2ff, #3a7bd5);
-		transition: width 0.3s ease;
+	.upcoming-card-full:hover {
+		transform: translateY(-3px);
+		box-shadow: 0 12px 40px rgba(245, 158, 11, 0.1);
+		border-color: rgba(245, 158, 11, 0.25);
 	}
 
-	.line-clamp-2 {
-		display: -webkit-box;
-		-webkit-line-clamp: 2;
-		-webkit-box-orient: vertical;
-		overflow: hidden;
+	.card-countdown-upcoming {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 8px 16px;
+		background: rgba(245, 158, 11, 0.06);
+		border-bottom: 1px solid rgba(245, 158, 11, 0.1);
 	}
 
-	/* Skeleton */
-	.skeleton-line {
-		background: var(--bg-surface-hover);
-		border-radius: 4px;
-		animation: skeletonShimmer 1.5s ease-in-out infinite;
+	/* Graduated cards */
+	.graduated-card {
+		transition: all 0.2s ease;
 	}
-	@keyframes skeletonShimmer {
-		0%, 100% { opacity: 0.6; }
-		50% { opacity: 1; }
+	.graduated-card:hover {
+		transform: translateY(-2px);
+		border-color: rgba(16, 185, 129, 0.2);
+	}
+
+	/* Empty hero */
+	.empty-hero {
+		background: var(--bg-surface);
+		border-style: dashed;
+	}
+
+	/* Featured Partners */
+	.partner-section-header {
+		position: relative;
+		background: rgba(139, 92, 246, 0.04);
+		border: 1px solid rgba(139, 92, 246, 0.15);
+		border-radius: 14px;
+		margin-bottom: 16px;
+		overflow: hidden;
+	}
+	.partner-section-glow {
+		position: absolute;
+		inset: 0;
+		background: radial-gradient(ellipse at 20% 50%, rgba(139, 92, 246, 0.12), transparent 60%);
+		pointer-events: none;
+	}
+	.partner-section-icon {
+		width: 36px;
+		height: 36px;
+		border-radius: 10px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: linear-gradient(135deg, #8b5cf6, #a78bfa);
+		color: white;
+		font-size: 16px;
+		font-weight: 800;
+		font-family: 'Syne', sans-serif;
+		flex-shrink: 0;
+	}
+
+	/* partner-scroll kept for backward compat but grid is used now */
+
+	.partner-launch-card {
+		overflow: hidden;
+		transition: all 0.2s ease;
+		border-color: rgba(139, 92, 246, 0.12);
+	}
+	.partner-launch-card:hover {
+		transform: translateY(-3px);
+		border-color: rgba(139, 92, 246, 0.3);
+		box-shadow: 0 12px 40px rgba(139, 92, 246, 0.12);
+	}
+
+	.partner-accent {
+		height: 3px;
+		background: linear-gradient(90deg, #8b5cf6, #a78bfa, #c4b5fd);
+	}
+
+	.partner-avatar {
+		width: 38px;
+		height: 38px;
+		border-radius: 50%;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: rgba(139, 92, 246, 0.1);
+		color: #a78bfa;
+		font-size: 15px;
+		font-weight: 700;
+		font-family: 'Syne', sans-serif;
+		border: 1px solid rgba(139, 92, 246, 0.2);
+		flex-shrink: 0;
+	}
+
+	.partner-verified {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 15px;
+		height: 15px;
+		border-radius: 50%;
+		background: #8b5cf6;
+		color: white;
+		font-size: 8px;
+		font-weight: 700;
+		flex-shrink: 0;
+	}
+
+	.partner-pill {
+		display: inline-block;
+		padding: 2px 8px;
+		border-radius: 999px;
+		font-size: 9px;
+		font-family: 'Space Mono', monospace;
+		font-weight: 600;
+		color: #c4b5fd;
+		background: rgba(139, 92, 246, 0.08);
+		border: 1px solid rgba(139, 92, 246, 0.12);
+	}
+
+	.partner-cta {
+		background: rgba(139, 92, 246, 0.03);
+		border-color: rgba(139, 92, 246, 0.12);
+		border-style: dashed;
+	}
+
+	.btn-partner {
+		background: linear-gradient(135deg, #8b5cf6, #a78bfa);
+		color: var(--text-heading);
+		font-weight: 700;
+		border-radius: 10px;
+		border: none;
+		cursor: pointer;
+		transition: all 0.2s;
+		font-family: 'Syne', sans-serif;
+	}
+	.btn-partner:hover {
+		transform: translateY(-1px);
+		box-shadow: 0 6px 28px rgba(139, 92, 246, 0.35);
+	}
+
+	/* CTA banner */
+	.cta-banner {
+		background: rgba(0, 210, 255, 0.03);
+		border-color: rgba(0, 210, 255, 0.12);
 	}
 </style>

@@ -1,6 +1,9 @@
 <script lang="ts">
 	import { ethers } from 'ethers';
 	import { getContext, onMount } from 'svelte';
+	import { t } from '$lib/i18n';
+	import { favorites, toggleFavorite } from '$lib/favorites';
+	import MarketFlow from '$lib/MarketFlow.svelte';
 	import type { SupportedNetwork } from '$lib/structure';
 	import {
 		LAUNCHPAD_FACTORY_ABI,
@@ -32,8 +35,32 @@
 	let loading = $state(true);
 	let selectedNetwork = $state<'all' | number>('all');
 	let activeTab = $state<'live' | 'upcoming' | 'graduated' | 'all'>('live');
-	let sortBy = $state<'newest' | 'ending' | 'raised' | 'progress'>('newest');
+	let sortBy = $state<'newest' | 'ending' | 'raised' | 'progress' | 'trending'>('newest');
 	let showMyLaunches = $state(false);
+	let showFavorites = $state(false);
+	let searchQuery = $state('');
+
+	// Pagination
+	const PAGE_SIZE = 12;
+	let currentPage = $state(1);
+
+	// Reset page when filters change
+	$effect(() => {
+		activeTab; selectedNetwork; showMyLaunches; showFavorites; sortBy; searchQuery;
+		currentPage = 1;
+	});
+
+	// Hover tooltip
+	let hoveredLaunch = $state<string | null>(null);
+	let hoverTimeout: ReturnType<typeof setTimeout> | null = null;
+
+	function onCardMouseEnter(address: string) {
+		hoverTimeout = setTimeout(() => { hoveredLaunch = address; }, 500);
+	}
+	function onCardMouseLeave() {
+		if (hoverTimeout) { clearTimeout(hoverTimeout); hoverTimeout = null; }
+		hoveredLaunch = null;
+	}
 
 	// Countdown ticker
 	let tickNow = $state(Date.now());
@@ -45,6 +72,40 @@
 		}
 		return () => { if (tickInterval) { clearInterval(tickInterval); tickInterval = null; } };
 	});
+
+	function countdownMs(deadline: bigint): number {
+		return Number(deadline) * 1000 - tickNow;
+	}
+
+	function countdownColor(deadline: bigint): string {
+		const ms = countdownMs(deadline);
+		if (ms <= 0) return 'text-gray-500';
+		if (ms < 15 * 60 * 1000) return 'countdown-urgent';
+		if (ms < 60 * 60 * 1000) return 'countdown-warning';
+		return 'countdown-normal';
+	}
+
+	function isHot(launch: LaunchInfo): boolean {
+		if (launch.state !== 1) return false;
+		if (launch.hardCap === 0n) return false;
+		return launch.totalBaseRaised * 100n / launch.hardCap > 50n;
+	}
+
+	function softCapPercent(launch: LaunchInfo): number {
+		if (launch.hardCap === 0n) return 0;
+		return Math.min(100, Number((launch.softCap * 100n) / launch.hardCap));
+	}
+
+	function truncateAddr(addr: string): string {
+		if (!addr || addr.length < 10) return addr;
+		return addr.slice(0, 6) + '...' + addr.slice(-4);
+	}
+
+	function lpPercent(launch: LaunchInfo): string {
+		const total = launch.tokensForCurve + launch.tokensForLP;
+		if (total === 0n) return '0';
+		return Number((launch.tokensForLP * 100n) / total).toFixed(0);
+	}
 
 	function countdownStr(deadline: bigint): string {
 		const ms = Number(deadline) * 1000 - tickNow;
@@ -60,10 +121,27 @@
 	let filteredLaunches = $derived.by(() => {
 		let result = launches;
 
+		// Search filter
+		if (searchQuery.trim()) {
+			const q = searchQuery.trim().toLowerCase();
+			result = result.filter(l =>
+				(l.tokenName || '').toLowerCase().includes(q) ||
+				(l.tokenSymbol || '').toLowerCase().includes(q)
+			);
+		}
+
 		// Tab filter
-		if (activeTab === 'live') result = result.filter(l => l.state === 1);
-		else if (activeTab === 'upcoming') result = result.filter(l => l.state === 0);
-		else if (activeTab === 'graduated') result = result.filter(l => l.state === 2 || l.state === 3);
+		const nowSec = BigInt(Math.floor(Date.now() / 1000));
+		if (activeTab === 'live') {
+			result = result.filter(l => l.state === 1 && (l.startTimestamp === 0n || l.startTimestamp <= nowSec));
+		} else if (activeTab === 'upcoming') {
+			result = result.filter(l =>
+				l.state === 0 || // pending deposit
+				(l.state === 1 && l.startTimestamp > 0n && l.startTimestamp > nowSec) // scheduled
+			);
+		} else if (activeTab === 'graduated') {
+			result = result.filter(l => l.state === 2 || l.state === 3);
+		}
 
 		if (selectedNetwork !== 'all') {
 			result = result.filter(l => l.network.chain_id === selectedNetwork);
@@ -72,10 +150,21 @@
 			const addr = userAddress.toLowerCase();
 			result = result.filter(l => l.creator.toLowerCase() === addr);
 		}
+		if (showFavorites) {
+			const favs = $favorites;
+			result = result.filter(l => favs.includes(l.address.toLowerCase()));
+		}
 
 		// Sort
 		result = [...result];
-		if (sortBy === 'newest') {
+		if (activeTab === 'upcoming') {
+			// For upcoming: sort by start time (soonest first), then by deadline
+			result.sort((a, b) => {
+				const aStart = a.startTimestamp > 0n ? Number(a.startTimestamp) : Number(a.deadline);
+				const bStart = b.startTimestamp > 0n ? Number(b.startTimestamp) : Number(b.deadline);
+				return aStart - bStart;
+			});
+		} else if (sortBy === 'newest') {
 			result.sort((a, b) => Number(b.deadline - a.deadline));
 		} else if (sortBy === 'ending') {
 			const now = BigInt(Math.floor(Date.now() / 1000));
@@ -86,8 +175,13 @@
 			});
 		} else if (sortBy === 'raised') {
 			result.sort((a, b) => Number(b.totalBaseRaised - a.totalBaseRaised));
-		} else if (sortBy === 'progress') {
+		} else if (sortBy === 'progress' || sortBy === 'trending') {
 			result.sort((a, b) => {
+				if (sortBy === 'trending') {
+					const aActive = a.state === 1 ? 1 : 0;
+					const bActive = b.state === 1 ? 1 : 0;
+					if (aActive !== bActive) return bActive - aActive;
+				}
 				const pA = a.hardCap > 0n ? Number((a.totalBaseRaised * 10000n) / a.hardCap) : 0;
 				const pB = b.hardCap > 0n ? Number((b.totalBaseRaised * 10000n) / b.hardCap) : 0;
 				return pB - pA;
@@ -97,8 +191,19 @@
 		return result;
 	});
 
+	// Pagination derived values
+	let totalPages = $derived(Math.max(1, Math.ceil(filteredLaunches.length / PAGE_SIZE)));
+	let paginatedLaunches = $derived(filteredLaunches.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE));
+
+	function pageLabel(): string {
+		return $t('lp.pageOf').replace('{page}', String(currentPage)).replace('{total}', String(totalPages));
+	}
+
 	// Stats
-	let liveCount = $derived(launches.filter(l => l.state === 1).length);
+	let nowBigInt = $derived(BigInt(Math.floor(tickNow / 1000)));
+	let liveCount = $derived(launches.filter(l => l.state === 1 && (l.startTimestamp === 0n || l.startTimestamp <= nowBigInt)).length);
+	let upcomingCount = $derived(launches.filter(l => l.state === 0 || (l.state === 1 && l.startTimestamp > 0n && l.startTimestamp > nowBigInt)).length);
+	let graduatedCount = $derived(launches.filter(l => l.state === 2).length);
 	let totalRaised = $derived(launches.reduce((sum, l) => sum + l.totalBaseRaised, 0n));
 
 	// Database row mapper
@@ -114,6 +219,7 @@
 			softCap: BigInt(row.soft_cap || '0'),
 			hardCap: BigInt(row.hard_cap || '0'),
 			deadline: BigInt(row.deadline || 0),
+			startTimestamp: BigInt(row.start_timestamp || 0),
 			totalBaseRaised: BigInt(row.total_base_raised || '0'),
 			tokensSold: BigInt(row.tokens_sold || '0'),
 			tokensForCurve: BigInt(row.tokens_for_curve || '0'),
@@ -210,29 +316,33 @@
 	});
 
 	const BADGE_META: Record<string, { label: string; cls: string }> = {
-		audit: { label: 'AUDIT', cls: 'badge-list-cyan' },
+		audit: { label: 'Audit', cls: 'badge-list-cyan' },
 		kyc: { label: 'KYC', cls: 'badge-list-emerald' },
 		partner: { label: 'Partner', cls: 'badge-list-purple' },
 		doxxed: { label: 'Doxxed', cls: 'badge-list-amber' },
-		safu: { label: 'SAFU', cls: 'badge-list-blue' }
+		safu: { label: 'SAFU', cls: 'badge-list-blue' },
+		mintable: { label: 'Mintable', cls: 'badge-list-orange' },
+		taxable: { label: 'Taxable', cls: 'badge-list-amber' },
+		renounced: { label: 'No Owner', cls: 'badge-list-emerald' }
 	};
 </script>
 
 <svelte:head>
-	<title>Launchpad | TokenKrafter</title>
-	<meta name="description" content="Discover and invest in new token launches on bonding curves. Buy early, earn from price discovery, and auto-graduate to DEX liquidity." />
+	<title>{$t('lp.title')} | TokenKrafter</title>
+	<meta name="description" content={$t('lp.metaDesc')} />
 </svelte:head>
 
-<div class="page-wrap max-w-7xl mx-auto px-4 sm:px-6 py-8">
+<div class="page-wrap max-w-[1400px] mx-auto px-4 sm:px-6 py-8 xl:grid xl:grid-cols-[1fr_320px] xl:gap-6">
+	<div class="min-w-0">
 	<!-- Header row -->
 	<div class="flex flex-wrap items-end justify-between gap-4 mb-6">
 		<div>
-			<h1 class="syne text-2xl sm:text-3xl font-bold text-white">Launchpad</h1>
-			<p class="text-gray-500 font-mono text-xs mt-1">Bonding curve token launches</p>
+			<h1 class="syne text-2xl sm:text-3xl font-bold text-white">{$t('lp.title')}</h1>
+			<p class="text-gray-500 font-mono text-xs mt-1">{$t('lp.subtitle')}</p>
 		</div>
 		<div class="flex gap-2">
-			<a href="/launchpad/create" class="btn-primary text-xs px-4 py-2 no-underline">Create Launch</a>
-			<a href="/create" class="btn-secondary text-xs px-4 py-2 no-underline">Create Token</a>
+			<a href="/create?launch=true" class="btn-primary text-xs px-4 py-2 no-underline">{$t('lp.createLaunch')}</a>
+			<a href="/create" class="btn-secondary text-xs px-4 py-2 no-underline">{$t('lp.createToken')}</a>
 		</div>
 	</div>
 
@@ -240,15 +350,21 @@
 	<div class="stats-bar mb-6">
 		<div class="stat-item">
 			<span class="stat-value">{liveCount}</span>
-			<span class="stat-label">Live</span>
+			<span class="stat-label">{$t('lp.live')}</span>
 		</div>
+		{#if upcomingCount > 0}
+			<div class="stat-item">
+				<span class="stat-value">{upcomingCount}</span>
+				<span class="stat-label">Upcoming</span>
+			</div>
+		{/if}
 		<div class="stat-item">
-			<span class="stat-value">{launches.length}</span>
-			<span class="stat-label">Total</span>
+			<span class="stat-value">{graduatedCount}</span>
+			<span class="stat-label">{$t('lp.graduated')}</span>
 		</div>
 		<div class="stat-item">
 			<span class="stat-value">{formatUsdt(totalRaised)}</span>
-			<span class="stat-label">Total Raised</span>
+			<span class="stat-label">{$t('lp.totalRaised')}</span>
 		</div>
 	</div>
 
@@ -256,35 +372,57 @@
 	<div class="flex flex-wrap items-center gap-3 mb-6">
 		<!-- State tabs -->
 		<div class="tab-row">
-			<button class="tab-btn {activeTab === 'live' ? 'tab-active' : ''}" onclick={() => activeTab = 'live'}>Live</button>
-			<button class="tab-btn {activeTab === 'upcoming' ? 'tab-active' : ''}" onclick={() => activeTab = 'upcoming'}>Upcoming</button>
-			<button class="tab-btn {activeTab === 'graduated' ? 'tab-active' : ''}" onclick={() => activeTab = 'graduated'}>Graduated</button>
-			<button class="tab-btn {activeTab === 'all' ? 'tab-active' : ''}" onclick={() => activeTab = 'all'}>All</button>
+			<button class="tab-btn {activeTab === 'live' ? 'tab-active' : ''}" onclick={() => activeTab = 'live'}>{$t('lp.live')} {liveCount > 0 ? `(${liveCount})` : ''}</button>
+			<button class="tab-btn {activeTab === 'upcoming' ? 'tab-active' : ''}" onclick={() => activeTab = 'upcoming'}>{$t('lp.upcoming')} {upcomingCount > 0 ? `(${upcomingCount})` : ''}</button>
+			<button class="tab-btn {activeTab === 'graduated' ? 'tab-active' : ''}" onclick={() => activeTab = 'graduated'}>{$t('lp.graduated')} {graduatedCount > 0 ? `(${graduatedCount})` : ''}</button>
+			<button class="tab-btn {activeTab === 'all' ? 'tab-active' : ''}" onclick={() => activeTab = 'all'}>{$t('lp.all')} ({launches.length})</button>
 		</div>
 
 		<div class="flex-1"></div>
 
+		<!-- Search bar -->
+		<div class="search-wrap">
+			<svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+				<circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
+			</svg>
+			<input
+				type="text"
+				class="input-field search-input"
+				placeholder={$t('lp.searchPlaceholder')}
+				bind:value={searchQuery}
+			/>
+		</div>
+
 		<!-- Sort -->
 		<select class="filter-select" bind:value={sortBy}>
-			<option value="newest">Newest</option>
-			<option value="ending">Ending Soon</option>
-			<option value="raised">Most Raised</option>
-			<option value="progress">Most Progress</option>
+			<option value="newest">{$t('lp.newest')}</option>
+			<option value="ending">{$t('lp.endingSoon')}</option>
+			<option value="raised">{$t('lp.mostRaised')}</option>
+			<option value="progress">{$t('lp.mostProgress')}</option>
+			<option value="trending">{$t('lp.trending')}</option>
 		</select>
 
 		<!-- Network -->
 		<select class="filter-select" bind:value={selectedNetwork}>
-			<option value="all">All Chains</option>
+			<option value="all">{$t('lp.allChains')}</option>
 			{#each supportedNetworks.filter(n => n.launchpad_address && n.launchpad_address !== '0x') as net}
 				<option value={net.chain_id}>{net.name}</option>
 			{/each}
 		</select>
 
+		<button
+			onclick={() => { showFavorites = !showFavorites; if (showFavorites) showMyLaunches = false; }}
+			class="filter-btn {showFavorites ? 'filter-btn-active' : ''}"
+		>
+			<svg width="12" height="12" viewBox="0 0 24 24" fill={showFavorites ? '#00d2ff' : 'none'} stroke={showFavorites ? '#00d2ff' : 'currentColor'} stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline;vertical-align:-1px;margin-right:4px"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
+			{$t('lp.favorites')}
+		</button>
+
 		{#if userAddress}
 			<button
-				onclick={() => showMyLaunches = !showMyLaunches}
+				onclick={() => { showMyLaunches = !showMyLaunches; if (showMyLaunches) showFavorites = false; }}
 				class="filter-btn {showMyLaunches ? 'filter-btn-active' : ''}"
-			>My Launches</button>
+			>{$t('lp.myLaunches')}</button>
 		{/if}
 	</div>
 
@@ -323,29 +461,62 @@
 					<circle cx="32" cy="42" r="1.5" fill="rgba(0,210,255,0.4)" />
 				</svg>
 			</div>
-			{#if showMyLaunches}
-				<h3 class="syne text-lg font-bold text-white mb-2">No launches yet</h3>
-				<p class="text-gray-500 font-mono text-sm max-w-sm mx-auto">You haven't created any launches.</p>
+			{#if showFavorites}
+				<h3 class="syne text-lg font-bold text-white mb-2">{$t('lp.noFavorites')}</h3>
+				<p class="text-gray-500 font-mono text-sm max-w-sm mx-auto">{$t('lp.noFavoritesHint')}</p>
+			{:else if showMyLaunches}
+				<h3 class="syne text-lg font-bold text-white mb-2">{$t('lp.noLaunchesYet')}</h3>
+				<p class="text-gray-500 font-mono text-sm max-w-sm mx-auto">{$t('lp.noCreated')}</p>
 			{:else}
-				<h3 class="syne text-lg font-bold text-white mb-2">No matching launches</h3>
-				<p class="text-gray-500 font-mono text-sm max-w-sm mx-auto">Try adjusting your filters or be the first to launch.</p>
+				<h3 class="syne text-lg font-bold text-white mb-2">{$t('lp.noMatching')}</h3>
+				<p class="text-gray-500 font-mono text-sm max-w-sm mx-auto">{$t('lp.tryFilters')}</p>
 			{/if}
 			<div class="flex gap-3 justify-center mt-6">
-				<a href="/launchpad/create" class="btn-primary text-sm px-5 py-2.5 no-underline">Create Launch</a>
+				<a href="/create?launch=true" class="btn-primary text-sm px-5 py-2.5 no-underline">{$t('lp.createLaunch')}</a>
 			</div>
 		</div>
 	{:else}
 		<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-			{#each filteredLaunches as launch}
+			{#each paginatedLaunches as launch}
 				{@const progress = progressPercent(launch.totalBaseRaised, launch.hardCap)}
 				{@const color = stateColor(launch.state)}
 				{@const ud = (launch as any).usdtDecimals ?? 18}
-				<a href="/launchpad/{launch.address}" class="launch-card card p-0 block no-underline group">
-					<!-- Card header -->
-					<div class="card-head p-4 pb-3">
+				{@const scPct = softCapPercent(launch)}
+				<!-- svelte-ignore a11y_mouse_events_have_key_events -->
+				<a
+					href="/launchpad/{launch.address}"
+					class="launch-card card p-0 block no-underline group"
+					style="position:relative"
+					onmouseenter={() => onCardMouseEnter(launch.address)}
+					onmouseleave={onCardMouseLeave}
+				>
+					<!-- Favorite button -->
+					<button
+						class="fav-btn {$favorites.includes(launch.address.toLowerCase()) ? 'fav-btn-active' : ''}"
+						onclick={(e) => { e.preventDefault(); e.stopPropagation(); toggleFavorite(launch.address); }}
+						title={$favorites.includes(launch.address.toLowerCase()) ? 'Remove from favorites' : 'Add to favorites'}
+					>
+						<svg width="14" height="14" viewBox="0 0 24 24" fill={$favorites.includes(launch.address.toLowerCase()) ? '#00d2ff' : 'none'} stroke={$favorites.includes(launch.address.toLowerCase()) ? '#00d2ff' : 'currentColor'} stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
+					</button>
+
+					<!-- 1. Badges banner (top) -->
+					<div class="card-badges-bar">
+						{#each ((launch as any).badges ?? []) as badge}
+							{#if BADGE_META[badge]}
+								<span class="badge-pill {BADGE_META[badge].cls}">{BADGE_META[badge].label}</span>
+							{/if}
+						{/each}
+						<span class="badge-pill badge-pill-lp">LP Burned</span>
+						{#if isHot(launch)}
+							<span class="badge-pill badge-list-hot">HOT</span>
+						{/if}
+					</div>
+
+					<!-- 2. Identity -->
+					<div class="p-4 pb-3">
 						<div class="flex items-start gap-3">
 							{#if (launch as any).logoUrl}
-								<img src={(launch as any).logoUrl} alt="" class="card-logo" />
+								<img src={(launch as any).logoUrl} alt="" class="card-logo card-logo-adapt" />
 							{:else}
 								<div class="card-logo card-logo-placeholder">
 									{(launch.tokenSymbol || '?').charAt(0)}
@@ -354,7 +525,7 @@
 							<div class="flex-1 min-w-0">
 								<div class="flex items-center gap-2 mb-0.5">
 									<span class="syne font-bold text-white text-sm group-hover:text-cyan-300 transition truncate">{launch.tokenName || 'Unknown'}</span>
-									<span class="text-gray-600 text-xs font-mono flex-shrink-0">{launch.tokenSymbol || '???'}</span>
+									<span class="text-gray-600 text-xs font-mono shrink-0">{launch.tokenSymbol || '???'}</span>
 								</div>
 								<div class="flex items-center gap-1.5">
 									<span class="state-dot state-dot-{color}"></span>
@@ -363,57 +534,118 @@
 									{:else}
 										<span class="text-xs font-mono state-text-{color}">{stateLabel(launch.state)}</span>
 									{/if}
+									<span class="text-gray-700 text-[10px] font-mono ml-auto">{CURVE_TYPES[launch.curveType]}</span>
 								</div>
 							</div>
 						</div>
 					</div>
 
-					<!-- Description preview -->
+					<!-- 3. Description preview -->
 					{#if (launch as any).description}
 						<div class="px-4 pb-2">
 							<p class="text-gray-400 text-xs font-mono leading-relaxed line-clamp-2">{(launch as any).description}</p>
 						</div>
 					{/if}
 
-					<!-- Raised + countdown row -->
-					<div class="px-4 pb-2">
+					<!-- 4. Progress + Timer (bottom) -->
+					<div class="px-4 pb-4">
 						<div class="flex justify-between items-baseline mb-1.5">
 							<span class="text-white text-xs font-mono font-semibold">Raised {progress}%</span>
+							<!-- Timer inline with progress -->
 							{#if launch.state <= 1}
-								<span class="countdown-text">{countdownStr(launch.deadline)}</span>
+								{@const isScheduled = launch.startTimestamp > 0n && launch.startTimestamp > BigInt(Math.floor(tickNow / 1000))}
+								{@const targetTs = isScheduled ? launch.startTimestamp : launch.deadline}
+								{@const cdMs = countdownMs(targetTs)}
+								{@const cdStr = countdownStr(targetTs)}
+								{#if cdMs > 0}
+									<span class="card-timer {isScheduled ? 'countdown-scheduled' : countdownColor(launch.deadline)}">
+										{isScheduled ? 'Starts in ' : ''}{cdStr}
+									</span>
+								{:else}
+									<span class="card-timer text-gray-600">Ended</span>
+								{/if}
 							{/if}
 						</div>
-						<div class="progress-track">
-							<div class="progress-fill progress-{color}" style="width: {progress}%"></div>
+						<div class="progress-track-wrap">
+							<div class="progress-track">
+								<div class="progress-fill progress-{color}" style="width: {progress}%"></div>
+							</div>
+							{#if scPct > 0 && scPct < 100}
+								<div class="softcap-marker" style="left: {scPct}%">
+									<div class="softcap-tick"></div>
+									<div class="softcap-label">SC</div>
+								</div>
+							{/if}
 						</div>
 						<div class="flex justify-between mt-1">
-							<span class="text-gray-500 text-[10px] font-mono">{formatUsdt(launch.totalBaseRaised, ud)}</span>
-							<span class="text-gray-500 text-[10px] font-mono">{formatUsdt(launch.hardCap, ud)}</span>
+							<span class="text-gray-600 text-[10px] font-mono">{formatUsdt(launch.totalBaseRaised, ud)} / {formatUsdt(launch.hardCap, ud)}</span>
 						</div>
 					</div>
 
-					<!-- Card footer: badges + type -->
-					<div class="card-foot px-4 py-2.5">
-						<div class="flex items-center gap-1.5 flex-wrap flex-1 min-w-0">
-							{#each ((launch as any).badges ?? []) as badge}
-								{#if BADGE_META[badge]}
-									<span class="badge-pill {BADGE_META[badge].cls}">{BADGE_META[badge].label}</span>
-								{/if}
-							{/each}
-							<span class="badge-pill badge-pill-lp">LP Burned</span>
+					<!-- Hover tooltip -->
+					{#if hoveredLaunch === launch.address}
+						<div class="card-tooltip">
+							<div class="tooltip-row">
+								<span class="tooltip-label">{$t('lp.softCapLabel')}</span>
+								<span class="tooltip-value">{formatUsdt(launch.softCap, ud)}</span>
+							</div>
+							<div class="tooltip-row">
+								<span class="tooltip-label">{$t('lp.hardCapLabel')}</span>
+								<span class="tooltip-value">{formatUsdt(launch.hardCap, ud)}</span>
+							</div>
+							<div class="tooltip-row">
+								<span class="tooltip-label">{$t('lp.curveLabel')}</span>
+								<span class="tooltip-value">{CURVE_TYPES[launch.curveType]}</span>
+							</div>
+							<div class="tooltip-row">
+								<span class="tooltip-label">{$t('lp.creatorLabel')}</span>
+								<span class="tooltip-value">{truncateAddr(launch.creator)}</span>
+							</div>
+							<div class="tooltip-row">
+								<span class="tooltip-label">{$t('lp.tokensForLpLabel')}</span>
+								<span class="tooltip-value">{lpPercent(launch)}%</span>
+							</div>
+							<div class="tooltip-row">
+								<span class="tooltip-label">{$t('lp.creatorAllocLabel')}</span>
+								<span class="tooltip-value">{(Number(launch.creatorAllocationBps) / 100).toFixed(1)}%</span>
+							</div>
 						</div>
-						<span class="text-gray-600 text-[10px] font-mono flex-shrink-0">{CURVE_TYPES[launch.curveType]}</span>
-					</div>
+					{/if}
 				</a>
 			{/each}
 		</div>
+
+		<!-- Pagination -->
+		{#if totalPages > 1}
+			<div class="pagination-bar">
+				<button
+					class="pagination-btn"
+					disabled={currentPage <= 1}
+					onclick={() => currentPage = Math.max(1, currentPage - 1)}
+				>{$t('lp.previous')}</button>
+				<span class="pagination-info">{pageLabel()}</span>
+				<button
+					class="pagination-btn"
+					disabled={currentPage >= totalPages}
+					onclick={() => currentPage = Math.min(totalPages, currentPage + 1)}
+				>{$t('lp.next')}</button>
+			</div>
+		{/if}
 	{/if}
+	</div>
+	<!-- Market Flow sidebar -->
+	<div class="lp-sidebar hidden xl:block">
+		<MarketFlow />
+	</div>
 </div>
 
 <style>
-	.page-wrap { padding-bottom: 40px; }
-	.no-underline { text-decoration: none; }
-
+	.lp-sidebar {
+		position: sticky;
+		top: 0;
+		height: calc(100vh - 56px);
+		overflow: hidden;
+	}
 	/* Stats bar */
 	.stats-bar {
 		display: flex;
@@ -464,7 +696,7 @@
 		background: transparent;
 		color: #6b7280;
 		cursor: pointer;
-		transition: all 0.15s ease;
+		transition: all var(--transition-fast);
 		white-space: nowrap;
 	}
 	.tab-btn:hover { color: #d1d5db; }
@@ -497,7 +729,7 @@
 		background: var(--bg-surface);
 		color: #6b7280;
 		cursor: pointer;
-		transition: all 0.15s ease;
+		transition: all var(--transition-fast);
 	}
 	.filter-btn:hover { color: #d1d5db; border-color: rgba(255,255,255,0.15); }
 	.filter-btn-active {
@@ -506,14 +738,103 @@
 		color: #00d2ff;
 	}
 
+	/* Search bar */
+	.search-wrap {
+		position: relative;
+		display: flex;
+		align-items: center;
+	}
+	.search-icon {
+		position: absolute;
+		left: 10px;
+		color: #6b7280;
+		pointer-events: none;
+	}
+	.search-input {
+		padding-left: 30px !important;
+		min-width: 180px;
+		max-width: 260px;
+		font-size: 11px;
+		height: 32px;
+	}
+	@media (max-width: 640px) {
+		.search-wrap {
+			width: 100%;
+			order: 10;
+		}
+		.search-input {
+			width: 100%;
+			max-width: none;
+		}
+	}
+
 	/* Launch card */
 	.launch-card {
-		overflow: hidden;
-		transition: all 0.2s ease;
+		overflow: visible;
+		transition: all var(--transition-base);
 	}
 	.launch-card:hover {
 		transform: translateY(-2px);
 		box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+	}
+
+	/* Hot badge */
+	.hot-badge {
+		position: absolute;
+		top: 8px;
+		right: 36px;
+		display: flex;
+		align-items: center;
+		gap: 3px;
+		font-size: 9px;
+		font-weight: 700;
+		font-family: 'Space Mono', monospace;
+		text-transform: uppercase;
+		padding: 2px 7px;
+		border-radius: 4px;
+		background: rgba(245, 158, 11, 0.15);
+		color: #fbbf24;
+		border: 1px solid rgba(245, 158, 11, 0.3);
+		z-index: 2;
+		letter-spacing: 0.03em;
+	}
+	.hot-flame {
+		color: #f59e0b;
+	}
+
+	/* Prominent countdown banner */
+	/* Badge banner at top of card */
+	.card-badges-bar {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		padding: 6px 12px;
+		flex-wrap: wrap;
+		border-bottom: 1px solid var(--border-subtle);
+		min-height: 32px;
+	}
+
+	/* Timer next to progress (bottom of card) */
+	.card-timer {
+		font-size: 11px;
+		font-weight: 600;
+		font-family: 'Space Mono', monospace;
+		white-space: nowrap;
+		flex-shrink: 0;
+	}
+	.countdown-normal { color: #00d2ff; }
+	.countdown-warning { color: #fbbf24; }
+	.countdown-urgent { color: #f87171; animation: urgentPulse 1.5s ease-in-out infinite; }
+	.countdown-scheduled { color: #f59e0b; }
+
+	.badge-list-hot {
+		background: rgba(239, 68, 68, 0.1);
+		color: #f87171;
+		border-color: rgba(239, 68, 68, 0.2);
+	}
+	@keyframes urgentPulse {
+		0%, 100% { opacity: 1; }
+		50% { opacity: 0.7; }
 	}
 
 	.card-logo {
@@ -552,39 +873,37 @@
 	.state-text-purple { color: #a78bfa; }
 	.state-text-red { color: #f87171; }
 
-	/* Description clamp */
-	.line-clamp-2 {
-		display: -webkit-box;
-		-webkit-line-clamp: 2;
-		-webkit-box-orient: vertical;
-		overflow: hidden;
+	/* Progress bar with soft cap marker */
+	.progress-track-wrap {
+		position: relative;
+		height: 16px;
 	}
-
-	/* Countdown */
-	.countdown-text {
-		font-size: 11px;
-		font-family: 'Space Mono', monospace;
-		color: #f87171;
-		font-weight: 600;
-	}
-
-	/* Progress */
-	.progress-track {
-		width: 100%;
+	.progress-track-wrap .progress-track {
 		height: 6px;
-		background: var(--bg-surface-hover);
-		border-radius: 3px;
-		overflow: hidden;
+		margin-top: 2px;
 	}
-	.progress-fill {
-		height: 100%;
-		border-radius: 3px;
-		transition: width 0.3s ease;
+	.softcap-marker {
+		position: absolute;
+		top: 0;
+		transform: translateX(-50%);
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		pointer-events: none;
 	}
-	.progress-cyan { background: linear-gradient(90deg, #00d2ff, #3a7bd5); }
-	.progress-amber { background: linear-gradient(90deg, #f59e0b, #d97706); }
-	.progress-purple { background: linear-gradient(90deg, #8b5cf6, #a78bfa); }
-	.progress-red { background: linear-gradient(90deg, #ef4444, #f87171); }
+	.softcap-tick {
+		width: 2px;
+		height: 10px;
+		background: rgba(255, 255, 255, 0.4);
+		border-radius: 1px;
+	}
+	.softcap-label {
+		font-size: 7px;
+		font-family: 'Space Mono', monospace;
+		color: rgba(255, 255, 255, 0.35);
+		margin-top: 1px;
+		letter-spacing: 0.03em;
+	}
 
 	/* Card footer */
 	.card-foot {
@@ -612,17 +931,12 @@
 	.badge-list-purple { background: rgba(139, 92, 246, 0.08); color: #a78bfa; border-color: rgba(139, 92, 246, 0.2); }
 	.badge-list-amber { background: rgba(245, 158, 11, 0.08); color: #fbbf24; border-color: rgba(245, 158, 11, 0.2); }
 	.badge-list-blue { background: rgba(59, 130, 246, 0.08); color: #60a5fa; border-color: rgba(59, 130, 246, 0.2); }
+	.badge-list-orange { background: rgba(249, 115, 22, 0.08); color: #fb923c; border-color: rgba(249, 115, 22, 0.2); }
 	.badge-pill-lp { background: rgba(16, 185, 129, 0.08); color: #34d399; border-color: rgba(16, 185, 129, 0.2); }
 
-	/* Skeleton */
+	/* Skeleton card pulse */
 	.skeleton-card { animation: skeletonPulse 1.5s ease-in-out infinite; }
-	.skeleton-line {
-		background: var(--bg-surface-hover);
-		border-radius: 4px;
-		animation: skeletonShimmer 1.5s ease-in-out infinite;
-	}
 	@keyframes skeletonPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
-	@keyframes skeletonShimmer { 0%, 100% { background: var(--bg-surface-hover); } 50% { background: var(--border-input); } }
 
 	.empty-state {
 		min-height: 300px;
@@ -632,5 +946,113 @@
 		justify-content: center;
 	}
 
-	.syne { font-family: 'Syne', sans-serif; }
+	/* Favorite button on cards */
+	.fav-btn {
+		position: absolute;
+		top: 10px;
+		right: 10px;
+		z-index: 2;
+		background: var(--bg-surface);
+		border: 1px solid var(--border);
+		border-radius: 50%;
+		width: 30px;
+		height: 30px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		cursor: pointer;
+		transition: all var(--transition-fast);
+		color: #6b7280;
+		opacity: 0;
+	}
+	.launch-card:hover .fav-btn,
+	.fav-btn:focus-visible,
+	.fav-btn-active {
+		opacity: 1;
+	}
+	.fav-btn:hover {
+		border-color: rgba(0, 210, 255, 0.4);
+		background: rgba(0, 210, 255, 0.08);
+		color: #00d2ff;
+	}
+
+	/* Hover tooltip */
+	.card-tooltip {
+		position: absolute;
+		bottom: calc(100% + 8px);
+		left: 50%;
+		transform: translateX(-50%);
+		background: var(--bg-surface);
+		border: 1px solid var(--bg-surface-hover);
+		border-radius: 8px;
+		padding: 10px 14px;
+		min-width: 220px;
+		z-index: 50;
+		box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+		pointer-events: none;
+	}
+	.card-tooltip::after {
+		content: '';
+		position: absolute;
+		top: 100%;
+		left: 50%;
+		transform: translateX(-50%);
+		border: 6px solid transparent;
+		border-top-color: var(--bg-surface-hover);
+	}
+	.tooltip-row {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 2px 0;
+	}
+	.tooltip-row + .tooltip-row {
+		border-top: 1px solid rgba(255, 255, 255, 0.04);
+	}
+	.tooltip-label {
+		font-size: 10px;
+		color: #6b7280;
+		font-family: 'Space Mono', monospace;
+	}
+	.tooltip-value {
+		font-size: 10px;
+		color: #e5e7eb;
+		font-family: 'Space Mono', monospace;
+		font-weight: 600;
+	}
+
+	/* Pagination */
+	.pagination-bar {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 16px;
+		margin-top: 24px;
+		padding: 12px 0;
+	}
+	.pagination-btn {
+		font-size: 12px;
+		font-family: 'Space Mono', monospace;
+		padding: 6px 16px;
+		border-radius: 8px;
+		border: 1px solid var(--bg-surface-hover);
+		background: var(--bg-surface);
+		color: #9ca3af;
+		cursor: pointer;
+		transition: all var(--transition-fast);
+	}
+	.pagination-btn:hover:not(:disabled) {
+		color: #00d2ff;
+		border-color: rgba(0, 210, 255, 0.3);
+		background: rgba(0, 210, 255, 0.05);
+	}
+	.pagination-btn:disabled {
+		opacity: 0.35;
+		cursor: not-allowed;
+	}
+	.pagination-info {
+		font-size: 12px;
+		font-family: 'Space Mono', monospace;
+		color: #6b7280;
+	}
 </style>

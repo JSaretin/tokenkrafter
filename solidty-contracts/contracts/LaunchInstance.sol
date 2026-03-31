@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/math/Math.sol";
@@ -215,6 +216,7 @@ contract LaunchInstance is ReentrancyGuard {
     CurveType public immutable curveType;
     IUniswapV2Router02 public immutable dexRouter;
     IERC20 public immutable usdt;    // stablecoin — all curve math denominated in USDT
+    uint256 public immutable baseScale; // 10^(18 - usdtDecimals), to normalize curve math to 1e18
 
     uint256 public immutable curveParam1;
     uint256 public immutable curveParam2;
@@ -240,9 +242,8 @@ contract LaunchInstance is ReentrancyGuard {
     uint256 public immutable totalTokensRequired;
 
     // ── Platform fees ──────────────────────────────────────────
-    uint256 public constant PLATFORM_FEE_BPS = 300;  // 3%
+    uint256 public constant PLATFORM_FEE_BPS = 300;  // 3% on graduation
     uint256 public constant BPS = 10000;
-    uint256 public constant BUY_FEE_BPS = 100;       // 1% fee on each buy
 
     // ── State ──────────────────────────────────────────────────
     LaunchState public state;
@@ -306,6 +307,9 @@ contract LaunchInstance is ReentrancyGuard {
         creator = creator_;
         token = IERC20(token_);
         usdt = IERC20(usdt_);
+        // Compute scale factor: curve math operates in 18 decimals internally
+        uint8 usdtDec = IERC20Metadata(usdt_).decimals();
+        baseScale = usdtDec < 18 ? 10 ** (18 - usdtDec) : 1;
         curveType = curveType_;
         curveParam1 = curveParam1_;
         curveParam2 = curveParam2_;
@@ -327,7 +331,7 @@ contract LaunchInstance is ReentrancyGuard {
         creatorAllocationBps = creatorAllocationBps_;
         totalTokensRequired = totalTokensForLaunch_;
 
-        maxBuyPerWallet = (curveTokens * maxBuyBps_) / BPS;
+        maxBuyPerWallet = (hardCap_ * maxBuyBps_) / BPS;
         vestingDuration = vestingDays_ * 1 days;
         vestingCliff = vestingDays_ > 0 ? 7 days : 0;
 
@@ -470,10 +474,9 @@ contract LaunchInstance is ReentrancyGuard {
     }
 
     /// @dev Internal buy logic. All amounts are in USDT after conversion.
+    ///      No buy fee — platform earns only from the 3% graduation fee.
     function _processBuy(address buyer, uint256 usdtAmount, uint256 minTokensOut) internal {
-        // 1% buy fee
-        uint256 fee = (usdtAmount * BUY_FEE_BPS) / BPS;
-        uint256 baseForTokens = usdtAmount - fee;
+        uint256 baseForTokens = usdtAmount;
 
         // Calculate tokens from curve
         uint256 tokensOut = _getTokensForBase(baseForTokens);
@@ -483,36 +486,43 @@ contract LaunchInstance is ReentrancyGuard {
         if (tokensOut > remaining) {
             tokensOut = remaining;
             uint256 actualCost = _getCostForTokens(tokensOut);
-            uint256 actualFee = (actualCost * BUY_FEE_BPS) / (BPS - BUY_FEE_BPS);
-            uint256 refundUsdt = usdtAmount - actualCost - actualFee;
-            fee = actualFee;
+            uint256 refundUsdt = usdtAmount - actualCost;
             baseForTokens = actualCost;
             if (refundUsdt > 0) {
                 usdt.safeTransfer(buyer, refundUsdt);
             }
         }
 
-        // Check minTokensOut AFTER capping to remaining supply
-        if (tokensOut < minTokensOut) revert InsufficientTokensOut();
+        // Anti-whale: cap by USDT value (% of hard cap)
+        if (basePaid[buyer] + baseForTokens > maxBuyPerWallet) {
+            uint256 remaining_allowance = maxBuyPerWallet > basePaid[buyer]
+                ? maxBuyPerWallet - basePaid[buyer]
+                : 0;
+            if (remaining_allowance == 0) revert ExceedsMaxBuy();
 
-        // Anti-whale
-        if (tokensBought[buyer] + tokensOut > maxBuyPerWallet) revert ExceedsMaxBuy();
+            tokensOut = _getTokensForBase(remaining_allowance);
+            if (tokensOut == 0) revert ExceedsMaxBuy();
+            uint256 actualCost = _getCostForTokens(tokensOut);
+            uint256 refundUsdt = usdtAmount - actualCost;
+            baseForTokens = actualCost;
+            if (refundUsdt > 0) {
+                usdt.safeTransfer(buyer, refundUsdt);
+            }
+        }
+
+        // Check minTokensOut AFTER all capping
+        if (tokensOut < minTokensOut) revert InsufficientTokensOut();
 
         // Update state
         tokensSold += tokensOut;
         totalBaseRaised += baseForTokens;
-        basePaid[buyer] += baseForTokens;  // only track refundable USDT base (fee is non-refundable)
+        basePaid[buyer] += baseForTokens;
         tokensBought[buyer] += tokensOut;
 
         // Transfer tokens to buyer
         token.safeTransfer(buyer, tokensOut);
 
-        // Send buy fee to factory (platform) in USDT
-        if (fee > 0) {
-            usdt.safeTransfer(factory, fee);
-        }
-
-        emit TokenBought(buyer, tokensOut, baseForTokens + fee, getCurrentPrice());
+        emit TokenBought(buyer, tokensOut, baseForTokens, getCurrentPrice());
 
         // Auto-graduate on hard cap or curve sell-out
         if (totalBaseRaised >= hardCap || tokensSold >= tokensForCurve) {
@@ -634,7 +644,7 @@ contract LaunchInstance is ReentrancyGuard {
             token.safeTransferFrom(msg.sender, address(this), buyerTokens);
         }
 
-        // Refund USDT (excluding buy fee — fee is non-refundable)
+        // Refund full USDT amount (no buy fee was taken)
         usdt.safeTransfer(msg.sender, paid);
 
         emit Refunded(msg.sender, paid);
@@ -698,21 +708,47 @@ contract LaunchInstance is ReentrancyGuard {
         return _getCostForTokens(amount);
     }
 
-    /// @notice Tokens received for `baseAmount` base coin (after fee).
+    /// @notice Tokens received for `baseAmount` base coin (no buy fee).
     function getTokensForBase(uint256 baseAmount) external view returns (uint256) {
-        uint256 fee = (baseAmount * BUY_FEE_BPS) / BPS;
-        return _getTokensForBase(baseAmount - fee);
+        return _getTokensForBase(baseAmount);
     }
 
     /// @notice Preview a buy: returns tokens out, fee, and price impact for a given base amount.
+    ///         Does not account for per-wallet limits. Use previewBuyFor() for wallet-aware preview.
     function previewBuy(uint256 baseAmount) external view returns (
         uint256 tokensOut,
         uint256 fee,
         uint256 priceImpactBps
     ) {
+        return _previewBuy(baseAmount, type(uint256).max);
+    }
+
+    /// @notice Preview a buy for a specific buyer, respecting their per-wallet USDT limit.
+    function previewBuyFor(address buyer, uint256 baseAmount) external view returns (
+        uint256 tokensOut,
+        uint256 fee,
+        uint256 priceImpactBps
+    ) {
+        uint256 remainingAllowance = maxBuyPerWallet > basePaid[buyer]
+            ? maxBuyPerWallet - basePaid[buyer]
+            : 0;
+        return _previewBuy(baseAmount, remainingAllowance);
+    }
+
+    function _previewBuy(uint256 baseAmount, uint256 maxBase) internal view returns (
+        uint256 tokensOut,
+        uint256 fee,
+        uint256 priceImpactBps
+    ) {
         if (baseAmount == 0 || state != LaunchState.Active) return (0, 0, 0);
-        fee = (baseAmount * BUY_FEE_BPS) / BPS;
-        uint256 baseForTokens = baseAmount - fee;
+        fee = 0; // No buy fee — platform earns from graduation only
+        uint256 baseForTokens = baseAmount;
+
+        // Cap to wallet's remaining USDT allowance
+        if (baseForTokens > maxBase) {
+            baseForTokens = maxBase;
+        }
+
         tokensOut = _getTokensForBase(baseForTokens);
         uint256 remaining = tokensForCurve - tokensSold;
         if (tokensOut > remaining) tokensOut = remaining;
@@ -797,7 +833,8 @@ contract LaunchInstance is ReentrancyGuard {
 
     // ── Internal Curve Math ────────────────────────────────────
 
-    function _getCostForTokens(uint256 amount) internal view returns (uint256) {
+    /// @dev Raw curve cost in 18-decimal virtual base units (before scaling to actual USDT decimals).
+    function _curveCost(uint256 amount) internal view returns (uint256) {
         if (curveType == CurveType.Linear) {
             return BondingCurve.linearCost(tokensSold, amount, curveParam1, curveParam2);
         } else if (curveType == CurveType.SquareRoot) {
@@ -809,10 +846,18 @@ contract LaunchInstance is ReentrancyGuard {
         }
     }
 
+    /// @dev Cost in actual USDT units (scaled from 18-dec curve output).
+    function _getCostForTokens(uint256 amount) internal view returns (uint256) {
+        return _curveCost(amount) / baseScale;
+    }
+
     function _getTokensForBase(uint256 baseAmount) internal view returns (uint256) {
         if (baseAmount == 0) return 0;
         uint256 remaining = tokensForCurve - tokensSold;
         if (remaining == 0) return 0;
+
+        // Scale up to 18-dec for curve comparison
+        uint256 scaledBase = baseAmount * baseScale;
 
         uint256 low = 0;
         uint256 high = remaining;
@@ -822,9 +867,9 @@ contract LaunchInstance is ReentrancyGuard {
             if (low > high) break;
             uint256 mid = (low + high) / 2;
             if (mid == 0) break;
-            // Use _tryCostForTokens to handle overflow for extreme curve params
-            (bool ok, uint256 cost) = _tryCostForTokens(mid);
-            if (!ok || cost > baseAmount) {
+            // Use _tryCurveCost to handle overflow for extreme curve params
+            (bool ok, uint256 cost) = _tryCurveCost(mid);
+            if (!ok || cost > scaledBase) {
                 if (mid == 0) break;
                 high = mid - 1;
             } else {
@@ -835,9 +880,10 @@ contract LaunchInstance is ReentrancyGuard {
         return bestAmount;
     }
 
-    /// @dev Wraps _getCostForTokens to catch overflow/revert for extreme curve parameters.
-    function _tryCostForTokens(uint256 amount) internal view returns (bool success, uint256 cost) {
-        try this.getCostForTokensExternal(amount) returns (uint256 result) {
+    /// @dev Wraps _curveCost to catch overflow/revert for extreme curve parameters.
+    ///      Returns cost in 18-decimal virtual units (not actual USDT units).
+    function _tryCurveCost(uint256 amount) internal view returns (bool success, uint256 cost) {
+        try this.curveCostExternal(amount) returns (uint256 result) {
             return (true, result);
         } catch {
             return (false, 0);
@@ -845,8 +891,9 @@ contract LaunchInstance is ReentrancyGuard {
     }
 
     /// @dev External wrapper needed for try/catch on internal view function.
-    function getCostForTokensExternal(uint256 amount) external view returns (uint256) {
-        return _getCostForTokens(amount);
+    ///      Returns raw 18-decimal curve cost.
+    function curveCostExternal(uint256 amount) external view returns (uint256) {
+        return _curveCost(amount);
     }
 
     /// @notice Recover accidentally sent ETH. Only callable by creator.

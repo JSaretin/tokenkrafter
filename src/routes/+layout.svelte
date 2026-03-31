@@ -6,34 +6,50 @@
 	import { initAppKit, getAppKit } from '$lib/wagmiConfig';
 	import type { SupportedNetworks, SupportedNetwork, PaymentOption } from '$lib/structure';
 	import { page } from '$app/state';
+	import { t } from '$lib/i18n';
+	import LanguageSwitcher from '$lib/LanguageSwitcher.svelte';
 
 	let { children } = $props();
 
 	const supportedNetworks: SupportedNetworks = [
 		{
-			chain_id: 1,
-			name: 'Ethereum',
-			symbol: 'ETH',
+			chain_id: 31337,
+			name: 'Localhost',
+			symbol: 'LOCAL',
 			native_coin: 'ETH',
-			usdt_address: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
-			usdc_address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
-			platform_address: '0x',
-			launchpad_address: '0x',
-			dex_router: '0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D',
-			rpc: 'https://eth.llamarpc.com'
-		},
-		{
-			chain_id: 56,
-			name: 'Binance Smart Chain',
-			symbol: 'BSC',
-			native_coin: 'BNB',
-			usdt_address: '0x55d398326f99059ff775485246999027b3197955',
-			usdc_address: '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d',
-			platform_address: '0xf8953948561d3047b15006915669d2814b9f0e5d',
-			launchpad_address: '0x9a7c5e6a4343E881152d3D4A8709289B4f46E071',
-			dex_router: '0x10ED43C718714eb63d5aA57B78B54704E256024E',
-			rpc: 'https://bsc-dataseed.binance.org/'
+			usdt_address: '0x5FbDB2315678afecb367f032d93F642f64180aa3',
+			usdc_address: '',
+			platform_address: '0x0B306BF915C4d645ff596e518fAf3F9669b97016',
+			launchpad_address: '0x959922bE3CAee4b8Cd9a407cc3ac1C251C2007B1',
+			router_address: '0x7a2088a1bFc9d81c55368AE168C2C02570cB814F',
+			dex_router: '0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9',
+			trade_router_address: '0x09635F643e140090A9A8Dcd712eD6285858ceBef',
+			rpc: 'http://127.0.0.1:8545'
 		}
+		// {
+		// 	chain_id: 1,
+		// 	name: 'Ethereum',
+		// 	symbol: 'ETH',
+		// 	native_coin: 'ETH',
+		// 	usdt_address: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
+		// 	usdc_address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+		// 	platform_address: '0x',
+		// 	launchpad_address: '0x',
+		// 	dex_router: '0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D',
+		// 	rpc: 'https://eth.llamarpc.com'
+		// },
+		// {
+		// 	chain_id: 56,
+		// 	name: 'Binance Smart Chain',
+		// 	symbol: 'BSC',
+		// 	native_coin: 'BNB',
+		// 	usdt_address: '0x55d398326f99059ff775485246999027b3197955',
+		// 	usdc_address: '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d',
+		// 	platform_address: '0xf8953948561d3047b15006915669d2814b9f0e5d',
+		// 	launchpad_address: '0x9a7c5e6a4343E881152d3D4A8709289B4f46E071',
+		// 	dex_router: '0x10ED43C718714eb63d5aA57B78B54704E256024E',
+		// 	rpc: 'https://bsc-dataseed.binance.org/'
+		// },
 	];
 
 	// Network providers initialized in background
@@ -57,6 +73,8 @@
 	let userAddress: string | null = $state(null);
 	let isLoading = $state(true);
 	let mobileMenuOpen = $state(false);
+	let mobileMenuEl: HTMLElement | undefined = $state(undefined);
+	let hamburgerEl: HTMLElement | undefined = $state(undefined);
 	let theme: 'dark' | 'light' = $state('dark');
 
 	function addFeedback(feedback: { message: string; type: string }) {
@@ -145,6 +163,30 @@
 		if (ref && ethers.isAddress(ref) && !localStorage.getItem('referral')) {
 			localStorage.setItem('referral', ref);
 		}
+
+		// Close mobile menu when clicking outside
+		function handleClickOutside(e: MouseEvent) {
+			if (
+				mobileMenuOpen &&
+				mobileMenuEl &&
+				!mobileMenuEl.contains(e.target as Node) &&
+				hamburgerEl &&
+				!hamburgerEl.contains(e.target as Node)
+			) {
+				mobileMenuOpen = false;
+			}
+		}
+		document.addEventListener('click', handleClickOutside);
+
+		return () => {
+			document.removeEventListener('click', handleClickOutside);
+		};
+	});
+
+	$effect(() => {
+		if (typeof document !== 'undefined') {
+			document.body.style.overflow = mobileMenuOpen ? 'hidden' : '';
+		}
 	});
 
 	setContext('addFeedback', addFeedback);
@@ -157,13 +199,19 @@
 	setContext('providersReady', () => providersReady);
 	setContext('getPaymentOptions', getPaymentOptions);
 
-	const navLinks = [
-		{ href: '/', label: 'Home' },
-		{ href: '/create', label: 'Create Token' },
-		{ href: '/launchpad', label: 'Launchpad' },
-		{ href: '/manage-tokens', label: 'My Tokens' },
-		{ href: '/tokens', label: 'Explore' },
-		{ href: '/affiliate', label: 'Affiliate' }
+	// Primary nav — only the core pages users need
+	const navLinks: { href: string; key: import('$lib/i18n').TranslationKey }[] = [
+		{ href: '/launchpad', key: 'nav.launchpad' },
+		{ href: '/trade', key: 'nav.trade' },
+		{ href: '/create', key: 'nav.createToken' },
+		{ href: '/tokens', key: 'nav.explore' },
+	];
+
+	// Secondary nav — shown in mobile drawer and footer only
+	const secondaryLinks: { href: string; key: import('$lib/i18n').TranslationKey }[] = [
+		{ href: '/manage-tokens', key: 'nav.manageTokens' },
+		{ href: '/affiliate', key: 'nav.affiliate' },
+		{ href: '/admin', key: 'nav.admin' },
 	];
 
 	const socials = [
@@ -187,6 +235,12 @@
 	/>
 </svelte:head>
 
+<!-- Skip to content -->
+<a
+	href="#main-content"
+	class="skip-to-content"
+>Skip to main content</a>
+
 <!-- Toast Notifications -->
 <div class="fixed top-4 right-4 z-[100] flex flex-col gap-2 max-w-sm w-full pointer-events-none px-4">
 	{#each feedbacks as feedback (feedback.id)}
@@ -205,6 +259,7 @@
 			<button
 				onclick={() => hideFeedback(feedback.id)}
 				class="text-current opacity-50 hover:opacity-100 transition ml-2 flex-shrink-0 cursor-pointer"
+				aria-label="Dismiss notification"
 			>x</button>
 		</div>
 	{/each}
@@ -212,72 +267,148 @@
 
 <!-- AppKit handles the wallet modal -->
 
-<!-- App Shell -->
-<div class="app-shell min-h-screen w-full overflow-x-hidden">
+<!-- App Shell — flex column, viewport height -->
+<div class="app-shell flex flex-col h-screen w-full overflow-hidden">
 	<div class="grid-bg fixed inset-0 pointer-events-none z-0"></div>
 	<div class="glow-orb fixed top-[-20%] left-[30%] w-[700px] h-[700px] pointer-events-none z-0"></div>
 	<div class="glow-orb-2 fixed bottom-[-20%] right-[10%] w-[500px] h-[500px] pointer-events-none z-0"></div>
 
 	<!-- Navbar -->
-	<nav class="nav-bar fixed top-0 left-0 right-0 z-50 border-b backdrop-blur-xl" style="border-color: var(--border-subtle)">
-		<div class="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
+	<nav class="nav-bar sticky top-0 z-50 flex-shrink-0 border-b backdrop-blur-xl" style="border-color: var(--border-subtle)">
+		<div class="max-w-7xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-3">
+			<!-- Logo -->
 			<a href="/" class="flex items-center gap-2 flex-shrink-0 group">
-				<div class="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-400 to-blue-600 flex items-center justify-center group-hover:shadow-lg group-hover:shadow-cyan-500/30 transition">
-					<span class="text-black font-bold text-xs">TK</span>
+				<div class="w-7 h-7 rounded-lg bg-gradient-to-br from-cyan-400 to-blue-600 flex items-center justify-center group-hover:shadow-lg group-hover:shadow-cyan-500/30 transition">
+					<span class="text-black font-bold text-[10px]">TK</span>
 				</div>
-				<span class="syne font-bold text-lg hidden sm:block tracking-tight">TokenKrafter</span>
+				<span class="syne font-bold text-base hidden sm:block tracking-tight">TokenKrafter</span>
 			</a>
 
-			<div class="hidden md:flex items-center gap-1">
+			<!-- Center nav links -->
+			<div class="hidden md:flex items-center gap-0.5">
 				{#each navLinks as link}
 					<a
 						href={link.href}
-						class="px-3 py-2 rounded-lg text-sm transition font-mono
-						{page.url.pathname === link.href
+						class="nav-link px-3 py-1.5 rounded-md text-[13px] transition font-mono
+						{page.url.pathname === link.href || (link.href !== '/' && page.url.pathname.startsWith(link.href))
 							? 'text-cyan-400 bg-cyan-400/10'
 							: 'text-gray-400 hover:text-white hover:bg-white/5'}"
-					>{link.label}</a>
+					>{$t(link.key)}</a>
 				{/each}
+				{#if userAddress}
+					<a
+						href="/manage-tokens"
+						class="nav-link px-3 py-1.5 rounded-md text-[13px] transition font-mono
+						{page.url.pathname.startsWith('/manage-tokens')
+							? 'text-cyan-400 bg-cyan-400/10'
+							: 'text-gray-400 hover:text-white hover:bg-white/5'}"
+					>{$t('nav.manageTokens')}</a>
+				{/if}
 			</div>
 
+			<!-- Right side: actions -->
 			<div class="flex items-center gap-2">
-				<appkit-button size="sm" />
+				<a href="/create" class="hidden md:inline-flex nav-cta no-underline">
+					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+					Launch
+				</a>
+				<div class="hidden md:block"><LanguageSwitcher /></div>
+				<div class="hidden md:block"><appkit-button size="sm"></appkit-button></div>
 
 				<button
+					bind:this={hamburgerEl}
 					onclick={() => (mobileMenuOpen = !mobileMenuOpen)}
-					class="md:hidden p-2.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition cursor-pointer"
+					class="md:hidden p-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition cursor-pointer"
+					aria-label="Toggle menu"
+					aria-expanded={mobileMenuOpen}
 				>
 					{#if mobileMenuOpen}
-						<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+						<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
 					{:else}
-						<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+						<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
 					{/if}
 				</button>
 			</div>
 		</div>
-
-		{#if mobileMenuOpen}
-			<div class="md:hidden border-t backdrop-blur-xl" style="border-color: var(--border-subtle); background: var(--bg-mobile-menu)">
-				<div class="px-4 py-3 flex flex-col gap-1">
-					{#each navLinks as link}
-						<a
-							href={link.href}
-							onclick={() => (mobileMenuOpen = false)}
-							class="px-3 py-2 rounded-lg text-sm transition font-mono
-							{page.url.pathname === link.href
-								? 'text-cyan-400 bg-cyan-400/10'
-								: 'text-gray-400 hover:text-white hover:bg-white/5'}"
-						>{link.label}</a>
-					{/each}
-					<div class="px-3 py-2">
-						<appkit-button size="sm" />
-					</div>
-				</div>
-			</div>
-		{/if}
 	</nav>
 
-	<main class="pt-16 min-h-screen">
+	<!-- Mobile Menu Overlay + Drawer -->
+	{#if mobileMenuOpen}
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div
+			class="mobile-backdrop fixed inset-0 z-40 md:hidden"
+			onclick={() => (mobileMenuOpen = false)}
+			onkeydown={(e) => { if (e.key === 'Escape') mobileMenuOpen = false; }}
+		></div>
+	{/if}
+	<div
+		bind:this={mobileMenuEl}
+		class="mobile-drawer fixed top-0 right-0 z-50 h-full md:hidden"
+		class:mobile-drawer-open={mobileMenuOpen}
+	>
+		<div class="flex flex-col h-full">
+			<!-- Drawer header -->
+			<div class="flex items-center justify-between px-5 h-16 border-b" style="border-color: var(--border-subtle)">
+				<span class="syne font-bold text-base tracking-tight">Menu</span>
+				<button
+					onclick={() => (mobileMenuOpen = false)}
+					class="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition cursor-pointer"
+					aria-label="Close menu"
+				>
+					<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+				</button>
+			</div>
+
+			<!-- Nav links -->
+			<nav class="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-1">
+				<!-- Launch CTA in drawer -->
+				<a
+					href="/create"
+					onclick={() => (mobileMenuOpen = false)}
+					class="nav-cta no-underline mb-3 justify-center"
+				>
+					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+					Launch
+				</a>
+
+				{#each navLinks as link}
+					<a
+						href={link.href}
+						onclick={() => (mobileMenuOpen = false)}
+						class="mobile-nav-link px-4 py-3 rounded-lg text-sm transition font-mono flex items-center
+						{page.url.pathname === link.href || (link.href !== '/' && page.url.pathname.startsWith(link.href))
+							? 'text-cyan-400 bg-cyan-400/10'
+							: 'text-gray-400 hover:text-white hover:bg-white/5'}"
+					>{$t(link.key)}</a>
+				{/each}
+
+				<hr class="divider my-2" />
+				<span class="text-[10px] font-mono uppercase tracking-wider px-4 mb-1" style="color: var(--text-dim)">More</span>
+				{#each secondaryLinks as link}
+					<a
+						href={link.href}
+						onclick={() => (mobileMenuOpen = false)}
+						class="mobile-nav-link px-4 py-2.5 rounded-lg text-xs transition font-mono flex items-center
+						{page.url.pathname.startsWith(link.href)
+							? 'text-cyan-400 bg-cyan-400/10'
+							: 'text-gray-500 hover:text-white hover:bg-white/5'}"
+					>{$t(link.key)}</a>
+				{/each}
+			</nav>
+
+			<!-- Bottom actions -->
+			<div class="px-4 py-5 border-t flex flex-col gap-3" style="border-color: var(--border-subtle)">
+				<div class="flex items-center justify-between">
+					<span class="text-xs font-mono uppercase tracking-wider" style="color: var(--text-dim)">Language</span>
+					<LanguageSwitcher />
+				</div>
+				<appkit-button size="sm"></appkit-button>
+			</div>
+		</div>
+	</div>
+
+	<div id="scroll-container" class="flex-1 overflow-y-auto overflow-x-hidden">
+	<main id="main-content" class="min-h-screen">
 		{#if isLoading}
 			<div class="flex items-center justify-center min-h-[80vh]">
 				<div class="flex flex-col items-center gap-4">
@@ -303,23 +434,24 @@
 						<span class="syne font-bold text-lg tracking-tight">TokenKrafter</span>
 					</a>
 					<p class="text-sm text-gray-500 font-mono leading-relaxed max-w-xs">
-						Deploy custom ERC-20 tokens across multiple chains. No coding required.
+						{$t('footer.tagline')}
 					</p>
 				</div>
 
 				<!-- Quick Links -->
 				<div>
-					<h4 class="syne font-bold text-sm mb-4">Quick Links</h4>
+					<h4 class="syne font-bold text-sm mb-4">{$t('footer.quickLinks')}</h4>
 					<div class="flex flex-col gap-2">
-						{#each navLinks as link}
-							<a href={link.href} class="text-sm text-gray-400 hover:text-cyan-400 transition font-mono">{link.label}</a>
+						{#each [...navLinks, ...secondaryLinks] as link}
+							<a href={link.href} class="text-sm text-gray-400 hover:text-cyan-400 transition font-mono">{$t(link.key)}</a>
 						{/each}
+						<a href="/terms" class="text-sm text-gray-400 hover:text-cyan-400 transition font-mono">{$t('footer.termsOfService')}</a>
 					</div>
 				</div>
 
 				<!-- Community -->
 				<div>
-					<h4 class="syne font-bold text-sm mb-4">Community</h4>
+					<h4 class="syne font-bold text-sm mb-4">{$t('footer.community')}</h4>
 					<div class="flex flex-wrap gap-2">
 						{#each socials as social}
 							<a
@@ -328,6 +460,7 @@
 								rel="noopener noreferrer"
 								class="social-link flex items-center gap-2 px-3 py-2 rounded-lg border border-white/7 bg-white/3 hover:border-cyan-500/30 hover:bg-cyan-500/5 transition text-sm font-mono text-gray-400 hover:text-cyan-400"
 								title={social.label}
+								aria-label={social.label}
 							>
 								<svg class="social-svg" viewBox="0 0 24 24" fill="currentColor">{@html social.svg}</svg>
 								<span class="hidden sm:inline">{social.label}</span>
@@ -340,12 +473,13 @@
 			<hr class="divider mt-10 mb-6" />
 
 			<div class="flex flex-col sm:flex-row items-center justify-between gap-4">
-				<p class="text-xs font-mono" style="color: var(--text-dim)">&copy; {new Date().getFullYear()} TokenKrafter. All rights reserved.</p>
+				<p class="text-xs font-mono" style="color: var(--text-dim)">&copy; {new Date().getFullYear()} TokenKrafter. {$t('footer.allRightsReserved')}.</p>
 				<div class="flex items-center gap-4">
 					<button
 						onclick={toggleTheme}
 						class="theme-toggle"
 						title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+						aria-label="Toggle dark/light theme"
 					>
 						{#if theme === 'dark'}
 							<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
@@ -362,6 +496,7 @@
 								rel="noopener noreferrer"
 								class="footer-social-icon"
 								title={social.label}
+								aria-label={social.label}
 							><svg class="social-svg-sm" viewBox="0 0 24 24" fill="currentColor">{@html social.svg}</svg></a>
 						{/each}
 					</div>
@@ -369,6 +504,7 @@
 			</div>
 		</div>
 	</footer>
+	</div>
 </div>
 
 <style>
@@ -397,6 +533,25 @@
 		border-radius: 50%;
 	}
 	.nav-bar { background: var(--bg-nav); }
+	.nav-cta {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+		background: linear-gradient(135deg, #00d2ff, #3a7bd5);
+		color: white;
+		font-weight: 600;
+		padding: 6px 14px;
+		border-radius: 8px;
+		border: none;
+		cursor: pointer;
+		transition: all 0.2s;
+		font-family: 'Syne', sans-serif;
+		font-size: 13px;
+	}
+	.nav-cta:hover {
+		transform: translateY(-1px);
+		box-shadow: 0 4px 16px rgba(0, 210, 255, 0.3);
+	}
 	.toast { animation: slideIn 0.3s ease-out; }
 	@keyframes slideIn {
 		from { opacity: 0; transform: translateX(20px); }
@@ -443,5 +598,56 @@
 	}
 	.footer-social-icon:hover {
 		color: #00d2ff;
+	}
+
+	/* ─── Mobile Drawer ─── */
+	.mobile-backdrop {
+		background: rgba(0, 0, 0, 0.6);
+		backdrop-filter: blur(4px);
+		animation: fadeIn 0.25s ease-out;
+	}
+	@keyframes fadeIn {
+		from { opacity: 0; }
+		to   { opacity: 1; }
+	}
+	.mobile-drawer {
+		width: 280px;
+		max-width: 85vw;
+		background: var(--bg-mobile-menu);
+		border-left: 1px solid var(--border-subtle);
+		backdrop-filter: blur(20px);
+		transform: translateX(100%);
+		transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+		pointer-events: none;
+	}
+	.mobile-drawer-open {
+		transform: translateX(0);
+		pointer-events: auto;
+	}
+	.mobile-nav-link {
+		font-family: 'Space Mono', monospace;
+	}
+	.skip-to-content {
+		position: absolute;
+		left: -9999px;
+		top: auto;
+		width: 1px;
+		height: 1px;
+		overflow: hidden;
+	}
+	.skip-to-content:focus {
+		position: fixed;
+		top: 8px;
+		left: 8px;
+		width: auto;
+		height: auto;
+		padding: 8px 16px;
+		background: var(--bg-surface);
+		color: var(--text);
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		z-index: 200;
+		font-family: 'Space Mono', monospace;
+		font-size: 13px;
 	}
 </style>

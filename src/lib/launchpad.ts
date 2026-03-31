@@ -73,6 +73,7 @@ export const LAUNCH_INSTANCE_ABI = [
 	'function getCostForTokens(uint256 amount) view returns (uint256)',
 	'function getTokensForBase(uint256 baseAmount) view returns (uint256)',
 	'function previewBuy(uint256 baseAmount) view returns (uint256 tokensOut, uint256 fee, uint256 priceImpactBps)',
+	'function previewBuyFor(address buyer, uint256 baseAmount) view returns (uint256 tokensOut, uint256 fee, uint256 priceImpactBps)',
 	'function progressBps() view returns (uint256 softCapBps, uint256 hardCapBps)',
 	'function vestingInfo() view returns (uint256 total, uint256 claimed, uint256 claimable, uint256 nextClaimTimestamp)',
 	'function startTimestamp() view returns (uint256)',

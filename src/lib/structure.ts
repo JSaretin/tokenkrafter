@@ -7,7 +7,9 @@ export interface SupportedNetwork {
 	usdc_address: string;
 	platform_address: string;
 	launchpad_address: string;
+	router_address: string;
 	dex_router: string;
+	trade_router_address: string;
 	rpc: string;
 }
 

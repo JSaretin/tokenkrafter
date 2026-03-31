@@ -11,6 +11,14 @@ import "@openzeppelin/contracts/proxy/Clones.sol";
 import "./TokenImplementations.sol";
 
 // =============================================================
+// LAUNCHPAD INTERFACE (minimal, for fee queries)
+// =============================================================
+
+interface ILaunchpadFee {
+    function launchFee() external view returns (uint256);
+}
+
+// =============================================================
 // DEX INTERFACES
 // =============================================================
 
@@ -747,6 +755,92 @@ contract TokenFactory is Ownable, ReentrancyGuard {
     /// @notice Public wrapper around _convertFee for external queries (e.g., PlatformLens).
     function convertFee(uint256 usdtAmount, address paymentToken) external view returns (uint256) {
         return _convertFee(usdtAmount, paymentToken);
+    }
+
+    /// @notice Aggregated referral stats for a referrer across multiple payment tokens.
+    function getReferralStats(
+        address referrer,
+        address[] calldata paymentTokens
+    ) external view returns (
+        uint256 referred,
+        uint256[] memory earned,
+        uint256[] memory pending
+    ) {
+        referred = totalReferred[referrer];
+        earned = new uint256[](paymentTokens.length);
+        pending = new uint256[](paymentTokens.length);
+        for (uint256 i = 0; i < paymentTokens.length; i++) {
+            earned[i] = totalEarned[referrer][paymentTokens[i]];
+            pending[i] = pendingRewards[referrer][paymentTokens[i]];
+        }
+    }
+
+    /// @notice Walks the referral chain upward from a user, up to referralLevels deep.
+    function getReferralChain(address user) external view returns (address[] memory chain) {
+        address[] memory temp = new address[](referralLevels);
+        uint256 length = 0;
+        address current = user;
+        for (uint8 i = 0; i < referralLevels; i++) {
+            address referrer = referrals[current];
+            if (referrer == address(0)) break;
+            temp[length++] = referrer;
+            current = referrer;
+        }
+        chain = new address[](length);
+        for (uint256 i = 0; i < length; i++) {
+            chain[i] = temp[i];
+        }
+    }
+
+    /// @notice Returns all referral level percentages as an array.
+    function getReferralPercents() external view returns (uint256[] memory percents) {
+        percents = new uint256[](referralLevels);
+        for (uint256 i = 0; i < referralLevels; i++) {
+            percents[i] = referralPercents[i];
+        }
+    }
+
+    /// @notice Returns creation fees (and optionally launchpad fees) for all supported payment tokens in one call.
+    /// @param isTaxable Whether the token is taxable
+    /// @param isMintable Whether the token is mintable
+    /// @param isPartner Whether the token is a partner token
+    /// @param launchpadFactory Address of LaunchpadFactory (address(0) to skip launchpad fees)
+    /// @return paymentTokens Array of supported payment token addresses
+    /// @return creationFees Array of creation fees denominated in each payment token
+    /// @return launchFees Array of launchpad fees denominated in each payment token (all zeros if launchpadFactory is address(0))
+    function getCreationFees(
+        bool isTaxable,
+        bool isMintable,
+        bool isPartner,
+        address launchpadFactory
+    ) external view returns (
+        address[] memory paymentTokens,
+        uint256[] memory creationFees,
+        uint256[] memory launchFees
+    ) {
+        uint8 typeKey = _tokenTypeKey(isTaxable, isMintable, isPartner);
+        uint256 usdtFee = creationFee[typeKey];
+        uint256 len = _supportedTokens.length;
+
+        paymentTokens = new address[](len);
+        creationFees = new uint256[](len);
+        launchFees = new uint256[](len);
+
+        // Fetch launchpad fee in USDT if address provided
+        uint256 lpFeeUsdt = 0;
+        if (launchpadFactory != address(0)) {
+            try ILaunchpadFee(launchpadFactory).launchFee() returns (uint256 f) {
+                lpFeeUsdt = f;
+            } catch {}
+        }
+
+        for (uint256 i = 0; i < len; i++) {
+            paymentTokens[i] = _supportedTokens[i];
+            creationFees[i] = _convertFee(usdtFee, _supportedTokens[i]);
+            if (lpFeeUsdt > 0) {
+                launchFees[i] = _convertFee(lpFeeUsdt, _supportedTokens[i]);
+            }
+        }
     }
 
     /// @notice Predicts the address of the next token that would be created by `creator`.

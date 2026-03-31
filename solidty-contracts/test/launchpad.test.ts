@@ -1326,21 +1326,20 @@ describe("Launchpad Tests", function () {
         const token = await ethers.getContractAt("BasicTokenImpl", tokenAddress);
         await token.connect(alice).enableTrading();
 
-        // Use custom curve with intercept that makes tokens cost ~1 USDT each
-        // linearCost(supply, amount, slope, intercept):
-        //   term2 = intercept * amount / 1e18
-        // For intercept = 1e6, cost for 1 token (1e18 units) = 1e6 * 1e18 / 1e18 = 1e6 = 1 USDT
+        // Use a custom curve with high intercept so minimum token cost > 1 USDT unit
+        // intercept = 1e18 means 1 token (1e18) costs 1e18 virtual units = 1 USDT
+        // With this curve, _getTokensForBase(1) returns 0 (1 unit can't buy a whole token)
         const tokensForLaunch = ethers.parseUnits("700000", 18);
         const tx = await launchpadFactory.connect(alice).createLaunchCustomCurve(
           tokenAddress,
           tokensForLaunch,
           0, // Linear
-          BigInt(0),    // zero slope (constant price)
-          BigInt(1e6),  // 1 USDT per token
-          BigInt(10) * BigInt(1e6),      // soft cap 10 USDT
-          BigInt(500000) * BigInt(1e6),  // very high hard cap
+          BigInt(0),         // zero slope
+          BigInt(1e18),      // intercept = 1 USDT per token (high price)
+          BigInt(100) * BigInt(1e6),  // soft cap
+          BigInt(500) * BigInt(1e6),  // hard cap
           30,
-          100, // maxBuyBps = 1% of curve tokens
+          100, // maxBuyBps = 1% of hard cap = 5 USDT
           0,
           0,
           ethers.ZeroAddress,
@@ -1365,19 +1364,18 @@ describe("Launchpad Tests", function () {
         await token.connect(alice).setExcludedFromLimits(launchAddress, true);
 
         const maxBuy = await launchInstance.maxBuyPerWallet();
-        // maxBuy = (700000 * 0.7 * 100) / 10000 = 4900 tokens
-        // Cost for maxBuy+1 tokens = ~4901 USDT (plus 1% fee = ~4951 USDT)
-        const costForExceeding = await launchInstance.getCostForTokens(maxBuy + BigInt(1e18));
-        const usdtNeeded = (costForExceeding * BigInt(10200)) / BigInt(9900);
+        // maxBuy = 5 USDT = 5_000_000 (6 decimals)
 
-        // Mint USDT for bob (the deployer minted 1B, we need ~5000)
-        await usdt.transfer(bob.address, usdtNeeded + BigInt(1e6));
         const usdtAddr = await usdt.getAddress();
-        await usdt.connect(bob).approve(launchAddress, usdtNeeded + BigInt(1e6));
+        await usdt.transfer(bob.address, BigInt(100) * BigInt(1e6));
+        await usdt.connect(bob).approve(launchAddress, BigInt(100) * BigInt(1e6));
 
-        // This single buy attempts to get maxBuy+1 tokens -> ExceedsMaxBuy
+        // First buy: large amount gets capped to maxBuyPerWallet
+        await launchInstance.connect(bob).buyWithToken(usdtAddr, BigInt(50) * BigInt(1e6), 0, 0);
+
+        // Second buy should revert: remaining_allowance is tiny, _getTokensForBase returns 0
         await expect(
-          launchInstance.connect(bob).buyWithToken(usdtAddr, usdtNeeded, 0, 0)
+          launchInstance.connect(bob).buyWithToken(usdtAddr, BigInt(50) * BigInt(1e6), 0, 0)
         ).to.be.revertedWithCustomError(launchInstance, "ExceedsMaxBuy");
       });
 
@@ -1441,27 +1439,25 @@ describe("Launchpad Tests", function () {
         const launchAddress = await createAndActivateLaunch(alice, tokenAddress, {
           softCap: BigInt(50) * BigInt(1e6),
           hardCap: BigInt(200) * BigInt(1e6),
-          maxBuyBps: 500, // 5% of curve tokens per wallet
+          maxBuyBps: 500, // 5% of hard cap = 10 USDT per wallet
         });
         const launchInstance = await ethers.getContractAt("LaunchInstance", launchAddress);
 
         await token.connect(alice).setExcludedFromLimits(launchAddress, true);
 
-        // Fund USDT to the launch instance for graduation (addLiquidity needs USDT)
-        // The USDT is held by the launch from buys. The mock router's addLiquidity
-        // will pull tokens from the launch instance, but for the USDT side, the launch
-        // holds USDT from buy conversions.
-
         // Buy enough to hit the hard cap ($200)
-        // 0.1 ETH = 200 USDT at our mock price
-        // Buy from multiple accounts to stay under maxBuy
-        const buyValue = ethers.parseEther("0.03"); // ~60 USDT each
-        await launchInstance.connect(bob).buy(0, 0, { value: buyValue });
-        await launchInstance.connect(charlie).buy(0, 0, { value: buyValue });
-        await launchInstance.connect(dave).buy(0, 0, { value: buyValue });
-
-        // Final push to hard cap
-        await launchInstance.connect(alice).buy(0, 0, { value: ethers.parseEther("0.05") });
+        // maxBuyPerWallet = 200 * 500 / 10000 = 10 USDT per wallet
+        // 0.005 ETH = ~10 USDT at mock price of 2000 USDT/ETH
+        // Need 20+ wallets to reach hard cap
+        const signers = await ethers.getSigners();
+        const buyValue = ethers.parseEther("0.006"); // ~12 USDT (capped to ~10 USDT per wallet)
+        for (let i = 0; i < 25; i++) {
+          try {
+            await launchInstance.connect(signers[i]).buy(0, 0, { value: buyValue });
+          } catch {
+            break; // May revert once hard cap is reached or all tokens sold
+          }
+        }
 
         // Should have auto-graduated
         expect(await launchInstance.state()).to.equal(2); // Graduated
@@ -1564,8 +1560,8 @@ describe("Launchpad Tests", function () {
         const token = await ethers.getContractAt("BasicTokenImpl", tokenAddress);
         const launchAddress = await createAndActivateLaunch(alice, tokenAddress, {
           softCap: BigInt(50) * BigInt(1e6),
-          hardCap: BigInt(500) * BigInt(1e6),
-          maxBuyBps: 500,
+          hardCap: BigInt(2500) * BigInt(1e6), // hardCap high enough so 5% per wallet (125 USDT) > buy amount
+          maxBuyBps: 500, // 5% of hard cap per wallet = 125 USDT
         });
         const launchInstance = await ethers.getContractAt("LaunchInstance", launchAddress);
 
@@ -1592,8 +1588,8 @@ describe("Launchpad Tests", function () {
         const token = await ethers.getContractAt("BasicTokenImpl", tokenAddress);
         const launchAddress = await createAndActivateLaunch(alice, tokenAddress, {
           softCap: BigInt(50) * BigInt(1e6),
-          hardCap: BigInt(500) * BigInt(1e6),
-          maxBuyBps: 500,
+          hardCap: BigInt(2500) * BigInt(1e6), // hardCap high enough so 5% per wallet (125 USDT) > buy amount
+          maxBuyBps: 500, // 5% of hard cap per wallet = 125 USDT
         });
         const launchInstance = await ethers.getContractAt("LaunchInstance", launchAddress);
 
@@ -1701,8 +1697,8 @@ describe("Launchpad Tests", function () {
         const token = await ethers.getContractAt("BasicTokenImpl", tokenAddress);
         const launchAddress = await createAndActivateLaunch(alice, tokenAddress, {
           softCap: BigInt(50) * BigInt(1e6),
-          hardCap: BigInt(500) * BigInt(1e6),
-          maxBuyBps: 500,
+          hardCap: BigInt(2500) * BigInt(1e6), // hardCap high enough so 5% per wallet (125 USDT) > buy amount
+          maxBuyBps: 500, // 5% of hard cap per wallet = 125 USDT
         });
         const launchInstance = await ethers.getContractAt("LaunchInstance", launchAddress);
 
@@ -1963,8 +1959,8 @@ describe("Launchpad Tests", function () {
         const token = await ethers.getContractAt("BasicTokenImpl", tokenAddress);
         const launchAddress = await createAndActivateLaunch(alice, tokenAddress, {
           softCap: BigInt(50) * BigInt(1e6),
-          hardCap: BigInt(500) * BigInt(1e6),
-          maxBuyBps: 500,
+          hardCap: BigInt(2500) * BigInt(1e6), // hardCap high enough so 5% per wallet (125 USDT) > buy amount
+          maxBuyBps: 500, // 5% of hard cap per wallet = 125 USDT
           creatorAllocationBps: 500,
           vestingDays: 30,
         });
@@ -1993,8 +1989,8 @@ describe("Launchpad Tests", function () {
         const token = await ethers.getContractAt("BasicTokenImpl", tokenAddress);
         const launchAddress = await createAndActivateLaunch(alice, tokenAddress, {
           softCap: BigInt(50) * BigInt(1e6),
-          hardCap: BigInt(500) * BigInt(1e6),
-          maxBuyBps: 500,
+          hardCap: BigInt(2500) * BigInt(1e6), // hardCap high enough so 5% per wallet (125 USDT) > buy amount
+          maxBuyBps: 500, // 5% of hard cap per wallet = 125 USDT
           creatorAllocationBps: 500, // 5%
           vestingDays: 30,
         });
@@ -2045,8 +2041,8 @@ describe("Launchpad Tests", function () {
         // No creator allocation
         const launchAddress = await createAndActivateLaunch(alice, tokenAddress, {
           softCap: BigInt(50) * BigInt(1e6),
-          hardCap: BigInt(500) * BigInt(1e6),
-          maxBuyBps: 500,
+          hardCap: BigInt(2500) * BigInt(1e6), // hardCap high enough so 5% per wallet (125 USDT) > buy amount
+          maxBuyBps: 500, // 5% of hard cap per wallet = 125 USDT
           creatorAllocationBps: 0,
           vestingDays: 0,
         });
@@ -2071,8 +2067,8 @@ describe("Launchpad Tests", function () {
         const token = await ethers.getContractAt("BasicTokenImpl", tokenAddress);
         const launchAddress = await createAndActivateLaunch(alice, tokenAddress, {
           softCap: BigInt(50) * BigInt(1e6),
-          hardCap: BigInt(500) * BigInt(1e6),
-          maxBuyBps: 500,
+          hardCap: BigInt(2500) * BigInt(1e6), // hardCap high enough so 5% per wallet (125 USDT) > buy amount
+          maxBuyBps: 500, // 5% of hard cap per wallet = 125 USDT
           creatorAllocationBps: 500,
           vestingDays: 30,
         });
@@ -2146,7 +2142,7 @@ describe("Launchpad Tests", function () {
           BigInt(100) * BigInt(1e6)
         );
         expect(tokensOut).to.be.gt(0);
-        expect(fee).to.be.gt(0); // 1% buy fee
+        expect(fee).to.equal(0); // No buy fee — platform earns from graduation only
       });
 
       it("previewBuy returns zeros when not active", async function () {
@@ -2225,8 +2221,8 @@ describe("Launchpad Tests", function () {
         const token = await ethers.getContractAt("BasicTokenImpl", tokenAddress);
         const launchAddress = await createAndActivateLaunch(alice, tokenAddress, {
           softCap: BigInt(50) * BigInt(1e6),
-          hardCap: BigInt(500) * BigInt(1e6),
-          maxBuyBps: 500,
+          hardCap: BigInt(2500) * BigInt(1e6), // hardCap high enough so 5% per wallet (125 USDT) > buy amount
+          maxBuyBps: 500, // 5% of hard cap per wallet = 125 USDT
           creatorAllocationBps: 500,
           vestingDays: 30,
         });
