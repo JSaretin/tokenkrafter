@@ -2,7 +2,6 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { env } from '$env/dynamic/private';
 import { supabaseAdmin } from '$lib/supabaseServer';
-import crypto from 'crypto';
 
 // POST /api/webhooks/flutterwave — handle transfer status updates
 export const POST: RequestHandler = async ({ request }) => {
