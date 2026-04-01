@@ -310,14 +310,16 @@
 
 			<!-- Right side: actions -->
 			<div class="flex items-center gap-2">
-				<a href="/create" class="hidden md:inline-flex nav-cta no-underline">
+				<a href="/create" class="nav-cta nav-cta-desktop no-underline">
 					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
 					Launch
 				</a>
-				<div class="hidden md:block"><LanguageSwitcher /></div>
-				<div class="hidden md:block"><appkit-button size="sm"></appkit-button></div>
-
-				<!-- Wallet in drawer on mobile, not top bar -->
+				<div class="lang-desktop"><LanguageSwitcher /></div>
+				{#if userAddress}
+					<appkit-network-button></appkit-network-button>
+				{/if}
+				<div class="wallet-desktop"><appkit-button size="sm"></appkit-button></div>
+				<div class="wallet-mobile"><appkit-button size="sm" balance="hide"></appkit-button></div>
 			</div>
 		</div>
 	</nav>
@@ -549,6 +551,16 @@
 		border-radius: 50%;
 	}
 	.nav-bar { background: var(--bg-nav); }
+	/* Desktop/mobile visibility */
+	.nav-cta-desktop, .lang-desktop, .wallet-desktop { display: none; }
+	.wallet-mobile { display: block; }
+	@media (min-width: 768px) {
+		.nav-cta-desktop { display: inline-flex; }
+		.lang-desktop { display: block; }
+		.wallet-desktop { display: block; }
+		.wallet-mobile { display: none; }
+	}
+
 	.nav-cta {
 		display: inline-flex;
 		align-items: center;
