@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { ethers } from 'ethers';
 	import { getContext, onMount } from 'svelte';
+	import { page } from '$app/state';
 	import { supabase } from '$lib/supabaseClient';
 	import type { SupportedNetwork } from '$lib/structure';
 	import { ERC20_ABI, ZERO_ADDRESS } from '$lib/tokenCrafter';
@@ -182,7 +183,59 @@
 				fiatRates = rateData.rates || {};
 			}
 		} catch {}
+
+		// ── URL parameter pre-selection ──────────────────────────
+		await handleUrlParams();
 	});
+
+	async function handleUrlParams() {
+		const urlFrom = page.url.searchParams.get('from');
+		const urlTo = page.url.searchParams.get('to');
+		const urlToken = page.url.searchParams.get('token');
+
+		// Resolve "from" token (input side)
+		if (urlFrom) {
+			const matchedIn = findTokenBySymbolOrAddress(urlFrom);
+			if (matchedIn) {
+				await selectToken('in', matchedIn);
+			} else if (ethers.isAddress(urlFrom)) {
+				const meta = await fetchMeta(urlFrom, false);
+				await selectToken('in', { address: urlFrom, symbol: meta.symbol, name: meta.name, decimals: meta.decimals });
+			}
+		}
+
+		// Resolve "to" or "token" (output side)
+		const target = urlToken || urlTo;
+		if (target) {
+			if (ethers.isAddress(target)) {
+				const meta = await fetchMeta(target, false);
+				await selectToken('out', { address: target, symbol: meta.symbol, name: meta.name, decimals: meta.decimals });
+			} else {
+				// Try matching built-in / platform tokens by symbol first
+				const matchedOut = findTokenBySymbolOrAddress(target);
+				if (matchedOut) {
+					await selectToken('out', matchedOut);
+				} else {
+					// Resolve via token alias API
+					try {
+						const res = await fetch(`/api/token-alias?alias=${encodeURIComponent(target)}`);
+						const data = await res.json();
+						if (data.address) {
+							const meta = await fetchMeta(data.address, false);
+							await selectToken('out', { address: data.address, symbol: meta.symbol, name: meta.name, decimals: meta.decimals });
+						}
+					} catch {}
+				}
+			}
+		}
+	}
+
+	function findTokenBySymbolOrAddress(query: string): { address: string; symbol: string; name: string; decimals: number; isNative?: boolean } | undefined {
+		const q = query.toLowerCase();
+		return allTokens.find(
+			(t) => t.symbol.toLowerCase() === q || t.address.toLowerCase() === q
+		);
+	}
 
 	let filteredBanks = $derived.by(() => {
 		const q = bankSearchQuery.toLowerCase().trim();

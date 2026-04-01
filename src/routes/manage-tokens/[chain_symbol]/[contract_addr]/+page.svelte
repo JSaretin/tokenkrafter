@@ -87,6 +87,12 @@
 	let launchAddress: string | null = $state(null);
 	let launchpadChecked = $state(false);
 
+	// Token alias state
+	let tokenAlias = $state('');
+	let tokenAliasInput = $state('');
+	let tokenAliasSaving = $state(false);
+	let tokenAliasLoaded = $state(false);
+
 	// Liquidity states
 	let selectedRouter = $state('');
 
@@ -293,11 +299,65 @@
 		await loadToken();
 		isLoading = false;
 		checkLaunchpad();
+		loadTokenAlias();
 		// Auto-load pools in background if router is set
 		if (selectedRouter && !poolsLoaded) {
 			lookupExistingPools();
 		}
 	});
+
+	async function loadTokenAlias() {
+		if (!contractAddress) return;
+		try {
+			const res = await fetch(`/api/token-alias?address=${encodeURIComponent(contractAddress)}`);
+			const data = await res.json();
+			if (data.alias) {
+				tokenAlias = data.alias;
+				tokenAliasInput = data.alias;
+			}
+		} catch {}
+		tokenAliasLoaded = true;
+	}
+
+	async function saveTokenAlias() {
+		if (!userAddress || !network || !contractAddress) return;
+		const s = await ensureSigner();
+		if (!s) return;
+
+		tokenAliasSaving = true;
+		try {
+			const ts = Date.now();
+			const message = `Set token alias "${tokenAliasInput}" for ${contractAddress}\nTimestamp: ${ts}`;
+			const signature = await s.signMessage(message);
+
+			const res = await fetch('/api/token-alias', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					alias: tokenAliasInput,
+					token_address: contractAddress,
+					chain_id: network.chain_id,
+					signature,
+					signed_message: message
+				})
+			});
+
+			if (res.ok) {
+				const data = await res.json();
+				tokenAlias = data.alias;
+				addFeedback({ message: `Alias "${data.alias}" saved`, type: 'success' });
+			} else {
+				const err = await res.json().catch(() => ({ message: 'Failed to save alias' }));
+				addFeedback({ message: err.message || 'Failed to save alias', type: 'error' });
+			}
+		} catch (e: any) {
+			if (!e?.message?.includes('user rejected')) {
+				addFeedback({ message: 'Failed to save alias', type: 'error' });
+			}
+		} finally {
+			tokenAliasSaving = false;
+		}
+	}
 
 	async function ensureSigner() {
 		if (!signer || !userAddress) {
@@ -1175,6 +1235,50 @@
 								</div>
 							</div>
 						{/if}
+					</div>
+				{/if}
+
+				<!-- Token Alias -->
+				{#if tokenAliasLoaded && isOwner}
+					<div class="panel mt-4">
+						<h3 class="syne text-lg font-bold text-white mb-3">Token Alias</h3>
+						<p class="text-gray-400 text-xs font-mono mb-3">
+							Set a short alias for your token. Share trade links like <span class="text-cyan-400">/trade?token={tokenAliasInput || 'mytoken'}</span>
+						</p>
+						<div class="flex items-center gap-2">
+							<input
+								type="text"
+								class="input-field flex-1 text-sm"
+								placeholder="e.g. mytoken"
+								bind:value={tokenAliasInput}
+								maxlength="30"
+							/>
+							<button
+								class="btn-primary text-xs px-4 py-2.5 shrink-0"
+								onclick={saveTokenAlias}
+								disabled={tokenAliasSaving || !tokenAliasInput.trim() || tokenAliasInput.trim() === tokenAlias}
+							>
+								{#if tokenAliasSaving}
+									Saving...
+								{:else if tokenAlias}
+									Update Alias
+								{:else}
+									Set Alias
+								{/if}
+							</button>
+						</div>
+						{#if tokenAlias}
+							<p class="text-emerald-400 text-xs font-mono mt-2">
+								Current alias: <span class="text-white">{tokenAlias}</span>
+							</p>
+						{/if}
+					</div>
+				{:else if tokenAliasLoaded && tokenAlias}
+					<div class="panel mt-4">
+						<h3 class="syne text-lg font-bold text-white mb-3">Token Alias</h3>
+						<p class="text-gray-400 text-xs font-mono">
+							Alias: <span class="text-cyan-400">{tokenAlias}</span> — <a href="/trade?token={tokenAlias}" class="text-cyan-400 underline">Trade link</a>
+						</p>
 					</div>
 				{/if}
 			{/if}

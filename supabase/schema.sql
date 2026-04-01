@@ -267,6 +267,21 @@ create or replace trigger withdrawal_requests_updated_at
   for each row execute function update_updated_at();
 
 -- ============================================================
+-- Token aliases (vanity names for tokens, e.g. MAMA -> 0x...)
+-- ============================================================
+create table if not exists token_aliases (
+  id bigint generated always as identity primary key,
+  alias text not null unique,
+  token_address text not null,
+  chain_id integer not null,
+  creator text not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_token_alias on token_aliases (alias);
+alter table token_aliases enable row level security;
+select create_policy_if_not_exists('token_aliases', 'Anon read', 'select');
+
+-- ============================================================
 -- Nigerian banks reference (local cache)
 -- ============================================================
 create table if not exists ng_banks (
