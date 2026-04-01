@@ -1,6 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { supabaseAdmin } from '$lib/supabaseServer';
+import { ethers } from 'ethers';
 
 // GET /api/launches/comments?address=0x...&limit=50
 export const GET: RequestHandler = async ({ url }) => {
@@ -26,10 +27,27 @@ export const GET: RequestHandler = async ({ url }) => {
 };
 
 // POST /api/launches/comments — add a new comment
+// Requires wallet signature; recovered address is the comment author
 export const POST: RequestHandler = async ({ request }) => {
 	const body = await request.json();
 
-	const required = ['launch_address', 'chain_id', 'wallet_address', 'message'];
+	if (!body.signature || !body.signed_message) {
+		return error(400, 'Signature required');
+	}
+
+	// Recover wallet from signature — this IS the author
+	let walletAddress: string;
+	try {
+		walletAddress = ethers.verifyMessage(body.signed_message, body.signature).toLowerCase();
+		const tsMatch = body.signed_message.match(/Timestamp: (\d+)/);
+		if (tsMatch && Date.now() - parseInt(tsMatch[1]) > 5 * 60 * 1000) {
+			return error(400, 'Signature expired');
+		}
+	} catch {
+		return error(400, 'Invalid signature');
+	}
+
+	const required = ['launch_address', 'chain_id', 'message'];
 	for (const field of required) {
 		if (!body[field]) {
 			return error(400, `Missing required field: ${field}`);
@@ -44,7 +62,7 @@ export const POST: RequestHandler = async ({ request }) => {
 	const row = {
 		launch_address: body.launch_address.toLowerCase(),
 		chain_id: body.chain_id,
-		wallet_address: body.wallet_address.toLowerCase(),
+		wallet_address: walletAddress,
 		message
 	};
 

@@ -32,9 +32,14 @@ export const GET: RequestHandler = async ({ url }) => {
 };
 
 // POST /api/launches — upsert a launch (called after on-chain creation or sync)
-// Protected: only internal callers (sync cron, create page) should call this.
-// In production, add an API key or restrict to server-side callers.
+// Protected: daemon-only. Requires SYNC_SECRET.
 export const POST: RequestHandler = async ({ request }) => {
+	const authHeader = request.headers.get('authorization');
+	const { env } = await import('$env/dynamic/private');
+	if (env.SYNC_SECRET && authHeader !== `Bearer ${env.SYNC_SECRET}`) {
+		return error(401, 'Unauthorized');
+	}
+
 	const body = await request.json();
 
 	const required = ['address', 'chain_id', 'token_address', 'creator'];

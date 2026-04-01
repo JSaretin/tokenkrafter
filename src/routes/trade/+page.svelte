@@ -63,6 +63,7 @@
 	// Swap state
 	let isSwapping = $state(false);
 	let showConfirmModal = $state(false);
+	let swapStep = $state(0); // 0=idle, 1=approve, 2=swap, 3=done
 
 	// Payment method
 	let paymentMethod = $state<'bank' | 'paypal' | 'wise'>('bank');
@@ -545,9 +546,9 @@
 					tx = await router.depositAndSwap(tokenInAddr, parsedIn, 0, hasTaxEither, bankRef);
 				}
 				const receipt = await tx.wait();
-				addFeedback({ message: 'Withdrawal submitted! Processing shortly.', type: 'success' });
 
-				// Parse withdraw ID from event
+				// Step 4: Verify on-chain
+				withdrawStep = 4;
 				let withdrawId = 0;
 				try {
 					const iface = new ethers.Interface(TRADE_ROUTER_ABI);
@@ -575,6 +576,8 @@
 					});
 				} catch {}
 
+				withdrawStep = 5; // all done
+
 				activeWithdrawal = {
 					id: preData.id,
 					withdraw_id: withdrawId,
@@ -591,16 +594,18 @@
 				};
 			} else {
 				// ── Direct swap ──────────────────────────────────
-				// Approve if needed (not for native)
+				// Step 1: Approve if needed (not for native)
+				swapStep = 1;
 				if (!tokenInIsNative) {
 					const erc20 = new ethers.Contract(tokenInAddr, ERC20_ABI, signer);
 					const allowance = await erc20.allowance(userAddress, selectedNetwork.trade_router_address);
 					if (allowance < parsedIn) {
-						addFeedback({ message: `Approving ${tokenInSymbol}...`, type: 'info' });
 						await (await erc20.approve(selectedNetwork.trade_router_address, parsedIn)).wait();
 					}
 				}
 
+				// Step 2: Execute swap
+				swapStep = 2;
 				if (tokenInIsNative) {
 					tx = await router.swapETHForTokens(tokenOutAddr, minOut, tokenOutHasTax, { value: parsedIn });
 				} else if (tokenOutIsNative) {
@@ -609,28 +614,9 @@
 					tx = await router.swapTokens(tokenInAddr, tokenOutAddr, parsedIn, minOut, hasTaxEither);
 				}
 				const swapReceipt = await tx.wait();
-				addFeedback({ message: `Swapped ${amountIn} ${tokenInSymbol} for ${tokenOutSymbol}`, type: 'success' });
+				swapStep = 3; // done
 
-				// Save swap history (best-effort)
-				try {
-					await fetch('/api/recent-transactions', {
-						method: 'POST',
-						headers: { 'Content-Type': 'application/json' },
-						body: JSON.stringify({
-							chain_id: selectedNetwork.chain_id,
-							launch_address: selectedNetwork.trade_router_address,
-							token_symbol: tokenOutSymbol,
-							token_name: tokenOutName || tokenOutSymbol,
-							buyer: userAddress,
-							tokens_amount: amountOut || '0',
-							base_amount: amountIn,
-							base_symbol: tokenInSymbol,
-							base_decimals: tokenInDecimals,
-							token_decimals: tokenOutDecimals,
-							tx_hash: swapReceipt?.hash || ''
-						})
-					});
-				} catch {}
+				// Swap history indexed by daemon from on-chain events
 			}
 
 			amountIn = '';
@@ -642,7 +628,8 @@
 			addFeedback({ message: e.shortMessage || e.message || 'Transaction failed', type: 'error' });
 		} finally {
 			isSwapping = false;
-			withdrawStep = 0;
+			if (withdrawStep < 5) withdrawStep = 0; // don't reset if completed
+			if (swapStep < 3) swapStep = 0;
 		}
 	}
 
@@ -1212,6 +1199,106 @@
 			</div>
 
 			<div class="confirm-body">
+				{#if isSwapping}
+					<!-- ═══ STEPPER (replaces review) ═══ -->
+					{#if outputMode === 'bank' && withdrawStep > 0}
+						{#if withdrawStep >= 5}
+							<div class="ws-complete">
+								<div class="ws-complete-icon">
+									<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+								</div>
+								<span class="ws-complete-text">Withdrawal submitted!</span>
+								<span class="ws-complete-sub">Your funds are secured in the smart contract. You'll receive payment shortly.</span>
+								<button class="swap-btn swap-btn-bank" style="margin: 12px 0 0; width: 100%;" onclick={() => { showConfirmModal = false; }}>
+									View Status
+								</button>
+							</div>
+						{:else}
+							<div class="ws-stepper-header">
+								<span class="ws-stepper-amount">{amountIn} {tokenInSymbol}</span>
+								{#if fiatEquivalent}
+									<span class="ws-stepper-fiat">→ {fiatEquivalent}</span>
+								{/if}
+							</div>
+							<div class="withdraw-steps">
+								{#each [
+									{ n: 1, title: 'Verify Identity', desc: 'Sign with your wallet', activeDesc: 'Waiting for signature...' },
+									{ n: 2, title: 'Approve Token', desc: tokenInIsNative ? 'Skipped for native' : `Allow ${tokenInSymbol}`, activeDesc: tokenInIsNative ? 'Skipping...' : 'Confirm in wallet...' },
+									{ n: 3, title: 'Execute Trade', desc: 'Deposit to contract', activeDesc: 'Confirm in wallet...' },
+									{ n: 4, title: 'Verify On-Chain', desc: 'Confirming transaction', activeDesc: 'Verifying...' }
+								] as step}
+									{@const isDone = withdrawStep > step.n}
+									{@const isActive = withdrawStep === step.n}
+									{@const isPending = withdrawStep < step.n}
+									<div class="withdraw-step" class:ws-done={isDone} class:ws-active={isActive} class:ws-pending={isPending}>
+										<div class="ws-indicator" class:ws-indicator-done={isDone} class:ws-indicator-active={isActive}>
+											{#if isDone}
+												<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+											{:else if isActive}
+												<div class="ws-spinner"></div>
+											{:else}
+												<span>{step.n}</span>
+											{/if}
+										</div>
+										<div class="ws-text">
+											<span class="ws-title">{step.title}</span>
+											<span class="ws-desc">{isActive ? step.activeDesc : step.desc}</span>
+										</div>
+										{#if isDone}
+											<span class="ws-check-label">Done</span>
+										{/if}
+									</div>
+								{/each}
+							</div>
+						{/if}
+					{:else if outputMode === 'token'}
+						{#if swapStep >= 3}
+							<div class="ws-complete">
+								<div class="ws-complete-icon">
+									<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+								</div>
+								<span class="ws-complete-text">Swap complete!</span>
+								<span class="ws-complete-sub">{tokenInSymbol} → {tokenOutSymbol}</span>
+								<button class="swap-btn" style="margin: 12px 0 0; width: 100%;" onclick={() => { showConfirmModal = false; swapStep = 0; amountIn = ''; amountOut = ''; }}>
+									Done
+								</button>
+							</div>
+						{:else}
+							<div class="ws-stepper-header">
+								<span class="ws-stepper-amount">{amountIn} {tokenInSymbol} → {amountOut} {tokenOutSymbol}</span>
+							</div>
+							<div class="withdraw-steps">
+								{#each [
+									{ n: 1, title: 'Approve Token', desc: tokenInIsNative ? 'Skipped for native' : `Allow ${tokenInSymbol}`, activeDesc: tokenInIsNative ? 'Skipping...' : 'Confirm in wallet...' },
+									{ n: 2, title: 'Execute Swap', desc: `${tokenInSymbol} → ${tokenOutSymbol}`, activeDesc: 'Confirm in wallet...' }
+								] as step}
+									{@const isDone = swapStep > step.n}
+									{@const isActive = swapStep === step.n}
+									{@const isPending = swapStep < step.n}
+									<div class="withdraw-step" class:ws-done={isDone} class:ws-active={isActive} class:ws-pending={isPending}>
+										<div class="ws-indicator" class:ws-indicator-done={isDone} class:ws-indicator-active={isActive}>
+											{#if isDone}
+												<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+											{:else if isActive}
+												<div class="ws-spinner"></div>
+											{:else}
+												<span>{step.n}</span>
+											{/if}
+										</div>
+										<div class="ws-text">
+											<span class="ws-title">{step.title}</span>
+											<span class="ws-desc">{isActive ? step.activeDesc : step.desc}</span>
+										</div>
+										{#if isDone}
+											<span class="ws-check-label">Done</span>
+										{/if}
+									</div>
+								{/each}
+							</div>
+						{/if}
+					{/if}
+				{:else}
+				<!-- ═══ REVIEW (before clicking confirm) ═══ -->
 				<div class="confirm-token-box">
 					<span class="confirm-label">You pay</span>
 					<div class="confirm-amount-row">
@@ -1296,61 +1383,13 @@
 					{/if}
 				</div>
 
-				{#if isSwapping}
-					{#if outputMode === 'bank' && withdrawStep > 0}
-						<!-- 3-step progress for bank withdrawal -->
-						<div class="withdraw-steps">
-							{#each [
-								{ n: 1, title: 'Verify Identity', desc: 'Sign with your wallet' },
-								{ n: 2, title: 'Approve Token', desc: tokenInIsNative ? 'Skipped for native token' : `Allow ${tokenInSymbol} spending` },
-								{ n: 3, title: 'Execute Trade', desc: 'Deposit to smart contract' }
-							] as step}
-								{@const isDone = withdrawStep > step.n}
-								{@const isActive = withdrawStep === step.n}
-								{@const isPending = withdrawStep < step.n}
-								<div class="withdraw-step" class:ws-done={isDone} class:ws-active={isActive} class:ws-pending={isPending}>
-									<div class="ws-indicator" class:ws-indicator-done={isDone} class:ws-indicator-active={isActive}>
-										{#if isDone}
-											<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-										{:else if isActive}
-											<div class="ws-spinner"></div>
-										{:else}
-											<span>{step.n}</span>
-										{/if}
-									</div>
-									<div class="ws-text">
-										<span class="ws-title">{step.title}</span>
-										<span class="ws-desc">
-											{#if isActive && step.n === 1}Waiting for signature...
-											{:else if isActive && step.n === 2}{tokenInIsNative ? 'Skipping...' : 'Confirm in wallet...'}
-											{:else if isActive && step.n === 3}Confirm transaction in wallet...
-											{:else}{step.desc}
-											{/if}
-										</span>
-									</div>
-									{#if isDone}
-										<span class="ws-check-label">Done</span>
-									{/if}
-								</div>
-							{/each}
-						</div>
-						<div class="ws-overall">
-							Step {withdrawStep} of 3
-						</div>
-					{:else}
-						<div class="confirm-processing">
-							<div class="spinner"></div>
-							<span>Processing...</span>
-						</div>
-					{/if}
-				{:else}
-					<button
-						class="swap-btn" class:swap-btn-bank={outputMode === 'bank'}
-						style="margin: 0; width: 100%;"
-						onclick={async () => { await handleSwap(); if (!isSwapping) showConfirmModal = false; }}
-					>
-						{outputMode === 'bank' ? 'Confirm Withdrawal' : 'Confirm Swap'}
-					</button>
+				<button
+					class="swap-btn" class:swap-btn-bank={outputMode === 'bank'}
+					style="margin: 0; width: 100%;"
+					onclick={async () => { await handleSwap(); }}
+				>
+					{outputMode === 'bank' ? 'Confirm Withdrawal' : 'Confirm Swap'}
+				</button>
 				{/if}
 			</div>
 		</div>
@@ -1891,9 +1930,34 @@
 		font-family: 'Space Mono', monospace; font-size: 10px; font-weight: 700;
 		color: #10b981; flex-shrink: 0;
 	}
-	.ws-overall {
-		text-align: center; font-family: 'Space Mono', monospace; font-size: 11px;
-		color: var(--text-muted); padding: 4px 0 8px;
+	.ws-stepper-header {
+		text-align: center; padding: 8px 0 16px;
+	}
+	.ws-stepper-amount {
+		font-family: 'Syne', sans-serif; font-size: 18px; font-weight: 700;
+		color: var(--text-heading);
+	}
+	.ws-stepper-fiat {
+		display: block; font-family: 'Space Mono', monospace; font-size: 14px;
+		font-weight: 700; color: #10b981; margin-top: 2px;
+	}
+	.ws-complete {
+		text-align: center; padding: 16px 0 8px;
+	}
+	.ws-complete-icon {
+		width: 56px; height: 56px; border-radius: 50%; margin: 0 auto 12px;
+		display: flex; align-items: center; justify-content: center;
+		background: rgba(16,185,129,0.1); border: 2px solid rgba(16,185,129,0.3);
+		animation: scaleIn 0.3s ease;
+	}
+	@keyframes scaleIn { from { transform: scale(0.5); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+	.ws-complete-text {
+		display: block; font-family: 'Syne', sans-serif; font-size: 18px; font-weight: 700;
+		color: #10b981; margin-bottom: 4px;
+	}
+	.ws-complete-sub {
+		display: block; font-family: 'Space Mono', monospace; font-size: 12px;
+		color: var(--text-muted);
 	}
 
 	/* Mobile */

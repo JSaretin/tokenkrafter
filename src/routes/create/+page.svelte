@@ -267,32 +267,8 @@
 				const depositTx = await instance.depositTokens(tokensForLaunch);
 				await depositTx.wait();
 
-				// Save to DB
+				// Launch data indexed by daemon from on-chain events
 				launchStep = 'saving';
-				try {
-					await fetch('/api/launches', {
-						method: 'POST',
-						headers: { 'Content-Type': 'application/json' },
-						body: JSON.stringify({
-							address: launchAddr.toLowerCase(),
-							chain_id: launchNetwork.chain_id,
-							token_address: launchTokenAddress.toLowerCase(),
-							creator: userAddress.toLowerCase(),
-							curve_type: launchCurveType,
-							state: 1,
-							soft_cap: ethers.parseUnits(launchSoftCap, usdtDec).toString(),
-							hard_cap: ethers.parseUnits(launchHardCap, usdtDec).toString(),
-							tokens_for_curve: ((tokensForLaunch * 7000n) / 10000n).toString(),
-							creator_allocation_bps: Number(launchCreatorAllocBps),
-							total_tokens_required: tokensForLaunch.toString(),
-							total_tokens_deposited: tokensForLaunch.toString(),
-							token_name: launchTokenName,
-							token_symbol: launchTokenSymbol,
-							token_decimals: launchTokenDecimals
-						})
-					});
-				} catch {}
-
 				launchDeployedAddress = launchAddr;
 				launchStep = 'done';
 				addFeedback({ message: $t('ci.launchSuccess'), type: 'success' });
@@ -726,31 +702,7 @@
 					await depositTx.wait();
 
 					addFeedback({ message: 'Launch is live!', type: 'success' });
-
-					// Save to DB
-					try {
-						await fetch('/api/launches', {
-							method: 'POST',
-							headers: { 'Content-Type': 'application/json' },
-							body: JSON.stringify({
-								address: launchAddr.toLowerCase(),
-								chain_id: tokenInfo.network.chain_id,
-								token_address: tokenInfo.existingTokenAddress!.toLowerCase(),
-								creator: userAddress!.toLowerCase(),
-								curve_type: tokenInfo.launch.curveType,
-								state: 1,
-								soft_cap: ethers.parseUnits(String(tokenInfo.launch.softCap), usdtDec).toString(),
-								hard_cap: ethers.parseUnits(String(tokenInfo.launch.hardCap), usdtDec).toString(),
-								tokens_for_curve: ((tokensForLaunch * 7000n) / 10000n).toString(),
-								creator_allocation_bps: Number(tokenInfo.launch.creatorAllocationBps),
-								total_tokens_required: tokensForLaunch.toString(),
-								total_tokens_deposited: tokensForLaunch.toString(),
-								token_name: tokenInfo.name,
-								token_symbol: tokenInfo.symbol,
-								token_decimals: tokenInfo.decimals
-							})
-						});
-					} catch {}
+					// Launch data indexed by daemon from on-chain events
 				}
 
 			} else if (tokenInfo.launch?.enabled && tokenInfo.network.router_address && tokenInfo.network.router_address !== '0x') {
@@ -818,33 +770,7 @@
 
 				addFeedback({ message: 'Token created & launch activated!', type: 'success' });
 
-				// Save launch to database (best-effort)
-				if (launchAddr && deployedTokenAddress) {
-					try {
-						await fetch('/api/launches', {
-							method: 'POST',
-							headers: { 'Content-Type': 'application/json' },
-							body: JSON.stringify({
-								address: launchAddr.toLowerCase(),
-								chain_id: tokenInfo.network.chain_id,
-								token_address: deployedTokenAddress.toLowerCase(),
-								creator: userAddress!.toLowerCase(),
-								curve_type: tokenInfo.launch.curveType,
-								state: 1,
-								soft_cap: launchParams.softCap.toString(),
-								hard_cap: launchParams.hardCap.toString(),
-								tokens_for_curve: ((tokensForLaunch * 7000n) / 10000n).toString(),
-								creator_allocation_bps: Number(tokenInfo.launch.creatorAllocationBps),
-								total_tokens_required: tokensForLaunch.toString(),
-								total_tokens_deposited: tokensForLaunch.toString(),
-								token_name: tokenInfo.name,
-								token_symbol: tokenInfo.symbol,
-								token_decimals: tokenInfo.decimals,
-								is_partner: tokenInfo.isPartner ?? false
-							})
-						});
-					} catch {}
-				}
+				// Launch data indexed by daemon from on-chain events
 			} else if (tokenInfo.listing?.enabled && tokenInfo.network.router_address && tokenInfo.network.router_address !== '0x') {
 				// Atomic Create + List via PlatformRouter
 				const listing = tokenInfo.listing;

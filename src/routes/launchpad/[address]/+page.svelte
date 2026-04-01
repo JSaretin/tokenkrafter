@@ -112,7 +112,7 @@
 	async function handleLogoUpload(event: Event) {
 		const input = event.target as HTMLInputElement;
 		const file = input.files?.[0];
-		if (!file || !userAddress || !network) return;
+		if (!file || !userAddress || !network || !signer) return;
 
 		if (file.size > 512 * 1024) {
 			addFeedback({ message: 'Image too large. Max 512 KB.', type: 'error' });
@@ -122,11 +122,16 @@
 
 		isUploadingLogo = true;
 		try {
+			const timestamp = Date.now();
+			const msg = `TokenKrafter Upload\nLaunch: ${launchAddress}\nAction: upload logo\nTimestamp: ${timestamp}`;
+			const signature = await signer.signMessage(msg);
+
 			const fd = new FormData();
 			fd.append('file', file);
 			fd.append('address', launchAddress);
 			fd.append('chain_id', String(network.chain_id));
-			fd.append('wallet_address', userAddress);
+			fd.append('signature', signature);
+			fd.append('signed_message', msg);
 
 			const res = await fetch('/api/launches/upload', { method: 'POST', body: fd });
 			if (!res.ok) {
@@ -145,16 +150,21 @@
 	}
 
 	async function saveMetadata() {
-		if (!userAddress || !network || !launch) return;
+		if (!userAddress || !network || !launch || !signer) return;
 		isSavingMeta = true;
 		try {
+			const timestamp = Date.now();
+			const msg = `TokenKrafter Metadata\nLaunch: ${launchAddress}\nAction: update metadata\nTimestamp: ${timestamp}`;
+			const signature = await signer.signMessage(msg);
+
 			const res = await fetch('/api/launches/metadata', {
 				method: 'PATCH',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
 					address: launchAddress,
 					chain_id: network.chain_id,
-					wallet_address: userAddress,
+					signature,
+					signed_message: msg,
 					description: editDescription,
 					website: editWebsite,
 					twitter: editTwitter,
@@ -873,23 +883,9 @@
 		txLoading = false;
 	}
 
-	async function recordTransaction(baseAmount: string, tokensReceived: string, txHash?: string) {
-		if (!network) return;
-		try {
-			await fetch('/api/launches/transactions', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					launch_address: launchAddress,
-					chain_id: network.chain_id,
-					buyer: userAddress,
-					base_amount: baseAmount,
-					tokens_received: tokensReceived,
-					tx_hash: txHash || null
-				})
-			});
-			await loadTransactions();
-		} catch { /* best effort */ }
+	async function recordTransaction(_baseAmount: string, _tokensReceived: string, _txHash?: string) {
+		// Transactions indexed by daemon from on-chain events
+		await loadTransactions();
 	}
 
 	// Start activity feed polling when launch is active
@@ -932,7 +928,7 @@
 	}
 
 	async function postComment() {
-		if (!userAddress || !network || !commentText.trim()) return;
+		if (!userAddress || !network || !signer || !commentText.trim()) return;
 		const msg = commentText.trim();
 		if (msg.length > 500) {
 			addFeedback({ message: $t('lpd.commentTooLong'), type: 'error' });
@@ -940,14 +936,19 @@
 		}
 		isPostingComment = true;
 		try {
+			const timestamp = Date.now();
+			const signMsg = `TokenKrafter Comment\nLaunch: ${launchAddress}\nTimestamp: ${timestamp}`;
+			const signature = await signer.signMessage(signMsg);
+
 			const res = await fetch('/api/launches/comments', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
 					launch_address: launchAddress,
 					chain_id: network.chain_id,
-					wallet_address: userAddress,
-					message: msg
+					message: msg,
+					signature,
+					signed_message: signMsg
 				})
 			});
 			if (!res.ok) {

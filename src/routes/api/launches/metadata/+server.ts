@@ -1,17 +1,33 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { supabaseAdmin } from '$lib/supabaseServer';
+import { ethers } from 'ethers';
 
 // PATCH /api/launches/metadata — update off-chain metadata for a launch
-// Creator passes their wallet address; we verify they own the launch in DB
+// Requires wallet signature; recovered address must match DB creator
 export const PATCH: RequestHandler = async ({ request }) => {
 	const body = await request.json();
 
-	if (!body.address || !body.chain_id || !body.wallet_address) {
-		return error(400, 'Missing address, chain_id, or wallet_address');
+	if (!body.address || !body.chain_id) {
+		return error(400, 'Missing address or chain_id');
+	}
+	if (!body.signature || !body.signed_message) {
+		return error(400, 'Signature required');
 	}
 
-	// Verify the caller is the creator
+	// Recover wallet from signature
+	let walletAddress: string;
+	try {
+		walletAddress = ethers.verifyMessage(body.signed_message, body.signature).toLowerCase();
+		const tsMatch = body.signed_message.match(/Timestamp: (\d+)/);
+		if (tsMatch && Date.now() - parseInt(tsMatch[1]) > 5 * 60 * 1000) {
+			return error(400, 'Signature expired');
+		}
+	} catch {
+		return error(400, 'Invalid signature');
+	}
+
+	// Verify the recovered address is the creator
 	const { data: launch } = await supabaseAdmin
 		.from('launches')
 		.select('creator')
@@ -23,7 +39,7 @@ export const PATCH: RequestHandler = async ({ request }) => {
 		return error(404, 'Launch not found');
 	}
 
-	if (launch.creator !== body.wallet_address.toLowerCase()) {
+	if (launch.creator !== walletAddress) {
 		return error(403, 'Only the launch creator can update metadata');
 	}
 

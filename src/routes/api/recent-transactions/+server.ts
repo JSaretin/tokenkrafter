@@ -30,8 +30,14 @@ export const GET: RequestHandler = async ({ url }) => {
 	return json(data || []);
 };
 
-// POST /api/recent-transactions — add a new transaction (called by daemon or real buy handler)
+// POST /api/recent-transactions — daemon-only. Requires SYNC_SECRET.
 export const POST: RequestHandler = async ({ request }) => {
+	const authHeader = request.headers.get('authorization');
+	const { env } = await import('$env/dynamic/private');
+	if (env.SYNC_SECRET && authHeader !== `Bearer ${env.SYNC_SECRET}`) {
+		return error(401, 'Unauthorized');
+	}
+
 	const body = await request.json();
 
 	const { error: dbError } = await supabaseAdmin

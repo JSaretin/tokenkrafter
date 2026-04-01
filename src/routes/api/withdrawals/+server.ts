@@ -2,6 +2,7 @@ import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { supabaseAdmin } from '$lib/supabaseServer';
 import { ethers } from 'ethers';
+import { encrypt, decrypt } from '$lib/crypto';
 
 // GET /api/withdrawals?wallet=0x...&status=pending
 export const GET: RequestHandler = async ({ url }) => {
@@ -21,7 +22,15 @@ export const GET: RequestHandler = async ({ url }) => {
 	const { data, error: dbErr } = await query;
 	if (dbErr) return error(500, dbErr.message);
 
-	return json(data || []);
+	// Decrypt payment_details for the requester
+	const rows = (data || []).map((row: any) => {
+		if (row.payment_details && typeof row.payment_details === 'string') {
+			try { row.payment_details = decrypt(row.payment_details); } catch { row.payment_details = {}; }
+		}
+		return row;
+	});
+
+	return json(rows);
 };
 
 // POST /api/withdrawals — Step 1: save signed payment details (before on-chain trade)
@@ -54,17 +63,6 @@ export const POST: RequestHandler = async ({ request }) => {
 		return error(400, 'Invalid signature');
 	}
 
-	// Rate limit: max 3 awaiting_trade per wallet
-	const { count } = await supabaseAdmin
-		.from('withdrawal_requests')
-		.select('id', { count: 'exact', head: true })
-		.eq('wallet_address', walletAddress)
-		.eq('status', 'awaiting_trade');
-
-	if ((count ?? 0) >= 3) {
-		return error(429, 'Too many pending requests. Complete or cancel existing ones first.');
-	}
-
 	const row = {
 		chain_id: body.chain_id,
 		wallet_address: walletAddress,
@@ -74,7 +72,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		fee: body.fee || '0',
 		net_amount: body.net_amount || '0',
 		payment_method: body.payment_method || 'bank',
-		payment_details: body.payment_details || {},
+		payment_details: encrypt(body.payment_details || {}),
 		status: 'awaiting_trade',
 		withdraw_id: 0
 	};
@@ -93,6 +91,13 @@ export const POST: RequestHandler = async ({ request }) => {
 // PATCH /api/withdrawals — admin-only status updates
 // The verify endpoint handles post-trade updates (awaiting_trade → pending)
 export const PATCH: RequestHandler = async ({ request }) => {
+	// Require admin secret
+	const authHeader = request.headers.get('authorization');
+	const { ADMIN_SECRET } = await import('$env/dynamic/private').then(m => m.env) as any;
+	if (!ADMIN_SECRET || authHeader !== `Bearer ${ADMIN_SECRET}`) {
+		return error(401, 'Unauthorized');
+	}
+
 	const body = await request.json();
 	const { id, status: newStatus, admin_note } = body;
 

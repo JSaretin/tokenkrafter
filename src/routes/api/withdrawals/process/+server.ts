@@ -1,11 +1,19 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { supabaseAdmin } from '$lib/supabaseServer';
-import { initiateTransfer, resolveAccount } from '$lib/flutterwave';
+import { initiateTransfer } from '$lib/flutterwave';
+import { decrypt } from '$lib/crypto';
 
 // POST /api/withdrawals/process — initiate Flutterwave transfer for a pending withdrawal
-// Called by admin dashboard or automation
+// Admin-only: requires ADMIN_SECRET
 export const POST: RequestHandler = async ({ request }) => {
+	// Require admin secret
+	const authHeader = request.headers.get('authorization');
+	const { ADMIN_SECRET } = await import('$env/dynamic/private').then(m => m.env) as any;
+	if (!ADMIN_SECRET || authHeader !== `Bearer ${ADMIN_SECRET}`) {
+		return error(401, 'Unauthorized');
+	}
+
 	const { withdrawal_id, naira_rate } = await request.json();
 
 	if (!withdrawal_id) return error(400, 'withdrawal_id required');
@@ -21,7 +29,11 @@ export const POST: RequestHandler = async ({ request }) => {
 	if (withdrawal.status !== 'pending') return error(400, 'Withdrawal not pending');
 	if (withdrawal.payment_method !== 'bank') return error(400, 'Only bank transfers are auto-processed');
 
-	const details = withdrawal.payment_details;
+	// Decrypt payment details
+	let details = withdrawal.payment_details;
+	if (typeof details === 'string') {
+		try { details = decrypt(details); } catch { return error(500, 'Failed to decrypt payment details'); }
+	}
 	if (!details?.bank_code || !details?.account) {
 		return error(400, 'Missing bank details');
 	}

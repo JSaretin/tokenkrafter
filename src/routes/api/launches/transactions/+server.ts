@@ -25,8 +25,14 @@ export const GET: RequestHandler = async ({ url }) => {
 	return json(data);
 };
 
-// POST /api/launches/transactions — record a new buy transaction
+// POST /api/launches/transactions — daemon-only. Requires SYNC_SECRET.
 export const POST: RequestHandler = async ({ request }) => {
+	const authHeader = request.headers.get('authorization');
+	const { env } = await import('$env/dynamic/private');
+	if (env.SYNC_SECRET && authHeader !== `Bearer ${env.SYNC_SECRET}`) {
+		return error(401, 'Unauthorized');
+	}
+
 	const body = await request.json();
 
 	const required = ['launch_address', 'chain_id', 'buyer', 'base_amount', 'tokens_received'];

@@ -2,6 +2,7 @@ import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { supabaseAdmin } from '$lib/supabaseServer';
 import { ethers } from 'ethers';
+import { decrypt } from '$lib/crypto';
 
 const TRADE_ROUTER_ABI = [
 	'event WithdrawRequested(uint256 indexed id, address indexed user, address token, uint256 grossAmount, uint256 fee, uint256 netAmount, bytes32 bankRef)'
@@ -97,7 +98,11 @@ export const POST: RequestHandler = async ({ request }) => {
 	let matchedRecord: any = null;
 
 	for (const record of dbRecords) {
-		const details = record.payment_details || {};
+		let details = record.payment_details || {};
+		// Decrypt if encrypted (string = encrypted, object = legacy plaintext)
+		if (typeof details === 'string') {
+			try { details = decrypt(details); } catch { continue; }
+		}
 		let computedRef: string;
 
 		if (record.payment_method === 'bank') {
