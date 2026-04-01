@@ -246,14 +246,14 @@ contract TokenFactory is Ownable, ReentrancyGuard {
         uint8 _usdtDecimals = ERC20(usdt_).decimals();
 
         // Default fees in USDT
-        creationFee[0] = 10 * 10 ** _usdtDecimals; // basic
-        creationFee[1] = 20 * 10 ** _usdtDecimals; // mintable
-        creationFee[2] = 25 * 10 ** _usdtDecimals; // taxable
-        creationFee[3] = 35 * 10 ** _usdtDecimals; // taxable+mintable
-        creationFee[4] = 15 * 10 ** _usdtDecimals; // partner
-        creationFee[5] = 25 * 10 ** _usdtDecimals; // partner+mintable
-        creationFee[6] = 30 * 10 ** _usdtDecimals; // partner+taxable
-        creationFee[7] = 40 * 10 ** _usdtDecimals; // partner+taxable+mintable
+        creationFee[0] = 50 * 10 ** _usdtDecimals;   // basic: $50
+        creationFee[1] = 150 * 10 ** _usdtDecimals;  // mintable: $150
+        creationFee[2] = 150 * 10 ** _usdtDecimals;  // taxable: $150
+        creationFee[3] = 250 * 10 ** _usdtDecimals;  // taxable+mintable: $250
+        creationFee[4] = 350 * 10 ** _usdtDecimals;  // partner: $350
+        creationFee[5] = 450 * 10 ** _usdtDecimals;  // partner+mintable: $450
+        creationFee[6] = 450 * 10 ** _usdtDecimals;  // partner+taxable: $450
+        creationFee[7] = 550 * 10 ** _usdtDecimals;  // partner+taxable+mintable: $550
 
         // Auto-add USDT and native as supported payment
         _addPaymentToken(usdt_);
