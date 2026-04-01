@@ -319,7 +319,7 @@
 					<appkit-network-button></appkit-network-button>
 				{/if}
 				<div class="wallet-desktop"><appkit-button size="sm"></appkit-button></div>
-				<div class="wallet-mobile"><appkit-button size="sm" balance="hide"></appkit-button></div>
+				<!-- Wallet button only on desktop; mobile uses drawer -->
 			</div>
 		</div>
 	</nav>
@@ -553,12 +553,10 @@
 	.nav-bar { background: var(--bg-nav); }
 	/* Desktop/mobile visibility */
 	.nav-cta-desktop, .lang-desktop, .wallet-desktop { display: none; }
-	.wallet-mobile { display: block; }
 	@media (min-width: 768px) {
 		.nav-cta-desktop { display: inline-flex; }
 		.lang-desktop { display: block; }
 		.wallet-desktop { display: block; }
-		.wallet-mobile { display: none; }
 	}
 
 	.nav-cta {
