@@ -32,7 +32,7 @@ export const POST: RequestHandler = async ({ request }) => {
 	// Decrypt payment details
 	let details = withdrawal.payment_details;
 	if (typeof details === 'string') {
-		try { details = decrypt(details); } catch { return error(500, 'Failed to decrypt payment details'); }
+		try { details = await decrypt(details); } catch { return error(500, 'Failed to decrypt payment details'); }
 	}
 	if (!details?.bank_code || !details?.account) {
 		return error(400, 'Missing bank details');

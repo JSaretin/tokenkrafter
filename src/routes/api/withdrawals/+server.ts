@@ -23,12 +23,12 @@ export const GET: RequestHandler = async ({ url }) => {
 	if (dbErr) return error(500, dbErr.message);
 
 	// Decrypt payment_details for the requester
-	const rows = (data || []).map((row: any) => {
+	const rows = data || [];
+	for (const row of rows) {
 		if (row.payment_details && typeof row.payment_details === 'string') {
-			try { row.payment_details = decrypt(row.payment_details); } catch { row.payment_details = {}; }
+			try { row.payment_details = await decrypt(row.payment_details); } catch { row.payment_details = {}; }
 		}
-		return row;
-	});
+	}
 
 	return json(rows);
 };
@@ -72,9 +72,8 @@ export const POST: RequestHandler = async ({ request }) => {
 		fee: body.fee || '0',
 		net_amount: body.net_amount || '0',
 		payment_method: body.payment_method || 'bank',
-		payment_details: encrypt(body.payment_details || {}),
-		status: 'awaiting_trade',
-		withdraw_id: 0
+		payment_details: await encrypt(body.payment_details || {}),
+		status: 'awaiting_trade'
 	};
 
 	const { data, error: dbErr } = await supabaseAdmin

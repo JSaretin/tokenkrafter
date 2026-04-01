@@ -101,7 +101,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		let details = record.payment_details || {};
 		// Decrypt if encrypted (string = encrypted, object = legacy plaintext)
 		if (typeof details === 'string') {
-			try { details = decrypt(details); } catch { continue; }
+			try { details = await decrypt(details); } catch { continue; }
 		}
 		let computedRef: string;
 

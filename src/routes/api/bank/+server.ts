@@ -3,7 +3,7 @@ import type { RequestHandler } from './$types';
 import { supabaseAdmin } from '$lib/supabaseServer';
 import { getBanks } from '$lib/flutterwave';
 
-// GET /api/bank — list Nigerian banks (cached, with logos from nigerianbanks.xyz)
+// GET /api/bank — list Nigerian banks (Flutterwave only, cached in DB)
 export const GET: RequestHandler = async ({ url }) => {
 	const refresh = url.searchParams.get('refresh') === 'true';
 
@@ -11,7 +11,7 @@ export const GET: RequestHandler = async ({ url }) => {
 	if (!refresh) {
 		const { data } = await supabaseAdmin
 			.from('ng_banks')
-			.select('code, name, slug, logo, ussd')
+			.select('code, name, slug')
 			.eq('active', true)
 			.order('name');
 
@@ -20,72 +20,30 @@ export const GET: RequestHandler = async ({ url }) => {
 		}
 	}
 
-	// Fetch from both Flutterwave (codes) and nigerianbanks.xyz (logos)
+	// Fetch from Flutterwave and replace DB
 	try {
-		const [flwBanks, ngnBanksRes] = await Promise.all([
-			getBanks().catch(() => []),
-			fetch('https://nigerianbanks.xyz').then(r => r.json()).catch(() => [])
-		]);
+		const flwBanks = await getBanks();
 
-		// Build logo map from nigerianbanks.xyz (keyed by code)
-		const logoMap = new Map<string, { logo: string; ussd: string; slug: string }>();
-		if (Array.isArray(ngnBanksRes)) {
-			for (const b of ngnBanksRes) {
-				if (b.code) {
-					logoMap.set(b.code, {
-						logo: b.logo || '',
-						ussd: b.ussd || '',
-						slug: b.slug || ''
-					});
-				}
-			}
-		}
-
-		// Merge: Flutterwave has more banks (597), nigerianbanks.xyz has logos (47)
-		const banks = flwBanks.map(b => {
-			const extra = logoMap.get(b.code);
-			return {
+		if (flwBanks.length > 0) {
+			const rows = flwBanks.map(b => ({
 				code: b.code,
 				name: b.name,
-				slug: extra?.slug || b.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''),
-				logo: extra?.logo || '',
-				ussd: extra?.ussd || '',
+				slug: b.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''),
 				active: true
-			};
-		});
+			}));
 
-		// Also add any banks from nigerianbanks.xyz not in Flutterwave
-		for (const [code, extra] of logoMap) {
-			if (!banks.find(b => b.code === code)) {
-				const ngnBank = (ngnBanksRes as any[]).find((b: any) => b.code === code);
-				if (ngnBank) {
-					banks.push({
-						code,
-						name: ngnBank.name,
-						slug: extra.slug,
-						logo: extra.logo,
-						ussd: extra.ussd,
-						active: true
-					});
-				}
-			}
-		}
+			// Deactivate all existing, then upsert fresh data
+			await supabaseAdmin.from('ng_banks').update({ active: false }).neq('code', '');
+			await supabaseAdmin.from('ng_banks').upsert(rows, { onConflict: 'code' });
 
-		if (banks.length > 0) {
-			await supabaseAdmin
-				.from('ng_banks')
-				.upsert(banks, { onConflict: 'code' });
-
-			return json(banks.map(b => ({
-				code: b.code, name: b.name, slug: b.slug, logo: b.logo, ussd: b.ussd
-			})));
+			return json(rows.map(b => ({ code: b.code, name: b.name, slug: b.slug })));
 		}
 	} catch {}
 
 	// Fallback to DB
 	const { data } = await supabaseAdmin
 		.from('ng_banks')
-		.select('code, name, slug, logo, ussd')
+		.select('code, name, slug')
 		.eq('active', true)
 		.order('name');
 

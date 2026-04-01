@@ -446,6 +446,8 @@
 							<a href={link.href} class="text-sm text-gray-400 hover:text-cyan-400 transition font-mono">{$t(link.key)}</a>
 						{/each}
 						<a href="/terms" class="text-sm text-gray-400 hover:text-cyan-400 transition font-mono">{$t('footer.termsOfService')}</a>
+						<a href="/privacy" class="text-sm text-gray-400 hover:text-cyan-400 transition font-mono">Privacy Policy</a>
+						<a href="/team" class="text-sm text-gray-400 hover:text-cyan-400 transition font-mono">Team</a>
 					</div>
 				</div>
 

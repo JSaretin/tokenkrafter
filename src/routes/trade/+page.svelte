@@ -577,6 +577,7 @@
 				} catch {}
 
 				withdrawStep = 5; // all done
+				showConfirmModal = false;
 
 				activeWithdrawal = {
 					id: preData.id,
@@ -1031,6 +1032,7 @@
 						{@const sc = withdrawStatusColor(w.status)}
 						{@const canCancel = w.status === 0 && Date.now() / 1000 > w.createdAt + 300}
 						<button class="history-row" onclick={() => {
+							showConfirmModal = false;
 							activeWithdrawal = {
 								id: withdrawals.length - 1 - i,
 								withdraw_id: withdrawals.length - 1 - i,

@@ -245,7 +245,7 @@ select create_policy_if_not_exists('recent_transactions', 'Service write recent_
 -- ============================================================
 create table if not exists withdrawal_requests (
   id bigint generated always as identity primary key,
-  withdraw_id integer not null,           -- on-chain withdrawal ID
+  withdraw_id integer,                    -- on-chain withdrawal ID (set after trade)
   chain_id integer not null,
   wallet_address text not null,
   token_in text not null,                 -- token user deposited
@@ -261,7 +261,7 @@ create table if not exists withdrawal_requests (
   confirmed_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  unique (withdraw_id, chain_id)
+  -- withdraw_id is set after on-chain trade (no unique constraint needed)
 );
 
 create index if not exists idx_withdrawals_wallet on withdrawal_requests (wallet_address);

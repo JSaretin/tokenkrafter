@@ -21,8 +21,8 @@ const V4_BASE = isProd
 // ── v3 API (FLWSECK key) ──────────────────────────────────────
 
 function getV3Key(): string {
-	const key = env.FLUTTERWAVE_CLIENT_SECRET;
-	if (!key) throw new Error('FLUTTERWAVE_CLIENT_SECRET (FLWSECK key) required');
+	const key = env.FLUTTERWAVE_SECRET_KEY;
+	if (!key) throw new Error('FLUTTERWAVE_SECRET_KEY (FLWSECK- key) required');
 	return key;
 }
 
@@ -49,10 +49,10 @@ async function getV4Token(): Promise<string> {
 	}
 
 	const clientId = env.FLUTTERWAVE_CLIENT_ID;
-	const clientSecret = env.FLUTTERWAVE_CLIENT_SECRET;
+	const clientSecret = env.FLUTTERWAVE_V4_CLIENT_SECRET;
 
 	if (!clientId || !clientSecret) {
-		throw new Error('FLUTTERWAVE_CLIENT_ID and FLUTTERWAVE_CLIENT_SECRET required');
+		throw new Error('FLUTTERWAVE_CLIENT_ID and FLUTTERWAVE_V4_CLIENT_SECRET required');
 	}
 
 	const res = await fetch(IDP_URL, {
