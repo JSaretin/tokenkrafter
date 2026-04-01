@@ -1,9 +1,6 @@
 <script lang="ts">
-	import { getContext, onDestroy } from 'svelte';
-	import { ethers } from 'ethers';
+	import { onDestroy } from 'svelte';
 	import { supabase } from '$lib/supabaseClient';
-	import { TRADE_ROUTER_ABI } from '$lib/tradeRouter';
-	import type { SupportedNetwork } from '$lib/structure';
 
 	let {
 		withdrawal,
@@ -14,10 +11,6 @@
 		onclose: () => void;
 		oncancel?: (id: number) => void;
 	} = $props();
-
-	const supportedNetworks: SupportedNetwork[] = getContext('supportedNetworks');
-	let getNetworkProviders: () => Map<number, ethers.JsonRpcProvider> = getContext('networkProviders');
-	let networkProviders = $derived(getNetworkProviders());
 
 	let tickNow = $state(Date.now());
 	let liveStatus = $state(withdrawal?.status || 'pending');
@@ -49,66 +42,10 @@
 		})
 		.subscribe();
 
-	// Poll DB every 3s as fallback
-	const dbPollInterval = setInterval(async () => {
-		if (liveStatus !== 'pending') return;
-		try {
-			const res = await fetch(`/api/withdrawals?wallet=${withdrawal?.wallet_address}&status=pending`);
-			if (res.ok) {
-				const data = await res.json();
-				// Check if our withdrawal is no longer pending
-				const stillPending = data.find((w: any) =>
-					w.withdraw_id === withdrawal?.withdraw_id ||
-					w.tx_hash === withdrawal?.tx_hash
-				);
-				if (!stillPending && data.length === 0) {
-					// Might be confirmed — check all
-					const allRes = await fetch(`/api/withdrawals?wallet=${withdrawal?.wallet_address}`);
-					if (allRes.ok) {
-						const allData = await allRes.json();
-						const match = allData.find((w: any) =>
-							w.withdraw_id === withdrawal?.withdraw_id ||
-							w.tx_hash === withdrawal?.tx_hash
-						);
-						if (match && match.status !== 'pending') {
-							liveStatus = match.status;
-							liveNote = match.admin_note || '';
-						}
-					}
-				}
-			}
-		} catch {}
-	}, 3000);
-
-	// Poll on-chain every 5s
-	const chainPollInterval = setInterval(async () => {
-		if (liveStatus !== 'pending') return;
-		if (withdrawal?.withdraw_id === undefined) return;
-		try {
-			const chainId = withdrawal?.chain_id;
-			const network = supportedNetworks.find(n => n.chain_id === chainId && n.trade_router_address);
-			if (!network) return;
-			const provider = networkProviders.get(chainId);
-			if (!provider) return;
-
-			const router = new ethers.Contract(network.trade_router_address, TRADE_ROUTER_ABI, provider);
-			const req = await router.getWithdrawal(withdrawal.withdraw_id);
-			const onChainStatus = Number(req.status);
-			// 0=Pending, 1=Confirmed, 2=Cancelled
-			if (onChainStatus === 1 && liveStatus === 'pending') {
-				liveStatus = 'confirmed';
-				liveNote = 'Confirmed on-chain';
-			} else if (onChainStatus === 2 && liveStatus === 'pending') {
-				liveStatus = 'cancelled';
-				liveNote = 'Cancelled on-chain';
-			}
-		} catch {}
-	}, 5000);
+	// No polling needed — daemon writes to DB, Supabase Realtime pushes to us
 
 	onDestroy(() => {
 		clearInterval(tickInterval);
-		clearInterval(dbPollInterval);
-		clearInterval(chainPollInterval);
 		supabase.removeChannel(channel);
 	});
 

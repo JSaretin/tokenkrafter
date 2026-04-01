@@ -130,7 +130,7 @@
 		providersReady = true;
 	}
 
-	onMount(async () => {
+	onMount(() => {
 		isLoading = false;
 		// Restore theme from localStorage
 		const saved = localStorage.getItem('theme') as 'dark' | 'light' | null;
@@ -140,6 +140,7 @@
 		initProviders();
 
 		// Initialize AppKit (Reown) for wallet connections
+		(async () => {
 		const kit = await initAppKit();
 		if (kit) {
 			if (theme === 'light') kit.setThemeMode('light');
@@ -173,6 +174,7 @@
 					.catch(() => {});
 			}
 		}
+		})(); // end async IIFE
 
 		// Close mobile menu when clicking outside
 		function handleClickOutside(e: MouseEvent) {

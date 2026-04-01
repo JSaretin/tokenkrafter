@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { ethers } from 'ethers';
 	import { getContext, onMount } from 'svelte';
+	import { supabase } from '$lib/supabaseClient';
 	import type { SupportedNetwork } from '$lib/structure';
 	import { ERC20_ABI, ZERO_ADDRESS } from '$lib/tokenCrafter';
 	import { TRADE_ROUTER_ABI, withdrawStatusLabel, withdrawStatusColor } from '$lib/tradeRouter';
@@ -634,19 +635,30 @@
 		}
 	}
 
-	// ── History ────────────────────────────────────────────────
+	// ── History (from Supabase + Realtime) ────────────────────
 	async function loadHistory() {
-		if (!selectedNetwork || !userAddress) return;
+		if (!userAddress) return;
 		historyLoading = true;
 		try {
-			const provider = networkProviders.get(selectedNetwork.chain_id);
-			if (!provider) return;
-			const router = new ethers.Contract(selectedNetwork.trade_router_address, TRADE_ROUTER_ABI, provider);
-			const [result, total] = await router.getUserWithdrawals(userAddress, 0, 50);
-			withdrawals = result.map((r: any, i: number) => ({
-				id: i, user: r.user, token: r.token, grossAmount: r.grossAmount,
-				fee: r.fee, netAmount: r.netAmount, createdAt: Number(r.createdAt),
-				status: Number(r.status), bankRef: r.bankRef
+			const { data } = await supabase
+				.from('withdrawal_requests')
+				.select('*')
+				.eq('wallet_address', userAddress.toLowerCase())
+				.order('created_at', { ascending: false })
+				.limit(50);
+
+			withdrawals = (data || []).map((r: any) => ({
+				id: r.id, user: r.wallet_address, token: r.token_in,
+				grossAmount: BigInt(r.gross_amount || '0'),
+				fee: BigInt(r.fee || '0'),
+				netAmount: BigInt(r.net_amount || '0'),
+				createdAt: Math.floor(new Date(r.created_at).getTime() / 1000),
+				status: r.status === 'confirmed' ? 1 : r.status === 'cancelled' ? 2 : 0,
+				bankRef: '', withdraw_id: r.withdraw_id,
+				payment_method: r.payment_method,
+				payment_details: r.payment_details,
+				chain_id: r.chain_id, tx_hash: r.tx_hash,
+				db_status: r.status
 			}));
 		} catch { withdrawals = []; }
 		finally { historyLoading = false; }
@@ -664,7 +676,22 @@
 		}
 	}
 
-	$effect(() => { if (showHistory && userAddress && selectedNetwork) loadHistory(); });
+	// Realtime sub for withdrawal updates
+	let withdrawChannel: any;
+	$effect(() => {
+		if (showHistory && userAddress) {
+			loadHistory();
+			// Subscribe to changes for this wallet
+			if (withdrawChannel) supabase.removeChannel(withdrawChannel);
+			withdrawChannel = supabase
+				.channel(`trade-history-${userAddress}`)
+				.on('postgres_changes', {
+					event: '*', schema: 'public', table: 'withdrawal_requests',
+					filter: `wallet_address=eq.${userAddress.toLowerCase()}`
+				}, () => loadHistory())
+				.subscribe();
+		}
+	});
 
 	// ── Button label ───────────────────────────────────────────
 	let buttonLabel = $derived.by(() => {

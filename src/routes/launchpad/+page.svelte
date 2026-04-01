@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { ethers } from 'ethers';
 	import { getContext, onMount } from 'svelte';
+	import { supabase } from '$lib/supabaseClient';
 	import { t } from '$lib/i18n';
 	import { favorites, toggleFavorite } from '$lib/favorites';
 	import MarketFlow from '$lib/MarketFlow.svelte';
@@ -244,11 +245,13 @@
 		} as any;
 	}
 
-	async function loadFromApi(): Promise<boolean> {
+	async function loadFromDb(): Promise<boolean> {
 		try {
-			const res = await fetch('/api/launches?limit=50');
-			if (!res.ok) return false;
-			const rows = await res.json();
+			const { data: rows } = await supabase
+				.from('launches')
+				.select('*')
+				.order('created_at', { ascending: false })
+				.limit(100);
 			if (!rows || rows.length === 0) return false;
 			const mapped = rows.map(dbRowToLaunch).filter(Boolean) as (LaunchInfo & { network: SupportedNetwork })[];
 			mapped.sort((a, b) => Number(b.deadline - a.deadline));
@@ -285,9 +288,10 @@
 
 	async function loadBadges() {
 		try {
-			const res = await fetch('/api/badges');
-			if (!res.ok) return;
-			const rows: { launch_address: string; chain_id: number; badge_type: string }[] = await res.json();
+			const { data: rows } = await supabase
+				.from('badges')
+				.select('launch_address, chain_id, badge_type');
+			if (!rows) return;
 			const badgeMap = new Map<string, string[]>();
 			for (const r of rows) {
 				const key = `${r.launch_address.toLowerCase()}-${r.chain_id}`;
@@ -305,14 +309,30 @@
 	async function loadLaunches() {
 		loading = true;
 		launches = [];
-		const fromApi = await loadFromApi();
-		if (!fromApi) await loadFromChain();
+		await loadFromDb();
 		await loadBadges();
 		loading = false;
 	}
 
+	// Realtime subscription for live updates
+	let launchChannel: any;
+
 	$effect(() => {
 		if (providersReady) loadLaunches();
+	});
+
+	onMount(() => {
+		launchChannel = supabase
+			.channel('launchpad-explorer')
+			.on('postgres_changes', { event: '*', schema: 'public', table: 'launches' }, () => {
+				// Re-fetch on any change
+				loadFromDb().then(() => loadBadges());
+			})
+			.subscribe();
+
+		return () => {
+			if (launchChannel) supabase.removeChannel(launchChannel);
+		};
 	});
 
 	const BADGE_META: Record<string, { label: string; cls: string }> = {

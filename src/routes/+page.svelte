@@ -1,7 +1,8 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { formatUsdt, progressPercent, stateLabel, stateColor, CURVE_TYPES } from '$lib/launchpad';
 	import { t } from '$lib/i18n';
+	import { supabase } from '$lib/supabaseClient';
 	import RecentTransactionsTicker from '$lib/RecentTransactionsTicker.svelte';
 
 	let liveLaunches: any[] = $state([]);
@@ -17,44 +18,72 @@
 	let totalRaised = $state(0n);
 	let graduatedCount = $state(0);
 
-	onMount(async () => {
+	function processLaunches(all: any[]) {
+		const nowSec = Math.floor(Date.now() / 1000);
+		totalLaunches = all.length;
+		graduatedCount = all.filter((r: any) => r.state === 2).length;
+		totalRaised = all.reduce((sum: bigint, r: any) => sum + BigInt(r.total_base_raised || '0'), 0n);
+
+		const active = all.filter((r: any) => r.state === 1);
+		liveLaunches = active.filter((r: any) => {
+			const st = Number(r.start_timestamp || 0);
+			return st === 0 || st <= nowSec;
+		}).slice(0, 9);
+
+		scheduledLaunches = [
+			...active.filter((r: any) => {
+				const st = Number(r.start_timestamp || 0);
+				return st > 0 && st > nowSec;
+			}),
+			...all.filter((r: any) => r.state === 0)
+		].slice(0, 6);
+
+		graduatedLaunches = all.filter((r: any) => r.state === 2).slice(0, 6);
+		partnerLaunches = all.filter((r: any) => r.is_partner && (r.state === 1 || r.state === 2)).slice(0, 8);
+	}
+
+	// Supabase Realtime channel
+	let channel: any;
+
+	onMount(() => {
 		tickInterval = setInterval(() => { tickNow = Date.now(); }, 1000);
 
-		try {
-			const res = await fetch('/api/launches?limit=50');
-			if (res.ok) {
-				const rows = await res.json();
-				const all = rows ?? [];
-				const nowSec = Math.floor(Date.now() / 1000);
-				totalLaunches = all.length;
-				graduatedCount = all.filter((r: any) => r.state === 2).length;
-				totalRaised = all.reduce((sum: bigint, r: any) => sum + BigInt(r.total_base_raised || '0'), 0n);
+		// Initial fetch from Supabase directly
+		supabase
+			.from('launches')
+			.select('*')
+			.order('created_at', { ascending: false })
+			.limit(100)
+			.then(({ data }) => {
+				if (data) processLaunches(data);
+				launchesLoading = false;
+			});
 
-				// Active launches: state=1 and either no startTimestamp or startTimestamp has passed
-				const active = all.filter((r: any) => r.state === 1);
-				liveLaunches = active.filter((r: any) => {
-					const st = Number(r.start_timestamp || 0);
-					return st === 0 || st <= nowSec;
-				}).slice(0, 9);
-
-				// Scheduled: state=1 with future startTimestamp, OR state=0 (pending deposit)
-				scheduledLaunches = [
-					...active.filter((r: any) => {
-						const st = Number(r.start_timestamp || 0);
-						return st > 0 && st > nowSec;
-					}),
-					...all.filter((r: any) => r.state === 0)
-				].slice(0, 6);
-
-				graduatedLaunches = all.filter((r: any) => r.state === 2).slice(0, 6);
-
-				// Partner launches: active or graduated with is_partner flag
-				partnerLaunches = all.filter((r: any) => r.is_partner && (r.state === 1 || r.state === 2)).slice(0, 8);
-			}
-		} catch {}
-		launchesLoading = false;
+		// Subscribe to realtime changes
+		channel = supabase
+			.channel('homepage-launches')
+			.on('postgres_changes', {
+				event: '*',
+				schema: 'public',
+				table: 'launches'
+			}, () => {
+				// Re-fetch all on any change (insert, update, delete)
+				supabase
+					.from('launches')
+					.select('*')
+					.order('created_at', { ascending: false })
+					.limit(100)
+					.then(({ data }) => {
+						if (data) processLaunches(data);
+					});
+			})
+			.subscribe();
 
 		return () => { if (tickInterval) clearInterval(tickInterval); };
+	});
+
+	onDestroy(() => {
+		if (channel) supabase.removeChannel(channel);
 	});
 
 	function countdownStr(ts: number): string {
