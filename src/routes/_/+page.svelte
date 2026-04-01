@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { getContext } from 'svelte';
 	import { ethers } from 'ethers';
+	import { enhance } from '$app/forms';
 	import { FACTORY_ABI } from '$lib/tokenCrafter';
 	import type { SupportedNetworks } from '$lib/structure';
 	import { t } from '$lib/i18n';
@@ -10,6 +11,8 @@
 	import LaunchpadTab from './lib/LaunchpadTab.svelte';
 	import WithdrawalsTab from './lib/WithdrawalsTab.svelte';
 
+	let { data, form } = $props();
+
 	let connectWallet: () => Promise<boolean> = getContext('connectWallet');
 	let getUserAddress: () => string | null = getContext('userAddress');
 	let supportedNetworks: SupportedNetworks = getContext('supportedNetworks');
@@ -18,6 +21,7 @@
 
 	let userAddress = $derived(getUserAddress());
 	let providersReady = $derived(getProvidersReady());
+	let loginPassword = $state('');
 
 	let selectedNetworkIdx = $state(0);
 	let selectedNetwork = $derived(supportedNetworks[selectedNetworkIdx]);
@@ -70,11 +74,40 @@
 </script>
 
 <svelte:head>
-	<title>Admin Dashboard | TokenKrafter</title>
-	<meta name="description" content="TokenKrafter admin panel — manage platform settings, supported networks, fee configurations, and monitor deployed tokens." />
+	<title>{data.authenticated ? 'Admin Dashboard' : 'Login'} | TokenKrafter</title>
+	<meta name="robots" content="noindex, nofollow" />
 </svelte:head>
 
+{#if !data.authenticated}
+	<!-- Login -->
+	<div class="login-wrap">
+		<div class="login-card">
+			<h1 class="syne text-2xl font-bold text-white mb-6 text-center">Admin Access</h1>
+			{#if form?.error}
+				<div class="login-error">{form.error}</div>
+			{/if}
+			<form method="POST" action="?/login" use:enhance>
+				<input
+					type="password"
+					name="password"
+					class="input-field mb-4"
+					placeholder="Enter admin password"
+					bind:value={loginPassword}
+					autocomplete="current-password"
+				/>
+				<button type="submit" class="btn-primary w-full py-3 text-sm cursor-pointer">
+					Login
+				</button>
+			</form>
+		</div>
+	</div>
+{:else}
 <div class="page-wrap">
+	<!-- Logout button -->
+	<form method="POST" action="?/logout" use:enhance class="fixed top-20 right-4 z-50">
+		<button type="submit" class="text-xs font-mono text-gray-600 hover:text-red-400 transition cursor-pointer">Logout</button>
+	</form>
+
 	<section class="max-w-6xl mx-auto px-4 sm:px-6 pt-10 pb-6">
 		<h1 class="text-3xl sm:text-4xl font-bold text-white mb-2" style="font-family: 'Rajdhani', sans-serif; font-weight: 700;">{$t('admin.title')}</h1>
 		<p class="text-gray-500 text-sm font-mono mb-6">{$t('admin.subtitle')}</p>
@@ -137,8 +170,25 @@
 		{/if}
 	</section>
 </div>
+{/if}
 
 <style>
+	.login-wrap {
+		min-height: calc(100vh - 140px);
+		display: flex; align-items: center; justify-content: center;
+		padding: 20px;
+	}
+	.login-card {
+		width: 100%; max-width: 360px;
+		background: var(--bg-surface); border: 1px solid var(--border);
+		border-radius: 16px; padding: 32px 24px;
+	}
+	.login-error {
+		background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.2);
+		color: #f87171; border-radius: 8px; padding: 10px 14px;
+		font-family: 'Space Mono', monospace; font-size: 12px; margin-bottom: 16px;
+	}
+	.syne { font-family: 'Syne', sans-serif; }
 	@font-face { font-family: 'Rajdhani'; font-weight: 300; font-display: swap; src: url('/fonts/rajdhani-300.woff2') format('woff2'); }
 	@font-face { font-family: 'Rajdhani'; font-weight: 400; font-display: swap; src: url('/fonts/rajdhani-400.woff2') format('woff2'); }
 	@font-face { font-family: 'Rajdhani'; font-weight: 500; font-display: swap; src: url('/fonts/rajdhani-500.woff2') format('woff2'); }

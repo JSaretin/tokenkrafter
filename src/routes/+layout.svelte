@@ -211,7 +211,6 @@
 	const secondaryLinks: { href: string; key: import('$lib/i18n').TranslationKey }[] = [
 		{ href: '/manage-tokens', key: 'nav.manageTokens' },
 		{ href: '/affiliate', key: 'nav.affiliate' },
-		{ href: '/admin', key: 'nav.admin' },
 	];
 
 	const socials = [
