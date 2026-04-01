@@ -28,3 +28,4 @@ solidty-contracts/artifacts
 solidty-contracts/cache
 solidty-contracts/typechain-types
 strategy/
+daemon-state.json
