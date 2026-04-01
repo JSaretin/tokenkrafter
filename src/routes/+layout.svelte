@@ -157,11 +157,21 @@
 			});
 		}
 
-		// Capture referral from URL if not already stored
+		// Capture referral from URL (address or alias)
 		const params = new URLSearchParams(window.location.search);
 		const ref = params.get('ref');
-		if (ref && ethers.isAddress(ref) && !localStorage.getItem('referral')) {
-			localStorage.setItem('referral', ref);
+		if (ref && !localStorage.getItem('referral')) {
+			if (ethers.isAddress(ref)) {
+				localStorage.setItem('referral', ref);
+			} else {
+				// Resolve alias to address
+				fetch(`/api/referral?alias=${encodeURIComponent(ref)}`)
+					.then(r => r.json())
+					.then(data => {
+						if (data.address) localStorage.setItem('referral', data.address);
+					})
+					.catch(() => {});
+			}
 		}
 
 		// Close mobile menu when clicking outside
@@ -267,7 +277,7 @@
 <!-- AppKit handles the wallet modal -->
 
 <!-- App Shell — flex column, viewport height -->
-<div class="app-shell flex flex-col h-screen w-full overflow-hidden">
+<div class="app-shell flex flex-col w-full min-h-screen md:h-screen md:overflow-hidden">
 	<div class="grid-bg fixed inset-0 pointer-events-none z-0"></div>
 	<div class="glow-orb fixed top-[-20%] left-[30%] w-[700px] h-[700px] pointer-events-none z-0"></div>
 	<div class="glow-orb-2 fixed bottom-[-20%] right-[10%] w-[500px] h-[500px] pointer-events-none z-0"></div>
@@ -395,7 +405,7 @@
 		</div>
 	</div>
 
-	<div id="scroll-container" class="flex-1 overflow-y-auto overflow-x-hidden pb-16 md:pb-0">
+	<div id="scroll-container" class="flex-1 md:overflow-y-auto overflow-x-hidden pb-16 md:pb-0">
 	<main id="main-content" class="min-h-screen">
 		{#if isLoading}
 			<div class="flex items-center justify-center min-h-[80vh]">

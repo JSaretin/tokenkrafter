@@ -292,6 +292,22 @@ create table if not exists ng_banks (
   active boolean not null default true
 );
 
+-- ============================================================
+-- Referral aliases
+-- ============================================================
+create table if not exists referral_aliases (
+  id bigint generated always as identity primary key,
+  alias text not null unique,
+  wallet_address text not null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_referral_alias on referral_aliases (alias);
+create index if not exists idx_referral_wallet on referral_aliases (wallet_address);
+alter table referral_aliases enable row level security;
+select create_policy_if_not_exists('referral_aliases', 'Public read aliases', 'select');
+select create_policy_if_not_exists('referral_aliases', 'Service write aliases', 'insert', null, 'true');
+
 -- Banks are populated via Flutterwave API on first app load
 -- Call GET /api/bank?refresh=true to fetch all 597 Nigerian banks
 

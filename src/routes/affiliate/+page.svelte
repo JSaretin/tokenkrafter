@@ -25,8 +25,20 @@
 	// Referral stats
 	let loading = $state(false);
 	let claiming = $state<string | null>(null);
-	let referralLink = $derived(userAddress ? `${typeof window !== 'undefined' ? window.location.origin : ''}/create?ref=${userAddress}` : '');
 	let copied = $state(false);
+
+	// Alias
+	let myAlias = $state('');
+	let aliasInput = $state('');
+	let aliasLoading = $state(false);
+	let aliasError = $state('');
+	let aliasSaved = $state(false);
+
+	let referralLink = $derived.by(() => {
+		if (!userAddress) return '';
+		const origin = typeof window !== 'undefined' ? window.location.origin : '';
+		return myAlias ? `${origin}/?ref=${myAlias}` : `${origin}/?ref=${userAddress}`;
+	});
 
 	// Stats data
 	let totalReferred = $state<bigint>(0n);
@@ -128,6 +140,60 @@
 			loadStats();
 		}
 	});
+
+	// Fetch existing alias on wallet connect
+	$effect(() => {
+		if (userAddress) {
+			fetch(`/api/referral?wallet=${userAddress}`)
+				.then(r => r.json())
+				.then(data => {
+					if (data.alias) {
+						myAlias = data.alias;
+						aliasInput = data.alias;
+					}
+				})
+				.catch(() => {});
+		}
+	});
+
+	async function saveAlias() {
+		if (!signer || !userAddress || !aliasInput.trim()) return;
+		aliasLoading = true;
+		aliasError = '';
+		aliasSaved = false;
+		try {
+			const timestamp = Date.now();
+			const msg = `TokenKrafter Referral Alias\nAlias: ${aliasInput.trim().toLowerCase()}\nTimestamp: ${timestamp}`;
+			const signature = await signer.signMessage(msg);
+
+			const res = await fetch('/api/referral', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					alias: aliasInput.trim(),
+					wallet_address: userAddress,
+					signature,
+					signed_message: msg
+				})
+			});
+
+			if (res.ok) {
+				const data = await res.json();
+				myAlias = data.alias;
+				aliasSaved = true;
+				addFeedback({ message: 'Alias saved!', type: 'success' });
+			} else {
+				const err = await res.json().catch(() => ({ message: 'Failed' }));
+				aliasError = err.message || 'Failed to save alias';
+				addFeedback({ message: aliasError, type: 'error' });
+			}
+		} catch (e: any) {
+			aliasError = e.message || 'Failed';
+			addFeedback({ message: aliasError, type: 'error' });
+		} finally {
+			aliasLoading = false;
+		}
+	}
 </script>
 
 <svelte:head>
@@ -266,6 +332,35 @@
 				<p class="text-xs text-gray-500 font-mono mt-2">
 					{$t('aff.linkHint')}
 				</p>
+
+				<!-- Alias -->
+				<div class="alias-section mt-4 pt-4" style="border-top: 1px solid var(--border)">
+					<div class="flex items-center gap-2 mb-2">
+						<span class="label-text mb-0">Custom Alias</span>
+						{#if myAlias}
+							<span class="text-[10px] font-mono text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded-full">{myAlias}</span>
+						{/if}
+					</div>
+					<div class="flex gap-2">
+						<input
+							type="text"
+							class="input-field flex-1"
+							placeholder="e.g. john, crypto-king"
+							bind:value={aliasInput}
+							maxlength="20"
+						/>
+						<button
+							class="btn-secondary text-xs px-4 cursor-pointer flex-shrink-0"
+							disabled={aliasLoading || !aliasInput.trim()}
+							onclick={saveAlias}
+						>
+							{aliasLoading ? '...' : myAlias ? 'Update' : 'Save'}
+						</button>
+					</div>
+					<p class="text-[10px] text-gray-600 font-mono mt-1.5">
+						3-20 chars, lowercase. Your link becomes: tokenkrafter.com/?ref={aliasInput.trim().toLowerCase() || 'your-alias'}
+					</p>
+				</div>
 			</div>
 
 			<!-- Network Selector -->

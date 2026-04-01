@@ -232,12 +232,12 @@
 
 	<!-- KPI Strip -->
 	<div class="kpi-grid mb-6">
-		<div class="kpi-card kpi-wide">
+		<div class="kpi-card">
 			<div class="kpi-label">Total Revenue</div>
 			<div class="kpi-value text-emerald-400">${dashTotalRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
 			<div class="kpi-bar bg-emerald-400/20"><div class="kpi-bar-fill bg-emerald-400" style="width: 100%"></div></div>
 		</div>
-		<div class="kpi-card kpi-wide">
+		<div class="kpi-card">
 			<div class="kpi-label">Total Raised</div>
 			<div class="kpi-value text-amber-400">${(t?.total_raised_usdt ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
 			<div class="kpi-bar bg-amber-400/20"><div class="kpi-bar-fill bg-amber-400" style="width: {Math.min(100, (t?.total_raised_usdt ?? 0) / 100)}%"></div></div>
@@ -256,15 +256,6 @@
 			<div class="kpi-label">Graduated</div>
 			<div class="kpi-value text-purple-400">{t?.launches_graduated ?? 0}</div>
 			<div class="kpi-bar bg-purple-400/20"><div class="kpi-bar-fill bg-purple-400" style="width: {Math.min(100, (t?.launches_graduated ?? 0) * 10)}%"></div></div>
-		</div>
-		<div class="kpi-card">
-			<div class="kpi-label">Visitors</div>
-			<div class="kpi-value text-rose-400">{(v?.total_visitors ?? 0).toLocaleString()}</div>
-			<div class="kpi-sub">
-				<span class="text-emerald-400">{v?.browsing ?? 0}</span> browsing
-				<span class="text-cyan-400 ml-1">{v?.creating ?? 0}</span> creating
-				<span class="text-amber-400 ml-1">{v?.investing ?? 0}</span> investing
-			</div>
 		</div>
 	</div>
 
@@ -499,18 +490,12 @@
 	}
 	@media (min-width: 768px) {
 		.kpi-grid {
-			grid-template-columns: repeat(4, 1fr);
-		}
-		.kpi-wide {
-			grid-column: span 2;
+			grid-template-columns: repeat(3, 1fr);
 		}
 	}
 	@media (min-width: 1280px) {
 		.kpi-grid {
-			grid-template-columns: 2fr 2fr 1fr 1fr 1fr 1fr;
-		}
-		.kpi-wide {
-			grid-column: span 1;
+			grid-template-columns: repeat(5, 1fr);
 		}
 	}
 	.kpi-card {
