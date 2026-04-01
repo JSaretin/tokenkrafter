@@ -1,8 +1,8 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { supabaseAdmin } from '$lib/supabaseServer';
-import { ethers } from 'ethers';
 import { encrypt, decrypt } from '$lib/crypto';
+import { recoverWallet, verifyAdminSession } from '$lib/auth';
 
 // GET /api/withdrawals?wallet=0x...&status=pending
 export const GET: RequestHandler = async ({ url }) => {
@@ -34,33 +34,19 @@ export const GET: RequestHandler = async ({ url }) => {
 };
 
 // POST /api/withdrawals — Step 1: save signed payment details (before on-chain trade)
-// Requires wallet signature to prove ownership of bank details
+// Requires wallet signature to prove ownership
 export const POST: RequestHandler = async ({ request }) => {
 	const body = await request.json();
 
-	// Require signature
 	if (!body.signature || !body.signed_message) {
 		return error(400, 'Signature required');
 	}
 
-	const walletAddress = (body.wallet_address || '').toLowerCase();
-
-	// Verify wallet signature
+	let walletAddress: string;
 	try {
-		const recovered = ethers.verifyMessage(body.signed_message, body.signature);
-		if (recovered.toLowerCase() !== walletAddress) {
-			return error(403, 'Signature does not match wallet address');
-		}
-		// Verify timestamp freshness (5 min window)
-		const tsMatch = body.signed_message.match(/Timestamp: (\d+)/);
-		if (tsMatch) {
-			const ts = parseInt(tsMatch[1]);
-			if (Date.now() - ts > 5 * 60 * 1000) {
-				return error(400, 'Signature expired');
-			}
-		}
-	} catch {
-		return error(400, 'Invalid signature');
+		walletAddress = recoverWallet(body.signature, body.signed_message);
+	} catch (e: any) {
+		return error(400, e.message || 'Invalid signature');
 	}
 
 	const row = {
@@ -87,22 +73,18 @@ export const POST: RequestHandler = async ({ request }) => {
 	return json(data);
 };
 
-// PATCH /api/withdrawals — admin-only status updates
-// The verify endpoint handles post-trade updates (awaiting_trade → pending)
-export const PATCH: RequestHandler = async ({ request }) => {
-	// Require admin secret
-	const authHeader = request.headers.get('authorization');
-	const { ADMIN_SECRET } = await import('$env/dynamic/private').then(m => m.env) as any;
-	if (!ADMIN_SECRET || authHeader !== `Bearer ${ADMIN_SECRET}`) {
-		return error(401, 'Unauthorized');
-	}
+// PATCH /api/withdrawals — admin-only status updates (session cookie)
+export const PATCH: RequestHandler = async ({ request, cookies }) => {
+	const token = cookies.get('admin_session');
+	if (!token) return error(401, 'Not authenticated');
+	const wallet = await verifyAdminSession(token);
+	if (!wallet) return error(401, 'Session expired');
 
 	const body = await request.json();
 	const { id, status: newStatus, admin_note } = body;
 
 	if (!id) return error(400, 'id required');
 
-	// Only allow admin status transitions
 	if (newStatus) {
 		if (!['confirmed', 'cancelled'].includes(newStatus)) {
 			return error(400, 'Invalid status. Only confirmed/cancelled allowed.');

@@ -1,12 +1,14 @@
 <script lang="ts">
-	import { getContext } from 'svelte';
+	import { getContext, onDestroy } from 'svelte';
+	import { supabase } from '$lib/supabaseClient';
 	import { ethers } from 'ethers';
 	import type { SupportedNetwork } from '$lib/structure';
 	import { TRADE_ROUTER_ABI } from '$lib/tradeRouter';
 
 	const addFeedback = getContext<(f: { message: string; type: string }) => void>('addFeedback');
 	let getSigner: () => ethers.Signer | null = getContext('signer');
-	const supportedNetworks: SupportedNetwork[] = getContext('supportedNetworks');
+	let _getNetworks: () => SupportedNetwork[] = getContext('supportedNetworks');
+	let supportedNetworks = $derived(_getNetworks());
 	let signer = $derived(getSigner());
 
 	let withdrawFilter = $state<'pending' | 'timeout' | 'all'>('pending');
@@ -19,8 +21,11 @@
 	let processingId = $state<number | null>(null);
 	let nairaRate = $state('1600');
 
-	// Fetch live rate on mount
+	// Fetch live rate on mount (run once)
+	let rateLoaded = false;
 	$effect(() => {
+		if (rateLoaded) return;
+		rateLoaded = true;
 		(async () => {
 			try {
 				const res = await fetch('/api/rates?currencies=NGN');
@@ -130,8 +135,24 @@
 		} finally { processingId = null; }
 	}
 
+	let channels: any[] = [];
+
 	// Auto-load on mount
-	$effect(() => { loadWithdrawals(); });
+	$effect(() => {
+		loadWithdrawals();
+
+		const withdrawalsChannel = supabase
+			.channel('admin-withdrawals')
+			.on('postgres_changes', { event: '*', schema: 'public', table: 'withdrawal_requests' }, () => {
+				loadWithdrawals();
+			})
+			.subscribe();
+		channels.push(withdrawalsChannel);
+	});
+
+	onDestroy(() => {
+		channels.forEach(c => supabase.removeChannel(c));
+	});
 </script>
 
 <div class="space-y-4">

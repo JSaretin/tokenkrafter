@@ -3,18 +3,19 @@ import type { RequestHandler } from './$types';
 import { supabaseAdmin } from '$lib/supabaseServer';
 import { initiateTransfer } from '$lib/flutterwave';
 import { decrypt } from '$lib/crypto';
+import { verifyAdminSession } from '$lib/auth';
 
-// POST /api/withdrawals/process — initiate Flutterwave transfer for a pending withdrawal
-// Admin-only: requires ADMIN_SECRET
-export const POST: RequestHandler = async ({ request }) => {
-	// Require admin secret
-	const authHeader = request.headers.get('authorization');
-	const { ADMIN_SECRET } = await import('$env/dynamic/private').then(m => m.env) as any;
-	if (!ADMIN_SECRET || authHeader !== `Bearer ${ADMIN_SECRET}`) {
-		return error(401, 'Unauthorized');
-	}
+// POST /api/withdrawals/process — initiate Flutterwave transfer
+// Admin-only: session cookie
+export const POST: RequestHandler = async ({ request, cookies }) => {
+	const token = cookies.get('admin_session');
+	if (!token) return error(401, 'Not authenticated');
+	const wallet = await verifyAdminSession(token);
+	if (!wallet) return error(401, 'Session expired');
 
-	const { withdrawal_id, naira_rate } = await request.json();
+	const body = await request.json();
+
+	const { withdrawal_id, naira_rate } = body;
 
 	if (!withdrawal_id) return error(400, 'withdrawal_id required');
 

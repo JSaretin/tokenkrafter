@@ -8,49 +8,12 @@
 	import { page } from '$app/state';
 	import { t } from '$lib/i18n';
 	import LanguageSwitcher from '$lib/LanguageSwitcher.svelte';
+	import { supabase } from '$lib/supabaseClient';
 
 	let { children } = $props();
 
-	const supportedNetworks: SupportedNetworks = [
-		{
-			chain_id: 31337,
-			name: 'Localhost',
-			symbol: 'LOCAL',
-			native_coin: 'ETH',
-			usdt_address: '0x5FbDB2315678afecb367f032d93F642f64180aa3',
-			usdc_address: '',
-			platform_address: '0x0B306BF915C4d645ff596e518fAf3F9669b97016',
-			launchpad_address: '0x959922bE3CAee4b8Cd9a407cc3ac1C251C2007B1',
-			router_address: '0x7a2088a1bFc9d81c55368AE168C2C02570cB814F',
-			dex_router: '0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9',
-			trade_router_address: '0x09635F643e140090A9A8Dcd712eD6285858ceBef',
-			rpc: 'http://127.0.0.1:8545'
-		}
-		// {
-		// 	chain_id: 1,
-		// 	name: 'Ethereum',
-		// 	symbol: 'ETH',
-		// 	native_coin: 'ETH',
-		// 	usdt_address: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
-		// 	usdc_address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
-		// 	platform_address: '0x',
-		// 	launchpad_address: '0x',
-		// 	dex_router: '0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D',
-		// 	rpc: 'https://eth.llamarpc.com'
-		// },
-		// {
-		// 	chain_id: 56,
-		// 	name: 'Binance Smart Chain',
-		// 	symbol: 'BSC',
-		// 	native_coin: 'BNB',
-		// 	usdt_address: '0x55d398326f99059ff775485246999027b3197955',
-		// 	usdc_address: '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d',
-		// 	platform_address: '0xf8953948561d3047b15006915669d2814b9f0e5d',
-		// 	launchpad_address: '0x9a7c5e6a4343E881152d3D4A8709289B4f46E071',
-		// 	dex_router: '0x10ED43C718714eb63d5aA57B78B54704E256024E',
-		// 	rpc: 'https://bsc-dataseed.binance.org/'
-		// },
-	];
+	// Networks loaded from DB (admin-managed)
+	let supportedNetworks: SupportedNetworks = $state([]);
 
 	// Network providers initialized in background
 	let networkProviders: Map<number, ethers.JsonRpcProvider> = $state(new Map());
@@ -131,13 +94,41 @@
 	}
 
 	onMount(() => {
+		// Load networks from DB
+		supabase
+			.from('platform_config')
+			.select('value')
+			.eq('key', 'networks')
+			.single()
+			.then(({ data }) => {
+				if (data?.value && Array.isArray(data.value) && data.value.length > 0) {
+					supportedNetworks = data.value;
+				}
+				// Init providers after networks are loaded
+				initProviders();
+			})
+			.catch(() => {
+				initProviders();
+			});
+
+		// Subscribe to config changes (admin updates networks live)
+		const configChannel = supabase
+			.channel('platform-config')
+			.on('postgres_changes', {
+				event: 'UPDATE', schema: 'public', table: 'platform_config',
+				filter: 'key=eq.networks'
+			}, (payload: any) => {
+				if (payload.new?.value && Array.isArray(payload.new.value)) {
+					supportedNetworks = payload.new.value;
+					initProviders(); // re-init with new RPCs
+				}
+			})
+			.subscribe();
+
 		isLoading = false;
 		// Restore theme from localStorage
 		const saved = localStorage.getItem('theme') as 'dark' | 'light' | null;
 		if (saved === 'light') applyTheme('light');
-
-		// Initialize providers in background
-		initProviders();
 
 		// Initialize AppKit (Reown) for wallet connections
 		(async () => {
@@ -206,7 +197,7 @@
 	setContext('signer', () => signer);
 	setContext('userAddress', () => userAddress);
 	setContext('connectWallet', connectWallet);
-	setContext('supportedNetworks', supportedNetworks);
+	setContext('supportedNetworks', () => supportedNetworks);
 	setContext('networkProviders', () => networkProviders);
 	setContext('providersReady', () => providersReady);
 	setContext('getPaymentOptions', getPaymentOptions);

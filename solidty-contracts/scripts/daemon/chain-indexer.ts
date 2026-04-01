@@ -90,7 +90,7 @@ const STATE_KEY = 'chain_indexer_state';
 
 async function loadState(chainId: number): Promise<IndexerState> {
 	const { data } = await supabase
-		.from('platform_settings')
+		.from('platform_config')
 		.select('value')
 		.eq('key', `${STATE_KEY}_${chainId}`)
 		.single();
@@ -103,7 +103,7 @@ async function loadState(chainId: number): Promise<IndexerState> {
 
 async function saveState(chainId: number, state: IndexerState) {
 	await supabase
-		.from('platform_settings')
+		.from('platform_config')
 		.upsert({
 			key: `${STATE_KEY}_${chainId}`,
 			value: state

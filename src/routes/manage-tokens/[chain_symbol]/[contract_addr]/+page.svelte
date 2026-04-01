@@ -7,7 +7,8 @@
 	import { LAUNCHPAD_FACTORY_ABI } from '$lib/launchpad';
 	import { t } from '$lib/i18n';
 
-	const supportedNetworks: SupportedNetworks = getContext('supportedNetworks');
+	let _getNetworks: () => SupportedNetworks = getContext('supportedNetworks');
+	let supportedNetworks = $derived(_getNetworks());
 	const addFeedback = getContext<(f: { message: string; type: string }) => void>('addFeedback');
 	let getSigner: () => ethers.Signer | null = getContext('signer');
 	let getUserAddress: () => string | null = getContext('userAddress');

@@ -12,7 +12,8 @@
 	let getUserAddress: () => string | null = getContext('userAddress');
 	let connectWallet: () => Promise<boolean> = getContext('connectWallet');
 	const addFeedback = getContext<(f: { message: string; type: string }) => void>('addFeedback');
-	const supportedNetworks: SupportedNetwork[] = getContext('supportedNetworks');
+	let _getNetworks: () => SupportedNetwork[] = getContext('supportedNetworks');
+	let supportedNetworks = $derived(_getNetworks());
 	let getNetworkProviders: () => Map<number, ethers.JsonRpcProvider> = getContext('networkProviders');
 
 	let signer = $derived(getSigner());
@@ -500,6 +501,7 @@
 					'TokenKrafter Withdrawal',
 					`Amount: ${amountIn} ${tokenInSymbol}`,
 					`Method: ${paymentMethod}`,
+					`Origin: ${window.location.origin}`,
 					`Timestamp: ${timestamp}`
 				].join('\n');
 				const signature = await signer.signMessage(withdrawMessage);

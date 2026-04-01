@@ -1,7 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { supabaseAdmin } from '$lib/supabaseServer';
-import { ethers } from 'ethers';
+import { recoverWallet } from '$lib/auth';
 
 // GET /api/launches/comments?address=0x...&limit=50
 export const GET: RequestHandler = async ({ url }) => {
@@ -35,16 +35,11 @@ export const POST: RequestHandler = async ({ request }) => {
 		return error(400, 'Signature required');
 	}
 
-	// Recover wallet from signature — this IS the author
 	let walletAddress: string;
 	try {
-		walletAddress = ethers.verifyMessage(body.signed_message, body.signature).toLowerCase();
-		const tsMatch = body.signed_message.match(/Timestamp: (\d+)/);
-		if (tsMatch && Date.now() - parseInt(tsMatch[1]) > 5 * 60 * 1000) {
-			return error(400, 'Signature expired');
-		}
-	} catch {
-		return error(400, 'Invalid signature');
+		walletAddress = recoverWallet(body.signature, body.signed_message);
+	} catch (e: any) {
+		return error(400, e.message || 'Invalid signature');
 	}
 
 	const required = ['launch_address', 'chain_id', 'message'];

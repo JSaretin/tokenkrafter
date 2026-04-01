@@ -1,5 +1,10 @@
 -- TokenKrafter Schema (fully idempotent — safe to run multiple times)
 -- Run this in your Supabase SQL editor
+--
+-- Security model:
+--   Anon key (frontend) = READ ONLY on all tables
+--   Service role key (backend) = bypasses RLS for writes
+--   All writes go through server-side API with wallet signature verification
 
 -- ============================================================
 -- Helper: create policy only if it doesn't exist
@@ -79,9 +84,7 @@ create trigger launches_updated_at
   for each row execute function update_updated_at();
 
 alter table launches enable row level security;
-select create_policy_if_not_exists('launches', 'Public read access', 'select');
-select create_policy_if_not_exists('launches', 'Service role write access', 'insert', null, 'true');
-select create_policy_if_not_exists('launches', 'Service role update access', 'update');
+select create_policy_if_not_exists('launches', 'Anon read', 'select');
 
 -- ============================================================
 -- Badges table
@@ -99,9 +102,7 @@ create table if not exists badges (
 
 create index if not exists idx_badges_launch on badges (launch_address, chain_id);
 alter table badges enable row level security;
-select create_policy_if_not_exists('badges', 'Public read badges', 'select');
-select create_policy_if_not_exists('badges', 'Service role insert badges', 'insert', null, 'true');
-select create_policy_if_not_exists('badges', 'Service role delete badges', 'delete');
+select create_policy_if_not_exists('badges', 'Anon read', 'select');
 
 -- ============================================================
 -- Launch transactions
@@ -119,8 +120,7 @@ create table if not exists launch_transactions (
 
 create index if not exists idx_launch_tx_address on launch_transactions (launch_address, chain_id);
 alter table launch_transactions enable row level security;
-select create_policy_if_not_exists('launch_transactions', 'Public read', 'select');
-select create_policy_if_not_exists('launch_transactions', 'Service write', 'insert', null, 'true');
+select create_policy_if_not_exists('launch_transactions', 'Anon read', 'select');
 
 -- ============================================================
 -- Comments
@@ -136,8 +136,7 @@ create table if not exists comments (
 
 create index if not exists idx_comments_launch on comments (launch_address, chain_id);
 alter table comments enable row level security;
-select create_policy_if_not_exists('comments', 'Public read comments', 'select');
-select create_policy_if_not_exists('comments', 'Service write comments', 'insert', null, 'true');
+select create_policy_if_not_exists('comments', 'Anon read', 'select');
 
 -- ============================================================
 -- Platform stats
@@ -160,9 +159,7 @@ create table if not exists platform_stats (
 
 create index if not exists idx_platform_stats_date on platform_stats (stat_date desc);
 alter table platform_stats enable row level security;
-select create_policy_if_not_exists('platform_stats', 'Public read stats', 'select');
-select create_policy_if_not_exists('platform_stats', 'Service write stats', 'insert', null, 'true');
-select create_policy_if_not_exists('platform_stats', 'Service update stats', 'update');
+select create_policy_if_not_exists('platform_stats', 'Anon read', 'select');
 
 -- ============================================================
 -- Site visitors
@@ -176,14 +173,12 @@ create table if not exists site_visitors (
   updated_at timestamptz not null default now()
 );
 
--- Seed initial row if empty
 insert into site_visitors (total_visitors, browsing, creating, investing)
 select 0, 0, 0, 0
 where not exists (select 1 from site_visitors limit 1);
 
 alter table site_visitors enable row level security;
-select create_policy_if_not_exists('site_visitors', 'Public read visitors', 'select');
-select create_policy_if_not_exists('site_visitors', 'Service write visitors', 'update');
+select create_policy_if_not_exists('site_visitors', 'Anon read', 'select');
 
 -- ============================================================
 -- Created tokens
@@ -211,8 +206,7 @@ create index if not exists idx_created_tokens_chain on created_tokens (chain_id)
 create index if not exists idx_created_tokens_creator on created_tokens (creator);
 create index if not exists idx_created_tokens_created_at on created_tokens (created_at desc);
 alter table created_tokens enable row level security;
-select create_policy_if_not_exists('created_tokens', 'Public read tokens', 'select');
-select create_policy_if_not_exists('created_tokens', 'Service write tokens', 'insert', null, 'true');
+select create_policy_if_not_exists('created_tokens', 'Anon read', 'select');
 
 -- ============================================================
 -- Recent transactions (social proof feed)
@@ -237,8 +231,7 @@ create index if not exists idx_recent_tx_created on recent_transactions (created
 create index if not exists idx_recent_tx_chain on recent_transactions (chain_id);
 create index if not exists idx_recent_tx_launch on recent_transactions (launch_address);
 alter table recent_transactions enable row level security;
-select create_policy_if_not_exists('recent_transactions', 'Public read recent_tx', 'select');
-select create_policy_if_not_exists('recent_transactions', 'Service write recent_tx', 'insert', null, 'true');
+select create_policy_if_not_exists('recent_transactions', 'Anon read', 'select');
 
 -- ============================================================
 -- Withdrawal requests (off-ramp: crypto → fiat)
@@ -248,36 +241,30 @@ create table if not exists withdrawal_requests (
   withdraw_id integer,                    -- on-chain withdrawal ID (set after trade)
   chain_id integer not null,
   wallet_address text not null,
-  token_in text not null,                 -- token user deposited
+  token_in text not null,
   token_in_symbol text,
-  gross_amount text not null default '0', -- before fee (USDT)
+  gross_amount text not null default '0',
   fee text not null default '0',
-  net_amount text not null default '0',   -- after fee
-  payment_method text not null default 'bank', -- 'bank', 'paypal', 'wise', etc.
-  payment_details jsonb not null default '{}', -- encrypted/hashed details
-  status text not null default 'pending', -- 'pending', 'confirmed', 'cancelled'
+  net_amount text not null default '0',
+  payment_method text not null default 'bank',
+  payment_details jsonb not null default '{}', -- encrypted
+  status text not null default 'pending',
   admin_note text,
   tx_hash text,
   confirmed_at timestamptz,
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  -- withdraw_id is set after on-chain trade (no unique constraint needed)
+  updated_at timestamptz not null default now()
 );
 
 create index if not exists idx_withdrawals_wallet on withdrawal_requests (wallet_address);
 create index if not exists idx_withdrawals_status on withdrawal_requests (status);
 create index if not exists idx_withdrawals_created on withdrawal_requests (created_at desc);
 alter table withdrawal_requests enable row level security;
-select create_policy_if_not_exists('withdrawal_requests', 'Public read withdrawals', 'select');
-select create_policy_if_not_exists('withdrawal_requests', 'Service write withdrawals', 'insert', null, 'true');
-select create_policy_if_not_exists('withdrawal_requests', 'Service update withdrawals', 'update');
+select create_policy_if_not_exists('withdrawal_requests', 'Anon read', 'select');
 
--- Trigger updated_at
 create or replace trigger withdrawal_requests_updated_at
   before update on withdrawal_requests
   for each row execute function update_updated_at();
-
--- (realtime added in idempotent block below)
 
 -- ============================================================
 -- Nigerian banks reference (local cache)
@@ -292,6 +279,9 @@ create table if not exists ng_banks (
   active boolean not null default true
 );
 
+alter table ng_banks enable row level security;
+select create_policy_if_not_exists('ng_banks', 'Anon read', 'select');
+
 -- ============================================================
 -- Referral aliases
 -- ============================================================
@@ -305,14 +295,34 @@ create table if not exists referral_aliases (
 create index if not exists idx_referral_alias on referral_aliases (alias);
 create index if not exists idx_referral_wallet on referral_aliases (wallet_address);
 alter table referral_aliases enable row level security;
-select create_policy_if_not_exists('referral_aliases', 'Public read aliases', 'select');
-select create_policy_if_not_exists('referral_aliases', 'Service write aliases', 'insert', null, 'true');
+select create_policy_if_not_exists('referral_aliases', 'Anon read', 'select');
 
--- Banks are populated via Flutterwave API on first app load
--- Call GET /api/bank?refresh=true to fetch all 597 Nigerian banks
+-- ============================================================
+-- Platform config (unified key-value store for all settings)
+-- Stores: networks, site info, social links, exchange rates, etc.
+-- ============================================================
+create table if not exists platform_config (
+  key text primary key,
+  value jsonb not null default '{}',
+  updated_at timestamptz not null default now()
+);
 
-alter table ng_banks enable row level security;
-select create_policy_if_not_exists('ng_banks', 'Public read banks', 'select');
+alter table platform_config enable row level security;
+select create_policy_if_not_exists('platform_config', 'Anon read', 'select');
+
+drop trigger if exists platform_config_updated_at on platform_config;
+create trigger platform_config_updated_at
+  before update on platform_config
+  for each row execute function update_updated_at();
+
+-- Seed defaults
+insert into platform_config (key, value) values
+  ('networks', '[]'::jsonb),
+  ('site', '{"name":"TokenKrafter","description":"Deploy custom ERC-20 tokens across multiple chains. No coding required.","support_email":"support@tokenkrafter.com"}'::jsonb),
+  ('social_links', '{"twitter":"https://x.com/TokenKrafter","telegram_group":"","telegram_channel":"","discord":"","facebook":"","youtube":""}'::jsonb),
+  ('exchange_rates', '{"base":"USD","rates":{"NGN":1385,"GBP":0.76,"EUR":0.87,"GHS":15.5,"KES":129},"source":"fallback"}'::jsonb),
+  ('rate_override', '{"NGN":null,"spread_bps":30}'::jsonb)
+on conflict (key) do nothing;
 
 -- ============================================================
 -- Enable Realtime for live updates (idempotent)
@@ -333,73 +343,39 @@ do $$ begin
   if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'withdrawal_requests') then
     alter publication supabase_realtime add table withdrawal_requests;
   end if;
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'platform_config') then
+    alter publication supabase_realtime add table platform_config;
+  end if;
 end $$;
 
 -- ============================================================
--- Platform settings (exchange rates, admin overrides)
--- ============================================================
-create table if not exists platform_settings (
-  key text primary key,
-  value jsonb not null default '{}',
-  updated_at timestamptz not null default now()
-);
-
-alter table platform_settings enable row level security;
-select create_policy_if_not_exists('platform_settings', 'Public read settings', 'select');
-select create_policy_if_not_exists('platform_settings', 'Service write settings', 'insert', null, 'true');
-select create_policy_if_not_exists('platform_settings', 'Service update settings', 'update');
-
--- Seed exchange rates row
-insert into platform_settings (key, value) values
-  ('exchange_rates', '{"base":"USD","rates":{"NGN":1385,"GBP":0.76,"EUR":0.87,"GHS":15.5,"KES":129},"source":"fallback"}')
-on conflict (key) do nothing;
-
--- Seed admin rate override (null = use live rate)
-insert into platform_settings (key, value) values
-  ('rate_override', '{"NGN":null,"spread_bps":30}')
-on conflict (key) do nothing;
-
--- ============================================================
 -- pg_cron: auto-update exchange rates every hour
--- Requires pg_net extension (enabled by default on Supabase)
 -- ============================================================
-
--- Enable extensions (idempotent)
 create extension if not exists pg_net with schema extensions;
 create extension if not exists pg_cron with schema extensions;
 
--- Function to fetch and store exchange rates
 create or replace function update_exchange_rates()
 returns void as $$
 declare
   response_id bigint;
-  response_body jsonb;
-  rates jsonb;
 begin
-  -- Make HTTP request to exchange rate API
   select net.http_get(
     url := 'https://open.er-api.com/v6/latest/USD'
   ) into response_id;
-
-  -- Wait briefly for response (pg_net is async)
-  -- The actual update happens in the callback below
 end;
 $$ language plpgsql;
 
--- Callback function that processes the HTTP response
 create or replace function process_exchange_rate_response()
 returns trigger as $$
 declare
   body jsonb;
   rates jsonb;
 begin
-  -- Only process successful responses
   if NEW.status_code = 200 then
     body := NEW.content::jsonb;
     if body->>'result' = 'success' and body->'rates' is not null then
       rates := body->'rates';
-
-      update platform_settings
+      update platform_config
       set value = jsonb_build_object(
         'base', 'USD',
         'rates', jsonb_build_object(
@@ -420,14 +396,8 @@ begin
 end;
 $$ language plpgsql;
 
--- Schedule: update rates every hour
 select cron.schedule(
   'update-exchange-rates',
-  '0 * * * *',  -- every hour at minute 0
+  '0 * * * *',
   $$select update_exchange_rates()$$
 );
-
--- ============================================================
--- Cleanup helper function (optional — drop after migration)
--- ============================================================
--- drop function if exists create_policy_if_not_exists;

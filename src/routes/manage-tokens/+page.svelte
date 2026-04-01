@@ -8,7 +8,8 @@
 	let getUserAddress: () => string | null = getContext('userAddress');
 	let connectWallet: () => Promise<boolean> = getContext('connectWallet');
 	const addFeedback = getContext<(f: { message: string; type: string }) => void>('addFeedback');
-	const supportedNetworks: SupportedNetworks = getContext('supportedNetworks');
+	let _getNetworks: () => SupportedNetworks = getContext('supportedNetworks');
+	let supportedNetworks = $derived(_getNetworks());
 	let getNetworkProviders: () => Map<number, ethers.JsonRpcProvider> = getContext('networkProviders');
 
 	let userAddress = $derived(getUserAddress());

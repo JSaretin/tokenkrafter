@@ -23,7 +23,8 @@
 	} from '$lib/launchpad';
 
 	let getUserAddress: () => string | null = getContext('userAddress');
-	const supportedNetworks: SupportedNetwork[] = getContext('supportedNetworks');
+	let _getNetworks: () => SupportedNetwork[] = getContext('supportedNetworks');
+	let supportedNetworks = $derived(_getNetworks());
 	let getNetworkProviders: () => Map<number, ethers.JsonRpcProvider> = getContext('networkProviders');
 	let getProvidersReady: () => boolean = getContext('providersReady');
 	const addFeedback = getContext<(f: { message: string; type: string }) => void>('addFeedback');

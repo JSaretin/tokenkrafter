@@ -87,23 +87,28 @@
 		});
 	}
 
+	// Init chart once when el is available
 	$effect(() => {
 		if (!el) return;
-		if (!chart) {
-			chart = echarts.init(el, undefined, { renderer: 'canvas' });
-			if (onclick) chart.on('click', 'series', onclick);
-		}
+		chart = echarts.init(el, undefined, { renderer: 'canvas' });
+		if (onclick) chart.on('click', 'series', onclick);
+
+		const ro = new ResizeObserver(() => chart?.resize());
+		ro.observe(el);
+
+		return () => {
+			ro.disconnect();
+			chart?.dispose();
+			chart = null;
+		};
+	});
+
+	// Update chart when option or chartPrefs change (no dispose/reinit)
+	$effect(() => {
+		if (!chart) return;
 		const themed = mergeTheme(option);
 		const final = applyChartType(themed, chartPrefs.type);
 		chart.setOption(final, true);
-		return () => { chart?.dispose(); chart = null; };
-	});
-
-	$effect(() => {
-		if (!el) return;
-		const ro = new ResizeObserver(() => chart?.resize());
-		ro.observe(el);
-		return () => ro.disconnect();
 	});
 </script>
 

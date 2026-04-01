@@ -9,7 +9,8 @@
 	let getSigner: () => ethers.Signer | null = getContext('signer');
 	let getUserAddress: () => string | null = getContext('userAddress');
 	let addFeedback: (f: { message: string; type: string }) => void = getContext('addFeedback');
-	let supportedNetworks: SupportedNetworks = getContext('supportedNetworks');
+	let _getNetworks: () => SupportedNetworks = getContext('supportedNetworks');
+	let supportedNetworks = $derived(_getNetworks());
 	let getNetworkProviders: () => Map<number, ethers.JsonRpcProvider> = getContext('networkProviders');
 	let getProvidersReady: () => boolean = getContext('providersReady');
 	let getPaymentOptions: (n: SupportedNetwork) => PaymentOption[] = getContext('getPaymentOptions');
@@ -163,7 +164,7 @@
 		aliasSaved = false;
 		try {
 			const timestamp = Date.now();
-			const msg = `TokenKrafter Referral Alias\nAlias: ${aliasInput.trim().toLowerCase()}\nTimestamp: ${timestamp}`;
+			const msg = `TokenKrafter Referral Alias\nAlias: ${aliasInput.trim().toLowerCase()}\nOrigin: ${window.location.origin}\nTimestamp: ${timestamp}`;
 			const signature = await signer.signMessage(msg);
 
 			const res = await fetch('/api/referral', {

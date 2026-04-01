@@ -1,7 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { supabaseAdmin } from '$lib/supabaseServer';
-import { ethers } from 'ethers';
+import { recoverWallet } from '$lib/auth';
 
 const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2 MB
 const ALLOWED_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/svg+xml'];
@@ -32,16 +32,11 @@ export const POST: RequestHandler = async ({ request }) => {
 		return error(400, `File too large. Max size is ${MAX_FILE_SIZE / (1024 * 1024)} MB`);
 	}
 
-	// Recover wallet from signature
 	let walletAddress: string;
 	try {
-		walletAddress = ethers.verifyMessage(signedMessage, signature).toLowerCase();
-		const tsMatch = signedMessage.match(/Timestamp: (\d+)/);
-		if (tsMatch && Date.now() - parseInt(tsMatch[1]) > 5 * 60 * 1000) {
-			return error(400, 'Signature expired');
-		}
-	} catch {
-		return error(400, 'Invalid signature');
+		walletAddress = recoverWallet(signature, signedMessage);
+	} catch (e: any) {
+		return error(400, e.message || 'Invalid signature');
 	}
 
 	// Verify the recovered address is the creator

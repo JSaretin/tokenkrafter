@@ -3,20 +3,20 @@ import type { RequestHandler } from './$types';
 import { supabaseAdmin } from '$lib/supabaseServer';
 
 // GET /api/rates?currencies=NGN,GBP,EUR
-// Reads from platform_settings table (updated hourly by pg_cron)
+// Reads from platform_config table (updated hourly by pg_cron)
 export const GET: RequestHandler = async ({ url }) => {
 	const currencies = url.searchParams.get('currencies')?.split(',') || ['NGN'];
 
 	// Read rates from DB (updated by pg_cron every hour)
 	const { data: settings } = await supabaseAdmin
-		.from('platform_settings')
+		.from('platform_config')
 		.select('value, updated_at')
 		.eq('key', 'exchange_rates')
 		.single();
 
 	// Read admin override
 	const { data: override } = await supabaseAdmin
-		.from('platform_settings')
+		.from('platform_config')
 		.select('value')
 		.eq('key', 'rate_override')
 		.single();

@@ -7,7 +7,8 @@
 
 	let getSigner: () => ethers.Signer | null = getContext('signer');
 	let addFeedback: (f: { message: string; type: string }) => void = getContext('addFeedback');
-	let supportedNetworks: SupportedNetworks = getContext('supportedNetworks');
+	let _getNetworks: () => SupportedNetworks = getContext('supportedNetworks');
+	let supportedNetworks = $derived(_getNetworks());
 	let getNetworkProviders: () => Map<number, ethers.JsonRpcProvider> = getContext('networkProviders');
 
 	let signer = $derived(getSigner());

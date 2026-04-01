@@ -2,7 +2,8 @@
 	import type { SupportedNetworks } from '$lib/structure';
 	import { getContext } from 'svelte';
 	import { t } from '$lib/i18n';
-	const supportedNetworks: SupportedNetworks = getContext('supportedNetworks');
+	let _getNetworks: () => SupportedNetworks = getContext('supportedNetworks');
+	let supportedNetworks = $derived(_getNetworks());
 </script>
 
 <svelte:head>

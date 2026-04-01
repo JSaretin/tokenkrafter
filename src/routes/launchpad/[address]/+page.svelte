@@ -30,7 +30,8 @@
 	let getUserAddress: () => string | null = getContext('userAddress');
 	let connectWallet: () => Promise<boolean> = getContext('connectWallet');
 	const addFeedback = getContext<(f: { message: string; type: string }) => void>('addFeedback');
-	const supportedNetworks: SupportedNetwork[] = getContext('supportedNetworks');
+	let _getNetworks: () => SupportedNetwork[] = getContext('supportedNetworks');
+	let supportedNetworks = $derived(_getNetworks());
 	let getNetworkProviders: () => Map<number, ethers.JsonRpcProvider> = getContext('networkProviders');
 	let getProvidersReady: () => boolean = getContext('providersReady');
 
@@ -123,7 +124,7 @@
 		isUploadingLogo = true;
 		try {
 			const timestamp = Date.now();
-			const msg = `TokenKrafter Upload\nLaunch: ${launchAddress}\nAction: upload logo\nTimestamp: ${timestamp}`;
+			const msg = `TokenKrafter Upload\nLaunch: ${launchAddress}\nAction: upload logo\nOrigin: ${window.location.origin}\nTimestamp: ${timestamp}`;
 			const signature = await signer.signMessage(msg);
 
 			const fd = new FormData();
@@ -154,7 +155,7 @@
 		isSavingMeta = true;
 		try {
 			const timestamp = Date.now();
-			const msg = `TokenKrafter Metadata\nLaunch: ${launchAddress}\nAction: update metadata\nTimestamp: ${timestamp}`;
+			const msg = `TokenKrafter Metadata\nLaunch: ${launchAddress}\nAction: update metadata\nOrigin: ${window.location.origin}\nTimestamp: ${timestamp}`;
 			const signature = await signer.signMessage(msg);
 
 			const res = await fetch('/api/launches/metadata', {
@@ -937,7 +938,7 @@
 		isPostingComment = true;
 		try {
 			const timestamp = Date.now();
-			const signMsg = `TokenKrafter Comment\nLaunch: ${launchAddress}\nTimestamp: ${timestamp}`;
+			const signMsg = `TokenKrafter Comment\nLaunch: ${launchAddress}\nOrigin: ${window.location.origin}\nTimestamp: ${timestamp}`;
 			const signature = await signer.signMessage(signMsg);
 
 			const res = await fetch('/api/launches/comments', {

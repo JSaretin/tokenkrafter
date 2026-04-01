@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { getContext } from 'svelte';
+	import { getContext, onDestroy } from 'svelte';
+	import { supabase } from '$lib/supabaseClient';
 	import { ethers } from 'ethers';
 	import { TokenFactory, FACTORY_ABI, ERC20_ABI, ZERO_ADDRESS } from '$lib/tokenCrafter';
 	import { LAUNCHPAD_FACTORY_ABI } from '$lib/launchpad';
@@ -7,7 +8,8 @@
 	import Chart from '$lib/Chart.svelte';
 	import ChartTypeToggle from '$lib/ChartTypeToggle.svelte';
 
-	let supportedNetworks: SupportedNetworks = getContext('supportedNetworks');
+	let _getNetworks: () => SupportedNetworks = getContext('supportedNetworks');
+	let supportedNetworks = $derived(_getNetworks());
 	let getUserAddress: () => string | null = getContext('userAddress');
 	let getNetworkProviders: () => Map<number, ethers.JsonRpcProvider> = getContext('networkProviders');
 	let getProvidersReady: () => boolean = getContext('providersReady');
@@ -212,11 +214,43 @@
 		return types;
 	});
 
+	let channels: any[] = [];
+
+	let hasLoaded = false;
 	$effect(() => {
-		if (providersReady) {
+		if (providersReady && !hasLoaded) {
+			hasLoaded = true;
 			loadDashboard();
 			loadAllChains();
+
+			const launchesChannel = supabase
+				.channel('admin-dashboard-launches')
+				.on('postgres_changes', { event: '*', schema: 'public', table: 'launches' }, () => {
+					loadDashboard();
+				})
+				.subscribe();
+			channels.push(launchesChannel);
+
+			const statsChannel = supabase
+				.channel('admin-dashboard-stats')
+				.on('postgres_changes', { event: '*', schema: 'public', table: 'platform_stats' }, () => {
+					loadDashboard();
+				})
+				.subscribe();
+			channels.push(statsChannel);
+
+			const tokensChannel = supabase
+				.channel('admin-dashboard-tokens')
+				.on('postgres_changes', { event: '*', schema: 'public', table: 'created_tokens' }, () => {
+					loadDashboard();
+				})
+				.subscribe();
+			channels.push(tokensChannel);
 		}
+	});
+
+	onDestroy(() => {
+		channels.forEach(c => supabase.removeChannel(c));
 	});
 </script>
 
@@ -549,6 +583,7 @@
 		border: 1px solid var(--border);
 		border-radius: 14px;
 		overflow: hidden;
+		position: relative;
 	}
 	.chart-header {
 		display: flex;
