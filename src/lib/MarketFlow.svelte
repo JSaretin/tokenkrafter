@@ -39,23 +39,11 @@
 	<div class="mf-header">
 		<div class="mf-title">
 			<span class="mf-dot"></span>
-			Market Flow
+			Recent Activity
 		</div>
 		{#if realtime.connected}
 			<span class="mf-live">LIVE</span>
 		{/if}
-	</div>
-
-	<!-- Stats row -->
-	<div class="mf-stats">
-		<div class="mf-stat">
-			<span class="mf-stat-value text-cyan-400">{realtime.activeBuyers}</span>
-			<span class="mf-stat-label">Active buyers</span>
-		</div>
-		<div class="mf-stat">
-			<span class="mf-stat-value text-emerald-400">{realtime.usersOnline.toLocaleString()}</span>
-			<span class="mf-stat-label">Users online</span>
-		</div>
 	</div>
 
 	<!-- Transaction list -->
@@ -137,31 +125,6 @@
 		border: 1px solid rgba(16, 185, 129, 0.2);
 	}
 
-	.mf-stats {
-		display: flex;
-		border-bottom: 1px solid var(--border);
-	}
-	.mf-stat {
-		flex: 1;
-		padding: 12px 16px;
-		display: flex;
-		flex-direction: column;
-		gap: 2px;
-	}
-	.mf-stat:first-child {
-		border-right: 1px solid var(--border);
-	}
-	.mf-stat-value {
-		font-family: 'Syne', sans-serif;
-		font-size: 18px;
-		font-weight: 800;
-		line-height: 1;
-	}
-	.mf-stat-label {
-		font-size: 10px;
-		color: #64748b;
-		font-family: 'Space Mono', monospace;
-	}
 
 	.mf-list {
 		flex: 1;

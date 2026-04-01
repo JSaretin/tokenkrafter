@@ -314,19 +314,8 @@
 				<div class="hidden md:block"><LanguageSwitcher /></div>
 				<div class="hidden md:block"><appkit-button size="sm"></appkit-button></div>
 
-				<button
-					bind:this={hamburgerEl}
-					onclick={() => (mobileMenuOpen = !mobileMenuOpen)}
-					class="md:hidden p-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition cursor-pointer"
-					aria-label="Toggle menu"
-					aria-expanded={mobileMenuOpen}
-				>
-					{#if mobileMenuOpen}
-						<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-					{:else}
-						<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-					{/if}
-				</button>
+				<!-- Hamburger hidden — replaced by bottom tab bar on mobile -->
+				<div class="md:hidden"><appkit-button size="sm"></appkit-button></div>
 			</div>
 		</div>
 	</nav>
@@ -406,7 +395,7 @@
 		</div>
 	</div>
 
-	<div id="scroll-container" class="flex-1 overflow-y-auto overflow-x-hidden">
+	<div id="scroll-container" class="flex-1 overflow-y-auto overflow-x-hidden pb-16 md:pb-0">
 	<main id="main-content" class="min-h-screen">
 		{#if isLoading}
 			<div class="flex items-center justify-center min-h-[80vh]">
@@ -506,6 +495,30 @@
 		</div>
 	</footer>
 	</div>
+
+	<!-- Mobile Bottom Tab Bar (Binance style) -->
+	<div class="bottom-tabs">
+		<a href="/" class="bottom-tab" class:bottom-tab-active={page.url.pathname === '/'}>
+			<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>
+			<span>Home</span>
+		</a>
+		<a href="/launchpad" class="bottom-tab" class:bottom-tab-active={page.url.pathname.startsWith('/launchpad')}>
+			<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+			<span>Launch</span>
+		</a>
+		<a href="/trade" class="bottom-tab" class:bottom-tab-active={page.url.pathname.startsWith('/trade')}>
+			<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4"/></svg>
+			<span>Trade</span>
+		</a>
+		<a href="/create" class="bottom-tab" class:bottom-tab-active={page.url.pathname.startsWith('/create')}>
+			<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+			<span>Create</span>
+		</a>
+		<button class="bottom-tab" onclick={() => (mobileMenuOpen = !mobileMenuOpen)}>
+			<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+			<span>More</span>
+		</button>
+	</div>
 </div>
 
 <style>
@@ -602,6 +615,29 @@
 	}
 
 	/* ─── Mobile Drawer ─── */
+	/* Bottom Tab Bar — mobile only */
+	.bottom-tabs {
+		position: fixed; bottom: 0; left: 0; right: 0; z-index: 40;
+		display: flex; align-items: stretch;
+		height: 60px;
+		background: var(--bg);
+		border-top: 1px solid var(--border);
+		padding-bottom: env(safe-area-inset-bottom, 0px);
+	}
+	@media (min-width: 768px) {
+		.bottom-tabs { display: none; }
+	}
+	.bottom-tab {
+		flex: 1; display: flex; flex-direction: column; align-items: center;
+		justify-content: center; gap: 2px; border: none; background: none;
+		color: var(--text-dim); text-decoration: none;
+		font-family: 'Space Mono', monospace; font-size: 10px;
+		transition: color 0.15s; cursor: pointer;
+	}
+	.bottom-tab:hover, .bottom-tab:active { color: var(--text); }
+	.bottom-tab-active { color: #00d2ff; }
+	.bottom-tab-active svg { stroke: #00d2ff; }
+
 	.mobile-backdrop {
 		background: rgba(0, 0, 0, 0.6);
 		backdrop-filter: blur(4px);
