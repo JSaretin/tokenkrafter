@@ -317,8 +317,7 @@
 				<div class="hidden md:block"><LanguageSwitcher /></div>
 				<div class="hidden md:block"><appkit-button size="sm"></appkit-button></div>
 
-				<!-- Hamburger hidden — replaced by bottom tab bar on mobile -->
-				<div class="md:hidden"><appkit-button size="sm"></appkit-button></div>
+				<!-- Wallet in drawer on mobile, not top bar -->
 			</div>
 		</div>
 	</nav>
