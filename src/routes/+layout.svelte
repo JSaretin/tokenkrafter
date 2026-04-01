@@ -94,21 +94,30 @@
 	}
 
 	onMount(() => {
-		// Load networks from DB
+		isLoading = false;
+		// Restore theme from localStorage
+		const saved = localStorage.getItem('theme') as 'dark' | 'light' | null;
+		if (saved === 'light') applyTheme('light');
+
+		// Load networks from DB, then init providers + AppKit
 		supabase
 			.from('platform_config')
 			.select('value')
 			.eq('key', 'networks')
 			.single()
-			.then(({ data }) => {
+			.then(async ({ data }) => {
 				if (data?.value && Array.isArray(data.value) && data.value.length > 0) {
 					supportedNetworks = data.value;
 				}
-				// Init providers after networks are loaded
 				initProviders();
+				// Init AppKit with DB networks
+				const kit = await initAppKit(supportedNetworks);
+				if (kit) setupWalletKit(kit);
 			})
-			.catch(() => {
+			.catch(async () => {
 				initProviders();
+				const kit = await initAppKit();
+				if (kit) setupWalletKit(kit);
 			});
 
 		// Subscribe to config changes (admin updates networks live)
@@ -120,20 +129,13 @@
 			}, (payload: any) => {
 				if (payload.new?.value && Array.isArray(payload.new.value)) {
 					supportedNetworks = payload.new.value;
-					initProviders(); // re-init with new RPCs
+					initProviders();
 				}
 			})
 			.subscribe();
 
-		isLoading = false;
-		// Restore theme from localStorage
-		const saved = localStorage.getItem('theme') as 'dark' | 'light' | null;
-		if (saved === 'light') applyTheme('light');
-
-		// Initialize AppKit (Reown) for wallet connections
-		(async () => {
-		const kit = await initAppKit();
-		if (kit) {
+		// Wallet kit setup helper
+		function setupWalletKit(kit: any) {
 			if (theme === 'light') kit.setThemeMode('light');
 			kit.subscribeAccount(async (account: any) => {
 				if (account.isConnected && account.address) {
@@ -156,7 +158,6 @@
 			if (ethers.isAddress(ref)) {
 				localStorage.setItem('referral', ref);
 			} else {
-				// Resolve alias to address
 				fetch(`/api/referral?alias=${encodeURIComponent(ref)}`)
 					.then(r => r.json())
 					.then(data => {
@@ -165,7 +166,6 @@
 					.catch(() => {});
 			}
 		}
-		})(); // end async IIFE
 
 		// Close mobile menu when clicking outside
 		function handleClickOutside(e: MouseEvent) {
