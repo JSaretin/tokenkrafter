@@ -3,17 +3,18 @@
  * Uses ENCRYPTION_KEY env var (64-char hex = 32 bytes).
  */
 import { createCipheriv, createDecipheriv, randomBytes } from 'crypto';
-import { ENCRYPTION_KEY } from '$env/static/private';
+import { env } from '$env/dynamic/private';
 
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 12;
 const TAG_LENGTH = 16;
 
 function getKey(): Buffer {
-	if (!ENCRYPTION_KEY || ENCRYPTION_KEY.length !== 64) {
+	const key = env.ENCRYPTION_KEY;
+	if (!key || key.length !== 64) {
 		throw new Error('ENCRYPTION_KEY must be a 64-character hex string (32 bytes)');
 	}
-	return Buffer.from(ENCRYPTION_KEY, 'hex');
+	return Buffer.from(key, 'hex');
 }
 
 /** Encrypt an object → base64 string (iv:tag:ciphertext) */
