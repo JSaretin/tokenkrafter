@@ -799,9 +799,24 @@
 	let displayAmountOut = $derived(formatAmount(postTaxAmountOut || amountOut, tokenOutDecimals, tokenOutSymbol));
 
 	// USD values for both fields
+	// Use the swap output to derive USD — more accurate than spot price for large amounts
+	const stablecoins = ['USDT', 'USDC', 'BUSD', 'DAI', 'TUSD'];
+
 	let usdValueIn = $derived.by(() => {
-		if (!amountIn || !tokenInAddr || !selectedNetwork?.usdt_address || !pricesLoaded) return '';
+		if (!amountIn || !tokenInAddr || parseFloat(amountIn) <= 0) return '';
 		try {
+			// If input IS a stablecoin, USD = amount
+			if (stablecoins.includes(tokenInSymbol.toUpperCase())) {
+				const val = parseFloat(amountIn);
+				return `~$${val.toFixed(2)} USD`;
+			}
+			// Otherwise, use the output value (if output is stablecoin, that's the USD value)
+			if (stablecoins.includes(tokenOutSymbol.toUpperCase()) && displayAmountOut) {
+				const val = parseFloat(displayAmountOut);
+				if (val > 0) return `~$${val.toFixed(2)} USD`;
+			}
+			// Fallback: use reserves spot price
+			if (!selectedNetwork?.usdt_address || !pricesLoaded) return '';
 			const parsed = ethers.parseUnits(parseFloat(amountIn).toFixed(tokenInDecimals), tokenInDecimals);
 			const addr = tokenInIsNative ? (wethAddr || getWeth()) : tokenInAddr;
 			const usd = getUsdValue(addr, parsed, tokenInDecimals, selectedNetwork.usdt_address);
@@ -811,9 +826,21 @@
 	});
 
 	let usdValueOut = $derived.by(() => {
-		if (!postTaxAmountOut && !amountOut || !tokenOutAddr || !selectedNetwork?.usdt_address || !pricesLoaded) return '';
+		const raw = postTaxAmountOut || amountOut;
+		if (!raw || !tokenOutAddr || parseFloat(raw) <= 0) return '';
 		try {
-			const raw = postTaxAmountOut || amountOut;
+			// If output IS a stablecoin, USD = amount
+			if (stablecoins.includes(tokenOutSymbol.toUpperCase())) {
+				const val = parseFloat(raw);
+				return `~$${val.toFixed(2)} USD`;
+			}
+			// If input is stablecoin, use input amount as USD reference
+			if (stablecoins.includes(tokenInSymbol.toUpperCase()) && amountIn) {
+				const val = parseFloat(amountIn);
+				if (val > 0) return `~$${val.toFixed(2)} USD`;
+			}
+			// Fallback: use reserves spot price
+			if (!selectedNetwork?.usdt_address || !pricesLoaded) return '';
 			const parsed = ethers.parseUnits(parseFloat(raw).toFixed(tokenOutDecimals), tokenOutDecimals);
 			const addr = tokenOutIsNative ? (wethAddr || getWeth()) : tokenOutAddr;
 			const usd = getUsdValue(addr, parsed, tokenOutDecimals, selectedNetwork.usdt_address);
