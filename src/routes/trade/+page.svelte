@@ -236,14 +236,16 @@
 	});
 
 	let filteredTokens = $derived.by(() => {
-		// Exclude the token already selected on the opposite side
-		const excludeAddr = tokenModalTarget === 'in'
-			? tokenOutAddr.toLowerCase()
-			: tokenInAddr.toLowerCase();
-
+		// In bank mode, show all tokens (no output token to exclude)
+		// In swap mode, exclude the token already selected on the opposite side
 		let list = allTokens;
-		if (excludeAddr) {
-			list = list.filter(t => t.address.toLowerCase() !== excludeAddr);
+		if (outputMode === 'token') {
+			const excludeAddr = tokenModalTarget === 'in'
+				? tokenOutAddr.toLowerCase()
+				: tokenInAddr.toLowerCase();
+			if (excludeAddr) {
+				list = list.filter(t => t.address.toLowerCase() !== excludeAddr);
+			}
 		}
 
 		const q = tokenSearch.toLowerCase().trim();
