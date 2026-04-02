@@ -1012,12 +1012,25 @@
 		}
 	});
 
+	// ── Gas balance check ─────────────────────────────────────
+	let nativeBalance = $state(0n);
+	let hasGas = $derived(nativeBalance > ethers.parseUnits('0.001', 18));
+
+	// Fetch native balance when wallet connects or network changes
+	$effect(() => {
+		if (!userAddress || !selectedNetwork) { nativeBalance = 0n; return; }
+		const provider = networkProviders.get(selectedNetwork.chain_id);
+		if (!provider) return;
+		provider.getBalance(userAddress).then(b => { nativeBalance = b; }).catch(() => {});
+	});
+
 	// ── Button label ───────────────────────────────────────────
 	// Button shows action label even without wallet — prompts connect on click
 	let buttonLabel = $derived.by(() => {
 		if (isSwapping || isWithdrawing) return 'Processing...';
 		if (!tokenInAddr) return 'Select a token';
 		if (!amountIn || parseFloat(amountIn) <= 0) return 'Enter an amount';
+		if (userAddress && !tokenInIsNative && !hasGas) return `No ${selectedNetwork?.native_coin || 'gas'} for fees`;
 		if (noLiquidity && outputMode === 'token') return 'Insufficient liquidity';
 		if (outputMode === 'bank') {
 			if (paymentMethod === 'bank' && (!bankResolved || !bankAccount || !bankCode)) return 'Verify bank account';
@@ -1142,14 +1155,17 @@
 					/>
 					{#if tokenInSymbol && tokenInBalance > 0n}
 						<button class="max-btn" onclick={() => {
+							let raw: string;
 							if (tokenInIsNative) {
-								// Leave gas buffer for native token (~0.005 BNB/ETH)
 								const gasBuffer = ethers.parseUnits('0.005', 18);
 								const maxAmount = tokenInBalance > gasBuffer ? tokenInBalance - gasBuffer : 0n;
-								amountIn = ethers.formatUnits(maxAmount, tokenInDecimals);
+								raw = ethers.formatUnits(maxAmount, tokenInDecimals);
 							} else {
-								amountIn = ethers.formatUnits(tokenInBalance, tokenInDecimals);
+								raw = ethers.formatUnits(tokenInBalance, tokenInDecimals);
 							}
+							// Truncate to 8 decimals (no rounding — exact floor)
+							const dot = raw.indexOf('.');
+							amountIn = dot === -1 ? raw : raw.slice(0, dot + 9);
 						}}>
 							MAX
 						</button>
@@ -1232,20 +1248,22 @@
 						<span>Funds held in smart contract. Cancel anytime if not processed within 5 minutes.</span>
 					</div>
 
-					{#if previewNet > 0n}
+					{#if previewNet > 0n || fiatEquivalent}
 						<div class="bank-preview">
-							<div class="bank-preview-row">
-								<span>Platform fee (0.1%)</span>
-								<span>{parseFloat(ethers.formatUnits(previewFee, usdtDecimals)).toFixed(2)}</span>
-							</div>
-							<div class="bank-preview-row bank-preview-net">
-								<span>You receive</span>
-								<span>{parseFloat(ethers.formatUnits(previewNet, usdtDecimals)).toFixed(2)}</span>
-							</div>
 							{#if fiatEquivalent}
-								<div class="bank-preview-row bank-preview-fiat">
-									<span>Estimated payout</span>
-									<span>{fiatEquivalent}</span>
+								<div class="bank-payout-highlight">
+									<span class="bank-payout-ngn">{fiatEquivalent}</span>
+									<span class="bank-payout-usd">≈ ${parseFloat(ethers.formatUnits(previewNet, usdtDecimals)).toFixed(2)} USD</span>
+								</div>
+							{/if}
+							{#if previewNet > 0n}
+								<div class="bank-preview-row">
+									<span>Platform fee (0.1%)</span>
+									<span>${parseFloat(ethers.formatUnits(previewFee, usdtDecimals)).toFixed(2)}</span>
+								</div>
+								<div class="bank-preview-row bank-preview-net">
+									<span>Net amount</span>
+									<span>${parseFloat(ethers.formatUnits(previewNet, usdtDecimals)).toFixed(2)}</span>
 								</div>
 							{/if}
 						</div>
@@ -1385,10 +1403,19 @@
 				</div>
 			{/if}
 
+			<!-- Gas warning -->
+			{#if userAddress && !tokenInIsNative && !hasGas && tokenInAddr}
+				<div class="gas-warning">
+					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+					You need {selectedNetwork?.native_coin || 'native token'} to pay for transaction fees
+				</div>
+			{/if}
+
 			<!-- Action button -->
 			<button
 				class="swap-btn"
 				class:swap-btn-bank={outputMode === 'bank'}
+				class:swap-btn-disabled-gas={userAddress && !tokenInIsNative && !hasGas && !!tokenInAddr}
 				disabled={buttonDisabled && !!userAddress}
 				onclick={() => { if (!userAddress) connectWallet(); else showConfirmModal = true; }}
 			>
@@ -1959,6 +1986,18 @@
 		display: flex; justify-content: space-between;
 		font-family: 'Space Mono', monospace; font-size: 11px; color: var(--text-muted);
 	}
+	.bank-payout-highlight {
+		text-align: center; padding: 10px 0 8px; margin-bottom: 6px;
+		border-bottom: 1px solid rgba(255,255,255,0.04);
+	}
+	.bank-payout-ngn {
+		display: block; font-family: 'Syne', sans-serif; font-size: 24px; font-weight: 800;
+		color: #10b981; line-height: 1.2;
+	}
+	.bank-payout-usd {
+		display: block; font-family: 'Space Mono', monospace; font-size: 11px;
+		color: var(--text-muted); margin-top: 2px;
+	}
 	.bank-preview-net { margin-top: 4px; }
 	.bank-preview-net span:last-child { color: #10b981; font-weight: 700; }
 
@@ -2081,6 +2120,14 @@
 	}
 	.swap-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 28px rgba(0,210,255,0.3); }
 	.swap-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+	.swap-btn-disabled-gas { background: linear-gradient(135deg, #f59e0b, #d97706) !important; }
+	.gas-warning {
+		display: flex; align-items: center; justify-content: center; gap: 6px;
+		padding: 10px; margin: 4px 4px 0;
+		font-family: 'Space Mono', monospace; font-size: 11px; color: #f59e0b;
+		background: rgba(245,158,11,0.06); border: 1px solid rgba(245,158,11,0.15);
+		border-radius: 10px;
+	}
 	.swap-btn-bank { background: linear-gradient(135deg, #10b981, #059669); }
 	.swap-btn-bank:hover:not(:disabled) { box-shadow: 0 6px 28px rgba(16,185,129,0.3); }
 
