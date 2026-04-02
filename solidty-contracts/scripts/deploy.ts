@@ -257,24 +257,6 @@ async function main() {
     console.log("done");
   }
 
-  // Set launchpad factory on token factory
-  process.stdout.write(
-    `  setLaunchpadFactory(${launchpadFactoryAddr})... `
-  );
-  const lpTx = await tokenFactory.setLaunchpadFactory(
-    launchpadFactoryAddr
-  );
-  await lpTx.wait();
-  console.log("done");
-
-  // Set token factory on launchpad factory
-  process.stdout.write(
-    `  setTokenFactory(${tokenFactoryAddr})... `
-  );
-  const tfTx = await launchpadFactory.setTokenFactory(tokenFactoryAddr);
-  await tfTx.wait();
-  console.log("done");
-
   // Add USDC as payment token if available
   if (usdc) {
     process.stdout.write(`  addPaymentToken(USDC: ${usdc})... `);
@@ -283,10 +265,63 @@ async function main() {
     console.log("done");
   }
 
+  // Set curve defaults for 6-decimal USDT
+  process.stdout.write("  setCurveDefaults... ");
+  await (await launchpadFactory.setCurveDefaults({
+    linearSlope: 0n,
+    linearIntercept: BigInt(1e16),
+    sqrtCoefficient: BigInt(1e16),
+    quadraticCoefficient: 1n,
+    expBase: BigInt(1e16),
+    expKFactor: BigInt(1e12)
+  })).wait();
+  console.log("done");
+
   // ══════════════════════════════════════════════════
-  // Step 6: Verify all contracts on explorer
+  // Step 6: Deploy PlatformRouter
   // ══════════════════════════════════════════════════
-  console.log("\n[6/6] Verifying contracts on explorer...\n");
+  console.log("\n[6/8] Deploying PlatformRouter...\n");
+
+  const PlatformRouterFactory = await ethers.getContractFactory("PlatformRouter");
+  const platformRouter = await PlatformRouterFactory.deploy(
+    tokenFactoryAddr,
+    launchpadFactoryAddr,
+    dexRouter
+  );
+  await platformRouter.waitForDeployment();
+  const platformRouterAddr = await platformRouter.getAddress();
+  deployedAddresses["PlatformRouter"] = platformRouterAddr;
+  console.log(`  PlatformRouter deployed at: ${platformRouterAddr}`);
+
+  // ══════════════════════════════════════════════════
+  // Step 7: Deploy TradeRouter
+  // ══════════════════════════════════════════════════
+  console.log("\n[7/8] Deploying TradeRouter...\n");
+
+  const TradeRouterFactory = await ethers.getContractFactory("TradeRouter");
+  const tradeRouter = await TradeRouterFactory.deploy(
+    dexRouter,
+    usdt,
+    platformWallet
+  );
+  await tradeRouter.waitForDeployment();
+  const tradeRouterAddr = await tradeRouter.getAddress();
+  deployedAddresses["TradeRouter"] = tradeRouterAddr;
+  console.log(`  TradeRouter deployed at: ${tradeRouterAddr}`);
+
+  // Whitelist PlatformRouter on both factories
+  process.stdout.write("  setAuthorizedRouter on TokenFactory... ");
+  await (await tokenFactory.setAuthorizedRouter(platformRouterAddr)).wait();
+  console.log("done");
+
+  process.stdout.write("  setAuthorizedRouter on LaunchpadFactory... ");
+  await (await launchpadFactory.setAuthorizedRouter(platformRouterAddr)).wait();
+  console.log("done");
+
+  // ══════════════════════════════════════════════════
+  // Step 8: Verify all contracts on explorer
+  // ══════════════════════════════════════════════════
+  console.log("\n[8/8] Verifying contracts on explorer...\n");
 
   // Wait for explorer to index (BSCScan needs ~15s)
   if (network.name !== "hardhat" && network.name !== "localhost") {
@@ -308,6 +343,12 @@ async function main() {
   // Verify LaunchpadFactory
   await verify(launchpadFactoryAddr, [platformWallet, dexRouter, usdt]);
 
+  // Verify PlatformRouter
+  await verify(platformRouterAddr, [tokenFactoryAddr, launchpadFactoryAddr, dexRouter]);
+
+  // Verify TradeRouter
+  await verify(tradeRouterAddr, [dexRouter, usdt, platformWallet]);
+
   // ══════════════════════════════════════════════════
   // Summary
   // ══════════════════════════════════════════════════
@@ -317,7 +358,9 @@ async function main() {
 
   console.log(`\nBondingCurve:     ${bondingCurveAddr}`);
   console.log(`TokenFactory:     ${tokenFactoryAddr}`);
-  console.log(`LaunchpadFactory: ${launchpadFactoryAddr}\n`);
+  console.log(`LaunchpadFactory: ${launchpadFactoryAddr}`);
+  console.log(`PlatformRouter:   ${platformRouterAddr}`);
+  console.log(`TradeRouter:      ${tradeRouterAddr}\n`);
 
   console.log("Implementations:");
   for (const impl of IMPL_CONTRACTS) {
@@ -336,9 +379,11 @@ async function main() {
   console.log("\n" + "-".repeat(60));
   console.log("Add to .env:");
   console.log(`  BONDING_CURVE_ADDRESS=${bondingCurveAddr}`);
-  console.log("\nUpdate frontend SupportedNetwork:");
-  console.log(`  platform_address:  "${tokenFactoryAddr}"`);
-  console.log(`  launchpad_address: "${launchpadFactoryAddr}"`);
+  console.log("\nUpdate DB platform_config networks:");
+  console.log(`  platform_address:      "${tokenFactoryAddr}"`);
+  console.log(`  launchpad_address:     "${launchpadFactoryAddr}"`);
+  console.log(`  router_address:        "${platformRouterAddr}"`);
+  console.log(`  trade_router_address:  "${tradeRouterAddr}"`);
   console.log("-".repeat(60));
 
   // Save deployment JSON

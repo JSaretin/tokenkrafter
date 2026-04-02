@@ -1,28 +1,20 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { supabaseAdmin } from '$lib/supabaseServer';
-import { recoverWallet } from '$lib/auth';
 
 // PATCH /api/launches/metadata — update off-chain metadata for a launch
-// Requires wallet signature; recovered address must match DB creator
-export const PATCH: RequestHandler = async ({ request }) => {
+// Auth: wallet session (hooks.server.ts), then creator check
+export const PATCH: RequestHandler = async ({ request, locals }) => {
+	if (!locals.wallet) return error(401, 'Wallet authentication required');
+
 	const body = await request.json();
+	const walletAddress = locals.wallet;
 
 	if (!body.address || !body.chain_id) {
 		return error(400, 'Missing address or chain_id');
 	}
-	if (!body.signature || !body.signed_message) {
-		return error(400, 'Signature required');
-	}
 
-	let walletAddress: string;
-	try {
-		walletAddress = recoverWallet(body.signature, body.signed_message);
-	} catch (e: any) {
-		return error(400, e.message || 'Invalid signature');
-	}
-
-	// Verify the recovered address is the creator
+	// Verify the session wallet is the creator
 	const { data: launch } = await supabaseAdmin
 		.from('launches')
 		.select('creator')

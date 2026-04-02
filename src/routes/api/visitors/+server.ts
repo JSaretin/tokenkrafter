@@ -37,27 +37,6 @@ export const GET: RequestHandler = async () => {
 	});
 };
 
-// POST /api/visitors — update visitor count (called by daemon/cron)
-export const POST: RequestHandler = async ({ request }) => {
-	const body = await request.json();
-
-	const { error: dbError } = await supabaseAdmin
-		.from('site_visitors')
-		.update({
-			total_visitors: body.total_visitors,
-			browsing: body.browsing,
-			creating: body.creating,
-			investing: body.investing,
-			updated_at: new Date().toISOString()
-		})
-		.eq('id', 1);
-
-	if (dbError) {
-		return error(500, dbError.message);
-	}
-
-	return json({ ok: true });
-};
 
 function generateVisitorData() {
 	// Time-aware: more visitors during Nigerian business hours (8 AM - 10 PM WAT = UTC+1)

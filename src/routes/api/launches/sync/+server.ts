@@ -24,7 +24,7 @@ const OWNER_ABI = ['function owner() view returns (address)'];
 // Protected by SYNC_SECRET to prevent abuse (expensive RPC calls)
 export const POST: RequestHandler = async ({ request }) => {
 	const authHeader = request.headers.get('authorization');
-	if (env.SYNC_SECRET && authHeader !== `Bearer ${env.SYNC_SECRET}`) {
+	if (!env.SYNC_SECRET || authHeader !== `Bearer ${env.SYNC_SECRET}`) {
 		return error(401, 'Unauthorized');
 	}
 

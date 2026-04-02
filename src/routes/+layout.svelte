@@ -9,6 +9,7 @@
 	import { t } from '$lib/i18n';
 	import LanguageSwitcher from '$lib/LanguageSwitcher.svelte';
 	import { supabase } from '$lib/supabaseClient';
+	import { initApiFetch } from '$lib/apiFetch';
 
 	let { children } = $props();
 
@@ -196,6 +197,7 @@
 	setContext('provider', () => provider);
 	setContext('signer', () => signer);
 	setContext('userAddress', () => userAddress);
+	initApiFetch(() => userAddress);
 	setContext('connectWallet', connectWallet);
 	setContext('supportedNetworks', () => supportedNetworks);
 	setContext('networkProviders', () => networkProviders);

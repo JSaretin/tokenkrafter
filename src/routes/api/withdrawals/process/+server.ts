@@ -3,15 +3,11 @@ import type { RequestHandler } from './$types';
 import { supabaseAdmin } from '$lib/supabaseServer';
 import { initiateTransfer } from '$lib/flutterwave';
 import { decrypt } from '$lib/crypto';
-import { verifyAdminSession } from '$lib/auth';
 
 // POST /api/withdrawals/process — initiate Flutterwave transfer
-// Admin-only: session cookie
-export const POST: RequestHandler = async ({ request, cookies }) => {
-	const token = cookies.get('admin_session');
-	if (!token) return error(401, 'Not authenticated');
-	const wallet = await verifyAdminSession(token);
-	if (!wallet) return error(401, 'Session expired');
+// Auth: admin session (set by hooks.server.ts)
+export const POST: RequestHandler = async ({ request, locals }) => {
+	if (!locals.isAdmin) return error(401, 'Admin access required');
 
 	const body = await request.json();
 

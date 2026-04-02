@@ -1,7 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { supabaseAdmin } from '$lib/supabaseServer';
-import { ethers } from 'ethers';
 
 // GET /api/referral?alias=john — resolve alias to wallet address
 // GET /api/referral?wallet=0x... — get alias for wallet
@@ -34,12 +33,16 @@ export const GET: RequestHandler = async ({ url }) => {
 };
 
 // POST /api/referral — create alias (requires wallet signature)
-export const POST: RequestHandler = async ({ request }) => {
-	const body = await request.json();
-	const { alias, wallet_address, signature, signed_message } = body;
+// Auth: wallet session (hooks.server.ts)
+export const POST: RequestHandler = async ({ request, locals }) => {
+	if (!locals.wallet) return error(401, 'Wallet authentication required');
 
-	if (!alias || !wallet_address || !signature || !signed_message) {
-		return error(400, 'alias, wallet_address, signature, and signed_message required');
+	const body = await request.json();
+	const { alias } = body;
+	const wallet_address = locals.wallet;
+
+	if (!alias) {
+		return error(400, 'alias required');
 	}
 
 	// Validate alias format
@@ -52,20 +55,6 @@ export const POST: RequestHandler = async ({ request }) => {
 	const reserved = ['admin', 'tokenkrafter', 'support', 'help', 'team', 'trade', 'create', 'launch', 'launchpad', 'explore', 'api', 'null', 'undefined'];
 	if (reserved.includes(cleanAlias)) {
 		return error(400, 'This alias is reserved');
-	}
-
-	// Verify signature
-	try {
-		const recovered = ethers.verifyMessage(signed_message, signature);
-		if (recovered.toLowerCase() !== wallet_address.toLowerCase()) {
-			return error(403, 'Signature does not match wallet');
-		}
-		const tsMatch = signed_message.match(/Timestamp: (\d+)/);
-		if (tsMatch && Date.now() - parseInt(tsMatch[1]) > 5 * 60 * 1000) {
-			return error(400, 'Signature expired');
-		}
-	} catch {
-		return error(400, 'Invalid signature');
 	}
 
 	// Check if alias is taken
@@ -83,7 +72,7 @@ export const POST: RequestHandler = async ({ request }) => {
 	const { data: walletAlias } = await supabaseAdmin
 		.from('referral_aliases')
 		.select('alias')
-		.eq('wallet_address', wallet_address.toLowerCase())
+		.eq('wallet_address', wallet_address)
 		.single();
 
 	if (walletAlias) {
@@ -91,7 +80,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		const { data, error: dbErr } = await supabaseAdmin
 			.from('referral_aliases')
 			.update({ alias: cleanAlias })
-			.eq('wallet_address', wallet_address.toLowerCase())
+			.eq('wallet_address', wallet_address)
 			.select()
 			.single();
 
@@ -104,7 +93,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		.from('referral_aliases')
 		.insert({
 			alias: cleanAlias,
-			wallet_address: wallet_address.toLowerCase()
+			wallet_address: wallet_address
 		})
 		.select()
 		.single();

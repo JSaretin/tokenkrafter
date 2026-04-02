@@ -21,9 +21,13 @@ const TRADE_ROUTER_MAP: Record<number, string> = {
 };
 
 // POST /api/withdrawals/verify — verify on-chain trade and link to DB record
-export const POST: RequestHandler = async ({ request }) => {
+// Auth: wallet session (hooks.server.ts)
+export const POST: RequestHandler = async ({ request, locals }) => {
+	if (!locals.wallet) return error(401, 'Wallet authentication required');
+
 	const body = await request.json();
-	const { tx_hash, chain_id, wallet_address } = body;
+	const { tx_hash, chain_id } = body;
+	const wallet_address = locals.wallet;
 
 	if (!tx_hash || !chain_id) {
 		return error(400, 'tx_hash and chain_id required');

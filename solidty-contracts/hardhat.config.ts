@@ -37,6 +37,9 @@ const config: HardhatUserConfig = {
       accounts: [DEPLOYER_KEY],
     },
   },
+  etherscan: {
+    apiKey: process.env.ETHERSCAN_API_KEYS?.split(",")[0] || process.env.ETHERSCAN_API_KEY || "",
+  },
   paths: {
     sources: "./contracts",
     tests: "./test",

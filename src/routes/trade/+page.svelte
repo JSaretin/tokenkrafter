@@ -21,9 +21,9 @@
 	let userAddress = $derived(getUserAddress());
 	let networkProviders = $derived(getNetworkProviders());
 
-	const tradeNetworks = supportedNetworks.filter(
-		(n) => n.trade_router_address && n.trade_router_address !== ''
-	);
+	let tradeNetworks = $derived(supportedNetworks.filter(
+		(n: any) => n.trade_router_address && n.trade_router_address !== ''
+	));
 
 	// ── Core State ──────────────────────────────────────────────
 	let selectedNetworkIdx = $state(0);
@@ -547,18 +547,8 @@
 					bankRef = ethers.id(`wise:${wiseEmail}:${wiseCurrency}`);
 				}
 
-				// Step 1: Sign & save payment details to DB
+				// Step 1: Save payment details to DB (session cookie authenticates)
 				withdrawStep = 1;
-				const timestamp = Date.now();
-				const withdrawMessage = [
-					'TokenKrafter Withdrawal',
-					`Amount: ${amountIn} ${tokenInSymbol}`,
-					`Method: ${paymentMethod}`,
-					`Origin: ${window.location.origin}`,
-					`Timestamp: ${timestamp}`
-				].join('\n');
-				const signature = await signer.signMessage(withdrawMessage);
-
 				const preRes = await fetch('/api/withdrawals', {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json' },
@@ -571,9 +561,7 @@
 						fee: previewFee.toString(),
 						net_amount: previewNet.toString(),
 						payment_method: paymentMethod,
-						payment_details: paymentDetails,
-						signature,
-						signed_message: withdrawMessage
+						payment_details: paymentDetails
 					})
 				});
 				if (!preRes.ok) {
@@ -603,8 +591,7 @@
 				}
 				const receipt = await tx.wait();
 
-				// Step 4: Verify on-chain
-				withdrawStep = 4;
+				// Verify on-chain (still part of step 3 visually)
 				let withdrawId = 0;
 				try {
 					const iface = new ethers.Interface(TRADE_ROUTER_ABI);
@@ -619,20 +606,19 @@
 					}
 				} catch {}
 
-				// Verify on-chain and link to DB record (bankRef matching)
+				// Verify on-chain and link to DB record (session cookie authenticates)
 				try {
 					await fetch('/api/withdrawals/verify', {
 						method: 'POST',
 						headers: { 'Content-Type': 'application/json' },
 						body: JSON.stringify({
 							tx_hash: receipt?.hash,
-							chain_id: selectedNetwork.chain_id,
-							wallet_address: userAddress
+							chain_id: selectedNetwork.chain_id
 						})
 					});
 				} catch {}
 
-				withdrawStep = 5; // all done
+				withdrawStep = 4; // all done
 				showConfirmModal = false;
 
 				activeWithdrawal = {
@@ -685,7 +671,7 @@
 			addFeedback({ message: e.shortMessage || e.message || 'Transaction failed', type: 'error' });
 		} finally {
 			isSwapping = false;
-			if (withdrawStep < 5) withdrawStep = 0; // don't reset if completed
+			if (withdrawStep < 4) withdrawStep = 0; // don't reset if completed
 			if (swapStep < 3) swapStep = 0;
 		}
 	}
@@ -731,6 +717,16 @@
 		}
 	}
 
+	// Refresh balances when wallet connects (user was browsing without wallet)
+	$effect(() => {
+		if (userAddress && tokenInAddr) {
+			fetchMeta(tokenInAddr, tokenInIsNative).then(meta => { tokenInBalance = meta.balance; });
+		}
+		if (userAddress && tokenOutAddr) {
+			fetchMeta(tokenOutAddr, tokenOutIsNative).then(meta => { tokenOutBalance = meta.balance; });
+		}
+	});
+
 	// Realtime sub for withdrawal updates
 	let withdrawChannel: any;
 	$effect(() => {
@@ -749,8 +745,8 @@
 	});
 
 	// ── Button label ───────────────────────────────────────────
+	// Button shows action label even without wallet — prompts connect on click
 	let buttonLabel = $derived.by(() => {
-		if (!userAddress) return 'Connect Wallet';
 		if (isSwapping || isWithdrawing) return 'Processing...';
 		if (!tokenInAddr) return 'Select a token';
 		if (!amountIn || parseFloat(amountIn) <= 0) return 'Enter an amount';
@@ -815,6 +811,28 @@
 						>{bps / 100}%</button>
 					{/each}
 				</div>
+			</div>
+		{/if}
+
+		<!-- Network selector (only if multiple trade networks) -->
+		{#if tradeNetworks.length > 1}
+			<div class="network-selector">
+				{#each tradeNetworks as net, i}
+					<button
+						class="network-btn"
+						class:network-active={selectedNetworkIdx === i}
+						onclick={() => {
+							if (selectedNetworkIdx !== i) {
+								selectedNetworkIdx = i;
+								tokenInAddr = ''; tokenInSymbol = ''; tokenInBalance = 0n; tokenInHasTax = false;
+								tokenOutAddr = ''; tokenOutSymbol = ''; tokenOutBalance = 0n; tokenOutHasTax = false;
+								amountIn = ''; amountOut = '';
+							}
+						}}
+					>
+						{net.symbol}
+					</button>
+				{/each}
 			</div>
 		{/if}
 
@@ -1306,10 +1324,9 @@
 							</div>
 							<div class="withdraw-steps">
 								{#each [
-									{ n: 1, title: 'Verify Identity', desc: 'Sign with your wallet', activeDesc: 'Waiting for signature...' },
+									{ n: 1, title: 'Save Details', desc: 'Saving payment info', activeDesc: 'Saving...' },
 									{ n: 2, title: 'Approve Token', desc: tokenInIsNative ? 'Skipped for native' : `Allow ${tokenInSymbol}`, activeDesc: tokenInIsNative ? 'Skipping...' : 'Confirm in wallet...' },
-									{ n: 3, title: 'Execute Trade', desc: 'Deposit to contract', activeDesc: 'Confirm in wallet...' },
-									{ n: 4, title: 'Verify On-Chain', desc: 'Confirming transaction', activeDesc: 'Verifying...' }
+									{ n: 3, title: 'Execute Trade', desc: 'Deposit to contract', activeDesc: 'Confirm in wallet...' }
 								] as step}
 									{@const isDone = withdrawStep > step.n}
 									{@const isActive = withdrawStep === step.n}
@@ -1498,6 +1515,19 @@
 		padding: 40px 16px 60px;
 	}
 	.trade-container { width: 100%; max-width: 460px; }
+
+	/* Network selector */
+	.network-selector {
+		display: flex; gap: 4px; padding: 4px; background: var(--bg-surface);
+		border: 1px solid var(--border); border-radius: 14px; margin-bottom: 8px;
+	}
+	.network-btn {
+		flex: 1; padding: 8px 0; border-radius: 10px; border: none; background: transparent;
+		color: var(--text-muted); font-family: 'Space Mono', monospace; font-size: 12px;
+		font-weight: 700; cursor: pointer; transition: all 150ms;
+	}
+	.network-btn:hover { color: var(--text); }
+	.network-active { background: rgba(0,210,255,0.1); color: #00d2ff; }
 
 	/* Header */
 	.trade-header {

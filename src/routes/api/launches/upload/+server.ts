@@ -8,20 +8,15 @@ const ALLOWED_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'im
 const BUCKET = 'launch-logos';
 
 // POST /api/launches/upload — upload logo image for a launch
-// Requires wallet signature; recovered address must match DB creator
-export const POST: RequestHandler = async ({ request }) => {
+// Auth: session cookie (preferred) or signature in FormData (fallback for first request)
+export const POST: RequestHandler = async ({ request, locals }) => {
 	const formData = await request.formData();
 	const file = formData.get('file') as File | null;
 	const address = formData.get('address') as string | null;
 	const chainId = formData.get('chain_id') as string | null;
-	const signature = formData.get('signature') as string | null;
-	const signedMessage = formData.get('signed_message') as string | null;
 
 	if (!file || !address || !chainId) {
 		return error(400, 'Missing file, address, or chain_id');
-	}
-	if (!signature || !signedMessage) {
-		return error(400, 'Signature required');
 	}
 
 	if (!ALLOWED_TYPES.includes(file.type)) {
@@ -32,11 +27,17 @@ export const POST: RequestHandler = async ({ request }) => {
 		return error(400, `File too large. Max size is ${MAX_FILE_SIZE / (1024 * 1024)} MB`);
 	}
 
-	let walletAddress: string;
-	try {
-		walletAddress = recoverWallet(signature, signedMessage);
-	} catch (e: any) {
-		return error(400, e.message || 'Invalid signature');
+	// Use session wallet, or fall back to signature in FormData
+	let walletAddress = locals.wallet;
+	if (!walletAddress) {
+		const signature = formData.get('signature') as string | null;
+		const signedMessage = formData.get('signed_message') as string | null;
+		if (!signature || !signedMessage) return error(401, 'Wallet authentication required');
+		try {
+			walletAddress = recoverWallet(signature, signedMessage);
+		} catch (e: any) {
+			return error(400, e.message || 'Invalid signature');
+		}
 	}
 
 	// Verify the recovered address is the creator

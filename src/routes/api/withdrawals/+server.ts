@@ -2,7 +2,7 @@ import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { supabaseAdmin } from '$lib/supabaseServer';
 import { encrypt, decrypt } from '$lib/crypto';
-import { recoverWallet, verifyAdminSession } from '$lib/auth';
+import { recoverWallet } from '$lib/auth';
 
 // GET /api/withdrawals?wallet=0x...&status=pending
 export const GET: RequestHandler = async ({ url }) => {
@@ -34,20 +34,12 @@ export const GET: RequestHandler = async ({ url }) => {
 };
 
 // POST /api/withdrawals — Step 1: save signed payment details (before on-chain trade)
-// Requires wallet signature to prove ownership
-export const POST: RequestHandler = async ({ request }) => {
+// Auth: wallet session (set by hooks.server.ts on first signature)
+export const POST: RequestHandler = async ({ request, locals }) => {
+	if (!locals.wallet) return error(401, 'Wallet authentication required');
+
 	const body = await request.json();
-
-	if (!body.signature || !body.signed_message) {
-		return error(400, 'Signature required');
-	}
-
-	let walletAddress: string;
-	try {
-		walletAddress = recoverWallet(body.signature, body.signed_message);
-	} catch (e: any) {
-		return error(400, e.message || 'Invalid signature');
-	}
+	const walletAddress = locals.wallet;
 
 	const row = {
 		chain_id: body.chain_id,
@@ -73,12 +65,10 @@ export const POST: RequestHandler = async ({ request }) => {
 	return json(data);
 };
 
-// PATCH /api/withdrawals — admin-only status updates (session cookie)
-export const PATCH: RequestHandler = async ({ request, cookies }) => {
-	const token = cookies.get('admin_session');
-	if (!token) return error(401, 'Not authenticated');
-	const wallet = await verifyAdminSession(token);
-	if (!wallet) return error(401, 'Session expired');
+// PATCH /api/withdrawals — admin-only status updates
+// Auth: admin session (set by hooks.server.ts)
+export const PATCH: RequestHandler = async ({ request, locals }) => {
+	if (!locals.isAdmin) return error(401, 'Admin access required');
 
 	const body = await request.json();
 	const { id, status: newStatus, admin_note } = body;

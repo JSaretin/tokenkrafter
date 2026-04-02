@@ -78,14 +78,14 @@ export function verifyCreator(signature: string, message: string, creator: strin
 	return recovered;
 }
 
-// ── Admin session (HMAC-based, no JWT dependency) ──────────
+// ── Sessions (HMAC-based, no JWT dependency) ───────────────
 
-const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const USER_SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+const ADMIN_SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 function getSessionKey(): Uint8Array {
 	const key = env.ENCRYPTION_KEY;
 	if (!key || key.length < 32) throw new Error('ENCRYPTION_KEY required for sessions');
-	// Use first 32 chars of ENCRYPTION_KEY as session HMAC key
 	const bytes = new Uint8Array(16);
 	for (let i = 0; i < 16; i++) {
 		bytes[i] = parseInt(key.substring(i * 2, i * 2 + 2), 16);
@@ -93,51 +93,71 @@ function getSessionKey(): Uint8Array {
 	return bytes;
 }
 
-/**
- * Create an admin session token: wallet:expiry:hmac
- */
-export async function createAdminSession(wallet: string): Promise<string> {
-	const expiry = Date.now() + SESSION_TTL_MS;
-	const payload = `${wallet.toLowerCase()}:${expiry}`;
-
+async function hmacSign(payload: string): Promise<string> {
+	const rawKey = getSessionKey();
 	const key = await crypto.subtle.importKey(
-		'raw', getSessionKey(), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
+		'raw', rawKey.buffer as ArrayBuffer, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
 	);
 	const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload));
-	const hmac = Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('');
+	return Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
 
+/**
+ * Create a session token: role:wallet:expiry:hmac
+ */
+export async function createSession(wallet: string, role: 'user' | 'admin' = 'user'): Promise<string> {
+	const ttl = role === 'admin' ? ADMIN_SESSION_TTL_MS : USER_SESSION_TTL_MS;
+	const expiry = Date.now() + ttl;
+	const payload = `${role}:${wallet.toLowerCase()}:${expiry}`;
+	const hmac = await hmacSign(payload);
 	return `${payload}:${hmac}`;
 }
 
 /**
- * Verify an admin session token. Returns wallet address or null.
+ * Verify a session token. Returns { wallet, role } or null.
  */
-export async function verifyAdminSession(token: string): Promise<string | null> {
+export async function verifySession(token: string): Promise<{ wallet: string; role: 'user' | 'admin' } | null> {
 	const parts = token.split(':');
-	if (parts.length !== 3) return null;
+	if (parts.length !== 4) return null;
 
-	const [wallet, expiryStr, hmac] = parts;
+	const [role, wallet, expiryStr, hmac] = parts;
+	if (role !== 'user' && role !== 'admin') return null;
+
 	const expiry = parseInt(expiryStr);
-
-	// Check expiry
 	if (isNaN(expiry) || Date.now() > expiry) return null;
 
-	// Check wallet is still an admin
+	// For admin sessions, verify wallet is still in ADMIN_WALLETS
+	if (role === 'admin') {
+		const admins = (env.ADMIN_WALLETS || '')
+			.split(',')
+			.map(a => a.trim().toLowerCase())
+			.filter(Boolean);
+		if (!admins.includes(wallet.toLowerCase())) return null;
+	}
+
+	// Verify HMAC
+	const payload = `${role}:${wallet}:${expiryStr}`;
+	const expected = await hmacSign(payload);
+	if (hmac !== expected) return null;
+
+	return { wallet: wallet.toLowerCase(), role: role as 'user' | 'admin' };
+}
+
+// Backwards compat aliases
+export const createAdminSession = (wallet: string) => createSession(wallet, 'admin');
+export async function verifyAdminSession(token: string): Promise<string | null> {
+	const result = await verifySession(token);
+	if (!result || result.role !== 'admin') return null;
+	return result.wallet;
+}
+
+/**
+ * Check if a wallet is an admin.
+ */
+export function isAdminWallet(wallet: string): boolean {
 	const admins = (env.ADMIN_WALLETS || '')
 		.split(',')
 		.map(a => a.trim().toLowerCase())
 		.filter(Boolean);
-	if (!admins.includes(wallet.toLowerCase())) return null;
-
-	// Verify HMAC
-	const payload = `${wallet}:${expiryStr}`;
-	const key = await crypto.subtle.importKey(
-		'raw', getSessionKey(), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
-	);
-	const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload));
-	const expected = Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('');
-
-	if (hmac !== expected) return null;
-
-	return wallet;
+	return admins.includes(wallet.toLowerCase());
 }

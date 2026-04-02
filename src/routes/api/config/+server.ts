@@ -1,7 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { supabaseAdmin } from '$lib/supabaseServer';
-import { verifyAdminSession } from '$lib/auth';
 
 // GET /api/config?keys=networks,site,social_links
 export const GET: RequestHandler = async ({ url }) => {
@@ -22,13 +21,10 @@ export const GET: RequestHandler = async ({ url }) => {
 	return json(result);
 };
 
-// PATCH /api/config — admin-only (session cookie)
-export const PATCH: RequestHandler = async ({ request, cookies }) => {
-	const token = cookies.get('admin_session');
-	if (!token) return error(401, 'Not authenticated');
-
-	const wallet = await verifyAdminSession(token);
-	if (!wallet) return error(401, 'Session expired');
+// PATCH /api/config — admin-only
+// Auth: admin session (hooks.server.ts)
+export const PATCH: RequestHandler = async ({ request, locals }) => {
+	if (!locals.isAdmin) return error(401, 'Admin access required');
 
 	const body = await request.json();
 	const { key, value } = body;

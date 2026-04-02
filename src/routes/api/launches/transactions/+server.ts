@@ -29,7 +29,7 @@ export const GET: RequestHandler = async ({ url }) => {
 export const POST: RequestHandler = async ({ request }) => {
 	const authHeader = request.headers.get('authorization');
 	const { env } = await import('$env/dynamic/private');
-	if (env.SYNC_SECRET && authHeader !== `Bearer ${env.SYNC_SECRET}`) {
+	if (!env.SYNC_SECRET || authHeader !== `Bearer ${env.SYNC_SECRET}`) {
 		return error(401, 'Unauthorized');
 	}
 

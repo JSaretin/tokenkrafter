@@ -1,7 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { supabaseAdmin } from '$lib/supabaseServer';
-import { recoverWallet } from '$lib/auth';
 
 // GET /api/launches/comments?address=0x...&limit=50
 export const GET: RequestHandler = async ({ url }) => {
@@ -27,20 +26,12 @@ export const GET: RequestHandler = async ({ url }) => {
 };
 
 // POST /api/launches/comments — add a new comment
-// Requires wallet signature; recovered address is the comment author
-export const POST: RequestHandler = async ({ request }) => {
+// Auth: wallet session (hooks.server.ts)
+export const POST: RequestHandler = async ({ request, locals }) => {
+	if (!locals.wallet) return error(401, 'Wallet authentication required');
+
 	const body = await request.json();
-
-	if (!body.signature || !body.signed_message) {
-		return error(400, 'Signature required');
-	}
-
-	let walletAddress: string;
-	try {
-		walletAddress = recoverWallet(body.signature, body.signed_message);
-	} catch (e: any) {
-		return error(400, e.message || 'Invalid signature');
-	}
+	const walletAddress = locals.wallet;
 
 	const required = ['launch_address', 'chain_id', 'message'];
 	for (const field of required) {
