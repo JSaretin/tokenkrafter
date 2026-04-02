@@ -173,8 +173,7 @@
 
 		// Ensure correct network
 		try {
-			const walletProvider = new ethers.BrowserProvider((window as any).ethereum);
-			const walletNetwork = await walletProvider.getNetwork();
+			const walletNetwork = await signer.provider!.getNetwork();
 			if (Number(walletNetwork.chainId) !== launchNetwork.chain_id) {
 				addFeedback({ message: `Switching to ${launchNetwork.name}...`, type: 'info' });
 				const switched = await switchNetwork(launchNetwork.chain_id);
@@ -1042,8 +1041,7 @@
 
 		// Ensure wallet is on the correct network
 		try {
-			const walletProvider = new ethers.BrowserProvider((window as any).ethereum);
-			const walletNetwork = await walletProvider.getNetwork();
+			const walletNetwork = await signer.provider!.getNetwork();
 			if (Number(walletNetwork.chainId) !== tokenInfo.network.chain_id) {
 				addFeedback({ message: `Switching to ${tokenInfo.network.name}...`, type: 'info' });
 				const switched = await switchNetwork(tokenInfo.network.chain_id);

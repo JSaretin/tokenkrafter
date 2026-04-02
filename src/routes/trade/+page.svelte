@@ -9,7 +9,7 @@
 	import WithdrawalStatusModal from '$lib/WithdrawalStatusModal.svelte';
 	import { formatUsdt } from '$lib/launchpad';
 	import { apiFetch } from '$lib/apiFetch';
-	import { queryTradeLens, getInstantQuote, getWeth, isCacheLoaded, type TaxInfo } from '$lib/tradeLens';
+	import { queryTradeLens, getInstantQuote, getWeth, isCacheLoaded, getUsdValue, type TaxInfo } from '$lib/tradeLens';
 
 	let getSigner: () => ethers.Signer | null = getContext('signer');
 	let getUserAddress: () => string | null = getContext('userAddress');
@@ -148,6 +148,14 @@
 	let historyLoading = $state(false);
 
 	let selectedNetwork = $derived(tradeNetworks[selectedNetworkIdx]);
+
+	// ── Lock body scroll when any modal is open ──────────────
+	let anyModalOpen = $derived(showTokenModal || showConfirmModal || showBankModal || !!activeWithdrawal);
+	$effect(() => {
+		if (typeof document !== 'undefined') {
+			document.body.classList.toggle('modal-open', anyModalOpen);
+		}
+	});
 
 	// ── Built-in token presets ──────────────────────────────────
 	let builtInTokens = $derived.by(() => {
@@ -290,7 +298,17 @@
 		// ── Fetch all token prices (instant quotes) ──────────────
 		refreshPrices();
 
-		// ── URL parameter pre-selection ──────────────────────────
+		// ── Default token selection (native coin → USDT) ─────────
+		if (!tokenInAddr && builtInTokens.length > 0) {
+			const native = builtInTokens.find(t => t.isNative);
+			if (native) selectToken('in', native);
+		}
+		if (!tokenOutAddr && builtInTokens.length > 1) {
+			const usdt = builtInTokens.find(t => t.symbol === 'USDT');
+			if (usdt) selectToken('out', usdt);
+		}
+
+		// ── URL parameter pre-selection (overrides defaults) ─────
 		await handleUrlParams();
 	});
 
@@ -780,6 +798,30 @@
 	});
 	let displayAmountOut = $derived(formatAmount(postTaxAmountOut || amountOut, tokenOutDecimals, tokenOutSymbol));
 
+	// USD values for both fields
+	let usdValueIn = $derived.by(() => {
+		if (!amountIn || !tokenInAddr || !selectedNetwork?.usdt_address || !pricesLoaded) return '';
+		try {
+			const parsed = ethers.parseUnits(parseFloat(amountIn).toFixed(tokenInDecimals), tokenInDecimals);
+			const addr = tokenInIsNative ? (wethAddr || getWeth()) : tokenInAddr;
+			const usd = getUsdValue(addr, parsed, tokenInDecimals, selectedNetwork.usdt_address);
+			if (usd === null || usd === 0) return '';
+			return `~$${usd < 0.01 ? usd.toFixed(4) : usd.toFixed(2)} USD`;
+		} catch { return ''; }
+	});
+
+	let usdValueOut = $derived.by(() => {
+		if (!postTaxAmountOut && !amountOut || !tokenOutAddr || !selectedNetwork?.usdt_address || !pricesLoaded) return '';
+		try {
+			const raw = postTaxAmountOut || amountOut;
+			const parsed = ethers.parseUnits(parseFloat(raw).toFixed(tokenOutDecimals), tokenOutDecimals);
+			const addr = tokenOutIsNative ? (wethAddr || getWeth()) : tokenOutAddr;
+			const usd = getUsdValue(addr, parsed, tokenOutDecimals, selectedNetwork.usdt_address);
+			if (usd === null || usd === 0) return '';
+			return `~$${usd < 0.01 ? usd.toFixed(4) : usd.toFixed(2)} USD`;
+		} catch { return ''; }
+	});
+
 	let rate = $derived.by(() => {
 		if (!amountIn || !amountOut || parseFloat(amountIn) <= 0 || noLiquidity) return '';
 		const r = parseFloat(amountOut) / parseFloat(amountIn);
@@ -1145,7 +1187,21 @@
 
 	// ── Gas balance check ─────────────────────────────────────
 	let nativeBalance = $state(0n);
-	let hasGas = $derived(nativeBalance > ethers.parseUnits('0.001', 18));
+	let estimatedGasCost = $state(ethers.parseUnits('0.001', 18)); // default fallback
+
+	// Fetch gas price and estimate cost
+	$effect(() => {
+		if (!selectedNetwork) return;
+		const provider = networkProviders.get(selectedNetwork.chain_id);
+		if (!provider) return;
+		provider.getFeeData().then(fee => {
+			const gasPrice = fee.gasPrice || fee.maxFeePerGas || 5000000000n; // fallback 5 gwei
+			const swapGasUnits = 300000n; // typical swap gas
+			estimatedGasCost = gasPrice * swapGasUnits;
+		}).catch(() => {});
+	});
+
+	let hasGas = $derived(nativeBalance > estimatedGasCost);
 
 	// Fetch native balance when wallet connects or network changes
 	$effect(() => {
@@ -1157,11 +1213,25 @@
 
 	// ── Button label ───────────────────────────────────────────
 	// Button shows action label even without wallet — prompts connect on click
+	// Insufficient balance check
+	let insufficientBalance = $derived.by(() => {
+		if (!userAddress || !tokenInAddr || !amountIn || parseFloat(amountIn) <= 0) return false;
+		if (tokenInBalance === 0n) return true;
+		try {
+			const sanitized = parseFloat(amountIn).toFixed(tokenInDecimals);
+			const needed = ethers.parseUnits(sanitized, tokenInDecimals);
+			return needed > tokenInBalance;
+		} catch { return false; }
+	});
+
+	let noGas = $derived(!!userAddress && !tokenInIsNative && !hasGas && !!tokenInAddr && !!amountIn);
+
 	let buttonLabel = $derived.by(() => {
 		if (isSwapping || isWithdrawing) return 'Processing...';
 		if (!tokenInAddr) return 'Select a token';
 		if (!amountIn || parseFloat(amountIn) <= 0) return 'Enter an amount';
-		if (userAddress && !tokenInIsNative && !hasGas) return `No ${selectedNetwork?.native_coin || 'gas'} for fees`;
+		if (insufficientBalance) return `Insufficient ${tokenInSymbol} balance`;
+		if (noGas) return `Insufficient ${selectedNetwork?.native_coin || 'gas'} for gas`;
 		if (noLiquidity && outputMode === 'token') return 'Insufficient liquidity';
 		if (outputMode === 'bank') {
 			if (paymentMethod === 'bank' && (!bankResolved || !bankAccount || !bankCode)) return 'Verify bank account';
@@ -1174,12 +1244,10 @@
 		return `Swap ${tokenInSymbol} → ${tokenOutSymbol}`;
 	});
 
-	let noGas = $derived(!!userAddress && !tokenInIsNative && !hasGas && !!tokenInAddr);
-
 	let buttonDisabled = $derived(
 		isSwapping || isWithdrawing ||
 		!tokenInAddr || !amountIn || parseFloat(amountIn) <= 0 ||
-		noGas ||
+		insufficientBalance || noGas ||
 		(outputMode === 'token' && (!tokenOutAddr || noLiquidity)) ||
 		(outputMode === 'bank' && (
 			(paymentMethod === 'bank' && (!bankResolved || !bankAccount || !bankCode)) ||
@@ -1291,7 +1359,7 @@
 						<button class="max-btn" onclick={() => {
 							let raw: string;
 							if (tokenInIsNative) {
-								const gasBuffer = ethers.parseUnits('0.005', 18);
+								const gasBuffer = estimatedGasCost * 12n / 10n; // +20% safety
 								const maxAmount = tokenInBalance > gasBuffer ? tokenInBalance - gasBuffer : 0n;
 								raw = ethers.formatUnits(maxAmount, tokenInDecimals);
 							} else {
@@ -1311,6 +1379,7 @@
 					{:else if tokenInSymbol}
 						<span>Balance: 0 {tokenInSymbol}</span>
 					{/if}
+					{#if usdValueIn}<span class="usd-value">{usdValueIn}</span>{/if}
 				</div>
 				{#if tokenInTax && !tokenInTax.canSell && !tokenInIsNative}
 					<div class="honeypot-badge">
@@ -1369,6 +1438,7 @@
 						{:else if tokenOutSymbol}
 							<span>Balance: 0 {tokenOutSymbol}</span>
 						{/if}
+						{#if usdValueOut}<span class="usd-value">{usdValueOut}</span>{/if}
 					</div>
 					{#if tokenOutTax && !tokenOutTax.canSell && !tokenOutIsNative}
 						<div class="honeypot-badge">
@@ -1522,9 +1592,12 @@
 						<span>1 {tokenInSymbol} = {rate} {tokenOutSymbol}</span>
 					</div>
 					{#if minReceived}
+						{@const minUsd = usdValueOut && displayAmountOut && parseFloat(displayAmountOut) > 0
+							? (parseFloat(usdValueOut.replace(/[^0-9.]/g, '')) * parseFloat(minReceived) / parseFloat(displayAmountOut)).toFixed(2)
+							: ''}
 						<div class="detail-line">
 							<span>Min. received</span>
-							<span>{minReceived} {tokenOutSymbol}</span>
+							<span>{minReceived} {tokenOutSymbol}{#if minUsd} <span class="usd-value">(~${minUsd})</span>{/if}</span>
 						</div>
 					{/if}
 					<div class="detail-line">
@@ -1553,23 +1626,25 @@
 				</div>
 			{/if}
 
-			<!-- Gas warning -->
-			{#if noGas}
-				<div class="gas-warning">
-					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-					You need {selectedNetwork?.native_coin || 'native token'} to pay for transaction fees
-				</div>
-			{/if}
-
 			<!-- Action button -->
 			<button
 				class="swap-btn"
-				class:swap-btn-bank={outputMode === 'bank'}
-				class:swap-btn-disabled-gas={noGas}
+				class:swap-btn-bank={outputMode === 'bank' && !insufficientBalance && !noGas}
+				class:swap-btn-error={insufficientBalance || noGas}
 				disabled={buttonDisabled && !!userAddress}
 				onclick={() => { if (!userAddress) connectWallet(); else showConfirmModal = true; }}
 			>
 				{buttonLabel}
+			</button>
+
+		</div>
+
+		<!-- Buy crypto banner -->
+		<div class="buy-crypto-strip">
+			<svg width="14" height="14" viewBox="0 0 512 512" fill="#00d2ff"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM169.8 165.3c7.9-22.3 29.1-37.3 52.8-37.3h58.3c34.9 0 63.1 28.3 63.1 63.1c0 22.6-12.1 43.5-31.7 54.8L280 264.4c-.2 13-10.9 23.6-24 23.6c-13.3 0-24-10.7-24-24V250.5c0-8.6 4.6-16.5 12.1-20.8l44.3-25.4c4.7-2.7 7.6-7.7 7.6-13.1c0-8.4-6.8-15.1-15.1-15.1H222.6c-3.4 0-6.4 2.1-7.5 5.3l-.4 1.2c-4.4 12.5-18.2 19-30.6 14.6s-19-18.2-14.6-30.6l.4-1.2zM224 352a32 32 0 1 1 64 0 32 32 0 1 1-64 0z"/></svg>
+			<span>Need Crypto? Buy with the best price!</span>
+			<button class="buy-crypto-btn" onclick={() => addFeedback({ message: 'Coming soon!', type: 'info' })}>
+				Get it Now
 			</button>
 		</div>
 
@@ -1926,9 +2001,12 @@
 							<span>Rate</span>
 							<span>1 {tokenInSymbol} = {rate} {tokenOutSymbol}</span>
 						</div>
+						{@const confirmMinUsd = usdValueOut && displayAmountOut && parseFloat(displayAmountOut) > 0
+							? (parseFloat(usdValueOut.replace(/[^0-9.]/g, '')) * parseFloat(minReceived) / parseFloat(displayAmountOut)).toFixed(2)
+							: ''}
 						<div class="confirm-detail-row">
 							<span>Min. received</span>
-							<span>{minReceived} {tokenOutSymbol}</span>
+							<span>{minReceived} {tokenOutSymbol}{#if confirmMinUsd} <span class="usd-value">(~${confirmMinUsd})</span>{/if}</span>
 						</div>
 						<div class="confirm-detail-row">
 							<span>Slippage</span>
@@ -2097,6 +2175,10 @@
 	.max-btn:hover { background: rgba(0,210,255,0.15); border-color: rgba(0,210,255,0.4); }
 	.token-balance-row {
 		margin-top: 6px; font-family: 'Space Mono', monospace; font-size: 11px; color: var(--text-dim);
+		display: flex; justify-content: space-between; align-items: center;
+	}
+	.usd-value {
+		color: var(--text-muted); font-size: 11px;
 	}
 	.amount-input {
 		flex: 1; background: transparent; border: none; outline: none;
@@ -2302,15 +2384,23 @@
 		transition: all 200ms; letter-spacing: 0.02em;
 	}
 	.swap-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 28px rgba(0,210,255,0.3); }
-	.swap-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-	.swap-btn-disabled-gas { background: linear-gradient(135deg, #f59e0b, #d97706) !important; }
-	.gas-warning {
-		display: flex; align-items: center; justify-content: center; gap: 6px;
-		padding: 10px; margin: 4px 4px 0;
-		font-family: 'Space Mono', monospace; font-size: 11px; color: #f59e0b;
-		background: rgba(245,158,11,0.06); border: 1px solid rgba(245,158,11,0.15);
-		border-radius: 10px;
+	.swap-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+	.swap-btn-error:disabled { background: rgba(100,116,139,0.15) !important; color: rgba(255,255,255,0.5) !important; box-shadow: none !important; transform: none !important; }
+	.buy-crypto-strip {
+		display: flex; align-items: center; gap: 8px; padding: 10px 14px;
+		margin-top: 10px; border-radius: 12px;
+		background: var(--bg-surface); border: 1px solid var(--border);
+		font-family: 'Space Mono', monospace; font-size: 11px; color: var(--text-muted);
 	}
+	.buy-crypto-strip svg { flex-shrink: 0; color: #00d2ff; }
+	.buy-crypto-strip span { flex: 1; }
+	.buy-crypto-btn {
+		padding: 6px 14px; border-radius: 8px; border: none; cursor: pointer;
+		background: linear-gradient(135deg, #00d2ff, #3a7bd5); color: white;
+		font-family: 'Syne', sans-serif; font-size: 12px; font-weight: 700;
+		white-space: nowrap; transition: all 150ms; flex-shrink: 0;
+	}
+	.buy-crypto-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(0,210,255,0.3); }
 	.swap-btn-bank { background: linear-gradient(135deg, #10b981, #059669); }
 	.swap-btn-bank:hover:not(:disabled) { box-shadow: 0 6px 28px rgba(16,185,129,0.3); }
 

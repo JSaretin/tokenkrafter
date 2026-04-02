@@ -1,5 +1,10 @@
 @import 'tailwindcss';
 
+/* ─── Modal scroll lock ─── */
+body.modal-open {
+  overflow: hidden;
+}
+
 /* ─── Transition System ─── */
 :root {
   --transition-fast: 150ms ease;

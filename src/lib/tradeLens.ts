@@ -128,6 +128,40 @@ export function getCachedToken(addr: string): TokenInfo | null {
 	return _tokenCache.get(addr.toLowerCase()) || null;
 }
 
+/** Get USD value of a token amount using cached reserves (WETH as intermediary) */
+export function getUsdValue(tokenAddr: string, amount: bigint, tokenDecimals: number, usdtAddr: string): number | null {
+	if (amount === 0n || !_weth) return null;
+
+	const weth = _weth.toLowerCase();
+	const addr = tokenAddr.toLowerCase();
+	const usdt = usdtAddr.toLowerCase();
+
+	// If token IS USDT, value = amount
+	if (addr === usdt) {
+		return parseFloat(ethers.formatUnits(amount, tokenDecimals));
+	}
+
+	// Get USDT/WETH rate
+	const usdtInfo = _tokenCache.get(usdt);
+	if (!usdtInfo?.hasLiquidity || usdtInfo.reserveBase === 0n) return null;
+	// 1 WETH = reserveToken/reserveBase USDT
+	const wethPriceUsdt = Number(usdtInfo.reserveToken) / Number(usdtInfo.reserveBase);
+
+	// If token IS WETH
+	if (addr === weth) {
+		return parseFloat(ethers.formatUnits(amount, 18)) * wethPriceUsdt;
+	}
+
+	// Token → WETH → USDT
+	const tokenInfo = _tokenCache.get(addr);
+	if (!tokenInfo?.hasLiquidity || tokenInfo.reserveToken === 0n) return null;
+	// 1 token = reserveBase/reserveToken WETH
+	const tokenPriceWeth = Number(tokenInfo.reserveBase) / Number(tokenInfo.reserveToken);
+	const tokenPriceUsdt = tokenPriceWeth * wethPriceUsdt;
+
+	return parseFloat(ethers.formatUnits(amount, tokenDecimals)) * tokenPriceUsdt;
+}
+
 /** Check if cache is stale */
 export function isCacheStale(maxAgeMs: number = 15000): boolean {
 	return Date.now() - _lastFetch > maxAgeMs;
