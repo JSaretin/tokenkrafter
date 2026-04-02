@@ -1406,27 +1406,29 @@
 					<p class="history-empty">No withdrawals yet</p>
 				{:else}
 					{#each withdrawals.toReversed() as w, i}
-						{@const sc = withdrawStatusColor(w.status)}
-						{@const canCancel = w.status === 0 && Date.now() / 1000 > w.createdAt + 300}
+						{@const timedOut = w.status === 0 && Date.now() / 1000 > w.createdAt + 300}
+						{@const sc = timedOut ? 'red' : withdrawStatusColor(w.status)}
+						{@const canCancel = timedOut}
 						<button class="history-row" onclick={() => {
 							showConfirmModal = false;
 							activeWithdrawal = {
-								id: withdrawals.length - 1 - i,
-								withdraw_id: withdrawals.length - 1 - i,
+								id: w.id,
+								withdraw_id: w.withdraw_id,
+								chain_id: w.chain_id || selectedNetwork?.chain_id,
 								wallet_address: userAddress,
-								status: withdrawStatusLabel(w.status).toLowerCase(),
+								status: timedOut ? 'timeout' : withdrawStatusLabel(w.status).toLowerCase(),
 								net_amount: w.netAmount?.toString() || w.grossAmount?.toString() || '0',
 								fee: w.fee?.toString() || '0',
 								gross_amount: w.grossAmount?.toString() || '0',
-								payment_method: 'bank',
-								payment_details: {},
-								tx_hash: '',
+								payment_method: w.payment_method || 'bank',
+								payment_details: w.payment_details || {},
+								tx_hash: w.tx_hash || '',
 								created_at: new Date(Number(w.createdAt) * 1000).toISOString()
 							};
 						}}>
 							<div class="history-row-top">
 								<span class="history-amount">${parseFloat(ethers.formatUnits(w.grossAmount, usdtDecimals)).toFixed(2)}</span>
-								<span class="history-status status-{sc}">{withdrawStatusLabel(w.status)}</span>
+								<span class="history-status status-{sc}">{timedOut ? 'Timed Out' : withdrawStatusLabel(w.status)}</span>
 							</div>
 							<div class="history-row-bottom">
 								<span class="history-date">{new Date(Number(w.createdAt) * 1000).toLocaleString()}</span>
