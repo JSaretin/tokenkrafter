@@ -1,5 +1,3 @@
-import { ethers } from 'ethers';
-
 export const TRADE_ROUTER_ABI = [
 	// Swap
 	'function swapTokens(address tokenIn, address tokenOut, uint256 amountIn, uint256 amountOutMin, bool hasTax) external returns (uint256 amountOut)',
@@ -12,6 +10,8 @@ export const TRADE_ROUTER_ABI = [
 	'function depositAndSwap(address tokenIn, uint256 amountIn, uint256 minUsdtOut, bool hasTax, bytes32 bankRef) external returns (uint256 id)',
 	'function depositETH(uint256 minUsdtOut, bytes32 bankRef) external payable returns (uint256 id)',
 	'function confirm(uint256 id) external',
+	'function confirm(uint256 id, address to) external',
+	'function confirm(uint256 id, address to, uint256 amount) external',
 	'function confirmBatch(uint256[] ids) external returns (uint256 confirmed)',
 	'function cancel(uint256 id) external',
 	'function getWithdrawal(uint256 id) view returns (tuple(address user, address token, uint256 grossAmount, uint256 fee, uint256 netAmount, uint256 createdAt, uint8 status, bytes32 bankRef))',
@@ -23,6 +23,26 @@ export const TRADE_ROUTER_ABI = [
 	'function feeBps() view returns (uint256)',
 	'function payoutTimeout() view returns (uint256)',
 	'function getUserWithdrawals(address user, uint256 offset, uint256 limit) view returns (tuple(address user, address token, uint256 grossAmount, uint256 fee, uint256 netAmount, uint256 createdAt, uint8 status, bytes32 bankRef)[] result, uint256 total)',
+
+	// Admin
+	'function owner() view returns (address)',
+	'function feeBps() view returns (uint256)',
+	'function payoutTimeout() view returns (uint256)',
+	'function platformWallet() view returns (address)',
+	'function totalEscrow() view returns (uint256)',
+	'function platformEarnings(address token) view returns (uint256)',
+	'function pendingCount() view returns (uint256)',
+	'function totalWithdrawals() view returns (uint256)',
+	'function getAdmins() view returns (address[])',
+	'function paused() view returns (bool)',
+	'function setFeeBps(uint256 newFee) external',
+	'function setPayoutTimeout(uint256 newTimeout) external',
+	'function setPlatformWallet(address wallet) external',
+	'function addAdmin(address admin) external',
+	'function removeAdmin(address admin) external',
+	'function withdrawFees(address token) external',
+	'function pause() external',
+	'function unpause() external',
 
 	// Events
 	'event Swap(address indexed user, address tokenIn, address tokenOut, uint256 amountIn, uint256 amountOut)',

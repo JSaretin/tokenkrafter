@@ -4,10 +4,11 @@
 	import { page } from '$app/state';
 	import { supabase } from '$lib/supabaseClient';
 	import type { SupportedNetwork } from '$lib/structure';
-	import { ERC20_ABI, ZERO_ADDRESS } from '$lib/tokenCrafter';
+	import { ERC20_ABI, ZERO_ADDRESS, FACTORY_V2_ABI, PAIR_ABI } from '$lib/tokenCrafter';
 	import { TRADE_ROUTER_ABI, withdrawStatusLabel, withdrawStatusColor } from '$lib/tradeRouter';
 	import WithdrawalStatusModal from '$lib/WithdrawalStatusModal.svelte';
 	import { formatUsdt } from '$lib/launchpad';
+	import { apiFetch } from '$lib/apiFetch';
 
 	let getSigner: () => ethers.Signer | null = getContext('signer');
 	let getUserAddress: () => string | null = getContext('userAddress');
@@ -86,9 +87,27 @@
 		return raw > 0 ? raw * (1 - spreadBps / 10000) : 0;
 	});
 	// Use gross amount for NGN display (fee is hidden in the spread)
+	// USDT decimals for the selected network (BSC USDT = 18, ETH USDT = 6)
+	let usdtDecimals = $state(18);
+	$effect(() => {
+		if (!selectedNetwork?.usdt_address) return;
+		const provider = networkProviders.get(selectedNetwork.chain_id);
+		if (!provider) return;
+		const token = new ethers.Contract(selectedNetwork.usdt_address, ['function decimals() view returns (uint8)'], provider);
+		token.decimals().then((d: any) => { usdtDecimals = Number(d); }).catch(() => {});
+	});
+
 	let fiatEquivalent = $derived.by(() => {
 		if (!amountIn || ngnRate === 0 || outputMode !== 'bank') return '';
-		const usdtVal = parseFloat(amountIn) || 0;
+		let usdtVal: number;
+		const isUsdt = selectedNetwork && tokenInAddr.toLowerCase() === selectedNetwork.usdt_address?.toLowerCase();
+		if (isUsdt) {
+			usdtVal = parseFloat(amountIn) || 0;
+		} else if (previewNet > 0n) {
+			usdtVal = parseFloat(ethers.formatUnits(previewNet, usdtDecimals));
+		} else {
+			return '';
+		}
 		const ngn = usdtVal * ngnRate;
 		return ngn > 0 ? `NGN ${ngn.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '';
 	});
@@ -197,10 +216,10 @@
 		if (urlFrom) {
 			const matchedIn = findTokenBySymbolOrAddress(urlFrom);
 			if (matchedIn) {
-				await selectToken('in', matchedIn);
+				selectToken('in', matchedIn);
 			} else if (ethers.isAddress(urlFrom)) {
 				const meta = await fetchMeta(urlFrom, false);
-				await selectToken('in', { address: urlFrom, symbol: meta.symbol, name: meta.name, decimals: meta.decimals });
+				selectToken('in', { address: urlFrom, symbol: meta.symbol, name: meta.name, decimals: meta.decimals });
 			}
 		}
 
@@ -209,12 +228,12 @@
 		if (target) {
 			if (ethers.isAddress(target)) {
 				const meta = await fetchMeta(target, false);
-				await selectToken('out', { address: target, symbol: meta.symbol, name: meta.name, decimals: meta.decimals });
+				selectToken('out', { address: target, symbol: meta.symbol, name: meta.name, decimals: meta.decimals });
 			} else {
 				// Try matching built-in / platform tokens by symbol first
 				const matchedOut = findTokenBySymbolOrAddress(target);
 				if (matchedOut) {
-					await selectToken('out', matchedOut);
+					selectToken('out', matchedOut);
 				} else {
 					// Resolve via token alias API
 					try {
@@ -222,7 +241,7 @@
 						const data = await res.json();
 						if (data.address) {
 							const meta = await fetchMeta(data.address, false);
-							await selectToken('out', { address: data.address, symbol: meta.symbol, name: meta.name, decimals: meta.decimals });
+							selectToken('out', { address: data.address, symbol: meta.symbol, name: meta.name, decimals: meta.decimals });
 						}
 					} catch {}
 				}
@@ -340,59 +359,68 @@
 		}
 	}
 
-	// ── Select token ───────────────────────────────────────────
-	async function selectToken(target: 'in' | 'out', token: { address: string; symbol: string; name: string; decimals: number; isNative?: boolean }) {
+	// ── Select token (optimistic — close modal instantly, fetch in background) ──
+	function selectToken(target: 'in' | 'out', token: { address: string; symbol: string; name: string; decimals: number; isNative?: boolean }) {
 		const isNative = !!token.isNative;
 		const addr = token.address;
 
+		// Close modal immediately (optimistic UI)
+		showTokenModal = false;
+		tokenSearch = '';
+
+		// Set known values instantly
 		if (target === 'in') {
 			tokenInAddr = addr;
 			tokenInSymbol = token.symbol;
 			tokenInName = token.name;
 			tokenInDecimals = token.decimals;
 			tokenInIsNative = isNative;
+			tokenInBalance = 0n;
 			tokenInLoading = true;
-			const [meta, tax] = await Promise.all([
-				fetchMeta(addr, isNative),
-				detectTax(addr, isNative)
-			]);
-			tokenInBalance = meta.balance;
-			tokenInTaxBuy = tax.buyTax;
-			tokenInTaxSell = tax.sellTax;
-			tokenInHasTax = tax.hasTax;
-			tokenInLoading = false;
 		} else {
 			tokenOutAddr = addr;
 			tokenOutSymbol = token.symbol;
 			tokenOutName = token.name;
 			tokenOutDecimals = token.decimals;
 			tokenOutIsNative = isNative;
+			tokenOutBalance = 0n;
 			tokenOutLoading = true;
-			const [meta, tax] = await Promise.all([
-				fetchMeta(addr, isNative),
-				detectTax(addr, isNative)
-			]);
-			tokenOutBalance = meta.balance;
-			tokenOutTaxBuy = tax.buyTax;
-			tokenOutTaxSell = tax.sellTax;
-			tokenOutHasTax = tax.hasTax;
-			tokenOutLoading = false;
 		}
 
-		showTokenModal = false;
-		tokenSearch = '';
+		// Fetch real data in background (balance, decimals from chain, tax)
+		Promise.all([fetchMeta(addr, isNative), detectTax(addr, isNative)]).then(([meta, tax]) => {
+			if (target === 'in' && tokenInAddr === addr) {
+				tokenInBalance = meta.balance;
+				tokenInDecimals = meta.decimals; // override preset with on-chain value
+				tokenInSymbol = meta.symbol !== '???' ? meta.symbol : token.symbol;
+				tokenInTaxBuy = tax.buyTax;
+				tokenInTaxSell = tax.sellTax;
+				tokenInHasTax = tax.hasTax;
+				tokenInLoading = false;
+			} else if (target === 'out' && tokenOutAddr === addr) {
+				tokenOutBalance = meta.balance;
+				tokenOutDecimals = meta.decimals; // override preset with on-chain value
+				tokenOutSymbol = meta.symbol !== '???' ? meta.symbol : token.symbol;
+				tokenOutTaxBuy = tax.buyTax;
+				tokenOutTaxSell = tax.sellTax;
+				tokenOutHasTax = tax.hasTax;
+				tokenOutLoading = false;
+			}
+		}).catch(() => {
+			if (target === 'in') tokenInLoading = false;
+			else tokenOutLoading = false;
+		});
 	}
 
 	// ── Custom address paste in modal ──────────────────────────
-	async function handleCustomAddress() {
+	function handleCustomAddress() {
 		const addr = tokenSearch.trim();
 		if (!ethers.isAddress(addr)) return;
-		const meta = await fetchMeta(addr, false);
-		await selectToken(tokenModalTarget, {
+		selectToken(tokenModalTarget, {
 			address: addr,
-			symbol: meta.symbol,
-			name: meta.name,
-			decimals: meta.decimals
+			symbol: '...',
+			name: 'Loading...',
+			decimals: 18
 		});
 	}
 
@@ -410,8 +438,114 @@
 		amountOut = '';
 	}
 
-	// ── Preview swap ───────────────────────────────────────────
+	// ── Reserves cache for instant price calculation ──────────
+
+	type ReservesCache = {
+		reserve0: bigint; reserve1: bigint;
+		token0: string; token1: string;
+		pairAddr: string;
+	};
+	let reservesCache: ReservesCache | null = $state(null);
+	let wethAddr = $state('');
+	let reservesLoading = $state(false);
+
+	// Fetch reserves when token pair changes
+	$effect(() => {
+		const inAddr = tokenInAddr;
+		const outAddr = tokenOutAddr;
+		const net = selectedNetwork;
+		if (!inAddr || !outAddr || !net || outputMode === 'bank') { reservesCache = null; return; }
+
+		reservesLoading = true;
+		(async () => {
+			try {
+				const provider = networkProviders.get(net.chain_id);
+				if (!provider) return;
+
+				// Get WETH and factory addresses
+				const dexRouter = new ethers.Contract(net.dex_router, [
+					'function factory() view returns (address)',
+					'function WETH() view returns (address)'
+				], provider);
+				const [factoryAddr, weth] = await Promise.all([dexRouter.factory(), dexRouter.WETH()]);
+				wethAddr = weth;
+
+				const addrIn = tokenInIsNative ? weth : inAddr;
+				const addrOut = tokenOutIsNative ? weth : outAddr;
+
+				// Direct pair
+				const factory = new ethers.Contract(factoryAddr, FACTORY_V2_ABI, provider);
+				let pairAddr = await factory.getPair(addrIn, addrOut);
+
+				if (!pairAddr || pairAddr === ethers.ZeroAddress) {
+					// Try via WETH (tokenIn → WETH → tokenOut) — skip for now, use on-chain only
+					reservesCache = null;
+					return;
+				}
+
+				const pair = new ethers.Contract(pairAddr, PAIR_ABI, provider);
+				const [reserves, token0] = await Promise.all([pair.getReserves(), pair.token0()]);
+
+				reservesCache = {
+					reserve0: reserves[0],
+					reserve1: reserves[1],
+					token0: token0.toLowerCase(),
+					token1: (addrIn.toLowerCase() === token0.toLowerCase() ? addrOut : addrIn).toLowerCase(),
+					pairAddr
+				};
+			} catch {
+				reservesCache = null;
+			} finally {
+				reservesLoading = false;
+			}
+		})();
+	});
+
+	// Refresh reserves every 15s
+	$effect(() => {
+		if (!reservesCache?.pairAddr) return;
+		const net = selectedNetwork;
+		if (!net) return;
+		const pairAddr = reservesCache.pairAddr;
+
+		const interval = setInterval(async () => {
+			try {
+				const provider = networkProviders.get(net.chain_id);
+				if (!provider) return;
+				const pair = new ethers.Contract(pairAddr, PAIR_ABI, provider);
+				const reserves = await pair.getReserves();
+				if (reservesCache && reservesCache.pairAddr === pairAddr) {
+					reservesCache = { ...reservesCache, reserve0: reserves[0], reserve1: reserves[1] };
+				}
+			} catch {}
+		}, 15000);
+		return () => clearInterval(interval);
+	});
+
+	/** Calculate output using constant product formula (x * y = k) */
+	function calcAmountOut(amtIn: bigint, reserveIn: bigint, reserveOut: bigint): bigint {
+		if (reserveIn === 0n || reserveOut === 0n) return 0n;
+		const amtInWithFee = amtIn * 9975n; // 0.25% PancakeSwap fee
+		const numerator = amtInWithFee * reserveOut;
+		const denominator = reserveIn * 10000n + amtInWithFee;
+		return numerator / denominator;
+	}
+
+	/** Get instant local price from cached reserves */
+	function getLocalAmountOut(parsedIn: bigint): string | null {
+		if (!reservesCache) return null;
+		const addrIn = (tokenInIsNative ? wethAddr : tokenInAddr).toLowerCase();
+		const isToken0 = addrIn === reservesCache.token0;
+		const reserveIn = isToken0 ? reservesCache.reserve0 : reservesCache.reserve1;
+		const reserveOut = isToken0 ? reservesCache.reserve1 : reservesCache.reserve0;
+		const out = calcAmountOut(parsedIn, reserveIn, reserveOut);
+		if (out === 0n) return null;
+		return ethers.formatUnits(out, tokenOutDecimals);
+	}
+
+	// ── Preview swap (instant local + background on-chain) ────
 	let previewTimeout: ReturnType<typeof setTimeout> | null = null;
+	let onChainPrice = $state(''); // verified on-chain price
 	$effect(() => {
 		if (previewTimeout) clearTimeout(previewTimeout);
 		const amt = amountIn;
@@ -419,12 +553,25 @@
 		const outAddr = tokenOutAddr;
 		const net = selectedNetwork;
 
-		if (!amt || !inAddr || !outAddr || !net || parseFloat(amt) <= 0) {
+		if (!amt || !inAddr || !outAddr || !net || parseFloat(amt) <= 0 || outputMode === 'bank') {
 			amountOut = '';
+			onChainPrice = '';
 			noLiquidity = false;
 			return;
 		}
 
+		// Instant local calculation from cached reserves
+		try {
+			const sanitized = parseFloat(amt).toFixed(tokenInDecimals);
+			const parsedIn = ethers.parseUnits(sanitized, tokenInDecimals);
+			const localOut = getLocalAmountOut(parsedIn);
+			if (localOut) {
+				amountOut = localOut;
+				noLiquidity = false;
+			}
+		} catch {}
+
+		// Background on-chain validation (updates after RPC responds)
 		previewTimeout = setTimeout(async () => {
 			previewLoading = true;
 			noLiquidity = false;
@@ -432,20 +579,24 @@
 				const provider = networkProviders.get(net.chain_id);
 				if (!provider) return;
 				const router = new ethers.Contract(net.trade_router_address, TRADE_ROUTER_ABI, provider);
-				const weth = await router.weth();
+				const weth = wethAddr || await router.weth();
 				const addrIn = tokenInIsNative ? weth : inAddr;
 				const addrOut = tokenOutIsNative ? weth : outAddr;
 				const sanitized = parseFloat(amt).toFixed(tokenInDecimals);
 				const parsedIn = ethers.parseUnits(sanitized, tokenInDecimals);
 				const out = await router.getAmountOut(addrIn, addrOut, parsedIn);
-				amountOut = ethers.formatUnits(out, tokenOutDecimals);
+				const formatted = ethers.formatUnits(out, tokenOutDecimals);
+				amountOut = formatted;
+				onChainPrice = formatted;
 			} catch {
-				amountOut = '';
-				noLiquidity = true;
+				if (!amountOut) {
+					amountOut = '';
+					noLiquidity = true;
+				}
 			} finally {
 				previewLoading = false;
 			}
-		}, 350);
+		}, 150); // shorter debounce since local calc handles instant feedback
 	});
 
 	// ── Preview bank fee ───────────────────────────────────────
@@ -453,7 +604,8 @@
 		if (outputMode !== 'bank') return;
 		const amt = amountIn;
 		const net = selectedNetwork;
-		if (!amt || !net || parseFloat(amt) <= 0) { previewFee = 0n; previewNet = 0n; return; }
+		const inAddr = tokenInAddr;
+		if (!amt || !net || !inAddr || parseFloat(amt) <= 0) { previewFee = 0n; previewNet = 0n; return; }
 		(async () => {
 			try {
 				const provider = networkProviders.get(net.chain_id);
@@ -461,7 +613,19 @@
 				const router = new ethers.Contract(net.trade_router_address, TRADE_ROUTER_ABI, provider);
 				const sanitizedAmt = parseFloat(amt).toFixed(tokenInDecimals);
 				const parsedAmt = ethers.parseUnits(sanitizedAmt, tokenInDecimals);
-				const [fee, netAmt] = await router.previewDeposit(parsedAmt);
+
+				// For non-USDT tokens, first estimate USDT output from swap
+				let usdtAmount: bigint;
+				const isUsdt = inAddr.toLowerCase() === net.usdt_address?.toLowerCase();
+				if (isUsdt) {
+					usdtAmount = parsedAmt;
+				} else {
+					const weth = await router.weth();
+					const addrIn = tokenInIsNative ? weth : inAddr;
+					usdtAmount = await router.getAmountOut(addrIn, net.usdt_address, parsedAmt);
+				}
+
+				const [fee, netAmt] = await router.previewDeposit(usdtAmount);
 				previewFee = fee;
 				previewNet = netAmt;
 			} catch { previewFee = 0n; previewNet = 0n; }
@@ -479,15 +643,31 @@
 
 	let hasTaxEither = $derived(tokenInHasTax || tokenOutHasTax);
 
+	/** Format token amount for display — stablecoins get 2dp, others get 4-6dp */
+	function formatAmount(value: string, decimals: number, symbol: string): string {
+		if (!value) return '';
+		const num = parseFloat(value);
+		if (isNaN(num)) return value;
+		const isStable = ['USDT', 'USDC', 'BUSD', 'DAI', 'TUSD'].includes(symbol.toUpperCase());
+		if (isStable) return num.toFixed(2);
+		if (num >= 1000) return num.toFixed(2);
+		if (num >= 1) return num.toFixed(4);
+		return num.toFixed(6);
+	}
+
+	let displayAmountOut = $derived(formatAmount(amountOut, tokenOutDecimals, tokenOutSymbol));
+
 	let rate = $derived.by(() => {
 		if (!amountIn || !amountOut || parseFloat(amountIn) <= 0 || noLiquidity) return '';
-		return (parseFloat(amountOut) / parseFloat(amountIn)).toFixed(6);
+		const r = parseFloat(amountOut) / parseFloat(amountIn);
+		return formatAmount(String(r), tokenOutDecimals, tokenOutSymbol);
 	});
 
 	let minReceived = $derived.by(() => {
 		if (!amountOut || noLiquidity) return '';
 		const out = parseFloat(amountOut);
-		return (out * (1 - slippageBps / 10000)).toFixed(6);
+		const min = out * (1 - slippageBps / 10000);
+		return formatAmount(String(min), tokenOutDecimals, tokenOutSymbol);
 	});
 
 	let priceImpactPct = $derived.by(() => {
@@ -549,7 +729,9 @@
 
 				// Step 1: Save payment details to DB (session cookie authenticates)
 				withdrawStep = 1;
-				const preRes = await fetch('/api/withdrawals', {
+				// Use USDT-equivalent amounts (not input token amount)
+				const usdtGross = previewFee + previewNet; // gross in USDT
+				const preRes = await apiFetch('/api/withdrawals', {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({
@@ -557,7 +739,7 @@
 						wallet_address: userAddress,
 						token_in: tokenInAddr,
 						token_in_symbol: tokenInSymbol,
-						gross_amount: parsedIn.toString(),
+						gross_amount: usdtGross.toString(),
 						fee: previewFee.toString(),
 						net_amount: previewNet.toString(),
 						payment_method: paymentMethod,
@@ -608,7 +790,7 @@
 
 				// Verify on-chain and link to DB record (session cookie authenticates)
 				try {
-					await fetch('/api/withdrawals/verify', {
+					await apiFetch('/api/withdrawals/verify', {
 						method: 'POST',
 						headers: { 'Content-Type': 'application/json' },
 						body: JSON.stringify({
@@ -629,7 +811,7 @@
 					status: 'pending',
 					net_amount: previewNet.toString(),
 					fee: previewFee.toString(),
-					gross_amount: parsedIn.toString(),
+					gross_amount: usdtGross.toString(),
 					payment_method: paymentMethod,
 					payment_details: paymentDetails,
 					tx_hash: receipt?.hash,
@@ -658,6 +840,8 @@
 				}
 				const swapReceipt = await tx.wait();
 				swapStep = 3; // done
+				addFeedback({ message: `Swapped ${amountIn} ${tokenInSymbol} → ${displayAmountOut} ${tokenOutSymbol}`, type: 'success' });
+				showConfirmModal = false;
 
 				// Swap history indexed by daemon from on-chain events
 			}
@@ -677,31 +861,115 @@
 	}
 
 	// ── History (from Supabase + Realtime) ────────────────────
+	function safeBigInt(val: any): bigint {
+		try {
+			if (!val) return 0n;
+			const s = String(val).split('.')[0]; // strip decimals if any
+			return BigInt(s);
+		} catch { return 0n; }
+	}
+
 	async function loadHistory() {
 		if (!userAddress) return;
 		historyLoading = true;
 		try {
-			const { data } = await supabase
-				.from('withdrawal_requests')
-				.select('*')
-				.eq('wallet_address', userAddress.toLowerCase())
-				.order('created_at', { ascending: false })
-				.limit(50);
+			// Fetch from both DB and on-chain, merge results
+			const net = selectedNetwork;
 
-			withdrawals = (data || []).map((r: any) => ({
-				id: r.id, user: r.wallet_address, token: r.token_in,
-				grossAmount: BigInt(r.gross_amount || '0'),
-				fee: BigInt(r.fee || '0'),
-				netAmount: BigInt(r.net_amount || '0'),
-				createdAt: Math.floor(new Date(r.created_at).getTime() / 1000),
-				status: r.status === 'confirmed' ? 1 : r.status === 'cancelled' ? 2 : 0,
-				bankRef: '', withdraw_id: r.withdraw_id,
-				payment_method: r.payment_method,
-				payment_details: r.payment_details,
-				chain_id: r.chain_id, tx_hash: r.tx_hash,
-				db_status: r.status
-			}));
-		} catch { withdrawals = []; }
+			// 1. DB records (has payment details, status tracking)
+			let dbRecords: any[] = [];
+			try {
+				const res = await apiFetch(`/api/withdrawals?wallet=${userAddress.toLowerCase()}`);
+				if (res.ok) dbRecords = await res.json();
+			} catch {}
+
+			// 2. On-chain records (source of truth for actual withdrawals)
+			let chainRecords: any[] = [];
+			if (net?.trade_router_address) {
+				try {
+					const provider = networkProviders.get(net.chain_id);
+					if (provider) {
+						const router = new ethers.Contract(net.trade_router_address, TRADE_ROUTER_ABI, provider);
+						const [result] = await router.getUserWithdrawals(userAddress, 0, 50);
+						chainRecords = result.map((r: any, i: number) => ({
+							withdraw_id: i,
+							user: r.user?.toLowerCase(),
+							grossAmount: r.grossAmount,
+							fee: r.fee,
+							netAmount: r.netAmount,
+							createdAt: Number(r.createdAt),
+							status: Number(r.status), // 0=Pending, 1=Confirmed, 2=Cancelled
+							bankRef: r.bankRef,
+						}));
+					}
+				} catch {}
+			}
+
+			// 3. Merge: use on-chain as base, enrich with DB data (payment details, etc.)
+			const dbByWithdrawId = new Map(dbRecords.filter((r: any) => r.withdraw_id != null).map((r: any) => [r.withdraw_id, r]));
+			const merged: any[] = [];
+
+			for (const chain of chainRecords) {
+				const db = dbByWithdrawId.get(chain.withdraw_id);
+				merged.push({
+					id: db?.id || chain.withdraw_id,
+					user: chain.user,
+					token: db?.token_in || '',
+					grossAmount: chain.grossAmount,
+					fee: chain.fee,
+					netAmount: chain.netAmount,
+					createdAt: chain.createdAt,
+					status: chain.status,
+					bankRef: chain.bankRef,
+					withdraw_id: chain.withdraw_id,
+					payment_method: db?.payment_method || 'bank',
+					payment_details: db?.payment_details || {},
+					chain_id: db?.chain_id || net?.chain_id,
+					tx_hash: db?.tx_hash || '',
+					db_status: db?.status || (chain.status === 1 ? 'confirmed' : chain.status === 2 ? 'cancelled' : 'pending'),
+				});
+				dbByWithdrawId.delete(chain.withdraw_id);
+			}
+
+			// Add DB-only records (awaiting_trade — not yet on-chain)
+			for (const db of dbByWithdrawId.values()) {
+				merged.push({
+					id: db.id, user: db.wallet_address, token: db.token_in,
+					grossAmount: safeBigInt(db.gross_amount),
+					fee: safeBigInt(db.fee),
+					netAmount: safeBigInt(db.net_amount),
+					createdAt: Math.floor(new Date(db.created_at).getTime() / 1000),
+					status: db.status === 'confirmed' ? 1 : db.status === 'cancelled' ? 2 : 0,
+					bankRef: '', withdraw_id: db.withdraw_id,
+					payment_method: db.payment_method,
+					payment_details: db.payment_details || {},
+					chain_id: db.chain_id, tx_hash: db.tx_hash,
+					db_status: db.status,
+				});
+			}
+
+			// Also add DB records not matched by withdraw_id (awaiting_trade with no withdraw_id)
+			for (const db of dbRecords.filter((r: any) => r.withdraw_id == null || r.withdraw_id === 0)) {
+				merged.push({
+					id: db.id, user: db.wallet_address, token: db.token_in,
+					grossAmount: safeBigInt(db.gross_amount),
+					fee: safeBigInt(db.fee),
+					netAmount: safeBigInt(db.net_amount),
+					createdAt: Math.floor(new Date(db.created_at).getTime() / 1000),
+					status: 0,
+					bankRef: '', withdraw_id: 0,
+					payment_method: db.payment_method,
+					payment_details: db.payment_details || {},
+					chain_id: db.chain_id, tx_hash: db.tx_hash,
+					db_status: db.status,
+				});
+			}
+
+			withdrawals = merged;
+		} catch (e) {
+			console.error('loadHistory error:', e);
+			withdrawals = [];
+		}
 		finally { historyLoading = false; }
 	}
 
@@ -873,7 +1141,16 @@
 						bind:value={amountIn}
 					/>
 					{#if tokenInSymbol && tokenInBalance > 0n}
-						<button class="max-btn" onclick={() => { amountIn = ethers.formatUnits(tokenInBalance, tokenInDecimals); }}>
+						<button class="max-btn" onclick={() => {
+							if (tokenInIsNative) {
+								// Leave gas buffer for native token (~0.005 BNB/ETH)
+								const gasBuffer = ethers.parseUnits('0.005', 18);
+								const maxAmount = tokenInBalance > gasBuffer ? tokenInBalance - gasBuffer : 0n;
+								amountIn = ethers.formatUnits(maxAmount, tokenInDecimals);
+							} else {
+								amountIn = ethers.formatUnits(tokenInBalance, tokenInDecimals);
+							}
+						}}>
 							MAX
 						</button>
 					{/if}
@@ -924,7 +1201,7 @@
 							inputmode="decimal"
 							class="amount-input amount-input-out"
 							placeholder="0.00"
-							value={previewLoading ? '' : amountOut}
+							value={previewLoading ? '' : displayAmountOut}
 							readonly
 						/>
 						{#if previewLoading}
@@ -959,11 +1236,11 @@
 						<div class="bank-preview">
 							<div class="bank-preview-row">
 								<span>Platform fee (0.1%)</span>
-								<span>{ethers.formatUnits(previewFee, 6)} USDT</span>
+								<span>{parseFloat(ethers.formatUnits(previewFee, usdtDecimals)).toFixed(2)}</span>
 							</div>
 							<div class="bank-preview-row bank-preview-net">
 								<span>You receive</span>
-								<span>{ethers.formatUnits(previewNet, 6)} USDT</span>
+								<span>{parseFloat(ethers.formatUnits(previewNet, usdtDecimals)).toFixed(2)}</span>
 							</div>
 							{#if fiatEquivalent}
 								<div class="bank-preview-row bank-preview-fiat">
@@ -1148,7 +1425,7 @@
 							};
 						}}>
 							<div class="history-row-top">
-								<span class="history-amount">{ethers.formatUnits(w.grossAmount, 6)} USDT</span>
+								<span class="history-amount">${parseFloat(ethers.formatUnits(w.grossAmount, usdtDecimals)).toFixed(2)}</span>
 								<span class="history-status status-{sc}">{withdrawStatusLabel(w.status)}</span>
 							</div>
 							<div class="history-row-bottom">
@@ -1419,7 +1696,7 @@
 					{#if outputMode === 'token'}
 						<span class="confirm-label">You receive</span>
 						<div class="confirm-amount-row">
-							<span class="confirm-amount">{amountOut || '0'}</span>
+							<span class="confirm-amount">{displayAmountOut || '0'}</span>
 							<span class="confirm-symbol">{tokenOutSymbol}</span>
 						</div>
 						{#if tokenOutHasTax}
@@ -1501,6 +1778,7 @@
 {#if activeWithdrawal}
 	<WithdrawalStatusModal
 		withdrawal={activeWithdrawal}
+		{usdtDecimals}
 		onclose={() => { activeWithdrawal = null; }}
 		oncancel={async (id) => { await handleCancel(id); activeWithdrawal = null; }}
 	/>

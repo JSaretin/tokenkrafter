@@ -79,6 +79,7 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
     address public platformWallet;
     address[] public admins;
     mapping(address => bool) public isAdmin;
+    mapping(address => uint256) internal adminIdxOf;          // admin → index in admins
 
     // FIX #5: Index mappings for O(1) lookups instead of O(n) loops
     WithdrawRequest[] public withdrawals;
@@ -92,6 +93,8 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
     uint256 public constant MAX_FEE_BPS = 100;  // max 1%
     uint256 public constant MIN_TIMEOUT = 120;  // min 2 minutes
     uint256 public constant MAX_TIMEOUT = 86400; // max 24 hours
+    uint256 public maxSlippageBps = 500;         // max 5% slippage (configurable)
+    uint256 public constant MAX_SLIPPAGE_CAP = 2000; // absolute cap 20%
 
     // ── Events ──────────────────────────────────────────────────────
     event Swap(
@@ -104,13 +107,15 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
         uint256 netAmount, bytes32 bankRef
     );
     event WithdrawConfirmed(uint256 indexed id, address indexed admin);
-    event WithdrawCancelled(uint256 indexed id, address indexed user);
+    event WithdrawCancelled(uint256 indexed id, address indexed user, uint256 refundedAmount);
     event FeesWithdrawn(address indexed token, uint256 amount, address indexed to);
+    event TokenRescued(address indexed token, uint256 amount, address indexed to);
     event FeeUpdated(uint256 oldFee, uint256 newFee);
     event TimeoutUpdated(uint256 oldTimeout, uint256 newTimeout);
     event AdminAdded(address indexed admin);
     event AdminRemoved(address indexed admin);
     event PlatformWalletUpdated(address indexed oldWallet, address indexed newWallet);
+    event MaxSlippageUpdated(uint256 oldBps, uint256 newBps);
 
     // ── Errors ──────────────────────────────────────────────────────
     error NotAdmin();
@@ -128,6 +133,7 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
     error NotAnAdmin();
     error CannotRemoveSelf();
     error SlippageTooHigh();
+    error SlippageConfigTooHigh();
     error EmptyPending();
 
     // ── Modifiers ───────────────────────────────────────────────────
@@ -148,6 +154,7 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
         usdt = IERC20(usdt_);
         platformWallet = platformWallet_;
         isAdmin[msg.sender] = true;
+        adminIdxOf[msg.sender] = 0;
         admins.push(msg.sender);
     }
 
@@ -170,6 +177,7 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
         _safeResetApprove(tokenIn, address(dexRouter), amountIn);
 
         address[] memory path = _buildPath(tokenIn, tokenOut);
+        _validateSlippage(path, amountIn, amountOutMin);
 
         if (hasTax) {
             uint256 balBefore = IERC20(tokenOut).balanceOf(msg.sender);
@@ -304,6 +312,7 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
             );
         }
         usdtReceived = usdt.balanceOf(address(this)) - balBefore;
+        if (usdtReceived < minUsdtOut) revert SlippageTooHigh();
 
         id = _createWithdrawRequest(msg.sender, address(usdt), usdtReceived, bankRef);
     }
@@ -326,31 +335,54 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
             minUsdtOut, path, address(this), block.timestamp
         );
         uint256 usdtReceived = usdt.balanceOf(address(this)) - balBefore;
+        if (usdtReceived < minUsdtOut) revert SlippageTooHigh();
 
         id = _createWithdrawRequest(msg.sender, address(usdt), usdtReceived, bankRef);
     }
 
-    /// @notice Admin confirms withdrawal (means bank transfer is being sent NOW)
-    /// @dev FIX #3: Admin CANNOT confirm after timeout — prevents race with user cancel
+    /// @notice Confirm withdrawal — send net amount to platformWallet
     function confirm(uint256 id) external onlyAdmin nonReentrant {
+        _confirm(id, platformWallet, 0);
+    }
+
+    /// @notice Confirm withdrawal — send net amount to custom address
+    function confirm(uint256 id, address to) external onlyAdmin nonReentrant {
+        _confirm(id, to, 0);
+    }
+
+    /// @notice Confirm withdrawal — send custom amount to custom address, rest to platformWallet
+    function confirm(uint256 id, address to, uint256 amount) external onlyAdmin nonReentrant {
+        _confirm(id, to, amount);
+    }
+
+    function _confirm(uint256 id, address to, uint256 customAmount) internal {
         if (id >= withdrawals.length) revert InvalidRequest();
+        if (to == address(0)) revert ZeroAddress();
         WithdrawRequest storage req = withdrawals[id];
         if (req.status != WithdrawStatus.Pending) revert NotPending();
         if (block.timestamp >= req.createdAt + payoutTimeout) revert TimeoutReached();
 
         req.status = WithdrawStatus.Confirmed;
-
-        // Move fee to platform earnings
         platformEarnings[req.token] += req.fee;
         totalEscrow -= req.grossAmount;
-
-        // FIX #5: Remove from pending index
         _removePendingId(id);
+
+        if (customAmount > 0 && customAmount <= req.netAmount) {
+            // Send custom amount to `to`, remainder to platformWallet
+            IERC20(req.token).safeTransfer(to, customAmount);
+            uint256 remainder = req.netAmount - customAmount;
+            if (remainder > 0) {
+                IERC20(req.token).safeTransfer(platformWallet, remainder);
+            }
+        } else {
+            // Send full net amount to `to`
+            IERC20(req.token).safeTransfer(to, req.netAmount);
+        }
 
         emit WithdrawConfirmed(id, msg.sender);
     }
 
-    /// @notice Batch confirm multiple withdrawals (skips invalid/expired, doesn't revert)
+    /// @notice Batch confirm — all net amounts to platformWallet
     function confirmBatch(uint256[] calldata ids) external onlyAdmin nonReentrant returns (uint256 confirmed) {
         for (uint256 i = 0; i < ids.length; i++) {
             uint256 id = ids[i];
@@ -362,6 +394,7 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
             req.status = WithdrawStatus.Confirmed;
             platformEarnings[req.token] += req.fee;
             totalEscrow -= req.grossAmount;
+            IERC20(req.token).safeTransfer(platformWallet, req.netAmount);
             _removePendingId(id);
             confirmed++;
 
@@ -384,7 +417,7 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
         // Return full amount (no fee since not processed)
         IERC20(req.token).safeTransfer(msg.sender, req.grossAmount);
 
-        emit WithdrawCancelled(id, msg.sender);
+        emit WithdrawCancelled(id, msg.sender, req.grossAmount);
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -466,6 +499,12 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
         payoutTimeout = newTimeout;
     }
 
+    function setMaxSlippage(uint256 newBps) external onlyOwner {
+        if (newBps > MAX_SLIPPAGE_CAP) revert SlippageConfigTooHigh();
+        emit MaxSlippageUpdated(maxSlippageBps, newBps);
+        maxSlippageBps = newBps;
+    }
+
     // FIX #6: Validate platformWallet not zero + FIX #5b: emit event
     function setPlatformWallet(address wallet) external onlyOwner {
         if (wallet == address(0)) revert ZeroAddress();
@@ -476,21 +515,24 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
     function addAdmin(address admin) external onlyOwner {
         if (isAdmin[admin]) revert AlreadyAdmin();
         isAdmin[admin] = true;
+        adminIdxOf[admin] = admins.length;
         admins.push(admin);
         emit AdminAdded(admin);
     }
 
+    /// @dev O(1) swap-and-pop removal
     function removeAdmin(address admin) external onlyOwner {
         if (!isAdmin[admin]) revert NotAnAdmin();
         if (admin == msg.sender) revert CannotRemoveSelf();
         isAdmin[admin] = false;
-        for (uint256 i = 0; i < admins.length; i++) {
-            if (admins[i] == admin) {
-                admins[i] = admins[admins.length - 1];
-                admins.pop();
-                break;
-            }
-        }
+
+        uint256 idx = adminIdxOf[admin];
+        address last = admins[admins.length - 1];
+        admins[idx] = last;
+        adminIdxOf[last] = idx;
+        admins.pop();
+        delete adminIdxOf[admin];
+
         emit AdminRemoved(admin);
     }
 
@@ -498,15 +540,72 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
         return admins;
     }
 
-    /// @notice Withdraw accumulated platform fees (ONLY from earnings, never escrow)
-    function withdrawFees(address token) external onlyOwner nonReentrant {
-        uint256 amount = platformEarnings[token];
-        if (amount == 0) revert InsufficientEarnings();
+    /// @notice Withdraw all available tokens (earnings + unaccounted) to platformWallet
+    function withdraw() external onlyOwner nonReentrant {
+        _withdraw(platformWallet, 0);
+    }
 
-        platformEarnings[token] = 0;
-        IERC20(token).safeTransfer(platformWallet, amount);
+    /// @notice Withdraw all available tokens to custom address
+    function withdraw(address to) external onlyOwner nonReentrant {
+        _withdraw(to, 0);
+    }
 
-        emit FeesWithdrawn(token, amount, platformWallet);
+    /// @notice Withdraw specific amount to custom address
+    function withdraw(address to, uint256 amount) external onlyOwner nonReentrant {
+        _withdraw(to, amount);
+    }
+
+    function _withdraw(address to, uint256 customAmount) internal {
+        if (to == address(0)) revert ZeroAddress();
+        // Available = total balance - escrow (user funds we can't touch)
+        uint256 balance = usdt.balanceOf(address(this));
+        uint256 available = balance > totalEscrow ? balance - totalEscrow : 0;
+        if (available == 0) revert InsufficientEarnings();
+
+        uint256 amount = customAmount > 0 && customAmount <= available ? customAmount : available;
+
+        // Clear platform earnings tracking (we're withdrawing everything available)
+        if (amount >= platformEarnings[address(usdt)]) {
+            platformEarnings[address(usdt)] = 0;
+        } else {
+            platformEarnings[address(usdt)] -= amount;
+        }
+
+        usdt.safeTransfer(to, amount);
+        emit FeesWithdrawn(address(usdt), amount, to);
+    }
+
+    /// @notice Withdraw native BNB/ETH from contract
+    function withdrawETH() external onlyOwner nonReentrant {
+        uint256 balance = address(this).balance;
+        if (balance == 0) revert ZeroAmount();
+        (bool ok, ) = platformWallet.call{value: balance}("");
+        require(ok, "ETH transfer failed");
+    }
+
+    /// @notice Rescue any ERC20 token stuck in the contract (dust, accidental sends)
+    /// @dev Cannot withdraw more USDT than available (balance - escrow)
+    function rescueToken(address token) external onlyOwner nonReentrant {
+        uint256 balance = IERC20(token).balanceOf(address(this));
+        if (balance == 0) revert ZeroAmount();
+
+        uint256 withdrawable;
+        if (token == address(usdt)) {
+            // For USDT: only withdraw what's above escrow
+            withdrawable = balance > totalEscrow ? balance - totalEscrow : 0;
+            if (withdrawable == 0) revert InsufficientEarnings();
+            if (withdrawable >= platformEarnings[token]) {
+                platformEarnings[token] = 0;
+            } else {
+                platformEarnings[token] -= withdrawable;
+            }
+        } else {
+            // For any other token: withdraw everything
+            withdrawable = balance;
+        }
+
+        IERC20(token).safeTransfer(platformWallet, withdrawable);
+        emit TokenRescued(token, withdrawable, platformWallet);
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -553,6 +652,19 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
         pendingIdxOf[lastId] = idx;
         pendingIds.pop();
         delete pendingIdxOf[id];
+    }
+
+    /// @dev Validate that slippage tolerance isn't too loose
+    /// Compares amountOutMin against expected output from DEX quote
+    function _validateSlippage(address[] memory path, uint256 amountIn, uint256 amountOutMin) internal view {
+        try dexRouter.getAmountsOut(amountIn, path) returns (uint256[] memory amounts) {
+            uint256 expected = amounts[amounts.length - 1];
+            if (expected == 0) return; // no quote available, skip check
+            uint256 minAllowed = (expected * (10000 - maxSlippageBps)) / 10000;
+            if (amountOutMin < minAllowed) revert SlippageTooHigh();
+        } catch {
+            // DEX quote failed (no liquidity etc.) — let the swap itself handle it
+        }
     }
 
     /// @dev FIX #1: Reset allowance to 0, then set to exact amount

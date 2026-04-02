@@ -259,6 +259,11 @@ create table if not exists withdrawal_requests (
 create index if not exists idx_withdrawals_wallet on withdrawal_requests (wallet_address);
 create index if not exists idx_withdrawals_status on withdrawal_requests (status);
 create index if not exists idx_withdrawals_created on withdrawal_requests (created_at desc);
+
+-- Prevent duplicate on-chain withdrawal IDs (awaiting_trade records have withdraw_id=0 or null, so excluded)
+create unique index if not exists idx_withdrawals_unique_onchain
+  on withdrawal_requests (withdraw_id, chain_id)
+  where withdraw_id is not null and withdraw_id > 0;
 alter table withdrawal_requests enable row level security;
 select create_policy_if_not_exists('withdrawal_requests', 'Anon read', 'select');
 

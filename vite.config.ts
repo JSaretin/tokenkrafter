@@ -6,6 +6,9 @@ export default defineConfig({
 	plugins: [tailwindcss(), sveltekit()],
 	server: {
 		host: true,
-		allowedHosts: 'all'
+		allowedHosts: 'all',
+		watch: {
+			ignored: ['**/solidty-contracts/**', '**/daemon-state*.json']
+		}
 	}
 });

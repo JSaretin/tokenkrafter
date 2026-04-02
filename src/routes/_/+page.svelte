@@ -8,6 +8,7 @@
 	import FactoryTab from './lib/FactoryTab.svelte';
 	import LaunchpadTab from './lib/LaunchpadTab.svelte';
 	import WithdrawalsTab from './lib/WithdrawalsTab.svelte';
+	import TradeRouterTab from './lib/TradeRouterTab.svelte';
 	import ConfigTab from './lib/ConfigTab.svelte';
 
 	let getSigner: () => ethers.Signer | null = getContext('signer');
@@ -23,7 +24,7 @@
 	let selectedNetworkIdx = $state(0);
 	let selectedNetwork = $derived(supportedNetworks[selectedNetworkIdx]);
 
-	type TabKey = 'dashboard' | 'factory' | 'launchpad' | 'withdrawals' | 'config';
+	type TabKey = 'dashboard' | 'factory' | 'launchpad' | 'withdrawals' | 'trade-router' | 'config';
 	let activeTab = $state<TabKey>('dashboard');
 
 	// Admin auth — wallet signature verified against ADMIN_WALLETS env
@@ -49,6 +50,7 @@
 		{ key: 'factory', i18n: 'admin.tabFees', label: 'Token Factory', icon: '⬡' },
 		{ key: 'launchpad', i18n: 'admin.tabLaunchpad', label: 'Launchpad', icon: '◉' },
 		{ key: 'withdrawals', i18n: 'admin.tabWithdrawals', label: 'Withdrawals', icon: '₦' },
+		{ key: 'trade-router', i18n: 'admin.tabTradeRouter', label: 'Trade Router', icon: '⇄' },
 		{ key: 'config', i18n: 'admin.tabConfig', label: 'Config', icon: '⚙' }
 	];
 
@@ -197,6 +199,8 @@
 				<LaunchpadTab selectedNetwork={selectedNetwork} />
 			{:else if activeTab === 'withdrawals'}
 				<WithdrawalsTab />
+			{:else if activeTab === 'trade-router' && selectedNetwork}
+				<TradeRouterTab selectedNetwork={selectedNetwork} />
 			{:else if activeTab === 'config'}
 				<ConfigTab />
 			{/if}

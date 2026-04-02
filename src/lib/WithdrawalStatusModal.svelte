@@ -5,11 +5,13 @@
 	let {
 		withdrawal,
 		onclose,
-		oncancel
+		oncancel,
+		usdtDecimals = 18
 	}: {
 		withdrawal: any;
 		onclose: () => void;
 		oncancel?: (id: number) => void;
+		usdtDecimals?: number;
 	} = $props();
 
 	let tickNow = $state(Date.now());
@@ -70,7 +72,7 @@
 	let remaining = $derived(Math.max(0, timeoutSec - elapsed));
 	let progressPct = $derived(Math.min(100, (elapsed / timeoutSec) * 100));
 	let canCancel = $derived(liveStatus === 'pending' && remaining <= 0);
-	let usdtAmount = $derived(parseFloat(withdrawal?.gross_amount || '0') / 1e6);
+	let usdtAmount = $derived(parseFloat(withdrawal?.gross_amount || '0') / (10 ** usdtDecimals));
 	let ngnAmount = $derived(ngnRate > 0 && usdtAmount > 0 ? usdtAmount * ngnRate : 0);
 	let details = $derived(withdrawal?.payment_details || {});
 
@@ -129,7 +131,7 @@
 			{/if}
 
 			<!-- Amount -->
-			<div class="status-amount">${usdtAmount.toFixed(2)} USDT</div>
+			<div class="status-amount">${usdtAmount.toFixed(2)}</div>
 			{#if ngnAmount > 0}
 				<div class="status-fiat">≈ NGN {ngnAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
 			{/if}

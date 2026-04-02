@@ -1,6 +1,6 @@
 /**
  * Supabase Realtime subscription manager
- * Provides reactive stores for live platform data
+ * Single channel, chained .on() handlers, one .subscribe()
  */
 import { supabase } from '$lib/supabaseClient';
 import type { RealtimeChannel } from '@supabase/supabase-js';
@@ -31,26 +31,17 @@ export interface LiveLaunchUpdate {
 }
 
 class RealtimeStore {
-	// Live transaction feed (most recent first)
 	transactions: LiveTransaction[] = $state([]);
-
-	// Launch updates (keyed by address)
 	launchUpdates: Map<string, LiveLaunchUpdate> = $state(new Map());
-
-	// Connection state
 	connected = $state(false);
 
-	// Stats
-	activeBuyers = $state(0);
-	usersOnline = $state(0);
-
-	private channels: RealtimeChannel[] = [];
+	private channel: RealtimeChannel | null = null;
 	private maxTransactions = 50;
 
 	async connect() {
-		if (this.connected) return;
+		if (this.connected || this.channel) return;
 
-		// Load initial recent transactions
+		// Load initial data
 		try {
 			const { data } = await supabase
 				.from('recent_transactions')
@@ -60,9 +51,9 @@ class RealtimeStore {
 			if (data) this.transactions = data;
 		} catch {}
 
-		// Subscribe to new transactions
-		const txChannel = supabase
-			.channel('public:recent_transactions')
+		// Single channel, chained handlers, one subscribe
+		this.channel = supabase
+			.channel('platform-realtime')
 			.on(
 				'postgres_changes',
 				{ event: 'INSERT', schema: 'public', table: 'recent_transactions' },
@@ -71,20 +62,18 @@ class RealtimeStore {
 					this.transactions = [tx, ...this.transactions].slice(0, this.maxTransactions);
 				}
 			)
-			.subscribe((status) => {
-				this.connected = status === 'SUBSCRIBED';
-			});
-
-		this.channels.push(txChannel);
-
-		// Subscribe to launch updates (state, raised, price changes)
-		const launchChannel = supabase
-			.channel('public:launches')
 			.on(
 				'postgres_changes',
 				{ event: 'UPDATE', schema: 'public', table: 'launches' },
 				(payload) => {
 					const row = payload.new as any;
+					const existing = this.launchUpdates.get(row.address);
+					if (existing &&
+						existing.state === row.state &&
+						existing.total_base_raised === row.total_base_raised &&
+						existing.tokens_sold === row.tokens_sold &&
+						existing.current_price === row.current_price) return;
+
 					const update: LiveLaunchUpdate = {
 						address: row.address,
 						chain_id: row.chain_id,
@@ -98,32 +87,16 @@ class RealtimeStore {
 					this.launchUpdates = newMap;
 				}
 			)
-			.subscribe();
-
-		this.channels.push(launchChannel);
-
-		// Subscribe to visitor count changes
-		const visitorChannel = supabase
-			.channel('public:site_visitors')
-			.on(
-				'postgres_changes',
-				{ event: 'UPDATE', schema: 'public', table: 'site_visitors' },
-				(payload) => {
-					const row = payload.new as any;
-					this.usersOnline = row.total_visitors || 0;
-					this.activeBuyers = row.investing || 0;
-				}
-			)
-			.subscribe();
-
-		this.channels.push(visitorChannel);
+			.subscribe((status) => {
+				this.connected = status === 'SUBSCRIBED';
+			});
 	}
 
 	disconnect() {
-		for (const ch of this.channels) {
-			supabase.removeChannel(ch);
+		if (this.channel) {
+			supabase.removeChannel(this.channel);
+			this.channel = null;
 		}
-		this.channels = [];
 		this.connected = false;
 	}
 }

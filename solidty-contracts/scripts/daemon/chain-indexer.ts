@@ -130,17 +130,58 @@ async function apiPatch(endpoint: string, body: any): Promise<boolean> {
 	}
 }
 
-// ── Load deployment addresses ──────────────────────────────
-function loadDeployment(): Record<string, string> {
+// ── Network config from backend ──────────────────────────────
+interface NetworkConfig {
+	chain_id: number;
+	name: string;
+	platform_address: string;   // TokenFactory
+	launchpad_address: string;  // LaunchpadFactory
+	router_address: string;     // PlatformRouter
+	trade_router_address: string;
+	dex_router: string;
+	usdt_address: string;
+	usdc_address?: string;
+}
+
+async function fetchNetworkConfig(chainId: number): Promise<NetworkConfig> {
+	// Try backend first
+	try {
+		const res = await fetch(`${API_BASE}/api/config?keys=networks`);
+		if (res.ok) {
+			const data = await res.json();
+			const networks: NetworkConfig[] = data.networks || [];
+			const match = networks.find(n => n.chain_id === chainId);
+			if (match) {
+				console.log(`   Config loaded from backend for chain ${chainId}`);
+				return match;
+			}
+		}
+	} catch (e: any) {
+		console.warn(`   ⚠️ Backend config fetch failed: ${e.message?.slice(0, 60)}`);
+	}
+
+	// Fall back to local deployment file
 	const deployFile = process.env.DEPLOYMENT_FILE
 		|| path.resolve(__dirname, '../../deployments/localhost.json');
 
 	if (!fs.existsSync(deployFile)) {
-		console.error(`❌ Deployment file not found: ${deployFile}`);
+		console.error(`❌ No backend config and no deployment file at: ${deployFile}`);
 		process.exit(1);
 	}
 
-	return JSON.parse(fs.readFileSync(deployFile, 'utf-8'));
+	console.log(`   Config loaded from file: ${deployFile}`);
+	const d = JSON.parse(fs.readFileSync(deployFile, 'utf-8'));
+	return {
+		chain_id: chainId,
+		name: 'Unknown',
+		platform_address: d.TokenFactory,
+		launchpad_address: d.LaunchpadFactory,
+		router_address: d.PlatformRouter || '',
+		trade_router_address: d.TradeRouter || '',
+		dex_router: d.DEXRouter || '',
+		usdt_address: d.USDT || '',
+		usdc_address: d.USDC || '',
+	};
 }
 
 // ── Token indexer ─────────────────────────────────────────
@@ -448,11 +489,57 @@ async function syncWithdrawals(
 
 		if (synced > 0) console.log(`  💰 Synced ${synced} withdrawal status(es)`);
 	} catch {}
+
+	// Part 3: Retry awaiting_trade records (frontend verify failed)
+	// Only run if there are actually orphaned records
+	try {
+		const res = await fetch(`${API_BASE}/api/withdrawals?status=awaiting_trade`);
+		if (!res.ok) return;
+		let awaiting = await res.json();
+		if (!awaiting?.length) return;
+
+		// Track which DB record IDs we've already matched to avoid duplicates
+		const matchedDbIds = new Set<number>();
+		let matched = 0;
+
+		for (let i = 0; i < totalOnChain && awaiting.length > 0; i++) {
+			try {
+				const req = await tradeRouter.getWithdrawal(i);
+				if (Number(req.status) !== 0) continue; // only pending on-chain
+
+				const user = req.user.toLowerCase();
+				const hasMatch = awaiting.some((w: any) =>
+					w.wallet_address?.toLowerCase() === user && !matchedDbIds.has(w.id)
+				);
+				if (!hasMatch) continue;
+
+				const ok = await apiPost('/api/withdrawals/verify', {
+					withdraw_id: i,
+					chain_id: chainId,
+					wallet_address: user,
+					gross_amount: req.grossAmount.toString(),
+					fee: req.fee.toString(),
+					net_amount: req.netAmount.toString(),
+					status: Number(req.status),
+					bank_ref: req.bankRef,
+				});
+
+				if (ok) {
+					matched++;
+					// Remove matched record from awaiting list
+					const matchedRecord = awaiting.find((w: any) => w.wallet_address?.toLowerCase() === user);
+					if (matchedRecord) matchedDbIds.add(matchedRecord.id);
+					awaiting = awaiting.filter((w: any) => !matchedDbIds.has(w.id));
+				}
+			} catch {}
+		}
+
+		if (matched > 0) console.log(`  🔗 Matched ${matched} awaiting_trade record(s)`);
+	} catch {}
 }
 
 // ── Main loop ──────────────────────────────────────────────
 async function main() {
-	const deployment = loadDeployment();
 	const [signer] = await ethers.getSigners();
 	const provider = signer.provider!;
 	const network = await provider.getNetwork();
@@ -462,17 +549,28 @@ async function main() {
 	console.log(`   API: ${API_BASE}`);
 	console.log(`   Poll interval: ${POLL_INTERVAL / 1000}s`);
 	console.log(`   State file: ${STATE_FILE}`);
-	console.log(`   TokenFactory: ${deployment.TokenFactory}`);
-	console.log(`   LaunchpadFactory: ${deployment.LaunchpadFactory}`);
-	if (deployment.TradeRouter) console.log(`   TradeRouter: ${deployment.TradeRouter}`);
 
-	const tokenFactory = new ethers.Contract(deployment.TokenFactory, TOKEN_FACTORY_ABI, provider);
-	const launchpadFactory = new ethers.Contract(deployment.LaunchpadFactory, LAUNCHPAD_FACTORY_ABI, provider);
-	const tradeRouter = deployment.TradeRouter
-		? new ethers.Contract(deployment.TradeRouter, TRADE_ROUTER_ABI, provider)
+	const config = await fetchNetworkConfig(chainId);
+	console.log(`   Network: ${config.name}`);
+	console.log(`   TokenFactory: ${config.platform_address}`);
+	console.log(`   LaunchpadFactory: ${config.launchpad_address}`);
+	if (config.trade_router_address) console.log(`   TradeRouter: ${config.trade_router_address}`);
+
+	const tokenFactory = new ethers.Contract(config.platform_address, TOKEN_FACTORY_ABI, provider);
+	const launchpadFactory = new ethers.Contract(config.launchpad_address, LAUNCHPAD_FACTORY_ABI, provider);
+	const tradeRouter = config.trade_router_address
+		? new ethers.Contract(config.trade_router_address, TRADE_ROUTER_ABI, provider)
 		: null;
 
-	const usdtDecimals = 6;
+	// Fetch USDT decimals from chain
+	let usdtDecimals = 18;
+	if (config.usdt_address) {
+		try {
+			const usdtContract = new ethers.Contract(config.usdt_address, ['function decimals() view returns (uint8)'], provider);
+			usdtDecimals = Number(await usdtContract.decimals());
+		} catch {}
+	}
+	console.log(`   USDT decimals: ${usdtDecimals}`);
 
 	const allState = loadState();
 	const cs = getChainState(allState, chainId);

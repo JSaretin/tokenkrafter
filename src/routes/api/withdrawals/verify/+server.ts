@@ -3,46 +3,64 @@ import type { RequestHandler } from './$types';
 import { supabaseAdmin } from '$lib/supabaseServer';
 import { ethers } from 'ethers';
 import { decrypt } from '$lib/crypto';
+import { env } from '$env/dynamic/private';
 
 const TRADE_ROUTER_ABI = [
 	'event WithdrawRequested(uint256 indexed id, address indexed user, address token, uint256 grossAmount, uint256 fee, uint256 netAmount, bytes32 bankRef)'
 ];
 
-// RPC endpoints per chain (server-side)
-const RPC_MAP: Record<number, string> = {
-	31337: 'http://127.0.0.1:8545',
-	56: 'https://bsc-dataseed.binance.org',
-	1: 'https://eth.llamarpc.com'
-};
+/** Get network config from DB */
+async function getNetworkConfig(chainId: number): Promise<{ rpc: string; trade_router_address: string } | null> {
+	const { data } = await supabaseAdmin
+		.from('platform_config')
+		.select('value')
+		.eq('key', 'networks')
+		.single();
 
-// Trade router addresses per chain
-const TRADE_ROUTER_MAP: Record<number, string> = {
-	31337: '0x09635F643e140090A9A8Dcd712eD6285858ceBef'
-};
+	if (!data?.value) return null;
+	const networks = data.value as any[];
+	const net = networks.find((n: any) => n.chain_id === chainId);
+	if (!net?.rpc || !net?.trade_router_address) return null;
+	return { rpc: net.rpc, trade_router_address: net.trade_router_address };
+}
 
 // POST /api/withdrawals/verify — verify on-chain trade and link to DB record
-// Auth: wallet session (hooks.server.ts)
+// Auth: wallet session OR SYNC_SECRET (daemon)
 export const POST: RequestHandler = async ({ request, locals }) => {
-	if (!locals.wallet) return error(401, 'Wallet authentication required');
-
 	const body = await request.json();
-	const { tx_hash, chain_id } = body;
-	const wallet_address = locals.wallet;
 
-	if (!tx_hash || !chain_id) {
-		return error(400, 'tx_hash and chain_id required');
+	// Auth: session cookie (frontend) or SYNC_SECRET (daemon)
+	const authHeader = request.headers.get('authorization');
+	const isDaemon = env.SYNC_SECRET && authHeader === `Bearer ${env.SYNC_SECRET}`;
+	const wallet_address = locals.wallet || (isDaemon ? body.wallet_address?.toLowerCase() : null);
+
+	if (!wallet_address && !isDaemon) {
+		return error(401, 'Authentication required');
 	}
 
-	const rpc = RPC_MAP[chain_id];
-	if (!rpc) return error(400, `Unsupported chain: ${chain_id}`);
+	const { tx_hash, chain_id } = body;
 
-	const tradeRouterAddr = TRADE_ROUTER_MAP[chain_id];
-	if (!tradeRouterAddr) return error(400, `No TradeRouter on chain ${chain_id}`);
+	if (!chain_id) {
+		return error(400, 'chain_id required');
+	}
+
+	// Get network config from DB
+	const netConfig = await getNetworkConfig(chain_id);
+	if (!netConfig) return error(400, `No network config for chain ${chain_id}`);
+
+	// If daemon sends pre-fetched data (no tx_hash), use it directly for bankRef matching
+	if (isDaemon && !tx_hash && body.withdraw_id !== undefined) {
+		return await handleDaemonVerify(body, chain_id);
+	}
+
+	if (!tx_hash) {
+		return error(400, 'tx_hash required');
+	}
 
 	// 1. Fetch transaction receipt from chain
 	let receipt;
 	try {
-		const provider = new ethers.JsonRpcProvider(rpc);
+		const provider = new ethers.JsonRpcProvider(netConfig.rpc);
 		receipt = await provider.getTransactionReceipt(tx_hash);
 		if (!receipt) return error(404, 'Transaction not found');
 		if (receipt.status !== 1) return error(400, 'Transaction failed on-chain');
@@ -50,12 +68,12 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		return error(502, `Failed to fetch receipt: ${e.message}`);
 	}
 
-	// 2. Parse WithdrawRequested event from the TradeRouter contract
+	// 2. Parse WithdrawRequested event
 	const iface = new ethers.Interface(TRADE_ROUTER_ABI);
 	let withdrawEvent: any = null;
 
 	for (const log of receipt.logs) {
-		if (log.address.toLowerCase() !== tradeRouterAddr.toLowerCase()) continue;
+		if (log.address.toLowerCase() !== netConfig.trade_router_address.toLowerCase()) continue;
 		try {
 			const parsed = iface.parseLog({ topics: [...log.topics], data: log.data });
 			if (parsed?.name === 'WithdrawRequested') {
@@ -69,46 +87,92 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		return error(400, 'No WithdrawRequested event found in transaction');
 	}
 
-	// 3. Extract verified data from event
-	const onChainWithdrawId = Number(withdrawEvent.args[0]); // id (indexed)
-	const onChainUser = (withdrawEvent.args[1] as string).toLowerCase(); // user (indexed)
+	// 3. Extract verified data
+	const onChainWithdrawId = Number(withdrawEvent.args[0]);
+	const onChainUser = (withdrawEvent.args[1] as string).toLowerCase();
 	const onChainToken = (withdrawEvent.args[2] as string).toLowerCase();
 	const onChainGross = withdrawEvent.args[3].toString();
 	const onChainFee = withdrawEvent.args[4].toString();
 	const onChainNet = withdrawEvent.args[5].toString();
-	const onChainBankRef = withdrawEvent.args[6] as string; // bytes32
+	const onChainBankRef = withdrawEvent.args[6] as string;
 
-	// 4. Verify wallet matches
-	const claimedWallet = (wallet_address || '').toLowerCase();
-	if (claimedWallet && claimedWallet !== onChainUser) {
+	// 4. Verify wallet matches (skip for daemon)
+	if (wallet_address && wallet_address !== onChainUser) {
 		return error(403, 'Wallet address does not match on-chain depositor');
 	}
 
-	// 5. Find matching DB record by bankRef (saved during signing step)
+	// 5. Find and update matching DB record
+	return await matchAndUpdate(onChainUser, onChainBankRef, {
+		withdraw_id: onChainWithdrawId,
+		tx_hash,
+		gross_amount: onChainGross,
+		fee: onChainFee,
+		net_amount: onChainNet,
+		token_in: onChainToken,
+	});
+};
+
+/** Handle daemon verify — matches by wallet + bankRef from on-chain data */
+async function handleDaemonVerify(body: any, chainId: number) {
+	const { withdraw_id, wallet_address, gross_amount, fee, net_amount, bank_ref, status } = body;
+
+	// If already confirmed/cancelled on-chain, just sync the status
+	if (status === 1 || status === 2) {
+		const newStatus = status === 1 ? 'confirmed' : 'cancelled';
+		const { data: existing } = await supabaseAdmin
+			.from('withdrawal_requests')
+			.select('id, status')
+			.eq('withdraw_id', withdraw_id)
+			.eq('chain_id', chainId)
+			.single();
+
+		if (existing && existing.status !== newStatus) {
+			await supabaseAdmin
+				.from('withdrawal_requests')
+				.update({ status: newStatus, updated_at: new Date().toISOString() })
+				.eq('id', existing.id);
+		}
+		return json({ ok: true, action: 'status_synced' });
+	}
+
+	// Try to match awaiting_trade record by bankRef
+	if (bank_ref) {
+		return await matchAndUpdate(wallet_address, bank_ref, {
+			withdraw_id,
+			gross_amount,
+			fee,
+			net_amount,
+		});
+	}
+
+	return json({ ok: true, action: 'skipped' });
+}
+
+/** Match an awaiting_trade record by wallet + bankRef, then update to pending */
+async function matchAndUpdate(
+	walletAddress: string,
+	bankRef: string,
+	updateData: Record<string, any>
+) {
 	const { data: dbRecords } = await supabaseAdmin
 		.from('withdrawal_requests')
 		.select('*')
 		.eq('status', 'awaiting_trade')
-		.eq('wallet_address', onChainUser);
+		.eq('wallet_address', walletAddress.toLowerCase());
 
 	if (!dbRecords || dbRecords.length === 0) {
 		return error(404, 'No awaiting withdrawal found for this wallet');
 	}
 
-	// Match by bankRef hash
-	// The frontend computed bankRef = keccak256(bankCode:account:holder:walletAddress)
-	// The contract stored the same bankRef
-	// Find the DB record whose payment_details hash matches
 	let matchedRecord: any = null;
 
 	for (const record of dbRecords) {
 		let details = record.payment_details || {};
-		// Decrypt if encrypted (string = encrypted, object = legacy plaintext)
 		if (typeof details === 'string') {
 			try { details = await decrypt(details); } catch { continue; }
 		}
-		let computedRef: string;
 
+		let computedRef: string;
 		if (record.payment_method === 'bank') {
 			computedRef = ethers.id(`bank:${details.bank_code}:${details.account}:${details.holder}`);
 		} else if (record.payment_method === 'paypal') {
@@ -119,26 +183,20 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			continue;
 		}
 
-		if (computedRef === onChainBankRef) {
+		if (computedRef === bankRef) {
 			matchedRecord = record;
 			break;
 		}
 	}
 
 	if (!matchedRecord) {
-		return error(404, 'No matching bank details found for this transaction. bankRef mismatch.');
+		return error(404, 'No matching bank details found. bankRef mismatch.');
 	}
 
-	// 6. Update DB record with verified on-chain data
 	const { data: updated, error: dbErr } = await supabaseAdmin
 		.from('withdrawal_requests')
 		.update({
-			withdraw_id: onChainWithdrawId,
-			tx_hash,
-			gross_amount: onChainGross,
-			fee: onChainFee,
-			net_amount: onChainNet,
-			token_in: onChainToken,
+			...updateData,
 			status: 'pending',
 			updated_at: new Date().toISOString()
 		})
@@ -148,16 +206,5 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 	if (dbErr) return error(500, dbErr.message);
 
-	return json({
-		success: true,
-		withdrawal: updated,
-		verified: {
-			withdraw_id: onChainWithdrawId,
-			user: onChainUser,
-			gross_amount: onChainGross,
-			fee: onChainFee,
-			net_amount: onChainNet,
-			bank_ref: onChainBankRef
-		}
-	});
-};
+	return json({ success: true, withdrawal: updated });
+}
