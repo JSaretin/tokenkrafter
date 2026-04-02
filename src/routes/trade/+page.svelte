@@ -4,11 +4,12 @@
 	import { page } from '$app/state';
 	import { supabase } from '$lib/supabaseClient';
 	import type { SupportedNetwork } from '$lib/structure';
-	import { ERC20_ABI, ZERO_ADDRESS, FACTORY_V2_ABI, PAIR_ABI } from '$lib/tokenCrafter';
+	import { ERC20_ABI, ZERO_ADDRESS } from '$lib/tokenCrafter';
 	import { TRADE_ROUTER_ABI, withdrawStatusLabel, withdrawStatusColor } from '$lib/tradeRouter';
 	import WithdrawalStatusModal from '$lib/WithdrawalStatusModal.svelte';
 	import { formatUsdt } from '$lib/launchpad';
 	import { apiFetch } from '$lib/apiFetch';
+	import { queryTradeLens, getInstantQuote, getWeth, isCacheLoaded, type TaxInfo } from '$lib/tradeLens';
 
 	let getSigner: () => ethers.Signer | null = getContext('signer');
 	let getUserAddress: () => string | null = getContext('userAddress');
@@ -53,6 +54,10 @@
 	let tokenOutTaxSell = $state(0);
 	let tokenOutHasTax = $state(false);
 	let tokenOutLoading = $state(false);
+
+	// Token tax detection (from TradeLens simulation)
+	let tokenInTax = $state<TaxInfo | null>(null);
+	let tokenOutTax = $state<TaxInfo | null>(null);
 
 	// Amounts
 	let amountIn = $state('');
@@ -149,25 +154,101 @@
 		if (!selectedNetwork) return [];
 		const tokens: { address: string; symbol: string; name: string; decimals: number; isNative?: boolean; logo_url?: string }[] = [];
 		tokens.push({ address: ZERO_ADDRESS, symbol: selectedNetwork.native_coin, name: selectedNetwork.native_coin, decimals: 18, isNative: true });
-		if (selectedNetwork.usdt_address) tokens.push({ address: selectedNetwork.usdt_address, symbol: 'USDT', name: 'Tether USD', decimals: 6 });
-		if (selectedNetwork.usdc_address) tokens.push({ address: selectedNetwork.usdc_address, symbol: 'USDC', name: 'USD Coin', decimals: 6 });
+		if (selectedNetwork.usdt_address) tokens.push({ address: selectedNetwork.usdt_address, symbol: 'USDT', name: 'Tether USD', decimals: 18 });
+		if (selectedNetwork.usdc_address) tokens.push({ address: selectedNetwork.usdc_address, symbol: 'USDC', name: 'USD Coin', decimals: 18 });
 		return tokens;
 	});
 
+	// ── Imported tokens (persisted to localStorage) ──────────
+	type ImportedToken = { address: string; symbol: string; name: string; decimals: number; chainId: number };
+	let importedTokens: ImportedToken[] = $state([]);
+
+	// Load from localStorage on mount
+	function loadImportedTokens() {
+		try {
+			const stored = localStorage.getItem('importedTokens');
+			if (stored) importedTokens = JSON.parse(stored);
+		} catch {}
+	}
+
+	function saveImportedToken(token: ImportedToken) {
+		if (importedTokens.find(t => t.address.toLowerCase() === token.address.toLowerCase() && t.chainId === token.chainId)) return;
+		importedTokens = [...importedTokens, token];
+		try { localStorage.setItem('importedTokens', JSON.stringify(importedTokens)); } catch {}
+		// Refresh prices to include the new token
+		refreshPrices();
+	}
+
+	function removeImportedToken(address: string) {
+		importedTokens = importedTokens.filter(t => t.address.toLowerCase() !== address.toLowerCase());
+		try { localStorage.setItem('importedTokens', JSON.stringify(importedTokens)); } catch {}
+	}
+
+	// ── Auto-detect pasted address ────────────────────────────
+	let pastedTokenMeta = $state<{ address: string; symbol: string; name: string; decimals: number } | null>(null);
+	let pastedTokenLoading = $state(false);
+
+	$effect(() => {
+		const q = tokenSearch.trim();
+		pastedTokenMeta = null;
+		if (!ethers.isAddress(q)) return;
+		// Already in our list? No need to fetch
+		if (allTokens.find(t => t.address.toLowerCase() === q.toLowerCase())) return;
+
+		pastedTokenLoading = true;
+		fetchMeta(q, false).then(meta => {
+			if (tokenSearch.trim().toLowerCase() === q.toLowerCase() && meta.symbol !== '???') {
+				pastedTokenMeta = { address: q, symbol: meta.symbol, name: meta.name, decimals: meta.decimals };
+			}
+		}).catch(() => {}).finally(() => { pastedTokenLoading = false; });
+	});
+
 	let allTokens = $derived.by(() => {
-		const combined = [...builtInTokens];
-		for (const pt of platformTokens) {
-			if (!combined.find(t => t.address.toLowerCase() === pt.address.toLowerCase())) {
-				combined.push(pt);
+		const chainId = selectedNetwork?.chain_id;
+		const seen = new Set<string>();
+		const combined: typeof builtInTokens = [];
+
+		// 1. Built-in tokens first (native, USDT, USDC)
+		for (const t of builtInTokens) {
+			combined.push(t);
+			seen.add(t.address.toLowerCase());
+		}
+
+		// 2. User-imported tokens (recently used, at the top after built-ins)
+		for (const it of importedTokens) {
+			const addr = it.address.toLowerCase();
+			if (it.chainId === chainId && !seen.has(addr)) {
+				combined.push(it);
+				seen.add(addr);
 			}
 		}
+
+		// 3. Platform tokens (from launches)
+		for (const pt of platformTokens) {
+			const addr = pt.address.toLowerCase();
+			if (!seen.has(addr)) {
+				combined.push(pt);
+				seen.add(addr);
+			}
+		}
+
 		return combined;
 	});
 
 	let filteredTokens = $derived.by(() => {
+		// Exclude the token already selected on the opposite side
+		const excludeAddr = tokenModalTarget === 'in'
+			? tokenOutAddr.toLowerCase()
+			: tokenInAddr.toLowerCase();
+
+		let list = allTokens;
+		if (excludeAddr) {
+			list = list.filter(t => t.address.toLowerCase() !== excludeAddr);
+		}
+
 		const q = tokenSearch.toLowerCase().trim();
-		if (!q) return allTokens;
-		return allTokens.filter(t =>
+		if (!q) return list;
+		return list.filter(t =>
 			t.symbol.toLowerCase().includes(q) ||
 			t.name.toLowerCase().includes(q) ||
 			t.address.toLowerCase().includes(q)
@@ -176,6 +257,7 @@
 
 	// ── Fetch platform tokens + banks + rates ──────────────────
 	onMount(async () => {
+		loadImportedTokens();
 		try {
 			const [launchRes, bankRes, rateRes] = await Promise.all([
 				fetch('/api/launches'),
@@ -203,8 +285,68 @@
 			}
 		} catch {}
 
+		// ── Fetch all token prices (instant quotes) ──────────────
+		refreshPrices();
+
 		// ── URL parameter pre-selection ──────────────────────────
 		await handleUrlParams();
+	});
+
+	// ── Price cache (MultiQuoter) ────────────────────────────
+	let wethAddr = $state('');
+	let pricesLoaded = $state(false);
+
+	async function refreshPrices() {
+		const net = selectedNetwork;
+		if (!net?.dex_router) return;
+		const provider = networkProviders.get(net.chain_id);
+		if (!provider) return;
+
+		try {
+			const tokenAddrs = allTokens
+				.map(t => t.isNative ? (wethAddr || '') : t.address)
+				.filter(a => a && a !== ZERO_ADDRESS);
+
+			for (const it of importedTokens) {
+				if (it.chainId === net.chain_id && !tokenAddrs.find(a => a.toLowerCase() === it.address.toLowerCase())) {
+					tokenAddrs.push(it.address);
+				}
+			}
+
+			if (tokenAddrs.length === 0) return;
+
+			// Prices only, no tax simulation (address(0) skips simulation)
+			const result = await queryTradeLens(provider as any, net.dex_router, tokenAddrs, ethers.ZeroAddress, ethers.parseEther('0.001'), userAddress || ethers.ZeroAddress, net.chain_id);
+			wethAddr = result.weth;
+			pricesLoaded = true;
+
+			// Update decimals + balances for selected tokens
+			for (const t of result.tokens) {
+				const tAddr = t.token.toLowerCase();
+				if (tAddr === tokenInAddr.toLowerCase() && !tokenInIsNative) {
+					tokenInDecimals = t.decimals;
+					tokenInBalance = t.balance;
+				}
+				if (tAddr === tokenOutAddr.toLowerCase() && !tokenOutIsNative) {
+					tokenOutDecimals = t.decimals;
+					tokenOutBalance = t.balance;
+				}
+			}
+			if (result.nativeBalance > 0n) {
+				if (tokenInIsNative) tokenInBalance = result.nativeBalance;
+				if (tokenOutIsNative) tokenOutBalance = result.nativeBalance;
+				nativeBalance = result.nativeBalance;
+			}
+		} catch (e) {
+			console.warn('Price refresh failed:', (e as any)?.message?.slice(0, 80));
+		}
+	}
+
+	// Refresh prices every 15 seconds
+	$effect(() => {
+		if (!selectedNetwork?.dex_router) return;
+		const interval = setInterval(refreshPrices, 15000);
+		return () => clearInterval(interval);
 	});
 
 	async function handleUrlParams() {
@@ -377,6 +519,7 @@
 			tokenInIsNative = isNative;
 			tokenInBalance = 0n;
 			tokenInLoading = true;
+			tokenInTax = null;
 		} else {
 			tokenOutAddr = addr;
 			tokenOutSymbol = token.symbol;
@@ -385,167 +528,132 @@
 			tokenOutIsNative = isNative;
 			tokenOutBalance = 0n;
 			tokenOutLoading = true;
+			tokenOutTax = null;
 		}
 
-		// Fetch real data in background (balance, decimals from chain, tax)
-		Promise.all([fetchMeta(addr, isNative), detectTax(addr, isNative)]).then(([meta, tax]) => {
+		// Fetch metadata quickly (balance, decimals, symbol)
+		fetchMeta(addr, isNative).then(meta => {
+			if (!isNative && selectedNetwork && meta.symbol !== '???') {
+				saveImportedToken({ address: addr, symbol: meta.symbol, name: meta.name, decimals: meta.decimals, chainId: selectedNetwork.chain_id });
+			}
 			if (target === 'in' && tokenInAddr === addr) {
 				tokenInBalance = meta.balance;
-				tokenInDecimals = meta.decimals; // override preset with on-chain value
+				tokenInDecimals = meta.decimals;
 				tokenInSymbol = meta.symbol !== '???' ? meta.symbol : token.symbol;
-				tokenInTaxBuy = tax.buyTax;
-				tokenInTaxSell = tax.sellTax;
-				tokenInHasTax = tax.hasTax;
 				tokenInLoading = false;
 			} else if (target === 'out' && tokenOutAddr === addr) {
 				tokenOutBalance = meta.balance;
-				tokenOutDecimals = meta.decimals; // override preset with on-chain value
+				tokenOutDecimals = meta.decimals;
 				tokenOutSymbol = meta.symbol !== '???' ? meta.symbol : token.symbol;
-				tokenOutTaxBuy = tax.buyTax;
-				tokenOutTaxSell = tax.sellTax;
-				tokenOutHasTax = tax.hasTax;
 				tokenOutLoading = false;
 			}
 		}).catch(() => {
 			if (target === 'in') tokenInLoading = false;
 			else tokenOutLoading = false;
 		});
+
+		// Run tax simulation via TradeLens (non-native tokens only)
+		if (!isNative && selectedNetwork?.dex_router) {
+			const provider = networkProviders.get(selectedNetwork.chain_id);
+			if (provider) {
+				// Collect all token addresses for batch query + simulate tax for the selected token
+				const allAddrs = allTokens
+					.map(t => t.isNative ? getWeth() || '' : t.address)
+					.filter(a => a && a !== ZERO_ADDRESS);
+				if (!allAddrs.find(a => a.toLowerCase() === addr.toLowerCase())) allAddrs.push(addr);
+
+				queryTradeLens(provider as any, selectedNetwork.dex_router, allAddrs, addr, ethers.parseEther('0.001'), userAddress || ethers.ZeroAddress, selectedNetwork.chain_id).then(result => {
+					pricesLoaded = true;
+					wethAddr = result.weth;
+
+					// Update decimals + balances from TradeLens for all selected tokens
+					for (const t of result.tokens) {
+						const tAddr = t.token.toLowerCase();
+						if (tAddr === tokenInAddr.toLowerCase() && !tokenInIsNative) {
+							tokenInDecimals = t.decimals;
+							if (t.balance > 0n) tokenInBalance = t.balance;
+						}
+						if (tAddr === tokenOutAddr.toLowerCase() && !tokenOutIsNative) {
+							tokenOutDecimals = t.decimals;
+							if (t.balance > 0n) tokenOutBalance = t.balance;
+						}
+					}
+					// Native balance
+					if (result.nativeBalance > 0n) {
+						if (tokenInIsNative) tokenInBalance = result.nativeBalance;
+						if (tokenOutIsNative) tokenOutBalance = result.nativeBalance;
+						nativeBalance = result.nativeBalance;
+					}
+
+					// Tax
+					const tax = result.taxInfo;
+					if (target === 'in' && tokenInAddr === addr) {
+						tokenInTax = tax;
+						tokenInTaxBuy = tax.buyTaxBps;
+						tokenInTaxSell = tax.sellTaxBps;
+						tokenInHasTax = tax.buyTaxBps > 0 || tax.sellTaxBps > 0;
+					} else if (target === 'out' && tokenOutAddr === addr) {
+						tokenOutTax = tax;
+						tokenOutTaxBuy = tax.buyTaxBps;
+						tokenOutTaxSell = tax.sellTaxBps;
+						tokenOutHasTax = tax.buyTaxBps > 0 || tax.sellTaxBps > 0;
+					}
+				}).catch(e => {
+					console.warn(`TradeLens failed:`, (e as any)?.message?.slice(0, 200));
+				});
+			}
+		}
 	}
 
 	// ── Custom address paste in modal ──────────────────────────
 	function handleCustomAddress() {
 		const addr = tokenSearch.trim();
 		if (!ethers.isAddress(addr)) return;
-		selectToken(tokenModalTarget, {
-			address: addr,
-			symbol: '...',
-			name: 'Loading...',
-			decimals: 18
-		});
+		const meta = pastedTokenMeta && pastedTokenMeta.address.toLowerCase() === addr.toLowerCase()
+			? pastedTokenMeta
+			: { address: addr, symbol: '...', name: 'Loading...', decimals: 18 };
+
+		// Save to localStorage for future visits
+		if (selectedNetwork && meta.symbol !== '...') {
+			saveImportedToken({ ...meta, chainId: selectedNetwork.chain_id });
+		}
+
+		selectToken(tokenModalTarget, meta);
 	}
 
 	// ── Flip tokens ────────────────────────────────────────────
 	function flipTokens() {
-		const tmp = { addr: tokenInAddr, sym: tokenInSymbol, name: tokenInName, dec: tokenInDecimals, native: tokenInIsNative, bal: tokenInBalance, taxB: tokenInTaxBuy, taxS: tokenInTaxSell, hasTax: tokenInHasTax };
+		const tmpIn = {
+			addr: tokenInAddr, sym: tokenInSymbol, name: tokenInName, dec: tokenInDecimals,
+			native: tokenInIsNative, bal: tokenInBalance,
+			taxB: tokenInTaxBuy, taxS: tokenInTaxSell, hasTax: tokenInHasTax, sim: tokenInTax
+		};
+		const tmpOut = {
+			addr: tokenOutAddr, sym: tokenOutSymbol, name: tokenOutName, dec: tokenOutDecimals,
+			native: tokenOutIsNative, bal: tokenOutBalance,
+			taxB: tokenOutTaxBuy, taxS: tokenOutTaxSell, hasTax: tokenOutHasTax, sim: tokenOutTax
+		};
 
-		tokenInAddr = tokenOutAddr; tokenInSymbol = tokenOutSymbol; tokenInName = tokenOutName; tokenInDecimals = tokenOutDecimals;
-		tokenInIsNative = tokenOutIsNative; tokenInBalance = tokenOutBalance; tokenInTaxBuy = tokenOutTaxBuy; tokenInTaxSell = tokenOutTaxSell; tokenInHasTax = tokenOutHasTax;
+		// Swap in ← out
+		tokenInAddr = tmpOut.addr; tokenInSymbol = tmpOut.sym; tokenInName = tmpOut.name;
+		tokenInDecimals = tmpOut.dec; tokenInIsNative = tmpOut.native; tokenInBalance = tmpOut.bal;
+		tokenInTaxBuy = tmpOut.taxB; tokenInTaxSell = tmpOut.taxS; tokenInHasTax = tmpOut.hasTax;
+		tokenInTax = tmpOut.sim;
 
-		tokenOutAddr = tmp.addr; tokenOutSymbol = tmp.sym; tokenOutName = tmp.name; tokenOutDecimals = tmp.dec;
-		tokenOutIsNative = tmp.native; tokenOutBalance = tmp.bal; tokenOutTaxBuy = tmp.taxB; tokenOutTaxSell = tmp.taxS; tokenOutHasTax = tmp.hasTax;
+		// Swap out ← in
+		tokenOutAddr = tmpIn.addr; tokenOutSymbol = tmpIn.sym; tokenOutName = tmpIn.name;
+		tokenOutDecimals = tmpIn.dec; tokenOutIsNative = tmpIn.native; tokenOutBalance = tmpIn.bal;
+		tokenOutTaxBuy = tmpIn.taxB; tokenOutTaxSell = tmpIn.taxS; tokenOutHasTax = tmpIn.hasTax;
+		tokenOutTax = tmpIn.sim;
 
-		amountIn = amountOut !== '' ? amountOut : '';
+		// Keep the input amount, clear output (preview will recalculate)
 		amountOut = '';
 	}
 
-	// ── Reserves cache for instant price calculation ──────────
+	// Old reserves cache removed — replaced by MultiQuoter
 
-	type ReservesCache = {
-		reserve0: bigint; reserve1: bigint;
-		token0: string; token1: string;
-		pairAddr: string;
-	};
-	let reservesCache: ReservesCache | null = $state(null);
-	let wethAddr = $state('');
-	let reservesLoading = $state(false);
-
-	// Fetch reserves when token pair changes
-	$effect(() => {
-		const inAddr = tokenInAddr;
-		const outAddr = tokenOutAddr;
-		const net = selectedNetwork;
-		if (!inAddr || !outAddr || !net || outputMode === 'bank') { reservesCache = null; return; }
-
-		reservesLoading = true;
-		(async () => {
-			try {
-				const provider = networkProviders.get(net.chain_id);
-				if (!provider) return;
-
-				// Get WETH and factory addresses
-				const dexRouter = new ethers.Contract(net.dex_router, [
-					'function factory() view returns (address)',
-					'function WETH() view returns (address)'
-				], provider);
-				const [factoryAddr, weth] = await Promise.all([dexRouter.factory(), dexRouter.WETH()]);
-				wethAddr = weth;
-
-				const addrIn = tokenInIsNative ? weth : inAddr;
-				const addrOut = tokenOutIsNative ? weth : outAddr;
-
-				// Direct pair
-				const factory = new ethers.Contract(factoryAddr, FACTORY_V2_ABI, provider);
-				let pairAddr = await factory.getPair(addrIn, addrOut);
-
-				if (!pairAddr || pairAddr === ethers.ZeroAddress) {
-					// Try via WETH (tokenIn → WETH → tokenOut) — skip for now, use on-chain only
-					reservesCache = null;
-					return;
-				}
-
-				const pair = new ethers.Contract(pairAddr, PAIR_ABI, provider);
-				const [reserves, token0] = await Promise.all([pair.getReserves(), pair.token0()]);
-
-				reservesCache = {
-					reserve0: reserves[0],
-					reserve1: reserves[1],
-					token0: token0.toLowerCase(),
-					token1: (addrIn.toLowerCase() === token0.toLowerCase() ? addrOut : addrIn).toLowerCase(),
-					pairAddr
-				};
-			} catch {
-				reservesCache = null;
-			} finally {
-				reservesLoading = false;
-			}
-		})();
-	});
-
-	// Refresh reserves every 15s
-	$effect(() => {
-		if (!reservesCache?.pairAddr) return;
-		const net = selectedNetwork;
-		if (!net) return;
-		const pairAddr = reservesCache.pairAddr;
-
-		const interval = setInterval(async () => {
-			try {
-				const provider = networkProviders.get(net.chain_id);
-				if (!provider) return;
-				const pair = new ethers.Contract(pairAddr, PAIR_ABI, provider);
-				const reserves = await pair.getReserves();
-				if (reservesCache && reservesCache.pairAddr === pairAddr) {
-					reservesCache = { ...reservesCache, reserve0: reserves[0], reserve1: reserves[1] };
-				}
-			} catch {}
-		}, 15000);
-		return () => clearInterval(interval);
-	});
-
-	/** Calculate output using constant product formula (x * y = k) */
-	function calcAmountOut(amtIn: bigint, reserveIn: bigint, reserveOut: bigint): bigint {
-		if (reserveIn === 0n || reserveOut === 0n) return 0n;
-		const amtInWithFee = amtIn * 9975n; // 0.25% PancakeSwap fee
-		const numerator = amtInWithFee * reserveOut;
-		const denominator = reserveIn * 10000n + amtInWithFee;
-		return numerator / denominator;
-	}
-
-	/** Get instant local price from cached reserves */
-	function getLocalAmountOut(parsedIn: bigint): string | null {
-		if (!reservesCache) return null;
-		const addrIn = (tokenInIsNative ? wethAddr : tokenInAddr).toLowerCase();
-		const isToken0 = addrIn === reservesCache.token0;
-		const reserveIn = isToken0 ? reservesCache.reserve0 : reservesCache.reserve1;
-		const reserveOut = isToken0 ? reservesCache.reserve1 : reservesCache.reserve0;
-		const out = calcAmountOut(parsedIn, reserveIn, reserveOut);
-		if (out === 0n) return null;
-		return ethers.formatUnits(out, tokenOutDecimals);
-	}
-
-	// ── Preview swap (instant local + background on-chain) ────
+	// ── Preview swap (instant from cache + background on-chain) ──
 	let previewTimeout: ReturnType<typeof setTimeout> | null = null;
-	let onChainPrice = $state(''); // verified on-chain price
 	$effect(() => {
 		if (previewTimeout) clearTimeout(previewTimeout);
 		const amt = amountIn;
@@ -555,26 +663,32 @@
 
 		if (!amt || !inAddr || !outAddr || !net || parseFloat(amt) <= 0 || outputMode === 'bank') {
 			amountOut = '';
-			onChainPrice = '';
 			noLiquidity = false;
+			previewLoading = false;
 			return;
 		}
 
-		// Instant local calculation from cached reserves
+		// ── Instant calculation from MultiQuoter cache (0ms) ──
+		let hasInstant = false;
 		try {
-			const sanitized = parseFloat(amt).toFixed(tokenInDecimals);
-			const parsedIn = ethers.parseUnits(sanitized, tokenInDecimals);
-			const localOut = getLocalAmountOut(parsedIn);
-			if (localOut) {
-				amountOut = localOut;
-				noLiquidity = false;
+			if (pricesLoaded) {
+				const sanitized = parseFloat(amt).toFixed(tokenInDecimals);
+				const parsedIn = ethers.parseUnits(sanitized, tokenInDecimals);
+				const addrIn = tokenInIsNative ? (wethAddr || getWeth()) : inAddr;
+				const addrOut = tokenOutIsNative ? (wethAddr || getWeth()) : outAddr;
+
+				const instantOut = getInstantQuote(addrIn, addrOut, parsedIn);
+				if (instantOut !== null && instantOut > 0n) {
+					amountOut = ethers.formatUnits(instantOut, tokenOutDecimals);
+					noLiquidity = false;
+					hasInstant = true;
+				}
 			}
 		} catch {}
 
-		// Background on-chain validation (updates after RPC responds)
+		// ── Background on-chain validation (silent update, no loading flash) ──
+		if (!hasInstant) previewLoading = true;
 		previewTimeout = setTimeout(async () => {
-			previewLoading = true;
-			noLiquidity = false;
 			try {
 				const provider = networkProviders.get(net.chain_id);
 				if (!provider) return;
@@ -585,18 +699,17 @@
 				const sanitized = parseFloat(amt).toFixed(tokenInDecimals);
 				const parsedIn = ethers.parseUnits(sanitized, tokenInDecimals);
 				const out = await router.getAmountOut(addrIn, addrOut, parsedIn);
-				const formatted = ethers.formatUnits(out, tokenOutDecimals);
-				amountOut = formatted;
-				onChainPrice = formatted;
+				amountOut = ethers.formatUnits(out, tokenOutDecimals);
+				noLiquidity = false;
 			} catch {
-				if (!amountOut) {
+				if (!hasInstant) {
 					amountOut = '';
 					noLiquidity = true;
 				}
 			} finally {
 				previewLoading = false;
 			}
-		}, 150); // shorter debounce since local calc handles instant feedback
+		}, hasInstant ? 500 : 150); // longer debounce if we already have instant price
 	});
 
 	// ── Preview bank fee ───────────────────────────────────────
@@ -655,7 +768,15 @@
 		return num.toFixed(6);
 	}
 
-	let displayAmountOut = $derived(formatAmount(amountOut, tokenOutDecimals, tokenOutSymbol));
+	// Apply simulation buy tax to output amount for accurate post-tax display
+	let postTaxAmountOut = $derived.by(() => {
+		if (!amountOut) return '';
+		const buyTax = tokenOutTax?.buyTaxBps || tokenOutTaxBuy || 0;
+		if (buyTax <= 0) return amountOut;
+		const raw = parseFloat(amountOut);
+		return String(raw * (1 - buyTax / 10000));
+	});
+	let displayAmountOut = $derived(formatAmount(postTaxAmountOut || amountOut, tokenOutDecimals, tokenOutSymbol));
 
 	let rate = $derived.by(() => {
 		if (!amountIn || !amountOut || parseFloat(amountIn) <= 0 || noLiquidity) return '';
@@ -664,8 +785,8 @@
 	});
 
 	let minReceived = $derived.by(() => {
-		if (!amountOut || noLiquidity) return '';
-		const out = parseFloat(amountOut);
+		if (!postTaxAmountOut || noLiquidity) return '';
+		const out = parseFloat(postTaxAmountOut);
 		const min = out * (1 - slippageBps / 10000);
 		return formatAmount(String(min), tokenOutDecimals, tokenOutSymbol);
 	});
@@ -693,7 +814,15 @@
 					expectedOut = ethers.parseUnits(sanitizedOut, tokenOutDecimals);
 				}
 			} catch {}
-			const minOut = expectedOut > 0n ? (expectedOut * BigInt(10000 - slippageBps)) / 10000n : 0n;
+			// Account for token tax + slippage in minOut
+			// Buy tax on output token reduces what we receive
+			const buyTax = tokenOutTax?.buyTaxBps || tokenOutTaxBuy || 0;
+			const sellTax = tokenInTax?.sellTaxBps || tokenInTaxSell || 0;
+			const totalTaxBps = buyTax + sellTax;
+			const afterTax = totalTaxBps > 0
+				? (expectedOut * BigInt(10000 - totalTaxBps)) / 10000n
+				: expectedOut;
+			const minOut = afterTax > 0n ? (afterTax * BigInt(10000 - slippageBps)) / 10000n : 0n;
 
 			let tx;
 			if (outputMode === 'bank') {
@@ -1181,7 +1310,12 @@
 						<span>Balance: 0 {tokenInSymbol}</span>
 					{/if}
 				</div>
-				{#if tokenInHasTax}
+				{#if tokenInTax && !tokenInTax.canSell && !tokenInIsNative}
+					<div class="honeypot-badge">
+						<span class="tax-dot" style="background: #f87171;"></span>
+						Honeypot: cannot sell this token
+					</div>
+				{:else if tokenInHasTax}
 					<div class="tax-badge">
 						<span class="tax-dot tax-dot-amber"></span>
 						Tax: {tokenInTaxBuy / 100}% buy / {tokenInTaxSell / 100}% sell
@@ -1234,7 +1368,12 @@
 							<span>Balance: 0 {tokenOutSymbol}</span>
 						{/if}
 					</div>
-					{#if tokenOutHasTax}
+					{#if tokenOutTax && !tokenOutTax.canSell && !tokenOutIsNative}
+						<div class="honeypot-badge">
+							<span class="tax-dot" style="background: #f87171;"></span>
+							Honeypot: cannot sell this token
+						</div>
+					{:else if tokenOutHasTax}
 						<div class="tax-badge">
 							<span class="tax-dot tax-dot-amber"></span>
 							Tax: {tokenOutTaxBuy / 100}% buy / {tokenOutTaxSell / 100}% sell
@@ -1390,10 +1529,16 @@
 						<span>Slippage</span>
 						<span>{slippageBps / 100}%</span>
 					</div>
-					{#if effectiveTax > 0}
+					{#if tokenInTaxSell > 0}
 						<div class="detail-line detail-line-warn">
-							<span>Token tax</span>
-							<span>{(effectiveTax / 100).toFixed(1)}%</span>
+							<span>Sell tax ({tokenInSymbol})</span>
+							<span>{(tokenInTaxSell / 100).toFixed(1)}%</span>
+						</div>
+					{/if}
+					{#if tokenOutTaxBuy > 0}
+						<div class="detail-line detail-line-warn">
+							<span>Buy tax ({tokenOutSymbol})</span>
+							<span>{(tokenOutTaxBuy / 100).toFixed(1)}%</span>
 						</div>
 					{/if}
 				</div>
@@ -1513,13 +1658,34 @@
 
 			<div class="token-list">
 				{#if ethers.isAddress(tokenSearch.trim()) && !filteredTokens.find(t => t.address.toLowerCase() === tokenSearch.trim().toLowerCase())}
-					<button class="token-list-item" onclick={handleCustomAddress}>
-						<div class="token-list-icon token-list-icon-custom">?</div>
-						<div class="token-list-info">
-							<span class="token-list-symbol">Import Token</span>
-							<span class="token-list-addr">{tokenSearch.trim().slice(0, 6)}...{tokenSearch.trim().slice(-4)}</span>
+					{#if pastedTokenLoading}
+						<div class="token-list-item" style="cursor: default; opacity: 0.6;">
+							<div class="token-list-icon token-list-icon-custom">
+								<div class="token-list-spinner"></div>
+							</div>
+							<div class="token-list-info">
+								<span class="token-list-symbol">Loading...</span>
+								<span class="token-list-addr">{tokenSearch.trim().slice(0, 6)}...{tokenSearch.trim().slice(-4)}</span>
+							</div>
 						</div>
+					{:else if pastedTokenMeta}
+						<button class="token-list-item" onclick={handleCustomAddress}>
+							<div class="token-list-icon token-list-icon-custom">{pastedTokenMeta.symbol.charAt(0)}</div>
+							<div class="token-list-info">
+								<span class="token-list-symbol">{pastedTokenMeta.symbol}</span>
+								<span class="token-list-name">{pastedTokenMeta.name}</span>
+							</div>
+							<span class="token-list-import">Import</span>
+						</button>
+					{:else}
+						<button class="token-list-item" onclick={handleCustomAddress}>
+							<div class="token-list-icon token-list-icon-custom">?</div>
+							<div class="token-list-info">
+								<span class="token-list-symbol">Import Token</span>
+								<span class="token-list-addr">{tokenSearch.trim().slice(0, 6)}...{tokenSearch.trim().slice(-4)}</span>
+							</div>
 					</button>
+					{/if}
 				{/if}
 
 				{#each filteredTokens as t}
@@ -1766,10 +1932,16 @@
 							<span>Slippage</span>
 							<span>{slippageBps / 100}%</span>
 						</div>
-						{#if effectiveTax > 0}
+						{#if tokenInTaxSell > 0}
 							<div class="confirm-detail-row confirm-detail-warn">
-								<span>Token tax</span>
-								<span>{(effectiveTax / 100).toFixed(1)}%</span>
+								<span>Sell tax ({tokenInSymbol})</span>
+								<span>{(tokenInTaxSell / 100).toFixed(1)}%</span>
+							</div>
+						{/if}
+						{#if tokenOutTaxBuy > 0}
+							<div class="confirm-detail-row confirm-detail-warn">
+								<span>Buy tax ({tokenOutSymbol})</span>
+								<span>{(tokenOutTaxBuy / 100).toFixed(1)}%</span>
 							</div>
 						{/if}
 					{:else if outputMode === 'bank'}
@@ -1954,6 +2126,12 @@
 		font-family: 'Space Mono', monospace; font-size: 13px; color: #00d2ff;
 	}
 
+	.honeypot-badge {
+		display: inline-flex; align-items: center; gap: 5px; margin-top: 8px;
+		font-family: 'Space Mono', monospace; font-size: 10px; color: #f87171;
+		background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.15);
+		border-radius: 6px; padding: 4px 8px; font-weight: 700;
+	}
 	.tax-badge {
 		display: inline-flex; align-items: center; gap: 5px; margin-top: 8px;
 		font-family: 'Space Mono', monospace; font-size: 10px; color: #f59e0b;
@@ -2236,6 +2414,15 @@
 		display: flex; align-items: center; justify-content: center;
 		background: rgba(139,92,246,0.1); color: #a78bfa; border: 1px solid rgba(139,92,246,0.2);
 		font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700;
+	}
+	.token-list-spinner {
+		width: 16px; height: 16px; border: 2px solid rgba(139,92,246,0.2);
+		border-top-color: #a78bfa; border-radius: 50%; animation: spin 0.8s linear infinite;
+	}
+	.token-list-import {
+		font-family: 'Space Mono', monospace; font-size: 10px; font-weight: 700;
+		color: #a78bfa; background: rgba(139,92,246,0.1); border: 1px solid rgba(139,92,246,0.2);
+		padding: 3px 8px; border-radius: 6px; flex-shrink: 0;
 	}
 	.token-list-info { flex: 1; min-width: 0; }
 	.token-list-symbol {
