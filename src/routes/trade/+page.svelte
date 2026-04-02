@@ -829,15 +829,21 @@
 		const raw = postTaxAmountOut || amountOut;
 		if (!raw || !tokenOutAddr || parseFloat(raw) <= 0) return '';
 		try {
-			// If output IS a stablecoin, USD = amount
+			// If output IS a stablecoin, USD = the post-tax amount directly
 			if (stablecoins.includes(tokenOutSymbol.toUpperCase())) {
 				const val = parseFloat(raw);
 				return `~$${val.toFixed(2)} USD`;
 			}
-			// If input is stablecoin, use input amount as USD reference
+			// Otherwise, derive USD from the input value minus tax
+			// This reflects the actual dollar value the user receives
 			if (stablecoins.includes(tokenInSymbol.toUpperCase()) && amountIn) {
-				const val = parseFloat(amountIn);
-				if (val > 0) return `~$${val.toFixed(2)} USD`;
+				const inputVal = parseFloat(amountIn);
+				const buyTax = tokenOutTax?.buyTaxBps || tokenOutTaxBuy || 0;
+				const sellTax = tokenInTax?.sellTaxBps || tokenInTaxSell || 0;
+				const totalTax = buyTax + sellTax;
+				const afterTax = totalTax > 0 ? inputVal * (1 - totalTax / 10000) : inputVal;
+				// Also subtract slippage (DEX fee already in the quote)
+				if (afterTax > 0) return `~$${afterTax.toFixed(2)} USD`;
 			}
 			// Fallback: use reserves spot price
 			if (!selectedNetwork?.usdt_address || !pricesLoaded) return '';
