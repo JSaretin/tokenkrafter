@@ -2384,8 +2384,8 @@
 		transition: all 200ms; letter-spacing: 0.02em;
 	}
 	.swap-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 28px rgba(0,210,255,0.3); }
-	.swap-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-	.swap-btn-error:disabled { background: rgba(100,116,139,0.15) !important; color: rgba(255,255,255,0.5) !important; box-shadow: none !important; transform: none !important; }
+	.swap-btn:disabled { opacity: 0.85; cursor: not-allowed; }
+	.swap-btn-error:disabled { background: rgba(239,68,68,0.12) !important; color: #f87171 !important; box-shadow: none !important; transform: none !important; }
 	.buy-crypto-strip {
 		display: flex; align-items: center; gap: 8px; padding: 10px 14px;
 		margin-top: 10px; border-radius: 12px;
