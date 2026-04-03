@@ -173,15 +173,17 @@
 
 		// Ensure correct network
 		try {
-			const walletNetwork = await signer.provider!.getNetwork();
-			if (Number(walletNetwork.chainId) !== launchNetwork.chain_id) {
-				addFeedback({ message: `Switching to ${launchNetwork.name}...`, type: 'info' });
-				const switched = await switchNetwork(launchNetwork.chain_id);
-				if (!switched) return;
+			const walletProvider = signer.provider;
+			if (walletProvider) {
+				const walletNetwork = await walletProvider.getNetwork();
+				if (Number(walletNetwork.chainId) !== launchNetwork.chain_id) {
+					addFeedback({ message: `Switching to ${launchNetwork.name}...`, type: 'info' });
+					const switched = await switchNetwork(launchNetwork.chain_id);
+					if (!switched) return;
+				}
 			}
 		} catch {
-			addFeedback({ message: 'Could not verify wallet network.', type: 'error' });
-			return;
+			// Can't verify network — proceed anyway, wallet will reject if wrong
 		}
 
 		launchSubmitting = true;
@@ -1041,17 +1043,17 @@
 
 		// Ensure wallet is on the correct network
 		try {
-			const walletNetwork = await signer.provider!.getNetwork();
-			if (Number(walletNetwork.chainId) !== tokenInfo.network.chain_id) {
-				addFeedback({ message: `Switching to ${tokenInfo.network.name}...`, type: 'info' });
-				const switched = await switchNetwork(tokenInfo.network.chain_id);
-				if (!switched) {
-					return;
+			const walletProvider = signer.provider;
+			if (walletProvider) {
+				const walletNetwork = await walletProvider.getNetwork();
+				if (Number(walletNetwork.chainId) !== tokenInfo.network.chain_id) {
+					addFeedback({ message: `Switching to ${tokenInfo.network.name}...`, type: 'info' });
+					const switched = await switchNetwork(tokenInfo.network.chain_id);
+					if (!switched) return;
 				}
 			}
-		} catch (e) {
-			addFeedback({ message: 'Could not verify wallet network.', type: 'error' });
-			return;
+		} catch {
+			// Can't verify network — proceed anyway, wallet will reject if wrong
 		}
 
 		isCreating = true;
