@@ -150,6 +150,14 @@
 					userAddress = null;
 				}
 			});
+
+			// Check if already connected on page load
+			try {
+				const walletProvider = kit.getWalletProvider();
+				if (walletProvider) {
+					setupEthersFromProvider(walletProvider);
+				}
+			} catch {}
 		}
 
 		// Capture referral from URL (address or alias)
