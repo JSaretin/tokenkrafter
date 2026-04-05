@@ -112,11 +112,81 @@
 
 	// Listing
 	let listingEnabled = $state(false);
-	let listingPricePerToken = $state(''); // single price in USDT
+	let listingPoolPct = $state(80); // % of supply going to LP pools
+	let listingAdvanced = $state(false); // toggle advanced price input
 	type ListingPair = { base: 'native' | 'usdt' | 'usdc'; amount: string };
 	let listingPairs = $state<ListingPair[]>([{ base: 'native', amount: '' }]);
 
-	// Legacy compat (kept for submit function)
+	// BNB price in USD (fetched once for display)
+	let bnbPriceUsd = $state(0);
+	$effect(() => {
+		if (!selectedNetwork) return;
+		const provider = getNetworkProviders?.()?.get(selectedNetwork.chain_id);
+		if (!provider || !selectedNetwork.usdt_address) return;
+		const routerContract = new ethers.Contract(selectedNetwork.dex_router || '', [
+			'function getAmountsOut(uint256, address[]) view returns (uint256[])',
+			'function WETH() view returns (address)'
+		], provider);
+		(async () => {
+			try {
+				const weth = await routerContract.WETH();
+				const amounts = await routerContract.getAmountsOut(ethers.parseEther('1'), [weth, selectedNetwork.usdt_address]);
+				bnbPriceUsd = parseFloat(ethers.formatUnits(amounts[1], 18)); // BSC USDT = 18 dec
+			} catch {}
+		})();
+	});
+
+	// Calculate USD value per pair
+	function pairUsdValue(pair: ListingPair): number {
+		const amt = Number(pair.amount);
+		if (!amt || amt <= 0) return 0;
+		if (pair.base === 'native') return amt * bnbPriceUsd;
+		return amt; // USDT/USDC = 1:1 USD
+	}
+
+	// Total USD value across all pairs
+	let totalLiquidityUsd = $derived(listingPairs.reduce((sum, p) => sum + pairUsdValue(p), 0));
+
+	// Tokens allocated to pools
+	let tokensForPool = $derived.by(() => {
+		const supply = Number(totalSupply);
+		if (!supply || supply <= 0) return 0;
+		return supply * (listingPoolPct / 100);
+	});
+
+	// Auto-calculated price: total USD ÷ total tokens for pool
+	let autoPrice = $derived.by(() => {
+		if (tokensForPool <= 0 || totalLiquidityUsd <= 0) return 0;
+		return totalLiquidityUsd / tokensForPool;
+	});
+
+	// Price per token in USDT (auto-derived or manual in advanced mode)
+	let listingPricePerToken = $state('');
+	$effect(() => {
+		if (!listingAdvanced && autoPrice > 0) {
+			listingPricePerToken = autoPrice.toFixed(18).replace(/0+$/, '').replace(/\.$/, '');
+		}
+	});
+
+	// Tokens allocated per pair (proportional to USD value)
+	function tokensForPair(pair: ListingPair): string {
+		if (totalLiquidityUsd <= 0 || tokensForPool <= 0) return '0';
+		const pairUsd = pairUsdValue(pair);
+		const share = pairUsd / totalLiquidityUsd;
+		return (tokensForPool * share).toFixed(2);
+	}
+
+	// Share % per pair
+	function pairSharePct(pair: ListingPair): number {
+		if (totalLiquidityUsd <= 0) return 0;
+		return (pairUsdValue(pair) / totalLiquidityUsd) * 100;
+	}
+
+	let totalTokensForListing = $derived(
+		listingPairs.reduce((sum, p) => sum + Number(tokensForPair(p)), 0)
+	);
+
+	// Legacy compat
 	let listingBaseCoin = $derived(listingPairs[0]?.base ?? 'native');
 	let listingMode = 'price' as const;
 	let listingTokenAmount = $derived('');
@@ -124,7 +194,6 @@
 	let listingListBaseAmount = $derived(listingPairs[0]?.amount ?? '');
 
 	function addListingPair() {
-		// Find the next base not yet added
 		const used = new Set(listingPairs.map(p => p.base));
 		const next = (['native', 'usdt', 'usdc'] as const).find(b => !used.has(b));
 		if (next) listingPairs = [...listingPairs, { base: next, amount: '' }];
@@ -146,18 +215,6 @@
 		if (base === 'native') return selectedNetwork?.native_coin || 'ETH';
 		return base.toUpperCase();
 	}
-
-	// Calculate tokens needed per pair based on price
-	function tokensForPair(pair: ListingPair): string {
-		const price = Number(listingPricePerToken);
-		const baseAmt = Number(pair.amount);
-		if (!price || price <= 0 || !baseAmt || baseAmt <= 0) return '0';
-		return (baseAmt / price).toFixed(2);
-	}
-
-	let totalTokensForListing = $derived(
-		listingPairs.reduce((sum, p) => sum + Number(tokensForPair(p)), 0)
-	);
 
 	const CURVE_TYPES_LABEL = ['Linear', 'Square Root', 'Quadratic', 'Exponential'] as const;
 
@@ -263,12 +320,15 @@
 		}
 		if (initialData.listing?.enabled != null) {
 			listingEnabled = initialData.listing.enabled;
-			if (initialData.listing.baseCoin) listingBaseCoin = initialData.listing.baseCoin;
-			if (initialData.listing.mode) listingMode = initialData.listing.mode;
-			if (initialData.listing.tokenAmount) listingTokenAmount = initialData.listing.tokenAmount;
-			if (initialData.listing.baseAmount) listingBaseAmount = initialData.listing.baseAmount;
-			if (initialData.listing.pricePerToken) listingPricePerToken = initialData.listing.pricePerToken;
-			if (initialData.listing.listBaseAmount) listingListBaseAmount = initialData.listing.listBaseAmount;
+			if (initialData.listing.pricePerToken) {
+				listingPricePerToken = initialData.listing.pricePerToken;
+				listingAdvanced = true; // use advanced mode when restoring a specific price
+			}
+			if (initialData.listing.pairs?.length) {
+				listingPairs = initialData.listing.pairs.map((p: any) => ({ base: p.base, amount: p.amount }));
+			} else if (initialData.listing.baseAmount) {
+				listingPairs = [{ base: (initialData.listing.baseCoin || 'native') as any, amount: initialData.listing.baseAmount }];
+			}
 		}
 		// Jump to last step if auto-submitting
 		if (autoSubmit && name && symbol && totalSupply && chainId) {
@@ -1119,105 +1179,143 @@
 		<div class="wizard-step" style="animation: fadeIn 0.2s ease-out">
 			<div class="step-header">
 				<h2 class="syne text-xl font-bold text-white">DEX Listing</h2>
-				<p class="text-sm text-gray-500 font-mono mt-1">Set your price, pick your pairs, add liquidity — all in one transaction.</p>
+				<p class="text-sm text-gray-500 font-mono mt-1">Add liquidity and your token is instantly tradable.</p>
 			</div>
 
 			<div class="step-body">
-				<!-- Token Price -->
+				<!-- Step 1: How many tokens for trading -->
 				<div class="field-group">
-					<label class="label-text" for="listing-price">Token Price (USDT) <Tooltip text="This price applies to all pairs. The contract calculates token amounts based on price and liquidity provided." /></label>
-					<div class="input-with-suffix">
-						<input id="listing-price" type="text" class="input-field" bind:value={listingPricePerToken} placeholder="0.001" />
-						<span class="input-suffix">USDT per {symbol || 'token'}</span>
+					<label class="label-text">How many tokens for trading? ({listingPoolPct}%)</label>
+					<p class="text-xs text-gray-600 font-mono mb-3">This is how much of your supply goes into the liquidity pool. The rest stays in your wallet.</p>
+					<div class="pool-slider-row">
+						<input type="range" class="pool-slider" min="10" max="100" step="5" bind:value={listingPoolPct} />
+						<span class="pool-slider-value">{listingPoolPct}%</span>
+					</div>
+					<div class="pool-slider-labels">
+						<span>{tokensForPool > 0 ? Number(tokensForPool).toLocaleString(undefined, { maximumFractionDigits: 0 }) : '0'} {symbol || 'TOKEN'} for pools</span>
+						<span>{Number(totalSupply) > 0 ? Number(Number(totalSupply) - tokensForPool).toLocaleString(undefined, { maximumFractionDigits: 0 }) : '0'} stays in your wallet</span>
 					</div>
 				</div>
 
-				<!-- Liquidity Pairs -->
+				<!-- Step 2: How much liquidity -->
 				<div class="field-group">
-					<label class="label-text">Trading Pairs</label>
+					<label class="label-text">How much liquidity are you adding?</label>
+					<p class="text-xs text-gray-600 font-mono mb-3">Pick a currency and enter the amount. More liquidity = higher starting price.</p>
 
 					{#each listingPairs as pair, i}
 						<div class="pair-card">
 							<div class="pair-card-header">
-								<span class="pair-index">{i + 1}</span>
-								<span class="pair-label">{symbol || 'TOKEN'} / {getBaseLabel(pair.base)}</span>
+								<div class="pair-header-left">
+									<select
+										class="pair-base-select"
+										value={pair.base}
+										onchange={(e) => updatePairBase(i, (e.target as HTMLSelectElement).value as any)}
+									>
+										<option value="native">{selectedNetwork?.native_coin || 'BNB'}</option>
+										<option value="usdt">USDT</option>
+										<option value="usdc">USDC</option>
+									</select>
+								</div>
 								{#if listingPairs.length > 1}
-									<button type="button" class="pair-remove" onclick={() => removeListingPair(i)} title="Remove pair">
+									<button type="button" class="pair-remove" onclick={() => removeListingPair(i)} title="Remove">
 										<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
 									</button>
 								{/if}
 							</div>
 
 							<div class="pair-card-body">
-								<div class="pair-field">
-									<label class="pair-field-label">Base Token</label>
-									<select
-										class="input-field"
-										value={pair.base}
-										onchange={(e) => updatePairBase(i, (e.target as HTMLSelectElement).value as any)}
-									>
-										<option value="native">{selectedNetwork?.native_coin || 'ETH'}</option>
-										<option value="usdt">USDT</option>
-										<option value="usdc">USDC</option>
-									</select>
-								</div>
-
-								<div class="pair-field">
-									<label class="pair-field-label">{getBaseLabel(pair.base)} to provide</label>
+								<div class="pair-amount-row">
 									<input
 										type="text"
-										class="input-field"
+										class="pair-amount-input"
+										inputmode="decimal"
 										value={pair.amount}
 										oninput={(e) => updatePairAmount(i, (e.target as HTMLInputElement).value)}
 										placeholder="0.00"
 									/>
+									<span class="pair-amount-label">{getBaseLabel(pair.base)}</span>
 								</div>
+								{#if pairUsdValue(pair) > 0}
+									<div class="pair-usd">≈ ${pairUsdValue(pair).toLocaleString(undefined, { maximumFractionDigits: 2 })} USD</div>
+								{/if}
+							</div>
 
-								<div class="pair-field">
-									<label class="pair-field-label">Tokens matched</label>
-									<div class="pair-token-amount">
-										{Number(tokensForPair(pair)) > 0 ? Number(tokensForPair(pair)).toLocaleString(undefined, { maximumFractionDigits: 0 }) : '—'}
-										<span class="pair-token-symbol">{symbol || 'TOKEN'}</span>
+							<!-- Pool share bar -->
+							{#if totalLiquidityUsd > 0 && pairUsdValue(pair) > 0}
+								<div class="pair-share">
+									<div class="pair-share-bar">
+										<div class="pair-share-fill" style="width: {pairSharePct(pair)}%"></div>
+									</div>
+									<div class="pair-share-info">
+										<span class="pair-share-name">{symbol || 'TOKEN'}/{getBaseLabel(pair.base)}</span>
+										<span class="pair-share-pct">{pairSharePct(pair).toFixed(1)}% · {Number(tokensForPair(pair)).toLocaleString(undefined, { maximumFractionDigits: 0 })} {symbol || 'TOKEN'}</span>
 									</div>
 								</div>
-							</div>
+							{/if}
 						</div>
 					{/each}
 
 					{#if listingPairs.length < 3}
 						<button type="button" class="add-pair-btn" onclick={addListingPair}>
 							<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v8M8 12h8"/></svg>
-							Add Pair ({listingPairs.length}/3)
+							Add another pair ({listingPairs.length}/3)
 						</button>
 					{/if}
 				</div>
 
-				<!-- Summary -->
-				{#if totalTokensForListing > 0 && Number(listingPricePerToken) > 0}
-					<div class="listing-summary">
-						<div class="listing-summary-row">
-							<span class="listing-summary-label">Price</span>
-							<span class="listing-summary-value">1 {symbol || 'TOKEN'} = {listingPricePerToken} USDT</span>
+				<!-- Live Preview -->
+				{#if totalLiquidityUsd > 0 && tokensForPool > 0}
+					<div class="listing-preview">
+						<div class="listing-preview-title">Preview</div>
+						<div class="listing-preview-grid">
+							<div class="listing-preview-item">
+								<span class="listing-preview-label">Starting Price</span>
+								<span class="listing-preview-value">${autoPrice > 0 ? autoPrice.toFixed(12).replace(/0+$/, '').replace(/\.$/, '') : '—'}</span>
+							</div>
+							<div class="listing-preview-item">
+								<span class="listing-preview-label">Market Cap</span>
+								<span class="listing-preview-value text-emerald-400">${totalLiquidityUsd > 0 ? (autoPrice * Number(totalSupply)).toLocaleString(undefined, { maximumFractionDigits: 0 }) : '—'}</span>
+							</div>
+							<div class="listing-preview-item">
+								<span class="listing-preview-label">Total Liquidity</span>
+								<span class="listing-preview-value">${totalLiquidityUsd.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+							</div>
+							<div class="listing-preview-item">
+								<span class="listing-preview-label">$10 buys</span>
+								<span class="listing-preview-value">{autoPrice > 0 ? (10 / autoPrice).toLocaleString(undefined, { maximumFractionDigits: 0 }) : '—'} {symbol || 'TOKEN'}</span>
+							</div>
 						</div>
-						<div class="listing-summary-row">
-							<span class="listing-summary-label">Total tokens for LP</span>
-							<span class="listing-summary-value">{totalTokensForListing.toLocaleString(undefined, { maximumFractionDigits: 0 })} {symbol || 'TOKEN'}
-								{#if totalSupply && Number(totalSupply) > 0}
-									<span class="listing-summary-pct">({((totalTokensForListing / Number(totalSupply)) * 100).toFixed(1)}%)</span>
-								{/if}
-							</span>
-						</div>
-						{#each listingPairs as pair}
-							{#if Number(pair.amount) > 0}
-								<div class="listing-summary-row listing-summary-pair">
-									<span class="listing-summary-label">{getBaseLabel(pair.base)} pool</span>
-									<span class="listing-summary-value">{pair.amount} {getBaseLabel(pair.base)} ↔ {Number(tokensForPair(pair)).toLocaleString(undefined, { maximumFractionDigits: 0 })} {symbol || 'TOKEN'}</span>
-								</div>
-							{/if}
-						{/each}
-						<div class="listing-summary-row">
-							<span class="listing-summary-label">LP tokens</span>
-							<span class="listing-summary-value text-emerald-400">→ Your wallet</span>
+
+						<!-- Pool breakdown -->
+						{#if listingPairs.filter(p => Number(p.amount) > 0).length > 0}
+							<div class="listing-preview-pools">
+								{#each listingPairs as pair}
+									{#if Number(pair.amount) > 0}
+										<div class="listing-pool-row">
+											<div class="listing-pool-bar-wrap">
+												<div class="listing-pool-bar" style="width: {pairSharePct(pair)}%; background: {pair.base === 'native' ? '#f59e0b' : pair.base === 'usdt' ? '#10b981' : '#3b82f6'}"></div>
+											</div>
+											<span class="listing-pool-name">{symbol}/{getBaseLabel(pair.base)}</span>
+											<span class="listing-pool-detail">{pair.amount} {getBaseLabel(pair.base)} ↔ {Number(tokensForPair(pair)).toLocaleString(undefined, { maximumFractionDigits: 0 })} {symbol}</span>
+											<span class="listing-pool-pct">{pairSharePct(pair).toFixed(0)}%</span>
+										</div>
+									{/if}
+								{/each}
+							</div>
+						{/if}
+					</div>
+				{/if}
+
+				<!-- Advanced toggle -->
+				<button type="button" class="advanced-toggle" onclick={() => listingAdvanced = !listingAdvanced}>
+					{listingAdvanced ? '▾ Hide' : '▸ Advanced'}: set price manually
+				</button>
+				{#if listingAdvanced}
+					<div class="field-group" style="margin-top: 8px;">
+						<label class="label-text" for="listing-price">Token Price (USDT)</label>
+						<div class="input-with-suffix">
+							<input id="listing-price" type="text" class="input-field" bind:value={listingPricePerToken} placeholder="0.001" />
+							<span class="input-suffix">USDT per {symbol || 'token'}</span>
 						</div>
 					</div>
 				{/if}
@@ -1850,9 +1948,113 @@
 		font-weight: 400;
 	}
 
+	/* New listing UI */
+	.pair-header-left { flex: 1; }
+	.pair-base-select {
+		padding: 4px 8px; border-radius: 8px; border: 1px solid rgba(99,102,241,0.2);
+		background: rgba(99,102,241,0.08); color: #818cf8; font-family: 'Space Mono', monospace;
+		font-size: 12px; font-weight: 700; cursor: pointer;
+	}
+	.pair-amount-row {
+		display: flex; align-items: center; gap: 8px;
+	}
+	.pair-amount-input {
+		flex: 1; background: transparent; border: none; outline: none;
+		color: #fff; font-family: 'Syne', sans-serif; font-size: 24px; font-weight: 700; padding: 0;
+	}
+	.pair-amount-input::placeholder { color: rgba(255,255,255,0.15); }
+	.pair-amount-label {
+		font-size: 13px; font-weight: 700; color: #64748b; font-family: 'Space Mono', monospace;
+	}
+	.pair-usd {
+		font-size: 11px; color: #64748b; font-family: 'Space Mono', monospace; margin-top: 4px;
+	}
+	.pair-share { padding: 8px 12px 10px; border-top: 1px solid rgba(99,102,241,0.08); }
+	.pair-share-bar {
+		width: 100%; height: 6px; background: rgba(255,255,255,0.05);
+		border-radius: 3px; overflow: hidden;
+	}
+	.pair-share-fill {
+		height: 100%; border-radius: 3px; transition: width 200ms;
+		background: linear-gradient(90deg, #00d2ff, #3a7bd5);
+	}
+	.pair-share-info {
+		display: flex; justify-content: space-between; margin-top: 4px;
+		font-size: 10px; font-family: 'Space Mono', monospace; color: #64748b;
+	}
+	.pair-share-pct { color: #00d2ff; }
+
+	/* Pool slider */
+	.pool-slider-row { display: flex; align-items: center; gap: 12px; }
+	.pool-slider {
+		flex: 1; -webkit-appearance: none; appearance: none; height: 6px;
+		background: rgba(255,255,255,0.08); border-radius: 3px; outline: none;
+	}
+	.pool-slider::-webkit-slider-thumb {
+		-webkit-appearance: none; width: 18px; height: 18px; border-radius: 50%;
+		background: #00d2ff; cursor: pointer; border: 2px solid #0a0a12;
+	}
+	.pool-slider-value {
+		font-size: 16px; font-weight: 700; color: #00d2ff;
+		font-family: 'Syne', sans-serif; min-width: 40px; text-align: right;
+	}
+	.pool-slider-labels {
+		display: flex; justify-content: space-between; margin-top: 4px;
+		font-size: 10px; font-family: 'Space Mono', monospace; color: #64748b;
+	}
+
+	/* Preview */
+	.listing-preview {
+		border: 1px solid rgba(0,210,255,0.15); border-radius: 12px;
+		background: rgba(0,210,255,0.03); padding: 16px; margin-top: 8px;
+	}
+	.listing-preview-title {
+		font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700;
+		color: #00d2ff; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.05em;
+	}
+	.listing-preview-grid {
+		display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px;
+	}
+	.listing-preview-item {
+		background: rgba(0,0,0,0.2); border-radius: 8px; padding: 10px;
+	}
+	.listing-preview-label {
+		display: block; font-size: 10px; color: #64748b;
+		font-family: 'Space Mono', monospace; text-transform: uppercase; letter-spacing: 0.03em;
+	}
+	.listing-preview-value {
+		display: block; font-size: 14px; font-weight: 700; color: #fff;
+		font-family: 'Space Mono', monospace; margin-top: 2px;
+	}
+
+	/* Pool breakdown */
+	.listing-preview-pools { border-top: 1px solid rgba(0,210,255,0.1); padding-top: 10px; }
+	.listing-pool-row {
+		display: grid; grid-template-columns: 60px 1fr 2fr auto; gap: 8px;
+		align-items: center; padding: 4px 0;
+		font-size: 10px; font-family: 'Space Mono', monospace;
+	}
+	.listing-pool-bar-wrap {
+		height: 8px; background: rgba(255,255,255,0.05); border-radius: 4px; overflow: hidden;
+	}
+	.listing-pool-bar { height: 100%; border-radius: 4px; transition: width 200ms; }
+	.listing-pool-name { color: #e2e8f0; font-weight: 700; }
+	.listing-pool-detail { color: #64748b; }
+	.listing-pool-pct { color: #00d2ff; font-weight: 700; text-align: right; }
+
+	/* Advanced toggle */
+	.advanced-toggle {
+		display: block; margin-top: 12px; padding: 0; border: none; background: none;
+		color: #64748b; font-size: 11px; font-family: 'Space Mono', monospace;
+		cursor: pointer; transition: color 150ms;
+	}
+	.advanced-toggle:hover { color: #00d2ff; }
+
 	@media (max-width: 500px) {
 		.pair-card-body {
 			grid-template-columns: 1fr;
 		}
+		.listing-preview-grid { grid-template-columns: 1fr; }
+		.listing-pool-row { grid-template-columns: 1fr; gap: 2px; }
 	}
 </style>

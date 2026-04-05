@@ -10,6 +10,10 @@ export const handle: Handle = async ({ event, resolve }) => {
 
 	// Connected wallet sent by frontend (may be null if not connected)
 	const connectedWallet = request.headers.get('x-wallet-address')?.toLowerCase() || null;
+	const isSecure = request.url.startsWith('https');
+
+	// Clean up legacy cookies
+	if (cookies.get('admin_session')) cookies.delete('admin_session', { path: '/' });
 
 	// 1. Check existing session cookie
 	const sessionToken = cookies.get('session');
@@ -17,10 +21,9 @@ export const handle: Handle = async ({ event, resolve }) => {
 		const session = await verifySession(sessionToken);
 		if (session) {
 			// If user switched wallets, invalidate session
-			// (skip check if no wallet header — user might not be connected yet)
 			if (connectedWallet && connectedWallet !== session.wallet) {
 				cookies.delete('session', { path: '/' });
-				// Don't set locals — force re-authentication
+				// Don't set locals — force re-authentication with new wallet
 			} else {
 				event.locals.wallet = session.wallet;
 				event.locals.isAdmin = session.role === 'admin';
@@ -56,8 +59,8 @@ export const handle: Handle = async ({ event, resolve }) => {
 					cookies.set('session', token, {
 						path: '/',
 						httpOnly: true,
-						secure: true,
-						sameSite: 'strict',
+						secure: isSecure,
+						sameSite: 'lax',
 						maxAge: isAdmin ? ADMIN_SESSION_MAX_AGE : USER_SESSION_MAX_AGE
 					});
 				}

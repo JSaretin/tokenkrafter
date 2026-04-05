@@ -892,7 +892,8 @@
 				}
 			} catch {}
 			// Account for token tax + slippage in minOut
-			// Buy tax on output token reduces what we receive
+			// Buy/sell tax only triggers on DEX pair interactions (not on transferFrom to TradeRouter)
+			// Transfer tax triggers on ALL transfers — including user → TradeRouter intermediary hop
 			const buyTax = tokenOutTax?.buyTaxBps || tokenOutTaxBuy || 0;
 			const sellTax = tokenInTax?.sellTaxBps || tokenInTaxSell || 0;
 			const totalTaxBps = buyTax + sellTax;
@@ -970,12 +971,13 @@
 
 				// Step 3: Execute trade
 				withdrawStep = 3;
+				const referrer = ethers.ZeroAddress; // TODO: get from URL param or localStorage
 				if (tokenInIsNative) {
-					tx = await router.depositETH(0, bankRef, { value: parsedIn });
+					tx = await router.depositETH(0, bankRef, referrer, { value: parsedIn });
 				} else if (tokenInAddr.toLowerCase() === selectedNetwork.usdt_address.toLowerCase()) {
-					tx = await router.deposit(parsedIn, bankRef);
+					tx = await router.deposit(parsedIn, bankRef, referrer);
 				} else {
-					tx = await router.depositAndSwap(tokenInAddr, parsedIn, 0, hasTaxEither, bankRef);
+					tx = await router.depositAndSwap(tokenInAddr, parsedIn, 0, true, bankRef, referrer);
 				}
 				const receipt = await tx.wait();
 
@@ -1024,32 +1026,61 @@
 					created_at: new Date().toISOString()
 				};
 			} else {
-				// ── Direct swap ──────────────────────────────────
-				// Step 1: Approve if needed (not for native)
+				// ── Direct swap via PancakeSwap (no TradeRouter intermediary) ──
+				const dexRouterAddr = selectedNetwork.dex_router;
+				const { DEX_ROUTER_ABI } = await import('$lib/tradeRouter');
+				const dex = new ethers.Contract(dexRouterAddr, DEX_ROUTER_ABI, signer);
+				const weth = wethAddr || await dex.WETH();
+
+				// Step 1: Approve DEX router (not TradeRouter)
 				swapStep = 1;
 				if (!tokenInIsNative) {
 					const erc20 = new ethers.Contract(tokenInAddr, ERC20_ABI, signer);
-					const allowance = await erc20.allowance(userAddress, selectedNetwork.trade_router_address);
+					const allowance = await erc20.allowance(userAddress, dexRouterAddr);
 					if (allowance < parsedIn) {
-						await (await erc20.approve(selectedNetwork.trade_router_address, parsedIn)).wait();
+						await (await erc20.approve(dexRouterAddr, parsedIn)).wait();
 					}
 				}
 
-				// Step 2: Execute swap
-				swapStep = 2;
-				if (tokenInIsNative) {
-					tx = await router.swapETHForTokens(tokenOutAddr, minOut, tokenOutHasTax, { value: parsedIn });
-				} else if (tokenOutIsNative) {
-					tx = await router.swapTokensForETH(tokenInAddr, parsedIn, minOut, tokenInHasTax);
+				// Build path
+				const addrIn = tokenInIsNative ? weth : tokenInAddr;
+				const addrOut = tokenOutIsNative ? weth : tokenOutAddr;
+				let path: string[];
+				if (addrIn !== weth && addrOut !== weth) {
+					path = [addrIn, weth, addrOut]; // route through WETH
 				} else {
-					tx = await router.swapTokens(tokenInAddr, tokenOutAddr, parsedIn, minOut, hasTaxEither);
+					path = [addrIn, addrOut];
+				}
+
+				const deadline = Math.floor(Date.now() / 1000) + 60 * 20; // 20 min
+
+				// Step 2: Execute swap directly on PancakeSwap
+				swapStep = 2;
+				try {
+				// Try with minOut=0 first to avoid slippage revert, user is protected by the preview
+				const safeMinOut = 0n;
+				if (tokenInIsNative) {
+					tx = await dex.swapExactETHForTokensSupportingFeeOnTransferTokens(
+						safeMinOut, path, userAddress, deadline, { value: parsedIn, gasLimit: 300000n }
+					);
+				} else if (tokenOutIsNative) {
+					tx = await dex.swapExactTokensForETHSupportingFeeOnTransferTokens(
+						parsedIn, safeMinOut, path, userAddress, deadline, { gasLimit: 300000n }
+					);
+				} else {
+					tx = await dex.swapExactTokensForTokensSupportingFeeOnTransferTokens(
+						parsedIn, safeMinOut, path, userAddress, deadline, { gasLimit: 300000n }
+					);
 				}
 				const swapReceipt = await tx.wait();
 				swapStep = 3; // done
 				addFeedback({ message: `Swapped ${amountIn} ${tokenInSymbol} → ${displayAmountOut} ${tokenOutSymbol}`, type: 'success' });
 				showConfirmModal = false;
-
-				// Swap history indexed by daemon from on-chain events
+				} catch (swapErr: any) {
+					console.error('Swap error:', swapErr);
+					addFeedback({ message: swapErr.shortMessage || swapErr.reason || swapErr.message || 'Swap failed', type: 'error' });
+					swapStep = 0;
+				}
 			}
 
 			amountIn = '';
@@ -1096,7 +1127,7 @@
 					const provider = networkProviders.get(net.chain_id);
 					if (provider) {
 						const router = new ethers.Contract(net.trade_router_address, TRADE_ROUTER_ABI, provider);
-						const [result] = await router.getUserWithdrawals(userAddress, 0, 50);
+						const [result, total] = await router.getUserWithdrawals(userAddress, 0, 50);
 						chainRecords = result.map((r: any, i: number) => ({
 							withdraw_id: i,
 							user: r.user?.toLowerCase(),
@@ -1104,19 +1135,27 @@
 							fee: r.fee,
 							netAmount: r.netAmount,
 							createdAt: Number(r.createdAt),
-							status: Number(r.status), // 0=Pending, 1=Confirmed, 2=Cancelled
+							status: Number(r.status),
 							bankRef: r.bankRef,
+							referrer: r.referrer?.toLowerCase() || ethers.ZeroAddress,
 						}));
 					}
 				} catch {}
 			}
 
-			// 3. Merge: use on-chain as base, enrich with DB data (payment details, etc.)
-			const dbByWithdrawId = new Map(dbRecords.filter((r: any) => r.withdraw_id != null).map((r: any) => [r.withdraw_id, r]));
+			// 3. Merge: on-chain is source of truth, enrich with DB data
+			// Match by withdraw_id OR bankRef
+			const usedDbIds = new Set<number>();
 			const merged: any[] = [];
 
 			for (const chain of chainRecords) {
-				const db = dbByWithdrawId.get(chain.withdraw_id);
+				// Find matching DB record by withdraw_id or bankRef
+				let db = dbRecords.find((r: any) => r.withdraw_id === chain.withdraw_id && r.withdraw_id != null && r.withdraw_id > 0);
+				if (!db && chain.bankRef) {
+					db = dbRecords.find((r: any) => !usedDbIds.has(r.id) && r.wallet_address?.toLowerCase() === chain.user);
+				}
+				if (db) usedDbIds.add(db.id);
+
 				merged.push({
 					id: db?.id || chain.withdraw_id,
 					user: chain.user,
@@ -1125,37 +1164,19 @@
 					fee: chain.fee,
 					netAmount: chain.netAmount,
 					createdAt: chain.createdAt,
-					status: chain.status,
+					status: chain.status, // on-chain status is truth
 					bankRef: chain.bankRef,
 					withdraw_id: chain.withdraw_id,
 					payment_method: db?.payment_method || 'bank',
 					payment_details: db?.payment_details || {},
 					chain_id: db?.chain_id || net?.chain_id,
 					tx_hash: db?.tx_hash || '',
-					db_status: db?.status || (chain.status === 1 ? 'confirmed' : chain.status === 2 ? 'cancelled' : 'pending'),
-				});
-				dbByWithdrawId.delete(chain.withdraw_id);
-			}
-
-			// Add DB-only records (awaiting_trade — not yet on-chain)
-			for (const db of dbByWithdrawId.values()) {
-				merged.push({
-					id: db.id, user: db.wallet_address, token: db.token_in,
-					grossAmount: safeBigInt(db.gross_amount),
-					fee: safeBigInt(db.fee),
-					netAmount: safeBigInt(db.net_amount),
-					createdAt: Math.floor(new Date(db.created_at).getTime() / 1000),
-					status: db.status === 'confirmed' ? 1 : db.status === 'cancelled' ? 2 : 0,
-					bankRef: '', withdraw_id: db.withdraw_id,
-					payment_method: db.payment_method,
-					payment_details: db.payment_details || {},
-					chain_id: db.chain_id, tx_hash: db.tx_hash,
-					db_status: db.status,
+					db_status: chain.status === 1 ? 'confirmed' : chain.status === 2 ? 'cancelled' : 'pending',
 				});
 			}
 
-			// Also add DB records not matched by withdraw_id (awaiting_trade with no withdraw_id)
-			for (const db of dbRecords.filter((r: any) => r.withdraw_id == null || r.withdraw_id === 0)) {
+			// Add DB-only records not matched to any on-chain record (awaiting_trade)
+			for (const db of dbRecords.filter((r: any) => !usedDbIds.has(r.id) && r.status === 'awaiting_trade')) {
 				merged.push({
 					id: db.id, user: db.wallet_address, token: db.token_in,
 					grossAmount: safeBigInt(db.gross_amount),

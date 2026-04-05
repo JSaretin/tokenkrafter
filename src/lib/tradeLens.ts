@@ -11,7 +11,7 @@ const TRADE_LENS_ABI = [
 			address factory,
 			uint256 nativeBalance,
 			tuple(address token, string symbol, string name, uint8 decimals, uint256 reserveToken, uint256 reserveBase, address pairAddress, bool hasLiquidity, uint256 balance)[] tokens,
-			tuple(bool success, bool canBuy, bool canSell, uint256 buyTaxBps, uint256 sellTaxBps, uint256 buyGas, uint256 sellGas, string buyError, string sellError) taxInfo,
+			tuple(bool success, bool canBuy, bool canSell, uint256 buyTaxBps, uint256 sellTaxBps, uint256 transferTaxBps, uint256 buyGas, uint256 sellGas, string buyError, string sellError) taxInfo,
 			address taxToken
 		)
 	)`
@@ -35,6 +35,7 @@ export interface TaxInfo {
 	canSell: boolean;
 	buyTaxBps: number;
 	sellTaxBps: number;
+	transferTaxBps: number;
 	buyGas: number;
 	sellGas: number;
 	buyError: string;
@@ -52,7 +53,7 @@ export interface TradeLensResult {
 
 // Deployed TradeLens contracts per chain
 const TRADE_LENS_ADDRESSES: Record<number, string> = {
-	56: '0x510E93b0d3928980bb9A72795b7948ad1e0800f1', // BSC
+	56: '0x5a9D12b5e61223a6D639EA6196ECBd11684C6592', // BSC
 };
 
 // ── Price cache ──────────────────────────────────────────
@@ -111,6 +112,7 @@ export async function queryTradeLens(
 			canSell: r.taxInfo.canSell,
 			buyTaxBps: Number(r.taxInfo.buyTaxBps),
 			sellTaxBps: Number(r.taxInfo.sellTaxBps),
+			transferTaxBps: Number(r.taxInfo.transferTaxBps),
 			buyGas: Number(r.taxInfo.buyGas),
 			sellGas: Number(r.taxInfo.sellGas),
 			buyError: r.taxInfo.buyError,

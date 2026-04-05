@@ -6,8 +6,8 @@
 	import type { SupportedNetwork, PaymentOption } from '$lib/structure';
 	import { FACTORY_ABI, PLATFORM_ROUTER_ABI, ROUTER_ABI, ERC20_ABI, ZERO_ADDRESS } from '$lib/tokenCrafter';
 	import { LAUNCHPAD_FACTORY_ABI, LAUNCH_INSTANCE_ABI, CURVE_TYPES, type CurveType } from '$lib/launchpad';
-	import TokenForm from './lib/TokenForm.svelte';
-	import type { ListingConfig, ListingPairConfig, TokenFormData, PreviewState } from './lib/TokenForm.svelte';
+	import TokenForm from './lib/TokenFormV2.svelte';
+	import type { ListingConfig, ListingPairConfig, TokenFormData, PreviewState } from './lib/TokenFormV2.svelte';
 	import DisplayPreview from './lib/DisplayPreview.svelte';
 	import Tooltip from '$lib/Tooltip.svelte';
 

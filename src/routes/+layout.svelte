@@ -205,7 +205,7 @@
 	setContext('provider', () => provider);
 	setContext('signer', () => signer);
 	setContext('userAddress', () => userAddress);
-	initApiFetch(() => userAddress);
+	initApiFetch(() => userAddress, () => signer);
 	setContext('connectWallet', connectWallet);
 	setContext('supportedNetworks', () => supportedNetworks);
 	setContext('networkProviders', () => networkProviders);

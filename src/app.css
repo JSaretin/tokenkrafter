@@ -1,8 +1,18 @@
 @import 'tailwindcss';
 
-/* ─── Modal scroll lock ─── */
+html, body {
+  overflow-x: hidden;
+  width: 100%;
+}
+
+/* Global modal scrolling fix */
 body.modal-open {
   overflow: hidden;
+}
+
+[role="dialog"] {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* ─── Transition System ─── */

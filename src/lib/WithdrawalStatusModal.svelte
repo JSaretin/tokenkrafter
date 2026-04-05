@@ -71,7 +71,7 @@
 	let timeoutSec = 300; // 5 min
 	let remaining = $derived(Math.max(0, timeoutSec - elapsed));
 	let progressPct = $derived(Math.min(100, (elapsed / timeoutSec) * 100));
-	let canCancel = $derived(liveStatus === 'pending' && remaining <= 0);
+	let canCancel = $derived((liveStatus === 'pending' || liveStatus === 'timeout') && remaining <= 0);
 	let usdtAmount = $derived(parseFloat(withdrawal?.gross_amount || '0') / (10 ** usdtDecimals));
 	let ngnAmount = $derived(ngnRate > 0 && usdtAmount > 0 ? usdtAmount * ngnRate : 0);
 	let details = $derived(withdrawal?.payment_details || {});
@@ -81,6 +81,7 @@
 			case 'confirmed': return { label: 'Confirmed', color: '#10b981', bg: 'rgba(16,185,129,0.1)', icon: 'M20 6L9 17l-5-5' };
 			case 'processing': return { label: 'Processing', color: '#00d2ff', bg: 'rgba(0,210,255,0.1)', icon: 'M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83' };
 			case 'cancelled': return { label: 'Cancelled', color: '#f87171', bg: 'rgba(239,68,68,0.1)', icon: 'M18 6L6 18M6 6l12 12' };
+			case 'timeout': return { label: 'Timed Out', color: '#f87171', bg: 'rgba(239,68,68,0.1)', icon: 'M12 2a10 10 0 100 20 10 10 0 000-20zM12 6v6l4 2' };
 			default: return { label: 'Pending', color: '#f59e0b', bg: 'rgba(245,158,11,0.1)', icon: 'M12 2v4m0 12v4' };
 		}
 	});

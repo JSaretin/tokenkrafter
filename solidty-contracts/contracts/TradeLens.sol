@@ -61,6 +61,7 @@ contract TradeLens {
         bool canSell;
         uint256 buyTaxBps;
         uint256 sellTaxBps;
+        uint256 transferTaxBps;
         uint256 buyGas;
         uint256 sellGas;
         string buyError;
@@ -203,6 +204,22 @@ contract TradeLens {
             return t;
         }
 
+        // ── TRANSFER TAX detection ──
+        // Transfer a small amount to 0xdead and measure delta
+        {
+            uint256 testAmount = IERC20(token).balanceOf(address(this)) / 10;
+            if (testAmount > 0) {
+                uint256 deadBefore = IERC20(token).balanceOf(address(0xdead));
+                try IERC20(token).transfer(address(0xdead), testAmount) {
+                    uint256 deadAfter = IERC20(token).balanceOf(address(0xdead));
+                    uint256 received = deadAfter - deadBefore;
+                    if (received < testAmount) {
+                        t.transferTaxBps = ((testAmount - received) * 10000) / testAmount;
+                    }
+                } catch {}
+            }
+        }
+
         // ── SELL ──
         uint256 tokensToSell = IERC20(token).balanceOf(address(this));
         if (tokensToSell == 0) { t.sellError = "No tokens"; return t; }
@@ -241,6 +258,22 @@ contract TradeLens {
         }
 
         t.success = t.canBuy && t.canSell;
+    }
+
+    // ── Owner recovery ──
+    address public immutable owner;
+    constructor() { owner = msg.sender; }
+
+    function withdrawETH() external {
+        require(msg.sender == owner);
+        (bool ok, ) = owner.call{value: address(this).balance}("");
+        require(ok);
+    }
+
+    function withdrawToken(address token) external {
+        require(msg.sender == owner);
+        uint256 bal = IERC20(token).balanceOf(address(this));
+        if (bal > 0) IERC20(token).transfer(owner, bal);
     }
 
     receive() external payable {}

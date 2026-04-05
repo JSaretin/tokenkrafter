@@ -26,10 +26,12 @@
 	let isPaused = $state(false);
 	let usdtEarnings = $state(0n);
 	let usdtDecimals = $state(18);
+	let maxSlippageBps = $state(0);
 
 	// Form state
 	let newFeeBps = $state('');
 	let newTimeout = $state('');
+	let newMaxSlippage = $state('');
 	let newPlatformWallet = $state('');
 	let newAdmin = $state('');
 	let withdrawToken = $state('');
@@ -43,7 +45,7 @@
 			if (!provider) return;
 			const router = new ethers.Contract(selectedNetwork.trade_router_address, TRADE_ROUTER_ABI, provider);
 
-			const [o, f, t, pw, te, pc, tw, a, p] = await Promise.all([
+			const [o, f, t, pw, te, pc, tw, a, p, ms] = await Promise.all([
 				router.owner(),
 				router.feeBps(),
 				router.payoutTimeout(),
@@ -53,11 +55,13 @@
 				router.totalWithdrawals(),
 				router.getAdmins(),
 				router.paused(),
+				router.maxSlippageBps(),
 			]);
 
 			owner = o;
 			feeBps = Number(f);
 			payoutTimeout = Number(t);
+			maxSlippageBps = Number(ms);
 			platformWallet = pw;
 			totalEscrow = te;
 			pendingCount = Number(pc);
@@ -79,6 +83,7 @@
 
 			newFeeBps = String(feeBps);
 			newTimeout = String(payoutTimeout);
+			newMaxSlippage = String(maxSlippageBps);
 			withdrawToken = selectedNetwork.usdt_address || '';
 		} catch (e: any) {
 			addFeedback({ message: e.message?.slice(0, 80) || 'Failed to load', type: 'error' });
@@ -194,6 +199,15 @@
 						onclick={() => execTx('Set timeout', (r: any) => r.setPayoutTimeout(parseInt(newTimeout)))}>
 						Set
 					</button>
+				</div>
+				<div class="flex items-center gap-2">
+					<label class="text-gray-400 text-xs font-mono">Max slippage (bps)</label>
+					<input class="input-field w-24" type="number" bind:value={newMaxSlippage} placeholder="500" />
+					<button class="btn-action btn-cyan" disabled={processing || !newMaxSlippage}
+						onclick={() => execTx('Set max slippage', (r: any) => r.setMaxSlippage(parseInt(newMaxSlippage)))}>
+						Set
+					</button>
+					<span class="text-[10px] text-gray-600 font-mono">{maxSlippageBps/100}%</span>
 				</div>
 			</div>
 		</div>

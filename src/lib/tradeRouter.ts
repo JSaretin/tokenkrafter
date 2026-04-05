@@ -6,15 +6,15 @@ export const TRADE_ROUTER_ABI = [
 	'function getAmountOut(address tokenIn, address tokenOut, uint256 amountIn) external view returns (uint256)',
 
 	// Off-ramp
-	'function deposit(uint256 amount, bytes32 bankRef) external returns (uint256 id)',
-	'function depositAndSwap(address tokenIn, uint256 amountIn, uint256 minUsdtOut, bool hasTax, bytes32 bankRef) external returns (uint256 id)',
-	'function depositETH(uint256 minUsdtOut, bytes32 bankRef) external payable returns (uint256 id)',
+	'function deposit(uint256 amount, bytes32 bankRef, address referrer) external returns (uint256 id)',
+	'function depositAndSwap(address tokenIn, uint256 amountIn, uint256 minUsdtOut, bool hasTax, bytes32 bankRef, address referrer) external returns (uint256 id)',
+	'function depositETH(uint256 minUsdtOut, bytes32 bankRef, address referrer) external payable returns (uint256 id)',
 	'function confirm(uint256 id) external',
 	'function confirm(uint256 id, address to) external',
 	'function confirm(uint256 id, address to, uint256 amount) external',
 	'function confirmBatch(uint256[] ids) external returns (uint256 confirmed)',
 	'function cancel(uint256 id) external',
-	'function getWithdrawal(uint256 id) view returns (tuple(address user, address token, uint256 grossAmount, uint256 fee, uint256 netAmount, uint256 createdAt, uint8 status, bytes32 bankRef))',
+	'function getWithdrawal(uint256 id) view returns (tuple(address user, address token, uint256 grossAmount, uint256 fee, uint256 netAmount, uint256 createdAt, uint8 status, bytes32 bankRef, address referrer))',
 	'function previewDeposit(uint256 amount) view returns (uint256 fee, uint256 netAmount)',
 
 	// Views
@@ -22,7 +22,7 @@ export const TRADE_ROUTER_ABI = [
 	'function weth() view returns (address)',
 	'function feeBps() view returns (uint256)',
 	'function payoutTimeout() view returns (uint256)',
-	'function getUserWithdrawals(address user, uint256 offset, uint256 limit) view returns (tuple(address user, address token, uint256 grossAmount, uint256 fee, uint256 netAmount, uint256 createdAt, uint8 status, bytes32 bankRef)[] result, uint256 total)',
+	'function getUserWithdrawals(address user, uint256 offset, uint256 limit) view returns (tuple(address user, address token, uint256 grossAmount, uint256 fee, uint256 netAmount, uint256 createdAt, uint8 status, bytes32 bankRef, address referrer)[] result, uint256 total)',
 
 	// Admin
 	'function owner() view returns (address)',
@@ -35,8 +35,10 @@ export const TRADE_ROUTER_ABI = [
 	'function totalWithdrawals() view returns (uint256)',
 	'function getAdmins() view returns (address[])',
 	'function paused() view returns (bool)',
+	'function maxSlippageBps() view returns (uint256)',
 	'function setFeeBps(uint256 newFee) external',
 	'function setPayoutTimeout(uint256 newTimeout) external',
+	'function setMaxSlippage(uint256 newBps) external',
 	'function setPlatformWallet(address wallet) external',
 	'function addAdmin(address admin) external',
 	'function removeAdmin(address admin) external',
@@ -51,6 +53,15 @@ export const TRADE_ROUTER_ABI = [
 	'event WithdrawCancelled(uint256 indexed id, address indexed user)'
 ];
 
+// PancakeSwap / Uniswap V2 Router ABI (for direct swaps, no intermediary)
+export const DEX_ROUTER_ABI = [
+	'function WETH() view returns (address)',
+	'function swapExactTokensForTokensSupportingFeeOnTransferTokens(uint256 amountIn, uint256 amountOutMin, address[] path, address to, uint256 deadline) external',
+	'function swapExactETHForTokensSupportingFeeOnTransferTokens(uint256 amountOutMin, address[] path, address to, uint256 deadline) external payable',
+	'function swapExactTokensForETHSupportingFeeOnTransferTokens(uint256 amountIn, uint256 amountOutMin, address[] path, address to, uint256 deadline) external',
+	'function getAmountsOut(uint256 amountIn, address[] path) view returns (uint256[])',
+];
+
 export const WITHDRAW_STATUS = ['Pending', 'Confirmed', 'Cancelled'] as const;
 
 export interface WithdrawRequest {
@@ -62,6 +73,7 @@ export interface WithdrawRequest {
 	createdAt: bigint;
 	status: 0 | 1 | 2;
 	bankRef: string;
+	referrer: string;
 }
 
 export function withdrawStatusLabel(status: number): string {

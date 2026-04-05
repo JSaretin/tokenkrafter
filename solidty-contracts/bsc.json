@@ -3,6 +3,12 @@
     "lastTokenCount": 0,
     "lastLaunchCount": 0,
     "lastWithdrawalCount": 3,
-    "lastSyncedBlock": 90247517
+    "lastSyncedBlock": 90796652
+  },
+  "31337": {
+    "lastTokenCount": 0,
+    "lastLaunchCount": 0,
+    "lastWithdrawalCount": 0,
+    "lastSyncedBlock": 0
   }
 }

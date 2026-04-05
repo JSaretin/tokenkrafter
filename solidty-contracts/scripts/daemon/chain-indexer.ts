@@ -57,7 +57,7 @@ const TOKEN_META_ABI = [
 
 const TRADE_ROUTER_ABI = [
 	'function totalWithdrawals() view returns (uint256)',
-	'function getWithdrawal(uint256 id) view returns (tuple(address user, address token, uint256 grossAmount, uint256 fee, uint256 netAmount, uint256 createdAt, uint8 status, bytes32 bankRef))',
+	'function getWithdrawal(uint256 id) view returns (tuple(address user, address token, uint256 grossAmount, uint256 fee, uint256 netAmount, uint256 createdAt, uint8 status, bytes32 bankRef, address referrer))',
 ];
 
 const LAUNCH_EVENTS_ABI = [

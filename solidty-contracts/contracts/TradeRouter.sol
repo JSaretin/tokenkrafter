@@ -67,6 +67,22 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
         uint256 createdAt;
         WithdrawStatus status;
         bytes32 bankRef;        // hashed bank reference (off-chain lookup)
+        address referrer;       // affiliate who referred this trade (address(0) if none)
+    }
+
+    struct RouterState {
+        address owner;
+        uint256 feeBps;
+        uint256 payoutTimeout;
+        address platformWallet;
+        uint256 totalEscrow;
+        uint256 pendingCount;
+        uint256 totalWithdrawals;
+        bool paused;
+        uint256 maxSlippageBps;
+        bool affiliateEnabled;
+        uint256 affiliateShareBps;
+        address[] admins;
     }
 
     // ── State ───────────────────────────────────────────────────────
@@ -95,6 +111,11 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
     uint256 public constant MAX_TIMEOUT = 86400; // max 24 hours
     uint256 public maxSlippageBps = 500;         // max 5% slippage (configurable)
     uint256 public constant MAX_SLIPPAGE_CAP = 2000; // absolute cap 20%
+
+    // Affiliate / referral
+    bool public affiliateEnabled;
+    uint256 public affiliateShareBps = 1000;     // 10% of platform fee → referrer
+    mapping(address => uint256) public affiliateEarnings; // per referrer
 
     // ── Events ──────────────────────────────────────────────────────
     event Swap(
@@ -274,12 +295,13 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
     /// @notice Deposit USDT directly for fiat withdrawal
     function deposit(
         uint256 amount,
-        bytes32 bankRef
+        bytes32 bankRef,
+        address referrer
     ) external nonReentrant whenNotPaused returns (uint256 id) {
         if (amount == 0) revert ZeroAmount();
 
         usdt.safeTransferFrom(msg.sender, address(this), amount);
-        id = _createWithdrawRequest(msg.sender, address(usdt), amount, bankRef);
+        id = _createWithdrawRequest(msg.sender, address(usdt), amount, bankRef, referrer);
     }
 
     /// @notice Swap any token → USDT and deposit for fiat withdrawal
@@ -288,19 +310,17 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
         uint256 amountIn,
         uint256 minUsdtOut,
         bool hasTax,
-        bytes32 bankRef
+        bytes32 bankRef,
+        address referrer
     ) external nonReentrant whenNotPaused returns (uint256 id) {
         if (amountIn == 0) revert ZeroAmount();
 
         IERC20(tokenIn).safeTransferFrom(msg.sender, address(this), amountIn);
-        // FIX #1: Reset-approve pattern
         _safeResetApprove(tokenIn, address(dexRouter), amountIn);
 
         address[] memory path = _buildPath(tokenIn, address(usdt));
 
         uint256 usdtReceived;
-        // FIX #4: Use fee-on-transfer variant for all depositAndSwap
-        // (safe for non-taxed tokens too, just slightly more gas)
         uint256 balBefore = usdt.balanceOf(address(this));
         if (hasTax) {
             dexRouter.swapExactTokensForTokensSupportingFeeOnTransferTokens(
@@ -314,14 +334,14 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
         usdtReceived = usdt.balanceOf(address(this)) - balBefore;
         if (usdtReceived < minUsdtOut) revert SlippageTooHigh();
 
-        id = _createWithdrawRequest(msg.sender, address(usdt), usdtReceived, bankRef);
+        id = _createWithdrawRequest(msg.sender, address(usdt), usdtReceived, bankRef, referrer);
     }
 
     /// @notice Swap ETH → USDT and deposit for fiat withdrawal
-    /// @dev Uses fee-on-transfer safe pattern (FIX #4)
     function depositETH(
         uint256 minUsdtOut,
-        bytes32 bankRef
+        bytes32 bankRef,
+        address referrer
     ) external payable nonReentrant whenNotPaused returns (uint256 id) {
         if (msg.value == 0) revert ZeroAmount();
 
@@ -329,7 +349,6 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
         path[0] = weth;
         path[1] = address(usdt);
 
-        // FIX #1 (depositETH): Use fee-on-transfer safe variant
         uint256 balBefore = usdt.balanceOf(address(this));
         dexRouter.swapExactETHForTokensSupportingFeeOnTransferTokens{value: msg.value}(
             minUsdtOut, path, address(this), block.timestamp
@@ -337,7 +356,7 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
         uint256 usdtReceived = usdt.balanceOf(address(this)) - balBefore;
         if (usdtReceived < minUsdtOut) revert SlippageTooHigh();
 
-        id = _createWithdrawRequest(msg.sender, address(usdt), usdtReceived, bankRef);
+        id = _createWithdrawRequest(msg.sender, address(usdt), usdtReceived, bankRef, referrer);
     }
 
     /// @notice Confirm withdrawal — send net amount to platformWallet
@@ -363,19 +382,28 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
         if (block.timestamp >= req.createdAt + payoutTimeout) revert TimeoutReached();
 
         req.status = WithdrawStatus.Confirmed;
-        platformEarnings[req.token] += req.fee;
         totalEscrow -= req.grossAmount;
         _removePendingId(id);
 
+        // Affiliate fee split
+        uint256 platformFee = req.fee;
+        if (affiliateEnabled && req.referrer != address(0) && req.referrer != req.user) {
+            uint256 referralCut = (req.fee * affiliateShareBps) / 10000;
+            if (referralCut > 0) {
+                platformFee -= referralCut;
+                affiliateEarnings[req.referrer] += referralCut;
+                IERC20(req.token).safeTransfer(req.referrer, referralCut);
+            }
+        }
+        platformEarnings[req.token] += platformFee;
+
         if (customAmount > 0 && customAmount <= req.netAmount) {
-            // Send custom amount to `to`, remainder to platformWallet
             IERC20(req.token).safeTransfer(to, customAmount);
             uint256 remainder = req.netAmount - customAmount;
             if (remainder > 0) {
                 IERC20(req.token).safeTransfer(platformWallet, remainder);
             }
         } else {
-            // Send full net amount to `to`
             IERC20(req.token).safeTransfer(to, req.netAmount);
         }
 
@@ -505,7 +533,15 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
         maxSlippageBps = newBps;
     }
 
-    // FIX #6: Validate platformWallet not zero + FIX #5b: emit event
+    function setAffiliateEnabled(bool enabled) external onlyOwner {
+        affiliateEnabled = enabled;
+    }
+
+    function setAffiliateShare(uint256 bps) external onlyOwner {
+        if (bps > 5000) revert InvalidFee(); // max 50% of fee to affiliate
+        affiliateShareBps = bps;
+    }
+
     function setPlatformWallet(address wallet) external onlyOwner {
         if (wallet == address(0)) revert ZeroAddress();
         emit PlatformWalletUpdated(platformWallet, wallet);
@@ -538,6 +574,24 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
 
     function getAdmins() external view returns (address[] memory) {
         return admins;
+    }
+
+    /// @notice Get all router state in one call (saves RPC calls)
+    function getState() external view returns (RouterState memory) {
+        return RouterState({
+            owner: owner(),
+            feeBps: feeBps,
+            payoutTimeout: payoutTimeout,
+            platformWallet: platformWallet,
+            totalEscrow: totalEscrow,
+            pendingCount: pendingIds.length,
+            totalWithdrawals: withdrawals.length,
+            paused: paused(),
+            maxSlippageBps: maxSlippageBps,
+            affiliateEnabled: affiliateEnabled,
+            affiliateShareBps: affiliateShareBps,
+            admins: admins
+        });
     }
 
     /// @notice Withdraw all available tokens (earnings + unaccounted) to platformWallet
@@ -616,7 +670,8 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
         address user,
         address token,
         uint256 grossAmount,
-        bytes32 bankRef
+        bytes32 bankRef,
+        address referrer
     ) internal returns (uint256 id) {
         uint256 fee = (grossAmount * feeBps) / 10000;
         uint256 netAmount = grossAmount - fee;
@@ -630,7 +685,8 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
             netAmount: netAmount,
             createdAt: block.timestamp,
             status: WithdrawStatus.Pending,
-            bankRef: bankRef
+            bankRef: bankRef,
+            referrer: referrer
         }));
 
         totalEscrow += grossAmount;
