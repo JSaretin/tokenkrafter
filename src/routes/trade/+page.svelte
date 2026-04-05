@@ -1541,8 +1541,8 @@
 					<div class="pay-method-tabs">
 						{#each [
 							{ key: 'bank', label: 'Bank Transfer', icon: 'M3 21h18M3 10h18M5 6l7-3 7 3M4 10v11M20 10v11M8 14v3M12 14v3M16 14v3' },
-							{ key: 'paypal', label: 'PayPal', icon: 'M7 11l4.08-5.22A2 2 0 0112.64 5H17a2 2 0 011.93 2.52L17.44 14H15l.69-3H12l-1.5 5.08A2 2 0 019.5 17H7' },
-							{ key: 'wise', label: 'Wise', icon: 'M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5' }
+							// { key: 'paypal', label: 'PayPal', icon: '...' }, // Coming soon
+							// { key: 'wise', label: 'Wise', icon: '...' },     // Coming soon
 						] as method}
 							<button
 								class="pay-method-tab"

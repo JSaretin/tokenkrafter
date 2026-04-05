@@ -35,6 +35,9 @@
 	let newPlatformWallet = $state('');
 	let newAdmin = $state('');
 	let withdrawToken = $state('');
+	let withdrawMode = $state('all');
+	let withdrawTo = $state('');
+	let withdrawAmount = $state('');
 	let processing = $state(false);
 
 	async function loadData() {
@@ -225,19 +228,72 @@
 			</div>
 		</div>
 
-		<!-- Withdraw Fees -->
+		<!-- Withdraw Funds -->
 		<div class="card p-4">
-			<h3 class="text-white text-sm font-semibold mb-3">Withdraw Platform Fees</h3>
+			<h3 class="text-white text-sm font-semibold mb-3">Withdraw Funds</h3>
 			<p class="text-xs text-gray-500 font-mono mb-2">
-				Available: ${parseFloat(ethers.formatUnits(usdtEarnings, usdtDecimals)).toFixed(2)} USDT
+				Platform earnings: <span class="text-emerald-400 font-bold">${parseFloat(ethers.formatUnits(usdtEarnings, usdtDecimals)).toFixed(2)} USDT</span>
 			</p>
-			<div class="flex gap-2">
-				<input class="input-field flex-1" bind:value={withdrawToken} placeholder="Token address (USDT)" />
-				<button class="btn-action btn-emerald" disabled={processing || usdtEarnings === 0n}
-					onclick={() => execTx('Withdraw fees', (r: any) => r.withdrawFees(withdrawToken || selectedNetwork.usdt_address))}>
-					Withdraw
-				</button>
+
+			<!-- Withdraw mode selector -->
+			<div class="flex gap-2 mb-3 flex-wrap">
+				{#each [
+					{ key: 'all', label: 'All USDT → Platform Wallet' },
+					{ key: 'to', label: 'All USDT → Custom Address' },
+					{ key: 'amount', label: 'Custom Amount → Custom Address' },
+					{ key: 'eth', label: 'Withdraw BNB' },
+					{ key: 'rescue', label: 'Rescue Token' },
+				] as mode}
+					<button class="text-[10px] font-mono px-2 py-1 rounded-md cursor-pointer transition border
+						{withdrawMode === mode.key ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' : 'text-gray-500 bg-transparent border-white/5'}"
+						onclick={() => withdrawMode = mode.key}
+					>{mode.label}</button>
+				{/each}
 			</div>
+
+			{#if withdrawMode === 'all'}
+				<button class="btn-action btn-emerald w-full" disabled={processing}
+					onclick={() => execTx('Withdraw all USDT', (r) => r['withdraw()']())}>
+					Withdraw All → Platform Wallet
+				</button>
+
+			{:else if withdrawMode === 'to'}
+				<div class="flex gap-2">
+					<input class="input-field flex-1" bind:value={withdrawTo} placeholder="Recipient 0x..." />
+					<button class="btn-action btn-emerald" disabled={processing || !withdrawTo}
+						onclick={() => execTx('Withdraw USDT', (r) => r['withdraw(address)'](withdrawTo))}>
+						Withdraw
+					</button>
+				</div>
+
+			{:else if withdrawMode === 'amount'}
+				<div class="flex gap-2 mb-2">
+					<input class="input-field flex-1" bind:value={withdrawTo} placeholder="Recipient 0x..." />
+				</div>
+				<div class="flex gap-2">
+					<input class="input-field flex-1" type="text" bind:value={withdrawAmount} placeholder="Amount (e.g. 100)" />
+					<button class="btn-action btn-emerald" disabled={processing || !withdrawTo || !withdrawAmount}
+						onclick={() => execTx('Withdraw amount', (r) => r['withdraw(address,uint256)'](withdrawTo, ethers.parseUnits(withdrawAmount, usdtDecimals)))}>
+						Withdraw
+					</button>
+				</div>
+
+			{:else if withdrawMode === 'eth'}
+				<button class="btn-action btn-cyan w-full" disabled={processing}
+					onclick={() => execTx('Withdraw BNB', (r) => r.withdrawETH())}>
+					Withdraw All BNB → Platform Wallet
+				</button>
+
+			{:else if withdrawMode === 'rescue'}
+				<div class="flex gap-2">
+					<input class="input-field flex-1" bind:value={withdrawToken} placeholder="Token address to rescue" />
+					<button class="btn-action btn-cyan" disabled={processing || !withdrawToken}
+						onclick={() => execTx('Rescue token', (r) => r.rescueToken(withdrawToken))}>
+						Rescue
+					</button>
+				</div>
+				<p class="text-[10px] text-gray-600 font-mono mt-1">Rescues stuck tokens. For USDT, only withdraws above escrow.</p>
+			{/if}
 		</div>
 
 		<!-- Admins -->
