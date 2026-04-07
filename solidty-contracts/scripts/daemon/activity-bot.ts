@@ -1,18 +1,22 @@
 /**
- * TokenKrafter Activity Bot — Real on-chain token creation
+ * TokenKrafter Activity Bot — Multi-wallet token creation
  *
- * Creates real tokens on BSC at random intervals to generate
- * organic-looking platform activity. Self-sustaining: withdraws
- * platform fees back to the bot wallet when balance runs low.
+ * Creates real tokens on BSC from rotating derived wallets so
+ * on-chain activity looks organic (different creator addresses).
+ *
+ * Master wallet (factory owner) scatters BNB to derived wallets
+ * and withdraws factory fees back when balances run low.
  *
  * Usage:
- *   PRIVATE_KEY=0x... npx hardhat run scripts/daemon/activity-bot.ts --network bsc
+ *   BOT_MNEMONIC="..." npx hardhat run scripts/daemon/activity-bot.ts --network bsc
  *
  * Environment:
- *   PRIVATE_KEY         — Bot wallet private key (NOT the deployer/owner — use a separate hot wallet)
- *   SPEED               — burst | normal | slow (default: normal)
- *   MIN_BALANCE_BNB     — Withdraw fees when BNB drops below this (default: 0.05)
- *   OWNER_KEY           — Owner private key for withdrawing fees (optional, only if different from PRIVATE_KEY)
+ *   BOT_MNEMONIC        — 12/24-word mnemonic to derive bot wallets from
+ *   WALLET_COUNT         — Number of derived wallets (default: 10)
+ *   SPEED                — burst | normal | slow (default: normal)
+ *   MIN_BALANCE_BNB      — Refund wallet when BNB drops below this (default: 0.02)
+ *   FUND_AMOUNT_BNB      — Amount to send when refunding a wallet (default: 0.05)
+ *   OWNER_KEY            — Factory owner private key for withdrawing fees & funding
  */
 
 import { ethers } from 'hardhat';
@@ -29,16 +33,18 @@ if (fs.existsSync(envPath)) {
 }
 
 const SPEED = process.env.SPEED || 'normal';
-const MIN_BALANCE = ethers.parseEther(process.env.MIN_BALANCE_BNB || '0.05');
+const WALLET_COUNT = parseInt(process.env.WALLET_COUNT || '10', 10);
+const MIN_BALANCE = ethers.parseEther(process.env.MIN_BALANCE_BNB || '0.02');
+const FUND_AMOUNT = ethers.parseEther(process.env.FUND_AMOUNT_BNB || '0.05');
 
 // ── Speed configs (seconds between actions) ──
 const SPEEDS: Record<string, { tokenMin: number; tokenMax: number; desc: string }> = {
-	burst:  { tokenMin: 60,    tokenMax: 300,    desc: '1-5 min between tokens (3-day burst)' },
-	normal: { tokenMin: 600,   tokenMax: 3600,   desc: '10-60 min between tokens (steady)' },
-	slow:   { tokenMin: 3600,  tokenMax: 14400,  desc: '1-4 hours between tokens (background)' },
+	burst:  { tokenMin: 60,    tokenMax: 300,    desc: '1-5 min between tokens' },
+	normal: { tokenMin: 600,   tokenMax: 3600,   desc: '10-60 min between tokens' },
+	slow:   { tokenMin: 3600,  tokenMax: 14400,  desc: '1-4 hours between tokens' },
 };
 
-// ── Token name pools (Nigerian-themed, web3-themed, meme-themed) ──
+// ── Token name pools ──
 const PREFIXES = [
 	// Nigerian culture
 	'Naija', 'Lagos', 'Abuja', 'Eko', 'Owambe', 'Gidi', 'Wahala', 'Chop',
@@ -68,25 +74,18 @@ function generateToken(): { name: string; symbol: string; supply: bigint; typeKe
 	const suffix = pick(SUFFIXES);
 	const name = suffix ? `${prefix} ${suffix}` : prefix;
 
-	// Symbol: 3-6 chars from the name
 	let symbol = prefix.toUpperCase().slice(0, randInt(3, 5));
 	if (suffix && Math.random() > 0.5) {
 		symbol = (prefix.slice(0, 2) + suffix.slice(0, 2)).toUpperCase();
 	}
 
-	// Supply: varied — 1M to 1T
 	const supplyTiers = [
-		1_000_000n,      // 1M
-		10_000_000n,     // 10M
-		100_000_000n,    // 100M
-		1_000_000_000n,  // 1B
-		10_000_000_000n, // 10B
-		1_000_000_000_000n, // 1T
+		1_000_000n, 10_000_000n, 100_000_000n,
+		1_000_000_000n, 10_000_000_000n, 1_000_000_000_000n,
 	];
 	const supply = pick(supplyTiers) * BigInt(randInt(1, 9));
 
-	// Type distribution (weighted toward basic + partner):
-	// 0=basic(30%), 1=mintable(10%), 2=taxable(15%), 3=tax+mint(5%)
+	// Type distribution: 0=basic(30%), 1=mintable(10%), 2=taxable(15%), 3=tax+mint(5%)
 	// 4=partner(20%), 5=partner+mint(5%), 6=partner+tax(10%), 7=partner+tax+mint(5%)
 	const typeWeights = [30, 10, 15, 5, 20, 5, 10, 5];
 	const totalWeight = typeWeights.reduce((a, b) => a + b, 0);
@@ -105,17 +104,24 @@ const TOKEN_FACTORY_ABI = [
 	'function createToken(string name, string symbol, uint256 totalSupply, uint8 decimals, uint8 tokenType, address paymentToken, address referral) external payable returns (address)',
 	'function creationFee(uint8 tokenType) view returns (uint256)',
 	'function convertFee(uint256 feeUsdt, address paymentToken) view returns (uint256)',
-	'function getSupportedPaymentTokens() view returns (address[])',
 	'function totalTokensCreated() view returns (uint256)',
 	'function owner() view returns (address)',
 	'function withdrawFees(address token) external',
 ];
 
-const ERC20_ABI = [
-	'function balanceOf(address) view returns (uint256)',
-	'function approve(address, uint256) returns (bool)',
-	'function decimals() view returns (uint8)',
-];
+// ── Derive wallets from mnemonic ──
+function deriveWallets(mnemonic: string, count: number, provider: any): ethers.Wallet[] {
+	const hdNode = ethers.HDNodeWallet.fromMnemonic(
+		ethers.Mnemonic.fromPhrase(mnemonic),
+		"m/44'/60'/0'/0"
+	);
+	const wallets: ethers.Wallet[] = [];
+	for (let i = 0; i < count; i++) {
+		const child = hdNode.deriveChild(i);
+		wallets.push(new ethers.Wallet(child.privateKey, provider));
+	}
+	return wallets;
+}
 
 async function main() {
 	const provider = ethers.provider;
@@ -123,7 +129,15 @@ async function main() {
 	const chainId = Number(network.chainId);
 	const speed = SPEEDS[SPEED] || SPEEDS.normal;
 
-	// Load deployment
+	// ── Validate mnemonic ──
+	const mnemonic = process.env.BOT_MNEMONIC;
+	if (!mnemonic) {
+		console.error('❌ BOT_MNEMONIC is required. Generate one with:');
+		console.error('   node -e "console.log(require(\'ethers\').Wallet.createRandom().mnemonic.phrase)"');
+		return;
+	}
+
+	// ── Load deployment ──
 	const deployFile = chainId === 56 ? 'bsc' : chainId === 97 ? 'bscTestnet' : 'localhost';
 	let deployment: any;
 	try {
@@ -133,41 +147,50 @@ async function main() {
 		return;
 	}
 
-	// Use the first signer (from PRIVATE_KEY in hardhat config)
-	const [bot] = await ethers.getSigners();
-	const botAddress = bot.address;
-	const balance = await provider.getBalance(botAddress);
-
-	// Owner signer for fee withdrawal (may be different wallet)
-	let ownerSigner = bot;
-	if (process.env.OWNER_KEY) {
-		ownerSigner = new ethers.Wallet(process.env.OWNER_KEY, provider);
+	// ── Owner signer (for fee withdrawal & funding) ──
+	const ownerKey = process.env.OWNER_KEY || process.env.DEPLOYER_PRIVATE_KEY;
+	if (!ownerKey) {
+		console.error('❌ OWNER_KEY or DEPLOYER_PRIVATE_KEY is required (factory owner, funds the wallets)');
+		return;
 	}
+	const owner = new ethers.Wallet(ownerKey, provider);
 
-	const factory = new ethers.Contract(deployment.TokenFactory, TOKEN_FACTORY_ABI, bot);
+	// ── Derive bot wallets ──
+	const wallets = deriveWallets(mnemonic, WALLET_COUNT, provider);
+
+	// ── Check factory ownership ──
+	const factory = new ethers.Contract(deployment.TokenFactory, TOKEN_FACTORY_ABI, owner);
 	const factoryOwner = await factory.owner();
-	const canWithdraw = factoryOwner.toLowerCase() === ownerSigner.address.toLowerCase();
+	const canWithdraw = factoryOwner.toLowerCase() === owner.address.toLowerCase();
+
+	// ── Print balances ──
+	const ownerBalance = await provider.getBalance(owner.address);
+	const walletBalances = await Promise.all(wallets.map(w => provider.getBalance(w.address)));
 
 	console.log(`
 ╔═══════════════════════════════════════════════════╗
-║         TokenKrafter Activity Bot                 ║
+║         TokenKrafter Activity Bot v2              ║
+║         Multi-Wallet Mode                         ║
 ╚═══════════════════════════════════════════════════╝
-  Chain:        ${chainId} (${deployFile})
-  Bot wallet:   ${botAddress}
-  Balance:      ${ethers.formatEther(balance)} BNB
-  Speed:        ${SPEED} — ${speed.desc}
-  Min balance:  ${ethers.formatEther(MIN_BALANCE)} BNB
-  Factory:      ${deployment.TokenFactory}
-  Can withdraw: ${canWithdraw ? '✅ yes' : '❌ no (owner: ' + factoryOwner.slice(0, 10) + '...)'}
-  Tokens so far: ${await factory.totalTokensCreated()}
+  Chain:          ${chainId} (${deployFile})
+  Speed:          ${SPEED} — ${speed.desc}
+  Factory:        ${deployment.TokenFactory}
+  Owner:          ${owner.address}
+  Owner balance:  ${ethers.formatEther(ownerBalance)} BNB
+  Can withdraw:   ${canWithdraw ? '✅ yes' : '❌ no (owner: ' + factoryOwner.slice(0, 10) + '...)'}
+  Tokens so far:  ${await factory.totalTokensCreated()}
+
+  Bot Wallets (${WALLET_COUNT}):
+${wallets.map((w, i) => `    [${i}] ${w.address}  ${ethers.formatEther(walletBalances[i])} BNB`).join('\n')}
+
+  Min balance:    ${ethers.formatEther(MIN_BALANCE)} BNB
+  Fund amount:    ${ethers.formatEther(FUND_AMOUNT)} BNB
 
   Press Ctrl+C to stop
 `);
 
-	if (balance < ethers.parseEther('0.01')) {
-		console.error('❌ Bot wallet has insufficient BNB. Send at least 0.01 BNB to', botAddress);
-		return;
-	}
+	// ── Initial funding: top up any wallet below minimum ──
+	await fundWallets(owner, wallets, provider);
 
 	let running = true;
 	let tokensCreated = 0;
@@ -178,114 +201,216 @@ async function main() {
 
 	while (running) {
 		try {
-			// ── Check balance, auto-withdraw if low ──
-			const currentBalance = await provider.getBalance(botAddress);
-			if (currentBalance < MIN_BALANCE && canWithdraw) {
-				console.log(`\n  💰 Balance low (${ethers.formatEther(currentBalance)} BNB). Withdrawing fees...`);
-				try {
-					// Try to withdraw native token fees
-					const factoryAsOwner = factory.connect(ownerSigner);
-					const tx = await factoryAsOwner.withdrawFees(ethers.ZeroAddress);
-					await tx.wait();
-					const newBal = await provider.getBalance(botAddress);
-					console.log(`  ✅ Withdrew fees. New balance: ${ethers.formatEther(newBal)} BNB`);
-				} catch (e: any) {
-					console.log(`  ⚠️  Withdraw failed: ${e.shortMessage || e.message?.slice(0, 60)}`);
-				}
-			}
+			// ── Pick a random wallet ──
+			const walletIdx = randInt(0, wallets.length - 1);
+			const wallet = wallets[walletIdx];
+			const walletBal = await provider.getBalance(wallet.address);
 
-			// ── Skip if too low even after withdrawal ──
-			const balNow = await provider.getBalance(botAddress);
-			if (balNow < ethers.parseEther('0.005')) {
-				console.log(`  ⚠️  Balance too low (${ethers.formatEther(balNow)} BNB). Waiting...`);
-				await new Promise(r => setTimeout(r, 60000));
-				continue;
-			}
-
-			// ── Generate and create token ──
-			const token = generateToken();
-			const typeLabels = ['Basic', 'Mintable', 'Taxable', 'Tax+Mint', 'Partner', 'Partner+Mint', 'Partner+Tax', 'Partner+Tax+Mint'];
-			const label = typeLabels[token.typeKey] || 'Basic';
-			const supplyStr = ethers.formatUnits(token.supply * 10n ** 18n, 18);
-
-			console.log(`\n  [${new Date().toLocaleTimeString()}] Creating: ${token.name} ($${token.symbol})`);
-			console.log(`    Type: ${label} | Supply: ${Number(supplyStr).toLocaleString()}`);
-
-			try {
-				// Get creation fee
-				const feeUsdt = await factory.creationFee(token.typeKey);
-				let paymentToken = ethers.ZeroAddress; // pay with native
-				let feeNative = 0n;
-
-				if (feeUsdt > 0n) {
-					try {
-						feeNative = await factory.convertFee(feeUsdt, ethers.ZeroAddress);
-					} catch {
-						// If conversion fails, try with a small fixed amount
-						feeNative = ethers.parseEther('0.01');
+			// ── Fund if low ──
+			if (walletBal < MIN_BALANCE) {
+				console.log(`\n  💰 Wallet [${walletIdx}] low (${ethers.formatEther(walletBal)} BNB). Funding...`);
+				const funded = await fundSingle(owner, wallet.address, provider, canWithdraw ? factory : null);
+				if (!funded) {
+					console.log(`  ⚠️  Could not fund wallet [${walletIdx}]. Trying another...`);
+					// Try to pick a funded wallet instead
+					const funded_wallet = await pickFundedWallet(wallets, provider);
+					if (!funded_wallet) {
+						console.log(`  ❌ All wallets underfunded. Waiting 60s...`);
+						await sleep(60000, () => running);
+						continue;
 					}
-					// Add 10% buffer for price movement
-					feeNative = feeNative * 11n / 10n;
+					// Use the funded wallet this round
+					await createToken(funded_wallet.wallet, funded_wallet.idx, factory, provider, deployment);
+					tokensCreated++;
+					continue;
 				}
+			}
 
-				const gasEstimate = await factory.createToken.estimateGas(
-					token.name, token.symbol,
-					token.supply * 10n ** 18n, // total supply in wei
-					18, token.typeKey,
-					paymentToken, ethers.ZeroAddress, // no referral
-					{ value: feeNative }
-				);
-
-				const tx = await factory.createToken(
-					token.name, token.symbol,
-					token.supply * 10n ** 18n,
-					18, token.typeKey,
-					paymentToken, ethers.ZeroAddress,
-					{ value: feeNative, gasLimit: gasEstimate * 12n / 10n }
-				);
-
-				const receipt = await tx.wait();
-				const gasCost = receipt!.gasUsed * receipt!.gasPrice;
-				totalGasSpent += gasCost;
+			// ── Create token ──
+			const result = await createToken(wallet, walletIdx, factory, provider, deployment);
+			if (result) {
+				totalGasSpent += result.gasCost;
 				tokensCreated++;
-
-				// Parse token address from event
-				let tokenAddr = '';
-				try {
-					const iface = new ethers.Interface(['event TokenCreated(address indexed creator, address indexed tokenAddress, uint8 tokenType, string name, string symbol, uint256 totalSupply, uint8 decimals)']);
-					for (const log of receipt!.logs) {
-						try {
-							const parsed = iface.parseLog({ topics: [...log.topics], data: log.data });
-							if (parsed?.name === 'TokenCreated') { tokenAddr = parsed.args[1]; break; }
-						} catch {}
-					}
-				} catch {}
-
-				console.log(`    ✅ Created! Token: ${tokenAddr.slice(0, 10)}...`);
-				console.log(`    Gas: ${ethers.formatEther(gasCost)} BNB | Fee: ${ethers.formatEther(feeNative)} BNB`);
 				console.log(`    Total: ${tokensCreated} tokens | Gas spent: ${ethers.formatEther(totalGasSpent)} BNB`);
-
-			} catch (e: any) {
-				console.log(`    ❌ Failed: ${e.shortMessage || e.message?.slice(0, 80)}`);
 			}
 
 		} catch (e: any) {
 			console.error(`  ❌ Error: ${e.message?.slice(0, 80)}`);
 		}
 
-		// ── Random delay before next token ──
+		// ── Random delay ──
 		const delaySec = randInt(speed.tokenMin, speed.tokenMax);
-		const delayMin = (delaySec / 60).toFixed(1);
-		console.log(`  ⏳ Next token in ~${delayMin} min`);
-
-		// Wait in small chunks so we can respond to SIGINT
-		const endTime = Date.now() + delaySec * 1000;
-		while (running && Date.now() < endTime) {
-			await new Promise(r => setTimeout(r, 5000));
-		}
+		console.log(`  ⏳ Next token in ~${(delaySec / 60).toFixed(1)} min`);
+		await sleep(delaySec * 1000, () => running);
 	}
 
 	console.log(`\n✅ Bot stopped. Created ${tokensCreated} tokens. Total gas: ${ethers.formatEther(totalGasSpent)} BNB`);
+}
+
+// ── Create a token from a specific wallet ──
+async function createToken(
+	wallet: ethers.Wallet,
+	walletIdx: number,
+	factory: ethers.Contract,
+	provider: any,
+	deployment: any
+): Promise<{ gasCost: bigint } | null> {
+	const token = generateToken();
+	const typeLabels = ['Basic', 'Mintable', 'Taxable', 'Tax+Mint', 'Partner', 'Partner+Mint', 'Partner+Tax', 'Partner+Tax+Mint'];
+	const label = typeLabels[token.typeKey] || 'Basic';
+	const supplyStr = ethers.formatUnits(token.supply * 10n ** 18n, 18);
+
+	console.log(`\n  [${new Date().toLocaleTimeString()}] Wallet [${walletIdx}] ${wallet.address.slice(0, 10)}...`);
+	console.log(`    Creating: ${token.name} ($${token.symbol}) | ${label} | Supply: ${Number(supplyStr).toLocaleString()}`);
+
+	try {
+		const factoryAsWallet = factory.connect(wallet);
+
+		// Get creation fee
+		const feeUsdt = await factory.creationFee(token.typeKey);
+		let feeNative = 0n;
+
+		if (feeUsdt > 0n) {
+			try {
+				feeNative = await factory.convertFee(feeUsdt, ethers.ZeroAddress);
+			} catch {
+				feeNative = ethers.parseEther('0.01');
+			}
+			feeNative = feeNative * 11n / 10n; // 10% buffer
+		}
+
+		const gasEstimate = await factoryAsWallet.createToken.estimateGas(
+			token.name, token.symbol,
+			token.supply * 10n ** 18n,
+			18, token.typeKey,
+			ethers.ZeroAddress, ethers.ZeroAddress,
+			{ value: feeNative }
+		);
+
+		const tx = await factoryAsWallet.createToken(
+			token.name, token.symbol,
+			token.supply * 10n ** 18n,
+			18, token.typeKey,
+			ethers.ZeroAddress, ethers.ZeroAddress,
+			{ value: feeNative, gasLimit: gasEstimate * 12n / 10n }
+		);
+
+		const receipt = await tx.wait();
+		const gasCost = receipt!.gasUsed * receipt!.gasPrice;
+
+		// Parse token address from event
+		let tokenAddr = '';
+		try {
+			const iface = new ethers.Interface([
+				'event TokenCreated(address indexed creator, address indexed tokenAddress, uint8 tokenType, string name, string symbol, uint256 totalSupply, uint8 decimals)'
+			]);
+			for (const log of receipt!.logs) {
+				try {
+					const parsed = iface.parseLog({ topics: [...log.topics], data: log.data });
+					if (parsed?.name === 'TokenCreated') { tokenAddr = parsed.args[1]; break; }
+				} catch {}
+			}
+		} catch {}
+
+		console.log(`    ✅ Created! Token: ${tokenAddr.slice(0, 10)}...`);
+		console.log(`    Gas: ${ethers.formatEther(gasCost)} BNB | Fee: ${ethers.formatEther(feeNative)} BNB`);
+
+		return { gasCost };
+	} catch (e: any) {
+		console.log(`    ❌ Failed: ${e.shortMessage || e.message?.slice(0, 80)}`);
+		return null;
+	}
+}
+
+// ── Fund a single wallet from owner ──
+async function fundSingle(
+	owner: ethers.Wallet,
+	to: string,
+	provider: any,
+	factory: ethers.Contract | null
+): Promise<boolean> {
+	const ownerBal = await provider.getBalance(owner.address);
+
+	// If owner is low, try withdrawing factory fees first
+	if (ownerBal < FUND_AMOUNT * 2n && factory) {
+		console.log(`  💰 Owner low too. Withdrawing factory fees...`);
+		try {
+			const tx = await factory.withdrawFees(ethers.ZeroAddress);
+			await tx.wait();
+			const newBal = await provider.getBalance(owner.address);
+			console.log(`  ✅ Withdrew fees. Owner balance: ${ethers.formatEther(newBal)} BNB`);
+		} catch (e: any) {
+			console.log(`  ⚠️  Fee withdrawal failed: ${e.shortMessage || e.message?.slice(0, 60)}`);
+		}
+	}
+
+	// Check again
+	const bal = await provider.getBalance(owner.address);
+	if (bal < FUND_AMOUNT + ethers.parseEther('0.005')) {
+		console.log(`  ❌ Owner balance too low to fund (${ethers.formatEther(bal)} BNB)`);
+		return false;
+	}
+
+	try {
+		const tx = await owner.sendTransaction({ to, value: FUND_AMOUNT });
+		await tx.wait();
+		console.log(`  ✅ Sent ${ethers.formatEther(FUND_AMOUNT)} BNB → ${to.slice(0, 10)}...`);
+		return true;
+	} catch (e: any) {
+		console.log(`  ❌ Fund tx failed: ${e.shortMessage || e.message?.slice(0, 60)}`);
+		return false;
+	}
+}
+
+// ── Fund all wallets that are below minimum ──
+async function fundWallets(owner: ethers.Wallet, wallets: ethers.Wallet[], provider: any) {
+	const balances = await Promise.all(wallets.map(w => provider.getBalance(w.address)));
+	const needFunding = wallets.filter((_, i) => balances[i] < MIN_BALANCE);
+
+	if (needFunding.length === 0) {
+		console.log('  ✅ All wallets funded');
+		return;
+	}
+
+	console.log(`\n  💰 Funding ${needFunding.length} wallet(s)...`);
+	for (const w of needFunding) {
+		const ownerBal = await provider.getBalance(owner.address);
+		if (ownerBal < FUND_AMOUNT + ethers.parseEther('0.005')) {
+			console.log(`  ⚠️  Owner out of funds. Remaining wallets unfunded.`);
+			break;
+		}
+		try {
+			const tx = await owner.sendTransaction({ to: w.address, value: FUND_AMOUNT });
+			await tx.wait();
+			console.log(`    ✅ ${w.address.slice(0, 10)}... funded`);
+		} catch (e: any) {
+			console.log(`    ❌ ${w.address.slice(0, 10)}... failed: ${e.shortMessage || e.message?.slice(0, 60)}`);
+		}
+	}
+}
+
+// ── Pick a wallet that has enough balance ──
+async function pickFundedWallet(wallets: ethers.Wallet[], provider: any): Promise<{ wallet: ethers.Wallet; idx: number } | null> {
+	// Shuffle to avoid always picking the same one
+	const indices = Array.from({ length: wallets.length }, (_, i) => i);
+	for (let i = indices.length - 1; i > 0; i--) {
+		const j = randInt(0, i);
+		[indices[i], indices[j]] = [indices[j], indices[i]];
+	}
+
+	for (const idx of indices) {
+		const bal = await provider.getBalance(wallets[idx].address);
+		if (bal >= MIN_BALANCE) return { wallet: wallets[idx], idx };
+	}
+	return null;
+}
+
+// ── Interruptible sleep ──
+async function sleep(ms: number, isRunning: () => boolean) {
+	const end = Date.now() + ms;
+	while (isRunning() && Date.now() < end) {
+		await new Promise(r => setTimeout(r, 5000));
+	}
 }
 
 main().catch(e => { console.error('Fatal:', e); process.exit(1); });

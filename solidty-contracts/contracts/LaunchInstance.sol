@@ -151,6 +151,16 @@ interface IUniswapV2Factory {
     function getPair(address tokenA, address tokenB) external view returns (address pair);
 }
 
+interface IUniswapV2Pair {
+    function token0() external view returns (address);
+    function getReserves() external view returns (uint112 reserve0, uint112 reserve1, uint32 blockTimestampLast);
+    function mint(address to) external returns (uint256 liquidity);
+}
+
+interface IUniswapV2FactoryCreate {
+    function createPair(address tokenA, address tokenB) external returns (address pair);
+}
+
 interface IOwnable {
     function owner() external view returns (address);
 }
@@ -209,49 +219,53 @@ contract LaunchInstance is ReentrancyGuard {
     enum CurveType { Linear, SquareRoot, Quadratic, Exponential }
     enum LaunchState { Pending, Active, Graduated, Refunding }
 
-    // ── Immutables ─────────────────────────────────────────────
-    address payable public immutable factory;
-    address public immutable creator;
-    IERC20 public immutable token;
-    CurveType public immutable curveType;
-    IUniswapV2Router02 public immutable dexRouter;
-    IERC20 public immutable usdt;    // stablecoin — all curve math denominated in USDT
-    uint256 public immutable baseScale; // 10^(18 - usdtDecimals), to normalize curve math to 1e18
+    // ── Storage (set once via initialize, replaces immutables for clone pattern) ──
+    bool private _initialized;
+    address payable public factory;
+    address public creator;
+    IERC20 public token;
+    CurveType public curveType;
+    IUniswapV2Router02 public dexRouter;
+    IERC20 public usdt;
+    uint256 public baseScale;
 
-    uint256 public immutable curveParam1;
-    uint256 public immutable curveParam2;
+    uint256 public curveParam1;
+    uint256 public curveParam2;
 
-    uint256 public immutable softCap;    // in USDT
-    uint256 public immutable hardCap;    // in USDT
-    uint256 public immutable durationSeconds;
-    uint256 public deadline;             // set on activation (or startTimestamp), not deployment
-    uint256 public immutable startTimestamp; // 0 = start immediately on activation
-    uint256 public immutable maxBuyPerWallet;
+    uint256 public softCap;
+    uint256 public hardCap;
+    uint256 public durationSeconds;
+    uint256 public deadline;
+    uint256 public startTimestamp;
+    uint256 public maxBuyPerWallet;
 
     // ── Creator vesting ────────────────────────────────────────
-    uint256 public immutable creatorAllocationBps;
-    uint256 public immutable vestingDuration;
-    uint256 public immutable vestingCliff;
+    uint256 public creatorAllocationBps;
+    uint256 public vestingDuration;
+    uint256 public vestingCliff;
     uint256 public creatorTotalTokens;
     uint256 public creatorClaimed;
     uint256 public graduationTimestamp;
+    uint256 public refundStartTimestamp;
 
     // ── Token distribution ─────────────────────────────────────
-    uint256 public immutable tokensForCurve;
-    uint256 public immutable tokensForLP;
-    uint256 public immutable totalTokensRequired;
+    uint256 public tokensForCurve;
+    uint256 public tokensForLP;
+    uint256 public totalTokensRequired;
 
     // ── Platform fees ──────────────────────────────────────────
-    uint256 public constant PLATFORM_FEE_BPS = 300;  // 3% on graduation
+    uint256 public constant BUY_FEE_BPS = 100;          // 1% on every buy
+    uint256 public constant GRADUATION_FEE_BPS = 100;   // 1% on graduation
     uint256 public constant BPS = 10000;
 
     // ── State ──────────────────────────────────────────────────
     LaunchState public state;
     uint256 public tokensSold;
-    uint256 public totalBaseRaised;
+    uint256 public totalBaseRaised;       // USDT raised (after buy fees)
+    uint256 public totalBuyFeesCollected; // accumulated buy fees
     uint256 public totalTokensDeposited;
 
-    mapping(address => uint256) public basePaid;      // base spent (excluding fee) — refundable amount
+    mapping(address => uint256) public basePaid;
     mapping(address => uint256) public tokensBought;
 
     // ── Events ─────────────────────────────────────────────────
@@ -275,16 +289,21 @@ contract LaunchInstance is ReentrancyGuard {
         _;
     }
 
-    // ── Constructor ────────────────────────────────────────────
-    constructor(
+    // ── Errors ──────────────────────────────────────────────────
+    error AlreadyInitialized();
+
+    // ── Initialize (replaces constructor for clone pattern) ────
+    /// @notice Called once by the factory immediately after cloning.
+    ///         Sets all launch parameters. Cannot be called again.
+    function initialize(
         address creator_,
         address token_,
-        uint256 totalTokensForLaunch_,  // Total tokens creator will deposit (curve + LP + creator alloc)
+        uint256 totalTokensForLaunch_,
         CurveType curveType_,
         uint256 curveParam1_,
         uint256 curveParam2_,
-        uint256 softCap_,               // in USDT
-        uint256 hardCap_,               // in USDT
+        uint256 softCap_,
+        uint256 hardCap_,
         uint256 durationDays_,
         uint256 maxBuyBps_,
         uint256 creatorAllocationBps_,
@@ -292,7 +311,10 @@ contract LaunchInstance is ReentrancyGuard {
         address dexRouter_,
         address usdt_,
         uint256 startTimestamp_
-    ) {
+    ) external {
+        if (_initialized) revert AlreadyInitialized();
+        _initialized = true;
+
         if (token_ == address(0)) revert InvalidToken();
         if (usdt_ == address(0)) revert InvalidUsdt();
         if (softCap_ == 0 || hardCap_ < softCap_) revert InvalidCaps();
@@ -307,7 +329,6 @@ contract LaunchInstance is ReentrancyGuard {
         creator = creator_;
         token = IERC20(token_);
         usdt = IERC20(usdt_);
-        // Compute scale factor: curve math operates in 18 decimals internally
         uint8 usdtDec = IERC20Metadata(usdt_).decimals();
         baseScale = usdtDec < 18 ? 10 ** (18 - usdtDec) : 1;
         curveType = curveType_;
@@ -319,8 +340,6 @@ contract LaunchInstance is ReentrancyGuard {
         startTimestamp = startTimestamp_;
         dexRouter = IUniswapV2Router02(dexRouter_);
 
-        // Token distribution from the deposited amount:
-        // 70% for bonding curve, remaining for LP and creator
         uint256 curveTokens = (totalTokensForLaunch_ * 7000) / BPS;
         uint256 creatorTokens = (totalTokensForLaunch_ * creatorAllocationBps_) / BPS;
         uint256 lpTokens = totalTokensForLaunch_ - curveTokens - creatorTokens;
@@ -335,7 +354,6 @@ contract LaunchInstance is ReentrancyGuard {
         vestingDuration = vestingDays_ * 1 days;
         vestingCliff = vestingDays_ > 0 ? 7 days : 0;
 
-        // Start as Pending — needs token deposit to activate
         state = LaunchState.Pending;
     }
 
@@ -474,9 +492,12 @@ contract LaunchInstance is ReentrancyGuard {
     }
 
     /// @dev Internal buy logic. All amounts are in USDT after conversion.
-    ///      No buy fee — platform earns only from the 3% graduation fee.
+    ///      1% buy fee taken before curve math. Refunds return basePaid (net after fee).
     function _processBuy(address buyer, uint256 usdtAmount, uint256 minTokensOut) internal {
-        uint256 baseForTokens = usdtAmount;
+        // Take buy fee upfront
+        uint256 buyFee = (usdtAmount * BUY_FEE_BPS) / BPS;
+        uint256 baseForTokens = usdtAmount - buyFee;
+        totalBuyFeesCollected += buyFee;
 
         // Calculate tokens from curve
         uint256 tokensOut = _getTokensForBase(baseForTokens);
@@ -486,7 +507,7 @@ contract LaunchInstance is ReentrancyGuard {
         if (tokensOut > remaining) {
             tokensOut = remaining;
             uint256 actualCost = _getCostForTokens(tokensOut);
-            uint256 refundUsdt = usdtAmount - actualCost;
+            uint256 refundUsdt = baseForTokens - actualCost;
             baseForTokens = actualCost;
             if (refundUsdt > 0) {
                 usdt.safeTransfer(buyer, refundUsdt);
@@ -503,7 +524,7 @@ contract LaunchInstance is ReentrancyGuard {
             tokensOut = _getTokensForBase(remaining_allowance);
             if (tokensOut == 0) revert ExceedsMaxBuy();
             uint256 actualCost = _getCostForTokens(tokensOut);
-            uint256 refundUsdt = usdtAmount - actualCost;
+            uint256 refundUsdt = baseForTokens - actualCost;
             baseForTokens = actualCost;
             if (refundUsdt > 0) {
                 usdt.safeTransfer(buyer, refundUsdt);
@@ -513,7 +534,7 @@ contract LaunchInstance is ReentrancyGuard {
         // Check minTokensOut AFTER all capping
         if (tokensOut < minTokensOut) revert InsufficientTokensOut();
 
-        // Update state
+        // Update state — basePaid tracks net amount (after fee), which is refundable
         tokensSold += tokensOut;
         totalBaseRaised += baseForTokens;
         basePaid[buyer] += baseForTokens;
@@ -549,16 +570,20 @@ contract LaunchInstance is ReentrancyGuard {
         state = LaunchState.Graduated;
         graduationTimestamp = block.timestamp;
 
-        // Platform fees: 3% of USDT base + 3% of LP tokens
-        uint256 platformBaseFee = (totalBaseRaised * PLATFORM_FEE_BPS) / BPS;
-        uint256 platformTokenFee = (tokensForLP * PLATFORM_FEE_BPS) / BPS;
+        address platformWallet = ILaunchpadFactory(factory).platformWallet();
+
+        // Send accumulated buy fees to platform (earned regardless of graduation)
+        if (totalBuyFeesCollected > 0) {
+            usdt.safeTransfer(platformWallet, totalBuyFeesCollected);
+        }
+
+        // Graduation fees: 1% of USDT raised + 1% of LP tokens
+        uint256 platformBaseFee = (totalBaseRaised * GRADUATION_FEE_BPS) / BPS;
+        uint256 platformTokenFee = (tokensForLP * GRADUATION_FEE_BPS) / BPS;
         uint256 usdtForLP = totalBaseRaised - platformBaseFee;
         uint256 tokensForDexLP = tokensForLP - platformTokenFee;
 
-        // Send platform fees
-        address platformWallet = ILaunchpadFactory(factory).platformWallet();
-
-        // Send USDT platform fee
+        // Send graduation fees
         if (platformBaseFee > 0) {
             usdt.safeTransfer(platformWallet, platformBaseFee);
         }
@@ -567,43 +592,37 @@ contract LaunchInstance is ReentrancyGuard {
             token.safeTransfer(platformWallet, platformTokenFee);
         }
 
-        // Approve router and add TOKEN/USDT liquidity
-        token.forceApprove(address(dexRouter), tokensForDexLP);
-        usdt.forceApprove(address(dexRouter), usdtForLP);
-
-        (uint256 amountToken, uint256 amountUsdt, ) = dexRouter.addLiquidity(
-            address(token),
-            address(usdt),
-            tokensForDexLP,
-            usdtForLP,
-            (tokensForDexLP * 995) / 1000,
-            (usdtForLP * 995) / 1000,
-            address(0xdead),               // Burn LP tokens — permanent liquidity
-            block.timestamp + 300
-        );
-
-        // Send any unused USDT from slippage to platform
-        uint256 unusedUsdt = usdtForLP - amountUsdt;
-        if (unusedUsdt > 0) {
-            usdt.safeTransfer(platformWallet, unusedUsdt);
-        }
-
-        // Burn unsold curve tokens
-        uint256 unsoldTokens = tokensForCurve - tokensSold;
-        if (unsoldTokens > 0) {
-            token.safeTransfer(address(0xdead), unsoldTokens);
-        }
-
-        // Burn unused LP tokens (from rounding)
-        uint256 unusedLPTokens = tokensForDexLP - amountToken;
-        if (unusedLPTokens > 0) {
-            token.safeTransfer(address(0xdead), unusedLPTokens);
-        }
-
+        // Add LP by transferring directly to the pair and calling mint().
+        // This bypasses the router's ratio-matching, making it immune to
+        // pair manipulation: our large amounts dominate any griefer position,
+        // and the griefer loses their capital regardless of direction.
         address dexFactory = dexRouter.factory();
         address pair = IUniswapV2Factory(dexFactory).getPair(address(token), address(usdt));
+        if (pair == address(0)) {
+            pair = IUniswapV2FactoryCreate(dexFactory).createPair(address(token), address(usdt));
+        }
 
-        emit Graduated(pair, amountUsdt, amountToken, platformBaseFee, platformTokenFee);
+        // Transfer LP amounts directly to the pair
+        token.safeTransfer(pair, tokensForDexLP);
+        usdt.safeTransfer(pair, usdtForLP);
+
+        // Mint LP tokens and burn them — permanent liquidity
+        IUniswapV2Pair(pair).mint(address(0xdead));
+
+        // Send remaining USDT to platform (graduation = no refunds)
+        uint256 usdtBal = usdt.balanceOf(address(this));
+        if (usdtBal > 0) {
+            usdt.safeTransfer(platformWallet, usdtBal);
+        }
+
+        // Burn unsold curve tokens + any unused LP tokens
+        uint256 tokenBal = token.balanceOf(address(this));
+        uint256 tokenReserved = creatorTotalTokens;
+        if (tokenBal > tokenReserved) {
+            token.safeTransfer(address(0xdead), tokenBal - tokenReserved);
+        }
+
+        emit Graduated(pair, usdtForLP, tokensForDexLP, platformBaseFee, platformTokenFee);
 
         // Record graduation in factory daily stats
         try ILaunchpadFactory(factory).recordGraduation(address(this)) {} catch {}
@@ -612,11 +631,21 @@ contract LaunchInstance is ReentrancyGuard {
     // ── Refund ─────────────────────────────────────────────────
 
     /// @notice Enable refunds if deadline passes without soft cap.
+    ///         Sends accumulated buy fees to platform (earned even on failed launches).
     function enableRefunds() external {
         if (state != LaunchState.Active) revert NotActive();
         if (block.timestamp < deadline) revert DeadlineNotReached();
         if (totalBaseRaised >= softCap) revert SoftCapAlreadyReached();
         state = LaunchState.Refunding;
+        refundStartTimestamp = block.timestamp;
+
+        // Platform keeps buy fees even on failed launches
+        if (totalBuyFeesCollected > 0) {
+            address platformWallet = ILaunchpadFactory(factory).platformWallet();
+            usdt.safeTransfer(platformWallet, totalBuyFeesCollected);
+            totalBuyFeesCollected = 0;
+        }
+
         emit RefundingEnabled();
     }
 
@@ -655,7 +684,10 @@ contract LaunchInstance is ReentrancyGuard {
     ///         Clears tokenToLaunch in factory to allow relaunching.
     function creatorWithdrawAfterRefund() external onlyCreator {
         if (state != LaunchState.Refunding) revert NotRefunding();
-        if (totalBaseRaised != 0) revert OutstandingRefundsRemain();
+        // Allow immediate withdraw if all refunds claimed, or after 90 days regardless
+        bool allRefunded = totalBaseRaised == 0;
+        bool timeoutPassed = block.timestamp >= refundStartTimestamp + 90 days;
+        if (!allRefunded && !timeoutPassed) revert OutstandingRefundsRemain();
         uint256 balance = token.balanceOf(address(this));
         if (balance == 0) revert NoTokens();
         token.safeTransfer(creator, balance);
@@ -708,9 +740,11 @@ contract LaunchInstance is ReentrancyGuard {
         return _getCostForTokens(amount);
     }
 
-    /// @notice Tokens received for `baseAmount` base coin (no buy fee).
+    /// @notice Tokens received for `baseAmount` base coin (before buy fee deduction).
+    ///         For accurate preview including fee, use previewBuy().
     function getTokensForBase(uint256 baseAmount) external view returns (uint256) {
-        return _getTokensForBase(baseAmount);
+        uint256 afterFee = baseAmount - (baseAmount * BUY_FEE_BPS) / BPS;
+        return _getTokensForBase(afterFee);
     }
 
     /// @notice Preview a buy: returns tokens out, fee, and price impact for a given base amount.
@@ -741,8 +775,8 @@ contract LaunchInstance is ReentrancyGuard {
         uint256 priceImpactBps
     ) {
         if (baseAmount == 0 || state != LaunchState.Active) return (0, 0, 0);
-        fee = 0; // No buy fee — platform earns from graduation only
-        uint256 baseForTokens = baseAmount;
+        fee = (baseAmount * BUY_FEE_BPS) / BPS;
+        uint256 baseForTokens = baseAmount - fee;
 
         // Cap to wallet's remaining USDT allowance
         if (baseForTokens > maxBase) {

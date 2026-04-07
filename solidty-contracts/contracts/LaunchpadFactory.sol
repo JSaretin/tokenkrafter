@@ -5,6 +5,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/proxy/Clones.sol";
 
 import "./LaunchInstance.sol";
 
@@ -36,6 +37,7 @@ contract LaunchpadFactory is Ownable, ReentrancyGuard {
     error RefundFailed();
     error WithdrawFailed();
     error NoBalance();
+
     error AlreadySupported();
     error NotSupported();
     error OnlyLaunch();
@@ -83,6 +85,7 @@ contract LaunchpadFactory is Ownable, ReentrancyGuard {
     address public platformWallet;
     address public dexRouter;
     address public usdt;
+    address public launchImplementation;  // LaunchInstance impl for cloning
 
     uint256 public launchFee;
 
@@ -105,11 +108,14 @@ contract LaunchpadFactory is Ownable, ReentrancyGuard {
     constructor(
         address platformWallet_,
         address dexRouter_,
-        address usdt_
+        address usdt_,
+        address launchImpl_
     ) Ownable(msg.sender) {
         if (platformWallet_ == address(0)) revert InvalidAddress();
         if (dexRouter_ == address(0)) revert InvalidAddress();
         if (usdt_ == address(0)) revert InvalidUsdt();
+        if (launchImpl_ == address(0)) revert InvalidAddress();
+        launchImplementation = launchImpl_;
 
         platformWallet = platformWallet_;
         dexRouter = dexRouter_;
@@ -243,7 +249,10 @@ contract LaunchpadFactory is Ownable, ReentrancyGuard {
         if (totalTokens_ == 0) revert ZeroTokens();
         if (address(tokenToLaunch[token_]) != address(0)) revert TokenAlreadyHasLaunch();
 
-        LaunchInstance launch = new LaunchInstance(
+        // Clone the implementation and initialize
+        address cloneAddr = Clones.clone(launchImplementation);
+        LaunchInstance launch = LaunchInstance(payable(cloneAddr));
+        launch.initialize(
             creator_,
             token_,
             totalTokens_,
@@ -374,7 +383,7 @@ contract LaunchpadFactory is Ownable, ReentrancyGuard {
         address paymentToken_,
         uint256 startTimestamp_
     ) external payable nonReentrant returns (address) {
-        if (msg.sender != authorizedRouter) revert OnlyAuthorizedRouter();
+        if (authorizedRouter == address(0) || msg.sender != authorizedRouter) revert OnlyAuthorizedRouter();
 
         _collectLaunchFee(creator_, paymentToken_);
 
@@ -399,7 +408,7 @@ contract LaunchpadFactory is Ownable, ReentrancyGuard {
 
     /// @notice Forwards a deposit notification to a LaunchInstance. Only callable by authorizedRouter.
     function notifyDeposit(address launch_, uint256 amount) external {
-        if (msg.sender != authorizedRouter) revert OnlyAuthorizedRouter();
+        if (authorizedRouter == address(0) || msg.sender != authorizedRouter) revert OnlyAuthorizedRouter();
         LaunchInstance(payable(launch_)).notifyDeposit(amount);
     }
 
@@ -427,6 +436,33 @@ contract LaunchpadFactory is Ownable, ReentrancyGuard {
     /// @notice Returns total number of launches created.
     function totalLaunches() external view returns (uint256) {
         return launches.length;
+    }
+
+    /// @notice Returns the launch contract address at a given index.
+    function getLaunchByIndex(uint256 index) external view returns (address) {
+        return address(launches[index]);
+    }
+
+    /// @notice Returns a paginated slice of launch addresses.
+    function getLaunches(uint256 offset, uint256 limit) external view returns (address[] memory r, uint256 total) {
+        total = launches.length;
+        if (offset >= total) return (new address[](0), total);
+        uint256 e = offset + limit > total ? total : offset + limit;
+        r = new address[](e - offset);
+        for (uint256 i = offset; i < e; i++) r[i - offset] = address(launches[i]);
+    }
+
+    /// @notice Returns key factory state in a single call for dashboards.
+    function getState() external view returns (
+        address factoryOwner,
+        uint256 totalLaunchCount,
+        uint256 totalFeeUsdt,
+        uint256 fee
+    ) {
+        factoryOwner = owner();
+        totalLaunchCount = launches.length;
+        totalFeeUsdt = totalLaunchFeeEarnedUsdt;
+        fee = launchFee;
     }
 
     /// @notice Returns all launches created by a given address.
@@ -465,6 +501,11 @@ contract LaunchpadFactory is Ownable, ReentrancyGuard {
         emit DexRouterUpdated(router_);
     }
 
+    function setLaunchImplementation(address impl_) external onlyOwner {
+        if (impl_ == address(0)) revert InvalidAddress();
+        launchImplementation = impl_;
+    }
+
     function setUsdt(address usdt_) external onlyOwner {
         if (usdt_ == address(0)) revert InvalidUsdt();
         usdt = usdt_;
@@ -476,6 +517,11 @@ contract LaunchpadFactory is Ownable, ReentrancyGuard {
     }
 
     function setCurveDefaults(CurveDefaults calldata defaults_) external onlyOwner {
+        // Prevent extreme values that would break curve math (overflow in BondingCurve library)
+        require(defaults_.linearSlope <= 1e30 && defaults_.linearIntercept <= 1e30, "Linear params too large");
+        require(defaults_.sqrtCoefficient <= 1e30, "Sqrt param too large");
+        require(defaults_.quadraticCoefficient <= 1e30, "Quad param too large");
+        require(defaults_.expBase <= 1e22 && defaults_.expKFactor <= 1e18, "Exp params too large");
         curveDefaults = defaults_;
         emit CurveDefaultsUpdated();
     }
@@ -522,14 +568,15 @@ contract LaunchpadFactory is Ownable, ReentrancyGuard {
         if (token_ == address(0)) {
             uint256 bal = address(this).balance;
             if (bal == 0) revert NoBalance();
-            (bool ok, ) = msg.sender.call{value: bal}("");
+            (bool ok, ) = platformWallet.call{value: bal}("");
             if (!ok) revert WithdrawFailed();
         } else {
             uint256 bal = IERC20(token_).balanceOf(address(this));
             if (bal == 0) revert NoBalance();
-            IERC20(token_).safeTransfer(msg.sender, bal);
+            IERC20(token_).safeTransfer(platformWallet, bal);
         }
     }
+
 
     receive() external payable {}
 }

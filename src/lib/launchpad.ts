@@ -7,6 +7,9 @@ export const LAUNCHPAD_FACTORY_ABI = [
 	// View functions
 	'function totalLaunches() view returns (uint256)',
 	'function launches(uint256) view returns (address)',
+	'function getLaunchByIndex(uint256 index) view returns (address)',
+	'function getLaunches(uint256 offset, uint256 limit) view returns (address[] r, uint256 total)',
+	'function getState() view returns (address factoryOwner, uint256 totalLaunchCount, uint256 totalFeeUsdt, uint256 fee)',
 	'function getCreatorLaunches(address creator_) view returns (address[])',
 	'function tokenToLaunch(address token_) view returns (address)',
 	'function getActiveLaunches(uint256 offset, uint256 limit) view returns (address[] result, uint256 total)',

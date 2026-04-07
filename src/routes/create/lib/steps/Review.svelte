@@ -8,7 +8,7 @@
 		buyTaxPct, sellTaxPct, transferTaxPct, taxWallets,
 		protectionEnabled, maxWalletPct, maxTransactionPct, cooldownSeconds,
 		launchTokensPct, launchCurveType, launchSoftCap, launchHardCap,
-		launchDurationDays, launchMaxBuyBps, launchCreatorAllocBps, launchVestingDays,
+		launchDurationDays, launchMaxBuyPct, launchCreatorAllocPct, launchVestingDays,
 		listingPoolPct, listingPairs, autoPrice, totalLiquidityUsd,
 		nativeCoin, useExistingToken, existingTokenAddress,
 	}: {
@@ -19,7 +19,7 @@
 		taxWallets: { address: string; sharePct: string }[];
 		protectionEnabled: boolean; maxWalletPct: string; maxTransactionPct: string; cooldownSeconds: string;
 		launchTokensPct: number; launchCurveType: number; launchSoftCap: string; launchHardCap: string;
-		launchDurationDays: string; launchMaxBuyBps: string; launchCreatorAllocBps: string; launchVestingDays: string;
+		launchDurationDays: string; launchMaxBuyPct: string; launchCreatorAllocPct: string; launchVestingDays: string;
 		listingPoolPct: number; listingPairs: ListingPair[]; autoPrice: number; totalLiquidityUsd: number;
 		nativeCoin: string; useExistingToken: boolean; existingTokenAddress: string;
 	} = $props();
@@ -107,8 +107,10 @@
 			<div class="rv-row"><span>Soft cap</span><span>${launchSoftCap}</span></div>
 			<div class="rv-row"><span>Hard cap</span><span>${launchHardCap}</span></div>
 			<div class="rv-row"><span>Duration</span><span>{launchDurationDays} days</span></div>
-			{#if Number(launchCreatorAllocBps) > 0}
-				<div class="rv-row"><span>Creator allocation</span><span>{Number(launchCreatorAllocBps) / 100}%</span></div>
+			<div class="rv-row"><span>Max buy per wallet</span><span>{launchMaxBuyPct}% of hard cap</span></div>
+			{#if Number(launchCreatorAllocPct) > 0}
+				<div class="rv-row"><span>Creator allocation</span><span>{launchCreatorAllocPct}%</span></div>
+				<div class="rv-row"><span>Vesting</span><span>{launchVestingDays} days</span></div>
 			{/if}
 		</div>
 	{/if}

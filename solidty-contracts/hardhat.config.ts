@@ -9,7 +9,7 @@ const config: HardhatUserConfig = {
     version: "0.8.20",
     settings: {
       viaIR: true,
-      optimizer: { enabled: true, runs: 200 },
+      optimizer: { enabled: true, runs: 100 },
     },
   },
   networks: {

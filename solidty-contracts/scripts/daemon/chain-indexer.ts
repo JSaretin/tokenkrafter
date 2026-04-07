@@ -33,6 +33,7 @@ if (!SYNC_SECRET) {
 // ── ABIs ───────────────────────────────────────────────────
 const TOKEN_FACTORY_ABI = [
 	'function totalTokensCreated() view returns (uint256)',
+	'function getTokenByIndex(uint256 index) view returns (address)',
 	'function tokenInfo(address) view returns (address creator, bool isMintable, bool isTaxable, bool isPartnership)',
 	'event TokenCreated(address indexed creator, address indexed tokenAddress, uint8 tokenType, string name, string symbol, uint256 totalSupply, uint8 decimals)',
 ];
@@ -197,55 +198,46 @@ async function indexNewTokens(
 	const newCount = currentCount - cs.lastTokenCount;
 	console.log(`  📦 ${newCount} new token(s) found`);
 
-	const currentBlock = await provider.getBlockNumber();
-	const fromBlock = cs.lastSyncedBlock > 0
-		? Math.max(0, cs.lastSyncedBlock - 10)
-		: Math.max(0, currentBlock - 1000);
-
-	const factoryAddress = await tokenFactory.getAddress();
-	const iface = tokenFactory.interface;
-	const topicHash = iface.getEvent('TokenCreated')!.topicHash;
-
-	const logs = await provider.getLogs({
-		address: factoryAddress,
-		fromBlock,
-		toBlock: currentBlock,
-		topics: [topicHash],
-	});
-
 	let indexed = 0;
-	for (const log of logs) {
+	for (let i = cs.lastTokenCount; i < currentCount; i++) {
 		try {
-			const parsed = iface.parseLog({ topics: [...log.topics], data: log.data });
-			if (!parsed) continue;
+			const tokenAddress = (await tokenFactory.getTokenByIndex(i)).toLowerCase();
+			const info = await tokenFactory.tokenInfo(tokenAddress);
+			const token = new ethers.Contract(tokenAddress, TOKEN_META_ABI, provider);
+			const [name, symbol, decimals] = await Promise.all([
+				token.name(), token.symbol(), token.decimals()
+			]);
 
-			const tokenAddress = parsed.args[1].toLowerCase();
-			const tokenType = Number(parsed.args[2]);
+			const isMintable = info.isMintable;
+			const isTaxable = info.isTaxable;
+			const isPartner = info.isPartnership;
+			const typeKey = (isTaxable ? 2 : 0) | (isMintable ? 1 : 0) | (isPartner ? 4 : 0);
 
 			const ok = await apiPost('/api/created-tokens', {
 				address: tokenAddress,
 				chain_id: chainId,
-				creator: parsed.args[0].toLowerCase(),
-				name: parsed.args[3],
-				symbol: parsed.args[4],
-				total_supply: parsed.args[5].toString(),
-				decimals: Number(parsed.args[6]),
-				is_mintable: (tokenType & 1) !== 0,
-				is_taxable: (tokenType & 2) !== 0,
-				is_partner: (tokenType & 4) !== 0,
-				type_key: tokenType,
+				creator: info.creator.toLowerCase(),
+				name,
+				symbol,
+				total_supply: '0', // not critical for indexing
+				decimals: Number(decimals),
+				is_mintable: isMintable,
+				is_taxable: isTaxable,
+				is_partner: isPartner,
+				type_key: typeKey,
 			});
 
 			if (ok) {
-				console.log(`    ✓ Token: ${parsed.args[4]} (${tokenAddress.slice(0, 10)}...)`);
+				console.log(`    ✓ [${i}] ${symbol} (${tokenAddress.slice(0, 10)}...)`);
 				indexed++;
+				cs.lastTokenCount = i + 1;
 			}
 		} catch (e: any) {
-			console.error(`    ✗ Token event: ${e.message?.slice(0, 80)}`);
+			console.error(`    ✗ Token #${i}: ${e.message?.slice(0, 80)}`);
+			break; // stop on error, retry from this index next poll
 		}
 	}
 
-	cs.lastTokenCount = currentCount;
 	return indexed;
 }
 
@@ -588,21 +580,22 @@ async function main() {
 			console.log(`[${ts}] Poll #${pollCount}`);
 
 			// 1. Index new tokens
-			await indexNewTokens(tokenFactory, provider, chainId, cs);
+			try { await indexNewTokens(tokenFactory, provider, chainId, cs); } catch (e: any) { console.error(`  ⚠️ Token indexing: ${e.message?.slice(0, 80)}`); }
+			saveState(allState);
 
 			// 2. Index new launches
-			await indexNewLaunches(launchpadFactory, tokenFactory, provider, chainId, usdtDecimals, cs);
+			try { await indexNewLaunches(launchpadFactory, tokenFactory, provider, chainId, usdtDecimals, cs); } catch (e: any) { console.error(`  ⚠️ Launch indexing: ${e.message?.slice(0, 80)}`); }
+			saveState(allState);
 
 			// 3. Update active launches
-			await updateActiveLaunches(launchpadFactory, tokenFactory, provider, chainId, usdtDecimals);
+			try { await updateActiveLaunches(launchpadFactory, tokenFactory, provider, chainId, usdtDecimals); } catch (e: any) { console.error(`  ⚠️ Launch updates: ${e.message?.slice(0, 80)}`); }
 
 			// 4. Index buy events
-			await indexEvents(provider, chainId, cs);
+			try { await indexEvents(provider, chainId, cs); } catch (e: any) { console.error(`  ⚠️ Event indexing: ${e.message?.slice(0, 80)}`); }
+			saveState(allState);
 
 			// 5. Sync withdrawals
-			await syncWithdrawals(tradeRouter, chainId, cs);
-
-			// Save state after each poll
+			try { await syncWithdrawals(tradeRouter, chainId, cs); } catch (e: any) { console.error(`  ⚠️ Withdrawal sync: ${e.message?.slice(0, 80)}`); }
 			saveState(allState);
 		} catch (e: any) {
 			console.error(`  ❌ Poll error: ${e.message?.slice(0, 120)}`);

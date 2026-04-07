@@ -170,6 +170,9 @@ contract TokenFactory is Ownable, ReentrancyGuard {
     /// @notice Total number of tokens created across all types.
     uint256 public totalTokensCreated;
 
+    /// @dev Global ordered list of all created token addresses (index 0 = first token).
+    address[] private _allTokens;
+
     /// @notice Per-creator nonce used for deterministic salt computation.
     mapping(address => uint256) public creatorNonce;
 
@@ -227,6 +230,9 @@ contract TokenFactory is Ownable, ReentrancyGuard {
     /// @notice The PlatformRouter address authorized to call routerCreateToken.
     address public authorizedRouter;
 
+    /// @notice Wallet that receives platform fees.
+    address public platformWallet;
+
     // =============================================================
     // CONSTRUCTOR
     // =============================================================
@@ -235,11 +241,14 @@ contract TokenFactory is Ownable, ReentrancyGuard {
     /// @param dexRouter_ The Uniswap V2-compatible router address
     constructor(
         address usdt_,
-        address dexRouter_
+        address dexRouter_,
+        address platformWallet_
     ) Ownable(msg.sender) {
         if (usdt_ == address(0)) revert InvalidAddress();
         if (dexRouter_ == address(0)) revert InvalidAddress();
+        if (platformWallet_ == address(0)) revert InvalidAddress();
 
+        platformWallet = platformWallet_;
         usdt = usdt_;
         dexRouter = IUniswapV2Router02(dexRouter_);
 
@@ -398,9 +407,11 @@ contract TokenFactory is Ownable, ReentrancyGuard {
     ) internal {
         if (referral == address(0) || referral == creator) return;
 
-        // Walk the referral chain to detect cycles of any length
+        // Walk the referral chain to detect cycles (2x depth for safety)
         address current = referral;
-        for (uint8 j = 0; j < referralLevels; j++) {
+        uint256 maxWalk = uint256(referralLevels) * 2;
+        if (maxWalk < 10) maxWalk = 10;
+        for (uint256 j = 0; j < maxWalk; j++) {
             if (current == address(0)) break;
             if (current == creator) revert CircularReferral();
             current = referrals[current];
@@ -476,6 +487,7 @@ contract TokenFactory is Ownable, ReentrancyGuard {
         }
 
         createdTokens[creator].push(tokenAddress);
+        _allTokens.push(tokenAddress);
         tokenInfo[tokenAddress] = TokenInfo({
             creator: creator,
             isMintable: p.isMintable,
@@ -616,7 +628,7 @@ contract TokenFactory is Ownable, ReentrancyGuard {
     function routerCreateToken(address creator, CreateTokenParams calldata p, address referral)
         external payable nonReentrant returns (address tokenAddress)
     {
-        if (msg.sender != authorizedRouter) revert NotAuthorizedRouter();
+        if (authorizedRouter == address(0) || msg.sender != authorizedRouter) revert NotAuthorizedRouter();
         if (creator == address(0)) revert InvalidAddress();
         if (p.totalSupply == 0 || p.totalSupply > 1e30 || p.decimals > 18
             || bytes(p.name).length == 0 || bytes(p.symbol).length == 0)
@@ -745,6 +757,50 @@ contract TokenFactory is Ownable, ReentrancyGuard {
     /// @notice Returns all token addresses created by a specific creator.
     function getCreatedTokens(address creator) external view returns (address[] memory) {
         return createdTokens[creator];
+    }
+
+    /// @notice Returns the token address at a given global index (0-based).
+    function getTokenByIndex(uint256 index) external view returns (address) {
+        return _allTokens[index];
+    }
+
+    /// @notice Returns a paginated slice of all created token addresses.
+    function getTokens(uint256 offset, uint256 limit) external view returns (address[] memory tokens, uint256 total) {
+        total = _allTokens.length;
+        if (offset >= total) return (new address[](0), total);
+        uint256 end = offset + limit;
+        if (end > total) end = total;
+        tokens = new address[](end - offset);
+        for (uint256 i = offset; i < end; i++) {
+            tokens[i - offset] = _allTokens[i];
+        }
+    }
+
+    /// @notice Returns all key factory state in a single call for dashboards.
+    function getState() external view returns (
+        address factoryOwner,
+        uint256 totalTokens,
+        uint256 totalFeeUsdt,
+        uint256[8] memory feesPerType,
+        uint256[8] memory countPerType,
+        address[] memory paymentTokens,
+        bool taxToStable,
+        uint256 taxSlippage,
+        uint8 refLevels,
+        bool autoDistribute
+    ) {
+        factoryOwner = owner();
+        totalTokens = totalTokensCreated;
+        totalFeeUsdt = totalFeeEarnedUsdt;
+        for (uint8 i = 0; i < 8; i++) {
+            feesPerType[i] = creationFee[i];
+            countPerType[i] = tokensCreatedByType[i];
+        }
+        paymentTokens = _supportedTokens;
+        taxToStable = convertTaxToStable;
+        taxSlippage = taxSlippageBps;
+        refLevels = referralLevels;
+        autoDistribute = autoDistributeReward;
     }
 
     /// @notice Returns all supported payment token addresses.
@@ -953,25 +1009,53 @@ contract TokenFactory is Ownable, ReentrancyGuard {
     /// @notice Withdraws accumulated fees minus reserved referral rewards.
     /// @param token The token address to withdraw, or address(0) for native
     function withdrawFees(address token) external onlyOwner {
+        _withdrawTo(token, platformWallet, 0);
+    }
+
+    function withdraw() external onlyOwner {
+        _withdrawTo(address(0), platformWallet, 0);
+    }
+
+    function withdraw(address to) external onlyOwner {
+        if (to == address(0)) revert InvalidAddress();
+        _withdrawTo(address(0), to, 0);
+    }
+
+    function withdraw(address to, uint256 amount) external onlyOwner {
+        if (to == address(0)) revert InvalidAddress();
+        _withdrawTo(address(0), to, amount);
+    }
+
+    function _withdrawTo(address token, address to, uint256 customAmount) internal {
         if (token == address(0)) {
             uint256 bal = address(this).balance;
             uint256 reserved = totalPendingRewards[address(0)];
             uint256 withdrawable = bal > reserved ? bal - reserved : 0;
             if (withdrawable == 0) revert NoBalance();
-            (bool ok, ) = msg.sender.call{value: withdrawable}("");
+            uint256 amt = customAmount > 0 && customAmount <= withdrawable ? customAmount : withdrawable;
+            (bool ok, ) = to.call{value: amt}("");
             if (!ok) revert TransferFailed();
         } else {
             uint256 bal = IERC20(token).balanceOf(address(this));
             uint256 reserved = totalPendingRewards[token];
             uint256 withdrawable = bal > reserved ? bal - reserved : 0;
             if (withdrawable == 0) revert NoBalance();
-            IERC20(token).safeTransfer(msg.sender, withdrawable);
+            uint256 amt = customAmount > 0 && customAmount <= withdrawable ? customAmount : withdrawable;
+            IERC20(token).safeTransfer(to, amt);
         }
     }
 
     /// @notice Sets the authorized PlatformRouter address.
     function setAuthorizedRouter(address _router) external onlyOwner {
         authorizedRouter = _router;
+    }
+
+    event PlatformWalletUpdated(address indexed oldWallet, address indexed newWallet);
+
+    function setPlatformWallet(address wallet) external onlyOwner {
+        if (wallet == address(0)) revert InvalidAddress();
+        emit PlatformWalletUpdated(platformWallet, wallet);
+        platformWallet = wallet;
     }
 
     // =============================================================

@@ -80,8 +80,8 @@
 	let launchSoftCap = $state('5');
 	let launchHardCap = $state('50');
 	let launchDurationDays = $state('30');
-	let launchMaxBuyBps = $state('200');
-	let launchCreatorAllocBps = $state('0');
+	let launchMaxBuyPct = $state('2');
+	let launchCreatorAllocPct = $state('0');
 	let launchVestingDays = $state('0');
 
 	let listingPoolPct = $state(80);
@@ -194,7 +194,9 @@
 	// ── Submit ─────────────────────────────────────────────
 	function submit() {
 		const network = supportedNetworks.find(n => n.chain_id == chainId);
-		if (!network) return;
+		if (!network) { addFeedback({ message: 'Please select a network', type: 'error' }); return; }
+		if (!useExistingToken && (!name.trim() || !symbol.trim())) { addFeedback({ message: 'Token name and symbol are required', type: 'error' }); return; }
+		if (!useExistingToken && (!totalSupply || Number(totalSupply) <= 0)) { addFeedback({ message: 'Total supply must be greater than 0', type: 'error' }); return; }
 		const validWallets = taxWallets.filter(w => w.address.trim() && /^0x[a-fA-F0-9]{40}$/.test(w.address.trim()));
 		const totalTokensForListing = listingPairs.reduce((sum, p) => {
 			if (totalLiquidityUsd <= 0 || tokensForPool <= 0) return sum;
@@ -214,8 +216,8 @@
 			launch: {
 				enabled: launchEnabled, tokensForLaunchPct: launchTokensPct,
 				curveType: launchCurveType, softCap: launchSoftCap, hardCap: launchHardCap,
-				durationDays: launchDurationDays, maxBuyBps: launchMaxBuyBps,
-				creatorAllocationBps: launchCreatorAllocBps, vestingDays: launchVestingDays,
+				durationDays: launchDurationDays, maxBuyBps: String(Math.round(parseFloat(launchMaxBuyPct || '0') * 100)),
+				creatorAllocationBps: String(Math.round(parseFloat(launchCreatorAllocPct || '0') * 100)), vestingDays: launchVestingDays,
 				launchPaymentToken: '',
 			},
 			protection: { maxWalletPct: protectionEnabled ? maxWalletPct : '0', maxTransactionPct: protectionEnabled ? maxTransactionPct : '0', cooldownSeconds: protectionEnabled ? cooldownSeconds : '0' },
@@ -289,12 +291,53 @@
 					<div class="wz-field"><label class="wz-label">Hard cap ($)</label><input class="input-field" type="text" bind:value={launchHardCap} /></div>
 				</div>
 				<div class="wz-row">
-					<div class="wz-field"><label class="wz-label">Duration (days)</label><input class="input-field" type="text" bind:value={launchDurationDays} /></div>
-					<div class="wz-field"><label class="wz-label">Max buy (%)</label><input class="input-field" type="text" bind:value={launchMaxBuyBps} placeholder="200 = 2%" /></div>
+					<div class="wz-field">
+						<label class="wz-label">Duration</label>
+						<select class="input-field" bind:value={launchDurationDays}>
+							<option value="7">7 days</option>
+							<option value="14">14 days</option>
+							<option value="30">30 days</option>
+							<option value="60">60 days</option>
+							<option value="90">90 days</option>
+						</select>
+					</div>
+					<div class="wz-field">
+						<label class="wz-label">Max buy per wallet</label>
+						<select class="input-field" bind:value={launchMaxBuyPct}>
+							<option value="0.5">0.5%</option>
+							<option value="1">1%</option>
+							<option value="2">2%</option>
+							<option value="3">3%</option>
+							<option value="5">5%</option>
+						</select>
+						<span class="wz-field-hint">Max % of hard cap one wallet can buy</span>
+					</div>
 				</div>
 				<div class="wz-row">
-					<div class="wz-field"><label class="wz-label">Creator allocation (%)</label><input class="input-field" type="text" bind:value={launchCreatorAllocBps} placeholder="0" /><span class="wz-field-hint">% of tokens reserved for you (vested)</span></div>
-					<div class="wz-field"><label class="wz-label">Vesting (days)</label><input class="input-field" type="text" bind:value={launchVestingDays} placeholder="0" /><span class="wz-field-hint">Lock period for creator tokens</span></div>
+					<div class="wz-field">
+						<label class="wz-label">Creator allocation</label>
+						<select class="input-field" bind:value={launchCreatorAllocPct}>
+							<option value="0">None</option>
+							<option value="1">1%</option>
+							<option value="2">2%</option>
+							<option value="3">3%</option>
+							<option value="5">5%</option>
+							<option value="10">10%</option>
+						</select>
+						<span class="wz-field-hint">Tokens reserved for you (vested)</span>
+					</div>
+					<div class="wz-field">
+						<label class="wz-label">Vesting period</label>
+						<select class="input-field" bind:value={launchVestingDays}>
+							<option value="0">No vesting</option>
+							<option value="7">7 days</option>
+							<option value="14">14 days</option>
+							<option value="30">30 days</option>
+							<option value="60">60 days</option>
+							<option value="90">90 days</option>
+						</select>
+						<span class="wz-field-hint">Lock period for creator tokens</span>
+					</div>
 				</div>
 
 				<!-- Anti-whale protection -->
@@ -336,7 +379,7 @@
 			<div class="wz-section">
 				<h2 class="wz-title">Review</h2>
 				<p class="wz-hint">Confirm your settings before deploying.</p>
-				<Review {name} {symbol} {totalSupply} {decimals} network={selectedNetwork} {isMintable} {isTaxable} {isPartner} {launchEnabled} {listingEnabled} {buyTaxPct} {sellTaxPct} {transferTaxPct} {taxWallets} {protectionEnabled} {maxWalletPct} {maxTransactionPct} {cooldownSeconds} {launchTokensPct} {launchCurveType} {launchSoftCap} {launchHardCap} {launchDurationDays} {launchMaxBuyBps} {launchCreatorAllocBps} {launchVestingDays} {listingPoolPct} {listingPairs} {autoPrice} {totalLiquidityUsd} {nativeCoin} {useExistingToken} {existingTokenAddress} />
+				<Review {name} {symbol} {totalSupply} {decimals} network={selectedNetwork} {isMintable} {isTaxable} {isPartner} {launchEnabled} {listingEnabled} {buyTaxPct} {sellTaxPct} {transferTaxPct} {taxWallets} {protectionEnabled} {maxWalletPct} {maxTransactionPct} {cooldownSeconds} {launchTokensPct} {launchCurveType} {launchSoftCap} {launchHardCap} {launchDurationDays} launchMaxBuyPct={launchMaxBuyPct} launchCreatorAllocPct={launchCreatorAllocPct} {launchVestingDays} {listingPoolPct} {listingPairs} {autoPrice} {totalLiquidityUsd} {nativeCoin} {useExistingToken} {existingTokenAddress} />
 			</div>
 		{/if}
 	</div>

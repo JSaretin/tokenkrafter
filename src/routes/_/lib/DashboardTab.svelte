@@ -38,9 +38,8 @@
 	let dashLoading = $state(false);
 	let recentLaunches: any[] = $state([]);
 
-	// For KPI fallback values
-	let totalTokens = $state(0n);
-	let lpTotalLaunches = $state(0n);
+	// Recent tokens from DB
+	let recentTokens: any[] = $state([]);
 
 	// Multi-chain contract data
 	type ChainData = {
@@ -48,6 +47,8 @@
 		totalTokens: bigint;
 		totalLaunches: bigint;
 		totalFeeUsdt: bigint;
+		tokenFeeUsdt: bigint;
+		launchFeeUsdt: bigint;
 		launchFee: string;
 		platformWallet: string;
 		owner: string;
@@ -58,6 +59,10 @@
 	};
 	let allChainData: ChainData[] = $state([]);
 	let chainsLoading = $state(false);
+
+	// Fallback totals from on-chain data
+	let onChainTokens = $derived(allChainData.reduce((s, c) => s + Number(c.totalTokens), 0));
+	let onChainLaunches = $derived(allChainData.reduce((s, c) => s + Number(c.totalLaunches), 0));
 
 	async function loadAllChains() {
 		chainsLoading = true;
@@ -71,13 +76,11 @@
 
 			try {
 				const factory = new ethers.Contract(net.platform_address, FACTORY_ABI, provider);
-				const [owner, total, supported] = await Promise.all([
-					factory.owner(),
-					factory.totalTokensCreated(),
-					factory.getSupportedPaymentTokens()
-				]);
 
-				let lpTotal = 0n, lpFeeUsdt = 0n, lpFee = '0', lpPW = '', lpOwnerVal = '', lpSupported: string[] = [];
+				// Single getState() call replaces 4 separate calls
+				const [owner, totalTokens, tokenFeeUsdt, , , supported] = await factory.getState();
+
+				let lpTotal = 0n, lpFeeUsdt = 0n, lpFee = '0', lpPW = '', lpSupported: string[] = [];
 				let ud = 18;
 
 				try {
@@ -88,20 +91,23 @@
 				if (net.launchpad_address && net.launchpad_address !== '0x') {
 					try {
 						const lp = new ethers.Contract(net.launchpad_address, LAUNCHPAD_FACTORY_ABI, provider);
-						const [lt, lfu, lf, pw, lo, ls] = await Promise.all([
-							lp.totalLaunches(), lp.totalLaunchFeeEarnedUsdt(), lp.launchFee(),
-							lp.platformWallet(), lp.owner(), lp.getSupportedPaymentTokens()
-						]);
-						lpTotal = lt; lpFeeUsdt = lfu; lpFee = ethers.formatUnits(lf, ud);
-						lpPW = pw; lpOwnerVal = lo; lpSupported = [...ls];
+						// Single getState() call replaces 5 separate calls
+						const [, lpTotalCount, lpTotalFee, lpFeeRaw] = await lp.getState();
+						lpTotal = lpTotalCount;
+						lpFeeUsdt = lpTotalFee;
+						lpFee = ethers.formatUnits(lpFeeRaw, ud);
+						lpPW = await lp.platformWallet();
+						lpSupported = [...(await lp.getSupportedPaymentTokens())];
 					} catch {}
 				}
 
 				results.push({
 					network: net,
-					totalTokens: total,
+					totalTokens: totalTokens,
 					totalLaunches: lpTotal,
-					totalFeeUsdt: lpFeeUsdt,
+					totalFeeUsdt: tokenFeeUsdt + lpFeeUsdt,
+					tokenFeeUsdt: tokenFeeUsdt,
+					launchFeeUsdt: lpFeeUsdt,
 					launchFee: lpFee,
 					platformWallet: lpPW,
 					owner,
@@ -188,11 +194,19 @@
 		dashLoading = false;
 	}
 
+	// On-chain fee totals as fallback
+	let onChainTokenFees = $derived(allChainData.reduce((s, c) => s + parseFloat(ethers.formatUnits(c.tokenFeeUsdt, c.usdtDecimals)), 0));
+	let onChainLaunchFees = $derived(allChainData.reduce((s, c) => s + parseFloat(ethers.formatUnits(c.launchFeeUsdt, c.usdtDecimals)), 0));
+	let onChainTotalRevenue = $derived(onChainTokenFees + onChainLaunchFees);
+
 	let dashTotalRevenue = $derived.by(() => {
-		if (!dashData) return 0;
-		const t = dashData.totals;
-		return (t.creation_fees_usdt || 0) + (t.launch_fees_usdt || 0) + (t.tax_revenue_usdt || 0);
+		const dbRev = dashData ? (dashData.totals.creation_fees_usdt || 0) + (dashData.totals.launch_fees_usdt || 0) + (dashData.totals.tax_revenue_usdt || 0) : 0;
+		return dbRev || onChainTotalRevenue;
 	});
+
+	let dashCreationFees = $derived.by(() => (dashData ? dashData.totals.creation_fees_usdt : 0) || onChainTokenFees);
+	let dashLaunchFees = $derived.by(() => (dashData ? dashData.totals.launch_fees_usdt : 0) || onChainLaunchFees);
+	let dashTaxRevenue = $derived.by(() => dashData ? dashData.totals.tax_revenue_usdt : 0);
 
 	let dashTokenTypeDistribution = $derived.by(() => {
 		const types = [
@@ -201,9 +215,16 @@
 			{ label: 'Taxable', count: 0, color: '#ef4444' },
 			{ label: 'Partner', count: 0, color: '#a78bfa' }
 		];
-		if (dashData) {
+		// Use real data from DB if available
+		if (recentTokens.length > 0) {
+			for (const t of recentTokens) {
+				if (t.is_partner) types[3].count++;
+				else if (t.is_taxable) types[2].count++;
+				else if (t.is_mintable) types[1].count++;
+				else types[0].count++;
+			}
+		} else if (dashData) {
 			const t = dashData.totals;
-			const total = t.total_tokens || 1;
 			const partner = t.partner_tokens_created || 0;
 			const regular = (t.tokens_created || 0) - partner;
 			types[0].count = Math.max(0, Math.round(regular * 0.5));
@@ -214,6 +235,13 @@
 		return types;
 	});
 
+	async function loadRecentTokens() {
+		try {
+			const res = await fetch('/api/created-tokens?limit=20');
+			if (res.ok) recentTokens = await res.json();
+		} catch {}
+	}
+
 	let channels: any[] = [];
 
 	let hasLoaded = false;
@@ -222,11 +250,13 @@
 			hasLoaded = true;
 			loadDashboard();
 			loadAllChains();
+			loadRecentTokens();
 
 			const launchesChannel = supabase
 				.channel('admin-dashboard-launches')
 				.on('postgres_changes', { event: '*', schema: 'public', table: 'launches' }, () => {
 					loadDashboard();
+					loadAllChains();
 				})
 				.subscribe();
 			channels.push(launchesChannel);
@@ -235,6 +265,7 @@
 				.channel('admin-dashboard-stats')
 				.on('postgres_changes', { event: '*', schema: 'public', table: 'platform_stats' }, () => {
 					loadDashboard();
+					loadAllChains();
 				})
 				.subscribe();
 			channels.push(statsChannel);
@@ -243,6 +274,8 @@
 				.channel('admin-dashboard-tokens')
 				.on('postgres_changes', { event: '*', schema: 'public', table: 'created_tokens' }, () => {
 					loadDashboard();
+					loadAllChains();
+					loadRecentTokens();
 				})
 				.subscribe();
 			channels.push(tokensChannel);
@@ -278,13 +311,13 @@
 		</div>
 		<div class="kpi-card">
 			<div class="kpi-label">Tokens Created</div>
-			<div class="kpi-value text-cyan-400">{t?.total_tokens ?? Number(totalTokens)}</div>
-			<div class="kpi-bar bg-cyan-400/20"><div class="kpi-bar-fill bg-cyan-400" style="width: {Math.min(100, (t?.total_tokens ?? Number(totalTokens)) * 2)}%"></div></div>
+			<div class="kpi-value text-cyan-400">{(t?.total_tokens || onChainTokens)}</div>
+			<div class="kpi-bar bg-cyan-400/20"><div class="kpi-bar-fill bg-cyan-400" style="width: {Math.min(100, (t?.total_tokens || onChainTokens) * 2)}%"></div></div>
 		</div>
 		<div class="kpi-card">
 			<div class="kpi-label">Launches</div>
-			<div class="kpi-value text-blue-400">{t?.launches_created ?? Number(lpTotalLaunches)}</div>
-			<div class="kpi-bar bg-blue-400/20"><div class="kpi-bar-fill bg-blue-400" style="width: {Math.min(100, (t?.launches_created ?? 0) * 5)}%"></div></div>
+			<div class="kpi-value text-blue-400">{(t?.launches_created || onChainLaunches)}</div>
+			<div class="kpi-bar bg-blue-400/20"><div class="kpi-bar-fill bg-blue-400" style="width: {Math.min(100, (t?.launches_created || onChainLaunches) * 5)}%"></div></div>
 		</div>
 		<div class="kpi-card">
 			<div class="kpi-label">Graduated</div>
@@ -444,34 +477,30 @@
 				<h3 class="chart-title">Revenue Breakdown</h3>
 			</div>
 			<div class="p-4">
-				{#each [{ creation: t?.creation_fees_usdt ?? 0, launch: t?.launch_fees_usdt ?? 0, tax: t?.tax_revenue_usdt ?? 0 }] as rev}
-				{@const creation = rev.creation}
-				{@const launch = rev.launch}
-				{@const tax = rev.tax}
-				{@const revTotal = creation + launch + tax || 1}
+				{#each [dashCreationFees + dashLaunchFees + dashTaxRevenue || 1] as revTotal}
 				<div class="rev-row">
 					<div class="rev-label">
 						<span class="legend-dot bg-emerald-400"></span>
 						<span>Creation Fees</span>
 					</div>
-					<span class="rev-amount text-emerald-400">${creation.toFixed(2)}</span>
-					<div class="rev-bar"><div class="rev-bar-fill bg-emerald-400" style="width: {(creation / revTotal) * 100}%"></div></div>
+					<span class="rev-amount text-emerald-400">${dashCreationFees.toFixed(2)}</span>
+					<div class="rev-bar"><div class="rev-bar-fill bg-emerald-400" style="width: {(dashCreationFees / revTotal) * 100}%"></div></div>
 				</div>
 				<div class="rev-row">
 					<div class="rev-label">
 						<span class="legend-dot bg-cyan-400"></span>
 						<span>Launch Fees</span>
 					</div>
-					<span class="rev-amount text-cyan-400">${launch.toFixed(2)}</span>
-					<div class="rev-bar"><div class="rev-bar-fill bg-cyan-400" style="width: {(launch / revTotal) * 100}%"></div></div>
+					<span class="rev-amount text-cyan-400">${dashLaunchFees.toFixed(2)}</span>
+					<div class="rev-bar"><div class="rev-bar-fill bg-cyan-400" style="width: {(dashLaunchFees / revTotal) * 100}%"></div></div>
 				</div>
 				<div class="rev-row">
 					<div class="rev-label">
 						<span class="legend-dot bg-purple-400"></span>
 						<span>Tax Revenue</span>
 					</div>
-					<span class="rev-amount text-purple-400">${tax.toFixed(2)}</span>
-					<div class="rev-bar"><div class="rev-bar-fill bg-purple-400" style="width: {(tax / revTotal) * 100}%"></div></div>
+					<span class="rev-amount text-purple-400">${dashTaxRevenue.toFixed(2)}</span>
+					<div class="rev-bar"><div class="rev-bar-fill bg-purple-400" style="width: {(dashTaxRevenue / revTotal) * 100}%"></div></div>
 				</div>
 				<div class="rev-row mt-3 pt-3" style="border-top: 1px solid rgba(255,255,255,0.06);">
 					<div class="rev-label font-bold">
@@ -483,37 +512,66 @@
 			</div>
 		</div>
 
-		<!-- Recent Activity -->
+		<!-- Recent Tokens -->
 		<div class="chart-card">
 			<div class="chart-header">
-				<h3 class="chart-title">Recent Launches</h3>
+				<h3 class="chart-title">Recent Tokens</h3>
+				<span class="text-[10px] text-gray-600 font-mono">{recentTokens.length} token{recentTokens.length !== 1 ? 's' : ''}</span>
 			</div>
 			<div class="p-4 max-h-[280px] overflow-y-auto" style="scrollbar-width: thin;">
-				{#if recentLaunches.length === 0}
-					<p class="text-gray-600 text-xs font-mono text-center py-6">No launches yet</p>
+				{#if recentTokens.length === 0}
+					<p class="text-gray-600 text-xs font-mono text-center py-6">No tokens created yet</p>
 				{:else}
-					{#each recentLaunches.slice(0, 8) as launch}
-						<a href="/launchpad/{launch.address}" class="activity-row">
-							<div class="activity-icon" style="background: {launch.state === 2 ? 'rgba(16,185,129,0.15)' : launch.state === 1 ? 'rgba(0,210,255,0.15)' : 'rgba(245,158,11,0.15)'}">
-								{(launch.token_symbol || '?').charAt(0)}
+					{#each recentTokens.slice(0, 10) as token}
+						<div class="activity-row">
+							<div class="activity-icon" style="background: {token.is_partner ? 'rgba(167,139,250,0.15)' : token.is_taxable ? 'rgba(239,68,68,0.15)' : 'rgba(0,210,255,0.15)'}">
+								{(token.symbol || '?').charAt(0)}
 							</div>
 							<div class="flex-1 min-w-0">
-								<div class="text-white text-xs font-mono truncate">{launch.token_name || 'Unknown'} <span class="text-gray-600">{launch.token_symbol}</span></div>
+								<div class="text-white text-xs font-mono truncate">{token.name} <span class="text-gray-600">${token.symbol}</span></div>
 								<div class="text-gray-600 text-[10px] font-mono">
-									{launch.state === 2 ? 'Graduated' : launch.state === 1 ? 'Active' : 'Pending'}
-									{#if launch.is_partner}<span class="text-purple-400 ml-1">Partner</span>{/if}
+									{token.is_partner ? 'Partner' : token.is_taxable ? 'Taxable' : token.is_mintable ? 'Mintable' : 'Basic'}
+									<span class="text-gray-700 ml-1">{token.creator?.slice(0, 6)}...{token.creator?.slice(-4)}</span>
 								</div>
 							</div>
 							<div class="text-right">
-								<div class="text-xs font-mono text-white">${(parseInt(launch.total_base_raised || '0') / 1e6).toFixed(0)}</div>
-								<div class="text-[10px] text-gray-600 font-mono">raised</div>
+								<div class="text-[10px] text-gray-600 font-mono">{new Date(token.created_at).toLocaleDateString()}</div>
 							</div>
-						</a>
+						</div>
 					{/each}
 				{/if}
 			</div>
 		</div>
 	</div>
+
+	<!-- Recent Launches -->
+	{#if recentLaunches.length > 0}
+		<div class="chart-card mt-4">
+			<div class="chart-header">
+				<h3 class="chart-title">Recent Launches</h3>
+			</div>
+			<div class="p-4 max-h-[280px] overflow-y-auto" style="scrollbar-width: thin;">
+				{#each recentLaunches.slice(0, 8) as launch}
+					<a href="/launchpad/{launch.address}" class="activity-row">
+						<div class="activity-icon" style="background: {launch.state === 2 ? 'rgba(16,185,129,0.15)' : launch.state === 1 ? 'rgba(0,210,255,0.15)' : 'rgba(245,158,11,0.15)'}">
+							{(launch.token_symbol || '?').charAt(0)}
+						</div>
+						<div class="flex-1 min-w-0">
+							<div class="text-white text-xs font-mono truncate">{launch.token_name || 'Unknown'} <span class="text-gray-600">{launch.token_symbol}</span></div>
+							<div class="text-gray-600 text-[10px] font-mono">
+								{launch.state === 2 ? 'Graduated' : launch.state === 1 ? 'Active' : 'Pending'}
+								{#if launch.is_partner}<span class="text-purple-400 ml-1">Partner</span>{/if}
+							</div>
+						</div>
+						<div class="text-right">
+							<div class="text-xs font-mono text-white">${(parseInt(launch.total_base_raised || '0') / 1e6).toFixed(0)}</div>
+							<div class="text-[10px] text-gray-600 font-mono">raised</div>
+						</div>
+					</a>
+				{/each}
+			</div>
+		</div>
+	{/if}
 {/if}
 
 <style>

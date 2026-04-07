@@ -54,8 +54,8 @@
 		launchSoftCap = '5';
 		launchHardCap = '50';
 		launchDurationDays = '30';
-		launchMaxBuyBps = '200';
-		launchCreatorAllocBps = '0';
+		launchMaxBuyPct = '2';
+		launchCreatorAllocPct = '0';
 		launchVestingDays = '0';
 		launchSubmitting = false;
 		launchStep = 'idle';
@@ -103,8 +103,8 @@
 	let launchSoftCap = $state('5');
 	let launchHardCap = $state('50');
 	let launchDurationDays = $state('30');
-	let launchMaxBuyBps = $state('200');
-	let launchCreatorAllocBps = $state('0');
+	let launchMaxBuyPct = $state('2');
+	let launchCreatorAllocPct = $state('0');
 	let launchVestingDays = $state('0');
 	let launchSubmitting = $state(false);
 	let launchStep = $state<'idle' | 'fee' | 'approving-fee' | 'creating' | 'approving-tokens' | 'depositing' | 'saving' | 'done'>('idle');
@@ -229,8 +229,8 @@
 				ethers.parseUnits(launchSoftCap, usdtDec),
 				ethers.parseUnits(launchHardCap, usdtDec),
 				BigInt(launchDurationDays),
-				BigInt(launchMaxBuyBps),
-				BigInt(launchCreatorAllocBps),
+				BigInt(Math.round(parseFloat(launchMaxBuyPct || '0') * 100)),
+				BigInt(Math.round(parseFloat(launchCreatorAllocPct || '0') * 100)),
 				BigInt(launchVestingDays),
 				paymentToken,
 				0n, // startTimestamp = immediate
@@ -606,7 +606,9 @@
 		try {
 			const storedRef = localStorage.getItem('referral');
 			const referral = storedRef && ethers.isAddress(storedRef) ? storedRef : ZERO_ADDRESS;
-			const txOptions = isNativePayment ? { value: selectedFee } : {};
+			// Add 8% buffer for native payments to account for price movement between fee quote and tx execution
+			const nativeFeeWithBuffer = isNativePayment ? selectedFee * 108n / 100n : 0n;
+			const txOptions = isNativePayment ? { value: nativeFeeWithBuffer } : {};
 
 			// For existing tokens, totalSupply is formatted (e.g. "1000000.0"), parse it back to wei
 			// For new tokens, totalSupply is a raw integer (e.g. "1000000"), contract scales internally
@@ -838,30 +840,36 @@
 				step = 'adding-liquidity';
 				addFeedback({ message: 'Creating token & adding liquidity...', type: 'info' });
 
-				// Always use createAndListWithEth — contract skips ETH pool if ethTokenAmount=0
-				const ethAmt = nativePair ? Number(nativePair.amount) : 0;
-				const ethTokenAmount = ethAmt > 0
-					? ethers.parseUnits((ethAmt / price).toFixed(6), tokenInfo.decimals)
-					: 0n;
-				const ethValue = ethAmt > 0 ? ethers.parseEther(String(ethAmt)) : 0n;
+				// Build unified ListParams: address(0) = native pair, others = ERC20
+				const bases: string[] = [];
+				const baseAmounts: bigint[] = [];
+				const tokenAmounts: bigint[] = [];
+				let ethValue = 0n;
 
-				const extraBases: string[] = [];
-				const extraBaseAmounts: bigint[] = [];
-				const extraTokenAmounts: bigint[] = [];
+				// Native pair first (if any)
+				if (nativePair && Number(nativePair.amount) > 0) {
+					const ethAmt = Number(nativePair.amount);
+					bases.push(ethers.ZeroAddress);
+					baseAmounts.push(ethers.parseEther(String(ethAmt)));
+					tokenAmounts.push(ethers.parseUnits((ethAmt / price).toFixed(6), tokenInfo.decimals));
+					ethValue = ethers.parseEther(String(ethAmt));
+				}
 
+				// ERC20 pairs
 				for (const pair of erc20Pairs) {
 					const baseAddress = getBaseTokenAddress(network, pair.base);
 					const baseDecimals = getBaseDecimals(network, pair.base);
 					const baseAmt = Number(pair.amount);
-					extraBases.push(baseAddress);
-					extraBaseAmounts.push(ethers.parseUnits(String(baseAmt), baseDecimals));
-					extraTokenAmounts.push(ethers.parseUnits((baseAmt / price).toFixed(6), tokenInfo.decimals));
+					bases.push(baseAddress);
+					baseAmounts.push(ethers.parseUnits(String(baseAmt), baseDecimals));
+					tokenAmounts.push(ethers.parseUnits((baseAmt / price).toFixed(6), tokenInfo.decimals));
 				}
 
-				const nativeValue = (isNativePayment ? selectedFee : 0n) + ethValue;
+				const listParams = { bases, baseAmounts, tokenAmounts };
+				const nativeValue = (isNativePayment ? selectedFee * 108n / 100n : 0n) + ethValue;
 
-				const tx = await router.createAndListWithEth(
-					tokenParams, ethTokenAmount, extraBases, extraBaseAmounts, extraTokenAmounts,
+				const tx = await router.createAndList(
+					tokenParams, listParams,
 					protectionParams, taxParams, referral,
 					{ value: nativeValue }
 				);
@@ -1637,23 +1645,49 @@
 								<div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
 									<div class="field-group">
 										<label class="label-text" for="launch-duration">{$t('ci.durationDays')} <Tooltip text="How long the curve stays open. If soft cap isn't met, refunds are enabled." /></label>
-										<input id="launch-duration" type="number" class="input-field" bind:value={launchDurationDays} min="1" />
+										<select id="launch-duration" class="input-field" bind:value={launchDurationDays}>
+											<option value="7">7 days</option>
+											<option value="14">14 days</option>
+											<option value="30">30 days</option>
+											<option value="60">60 days</option>
+											<option value="90">90 days</option>
+										</select>
 									</div>
 									<div class="field-group">
-										<label class="label-text" for="launch-max-buy">{$t('ci.maxBuyBps')} <Tooltip text="Max % of curve tokens one wallet can buy." /></label>
-										<input id="launch-max-buy" type="number" class="input-field" bind:value={launchMaxBuyBps} min="1" />
+										<label class="label-text" for="launch-max-buy">Max buy per wallet <Tooltip text="Max % of hard cap one wallet can buy." /></label>
+										<select id="launch-max-buy" class="input-field" bind:value={launchMaxBuyPct}>
+											<option value="0.5">0.5%</option>
+											<option value="1">1%</option>
+											<option value="2">2%</option>
+											<option value="3">3%</option>
+											<option value="5">5%</option>
+										</select>
 									</div>
 								</div>
 
 								<div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
 									<div class="field-group">
-										<label class="label-text" for="launch-creator-alloc">{$t('ci.creatorAllocBps')} <Tooltip text="% of launch tokens reserved for you, released over vesting period." /></label>
-										<input id="launch-creator-alloc" type="number" class="input-field" bind:value={launchCreatorAllocBps} min="0" />
+										<label class="label-text" for="launch-creator-alloc">Creator allocation <Tooltip text="% of launch tokens reserved for you, released over vesting period." /></label>
+										<select id="launch-creator-alloc" class="input-field" bind:value={launchCreatorAllocPct}>
+											<option value="0">None</option>
+											<option value="1">1%</option>
+											<option value="2">2%</option>
+											<option value="3">3%</option>
+											<option value="5">5%</option>
+											<option value="10">10%</option>
+										</select>
 									</div>
-									{#if parseInt(launchCreatorAllocBps) > 0}
+									{#if parseFloat(launchCreatorAllocPct) > 0}
 										<div class="field-group">
 											<label class="label-text" for="launch-vesting">{$t('ci.vestingDays')} <Tooltip text="Tokens unlock gradually over this period. Longer = stronger commitment signal." /></label>
-											<input id="launch-vesting" type="number" class="input-field" bind:value={launchVestingDays} min="0" />
+											<select id="launch-vesting" class="input-field" bind:value={launchVestingDays}>
+												<option value="0">No vesting</option>
+												<option value="7">7 days</option>
+												<option value="14">14 days</option>
+												<option value="30">30 days</option>
+												<option value="60">60 days</option>
+												<option value="90">90 days</option>
+											</select>
 										</div>
 									{/if}
 								</div>
@@ -1689,12 +1723,12 @@
 									</div>
 									<div class="detail-row">
 										<span class="detail-label">Max buy</span>
-										<span class="detail-value">{(parseInt(launchMaxBuyBps) / 100).toFixed(2)}%</span>
+										<span class="detail-value">{launchMaxBuyPct}%</span>
 									</div>
-									{#if parseInt(launchCreatorAllocBps) > 0}
+									{#if parseFloat(launchCreatorAllocPct) > 0}
 										<div class="detail-row">
 											<span class="detail-label">Creator alloc</span>
-											<span class="detail-value">{(parseInt(launchCreatorAllocBps) / 100).toFixed(2)}% ({launchVestingDays}d vesting)</span>
+											<span class="detail-value">{launchCreatorAllocPct}% ({launchVestingDays}d vesting)</span>
 										</div>
 									{/if}
 								</div>

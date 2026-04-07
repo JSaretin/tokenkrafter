@@ -273,7 +273,7 @@ contract TradeLens {
     function withdrawToken(address token) external {
         require(msg.sender == owner);
         uint256 bal = IERC20(token).balanceOf(address(this));
-        if (bal > 0) IERC20(token).transfer(owner, bal);
+        if (bal > 0) require(IERC20(token).transfer(owner, bal), "transfer failed");
     }
 
     receive() external payable {}

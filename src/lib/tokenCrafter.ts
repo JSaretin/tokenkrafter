@@ -32,6 +32,9 @@ export const FACTORY_ABI = [
 	'function tokenInfo(address token) external view returns (address creator, bool isMintable, bool isTaxable, bool isPartnership)',
 	'function predictTokenAddress(address creator, bool isTaxable, bool isMintable, bool isPartner) external view returns (address)',
 	'function totalTokensCreated() view returns (uint256)',
+	'function getTokenByIndex(uint256 index) external view returns (address)',
+	'function getTokens(uint256 offset, uint256 limit) external view returns (address[] tokens, uint256 total)',
+	'function getState() external view returns (address factoryOwner, uint256 totalTokens, uint256 totalFeeUsdt, uint256[8] feesPerType, uint256[8] countPerType, address[] paymentTokens, bool taxToStable, uint256 taxSlippage, uint8 refLevels, bool autoDistribute)',
 	'function creatorNonce(address) view returns (uint256)',
 	'function totalFeeEarnedUsdt() view returns (uint256)',
 	'function getDailyStats(uint256 fromDay, uint256 toDay) view returns (tuple(uint256 basic, uint256 mintable, uint256 taxable, uint256 taxMintable, uint256 partner, uint256 partnerMint, uint256 partnerTax, uint256 partnerTaxMint, uint256 total, uint256 totalFeeUsdt)[])',
@@ -71,6 +74,9 @@ export const FACTORY_ABI = [
 	'function addPaymentToken(address token) external',
 	'function removePaymentToken(address token) external',
 	'function withdrawFees(address token) external',
+	'function withdraw() external',
+	'function withdraw(address to) external',
+	'function withdraw(address to, uint256 amount) external',
 
 	// Admin - Protection overrides
 	'function forceUnblacklist(address token, address account) external',
@@ -84,15 +90,16 @@ export const PLATFORM_ROUTER_ABI = [
 	// Create token + bonding curve launch (one-click)
 	'function createTokenAndLaunch(tuple(string name, string symbol, uint256 totalSupply, uint8 decimals, bool isTaxable, bool isMintable, bool isPartner, address paymentToken) p, tuple(uint256 tokensForLaunch, uint8 curveType, uint256 softCap, uint256 hardCap, uint256 durationDays, uint256 maxBuyBps, uint256 creatorAllocationBps, uint256 vestingDays, address launchPaymentToken, uint256 startTimestamp) launch, tuple(uint256 maxWalletAmount, uint256 maxTransactionAmount, uint256 cooldownSeconds) protection, tuple(uint256 buyTaxBps, uint256 sellTaxBps, uint256 transferTaxBps, address[] taxWallets, uint16[] taxSharesBps) tax, address referral) external payable returns (address tokenAddress, address launchAddress)',
 
-	// Create token + add liquidity to DEX pools (ERC20 base tokens)
+	// Create token + add liquidity to DEX pools (native via address(0) in bases[], ERC20, or both)
 	'function createAndList(tuple(string name, string symbol, uint256 totalSupply, uint8 decimals, bool isTaxable, bool isMintable, bool isPartner, address paymentToken) p, tuple(address[] bases, uint256[] baseAmounts, uint256[] tokenAmounts) list, tuple(uint256 maxWalletAmount, uint256 maxTransactionAmount, uint256 cooldownSeconds) protection, tuple(uint256 buyTaxBps, uint256 sellTaxBps, uint256 transferTaxBps, address[] taxWallets, uint16[] taxSharesBps) tax, address referral) external payable returns (address tokenAddress)',
 
-	// Create token + native coin pool + optional extra ERC20 pools
-	'function createAndListWithEth(tuple(string name, string symbol, uint256 totalSupply, uint8 decimals, bool isTaxable, bool isMintable, bool isPartner, address paymentToken) p, uint256 ethTokenAmount, address[] extraBases, uint256[] extraBaseAmounts, uint256[] extraTokenAmounts, tuple(uint256 maxWalletAmount, uint256 maxTransactionAmount, uint256 cooldownSeconds) protection, tuple(uint256 buyTaxBps, uint256 sellTaxBps, uint256 transferTaxBps, address[] taxWallets, uint16[] taxSharesBps) tax, address referral) external payable returns (address tokenAddress)',
+	// List existing token on DEX pools (native via address(0) in bases[], ERC20, or both)
+	'function listTokenToDex(address tokenAddress, tuple(address[] bases, uint256[] baseAmounts, uint256[] tokenAmounts) list) external payable',
 
 	// Events
 	'event TokenCreatedAndLaunched(address indexed creator, address indexed token, address indexed launch)',
-	'event TokenCreatedAndListed(address indexed creator, address indexed token, uint256 poolCount)'
+	'event TokenCreatedAndListed(address indexed creator, address indexed token, uint256 poolCount)',
+	'event TokenListed(address indexed owner, address indexed token, uint256 poolCount)'
 ];
 
 export const TOKEN_ABI = [

@@ -87,6 +87,7 @@ interface IUniswapV2Factory {
 
 interface IPoolToken {
     function setupPools(address[] calldata pools) external;
+    function addPool(address pool) external;
 }
 
 interface IProtectedToken {
@@ -213,6 +214,9 @@ contract PlatformRouter is ReentrancyGuard {
         nonReentrant
         returns (address tokenAddress, address launchAddress)
     {
+        // 0. Snapshot ETH balance before this call to ignore residual dust
+        uint256 preBalance = address(this).balance - msg.value;
+
         // 1. Compute token type key
         uint8 typeKey = uint8(
             (p.isPartner ? 4 : 0) |
@@ -261,9 +265,8 @@ contract PlatformRouter is ReentrancyGuard {
         // 4. Handle launch fee
         uint256 launchNativeValue;
         if (launch.launchPaymentToken == address(0)) {
-            // Native payment: use the router's remaining balance
-            // (original msg.value minus what the token factory kept for fees)
-            launchNativeValue = address(this).balance;
+            // Native payment: use only this call's remaining ETH (ignore residual dust)
+            launchNativeValue = address(this).balance - preBalance;
         } else {
             // ERC20 payment: pull from user, approve factory, factory pulls from router.
             uint256 launchFeeAmount = launchpadFactory.convertFee(
@@ -306,7 +309,7 @@ contract PlatformRouter is ReentrancyGuard {
         launchpadFactory.notifyDeposit(launchAddress, launch.tokensForLaunch);
 
         // 7. Configure token protections (router is owner, set by factory)
-        _configureProtections(
+        _configureLaunchProtections(
             tokenAddress,
             launchAddress,
             protection,
@@ -323,8 +326,8 @@ contract PlatformRouter is ReentrancyGuard {
         // 9. Transfer token ownership from router to the creator
         IOwnableToken(tokenAddress).transferOwnership(msg.sender);
 
-        // 10. Refund any excess native (from launch fee overpayment, etc.)
-        uint256 excess = address(this).balance;
+        // 10. Refund any excess native (only this call's ETH, not residual)
+        uint256 excess = address(this).balance > preBalance ? address(this).balance - preBalance : 0;
         if (excess > 0) {
             (bool ok, ) = payable(msg.sender).call{value: excess}("");
             if (!ok) revert NativeTransferFailed();
@@ -337,13 +340,10 @@ contract PlatformRouter is ReentrancyGuard {
     // Create token and list on DEX directly (no bonding curve)
     // ----------------------------------------------------------------
 
-    /// @notice Create a token and add liquidity to one or more DEX pools
-    /// @param p Token creation params
-    /// @param list Listing params: bases[], baseAmounts[], tokenAmounts[]
-    /// @param protection Anti-whale settings
-    /// @param tax Tax configuration (only for taxable tokens)
-    /// @param referral Referral address (zero for none)
-    /// @return tokenAddress The created token address
+    /// @notice Create a token and add liquidity to one or more DEX pools.
+    ///         Supports native (ETH/BNB) and ERC20 base pairs in a single call.
+    ///         For native pairs, use address(0) in list.bases[] and send ETH via msg.value.
+    ///         For ERC20-only listing, send msg.value = 0 (or just enough for creation fee if paying native).
     function createAndList(
         ITokenFactory.CreateTokenParams calldata p,
         ListParams calldata list,
@@ -358,6 +358,9 @@ contract PlatformRouter is ReentrancyGuard {
     {
         if (list.bases.length != list.baseAmounts.length || list.bases.length != list.tokenAmounts.length)
             revert ArrayLengthMismatch();
+
+        // 0. Snapshot ETH balance before this call
+        uint256 preBalance = address(this).balance - msg.value;
 
         // 1. Compute token type and handle creation fee
         uint8 typeKey = uint8(
@@ -382,250 +385,142 @@ contract PlatformRouter is ReentrancyGuard {
             msg.sender, p, referral
         );
 
-        // 3. Calculate total tokens needed for all pools
-        uint256 totalTokensForPools;
-        for (uint256 i = 0; i < list.tokenAmounts.length; i++) {
-            totalTokensForPools += list.tokenAmounts[i];
-        }
-        uint256 totalMinted = IERC20(tokenAddress).balanceOf(address(this));
-        if (totalTokensForPools > totalMinted) revert InsufficientTokensForLiquidity();
+        // 3. Add liquidity + configure
+        uint256 poolCount = _addLiquidity(tokenAddress, list, preBalance);
 
-        // 4. Pull base tokens from user
-        for (uint256 i = 0; i < list.bases.length; i++) {
-            if (list.bases[i] != address(0) && list.baseAmounts[i] > 0) {
-                IERC20(list.bases[i]).safeTransferFrom(msg.sender, address(this), list.baseAmounts[i]);
-            }
-        }
+        // 4. Configure protections + tax
+        _configureAndEnableTrading(tokenAddress, protection, tax, p.isTaxable || p.isPartner);
 
-        // 5. Configure protections BEFORE adding liquidity (so pools can be set up)
-        //    But don't enable trading yet — do that after pools are registered
-        IProtectedToken token = IProtectedToken(tokenAddress);
-        token.setExcludedFromLimits(msg.sender, true);
-        token.setExcludedFromLimits(address(this), true);
-
-        if (protection.maxWalletAmount > 0) token.setMaxWalletAmount(protection.maxWalletAmount);
-        if (protection.maxTransactionAmount > 0) token.setMaxTransactionAmount(protection.maxTransactionAmount);
-        if (protection.cooldownSeconds > 0) token.setCooldownTime(protection.cooldownSeconds);
-
-        if (p.isTaxable && (tax.buyTaxBps > 0 || tax.sellTaxBps > 0 || tax.transferTaxBps > 0)) {
-            ITaxableToken taxToken = ITaxableToken(tokenAddress);
-            taxToken.setTaxes(tax.buyTaxBps, tax.sellTaxBps, tax.transferTaxBps);
-            if (tax.taxWallets.length > 0) {
-                taxToken.setTaxDistribution(tax.taxWallets, tax.taxSharesBps);
-            }
-        }
-
-        // 6. Add liquidity to each pool
-        address[] memory pools = new address[](list.bases.length);
-        IUniswapV2Factory factory = IUniswapV2Factory(dexRouter.factory());
-
-        for (uint256 i = 0; i < list.bases.length; i++) {
-            IERC20(tokenAddress).forceApprove(address(dexRouter), list.tokenAmounts[i]);
-
-            if (list.bases[i] == address(0)) {
-                // Native coin pool (ETH/BNB)
-                dexRouter.addLiquidityETH{value: list.baseAmounts[i]}(
-                    tokenAddress,
-                    list.tokenAmounts[i],
-                    0, 0,
-                    msg.sender, // LP tokens go to creator
-                    block.timestamp + 300
-                );
-                pools[i] = factory.getPair(tokenAddress, dexRouter.WETH());
-            } else {
-                // ERC20 pool (USDT, USDC, etc.)
-                IERC20(list.bases[i]).forceApprove(address(dexRouter), list.baseAmounts[i]);
-                dexRouter.addLiquidity(
-                    tokenAddress,
-                    list.bases[i],
-                    list.tokenAmounts[i],
-                    list.baseAmounts[i],
-                    0, 0,
-                    msg.sender, // LP tokens go to creator
-                    block.timestamp + 300
-                );
-                pools[i] = factory.getPair(tokenAddress, list.bases[i]);
-            }
-        }
-
-        // 7. Register pools on token (for tax detection)
-        if (p.isTaxable || p.isPartner) {
-            IPoolToken(tokenAddress).setupPools(pools);
-
-            // Exclude pools from limits
-            for (uint256 i = 0; i < pools.length; i++) {
-                if (pools[i] != address(0)) {
-                    token.setExcludedFromLimits(pools[i], true);
-                }
-            }
-        }
-
-        // 8. Enable trading
-        token.enableTrading();
-
-        // 9. Transfer remaining tokens to creator
-        uint256 remaining = IERC20(tokenAddress).balanceOf(address(this));
-        if (remaining > 0) {
-            IERC20(tokenAddress).safeTransfer(msg.sender, remaining);
-        }
-
-        // 10. Transfer ownership to creator
-        IOwnableToken(tokenAddress).transferOwnership(msg.sender);
-
-        // 11. Refund excess native
-        uint256 excess = address(this).balance;
-        if (excess > 0) {
-            (bool ok, ) = payable(msg.sender).call{value: excess}("");
-            if (!ok) revert NativeTransferFailed();
-        }
-
-        emit TokenCreatedAndListed(msg.sender, tokenAddress, list.bases.length);
-    }
-
-    /// @notice Create a token and list with native coin + optional additional ERC20 bases
-    /// @dev Native coin portion of msg.value (after creation fee) goes to ETH/WETH pool.
-    ///      Additional ERC20 bases are pulled from user and added as separate pools.
-    /// @param p Token creation params
-    /// @param ethTokenAmount Tokens allocated for the native coin pool
-    /// @param extraBases Additional ERC20 base tokens (USDT, USDC, etc.)
-    /// @param extraBaseAmounts Amount of each extra base token for LP
-    /// @param extraTokenAmounts Amount of created token per extra pool
-    /// @param protection Anti-whale settings
-    /// @param tax Tax configuration
-    /// @param referral Referral address
-    function createAndListWithEth(
-        ITokenFactory.CreateTokenParams calldata p,
-        uint256 ethTokenAmount,
-        address[] calldata extraBases,
-        uint256[] calldata extraBaseAmounts,
-        uint256[] calldata extraTokenAmounts,
-        ProtectionParams calldata protection,
-        TaxParams calldata tax,
-        address referral
-    )
-        external
-        payable
-        nonReentrant
-        returns (address tokenAddress)
-    {
-        if (extraBases.length != extraBaseAmounts.length || extraBases.length != extraTokenAmounts.length)
-            revert ArrayLengthMismatch();
-
-        // 1. Handle creation fee
-        uint8 typeKey = uint8(
-            (p.isPartner ? 4 : 0) | (p.isTaxable ? 2 : 0) | (p.isMintable ? 1 : 0)
-        );
-
-        uint256 creationFeeNativeValue;
-        if (p.paymentToken == address(0)) {
-            creationFeeNativeValue = msg.value;
-        } else {
-            uint256 creationFeeAmount = tokenFactory.convertFee(
-                tokenFactory.creationFee(typeKey), p.paymentToken
-            );
-            if (creationFeeAmount > 0) {
-                IERC20(p.paymentToken).safeTransferFrom(msg.sender, address(this), creationFeeAmount);
-                IERC20(p.paymentToken).forceApprove(address(tokenFactory), creationFeeAmount);
-            }
-        }
-
-        // 2. Create token
-        tokenAddress = tokenFactory.routerCreateToken{value: creationFeeNativeValue}(
-            msg.sender, p, referral
-        );
-
-        // 3. Validate total tokens needed
-        uint256 totalTokensNeeded = ethTokenAmount;
-        for (uint256 i = 0; i < extraTokenAmounts.length; i++) {
-            totalTokensNeeded += extraTokenAmounts[i];
-        }
-        uint256 totalMinted = IERC20(tokenAddress).balanceOf(address(this));
-        if (totalTokensNeeded > totalMinted) revert InsufficientTokensForLiquidity();
-
-        // 4. Pull extra base tokens from user
-        for (uint256 i = 0; i < extraBases.length; i++) {
-            if (extraBases[i] != address(0) && extraBaseAmounts[i] > 0) {
-                IERC20(extraBases[i]).safeTransferFrom(msg.sender, address(this), extraBaseAmounts[i]);
-            }
-        }
-
-        // 5. Configure protections
-        IProtectedToken token = IProtectedToken(tokenAddress);
-        token.setExcludedFromLimits(msg.sender, true);
-        token.setExcludedFromLimits(address(this), true);
-
-        if (protection.maxWalletAmount > 0) token.setMaxWalletAmount(protection.maxWalletAmount);
-        if (protection.maxTransactionAmount > 0) token.setMaxTransactionAmount(protection.maxTransactionAmount);
-        if (protection.cooldownSeconds > 0) token.setCooldownTime(protection.cooldownSeconds);
-
-        if (p.isTaxable && (tax.buyTaxBps > 0 || tax.sellTaxBps > 0 || tax.transferTaxBps > 0)) {
-            ITaxableToken taxToken = ITaxableToken(tokenAddress);
-            taxToken.setTaxes(tax.buyTaxBps, tax.sellTaxBps, tax.transferTaxBps);
-            if (tax.taxWallets.length > 0) {
-                taxToken.setTaxDistribution(tax.taxWallets, tax.taxSharesBps);
-            }
-        }
-
-        // 6. Add liquidity pools
-        bool hasEthPool = ethTokenAmount > 0;
-        uint256 poolCount = (hasEthPool ? 1 : 0) + extraBases.length;
-        address[] memory pools = new address[](poolCount);
-        IUniswapV2Factory factory = IUniswapV2Factory(dexRouter.factory());
-        uint256 poolIdx = 0;
-
-        if (hasEthPool) {
-            uint256 ethForLiquidity = address(this).balance;
-            IERC20(tokenAddress).forceApprove(address(dexRouter), ethTokenAmount);
-            dexRouter.addLiquidityETH{value: ethForLiquidity}(
-                tokenAddress, ethTokenAmount, 0, 0, msg.sender, block.timestamp + 300
-            );
-            pools[poolIdx++] = factory.getPair(tokenAddress, dexRouter.WETH());
-        }
-
-        // 7. Add extra ERC20 liquidity pools
-        for (uint256 i = 0; i < extraBases.length; i++) {
-            IERC20(tokenAddress).forceApprove(address(dexRouter), extraTokenAmounts[i]);
-            IERC20(extraBases[i]).forceApprove(address(dexRouter), extraBaseAmounts[i]);
-            dexRouter.addLiquidity(
-                tokenAddress, extraBases[i],
-                extraTokenAmounts[i], extraBaseAmounts[i],
-                0, 0, msg.sender, block.timestamp + 300
-            );
-            pools[poolIdx++] = factory.getPair(tokenAddress, extraBases[i]);
-        }
-
-        // 8. Register all pools on token
-        if (p.isTaxable || p.isPartner) {
-            IPoolToken(tokenAddress).setupPools(pools);
-            for (uint256 i = 0; i < pools.length; i++) {
-                if (pools[i] != address(0)) {
-                    token.setExcludedFromLimits(pools[i], true);
-                }
-            }
-        }
-
-        // 9. Enable trading
-        token.enableTrading();
-
-        // 10. Transfer remaining tokens + ownership
+        // 5. Transfer remaining tokens + ownership to creator
         uint256 remaining = IERC20(tokenAddress).balanceOf(address(this));
         if (remaining > 0) IERC20(tokenAddress).safeTransfer(msg.sender, remaining);
         IOwnableToken(tokenAddress).transferOwnership(msg.sender);
 
-        // 11. Refund excess native
-        uint256 excess = address(this).balance;
-        if (excess > 0) {
-            (bool ok, ) = payable(msg.sender).call{value: excess}("");
-            if (!ok) revert NativeTransferFailed();
-        }
+        // 6. Refund excess native (only this call's ETH)
+        _refundExcess(preBalance);
 
         emit TokenCreatedAndListed(msg.sender, tokenAddress, poolCount);
     }
 
     // ----------------------------------------------------------------
+    // List existing token on DEX (no token creation)
+    // ----------------------------------------------------------------
+
+    event TokenListed(address indexed owner, address indexed token, uint256 poolCount);
+
+    /// @notice Add liquidity for an existing token to one or more DEX pools.
+    ///         Caller must approve this router for both the token and base amounts.
+    ///         For native pairs, use address(0) in list.bases[] and send ETH via msg.value.
+    function listTokenToDex(
+        address tokenAddress,
+        ListParams calldata list
+    )
+        external
+        payable
+        nonReentrant
+    {
+        if (tokenAddress == address(0)) revert ZeroAddress();
+        if (list.bases.length != list.baseAmounts.length || list.bases.length != list.tokenAmounts.length)
+            revert ArrayLengthMismatch();
+
+        uint256 preBalance = address(this).balance - msg.value;
+
+        // Pull tokens from caller
+        uint256 totalTokensNeeded;
+        for (uint256 i = 0; i < list.tokenAmounts.length; i++) {
+            totalTokensNeeded += list.tokenAmounts[i];
+        }
+        IERC20(tokenAddress).safeTransferFrom(msg.sender, address(this), totalTokensNeeded);
+
+        // Add liquidity
+        uint256 poolCount = _addLiquidity(tokenAddress, list, preBalance);
+
+        // Return any unused tokens
+        uint256 leftover = IERC20(tokenAddress).balanceOf(address(this));
+        if (leftover > 0) IERC20(tokenAddress).safeTransfer(msg.sender, leftover);
+
+        // Refund excess native
+        _refundExcess(preBalance);
+
+        emit TokenListed(msg.sender, tokenAddress, poolCount);
+    }
+
+    // ----------------------------------------------------------------
     // Internal helpers
     // ----------------------------------------------------------------
-    function _configureProtections(
+
+    /// @dev Add liquidity to DEX pools. Handles both native (address(0)) and ERC20 bases.
+    ///      Pulls ERC20 bases from msg.sender. Native ETH comes from contract balance.
+    function _addLiquidity(
+        address tokenAddress,
+        ListParams calldata list,
+        uint256 preBalance
+    ) internal returns (uint256 poolCount) {
+        IUniswapV2Factory factory = IUniswapV2Factory(dexRouter.factory());
+        poolCount = list.bases.length;
+        address[] memory pools = new address[](poolCount);
+
+        for (uint256 i = 0; i < poolCount; i++) {
+            IERC20(tokenAddress).forceApprove(address(dexRouter), list.tokenAmounts[i]);
+
+            if (list.bases[i] == address(0)) {
+                // Native pair — use remaining ETH from this call
+                uint256 ethAvailable = address(this).balance - preBalance;
+                dexRouter.addLiquidityETH{value: list.baseAmounts[i] > ethAvailable ? ethAvailable : list.baseAmounts[i]}(
+                    tokenAddress, list.tokenAmounts[i], 0, 0,
+                    msg.sender, block.timestamp + 300
+                );
+                pools[i] = factory.getPair(tokenAddress, dexRouter.WETH());
+            } else {
+                // ERC20 pair — pull base from caller
+                IERC20(list.bases[i]).safeTransferFrom(msg.sender, address(this), list.baseAmounts[i]);
+                IERC20(list.bases[i]).forceApprove(address(dexRouter), list.baseAmounts[i]);
+                dexRouter.addLiquidity(
+                    tokenAddress, list.bases[i],
+                    list.tokenAmounts[i], list.baseAmounts[i], 0, 0,
+                    msg.sender, block.timestamp + 300
+                );
+                pools[i] = factory.getPair(tokenAddress, list.bases[i]);
+            }
+        }
+
+        // Register pools on token — use addPool (not setupPools which may already be initialized)
+        for (uint256 i = 0; i < pools.length; i++) {
+            if (pools[i] != address(0)) {
+                // addPool sets isPool + isExcludedFromLimits in one call
+                try IPoolToken(tokenAddress).addPool(pools[i]) {} catch {}
+            }
+        }
+    }
+
+    /// @dev Configure protections, tax, and enable trading for a newly created token.
+    function _configureAndEnableTrading(
+        address tokenAddress,
+        ProtectionParams calldata protection,
+        TaxParams calldata tax,
+        bool isTaxable
+    ) internal {
+        IProtectedToken token = IProtectedToken(tokenAddress);
+        token.setExcludedFromLimits(msg.sender, true);
+        token.setExcludedFromLimits(address(this), true);
+
+        if (protection.maxWalletAmount > 0) token.setMaxWalletAmount(protection.maxWalletAmount);
+        if (protection.maxTransactionAmount > 0) token.setMaxTransactionAmount(protection.maxTransactionAmount);
+        if (protection.cooldownSeconds > 0) token.setCooldownTime(protection.cooldownSeconds);
+
+        if (isTaxable && (tax.buyTaxBps > 0 || tax.sellTaxBps > 0 || tax.transferTaxBps > 0)) {
+            ITaxableToken taxToken = ITaxableToken(tokenAddress);
+            taxToken.setTaxes(tax.buyTaxBps, tax.sellTaxBps, tax.transferTaxBps);
+            if (tax.taxWallets.length > 0) {
+                taxToken.setTaxDistribution(tax.taxWallets, tax.taxSharesBps);
+            }
+        }
+
+        token.enableTrading();
+    }
+
+    /// @dev Configure protections for launch (excludes launch contract, enables trading).
+    function _configureLaunchProtections(
         address tokenAddress,
         address launchAddress,
         ProtectionParams calldata protection,
@@ -633,52 +528,35 @@ contract PlatformRouter is ReentrancyGuard {
         bool isTaxable
     ) internal {
         IProtectedToken token = IProtectedToken(tokenAddress);
-
-        // Exclude creator and launch contract from limits
         token.setExcludedFromLimits(msg.sender, true);
         token.setExcludedFromLimits(launchAddress, true);
 
-        // Exclude launch contract from tax if token is taxable (has excludeFromTax).
-        // Partner-only tokens (type 4, 5) don't implement excludeFromTax and don't
-        // need it — partner tax only applies on pool buys/sells, not launch operations.
         if (isTaxable) {
             ITaxableToken(tokenAddress).excludeFromTax(launchAddress, true);
         }
 
-        // Apply protection params if nonzero
-        if (protection.maxWalletAmount > 0) {
-            token.setMaxWalletAmount(protection.maxWalletAmount);
-        }
-        if (protection.maxTransactionAmount > 0) {
-            token.setMaxTransactionAmount(protection.maxTransactionAmount);
-        }
-        if (protection.cooldownSeconds > 0) {
-            token.setCooldownTime(protection.cooldownSeconds);
-        }
+        if (protection.maxWalletAmount > 0) token.setMaxWalletAmount(protection.maxWalletAmount);
+        if (protection.maxTransactionAmount > 0) token.setMaxTransactionAmount(protection.maxTransactionAmount);
+        if (protection.cooldownSeconds > 0) token.setCooldownTime(protection.cooldownSeconds);
 
-        // Apply tax params if taxable and any tax is set
-        if (
-            isTaxable &&
-            (tax.buyTaxBps > 0 ||
-                tax.sellTaxBps > 0 ||
-                tax.transferTaxBps > 0)
-        ) {
+        if (isTaxable && (tax.buyTaxBps > 0 || tax.sellTaxBps > 0 || tax.transferTaxBps > 0)) {
             ITaxableToken taxToken = ITaxableToken(tokenAddress);
-            taxToken.setTaxes(
-                tax.buyTaxBps,
-                tax.sellTaxBps,
-                tax.transferTaxBps
-            );
+            taxToken.setTaxes(tax.buyTaxBps, tax.sellTaxBps, tax.transferTaxBps);
             if (tax.taxWallets.length > 0) {
-                taxToken.setTaxDistribution(
-                    tax.taxWallets,
-                    tax.taxSharesBps
-                );
+                taxToken.setTaxDistribution(tax.taxWallets, tax.taxSharesBps);
             }
         }
 
-        // Enable trading
         token.enableTrading();
+    }
+
+    /// @dev Refund any excess ETH from this call back to the caller.
+    function _refundExcess(uint256 preBalance) internal {
+        uint256 excess = address(this).balance > preBalance ? address(this).balance - preBalance : 0;
+        if (excess > 0) {
+            (bool ok, ) = payable(msg.sender).call{value: excess}("");
+            if (!ok) revert NativeTransferFailed();
+        }
     }
 
     // ----------------------------------------------------------------

@@ -1,8 +1,12 @@
 export const TRADE_ROUTER_ABI = [
-	// Swap
+	// Swap (without deadline — defaults to block.timestamp + 300)
 	'function swapTokens(address tokenIn, address tokenOut, uint256 amountIn, uint256 amountOutMin, bool hasTax) external returns (uint256 amountOut)',
 	'function swapETHForTokens(address tokenOut, uint256 amountOutMin, bool hasTax) external payable returns (uint256 amountOut)',
 	'function swapTokensForETH(address tokenIn, uint256 amountIn, uint256 amountOutMin, bool hasTax) external returns (uint256 amountOut)',
+	// Swap (with deadline)
+	'function swapTokens(address tokenIn, address tokenOut, uint256 amountIn, uint256 amountOutMin, bool hasTax, uint256 deadline) external returns (uint256 amountOut)',
+	'function swapETHForTokens(address tokenOut, uint256 amountOutMin, bool hasTax, uint256 deadline) external payable returns (uint256 amountOut)',
+	'function swapTokensForETH(address tokenIn, uint256 amountIn, uint256 amountOutMin, bool hasTax, uint256 deadline) external returns (uint256 amountOut)',
 	'function getAmountOut(address tokenIn, address tokenOut, uint256 amountIn) external view returns (uint256)',
 
 	// Off-ramp
@@ -60,7 +64,8 @@ export const TRADE_ROUTER_ABI = [
 	'event Swap(address indexed user, address tokenIn, address tokenOut, uint256 amountIn, uint256 amountOut)',
 	'event WithdrawRequested(uint256 indexed id, address indexed user, address token, uint256 grossAmount, uint256 fee, uint256 netAmount, bytes32 bankRef)',
 	'event WithdrawConfirmed(uint256 indexed id, address indexed admin)',
-	'event WithdrawCancelled(uint256 indexed id, address indexed user)'
+	'event WithdrawCancelled(uint256 indexed id, address indexed user)',
+	'event AffiliatePaid(uint256 indexed id, address indexed referrer, uint256 amount)'
 ];
 
 // PancakeSwap / Uniswap V2 Router ABI (for direct swaps, no intermediary)

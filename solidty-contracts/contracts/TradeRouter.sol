@@ -90,8 +90,8 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
     address public immutable weth;
     IERC20 public immutable usdt;
 
-    uint256 public feeBps = 10;                 // 0.1% default
-    uint256 public payoutTimeout = 300;         // 5 minutes default
+    uint256 public feeBps = 100;                // 1% default
+    uint256 public payoutTimeout = 600;         // 10 minutes default
     address public platformWallet;
     address[] public admins;
     mapping(address => bool) public isAdmin;
@@ -106,8 +106,8 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
     uint256 public totalEscrow;                             // total user funds held
     mapping(address => uint256) public platformEarnings;    // per token
 
-    uint256 public constant MAX_FEE_BPS = 100;  // max 1%
-    uint256 public constant MIN_TIMEOUT = 120;  // min 2 minutes
+    uint256 public constant MAX_FEE_BPS = 1000; // max 10%
+    uint256 public constant MIN_TIMEOUT = 300;  // min 5 minutes
     uint256 public constant MAX_TIMEOUT = 86400; // max 24 hours
     uint256 public maxSlippageBps = 500;         // max 5% slippage (configurable)
     uint256 public constant MAX_SLIPPAGE_CAP = 2000; // absolute cap 20%
@@ -137,6 +137,7 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
     event AdminRemoved(address indexed admin);
     event PlatformWalletUpdated(address indexed oldWallet, address indexed newWallet);
     event MaxSlippageUpdated(uint256 oldBps, uint256 newBps);
+    event AffiliatePaid(uint256 indexed id, address indexed referrer, uint256 amount);
 
     // ── Errors ──────────────────────────────────────────────────────
     error NotAdmin();
@@ -156,6 +157,7 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
     error SlippageTooHigh();
     error SlippageConfigTooHigh();
     error EmptyPending();
+    error TooManyAdmins();
 
     // ── Modifiers ───────────────────────────────────────────────────
     modifier onlyAdmin() {
@@ -191,10 +193,32 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
         uint256 amountOutMin,
         bool hasTax
     ) external nonReentrant whenNotPaused returns (uint256 amountOut) {
+        return _swapTokens(tokenIn, tokenOut, amountIn, amountOutMin, hasTax, block.timestamp + 300);
+    }
+
+    /// @notice Swap token → token with explicit deadline
+    function swapTokens(
+        address tokenIn,
+        address tokenOut,
+        uint256 amountIn,
+        uint256 amountOutMin,
+        bool hasTax,
+        uint256 deadline
+    ) external nonReentrant whenNotPaused returns (uint256 amountOut) {
+        return _swapTokens(tokenIn, tokenOut, amountIn, amountOutMin, hasTax, deadline);
+    }
+
+    function _swapTokens(
+        address tokenIn,
+        address tokenOut,
+        uint256 amountIn,
+        uint256 amountOutMin,
+        bool hasTax,
+        uint256 deadline
+    ) internal returns (uint256 amountOut) {
         if (amountIn == 0) revert ZeroAmount();
 
         IERC20(tokenIn).safeTransferFrom(msg.sender, address(this), amountIn);
-        // FIX #1: Reset-approve pattern to prevent allowance accumulation
         _safeResetApprove(tokenIn, address(dexRouter), amountIn);
 
         address[] memory path = _buildPath(tokenIn, tokenOut);
@@ -203,12 +227,12 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
         if (hasTax) {
             uint256 balBefore = IERC20(tokenOut).balanceOf(msg.sender);
             dexRouter.swapExactTokensForTokensSupportingFeeOnTransferTokens(
-                amountIn, amountOutMin, path, msg.sender, block.timestamp
+                amountIn, amountOutMin, path, msg.sender, deadline
             );
             amountOut = IERC20(tokenOut).balanceOf(msg.sender) - balBefore;
         } else {
             uint256[] memory amounts = dexRouter.swapExactTokensForTokens(
-                amountIn, amountOutMin, path, msg.sender, block.timestamp
+                amountIn, amountOutMin, path, msg.sender, deadline
             );
             amountOut = amounts[amounts.length - 1];
         }
@@ -222,21 +246,41 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
         uint256 amountOutMin,
         bool hasTax
     ) external payable nonReentrant whenNotPaused returns (uint256 amountOut) {
+        return _swapETHForTokens(tokenOut, amountOutMin, hasTax, block.timestamp + 300);
+    }
+
+    /// @notice Swap ETH → token with explicit deadline
+    function swapETHForTokens(
+        address tokenOut,
+        uint256 amountOutMin,
+        bool hasTax,
+        uint256 deadline
+    ) external payable nonReentrant whenNotPaused returns (uint256 amountOut) {
+        return _swapETHForTokens(tokenOut, amountOutMin, hasTax, deadline);
+    }
+
+    function _swapETHForTokens(
+        address tokenOut,
+        uint256 amountOutMin,
+        bool hasTax,
+        uint256 deadline
+    ) internal returns (uint256 amountOut) {
         if (msg.value == 0) revert ZeroAmount();
 
         address[] memory path = new address[](2);
         path[0] = weth;
         path[1] = tokenOut;
+        _validateSlippage(path, msg.value, amountOutMin);
 
         if (hasTax) {
             uint256 balBefore = IERC20(tokenOut).balanceOf(msg.sender);
             dexRouter.swapExactETHForTokensSupportingFeeOnTransferTokens{value: msg.value}(
-                amountOutMin, path, msg.sender, block.timestamp
+                amountOutMin, path, msg.sender, deadline
             );
             amountOut = IERC20(tokenOut).balanceOf(msg.sender) - balBefore;
         } else {
             uint256[] memory amounts = dexRouter.swapExactETHForTokens{value: msg.value}(
-                amountOutMin, path, msg.sender, block.timestamp
+                amountOutMin, path, msg.sender, deadline
             );
             amountOut = amounts[amounts.length - 1];
         }
@@ -251,25 +295,48 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
         uint256 amountOutMin,
         bool hasTax
     ) external nonReentrant whenNotPaused returns (uint256 amountOut) {
+        return _swapTokensForETH(tokenIn, amountIn, amountOutMin, hasTax, block.timestamp + 300);
+    }
+
+    /// @notice Swap token → ETH with explicit deadline
+    function swapTokensForETH(
+        address tokenIn,
+        uint256 amountIn,
+        uint256 amountOutMin,
+        bool hasTax,
+        uint256 deadline
+    ) external nonReentrant whenNotPaused returns (uint256 amountOut) {
+        return _swapTokensForETH(tokenIn, amountIn, amountOutMin, hasTax, deadline);
+    }
+
+    function _swapTokensForETH(
+        address tokenIn,
+        uint256 amountIn,
+        uint256 amountOutMin,
+        bool hasTax,
+        uint256 deadline
+    ) internal returns (uint256 amountOut) {
         if (amountIn == 0) revert ZeroAmount();
 
         IERC20(tokenIn).safeTransferFrom(msg.sender, address(this), amountIn);
-        // FIX #1: Reset-approve pattern
         _safeResetApprove(tokenIn, address(dexRouter), amountIn);
 
         address[] memory path = new address[](2);
         path[0] = tokenIn;
         path[1] = weth;
+        _validateSlippage(path, amountIn, amountOutMin);
 
         if (hasTax) {
-            uint256 balBefore = address(msg.sender).balance;
+            uint256 balBefore = address(this).balance;
             dexRouter.swapExactTokensForETHSupportingFeeOnTransferTokens(
-                amountIn, amountOutMin, path, msg.sender, block.timestamp
+                amountIn, amountOutMin, path, address(this), deadline
             );
-            amountOut = address(msg.sender).balance - balBefore;
+            amountOut = address(this).balance - balBefore;
+            (bool ok, ) = msg.sender.call{value: amountOut}("");
+            require(ok, "ETH transfer failed");
         } else {
             uint256[] memory amounts = dexRouter.swapExactTokensForETH(
-                amountIn, amountOutMin, path, msg.sender, block.timestamp
+                amountIn, amountOutMin, path, msg.sender, deadline
             );
             amountOut = amounts[amounts.length - 1];
         }
@@ -319,16 +386,17 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
         _safeResetApprove(tokenIn, address(dexRouter), amountIn);
 
         address[] memory path = _buildPath(tokenIn, address(usdt));
+        _validateSlippage(path, amountIn, minUsdtOut);
 
         uint256 usdtReceived;
         uint256 balBefore = usdt.balanceOf(address(this));
         if (hasTax) {
             dexRouter.swapExactTokensForTokensSupportingFeeOnTransferTokens(
-                amountIn, minUsdtOut, path, address(this), block.timestamp
+                amountIn, minUsdtOut, path, address(this), block.timestamp + 300
             );
         } else {
             dexRouter.swapExactTokensForTokens(
-                amountIn, minUsdtOut, path, address(this), block.timestamp
+                amountIn, minUsdtOut, path, address(this), block.timestamp + 300
             );
         }
         usdtReceived = usdt.balanceOf(address(this)) - balBefore;
@@ -348,10 +416,11 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
         address[] memory path = new address[](2);
         path[0] = weth;
         path[1] = address(usdt);
+        _validateSlippage(path, msg.value, minUsdtOut);
 
         uint256 balBefore = usdt.balanceOf(address(this));
         dexRouter.swapExactETHForTokensSupportingFeeOnTransferTokens{value: msg.value}(
-            minUsdtOut, path, address(this), block.timestamp
+            minUsdtOut, path, address(this), block.timestamp + 300
         );
         uint256 usdtReceived = usdt.balanceOf(address(this)) - balBefore;
         if (usdtReceived < minUsdtOut) revert SlippageTooHigh();
@@ -391,8 +460,8 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
             uint256 referralCut = (req.fee * affiliateShareBps) / 10000;
             if (referralCut > 0) {
                 platformFee -= referralCut;
-                affiliateEarnings[req.referrer] += referralCut;
                 IERC20(req.token).safeTransfer(req.referrer, referralCut);
+                emit AffiliatePaid(id, req.referrer, referralCut);
             }
         }
         platformEarnings[req.token] += platformFee;
@@ -410,23 +479,16 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
         emit WithdrawConfirmed(id, msg.sender);
     }
 
-    /// @notice Batch confirm — all net amounts to platformWallet
+    /// @notice Batch confirm — all net amounts to platformWallet, with proper affiliate handling
     function confirmBatch(uint256[] calldata ids) external onlyAdmin nonReentrant returns (uint256 confirmed) {
         for (uint256 i = 0; i < ids.length; i++) {
             uint256 id = ids[i];
             if (id >= withdrawals.length) continue;
-            WithdrawRequest storage req = withdrawals[id];
-            if (req.status != WithdrawStatus.Pending) continue;
-            if (block.timestamp >= req.createdAt + payoutTimeout) continue;
+            if (withdrawals[id].status != WithdrawStatus.Pending) continue;
+            if (block.timestamp >= withdrawals[id].createdAt + payoutTimeout) continue;
 
-            req.status = WithdrawStatus.Confirmed;
-            platformEarnings[req.token] += req.fee;
-            totalEscrow -= req.grossAmount;
-            IERC20(req.token).safeTransfer(platformWallet, req.netAmount);
-            _removePendingId(id);
+            _confirm(id, platformWallet, 0);
             confirmed++;
-
-            emit WithdrawConfirmed(id, msg.sender);
         }
     }
 
@@ -550,6 +612,7 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
 
     function addAdmin(address admin) external onlyOwner {
         if (isAdmin[admin]) revert AlreadyAdmin();
+        if (admins.length >= 20) revert TooManyAdmins();
         isAdmin[admin] = true;
         adminIdxOf[admin] = admins.length;
         admins.push(admin);
@@ -728,15 +791,15 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
         IERC20(token).forceApprove(spender, amount);
     }
 
-    function _buildPath(address tokenIn, address tokenOut) internal view returns (address[] memory) {
+    function _buildPath(address tokenIn, address tokenOut) internal view returns (address[] memory path) {
         if (tokenIn != weth && tokenOut != weth) {
-            address[] memory path = new address[](3);
+            path = new address[](3);
             path[0] = tokenIn;
             path[1] = weth;
             path[2] = tokenOut;
             return path;
         }
-        address[] memory path = new address[](2);
+        path = new address[](2);
         path[0] = tokenIn;
         path[1] = tokenOut;
         return path;

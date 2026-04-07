@@ -162,8 +162,9 @@
 	.field-group { display: flex; flex-direction: column; gap: 4px; }
 	.hint, .muted { font-size: 10px; color: rgba(255,255,255,0.25); font-family: 'Space Mono', monospace; }
 	.muted { font-size: 0.75rem; }
-	.rate-row, .prot-fields { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem; }
-	.tax-total { display: flex; align-items: center; gap: 6px; padding: 8px 12px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 8px; }
+	.rate-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem; }
+	.prot-fields { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem; }
+	.tax-total { display: flex; align-items: center; gap: 6px; padding: 8px 12px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 8px; flex-wrap: wrap; }
 	.total-label, .total-detail { font-family: 'Space Mono', monospace; color: rgba(255,255,255,0.35); }
 	.total-label { font-size: 0.7rem; color: rgba(255,255,255,0.4); }
 	.total-detail { font-size: 0.65rem; }
@@ -191,5 +192,12 @@
 	.toggle.on { background: rgba(245,158,11,0.5); }
 	.knob { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: rgba(255,255,255,0.5); transition: all 0.2s; }
 	.toggle.on .knob { left: 18px; background: #fbbf24; }
-	@media (max-width: 640px) { .rate-row, .prot-fields { grid-template-columns: 1fr; } }
+	@media (max-width: 640px) {
+		.rate-row { grid-template-columns: 1fr 1fr 1fr; }
+		.prot-fields { grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+		.prot-fields .field-group:last-child { grid-column: 1 / -1; }
+		.wallet-row { flex-wrap: wrap; }
+		.wallet-addr { min-width: 0; flex-basis: 100%; }
+		.share-wrap { width: 70px; }
+	}
 </style>
