@@ -79,6 +79,7 @@
 	let previewFee = $state(0n);
 	let previewNet = $state(0n);
 	let isWithdrawing = $state(false);
+	let payoutTimeoutMins = $state(10); // default, updated from contract
 
 	// Withdrawal step tracking (bank off-ramp)
 	// 0=idle, 1=signing, 2=approving, 3=trading
@@ -340,6 +341,15 @@
 			wethAddr = result.weth;
 			pricesLoaded = true;
 
+			// Load payout timeout from TradeRouter
+			if (net.trade_router_address) {
+				try {
+					const router = new ethers.Contract(net.trade_router_address, TRADE_ROUTER_ABI, provider);
+					const state = await router.getState();
+					payoutTimeoutMins = Math.round(Number(state.payoutTimeout) / 60);
+				} catch {}
+			}
+
 			// Update decimals + balances for selected tokens
 			for (const t of result.tokens) {
 				const tAddr = t.token.toLowerCase();
@@ -540,6 +550,9 @@
 			tokenInBalance = 0n;
 			tokenInLoading = true;
 			tokenInTax = null;
+			tokenInTaxBuy = 0;
+			tokenInTaxSell = 0;
+			tokenInHasTax = false;
 		} else {
 			tokenOutAddr = addr;
 			tokenOutSymbol = token.symbol;
@@ -549,6 +562,9 @@
 			tokenOutBalance = 0n;
 			tokenOutLoading = true;
 			tokenOutTax = null;
+			tokenOutTaxBuy = 0;
+			tokenOutTaxSell = 0;
+			tokenOutHasTax = false;
 		}
 
 		// Fetch metadata quickly (balance, decimals, symbol)
@@ -747,7 +763,7 @@
 				const sanitizedAmt = parseFloat(amt).toFixed(tokenInDecimals);
 				const parsedAmt = ethers.parseUnits(sanitizedAmt, tokenInDecimals);
 
-				// For non-USDT tokens, first estimate USDT output from swap
+				// For non-USDT tokens, estimate USDT output accounting for token taxes
 				let usdtAmount: bigint;
 				const isUsdt = inAddr.toLowerCase() === net.usdt_address?.toLowerCase();
 				if (isUsdt) {
@@ -755,8 +771,20 @@
 				} else {
 					const weth = await router.weth();
 					const addrIn = tokenInIsNative ? weth : inAddr;
-					usdtAmount = await router.getAmountOut(addrIn, net.usdt_address, parsedAmt);
+					// Raw DEX quote (before tax)
+					let rawOut = await router.getAmountOut(addrIn, net.usdt_address, parsedAmt);
+					// Apply token taxes: transfer tax (user→router) + sell tax (router→DEX)
+					const transferTax = tokenInTax?.transferTaxBps || 0;
+					const sellTax = tokenInTax?.sellTaxBps || tokenInTaxSell || 0;
+					const totalTax = transferTax + sellTax;
+					if (totalTax > 0) {
+						rawOut = (rawOut * BigInt(10000 - totalTax)) / 10000n;
+					}
+					usdtAmount = rawOut;
 				}
+
+				// Apply slippage tolerance — show worst-case output
+				usdtAmount = (usdtAmount * BigInt(10000 - slippageBps)) / 10000n;
 
 				const [fee, netAmt] = await router.previewDeposit(usdtAmount);
 				previewFee = fee;
@@ -767,14 +795,16 @@
 
 	// ── Derived helpers ────────────────────────────────────────
 	let effectiveTax = $derived.by(() => {
-		// When selling tokenIn (it goes to pool), use sellTax of tokenIn
-		// When buying tokenOut (it comes from pool), use buyTax of tokenOut
+		// Transfer tax: triggers on transferFrom (user → router/DEX)
+		// Sell tax: triggers when input token enters a DEX pool
+		// Buy tax: triggers when output token leaves a DEX pool
+		const transfer = tokenInTax?.transferTaxBps || 0;
 		const sell = tokenInHasTax ? tokenInTaxSell : 0;
 		const buy = tokenOutHasTax ? tokenOutTaxBuy : 0;
-		return sell + buy;
+		return transfer + sell + buy;
 	});
 
-	let hasTaxEither = $derived(tokenInHasTax || tokenOutHasTax);
+	let hasTaxEither = $derived(tokenInHasTax || tokenOutHasTax || (tokenInTax?.transferTaxBps || 0) > 0);
 
 	/** Format token amount for display — stablecoins get 2dp, others get 4-6dp */
 	function formatAmount(value: string, decimals: number, symbol: string): string {
@@ -788,13 +818,12 @@
 		return num.toFixed(6);
 	}
 
-	// Apply simulation buy tax to output amount for accurate post-tax display
+	// Apply all applicable taxes to output amount for accurate post-tax display
 	let postTaxAmountOut = $derived.by(() => {
 		if (!amountOut) return '';
-		const buyTax = tokenOutTax?.buyTaxBps || tokenOutTaxBuy || 0;
-		if (buyTax <= 0) return amountOut;
+		if (effectiveTax <= 0) return amountOut;
 		const raw = parseFloat(amountOut);
-		return String(raw * (1 - buyTax / 10000));
+		return String(raw * (1 - effectiveTax / 10000));
 	});
 	let displayAmountOut = $derived(formatAmount(postTaxAmountOut || amountOut, tokenOutDecimals, tokenOutSymbol));
 
@@ -891,12 +920,19 @@
 					expectedOut = ethers.parseUnits(sanitizedOut, tokenOutDecimals);
 				}
 			} catch {}
-			// Account for token tax + slippage in minOut
-			// Buy/sell tax only triggers on DEX pair interactions (not on transferFrom to TradeRouter)
-			// Transfer tax triggers on ALL transfers — including user → TradeRouter intermediary hop
-			const buyTax = tokenOutTax?.buyTaxBps || tokenOutTaxBuy || 0;
+			// Account for all applicable taxes + slippage in minOut:
+			// - Transfer tax: triggers on transferFrom (user → router/DEX)
+			// - Sell tax: triggers when selling into a DEX pool
+			// - Buy tax: triggers when buying from a DEX pool (output token)
+			const transferTaxIn = tokenInTax?.transferTaxBps || 0;
 			const sellTax = tokenInTax?.sellTaxBps || tokenInTaxSell || 0;
-			const totalTaxBps = buyTax + sellTax;
+			const buyTax = tokenOutTax?.buyTaxBps || tokenOutTaxBuy || 0;
+			// Off-ramp: user→router (transfer tax) + router→DEX (sell tax), no buy tax on USDT
+			// Swap: sell tax on input + buy tax on output (transfer tax applies if token has it)
+			const isOfframp = outputMode === 'bank';
+			const totalTaxBps = isOfframp
+				? transferTaxIn + sellTax
+				: sellTax + buyTax + transferTaxIn;
 			const afterTax = totalTaxBps > 0
 				? (expectedOut * BigInt(10000 - totalTaxBps)) / 10000n
 				: expectedOut;
@@ -973,11 +1009,11 @@
 				withdrawStep = 3;
 				const referrer = ethers.ZeroAddress; // TODO: get from URL param or localStorage
 				if (tokenInIsNative) {
-					tx = await router.depositETH(0, bankRef, referrer, { value: parsedIn });
+					tx = await router.depositETH(minOut, bankRef, referrer, { value: parsedIn });
 				} else if (tokenInAddr.toLowerCase() === selectedNetwork.usdt_address.toLowerCase()) {
 					tx = await router.deposit(parsedIn, bankRef, referrer);
 				} else {
-					tx = await router.depositAndSwap(tokenInAddr, parsedIn, 0, true, bankRef, referrer);
+					tx = await router.depositAndSwap(tokenInAddr, parsedIn, minOut, true, bankRef, referrer);
 				}
 				const receipt = await tx.wait();
 
@@ -1057,19 +1093,17 @@
 				// Step 2: Execute swap directly on PancakeSwap
 				swapStep = 2;
 				try {
-				// Try with minOut=0 first to avoid slippage revert, user is protected by the preview
-				const safeMinOut = 0n;
 				if (tokenInIsNative) {
 					tx = await dex.swapExactETHForTokensSupportingFeeOnTransferTokens(
-						safeMinOut, path, userAddress, deadline, { value: parsedIn, gasLimit: 300000n }
+						minOut, path, userAddress, deadline, { value: parsedIn, gasLimit: 300000n }
 					);
 				} else if (tokenOutIsNative) {
 					tx = await dex.swapExactTokensForETHSupportingFeeOnTransferTokens(
-						parsedIn, safeMinOut, path, userAddress, deadline, { gasLimit: 300000n }
+						parsedIn, minOut, path, userAddress, deadline, { gasLimit: 300000n }
 					);
 				} else {
 					tx = await dex.swapExactTokensForTokensSupportingFeeOnTransferTokens(
-						parsedIn, safeMinOut, path, userAddress, deadline, { gasLimit: 300000n }
+						parsedIn, minOut, path, userAddress, deadline, { gasLimit: 300000n }
 					);
 				}
 				const swapReceipt = await tx.wait();
@@ -1440,10 +1474,10 @@
 						<span class="tax-dot" style="background: #f87171;"></span>
 						Honeypot: cannot sell this token
 					</div>
-				{:else if tokenInHasTax}
+				{:else if tokenInHasTax || (tokenInTax && tokenInTax.transferTaxBps > 0)}
 					<div class="tax-badge">
 						<span class="tax-dot tax-dot-amber"></span>
-						Tax: {tokenInTaxBuy / 100}% buy / {tokenInTaxSell / 100}% sell
+						Tax: {tokenInTaxBuy / 100}% buy / {tokenInTaxSell / 100}% sell{#if tokenInTax?.transferTaxBps} / {tokenInTax.transferTaxBps / 100}% transfer{/if}
 					</div>
 				{/if}
 			</div>
@@ -1499,10 +1533,10 @@
 							<span class="tax-dot" style="background: #f87171;"></span>
 							Honeypot: cannot sell this token
 						</div>
-					{:else if tokenOutHasTax}
+					{:else if tokenOutHasTax || (tokenOutTax && tokenOutTax.transferTaxBps > 0)}
 						<div class="tax-badge">
 							<span class="tax-dot tax-dot-amber"></span>
-							Tax: {tokenOutTaxBuy / 100}% buy / {tokenOutTaxSell / 100}% sell
+							Tax: {tokenOutTaxBuy / 100}% buy / {tokenOutTaxSell / 100}% sell{#if tokenOutTax?.transferTaxBps} / {tokenOutTax.transferTaxBps / 100}% transfer{/if}
 						</div>
 					{/if}
 				</div>
@@ -1513,7 +1547,7 @@
 				<div class="bank-section">
 					<div class="bank-info-strip">
 						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
-						<span>Funds held in smart contract. Cancel anytime if not processed within 5 minutes.</span>
+						<span>Funds held in smart contract. Cancel anytime if not processed within {payoutTimeoutMins} minutes.</span>
 					</div>
 
 					{#if previewNet > 0n || fiatEquivalent}
@@ -1526,7 +1560,7 @@
 							{/if}
 							{#if previewNet > 0n}
 								<div class="bank-preview-row">
-									<span>Platform fee (0.1%)</span>
+									<span>Platform fee ({previewFee > 0n && previewNet > 0n ? ((Number(previewFee) / Number(previewFee + previewNet)) * 100).toFixed(1) : '1'}%)</span>
 									<span>${parseFloat(ethers.formatUnits(previewFee, usdtDecimals)).toFixed(2)}</span>
 								</div>
 								<div class="bank-preview-row bank-preview-net">
@@ -2090,7 +2124,7 @@
 						{/if}
 						<div class="confirm-detail-row">
 							<span>Processing time</span>
-							<span>Under 5 minutes</span>
+							<span>Under {payoutTimeoutMins} minutes</span>
 						</div>
 						<div class="confirm-detail-row">
 							<span>Safety</span>

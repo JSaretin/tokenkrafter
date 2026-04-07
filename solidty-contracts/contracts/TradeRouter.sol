@@ -776,6 +776,7 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
     /// @dev Validate that slippage tolerance isn't too loose
     /// Compares amountOutMin against expected output from DEX quote
     function _validateSlippage(address[] memory path, uint256 amountIn, uint256 amountOutMin) internal view {
+        if (amountOutMin == 0) return; // user opted out of slippage protection
         try dexRouter.getAmountsOut(amountIn, path) returns (uint256[] memory amounts) {
             uint256 expected = amounts[amounts.length - 1];
             if (expected == 0) return; // no quote available, skip check
