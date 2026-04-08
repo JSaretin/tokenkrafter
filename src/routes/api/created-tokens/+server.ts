@@ -3,20 +3,26 @@ import type { RequestHandler } from './$types';
 import { supabaseAdmin } from '$lib/supabaseServer';
 import { env } from '$env/dynamic/private';
 
-// GET /api/created-tokens?chain_id=56&creator=0x...
+// GET /api/created-tokens?chain_id=56&creator=0x...&search=baby&offset=0&limit=30
 export const GET: RequestHandler = async ({ url }) => {
 	const chainId = url.searchParams.get('chain_id');
 	const creator = url.searchParams.get('creator');
+	const search = url.searchParams.get('search')?.trim();
 	const limit = Math.min(parseInt(url.searchParams.get('limit') || '50') || 50, 200);
+	const offset = Math.max(parseInt(url.searchParams.get('offset') || '0') || 0, 0);
 
 	let query = supabaseAdmin
 		.from('created_tokens')
 		.select('*')
 		.order('created_at', { ascending: false })
-		.limit(limit);
+		.range(offset, offset + limit - 1);
 
 	if (chainId) query = query.eq('chain_id', parseInt(chainId));
 	if (creator) query = query.ilike('creator', creator);
+	if (search) {
+		// Search by name, symbol, or address
+		query = query.or(`name.ilike.%${search}%,symbol.ilike.%${search}%,address.ilike.%${search}%`);
+	}
 
 	const { data, error: dbErr } = await query;
 	if (dbErr) return error(500, dbErr.message);

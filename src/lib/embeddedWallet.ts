@@ -274,6 +274,69 @@ async function saveVault(vault: WalletVault, accountCount: number, defaultAddres
 	return res.salt;
 }
 
+// ── Preferences Sync ──
+
+/** Debounce timer for preferences sync */
+let _prefSyncTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** Sync preferences to server (debounced — batches rapid changes) */
+export async function syncPreferences(prefs: Record<string, any>): Promise<void> {
+	if (!_jwt) return; // not logged in
+	if (_prefSyncTimer) clearTimeout(_prefSyncTimer);
+	_prefSyncTimer = setTimeout(async () => {
+		try {
+			await apiFetch('PATCH', { preferences: prefs });
+		} catch (e) {
+			console.warn('Preferences sync failed:', (e as Error).message);
+		}
+	}, 1000); // 1s debounce
+}
+
+/** Collect all localStorage preferences into one object */
+export function collectPreferences(): Record<string, any> {
+	const prefs: Record<string, any> = {};
+	try {
+		const names = localStorage.getItem('account_names');
+		if (names) prefs.account_names = JSON.parse(names);
+	} catch {}
+	try {
+		const tokens = localStorage.getItem('imported_tokens');
+		if (tokens) prefs.imported_tokens = JSON.parse(tokens);
+	} catch {}
+	try {
+		const tradeTokens = localStorage.getItem('importedTokens');
+		if (tradeTokens) prefs.trade_imported_tokens = JSON.parse(tradeTokens);
+	} catch {}
+	const activeAcct = localStorage.getItem('_active_acct');
+	if (activeAcct) prefs.active_account = parseInt(activeAcct, 10);
+	return prefs;
+}
+
+/** Restore preferences from server data to localStorage */
+export function restorePreferences(prefs: Record<string, any>): void {
+	if (!prefs || typeof prefs !== 'object') return;
+	if (prefs.account_names) {
+		localStorage.setItem('account_names', JSON.stringify(prefs.account_names));
+	}
+	if (prefs.imported_tokens) {
+		localStorage.setItem('imported_tokens', JSON.stringify(prefs.imported_tokens));
+	}
+	if (prefs.trade_imported_tokens) {
+		localStorage.setItem('importedTokens', JSON.stringify(prefs.trade_imported_tokens));
+	}
+	if (prefs.active_account != null) {
+		localStorage.setItem('_active_acct', String(prefs.active_account));
+	}
+}
+
+/** Sync all current localStorage preferences to server */
+export async function pushPreferences(): Promise<void> {
+	const prefs = collectPreferences();
+	if (Object.keys(prefs).length > 0) {
+		await syncPreferences(prefs);
+	}
+}
+
 // ── Wallet Operations ──
 
 /** Check if user has an existing vault */
@@ -348,6 +411,11 @@ export async function unlockWallet(pin: string): Promise<boolean> {
 
 	_mnemonic = mnemonic;
 	_accountCount = vault.account_count || 1;
+
+	// Restore synced preferences from server → localStorage
+	if (vault.preferences && typeof vault.preferences === 'object') {
+		restorePreferences(vault.preferences);
+	}
 
 	// Derive all accounts
 	_deriveAccounts();

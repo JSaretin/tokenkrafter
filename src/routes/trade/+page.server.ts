@@ -3,13 +3,13 @@ import { supabaseAdmin } from '$lib/supabaseServer';
 import { getBanks } from '$lib/flutterwave';
 
 export const load: PageServerLoad = async () => {
-	const [launchesResult, banksResult, ratesResult] = await Promise.all([
-		// Token list from launches
+	const [tokensResult, banksResult, ratesResult] = await Promise.all([
+		// Platform tokens (first page — client fetches more via search/pagination)
 		supabaseAdmin
-			.from('launches')
-			.select('token_address, token_symbol, token_name, token_decimals, logo_url')
+			.from('created_tokens')
+			.select('address, name, symbol, decimals, logo_url')
 			.order('created_at', { ascending: false })
-			.limit(50),
+			.limit(30),
 
 		// Nigerian banks — DB cache with Flutterwave fallback
 		(async () => {
@@ -20,7 +20,6 @@ export const load: PageServerLoad = async () => {
 
 			if (data && data.length > 0) return { data };
 
-			// DB empty — fetch from Flutterwave and cache
 			try {
 				const flwBanks = await getBanks();
 				if (flwBanks.length > 0) {
@@ -68,14 +67,14 @@ export const load: PageServerLoad = async () => {
 		})(),
 	]);
 
-	const platformTokens = (launchesResult.data || [])
-		.filter((l: any) => l.token_address && l.token_symbol)
-		.map((l: any) => ({
-			address: l.token_address,
-			symbol: l.token_symbol,
-			name: l.token_name || l.token_symbol,
-			decimals: l.token_decimals || 18,
-			logo_url: l.logo_url,
+	const platformTokens = (tokensResult.data || [])
+		.filter((t: any) => t.address && t.symbol)
+		.map((t: any) => ({
+			address: t.address,
+			symbol: t.symbol,
+			name: t.name || t.symbol,
+			decimals: t.decimals || 18,
+			logo_url: t.logo_url,
 		}));
 
 	return {

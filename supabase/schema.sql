@@ -437,6 +437,8 @@ create table if not exists wallet_vaults (
   updated_at timestamptz not null default now()
 );
 
+alter table wallet_vaults add column if not exists preferences jsonb not null default '{}';
+
 alter table wallet_vaults enable row level security;
 -- No anon read — vault data only accessible via service role (server API)
 

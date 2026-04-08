@@ -1,20 +1,128 @@
 <script lang="ts">
 	import { ethers } from 'ethers';
-	import { t } from '$lib/i18n';
+	import { onMount } from 'svelte';
+	import { chainSlug } from '$lib/structure';
 
 	let { data }: { data: any } = $props();
 	let tokens: any[] = data.tokens;
 	let search = $state('');
+	let sortBy = $state<'newest' | 'supply' | 'name'>('newest');
+	let filterType = $state<'all' | 'basic' | 'taxable' | 'mintable' | 'partner'>('all');
+	let tradeableOnly = $state(false);
+
+	const NOW = Date.now();
+
+	// GeckoTerminal market data — first 30 from SSR, rest filled client-side
+	const GECKO_NETWORKS: Record<number, string> = { 56: 'bsc', 1: 'eth', 8453: 'base', 42161: 'arbitrum', 137: 'polygon_pos' };
+	type GeckoInfo = { price_usd: number; volume_24h: number; price_change_24h: number; has_data: boolean };
+	let geckoMap: Record<string, GeckoInfo> = $state(data.geckoData || {});
+	let geckoLoading = $state(tokens.length > 30);
+
+	// Use $derived map so template reads are reactive
+	let geckoLookup = $derived(geckoMap);
+
+	function fmtPrice(val: number): string {
+		if (val === 0) return '$0';
+		if (val >= 1) return `$${val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}`;
+		// Show full precision for small prices (as returned by GCT)
+		const s = val.toPrecision(7);
+		return `$${parseFloat(s)}`;
+	}
+
+	function fmtVolume(val: number): string {
+		if (val >= 1e6) return `$${(val / 1e6).toFixed(1)}M`;
+		if (val >= 1e3) return `$${(val / 1e3).toFixed(1)}K`;
+		if (val > 0) return `$${val.toFixed(2)}`;
+		return '$0';
+	}
+
+	async function fetchGeckoBatch(addresses: string[], geckoNetwork: string) {
+		if (addresses.length === 0) return;
+		const batch = addresses.slice(0, 30);
+		const url = `https://api.geckoterminal.com/api/v2/networks/${geckoNetwork}/tokens/multi/${batch.join(',')}`;
+		try {
+			const res = await fetch(url);
+			if (!res.ok) return;
+			const json = await res.json();
+			const items = json?.data || [];
+			for (const item of items) {
+				const a = item.attributes;
+				if (!a) continue;
+				const addr = (item.id || '').split('_').pop()?.toLowerCase();
+				if (!addr) continue;
+				geckoMap[addr] = {
+					price_usd: parseFloat(a.price_usd || '0'),
+					volume_24h: parseFloat(a.volume_usd?.h24 || '0'),
+					price_change_24h: parseFloat(a.price_change_percentage?.h24 || '0'),
+					has_data: a.price_usd != null && parseFloat(a.price_usd) > 0,
+				};
+			}
+			// Trigger reactivity
+			geckoMap = { ...geckoMap };
+		} catch {}
+	}
+
+	onMount(async () => {
+		// First 30 already loaded from SSR — fetch remaining batches
+		const remaining = tokens.slice(30);
+		if (remaining.length === 0) { geckoLoading = false; return; }
+
+		const byChain: Record<string, string[]> = {};
+		for (const t of remaining) {
+			const net = GECKO_NETWORKS[t.chain_id] || 'bsc';
+			if (!byChain[net]) byChain[net] = [];
+			byChain[net].push(t.address);
+		}
+
+		for (const [net, addrs] of Object.entries(byChain)) {
+			for (let i = 0; i < addrs.length; i += 30) {
+				await fetchGeckoBatch(addrs.slice(i, i + 30), net);
+			}
+		}
+		geckoLoading = false;
+	});
 
 	let filtered = $derived.by(() => {
-		if (!search.trim()) return tokens;
-		const q = search.toLowerCase();
-		return tokens.filter(t =>
-			t.name?.toLowerCase().includes(q) ||
-			t.symbol?.toLowerCase().includes(q) ||
-			t.address?.toLowerCase().includes(q) ||
-			t.creator?.toLowerCase().includes(q)
-		);
+		let list = tokens;
+
+		// Tradeable filter
+		if (tradeableOnly) {
+			list = list.filter(t => geckoLookup[t.address?.toLowerCase()]?.has_data);
+		}
+
+		// Type filter
+		if (filterType !== 'all') {
+			list = list.filter(t => {
+				if (filterType === 'taxable') return t.is_taxable;
+				if (filterType === 'mintable') return t.is_mintable;
+				if (filterType === 'partner') return t.is_partner;
+				return !t.is_taxable && !t.is_mintable && !t.is_partner;
+			});
+		}
+
+		// Search
+		if (search.trim()) {
+			const q = search.toLowerCase();
+			list = list.filter(t =>
+				t.name?.toLowerCase().includes(q) ||
+				t.symbol?.toLowerCase().includes(q) ||
+				t.address?.toLowerCase().includes(q)
+			);
+		}
+
+		// Sort
+		if (sortBy === 'supply') {
+			list = [...list].sort((a, b) => {
+				const sa = parseFloat(ethers.formatUnits(a.total_supply || '0', a.decimals || 18));
+				const sb = parseFloat(ethers.formatUnits(b.total_supply || '0', b.decimals || 18));
+				return sb - sa;
+			});
+		} else if (sortBy === 'name') {
+			list = [...list].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+		}
+		// 'newest' is default DB order
+
+		return list;
 	});
 
 	function fmtSupply(val: string, dec: number): string {
@@ -43,7 +151,7 @@
 	}
 
 	function timeAgo(dateStr: string): string {
-		const diff = Date.now() - new Date(dateStr).getTime();
+		const diff = NOW - new Date(dateStr).getTime();
 		const mins = Math.floor(diff / 60000);
 		if (mins < 1) return 'just now';
 		if (mins < 60) return `${mins}m ago`;
@@ -53,6 +161,26 @@
 		if (days < 30) return `${days}d ago`;
 		return new Date(dateStr).toLocaleDateString();
 	}
+
+	function isNew(dateStr: string): boolean {
+		return NOW - new Date(dateStr).getTime() < 24 * 60 * 60 * 1000;
+	}
+
+	function chainName(id: number): string {
+		const map: Record<number, string> = { 56: 'BSC', 1: 'ETH', 8453: 'Base', 42161: 'Arbitrum', 137: 'Polygon' };
+		return map[id] || 'BSC';
+	}
+
+	let typeCounts = $derived.by(() => {
+		const counts = { all: tokens.length, basic: 0, taxable: 0, mintable: 0, partner: 0 };
+		for (const t of tokens) {
+			if (t.is_partner) counts.partner++;
+			else if (t.is_taxable) counts.taxable++;
+			else if (t.is_mintable) counts.mintable++;
+			else counts.basic++;
+		}
+		return counts;
+	});
 </script>
 
 <svelte:head>
@@ -61,10 +189,11 @@
 </svelte:head>
 
 <div class="explore">
+	<!-- Header -->
 	<div class="explore-header">
 		<div>
 			<h1 class="explore-title">Explore Tokens</h1>
-			<p class="explore-sub">Discover tokens created on TokenKrafter</p>
+			<p class="explore-sub">{tokens.length} tokens on TokenKrafter</p>
 		</div>
 		<div class="explore-search">
 			<svg class="search-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -72,27 +201,94 @@
 		</div>
 	</div>
 
+	<!-- Filters -->
+	<div class="explore-controls">
+		<div class="filter-pills">
+			{#each [['all','All'],['basic','Basic'],['taxable','Taxable'],['mintable','Mintable'],['partner','Partner']] as [key, label]}
+				<button
+					class="filter-pill"
+					class:filter-pill-active={filterType === key}
+					onclick={() => filterType = key as typeof filterType}
+				>
+					{label}
+					<span class="filter-count">{typeCounts[key as keyof typeof typeCounts]}</span>
+				</button>
+			{/each}
+		</div>
+		<div class="explore-right-controls">
+			<button
+				class="filter-pill"
+				class:filter-pill-tradeable={tradeableOnly}
+				onclick={() => tradeableOnly = !tradeableOnly}
+			>
+				<span class="tradeable-dot" class:tradeable-dot-on={tradeableOnly}></span>
+				Tradeable
+			</button>
+			<select class="sort-select" bind:value={sortBy}>
+				<option value="newest">Newest</option>
+				<option value="supply">Highest Supply</option>
+				<option value="name">A → Z</option>
+			</select>
+		</div>
+	</div>
+
+	<!-- Grid -->
 	{#if filtered.length === 0}
 		<div class="explore-empty">
-			{search ? 'No tokens match your search' : 'No tokens created yet. Be the first!'}
+			<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#374151" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+			<span>{search ? `No tokens match "${search}"` : 'No tokens created yet'}</span>
+			{#if !search}
+				<a href="/create" class="explore-empty-cta">Create the first token</a>
+			{/if}
 		</div>
 	{:else}
 		<div class="token-grid">
 			{#each filtered as tok}
-				<a href="/token/bsc/{tok.address}" class="token-card">
-					<!-- Header -->
-					<div class="tc-header">
+				{@const color = typeColor(tok)}
+				{@const slug = chainSlug(tok.chain_id)}
+				{@const gecko = geckoLookup[tok.address?.toLowerCase()]}
+				<div class="token-card">
+					<!-- Header: clickable to detail page -->
+					<a href="/token/{slug}/{tok.address}" class="tc-header">
 						{#if tok.logo_url}
 							<img src={tok.logo_url} alt={tok.symbol} class="tc-logo" />
 						{:else}
-							<div class="tc-logo-fallback tc-color-{typeColor(tok)}">{tok.symbol?.charAt(0) || '?'}</div>
+							<div class="tc-logo-fallback tc-color-{color}">
+								<span>{tok.symbol?.slice(0, 2).toUpperCase() || '??'}</span>
+							</div>
 						{/if}
 						<div class="tc-identity">
 							<span class="tc-name">{tok.name || 'Unknown'}</span>
-							<span class="tc-symbol">${tok.symbol || '???'}</span>
+							<div class="tc-meta-row">
+								<span class="tc-symbol">{tok.symbol || '???'}</span>
+								<span class="tc-chain">{chainName(tok.chain_id)}</span>
+								{#if gecko?.has_data}
+									<span class="tc-live-dot"></span>
+								{/if}
+							</div>
 						</div>
-						<span class="tc-badge tc-badge-{typeColor(tok)}">{tokenType(tok)}</span>
-					</div>
+						<div class="tc-header-right">
+							<div class="tc-badges-row">
+								{#if tok.created_at && isNew(tok.created_at)}
+									<span class="tc-badge tc-badge-new">New</span>
+								{/if}
+								<span class="tc-badge tc-badge-{color}">{tokenType(tok)}</span>
+							</div>
+							{#if gecko?.has_data}
+								<span class="tc-price">{fmtPrice(gecko.price_usd)}</span>
+								{#if gecko.price_change_24h !== 0}
+									<span class="tc-change" class:tc-change-up={gecko.price_change_24h > 0} class:tc-change-down={gecko.price_change_24h < 0}>
+										{gecko.price_change_24h > 0 ? '+' : ''}{gecko.price_change_24h.toFixed(1)}%
+									</span>
+								{/if}
+							{/if}
+						</div>
+					</a>
+
+					<!-- Description -->
+					{#if tok.description}
+						<p class="tc-desc">{tok.description.slice(0, 90)}{tok.description.length > 90 ? '...' : ''}</p>
+					{/if}
 
 					<!-- Stats -->
 					<div class="tc-stats">
@@ -100,20 +296,44 @@
 							<span class="tc-stat-label">Supply</span>
 							<span class="tc-stat-value">{fmtSupply(tok.total_supply, tok.decimals)}</span>
 						</div>
+						{#if gecko?.has_data}
+							{#if gecko.volume_24h > 0}
+								<div class="tc-stat">
+									<span class="tc-stat-label">Volume 24h</span>
+									<span class="tc-stat-value">{fmtVolume(gecko.volume_24h)}</span>
+								</div>
+							{:else}
+								<div class="tc-stat">
+									<span class="tc-stat-label">Status</span>
+									<span class="tc-stat-value tc-listed">Listed</span>
+								</div>
+							{/if}
+						{:else}
+							<div class="tc-stat">
+								<span class="tc-stat-label">Status</span>
+								<span class="tc-stat-value tc-not-listed">Not Listed</span>
+							</div>
+						{/if}
 						<div class="tc-stat">
 							<span class="tc-stat-label">Created</span>
 							<span class="tc-stat-value">{tok.created_at ? timeAgo(tok.created_at) : '—'}</span>
 						</div>
 					</div>
 
-					<!-- Footer -->
-					<div class="tc-footer">
-						<span class="tc-creator">{tok.creator?.slice(0, 6)}...{tok.creator?.slice(-4)}</span>
-						{#if tok.description}
-							<span class="tc-desc">{tok.description.slice(0, 50)}{tok.description.length > 50 ? '...' : ''}</span>
+					<!-- Actions -->
+					<div class="tc-actions">
+						{#if gecko?.has_data}
+							<a href="/trade?token={tok.address}" class="tc-action tc-action-trade">
+								<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+								Trade
+							</a>
 						{/if}
+						<a href="/token/{slug}/{tok.address}" class="tc-action tc-action-view" class:tc-action-full={!gecko?.has_data}>
+							View
+							<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+						</a>
 					</div>
-				</a>
+				</div>
 			{/each}
 		</div>
 	{/if}
@@ -122,9 +342,10 @@
 <style>
 	.explore { max-width: 1100px; margin: 0 auto; padding: 24px 16px 60px; }
 
-	.explore-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; }
+	/* Header */
+	.explore-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
 	.explore-title { font-family: 'Syne', sans-serif; font-size: 28px; font-weight: 800; color: #fff; margin: 0; }
-	.explore-sub { font-size: 13px; color: #475569; font-family: 'Space Mono', monospace; margin: 4px 0 0; }
+	.explore-sub { font-size: 12px; color: #475569; font-family: 'Space Mono', monospace; margin: 4px 0 0; }
 
 	.explore-search {
 		display: flex; align-items: center; gap: 8px;
@@ -140,38 +361,80 @@
 	}
 	.search-input::placeholder { color: #1e293b; }
 
-	.explore-loading { display: flex; justify-content: center; padding: 60px 0; }
-	.spinner { width: 32px; height: 32px; border: 2px solid rgba(255,255,255,0.06); border-top-color: #00d2ff; border-radius: 50%; animation: spin 0.8s linear infinite; }
-	@keyframes spin { to { transform: rotate(360deg); } }
-	.explore-empty { text-align: center; padding: 60px 0; color: #1e293b; font-family: 'Space Mono', monospace; font-size: 13px; }
+	/* Controls */
+	.explore-controls { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
+	.filter-pills { display: flex; gap: 6px; flex-wrap: wrap; }
+	.filter-pill {
+		display: inline-flex; align-items: center; gap: 5px;
+		padding: 5px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.06);
+		background: rgba(255,255,255,0.02); color: #64748b;
+		font-family: 'Space Mono', monospace; font-size: 11px;
+		cursor: pointer; transition: all 0.15s;
+	}
+	.filter-pill:hover { border-color: rgba(255,255,255,0.12); color: #94a3b8; }
+	.filter-pill-active { border-color: rgba(0,210,255,0.3); background: rgba(0,210,255,0.06); color: #00d2ff; }
+	.filter-count { font-size: 9px; opacity: 0.6; }
 
-	/* Token Grid */
+	.explore-right-controls { display: flex; align-items: center; gap: 8px; }
+	.filter-pill-tradeable { border-color: rgba(16,185,129,0.3); background: rgba(16,185,129,0.08); color: #10b981; }
+	.tradeable-dot { width: 6px; height: 6px; border-radius: 50%; background: #374151; transition: all 0.15s; }
+	.tradeable-dot-on { background: #10b981; box-shadow: 0 0 6px rgba(16,185,129,0.5); }
+
+	.sort-select {
+		padding: 6px 10px; border-radius: 8px;
+		background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
+		color: #94a3b8; font-family: 'Space Mono', monospace; font-size: 11px;
+		cursor: pointer; outline: none;
+	}
+	.sort-select option { background: #0d0d14; }
+
+	/* Empty */
+	.explore-empty {
+		display: flex; flex-direction: column; align-items: center; gap: 8px;
+		text-align: center; padding: 60px 0; color: #374151;
+		font-family: 'Space Mono', monospace; font-size: 13px;
+	}
+	.explore-empty-cta {
+		margin-top: 8px; padding: 9px 20px; border-radius: 10px;
+		background: linear-gradient(135deg, #00d2ff, #3a7bd5); color: white;
+		font-family: 'Syne', sans-serif; font-weight: 700; font-size: 13px;
+		text-decoration: none; transition: all 0.2s;
+	}
+	.explore-empty-cta:hover { transform: translateY(-1px); box-shadow: 0 6px 24px rgba(0,210,255,0.3); }
+
+	/* Grid */
 	.token-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
 
 	.token-card {
 		display: flex; flex-direction: column; gap: 10px;
 		padding: 16px; border-radius: 12px;
 		background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05);
-		text-decoration: none; color: inherit; transition: all 0.15s;
+		transition: all 0.15s;
 	}
-	.token-card:hover { border-color: rgba(0,210,255,0.2); transform: translateY(-2px); box-shadow: 0 4px 20px rgba(0,0,0,0.2); }
+	.token-card:hover { border-color: rgba(0,210,255,0.15); box-shadow: 0 4px 20px rgba(0,0,0,0.15); }
 
-	/* Card header */
-	.tc-header { display: flex; align-items: center; gap: 10px; }
-	.tc-logo { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; border: 1px solid rgba(255,255,255,0.06); flex-shrink: 0; }
+	/* Badges row */
+	.tc-badges-row { display: flex; gap: 4px; align-items: center; justify-content: flex-end; }
+	.tc-badge-new { background: rgba(16,185,129,0.15); color: #10b981; }
+
+	/* Header */
+	.tc-header { display: flex; align-items: center; gap: 10px; text-decoration: none; color: inherit; }
+	.tc-logo { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; border: 2px solid rgba(255,255,255,0.06); flex-shrink: 0; }
 	.tc-logo-fallback {
-		width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
+		width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0;
 		display: flex; align-items: center; justify-content: center;
-		font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 800;
+		font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 800;
 	}
-	.tc-color-cyan { background: rgba(0,210,255,0.1); color: #00d2ff; border: 1px solid rgba(0,210,255,0.15); }
-	.tc-color-amber { background: rgba(245,158,11,0.1); color: #f59e0b; border: 1px solid rgba(245,158,11,0.15); }
-	.tc-color-purple { background: rgba(139,92,246,0.1); color: #a78bfa; border: 1px solid rgba(139,92,246,0.15); }
-	.tc-color-emerald { background: rgba(16,185,129,0.1); color: #10b981; border: 1px solid rgba(16,185,129,0.15); }
+	.tc-color-cyan { background: rgba(0,210,255,0.12); color: #00d2ff; border: 2px solid rgba(0,210,255,0.2); }
+	.tc-color-amber { background: rgba(245,158,11,0.12); color: #f59e0b; border: 2px solid rgba(245,158,11,0.2); }
+	.tc-color-purple { background: rgba(139,92,246,0.12); color: #a78bfa; border: 2px solid rgba(139,92,246,0.2); }
+	.tc-color-emerald { background: rgba(16,185,129,0.12); color: #10b981; border: 2px solid rgba(16,185,129,0.2); }
 
 	.tc-identity { flex: 1; min-width: 0; }
-	.tc-name { display: block; font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-	.tc-symbol { display: block; font-family: 'Space Mono', monospace; font-size: 10px; color: #475569; }
+	.tc-name { display: block; font-family: 'Syne', sans-serif; font-size: 15px; font-weight: 700; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+	.tc-meta-row { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
+	.tc-symbol { font-family: 'Space Mono', monospace; font-size: 10px; color: #475569; }
+	.tc-chain { font-family: 'Space Mono', monospace; font-size: 8px; color: #374151; padding: 1px 5px; border-radius: 4px; background: rgba(255,255,255,0.04); }
 
 	.tc-badge {
 		font-size: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
@@ -182,21 +445,61 @@
 	.tc-badge-purple { background: rgba(139,92,246,0.1); color: #a78bfa; }
 	.tc-badge-emerald { background: rgba(16,185,129,0.1); color: #10b981; }
 
-	/* Card stats */
+	/* Header right (badge + price) */
+	.tc-header-right { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; flex-shrink: 0; }
+	.tc-price { font-family: 'Rajdhani', sans-serif; font-size: 15px; font-weight: 700; color: #fff; font-variant-numeric: tabular-nums; line-height: 1; }
+	.tc-change { font-family: 'Rajdhani', sans-serif; font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1; }
+	.tc-change-up { color: #10b981; }
+	.tc-change-down { color: #f87171; }
+
+	/* Live dot */
+	.tc-live-dot {
+		width: 5px; height: 5px; border-radius: 50%;
+		background: #10b981; flex-shrink: 0;
+		box-shadow: 0 0 4px rgba(16,185,129,0.5);
+	}
+
+	/* Description */
+	.tc-desc {
+		font-family: 'Space Mono', monospace; font-size: 10px; color: #475569;
+		line-height: 1.5; margin: 0;
+	}
+
+	/* Stats */
 	.tc-stats { display: flex; gap: 0; border-radius: 8px; overflow: hidden; border: 1px solid rgba(255,255,255,0.04); }
-	.tc-stat { flex: 1; padding: 8px 10px; }
+	.tc-stat { flex: 1; padding: 7px 10px; }
 	.tc-stat + .tc-stat { border-left: 1px solid rgba(255,255,255,0.04); }
 	.tc-stat-label { display: block; font-size: 8px; color: #374151; font-family: 'Space Mono', monospace; text-transform: uppercase; letter-spacing: 0.04em; }
 	.tc-stat-value { display: block; font-family: 'Rajdhani', sans-serif; font-size: 14px; font-weight: 600; color: #e2e8f0; font-variant-numeric: tabular-nums; margin-top: 1px; }
 
-	/* Card footer */
-	.tc-footer { display: flex; flex-direction: column; gap: 2px; }
-	.tc-creator { font-family: 'Space Mono', monospace; font-size: 9px; color: #1e293b; }
-	.tc-desc { font-family: 'Space Mono', monospace; font-size: 10px; color: #374151; line-height: 1.4; }
+	/* Actions */
+	.tc-actions { display: flex; gap: 8px; margin-top: auto; }
+	.tc-action {
+		display: inline-flex; align-items: center; gap: 5px;
+		padding: 7px 14px; border-radius: 8px;
+		font-family: 'Space Mono', monospace; font-size: 11px;
+		text-decoration: none; transition: all 0.15s; cursor: pointer;
+	}
+	.tc-action-trade {
+		flex: 1; justify-content: center;
+		background: linear-gradient(135deg, rgba(0,210,255,0.12), rgba(59,130,246,0.12));
+		border: 1px solid rgba(0,210,255,0.15); color: #00d2ff;
+	}
+	.tc-action-trade:hover { background: linear-gradient(135deg, rgba(0,210,255,0.2), rgba(59,130,246,0.2)); border-color: rgba(0,210,255,0.3); }
+	.tc-action-view {
+		padding: 7px 12px;
+		background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
+		color: #64748b;
+	}
+	.tc-action-view:hover { color: #e2e8f0; border-color: rgba(255,255,255,0.12); }
+	.tc-action-full { flex: 1; justify-content: center; }
+	.tc-not-listed { color: #374151; font-size: 11px; }
+	.tc-listed { color: #10b981; font-size: 11px; }
 
 	@media (max-width: 500px) {
 		.explore-header { flex-direction: column; }
 		.explore-search { min-width: 0; width: 100%; }
+		.explore-controls { flex-direction: column; align-items: flex-start; }
 		.token-grid { grid-template-columns: 1fr; }
 	}
 </style>

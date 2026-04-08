@@ -11,7 +11,7 @@
 	import WithdrawalStatusModal from '$lib/WithdrawalStatusModal.svelte';
 	import { formatUsdt } from '$lib/launchpad';
 	import { apiFetch } from '$lib/apiFetch';
-	import { queryTradeLens, getInstantQuote, getWeth, isCacheLoaded, getUsdValue, type TaxInfo } from '$lib/tradeLens';
+	import { queryTradeLens, getInstantQuote, getWeth, isCacheLoaded, getUsdValue, getCachedToken, type TaxInfo } from '$lib/tradeLens';
 	import { resolveTokenLogo } from '$lib/tokenLogo';
 
 	let getSigner: () => ethers.Signer | null = getContext('signer');
@@ -274,6 +274,53 @@
 		}).catch(() => {}).finally(() => { pastedTokenLoading = false; });
 	});
 
+	// DB search results (for token modal search)
+	let dbSearchResults: typeof platformTokens = $state([]);
+	let dbSearchLoading = $state(false);
+	let dbSearchTimer: ReturnType<typeof setTimeout> | null = null;
+
+	function searchTokensDB(query: string) {
+		if (dbSearchTimer) clearTimeout(dbSearchTimer);
+		if (!query || query.length < 2) { dbSearchResults = []; return; }
+		dbSearchLoading = true;
+		dbSearchTimer = setTimeout(async () => {
+			try {
+				const res = await fetch(`/api/created-tokens?search=${encodeURIComponent(query)}&limit=20`);
+				if (res.ok) {
+					const rows = await res.json();
+					dbSearchResults = rows
+						.filter((t: any) => t.address && t.symbol)
+						.map((t: any) => ({
+							address: t.address,
+							symbol: t.symbol,
+							name: t.name || t.symbol,
+							decimals: t.decimals || 18,
+							logo_url: t.logo_url,
+						}));
+				}
+			} catch {}
+			dbSearchLoading = false;
+		}, 300);
+	}
+
+	// Trigger DB search when token search query changes
+	$effect(() => {
+		const q = tokenSearch.trim();
+		if (showTokenModal && q.length >= 2 && !ethers.isAddress(q)) {
+			searchTokensDB(q);
+		} else {
+			dbSearchResults = [];
+		}
+	});
+
+	/** Check if a token has liquidity (from TradeLens cache) */
+	function hasLiquidity(address: string): boolean {
+		if (!pricesLoaded) return true; // assume yes until we know
+		if (address === ZERO_ADDRESS) return true; // native always liquid
+		const cached = getCachedToken(address);
+		return cached ? cached.hasLiquidity : true; // unknown tokens pass through
+	}
+
 	let allTokens = $derived.by(() => {
 		const chainId = selectedNetwork?.chain_id;
 		const seen = new Set<string>();
@@ -294,10 +341,10 @@
 			}
 		}
 
-		// 3. Platform tokens (from launches)
+		// 3. Platform tokens — only show ones with liquidity (after TradeLens loads)
 		for (const pt of platformTokens) {
 			const addr = pt.address.toLowerCase();
-			if (!seen.has(addr)) {
+			if (!seen.has(addr) && hasLiquidity(addr)) {
 				combined.push(pt);
 				seen.add(addr);
 			}
@@ -321,11 +368,24 @@
 
 		const q = tokenSearch.toLowerCase().trim();
 		if (!q) return list;
-		return list.filter(t =>
+
+		// Filter local list
+		const localMatches = list.filter(t =>
 			t.symbol.toLowerCase().includes(q) ||
 			t.name.toLowerCase().includes(q) ||
 			t.address.toLowerCase().includes(q)
 		);
+
+		// Merge DB search results (for tokens not in the local list)
+		const seen = new Set(localMatches.map(t => t.address.toLowerCase()));
+		for (const r of dbSearchResults) {
+			if (!seen.has(r.address.toLowerCase())) {
+				localMatches.push(r);
+				seen.add(r.address.toLowerCase());
+			}
+		}
+
+		return localMatches;
 	});
 
 	// ── Data from server (platformTokens, ngBanks, fiatRates) — already loaded ──
@@ -1937,7 +1997,11 @@
 					</button>
 				{/each}
 
-				{#if filteredTokens.length === 0 && !ethers.isAddress(tokenSearch.trim())}
+				{#if dbSearchLoading}
+					<div class="token-list-item" style="cursor: default; opacity: 0.5; justify-content: center;">
+						<span class="token-list-name">Searching...</span>
+					</div>
+				{:else if filteredTokens.length === 0 && !ethers.isAddress(tokenSearch.trim())}
 					<p class="token-list-empty">No tokens found</p>
 				{/if}
 			</div>
@@ -1964,15 +2028,6 @@
 				bind:value={bankSearchQuery}
 				autofocus
 			/>
-
-			<!-- Popular banks quick select -->
-			<div class="quick-tokens">
-				{#each ngBanks.filter(b => ['058','011','033','044','057','100','103'].includes(b.code)).slice(0, 6) as bank}
-					<button class="quick-token-btn" onclick={() => { selectBank(bank); showBankModal = false; bankSearchQuery = ''; }}>
-						{bank.name.replace(/ Plc| Bank| of Nigeria/gi, '').trim()}
-					</button>
-				{/each}
-			</div>
 
 			<div class="token-list">
 				{#each filteredBanks as bank}
@@ -2652,8 +2707,12 @@
 	.quick-token-btn:hover { border-color: rgba(0,210,255,0.3); color: #00d2ff; background: rgba(0,210,255,0.05); }
 
 	.token-list {
-		flex: 1; overflow-y: auto; padding: 0 8px 8px;
+		overflow-y: auto; padding: 0 8px 8px;
 		scrollbar-width: thin; scrollbar-color: var(--bg-surface-hover) transparent;
+		height: 60vh;
+	}
+	@media (min-width: 640px) {
+		.token-list { height: 80vh; }
 	}
 	.token-list-item {
 		display: flex; align-items: center; gap: 10px; width: 100%;

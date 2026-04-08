@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { ethers } from 'ethers';
 	import { t } from '$lib/i18n';
+	import { pushPreferences } from '$lib/embeddedWallet';
 	import { getContext, onDestroy } from 'svelte';
 	import { page } from '$app/state';
 	import type { SupportedNetwork, PaymentOption } from '$lib/structure';
@@ -1054,6 +1055,7 @@
 							logoUrl: tokenInfo.metadata?.logoUrl?.startsWith('data:') ? '' : tokenInfo.metadata?.logoUrl || '',
 						});
 						localStorage.setItem('imported_tokens', JSON.stringify(saved));
+						pushPreferences();
 					}
 				} catch {}
 			}

@@ -48,7 +48,7 @@ async function getAuthUser(request: Request): Promise<string> {
 	return data.user.id;
 }
 
-// ── GET: Fetch vault + salt ──
+// ── GET: Fetch vault + salt + preferences ──
 export const GET: RequestHandler = async ({ request }) => {
 	let userId: string;
 	try {
@@ -65,7 +65,7 @@ export const GET: RequestHandler = async ({ request }) => {
 
 	const { data: vault } = await supabaseAdmin
 		.from('wallet_vaults')
-		.select('primary_blob, recovery_blob_1, recovery_blob_2, recovery_blob_3, account_count, created_at')
+		.select('primary_blob, recovery_blob_1, recovery_blob_2, recovery_blob_3, account_count, preferences, created_at')
 		.eq('user_id', userId)
 		.single();
 
@@ -108,6 +108,43 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	const salt = await deriveSalt(userId);
 	return json({ ok: true, salt });
+};
+
+// ── PATCH: Sync preferences (imported tokens, account names, etc.) ──
+export const PATCH: RequestHandler = async ({ request }) => {
+	let userId: string;
+	try {
+		userId = await getAuthUser(request);
+	} catch (e: any) {
+		return error(401, e.message);
+	}
+
+	const body = await request.json();
+	const { preferences } = body;
+
+	if (!preferences || typeof preferences !== 'object') {
+		return error(400, 'preferences object required');
+	}
+
+	// Merge with existing preferences (partial update)
+	const { data: existing } = await supabaseAdmin
+		.from('wallet_vaults')
+		.select('preferences')
+		.eq('user_id', userId)
+		.single();
+
+	if (!existing) return error(404, 'No wallet vault found');
+
+	const merged = { ...(existing.preferences || {}), ...preferences };
+
+	const { error: dbErr } = await supabaseAdmin
+		.from('wallet_vaults')
+		.update({ preferences: merged })
+		.eq('user_id', userId);
+
+	if (dbErr) return error(500, dbErr.message);
+
+	return json({ ok: true, preferences: merged });
 };
 
 // ── DELETE: Remove vault (danger — user loses access if no backup) ──

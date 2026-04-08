@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { ethers } from 'ethers';
-	import { getWalletState, exportPrivateKey, exportSeedPhrase, setActiveAccount, addAccount, unlockWallet, onWalletStateChange, getSigner, type WalletState } from './embeddedWallet';
+	import { getWalletState, exportPrivateKey, exportSeedPhrase, setActiveAccount, addAccount, unlockWallet, onWalletStateChange, getSigner, pushPreferences, type WalletState } from './embeddedWallet';
 	import { getKnownLogo, resolveTokenLogo } from './tokenLogo';
 	import { balanceState } from './balancePoller';
 
@@ -92,6 +92,7 @@
 		localStorage.setItem('account_names', JSON.stringify(accountNames));
 		renamingIndex = null;
 		renameValue = '';
+		if (walletType === 'embedded') pushPreferences();
 	}
 	let creatingAccount = $state(false);
 	let copiedAddr = $state(false);
@@ -227,6 +228,7 @@
 			// Persist to localStorage (without balance — re-fetched on load)
 			const toSave = importedTokens.map(t => ({ address: t.address, name: t.name, symbol: t.symbol, decimals: t.decimals, logoUrl: (t as any).logoUrl || '' }));
 			localStorage.setItem('imported_tokens', JSON.stringify(toSave));
+			if (walletType === 'embedded') pushPreferences();
 
 			onAddFeedback({ message: `${symbol} imported`, type: 'success' });
 			showImport = false;
