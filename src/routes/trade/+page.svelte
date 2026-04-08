@@ -182,7 +182,7 @@
 	});
 
 	// ── Imported tokens (persisted to localStorage) ──────────
-	type ImportedToken = { address: string; symbol: string; name: string; decimals: number; chainId: number };
+	type ImportedToken = { address: string; symbol: string; name: string; decimals: number; chainId: number; logo_url?: string };
 	let importedTokens: ImportedToken[] = $state([]);
 
 	// Load from localStorage on mount
@@ -207,20 +207,40 @@
 	}
 
 	// ── Auto-detect pasted address ────────────────────────────
-	let pastedTokenMeta = $state<{ address: string; symbol: string; name: string; decimals: number } | null>(null);
+	let pastedTokenMeta = $state<{ address: string; symbol: string; name: string; decimals: number; logo_url?: string } | null>(null);
 	let pastedTokenLoading = $state(false);
+
+	/** Fetch token logo from our DB or GeckoTerminal */
+	async function fetchTokenLogoUrl(address: string): Promise<string> {
+		// Try our DB
+		try {
+			const res = await fetch(`/api/token-metadata?address=${address.toLowerCase()}&chain_id=${selectedNetwork?.chain_id || 56}`);
+			if (res.ok) { const d = await res.json(); if (d?.logo_url) return d.logo_url; }
+		} catch {}
+		// Try GeckoTerminal
+		try {
+			const gecko = selectedNetwork?.gecko_network || 'bsc';
+			const res = await fetch(`https://api.geckoterminal.com/api/v2/networks/${gecko}/tokens/${address}`);
+			if (res.ok) {
+				const d = await res.json();
+				const img = d?.data?.attributes?.image_url;
+				if (img && !img.includes('missing') && img.startsWith('http')) return img;
+			}
+		} catch {}
+		return '';
+	}
 
 	$effect(() => {
 		const q = tokenSearch.trim();
 		pastedTokenMeta = null;
 		if (!ethers.isAddress(q)) return;
-		// Already in our list? No need to fetch
 		if (allTokens.find(t => t.address.toLowerCase() === q.toLowerCase())) return;
 
 		pastedTokenLoading = true;
-		fetchMeta(q, false).then(meta => {
+		fetchMeta(q, false).then(async (meta) => {
 			if (tokenSearch.trim().toLowerCase() === q.toLowerCase() && meta.symbol !== '???') {
-				pastedTokenMeta = { address: q, symbol: meta.symbol, name: meta.name, decimals: meta.decimals };
+				const logo = TOKEN_LOGOS[meta.symbol.toUpperCase()] || await fetchTokenLogoUrl(q);
+				pastedTokenMeta = { address: q, symbol: meta.symbol, name: meta.name, decimals: meta.decimals, logo_url: logo };
 			}
 		}).catch(() => {}).finally(() => { pastedTokenLoading = false; });
 	});
@@ -1867,7 +1887,11 @@
 						</div>
 					{:else if pastedTokenMeta}
 						<button class="token-list-item" onclick={handleCustomAddress}>
-							<div class="token-list-icon token-list-icon-custom">{pastedTokenMeta.symbol.charAt(0)}</div>
+							{#if pastedTokenMeta.logo_url}
+								<img src={pastedTokenMeta.logo_url} alt="" class="token-list-icon" />
+							{:else}
+								<div class="token-list-icon token-list-icon-custom">{pastedTokenMeta.symbol.charAt(0)}</div>
+							{/if}
 							<div class="token-list-info">
 								<span class="token-list-symbol">{pastedTokenMeta.symbol}</span>
 								<span class="token-list-name">{pastedTokenMeta.name}</span>
