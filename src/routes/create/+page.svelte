@@ -538,6 +538,19 @@
 		}
 	}
 
+	// Calculate total native needed (creation fee + liquidity if native pairs)
+	let totalNativeNeeded = $derived.by(() => {
+		let total = isNativePayment ? selectedFee * 108n / 100n : 0n; // fee with 8% buffer
+		if (tokenInfo?.listing?.enabled && tokenInfo.listing.pairs) {
+			for (const pair of tokenInfo.listing.pairs) {
+				if (pair.base === 'native' && Number(pair.amount) > 0) {
+					total += ethers.parseEther(String(pair.amount));
+				}
+			}
+		}
+		return total;
+	});
+
 	async function checkBalance(): Promise<boolean> {
 		if (!userAddress || !tokenInfo || !selectedPayment) return false;
 
@@ -551,6 +564,8 @@
 			userBalance = await erc20.balanceOf(userAddress);
 		}
 
+		// For native payment: check fee + liquidity amounts
+		if (isNativePayment) return userBalance >= totalNativeNeeded;
 		return userBalance >= selectedFee;
 	}
 
@@ -948,6 +963,24 @@
 				}
 			}
 
+			// Auto-add token to wallet's imported tokens list
+			if (deployedTokenAddress && tokenInfo) {
+				try {
+					const saved = JSON.parse(localStorage.getItem('imported_tokens') || '[]');
+					const exists = saved.some((t: any) => t.address?.toLowerCase() === deployedTokenAddress?.toLowerCase());
+					if (!exists) {
+						saved.push({
+							address: deployedTokenAddress.toLowerCase(),
+							name: tokenInfo.name,
+							symbol: tokenInfo.symbol,
+							decimals: tokenInfo.decimals,
+							logoUrl: tokenInfo.metadata?.logoUrl?.startsWith('data:') ? '' : tokenInfo.metadata?.logoUrl || '',
+						});
+						localStorage.setItem('imported_tokens', JSON.stringify(saved));
+					}
+				} catch {}
+			}
+
 			step = 'done';
 		} catch (e: any) {
 			const msg = e.shortMessage || e.message || 'Transaction failed';
@@ -1225,51 +1258,40 @@
 				</div>
 
 			{:else if step === 'waiting-deposit'}
-				<!-- Waiting for deposit - show QR code -->
-				<div class="text-center py-4">
-					<div class="modal-header mb-4">
-						<h2 class="syne text-xl font-bold text-white">{$t('ct.insufficientBalance')}</h2>
+				<!-- Deposit payment screen -->
+				<div class="deposit-screen">
+					<div class="modal-header mb-2">
+						<h2 class="syne text-lg font-bold text-white">Deposit to Continue</h2>
 						<button onclick={closePreview} class="close-btn cursor-pointer">x</button>
 					</div>
 
-					<div class="insufficient-box mb-4">
-						<p class="text-amber-300 text-sm font-mono mb-2">
-							You need {selectedFeeFormatted} {selectedPayment?.symbol} but your balance is {parseFloat(ethers.formatUnits(userBalance, selectedPayment?.decimals ?? 18)).toFixed(4)} {selectedPayment?.symbol}.
-						</p>
-						<p class="text-gray-500 text-xs font-mono">
-							{$t('ct.depositRequired')}
-						</p>
+					<div class="deposit-amount">
+						<span class="deposit-amount-label">Send exactly</span>
+						<span class="deposit-amount-value">{isNativePayment ? parseFloat(ethers.formatUnits(totalNativeNeeded, 18)).toFixed(4) : selectedFeeFormatted} {selectedPayment?.symbol}</span>
+						<span class="deposit-amount-bal">Balance: {parseFloat(ethers.formatUnits(userBalance, selectedPayment?.decimals ?? 18)).toFixed(4)} {selectedPayment?.symbol}</span>
 					</div>
 
-					<!-- QR Code for user address -->
-					<div class="qr-section mb-4">
+					<div class="deposit-qr-row">
 						<div class="qr-placeholder">
 							<img
-								src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data={userAddress}&bgcolor=0d0d14&color=00d2ff"
-								alt="Deposit address QR"
-								class="qr-img"
+								src="https://api.qrserver.com/v1/create-qr-code/?size=120x120&data={userAddress}&bgcolor=ffffff&color=000000&margin=6"
+								alt="QR" class="qr-img" width="120" height="120"
 							/>
 						</div>
-						<div class="address-box mt-3">
-							<span class="text-cyan-400 text-xs font-mono break-all">{userAddress}</span>
+						<div class="deposit-addr-info">
+							<span class="deposit-addr-label">Your deposit address</span>
+							<span class="deposit-addr">{userAddress}</span>
+							<span class="deposit-network">{tokenInfo.network.name} network only</span>
 						</div>
 					</div>
 
-					<div class="deposit-notice">
-						<span class="text-amber-400 text-xs font-mono font-bold">{$t('ct.important')}</span>
-						<span class="text-gray-400 text-xs font-mono">
-							{$t('ct.depositWarning1')} <strong class="text-white">{selectedPayment?.symbol}</strong> {$t('ct.depositWarning2')}
-							<strong class="text-white">{tokenInfo.network.name}</strong> {$t('ct.depositWarning3')}
-						</span>
+					<div class="deposit-status">
+						<div class="spinner-sm w-3 h-3 rounded-full border-2 border-white/10 border-t-cyan-400"></div>
+						<span>Waiting for deposit...</span>
 					</div>
 
-					<div class="mt-4 flex items-center justify-center gap-2">
-						<div class="spinner-sm w-4 h-4 rounded-full border-2 border-white/10 border-t-cyan-400"></div>
-						<span class="text-gray-500 text-xs font-mono">{$t('ct.checkingDeposit')}</span>
-					</div>
-
-					<button onclick={closePreview} class="btn-secondary text-sm px-5 py-2.5 mt-4 cursor-pointer w-full">
-						{$t('ct.cancel')}
+					<button onclick={closePreview} class="btn-secondary text-sm py-2 cursor-pointer w-full">
+						Cancel
 					</button>
 				</div>
 
@@ -1997,17 +2019,31 @@
 		border-radius: 10px;
 	}
 
+	/* Deposit screen */
+	.deposit-screen { display: flex; flex-direction: column; gap: 12px; }
+	.deposit-amount { text-align: center; padding: 10px; background: rgba(0,210,255,0.04); border: 1px solid rgba(0,210,255,0.1); border-radius: 10px; }
+	.deposit-amount-label { display: block; font-size: 10px; color: #64748b; font-family: 'Space Mono', monospace; }
+	.deposit-amount-value { display: block; font-family: 'Rajdhani', sans-serif; font-size: 26px; font-weight: 700; color: #00d2ff; font-variant-numeric: tabular-nums; }
+	.deposit-amount-bal { display: block; font-size: 9px; color: #f59e0b; font-family: 'Space Mono', monospace; }
+	.deposit-qr-row { display: flex; align-items: center; gap: 14px; padding: 12px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 10px; }
+	.deposit-addr-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+	.deposit-addr-label { font-size: 9px; color: #475569; font-family: 'Space Mono', monospace; text-transform: uppercase; letter-spacing: 0.04em; }
+	.deposit-addr { font-size: 10px; color: #e2e8f0; font-family: 'Space Mono', monospace; word-break: break-all; line-height: 1.5; }
+	.deposit-network { font-size: 9px; color: #f59e0b; font-family: 'Space Mono', monospace; }
+	.deposit-status { display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 10px; color: #475569; font-family: 'Space Mono', monospace; }
+
 	.qr-section { display: flex; flex-direction: column; align-items: center; }
 	.qr-placeholder {
-		padding: 12px;
-		background: var(--bg-surface);
-		border: 1px solid var(--border-input);
-		border-radius: 12px;
+		padding: 8px;
+		background: #fff;
+		border-radius: 10px;
+		display: inline-block;
 	}
 	.qr-img {
-		width: 180px;
-		height: 180px;
-		border-radius: 8px;
+		width: 120px;
+		height: 120px;
+		border-radius: 4px;
+		display: block;
 	}
 	.address-box {
 		padding: 8px 14px;
