@@ -4,6 +4,8 @@
 	import { page } from '$app/state';
 	import { supabase } from '$lib/supabaseClient';
 	import type { SupportedNetwork } from '$lib/structure';
+
+	let { data: serverData }: { data: any } = $props();
 	import { ERC20_ABI, ZERO_ADDRESS } from '$lib/tokenCrafter';
 	import { TRADE_ROUTER_ABI, withdrawStatusLabel, withdrawStatusColor } from '$lib/tradeRouter';
 	import WithdrawalStatusModal from '$lib/WithdrawalStatusModal.svelte';
@@ -89,7 +91,7 @@
 	let withdrawStep = $state(0);
 
 	// Exchange rates (with 0.3% spread for our rate)
-	let fiatRates: Record<string, number> = $state({});
+	let fiatRates: Record<string, number> = $state(serverData?.fiatRates || {});
 	let spreadBps = 30; // 0.3% spread
 	let ngnRate = $derived.by(() => {
 		const raw = fiatRates['NGN'] || 0;
@@ -129,7 +131,7 @@
 	let bankResolving = $state(false);
 	let bankResolved = $state(false);
 	let bankError = $state('');
-	let ngBanks: { code: string; name: string; slug: string; logo?: string; ussd?: string }[] = $state([]);
+	let ngBanks: { code: string; name: string; slug: string; logo?: string; ussd?: string }[] = $state(serverData?.ngBanks || []);
 	let bankSearchQuery = $state('');
 	let showBankDropdown = $state(false);
 	let showBankModal = $state(false);
@@ -143,7 +145,7 @@
 	let showTokenModal = $state(false);
 	let tokenModalTarget = $state<'in' | 'out'>('in');
 	let tokenSearch = $state('');
-	let platformTokens: { address: string; symbol: string; name: string; decimals: number; logo_url?: string }[] = $state([]);
+	let platformTokens: { address: string; symbol: string; name: string; decimals: number; logo_url?: string }[] = $state(serverData?.platformTokens || []);
 
 	// History
 	let showHistory = $state(false);
@@ -326,35 +328,9 @@
 		);
 	});
 
-	// ── Fetch platform tokens + banks + rates ──────────────────
+	// ── Data from server (platformTokens, ngBanks, fiatRates) — already loaded ──
 	onMount(async () => {
 		loadImportedTokens();
-		try {
-			const [launchRes, bankRes, rateRes] = await Promise.all([
-				fetch('/api/launches'),
-				fetch('/api/bank'),
-				fetch('/api/rates?currencies=NGN,GBP,EUR,GHS,KES')
-			]);
-			if (launchRes.ok) {
-				const launches = await launchRes.json();
-				platformTokens = launches
-					.filter((l: any) => l.token_address && l.token_symbol)
-					.map((l: any) => ({
-						address: l.token_address,
-						symbol: l.token_symbol,
-						name: l.token_name || l.token_symbol,
-						decimals: l.token_decimals || 18,
-						logo_url: l.logo_url
-					}));
-			}
-			if (bankRes.ok) {
-				ngBanks = await bankRes.json();
-			}
-			if (rateRes.ok) {
-				const rateData = await rateRes.json();
-				fiatRates = rateData.rates || {};
-			}
-		} catch {}
 
 		// ── Fetch all token prices (instant quotes) ──────────────
 		refreshPrices();
@@ -597,6 +573,9 @@
 			tokenInTaxSell = 0;
 			tokenInHasTax = false;
 			tokenInLogo = (token as any).logo_url || TOKEN_LOGOS[token.symbol.toUpperCase()] || '';
+			if (!tokenInLogo && !isNative && addr) {
+				resolveTokenLogo(addr, selectedNetwork?.chain_id || 56).then(url => { if (url && tokenInAddr === addr) tokenInLogo = url; });
+			}
 		} else {
 			tokenOutAddr = addr;
 			tokenOutSymbol = token.symbol;
@@ -610,6 +589,9 @@
 			tokenOutTaxSell = 0;
 			tokenOutHasTax = false;
 			tokenOutLogo = (token as any).logo_url || TOKEN_LOGOS[token.symbol.toUpperCase()] || '';
+			if (!tokenOutLogo && !isNative && addr) {
+				resolveTokenLogo(addr, selectedNetwork?.chain_id || 56).then(url => { if (url && tokenOutAddr === addr) tokenOutLogo = url; });
+			}
 		}
 
 		// Fetch metadata quickly (balance, decimals, symbol)

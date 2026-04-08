@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { getContext, onDestroy } from 'svelte';
+	import { chainSlug } from '$lib/structure';
 	import { supabase } from '$lib/supabaseClient';
 	import { ethers } from 'ethers';
 	import { TokenFactory, FACTORY_ABI, ERC20_ABI, ZERO_ADDRESS } from '$lib/tokenCrafter';
@@ -552,7 +553,7 @@
 			</div>
 			<div class="p-4 max-h-[280px] overflow-y-auto" style="scrollbar-width: thin;">
 				{#each recentLaunches.slice(0, 8) as launch}
-					<a href="/launchpad/{launch.address}" class="activity-row">
+					<a href="/launchpad/{chainSlug(launch.chain_id ?? 56)}/{launch.address}" class="activity-row">
 						<div class="activity-icon" style="background: {launch.state === 2 ? 'rgba(16,185,129,0.15)' : launch.state === 1 ? 'rgba(0,210,255,0.15)' : 'rgba(245,158,11,0.15)'}">
 							{(launch.token_symbol || '?').charAt(0)}
 						</div>

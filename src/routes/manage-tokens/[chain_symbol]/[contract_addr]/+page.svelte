@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import type { SupportedNetworks, SupportedNetwork, PaymentOption } from '$lib/structure';
+	import { chainSlug, type SupportedNetworks, type SupportedNetwork, type PaymentOption } from '$lib/structure';
 	import { ethers } from 'ethers';
 	import { getContext, onMount, onDestroy } from 'svelte';
 	import { TOKEN_ABI, ROUTER_ABI, FACTORY_V2_ABI, PAIR_ABI, ERC20_ABI, FACTORY_ABI, ZERO_ADDRESS } from '$lib/tokenCrafter';
@@ -19,6 +19,13 @@
 	let signer = $derived(getSigner());
 	let userAddress = $derived(getUserAddress());
 	let networkProviders = $derived(getNetworkProviders());
+
+	// Fallback chain data so the page works without wallet connection
+	const CHAIN_FALLBACK: Record<string, Partial<SupportedNetwork>> = {
+		bsc: { name: 'BNB Smart Chain', symbol: 'bsc', chain_id: 56, native_coin: 'BNB', rpc: 'https://bsc-rpc.publicnode.com', usdt_address: '0x55d398326f99059fF775485246999027B3197955', usdc_address: '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d', explorer_url: 'https://bscscan.com' },
+		eth: { name: 'Ethereum', symbol: 'eth', chain_id: 1, native_coin: 'ETH', rpc: 'https://eth.llamarpc.com', usdt_address: '0xdAC17F958D2ee523a2206206994597C13D831ec7', usdc_address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', explorer_url: 'https://etherscan.io' },
+		base: { name: 'Base', symbol: 'base', chain_id: 8453, native_coin: 'ETH', rpc: 'https://mainnet.base.org', explorer_url: 'https://basescan.org' },
+	};
 
 	type ExtendedTokenInfo = {
 		name: string;
@@ -71,6 +78,10 @@
 
 	// Token metadata (about)
 	let metaLogoUrl = $state('');
+	let metaLogoPreview = $state(''); // data URL for preview before upload
+	let metaLogoFile: File | null = $state(null);
+	let metaLogoUploading = $state(false);
+	let metaLogoFileInput: HTMLInputElement | undefined = $state();
 	let metaDescription = $state('');
 	let metaWebsite = $state('');
 	let metaTwitter = $state('');
@@ -79,12 +90,82 @@
 	let metaSaving = $state(false);
 	let metaLoaded = $state(false);
 
+	// Supply formatting helper
+	function fmtSupply(val: string | number): string {
+		const n = typeof val === 'string' ? Number(val) : val;
+		if (isNaN(n) || n === 0) return '0';
+		if (n >= 1e12) return `${(n / 1e12).toFixed(1)}T`;
+		if (n >= 1e9) return `${(n / 1e9).toFixed(1)}B`;
+		if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
+		if (n >= 1e3) return `${(n / 1e3).toFixed(1)}K`;
+		return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+	}
+
+	// Logo resize (same as BasicInfo — 256x256 max, skip GIF/SVG)
+	const MAX_LOGO_SIZE = 256;
+	const SKIP_RESIZE = ['image/gif', 'image/svg+xml'];
+	function resizeImage(file: File): Promise<File> {
+		return new Promise((resolve) => {
+			if (SKIP_RESIZE.includes(file.type)) { resolve(file); return; }
+			const img = new Image();
+			img.onload = () => {
+				if (img.width <= MAX_LOGO_SIZE && img.height <= MAX_LOGO_SIZE) { URL.revokeObjectURL(img.src); resolve(file); return; }
+				const canvas = document.createElement('canvas');
+				const scale = Math.min(MAX_LOGO_SIZE / img.width, MAX_LOGO_SIZE / img.height);
+				canvas.width = Math.round(img.width * scale);
+				canvas.height = Math.round(img.height * scale);
+				const ctx = canvas.getContext('2d')!;
+				ctx.imageSmoothingQuality = 'high';
+				ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+				URL.revokeObjectURL(img.src);
+				canvas.toBlob((blob) => {
+					blob ? resolve(new File([blob], file.name, { type: file.type })) : resolve(file);
+				}, file.type, 0.9);
+			};
+			img.onerror = () => resolve(file);
+			img.src = URL.createObjectURL(file);
+		});
+	}
+
+	async function handleMetaLogoUpload(e: Event) {
+		const file = (e.target as HTMLInputElement).files?.[0];
+		if (!file) return;
+		if (file.size > 2 * 1024 * 1024) { addFeedback({ message: 'Max 2 MB', type: 'error' }); return; }
+		if (!['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/svg+xml'].includes(file.type)) {
+			addFeedback({ message: 'PNG, JPEG, WebP, GIF, or SVG only', type: 'error' }); return;
+		}
+		const processed = await resizeImage(file);
+		metaLogoFile = processed;
+		const reader = new FileReader();
+		reader.onload = () => { metaLogoPreview = reader.result as string; };
+		reader.readAsDataURL(processed);
+	}
+
+	async function uploadLogoFile(): Promise<string | null> {
+		if (!metaLogoFile || !contractAddress) return null;
+		metaLogoUploading = true;
+		try {
+			const chainId = network?.chain_id || 56;
+			const form = new FormData();
+			form.append('file', metaLogoFile);
+			form.append('address', contractAddress.toLowerCase());
+			form.append('chain_id', String(chainId));
+			const res = await fetch('/api/token-metadata/upload', { method: 'POST', body: form });
+			if (!res.ok) { const e = await res.json().catch(() => ({ message: 'Upload failed' })); throw new Error(e.message); }
+			const data = await res.json();
+			return data.logo_url || null;
+		} catch (e: any) {
+			addFeedback({ message: e.message || 'Logo upload failed', type: 'error' });
+			return null;
+		} finally { metaLogoUploading = false; }
+	}
+
 	async function loadMetadata() {
-		if (metaLoaded || !contractAddr) return;
+		if (metaLoaded || !contractAddress) return;
 		metaLoading = true;
 		try {
-			const chainId = selectedNetwork?.chain_id || 56;
-			const res = await fetch(`/api/token-metadata?address=${contractAddr.toLowerCase()}&chain_id=${chainId}`);
+			const chainId = network?.chain_id || 56;
+			const res = await fetch(`/api/token-metadata?address=${contractAddress.toLowerCase()}&chain_id=${chainId}`);
 			if (res.ok) {
 				const data = await res.json();
 				if (data) {
@@ -102,12 +183,22 @@
 	async function saveMetadata() {
 		metaSaving = true;
 		try {
-			const chainId = selectedNetwork?.chain_id || 56;
+			// Upload logo file first if pending
+			if (metaLogoFile) {
+				const url = await uploadLogoFile();
+				if (url) {
+					metaLogoUrl = url;
+					metaLogoFile = null;
+					metaLogoPreview = '';
+				}
+			}
+
+			const chainId = network?.chain_id || 56;
 			const res = await fetch('/api/token-metadata', {
 				method: 'PUT',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
-					address: contractAddr.toLowerCase(),
+					address: contractAddress.toLowerCase(),
 					chain_id: chainId,
 					logo_url: metaLogoUrl || null,
 					description: metaDescription || null,
@@ -256,9 +347,14 @@
 		if (!chain_symbol) { error = 'unsupported_network'; return; }
 		if (!contract_addr) { error = 'contract_not_found'; return; }
 
-		const net = supportedNetworks.find(
+		let net = supportedNetworks.find(
 			(n) => n.symbol.toLowerCase() === chain_symbol.toLowerCase() || n.chain_id.toString() === chain_symbol
 		);
+		// Fallback to hardcoded chain data when wallet not connected
+		if (!net) {
+			const fb = CHAIN_FALLBACK[chain_symbol.toLowerCase()];
+			if (fb) net = fb as SupportedNetwork;
+		}
 		if (!net) { error = 'unsupported_network'; return; }
 		network = net;
 
@@ -357,6 +453,7 @@
 		isLoading = false;
 		checkLaunchpad();
 		loadTokenAlias();
+		loadMetadata(); // Load early so logo shows in header
 		// Auto-load pools in background if router is set
 		if (selectedRouter && !poolsLoaded) {
 			lookupExistingPools();
@@ -1153,9 +1250,13 @@
 		<div class="token-header mb-8">
 			<div class="flex items-start justify-between flex-wrap gap-4">
 				<div class="flex items-center gap-4">
-					<div class="token-avatar syne">
-						{tokenInfo.symbol.slice(0, 2).toUpperCase()}
-					</div>
+					{#if metaLogoUrl || metaLogoPreview}
+						<img src={metaLogoPreview || metaLogoUrl} alt={tokenInfo.symbol} class="token-avatar-img" />
+					{:else}
+						<div class="token-avatar syne">
+							{tokenInfo.symbol.slice(0, 2).toUpperCase()}
+						</div>
+					{/if}
 					<div>
 						<h1 class="syne text-2xl sm:text-3xl font-bold text-white">{tokenInfo.name}</h1>
 						<div class="flex items-center gap-2 mt-1 flex-wrap">
@@ -1190,26 +1291,40 @@
 		<div class="stats-row mb-8 grid grid-cols-2 sm:grid-cols-4 gap-3">
 			<div class="stat-card card p-4">
 				<div class="stat-label">{$t('mt.totalSupply')}</div>
-				<div class="stat-value syne">{Number(tokenInfo.totalSupply).toLocaleString()}</div>
+				<div class="stat-value rajdhani">{fmtSupply(tokenInfo.totalSupply)}</div>
 				<div class="stat-unit">{tokenInfo.symbol}</div>
 			</div>
 			<div class="stat-card card p-4">
 				<div class="stat-label">{$t('mt.decimals')}</div>
-				<div class="stat-value syne">{tokenInfo.decimals}</div>
+				<div class="stat-value rajdhani">{tokenInfo.decimals}</div>
 				<div class="stat-unit">{$t('mt.precision')}</div>
 			</div>
 			{#if tokenInfo.userBalance !== undefined}
 				<div class="stat-card card p-4">
 					<div class="stat-label">{$t('mt.yourBalance')}</div>
-					<div class="stat-value syne">{Number(tokenInfo.userBalance).toLocaleString()}</div>
+					<div class="stat-value rajdhani">{fmtSupply(tokenInfo.userBalance)}</div>
 					<div class="stat-unit">{tokenInfo.symbol}</div>
 				</div>
 			{/if}
 			{#if tokenInfo.isTaxable && tokenInfo.buyTaxBps !== undefined}
-				<div class="stat-card card p-4">
-					<div class="stat-label">{$t('mt.buySellTransferTax')}</div>
-					<div class="stat-value syne">{(tokenInfo.buyTaxBps / 100).toFixed(1)}% / {((tokenInfo.sellTaxBps ?? 0) / 100).toFixed(1)}% / {((tokenInfo.transferTaxBps ?? 0) / 100).toFixed(1)}%</div>
-					<div class="stat-unit">{$t('mt.basisPoints')}</div>
+				<div class="stat-card stat-card-tax card p-4">
+					<div class="stat-label">Tax Rates</div>
+					<div class="tax-rates-row">
+						<div class="tax-rate-item">
+							<span class="tax-rate-val rajdhani">{(tokenInfo.buyTaxBps / 100).toFixed(1)}%</span>
+							<span class="tax-rate-type">Buy</span>
+						</div>
+						<span class="tax-rate-sep">/</span>
+						<div class="tax-rate-item">
+							<span class="tax-rate-val rajdhani">{((tokenInfo.sellTaxBps ?? 0) / 100).toFixed(1)}%</span>
+							<span class="tax-rate-type">Sell</span>
+						</div>
+						<span class="tax-rate-sep">/</span>
+						<div class="tax-rate-item">
+							<span class="tax-rate-val rajdhani">{((tokenInfo.transferTaxBps ?? 0) / 100).toFixed(1)}%</span>
+							<span class="tax-rate-type">Transfer</span>
+						</div>
+					</div>
 				</div>
 			{/if}
 		</div>
@@ -1238,7 +1353,7 @@
 						{#each [
 							[$t('mt.name'), tokenInfo.name],
 							[$t('mt.symbol'), tokenInfo.symbol],
-							[$t('mt.totalSupply'), Number(tokenInfo.totalSupply).toLocaleString() + ' ' + tokenInfo.symbol],
+							[$t('mt.totalSupply'), fmtSupply(tokenInfo.totalSupply) + ' ' + tokenInfo.symbol],
 							[$t('mt.decimals'), String(tokenInfo.decimals)],
 							[$t('mt.network'), network?.name ?? 'Unknown'],
 							[$t('mt.mintable'), tokenInfo.isMintable !== undefined ? (tokenInfo.isMintable ? $t('mt.yes') : $t('mt.no')) : $t('mt.na')],
@@ -1267,7 +1382,7 @@
 										<p class="text-xs text-gray-500 font-mono mt-0.5">{launchAddress.slice(0, 10)}...{launchAddress.slice(-8)}</p>
 									</div>
 								</div>
-								<a href="/launchpad/{launchAddress}" class="btn-primary text-xs px-4 py-2 no-underline shrink-0">
+								<a href="/launchpad/{chainSlug(network?.chain_id ?? 56)}/{launchAddress}" class="btn-primary text-xs px-4 py-2 no-underline shrink-0">
 									{$t('mt.viewLaunchpad')} →
 								</a>
 							</div>
@@ -2010,7 +2125,11 @@
 									<span class="text-gray-500 text-xs font-mono">{$t('mt.scanningPools')}</span>
 								</div>
 							{:else if poolsLoaded && existingPools.length === 0}
-								<p class="text-gray-500 text-xs font-mono py-2">{$t('mt.noPoolsFound')}</p>
+								<div class="liq-empty-state">
+									<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="text-gray-600"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+									<span class="text-gray-400 text-sm font-mono">No liquidity pools found</span>
+									<span class="text-gray-600 text-xs font-mono">Create a new pool below to list your token on the DEX</span>
+								</div>
 							{:else if !poolsLoaded}
 								<p class="text-gray-600 text-xs font-mono py-2">{$t('mt.clickLoadPools')}</p>
 							{/if}
@@ -2030,22 +2149,20 @@
 													<div class="pool-pair-badge syne">{tokenInfo.symbol}/{pool.baseSymbol}</div>
 													<div class="flex flex-col">
 														{#if isEmptyPool(pool)}
-															<span class="text-amber-400 text-sm font-mono">{$t('mt.emptyPoolSetPrice')}</span>
+															<span class="text-amber-400 text-sm font-mono">No liquidity yet</span>
+															<span class="text-gray-600 text-[10px] font-mono">Add tokens to set the initial price</span>
 														{:else}
-															<span class="text-white text-sm font-mono">1 {tokenInfo.symbol} = {pool.pricePerToken < 0.000001 ? pool.pricePerToken.toExponential(4) : pool.pricePerToken.toFixed(6)} {pool.baseSymbol}</span>
+															<span class="text-white text-sm rajdhani" style="font-size:15px;">1 {tokenInfo.symbol} = {pool.pricePerToken < 0.000001 ? pool.pricePerToken.toExponential(4) : pool.pricePerToken.toFixed(6)} {pool.baseSymbol}</span>
+															<span class="text-gray-500 text-[10px] font-mono">{fmtSupply(pool.tokenReserve)} {tokenInfo.symbol} + {pool.baseReserve.toLocaleString(undefined, {maximumFractionDigits: 4})} {pool.baseSymbol}</span>
 														{/if}
-														<span class="text-gray-500 text-[10px] font-mono">{shortAddr(pool.pairAddress)}</span>
 													</div>
 												</div>
 												<div class="flex items-center gap-3">
-													<div class="flex flex-col items-end">
-														{#if isEmptyPool(pool)}
-															<span class="badge badge-amber" style="font-size:10px;">{$t('mt.empty')}</span>
-														{:else}
-															<span class="text-gray-400 text-[10px] font-mono uppercase">{$t('mt.poolLiquidity')}</span>
-															<span class="text-gray-300 text-xs font-mono">{pool.tokenReserve.toLocaleString(undefined, {maximumFractionDigits: 2})} / {pool.baseReserve.toLocaleString(undefined, {maximumFractionDigits: 4})}</span>
-														{/if}
-													</div>
+													{#if isEmptyPool(pool)}
+														<span class="badge badge-amber" style="font-size:10px;">Empty</span>
+													{:else}
+														<span class="badge badge-emerald" style="font-size:10px;">Active</span>
+													{/if}
 													<span class="pool-expand-icon {poolAddAmounts[pool.pairAddress]?.expanded ? 'expanded' : ''}">v</span>
 												</div>
 											</button>
@@ -2303,15 +2420,30 @@
 							<div class="spinner w-8 h-8 rounded-full border-2 border-white/10 border-t-cyan-400" style="animation: spin 0.8s linear infinite;"></div>
 						</div>
 					{:else}
-						<div class="space-y-3">
-							<div>
-								<label class="label-text" for="meta-logo">Logo URL</label>
-								<input id="meta-logo" class="input-field" type="url" placeholder="https://example.com/logo.png" bind:value={metaLogoUrl} />
-								{#if metaLogoUrl}
-									<div class="mt-2 flex items-center gap-2">
-										<img src={metaLogoUrl} alt="Logo preview" class="w-8 h-8 rounded-full object-cover" onerror={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-										<span class="text-gray-500 text-[10px] font-mono">Preview</span>
-									</div>
+						<div class="about-form">
+							<!-- Logo Upload -->
+							<div class="about-logo-section">
+								<label class="label-text">Token Logo</label>
+								<input type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" class="hidden-file" bind:this={metaLogoFileInput} onchange={handleMetaLogoUpload} />
+								<div class="about-logo-row">
+									{#if metaLogoPreview || metaLogoUrl}
+										<div class="about-logo-preview-wrap">
+											<img src={metaLogoPreview || metaLogoUrl} alt="Logo" class="about-logo-img" onerror={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+											<button class="about-logo-change" type="button" onclick={() => metaLogoFileInput?.click()}>
+												<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+												Change
+											</button>
+										</div>
+									{:else}
+										<button class="about-logo-upload" type="button" onclick={() => metaLogoFileInput?.click()}>
+											<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+											<span>Upload Logo</span>
+											<span class="about-logo-hint">PNG, JPEG, WebP, GIF — max 2 MB</span>
+										</button>
+									{/if}
+								</div>
+								{#if metaLogoFile}
+									<span class="about-logo-pending">New logo ready — will upload on save</span>
 								{/if}
 							</div>
 
@@ -2336,8 +2468,14 @@
 								</div>
 							</div>
 
-							<button class="action-btn syne cursor-pointer w-full mt-2" disabled={metaSaving} onclick={saveMetadata}>
-								{metaSaving ? 'Saving...' : 'Save Token Info'}
+							<button class="action-btn syne cursor-pointer w-full mt-2" disabled={metaSaving || metaLogoUploading} onclick={saveMetadata}>
+								{#if metaLogoUploading}
+									Uploading logo...
+								{:else if metaSaving}
+									Saving...
+								{:else}
+									Save Token Info
+								{/if}
 							</button>
 						</div>
 					{/if}
@@ -2445,6 +2583,7 @@
 	@keyframes spin { to { transform: rotate(360deg); } }
 
 	.syne { font-family: 'Syne', sans-serif; }
+	.rajdhani { font-family: 'Rajdhani', sans-serif; font-variant-numeric: tabular-nums; }
 
 	.token-avatar {
 		width: 60px; height: 60px;
@@ -2471,8 +2610,59 @@
 		border-radius: 12px;
 	}
 	.stat-label { font-size: 11px; color: #6b7280; font-family: 'Space Mono', monospace; text-transform: uppercase; letter-spacing: 0.05em; }
-	.stat-value { font-size: 18px; font-weight: 800; color: var(--text-heading); margin: 4px 0 2px; }
+	.stat-value { font-size: 22px; font-weight: 700; color: var(--text-heading); margin: 4px 0 2px; font-family: 'Rajdhani', sans-serif; font-variant-numeric: tabular-nums; }
 	.stat-unit { font-size: 11px; color: var(--text-dim); font-family: 'Space Mono', monospace; }
+
+	/* Tax rates in stat card */
+	.stat-card-tax { grid-column: span 1; }
+	.tax-rates-row { display: flex; align-items: center; gap: 6px; margin: 4px 0 2px; }
+	.tax-rate-item { display: flex; flex-direction: column; align-items: center; gap: 0; }
+	.tax-rate-val { font-size: 20px; font-weight: 700; color: var(--text-heading); line-height: 1.2; }
+	.tax-rate-type { font-size: 9px; color: #6b7280; font-family: 'Space Mono', monospace; text-transform: uppercase; letter-spacing: 0.04em; }
+	.tax-rate-sep { color: #374151; font-size: 16px; margin-top: -4px; }
+
+	/* Token avatar (logo) */
+	.token-avatar-img {
+		width: 60px; height: 60px;
+		border-radius: 16px;
+		object-fit: cover;
+		border: 1px solid var(--border-input);
+		flex-shrink: 0;
+	}
+
+	/* About section logo upload */
+	.about-form { display: flex; flex-direction: column; gap: 14px; }
+	.about-logo-section { display: flex; flex-direction: column; gap: 8px; }
+	.about-logo-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+	.about-logo-preview-wrap { position: relative; }
+	.about-logo-img { width: 72px; height: 72px; border-radius: 14px; object-fit: cover; border: 2px solid var(--border-input); }
+	.about-logo-change {
+		position: absolute; bottom: -4px; right: -4px;
+		display: flex; align-items: center; gap: 4px;
+		padding: 3px 8px; border-radius: 6px;
+		background: var(--bg-surface-hover); border: 1px solid var(--border-input);
+		color: #00d2ff; font-size: 10px; font-family: 'Space Mono', monospace;
+		cursor: pointer; transition: all 0.15s;
+	}
+	.about-logo-change:hover { background: rgba(0,210,255,0.1); border-color: rgba(0,210,255,0.3); }
+	.about-logo-upload {
+		display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+		width: 140px; height: 100px;
+		border: 2px dashed rgba(255,255,255,0.1); border-radius: 14px;
+		background: rgba(255,255,255,0.02); color: #64748b;
+		cursor: pointer; transition: all 0.2s;
+		font-family: 'Space Mono', monospace; font-size: 11px;
+	}
+	.about-logo-upload:hover { border-color: rgba(0,210,255,0.3); color: #00d2ff; background: rgba(0,210,255,0.04); }
+	.about-logo-hint { font-size: 9px; color: #374151; }
+	.about-logo-pending { font-size: 10px; color: #10b981; font-family: 'Space Mono', monospace; }
+	.hidden-file { display: none; }
+
+	/* Liquidity empty state */
+	.liq-empty-state {
+		display: flex; flex-direction: column; align-items: center; gap: 6px;
+		padding: 24px 16px; text-align: center;
+	}
 
 	.tabs-bar {
 		border-bottom: 1px solid var(--bg-surface-hover);

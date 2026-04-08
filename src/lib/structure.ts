@@ -34,3 +34,6 @@ export interface TokenInfo {
 }
 
 export type SupportedNetworks = SupportedNetwork[];
+
+const _CHAIN_SLUGS: Record<number, string> = { 56: 'bsc', 1: 'eth', 8453: 'base', 42161: 'arbitrum', 137: 'polygon' };
+export function chainSlug(chainId: number): string { return _CHAIN_SLUGS[chainId] || 'bsc'; }

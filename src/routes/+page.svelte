@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import { formatUsdt, progressPercent, stateLabel, stateColor, CURVE_TYPES } from '$lib/launchpad';
+	import { chainSlug } from '$lib/structure';
 	import { t } from '$lib/i18n';
 	import { supabase } from '$lib/supabaseClient';
 	import RecentTransactionsTicker from '$lib/RecentTransactionsTicker.svelte';
@@ -227,7 +228,7 @@
 					{@const progress = progressPercent(raised, hardCap)}
 					{@const deadline = Number(launch.deadline || 0)}
 					{@const hot = isHot(launch)}
-					<a href="/launchpad/{launch.address}" class="launch-card card p-0 block no-underline group">
+					<a href="/launchpad/{chainSlug(launch.chain_id)}/{launch.address}" class="launch-card card p-0 block no-underline group">
 						<!-- Countdown banner -->
 						{#if deadline > 0}
 							<div class="card-countdown {countdownColor(deadline)}">
@@ -327,7 +328,7 @@
 					{@const hardCap = BigInt(launch.hard_cap || '0')}
 					{@const progress = progressPercent(raised, hardCap)}
 					{@const deadline = Number(launch.deadline || 0)}
-					<a href="/launchpad/{launch.address}" class="partner-launch-card card p-0 block no-underline group">
+					<a href="/launchpad/{chainSlug(launch.chain_id)}/{launch.address}" class="partner-launch-card card p-0 block no-underline group">
 						<!-- Partner accent -->
 						<div class="partner-accent"></div>
 
@@ -419,7 +420,7 @@
 					{@const softCap = BigInt(launch.soft_cap || '0')}
 					{@const startTs = Number(launch.start_timestamp || 0)}
 					{@const isPending = launch.state === 0}
-					<a href="/launchpad/{launch.address}" class="upcoming-card-full card p-0 block no-underline group">
+					<a href="/launchpad/{chainSlug(launch.chain_id)}/{launch.address}" class="upcoming-card-full card p-0 block no-underline group">
 						<!-- Countdown banner -->
 						<div class="card-countdown-upcoming">
 							{#if isPending}
@@ -486,7 +487,7 @@
 				{#each graduatedLaunches as launch}
 					{@const ud = launch.usdt_decimals ?? 18}
 					{@const raised = BigInt(launch.total_base_raised || '0')}
-					<a href="/launchpad/{launch.address}" class="graduated-card card p-4 block no-underline group">
+					<a href="/launchpad/{chainSlug(launch.chain_id)}/{launch.address}" class="graduated-card card p-4 block no-underline group">
 						<div class="flex items-center gap-3">
 							{#if launch.logo_url}
 								<img src={launch.logo_url} alt="" class="launch-logo-sm card-logo-adapt" />

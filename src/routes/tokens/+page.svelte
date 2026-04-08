@@ -2,8 +2,8 @@
 	import { ethers } from 'ethers';
 	import { t } from '$lib/i18n';
 
-	let tokens = $state<any[]>([]);
-	let loading = $state(true);
+	let { data }: { data: any } = $props();
+	let tokens: any[] = data.tokens;
 	let search = $state('');
 
 	let filtered = $derived.by(() => {
@@ -53,16 +53,6 @@
 		if (days < 30) return `${days}d ago`;
 		return new Date(dateStr).toLocaleDateString();
 	}
-
-	// Fetch tokens from API
-	import { onMount } from 'svelte';
-	onMount(async () => {
-		try {
-			const res = await fetch('/api/created-tokens?limit=200');
-			if (res.ok) tokens = await res.json();
-		} catch {}
-		loading = false;
-	});
 </script>
 
 <svelte:head>
@@ -82,11 +72,7 @@
 		</div>
 	</div>
 
-	{#if loading}
-		<div class="explore-loading">
-			<div class="spinner"></div>
-		</div>
-	{:else if filtered.length === 0}
+	{#if filtered.length === 0}
 		<div class="explore-empty">
 			{search ? 'No tokens match your search' : 'No tokens created yet. Be the first!'}
 		</div>

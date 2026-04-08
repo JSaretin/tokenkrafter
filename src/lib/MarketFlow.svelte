@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { chainSlug } from '$lib/structure';
 	import { realtime, type LiveTransaction } from '$lib/realtime.svelte';
 
 	let { maxItems = 15 }: { maxItems?: number } = $props();
@@ -49,7 +50,7 @@
 	<!-- Transaction list -->
 	<div class="mf-list">
 		{#each visible as tx (tx.id)}
-			<a href="/launchpad/{tx.launch_address}" class="mf-item">
+			<a href="/launchpad/{chainSlug(tx.chain_id ?? 56)}/{tx.launch_address}" class="mf-item">
 				<div class="mf-item-icon">
 					<span class="mf-buy-arrow">↑</span>
 				</div>

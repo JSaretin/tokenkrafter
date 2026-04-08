@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { chainSlug } from '$lib/structure';
 	import { realtime } from '$lib/realtime.svelte';
 
 	let currentIndex = $state(0);
@@ -75,7 +76,7 @@
 				</span>
 				<span class="flex-shrink-0 text-xs text-gray-500">{timeAgo(current.created_at)}</span>
 				<a
-					href="/launchpad/{current.launch_address}"
+					href="/launchpad/{chainSlug(current.chain_id ?? 56)}/{current.launch_address}"
 					class="flex-shrink-0 rounded bg-emerald-500/20 px-2 py-0.5 text-xs font-medium text-emerald-400 hover:bg-emerald-500/30 transition-colors"
 				>View</a>
 			</div>

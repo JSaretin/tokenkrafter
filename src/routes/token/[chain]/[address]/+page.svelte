@@ -1,46 +1,17 @@
 <script lang="ts">
-	import { page } from '$app/state';
 	import { ethers } from 'ethers';
-	import { getContext, onMount } from 'svelte';
+	import { onMount } from 'svelte';
 
-	import type { SupportedNetworks } from '$lib/structure';
+	let { data }: { data: any } = $props();
 
-	// Try to get networks from context (layout provides them)
-	let _getNetworks: (() => SupportedNetworks) | undefined;
-	try { _getNetworks = getContext('supportedNetworks'); } catch {}
-	let supportedNetworks = $derived(_getNetworks?.() || []);
+	const { tokenAddress, chain: chainInfo, dbData, onChainData } = data;
 
-	// Fallback chain data for public pages where context may not exist
-	const CHAIN_FALLBACK: Record<string, { id: number; name: string; symbol: string; rpc: string; gecko: string; explorer: string }> = {
-		bsc: { id: 56, name: 'BNB Smart Chain', symbol: 'BNB', rpc: 'https://bsc-rpc.publicnode.com', gecko: 'bsc', explorer: 'https://bscscan.com' },
-		eth: { id: 1, name: 'Ethereum', symbol: 'ETH', rpc: 'https://eth.llamarpc.com', gecko: 'eth', explorer: 'https://etherscan.io' },
-		base: { id: 8453, name: 'Base', symbol: 'ETH', rpc: 'https://mainnet.base.org', gecko: 'base', explorer: 'https://basescan.org' },
-		arbitrum: { id: 42161, name: 'Arbitrum', symbol: 'ETH', rpc: 'https://arb1.arbitrum.io/rpc', gecko: 'arbitrum', explorer: 'https://arbiscan.io' },
-		polygon: { id: 137, name: 'Polygon', symbol: 'MATIC', rpc: 'https://polygon-rpc.com', gecko: 'polygon_pos', explorer: 'https://polygonscan.com' },
-	};
-
-	let chainSlug = $derived(page.params.chain?.toLowerCase() || 'bsc');
-	let tokenAddress = $derived(page.params.address?.toLowerCase() || '');
-
-	// Prefer DB config, fallback to hardcoded
-	let chainInfo = $derived.by(() => {
-		const dbNet = supportedNetworks.find(n => n.symbol?.toLowerCase() === chainSlug || n.chain_id === CHAIN_FALLBACK[chainSlug]?.id);
-		if (dbNet) return {
-			id: dbNet.chain_id, name: dbNet.name, symbol: dbNet.native_coin,
-			rpc: dbNet.rpc, gecko: dbNet.gecko_network || chainSlug,
-			explorer: dbNet.explorer_url || CHAIN_FALLBACK[chainSlug]?.explorer || 'https://bscscan.com',
-		};
-		return CHAIN_FALLBACK[chainSlug] || CHAIN_FALLBACK.bsc;
-	});
-
-	// ── Data states ──
-	let dbData = $state<any>(null);
+	// ── GeckoTerminal data (client-side only — price changes frequently) ──
 	let geckoData = $state<any>(null);
-	let onChainData = $state<{ name: string; symbol: string; decimals: number; totalSupply: string } | null>(null);
-	let loading = $state(true);
 	let copied = $state(false);
+	let priceLoading = $state(true);
 
-	// ── Derived display values ──
+	// ── Derived display values (instant from server data) ──
 	let tokenName = $derived(dbData?.name || onChainData?.name || geckoData?.name || 'Unknown Token');
 	let tokenSymbol = $derived(dbData?.symbol || onChainData?.symbol || geckoData?.symbol || '???');
 	let tokenDecimals = $derived(dbData?.decimals || onChainData?.decimals || 18);
@@ -63,7 +34,6 @@
 	});
 	let createdAt = $derived(dbData?.created_at ? new Date(dbData.created_at).toLocaleDateString() : '');
 
-	// Gecko price data
 	let price = $derived(geckoData?.price_usd ? parseFloat(geckoData.price_usd) : 0);
 	let priceChange24h = $derived(geckoData?.price_change_24h || 0);
 	let marketCap = $derived(geckoData?.market_cap_usd ? parseFloat(geckoData.market_cap_usd) : 0);
@@ -104,17 +74,12 @@
 		setTimeout(() => copied = false, 2000);
 	}
 
+	// Only GeckoTerminal fetched client-side (live price data)
 	onMount(async () => {
-		// 1. Fetch from our DB (fastest)
-		fetch(`/api/token-metadata?address=${tokenAddress}&chain_id=${chainInfo.id}`)
-			.then(r => r.ok ? r.json() : null)
-			.then(d => { if (d) dbData = d; })
-			.catch(() => {});
-
-		// 2. Fetch from GeckoTerminal (price, market data)
-		fetch(`https://api.geckoterminal.com/api/v2/networks/${chainInfo.gecko}/tokens/${tokenAddress}`)
-			.then(r => r.ok ? r.json() : null)
-			.then(d => {
+		try {
+			const res = await fetch(`https://api.geckoterminal.com/api/v2/networks/${chainInfo.gecko}/tokens/${tokenAddress}`);
+			if (res.ok) {
+				const d = await res.json();
 				if (d?.data?.attributes) {
 					const a = d.data.attributes;
 					geckoData = {
@@ -129,36 +94,20 @@
 						websites: a.websites,
 					};
 				}
-			})
-			.catch(() => {});
-
-		// 3. Fetch on-chain data
-		try {
-			const provider = new ethers.JsonRpcProvider(chainInfo.rpc);
-			const contract = new ethers.Contract(tokenAddress, [
-				'function name() view returns (string)',
-				'function symbol() view returns (string)',
-				'function decimals() view returns (uint8)',
-				'function totalSupply() view returns (uint256)',
-			], provider);
-
-			const [name, symbol, decimals, supply] = await Promise.all([
-				contract.name().catch(() => ''),
-				contract.symbol().catch(() => ''),
-				contract.decimals().catch(() => 18),
-				contract.totalSupply().catch(() => 0n),
-			]);
-
-			onChainData = { name, symbol, decimals: Number(decimals), totalSupply: supply.toString() };
+			}
 		} catch {}
-
-		loading = false;
+		priceLoading = false;
 	});
 </script>
 
 <svelte:head>
 	<title>{tokenSymbol} — {tokenName} | TokenKrafter</title>
 	<meta name="description" content="{tokenName} ({tokenSymbol}) on {chainInfo.name}. {description?.slice(0, 120) || 'View token details, price, and more.'}" />
+	{#if logoUrl}
+		<meta property="og:image" content={logoUrl} />
+	{/if}
+	<meta property="og:title" content="{tokenName} ({tokenSymbol}) | TokenKrafter" />
+	<meta property="og:description" content={description?.slice(0, 200) || `${tokenName} on ${chainInfo.name}. View price, supply, and details.`} />
 </svelte:head>
 
 <div class="td">
@@ -198,10 +147,10 @@
 				<span class="td-change" class:positive={priceChange24h > 0} class:negative={priceChange24h < 0}>
 					{priceChange24h > 0 ? '+' : ''}{priceChange24h.toFixed(2)}%
 				</span>
-			{:else if !loading}
+			{:else if !priceLoading}
 				<span class="td-price td-price-na">No price data</span>
 			{:else}
-				<span class="td-price td-price-loading">Loading...</span>
+				<span class="td-price td-price-loading">Loading price...</span>
 			{/if}
 		</div>
 

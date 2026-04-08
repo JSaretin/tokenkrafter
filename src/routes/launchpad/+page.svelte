@@ -5,7 +5,7 @@
 	import { t } from '$lib/i18n';
 	import { favorites, toggleFavorite } from '$lib/favorites';
 	import MarketFlow from '$lib/MarketFlow.svelte';
-	import type { SupportedNetwork } from '$lib/structure';
+	import { chainSlug, type SupportedNetwork } from '$lib/structure';
 	import {
 		LAUNCHPAD_FACTORY_ABI,
 		LAUNCH_INSTANCE_ABI,
@@ -505,7 +505,7 @@
 				{@const scPct = softCapPercent(launch)}
 				<!-- svelte-ignore a11y_mouse_events_have_key_events -->
 				<a
-					href="/launchpad/{launch.address}"
+					href="/launchpad/{chainSlug((launch as any).network?.chain_id ?? 56)}/{launch.address}"
 					class="launch-card card p-0 block no-underline group"
 					style="position:relative"
 					onmouseenter={() => onCardMouseEnter(launch.address)}

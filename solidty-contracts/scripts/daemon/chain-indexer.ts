@@ -34,6 +34,7 @@ if (!SYNC_SECRET) {
 const TOKEN_FACTORY_ABI = [
 	'function totalTokensCreated() view returns (uint256)',
 	'function getTokenByIndex(uint256 index) view returns (address)',
+	'function getTokens(uint256 offset, uint256 limit) view returns (address[] tokens, uint256 total)',
 	'function tokenInfo(address) view returns (address creator, bool isMintable, bool isTaxable, bool isPartnership)',
 	'event TokenCreated(address indexed creator, address indexed tokenAddress, uint8 tokenType, string name, string symbol, uint256 totalSupply, uint8 decimals)',
 ];
@@ -53,6 +54,7 @@ const TOKEN_META_ABI = [
 	'function name() view returns (string)',
 	'function symbol() view returns (string)',
 	'function decimals() view returns (uint8)',
+	'function totalSupply() view returns (uint256)',
 	'function owner() view returns (address)',
 ];
 
@@ -185,12 +187,95 @@ async function fetchNetworkConfig(chainId: number): Promise<NetworkConfig> {
 	};
 }
 
-// ── Token indexer ─────────────────────────────────────────
+// ── MultiCallLens — batch reads in one eth_call ──────────
+// Try artifacts first (local dev), then same dir (VPS deploy)
+const LENS_PATHS = [
+	path.resolve(__dirname, '../../artifacts/contracts/MultiCallLens.sol/MultiCallLens.json'),
+	path.resolve(__dirname, 'MultiCallLens.json'),
+];
+let MultiCallLensArtifact: any = null;
+for (const p of LENS_PATHS) {
+	try { MultiCallLensArtifact = JSON.parse(fs.readFileSync(p, 'utf-8')); break; } catch {}
+}
+if (!MultiCallLensArtifact) {
+	console.warn('⚠️  MultiCallLens artifact not found — will use per-token fallback');
+}
+
+interface LensTokenData {
+	addr: string;
+	name: string;
+	symbol: string;
+	decimals: number;
+	totalSupply: bigint;
+	userBalance: bigint;
+	creator: string;
+	isMintable: boolean;
+	isTaxable: boolean;
+	isPartner: boolean;
+}
+
+async function batchTokenMeta(
+	provider: any,
+	tokenAddresses: string[],
+	config: NetworkConfig,
+): Promise<LensTokenData[]> {
+	if (tokenAddresses.length === 0) return [];
+	if (!MultiCallLensArtifact) throw new Error('MultiCallLens artifact not loaded');
+
+	// Encode constructor args manually (hardhat ethers ContractFactory needs a runner)
+	const abiCoder = ethers.AbiCoder.defaultAbiCoder();
+	const constructorArgs = abiCoder.encode(
+		['address', 'address', 'address', 'address', 'address', 'address', 'address[]', 'address[]'],
+		[
+			config.platform_address,
+			config.launchpad_address,
+			config.trade_router_address || ethers.ZeroAddress,
+			config.usdt_address || ethers.ZeroAddress,
+			config.dex_router || ethers.ZeroAddress,
+			ethers.ZeroAddress,  // user (skip balances)
+			tokenAddresses,
+			[]                   // balanceTokens (skip)
+		]
+	);
+
+	const callData = MultiCallLensArtifact.bytecode + constructorArgs.slice(2);
+	const raw = await provider.call({ data: callData, gasLimit: 30_000_000 });
+
+	if (!raw || raw === '0x') throw new Error('MultiCallLens returned empty (constructor reverted)');
+
+	const decoded = abiCoder.decode(
+		[
+			// PlatformData
+			'tuple(address,uint256,uint256,uint256[8],uint256[8],address,uint256,uint256,uint256,address,uint256,uint256,address,uint256,uint256,uint256,bool,bool,uint256)',
+			// TokenData[]
+			'tuple(address addr,string name,string symbol,uint8 decimals,uint256 totalSupply,uint256 userBalance,address creator,bool isMintable,bool isTaxable,bool isPartner)[]',
+			// BalanceInfo[]
+			'tuple(address,uint256,uint8)[]'
+		],
+		raw
+	);
+
+	return (decoded[1] as any[]).map((t: any) => ({
+		addr: t.addr.toLowerCase(),
+		name: t.name || 'Unknown',
+		symbol: t.symbol || '???',
+		decimals: Number(t.decimals),
+		totalSupply: t.totalSupply,
+		userBalance: t.userBalance,
+		creator: t.creator.toLowerCase(),
+		isMintable: t.isMintable,
+		isTaxable: t.isTaxable,
+		isPartner: t.isPartner,
+	}));
+}
+
+// ── Token indexer (batch via MultiCallLens) ──────────────
 async function indexNewTokens(
 	tokenFactory: any,
 	provider: any,
 	chainId: number,
-	cs: ChainState
+	cs: ChainState,
+	config: NetworkConfig
 ): Promise<number> {
 	const currentCount = Number(await tokenFactory.totalTokensCreated());
 	if (currentCount <= cs.lastTokenCount) return 0;
@@ -198,32 +283,75 @@ async function indexNewTokens(
 	const newCount = currentCount - cs.lastTokenCount;
 	console.log(`  📦 ${newCount} new token(s) found`);
 
+	// 1. Batch-fetch all new token addresses (one RPC call)
+	const { tokens: addresses } = await tokenFactory.getTokens(cs.lastTokenCount, newCount);
+	const tokenAddresses: string[] = addresses.map((a: string) => a.toLowerCase());
+	console.log(`    Fetched ${tokenAddresses.length} addresses`);
+
+	// 2. Batch-fetch all metadata via MultiCallLens (one RPC call)
+	let tokenDataBatch: LensTokenData[];
+	try {
+		tokenDataBatch = await batchTokenMeta(provider, tokenAddresses, config);
+		console.log(`    MultiCallLens returned ${tokenDataBatch.length} tokens`);
+	} catch (e: any) {
+		console.error(`    ✗ MultiCallLens failed: ${e.message?.slice(0, 80)}`);
+		console.log(`    Falling back to per-token queries...`);
+		return await indexNewTokensFallback(tokenFactory, provider, chainId, cs);
+	}
+
+	// 3. Post each to API
+	let indexed = 0;
+	for (let i = 0; i < tokenDataBatch.length; i++) {
+		const t = tokenDataBatch[i];
+		const typeKey = (t.isTaxable ? 2 : 0) | (t.isMintable ? 1 : 0) | (t.isPartner ? 4 : 0);
+
+		const ok = await apiPost('/api/created-tokens', {
+			address: t.addr,
+			chain_id: chainId,
+			creator: t.creator,
+			name: t.name,
+			symbol: t.symbol,
+			total_supply: t.totalSupply.toString(),
+			decimals: t.decimals,
+			is_mintable: t.isMintable,
+			is_taxable: t.isTaxable,
+			is_partner: t.isPartner,
+			type_key: typeKey,
+		});
+
+		if (ok) {
+			console.log(`    ✓ [${cs.lastTokenCount + i}] ${t.symbol} (${t.addr.slice(0, 10)}...)`);
+			indexed++;
+			cs.lastTokenCount = cs.lastTokenCount + i + 1;
+		}
+	}
+
+	return indexed;
+}
+
+// Fallback: per-token queries if MultiCallLens fails
+async function indexNewTokensFallback(
+	tokenFactory: any,
+	provider: any,
+	chainId: number,
+	cs: ChainState
+): Promise<number> {
+	const currentCount = Number(await tokenFactory.totalTokensCreated());
 	let indexed = 0;
 	for (let i = cs.lastTokenCount; i < currentCount; i++) {
 		try {
 			const tokenAddress = (await tokenFactory.getTokenByIndex(i)).toLowerCase();
 			const info = await tokenFactory.tokenInfo(tokenAddress);
 			const token = new ethers.Contract(tokenAddress, TOKEN_META_ABI, provider);
-			const [name, symbol, decimals] = await Promise.all([
-				token.name(), token.symbol(), token.decimals()
+			const [name, symbol, decimals, totalSupply] = await Promise.all([
+				token.name(), token.symbol(), token.decimals(), token.totalSupply()
 			]);
 
-			const isMintable = info.isMintable;
-			const isTaxable = info.isTaxable;
-			const isPartner = info.isPartnership;
-			const typeKey = (isTaxable ? 2 : 0) | (isMintable ? 1 : 0) | (isPartner ? 4 : 0);
-
+			const typeKey = (info.isTaxable ? 2 : 0) | (info.isMintable ? 1 : 0) | (info.isPartnership ? 4 : 0);
 			const ok = await apiPost('/api/created-tokens', {
-				address: tokenAddress,
-				chain_id: chainId,
-				creator: info.creator.toLowerCase(),
-				name,
-				symbol,
-				total_supply: '0', // not critical for indexing
-				decimals: Number(decimals),
-				is_mintable: isMintable,
-				is_taxable: isTaxable,
-				is_partner: isPartner,
+				address: tokenAddress, chain_id: chainId, creator: info.creator.toLowerCase(),
+				name, symbol, total_supply: totalSupply.toString(), decimals: Number(decimals),
+				is_mintable: info.isMintable, is_taxable: info.isTaxable, is_partner: info.isPartnership,
 				type_key: typeKey,
 			});
 
@@ -234,10 +362,9 @@ async function indexNewTokens(
 			}
 		} catch (e: any) {
 			console.error(`    ✗ Token #${i}: ${e.message?.slice(0, 80)}`);
-			break; // stop on error, retry from this index next poll
+			break;
 		}
 	}
-
 	return indexed;
 }
 
@@ -580,7 +707,7 @@ async function main() {
 			console.log(`[${ts}] Poll #${pollCount}`);
 
 			// 1. Index new tokens
-			try { await indexNewTokens(tokenFactory, provider, chainId, cs); } catch (e: any) { console.error(`  ⚠️ Token indexing: ${e.message?.slice(0, 80)}`); }
+			try { await indexNewTokens(tokenFactory, provider, chainId, cs, config); } catch (e: any) { console.error(`  ⚠️ Token indexing: ${e.message?.slice(0, 80)}`); }
 			saveState(allState);
 
 			// 2. Index new launches
