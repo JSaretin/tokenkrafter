@@ -22,7 +22,17 @@
 	const num = (v: string) => parseFloat(v) || 0;
 	let totalTax = $derived(num(buyTaxPct) + num(sellTaxPct) + num(transferTaxPct));
 	let totalShares = $derived(taxWallets.reduce((s, w) => s + num(w.sharePct), 0));
-	let sharesValid = $derived(Math.abs(totalShares - 100) < 0.01);
+	let sharesValid = $derived(totalShares <= 100 && totalShares > 0);
+	let sharesBurned = $derived(100 - totalShares);
+
+	// Per-tax limits (from contract)
+	const MAX_BUY = 10;
+	const MAX_SELL = 10;
+	const MAX_TRANSFER = 5;
+	const MAX_TOTAL = 25;
+	let buyOver = $derived(num(buyTaxPct) > MAX_BUY);
+	let sellOver = $derived(num(sellTaxPct) > MAX_SELL);
+	let transferOver = $derived(num(transferTaxPct) > MAX_TRANSFER);
 
 	const presets = [0, 1, 2, 3, 5];
 
@@ -38,10 +48,11 @@
 	<!-- Tax Rate Rows -->
 	<div class="tc-rates">
 		<!-- Buy -->
-		<div class="tc-rate">
+		<div class="tc-rate" class:tc-rate-error={buyOver}>
 			<div class="tc-rate-left">
 				<span class="tc-dot tc-dot-buy"></span>
 				<span class="tc-rate-name">Buy Tax</span>
+				{#if buyOver}<span class="tc-limit-warn">max {MAX_BUY}%</span>{/if}
 			</div>
 			<div class="tc-rate-right">
 				<div class="tc-presets">
@@ -49,7 +60,7 @@
 						<button class="tc-preset" class:active={num(buyTaxPct) === p} onclick={() => buyTaxPct = String(p)}>{p}%</button>
 					{/each}
 				</div>
-				<div class="tc-rate-input-wrap">
+				<div class="tc-rate-input-wrap" class:tc-input-error={buyOver}>
 					<input class="tc-rate-input" type="text" inputmode="decimal" bind:value={buyTaxPct} placeholder="0" />
 					<span class="tc-pct">%</span>
 				</div>
@@ -57,10 +68,11 @@
 		</div>
 
 		<!-- Sell -->
-		<div class="tc-rate">
+		<div class="tc-rate" class:tc-rate-error={sellOver}>
 			<div class="tc-rate-left">
 				<span class="tc-dot tc-dot-sell"></span>
 				<span class="tc-rate-name">Sell Tax</span>
+				{#if sellOver}<span class="tc-limit-warn">max {MAX_SELL}%</span>{/if}
 			</div>
 			<div class="tc-rate-right">
 				<div class="tc-presets">
@@ -68,7 +80,7 @@
 						<button class="tc-preset" class:active={num(sellTaxPct) === p} onclick={() => sellTaxPct = String(p)}>{p}%</button>
 					{/each}
 				</div>
-				<div class="tc-rate-input-wrap">
+				<div class="tc-rate-input-wrap" class:tc-input-error={sellOver}>
 					<input class="tc-rate-input" type="text" inputmode="decimal" bind:value={sellTaxPct} placeholder="0" />
 					<span class="tc-pct">%</span>
 				</div>
@@ -76,18 +88,19 @@
 		</div>
 
 		<!-- Transfer -->
-		<div class="tc-rate">
+		<div class="tc-rate" class:tc-rate-error={transferOver}>
 			<div class="tc-rate-left">
 				<span class="tc-dot tc-dot-transfer"></span>
 				<span class="tc-rate-name">Transfer Tax</span>
+				{#if transferOver}<span class="tc-limit-warn">max {MAX_TRANSFER}%</span>{/if}
 			</div>
 			<div class="tc-rate-right">
 				<div class="tc-presets">
-					{#each presets as p}
+					{#each presets.filter(p => p <= MAX_TRANSFER) as p}
 						<button class="tc-preset" class:active={num(transferTaxPct) === p} onclick={() => transferTaxPct = String(p)}>{p}%</button>
 					{/each}
 				</div>
-				<div class="tc-rate-input-wrap">
+				<div class="tc-rate-input-wrap" class:tc-input-error={transferOver}>
 					<input class="tc-rate-input" type="text" inputmode="decimal" bind:value={transferTaxPct} placeholder="0" />
 					<span class="tc-pct">%</span>
 				</div>
@@ -99,13 +112,13 @@
 	{#if totalTax > 0}
 		<div class="tc-total-bar">
 			<div class="tc-total-segments">
-				{#if num(buyTaxPct) > 0}<div class="tc-seg tc-seg-buy" style="width: {(num(buyTaxPct) / 25) * 100}%"></div>{/if}
-				{#if num(sellTaxPct) > 0}<div class="tc-seg tc-seg-sell" style="width: {(num(sellTaxPct) / 25) * 100}%"></div>{/if}
-				{#if num(transferTaxPct) > 0}<div class="tc-seg tc-seg-transfer" style="width: {(num(transferTaxPct) / 25) * 100}%"></div>{/if}
+				{#if num(buyTaxPct) > 0}<div class="tc-seg tc-seg-buy" style="width: {(num(buyTaxPct) / MAX_TOTAL) * 100}%"></div>{/if}
+				{#if num(sellTaxPct) > 0}<div class="tc-seg tc-seg-sell" style="width: {(num(sellTaxPct) / MAX_TOTAL) * 100}%"></div>{/if}
+				{#if num(transferTaxPct) > 0}<div class="tc-seg tc-seg-transfer" style="width: {(num(transferTaxPct) / MAX_TOTAL) * 100}%"></div>{/if}
 			</div>
 			<div class="tc-total-info">
-				<span class="tc-total-val" class:tc-over={totalTax > 25}>{totalTax}% total</span>
-				{#if totalTax > 25}<span class="tc-total-warn">Max 25%</span>{/if}
+				<span class="tc-total-val" class:tc-over={totalTax > MAX_TOTAL || buyOver || sellOver || transferOver}>{totalTax}% total</span>
+				{#if totalTax > MAX_TOTAL}<span class="tc-total-warn">Max {MAX_TOTAL}%</span>{/if}
 			</div>
 		</div>
 	{/if}
@@ -135,8 +148,10 @@
 				{#if taxWallets.length < 10}
 					<button class="tc-wallet-add" onclick={addWallet}>+ Add wallet</button>
 				{/if}
-				{#if !sharesValid}
-					<span class="tc-wallet-warn">Shares total {totalShares}% — must equal 100%</span>
+				{#if totalShares > 100}
+					<span class="tc-wallet-warn">Shares total {totalShares}% — max 100%</span>
+				{:else if sharesBurned > 0 && totalShares > 0}
+					<span class="tc-wallet-burn">{sharesBurned}% will be burned</span>
 				{/if}
 			</div>
 		</div>
@@ -289,7 +304,12 @@
 		font-size: 10px; cursor: pointer; transition: all 0.12s;
 	}
 	.tc-wallet-add:hover { color: #00d2ff; border-color: rgba(0,210,255,0.2); }
-	.tc-wallet-warn { font-size: 10px; color: #fbbf24; font-family: 'Space Mono', monospace; }
+	.tc-wallet-warn { font-size: 10px; color: #f87171; font-family: 'Space Mono', monospace; }
+	.tc-wallet-burn { font-size: 10px; color: #64748b; font-family: 'Space Mono', monospace; }
+	.tc-rate-error { border-color: rgba(248,113,113,0.25); }
+	.tc-input-error { border-color: rgba(248,113,113,0.4); }
+	.tc-input-error .tc-rate-input { color: #f87171; }
+	.tc-limit-warn { font-size: 9px; color: #f87171; font-family: 'Space Mono', monospace; margin-left: auto; }
 
 	@media (max-width: 500px) {
 		.tc-wallet { flex-wrap: wrap; }

@@ -88,6 +88,22 @@
 		</div>
 	</div>
 
+	<!-- Metadata (right below identity) -->
+	{#if hasMetadata}
+		<div class="meta-section">
+			{#if description}
+				<p class="meta-desc">{description.length > 80 ? description.slice(0, 80) + '...' : description}</p>
+			{/if}
+			{#if website || twitter || telegram}
+				<div class="meta-links">
+					{#if website}<span class="meta-link">🌐 Website</span>{/if}
+					{#if twitter}<span class="meta-link">𝕏 Twitter</span>{/if}
+					{#if telegram}<span class="meta-link">✈ Telegram</span>{/if}
+				</div>
+			{/if}
+		</div>
+	{/if}
+
 	<!-- Quick Stats -->
 	<div class="stats-grid">
 		<div class="stat">
@@ -174,22 +190,6 @@
 	{#if isPartner && !isTaxable}
 		<div class="partner-note">
 			1% platform fee on buys/sells (fixed)
-		</div>
-	{/if}
-
-	<!-- Metadata -->
-	{#if hasMetadata}
-		<div class="detail-section">
-			{#if description}
-				<p class="meta-desc">{description.length > 80 ? description.slice(0, 80) + '...' : description}</p>
-			{/if}
-			{#if website || twitter || telegram}
-				<div class="meta-links">
-					{#if website}<span class="meta-link">🌐 Website</span>{/if}
-					{#if twitter}<span class="meta-link">𝕏 Twitter</span>{/if}
-					{#if telegram}<span class="meta-link">✈ Telegram</span>{/if}
-				</div>
-			{/if}
 		</div>
 	{/if}
 
@@ -361,6 +361,7 @@
 		margin-top: 4px;
 	}
 
+	.meta-section { margin-bottom: 14px; }
 	.meta-desc {
 		font-size: 11px; color: var(--text-muted); font-family: 'Space Mono', monospace;
 		line-height: 1.5; margin: 0 0 6px;
