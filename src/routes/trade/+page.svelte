@@ -147,7 +147,7 @@
 	let activeWithdrawal: any = $state(null);
 	let withdrawals: any[] = $state([]);
 	let historyLoading = $state(false);
-	let historyFilter = $state<'all' | 'pending' | 'completed' | 'timeout'>('all');
+	let historyFilter = $state<'all' | 'pending' | 'completed' | 'timeout' | 'cancelled'>('all');
 
 	let selectedNetwork = $derived(tradeNetworks[selectedNetworkIdx]);
 
@@ -1751,8 +1751,10 @@
 			<div class="history-panel">
 				<h3 class="history-title">Withdrawal History</h3>
 				<div class="history-filters">
-					{#each ['all', 'pending', 'completed', 'timeout'] as f}
-						<button class="history-filter" class:active={historyFilter === f} onclick={() => historyFilter = f}>{f === 'all' ? 'All' : f === 'pending' ? 'Pending' : f === 'completed' ? 'Completed' : 'Timeout'}</button>
+					{#each ['all', 'pending', 'completed', 'timeout', 'cancelled'] as f}
+						<button class="history-filter" class:active={historyFilter === f} onclick={() => historyFilter = f}>
+							{f === 'all' ? 'All' : f === 'pending' ? 'Pending' : f === 'completed' ? 'Completed' : f === 'timeout' ? 'Timeout' : 'Cancelled'}
+						</button>
 					{/each}
 				</div>
 				{#if historyLoading}
@@ -1766,6 +1768,7 @@
 						if (historyFilter === 'timeout') return to;
 						if (historyFilter === 'pending') return w.status === 0 && !to;
 						if (historyFilter === 'completed') return w.status === 1;
+						if (historyFilter === 'cancelled') return w.status === 2;
 						return true;
 					}) as w, i}
 						{@const timedOut = w.status === 0 && Date.now() / 1000 > w.createdAt + payoutTimeoutMins * 60}

@@ -21,6 +21,10 @@
 		transferTaxPct,
 		wizardStep,
 		logoUrl = '',
+		description = '',
+		website = '',
+		twitter = '',
+		telegram = '',
 	}: {
 		name: string;
 		symbol: string;
@@ -43,7 +47,13 @@
 		transferTaxPct: string;
 		wizardStep: string;
 		logoUrl?: string;
+		description?: string;
+		website?: string;
+		twitter?: string;
+		telegram?: string;
 	} = $props();
+
+	let hasMetadata = $derived(description || website || twitter || telegram);
 
 	const CURVE_LABELS = ['Linear', 'Sqrt', 'Quadratic', 'Exponential'];
 
@@ -164,6 +174,22 @@
 	{#if isPartner && !isTaxable}
 		<div class="partner-note">
 			1% platform fee on buys/sells (fixed)
+		</div>
+	{/if}
+
+	<!-- Metadata -->
+	{#if hasMetadata}
+		<div class="detail-section">
+			{#if description}
+				<p class="meta-desc">{description.length > 80 ? description.slice(0, 80) + '...' : description}</p>
+			{/if}
+			{#if website || twitter || telegram}
+				<div class="meta-links">
+					{#if website}<span class="meta-link">🌐 Website</span>{/if}
+					{#if twitter}<span class="meta-link">𝕏 Twitter</span>{/if}
+					{#if telegram}<span class="meta-link">✈ Telegram</span>{/if}
+				</div>
+			{/if}
 		</div>
 	{/if}
 
@@ -333,6 +359,17 @@
 		padding-top: 12px;
 		border-top: 1px solid var(--border-subtle);
 		margin-top: 4px;
+	}
+
+	.meta-desc {
+		font-size: 11px; color: var(--text-muted); font-family: 'Space Mono', monospace;
+		line-height: 1.5; margin: 0 0 6px;
+	}
+	.meta-links { display: flex; gap: 6px; flex-wrap: wrap; }
+	.meta-link {
+		font-size: 9px; padding: 2px 6px; border-radius: 4px;
+		background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
+		color: var(--text-dim); font-family: 'Space Mono', monospace;
 	}
 
 	.syne { font-family: 'Syne', sans-serif; }
