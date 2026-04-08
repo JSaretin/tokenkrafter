@@ -84,7 +84,7 @@
 		{/if}
 		<div class="token-identity">
 			<div class="token-name syne">{name || 'Token Name'}</div>
-			<div class="token-symbol">{symbol ? `$${symbol.toUpperCase()}` : '$SYMBOL'}</div>
+			<div class="token-symbol">{symbol ? symbol.toUpperCase() : 'SYMBOL'}</div>
 		</div>
 	</div>
 

@@ -17,6 +17,7 @@
 		isCreateOnly = false,
 		supportedNetworks,
 		getNetworkProviders,
+		onPresetLoaded,
 	}: {
 		isCreateOnly?: boolean;
 		name: string;
@@ -33,11 +34,113 @@
 		tokenTelegram: string;
 		supportedNetworks: any[];
 		getNetworkProviders: () => Map<number, any>;
+		onPresetLoaded?: (data: { isTaxable: boolean; buyTaxPct: string; sellTaxPct: string; transferTaxPct: string }) => void;
 	} = $props();
 
 	let showMetadata = $state(false);
 	let logoUploading = $state(false);
 	let logoFileInput: HTMLInputElement | undefined = $state();
+
+	// Preset loader
+	let showPresetLoader = $state(false);
+	let presetAddress = $state('');
+	let presetLoading = $state(false);
+	let presetError = $state('');
+
+	async function loadPreset() {
+		const net = selectedNetwork;
+		if (!presetAddress || !ethers.isAddress(presetAddress) || !net) {
+			presetError = 'Enter a valid token address';
+			return;
+		}
+		presetLoading = true;
+		presetError = '';
+		try {
+			const provider = getNetworkProviders().get(net.chain_id);
+			if (!provider) { presetError = 'No provider for network'; return; }
+
+			// Read basic token info
+			const token = new ethers.Contract(presetAddress, [
+				'function name() view returns (string)',
+				'function symbol() view returns (string)',
+				'function decimals() view returns (uint8)',
+				'function totalSupply() view returns (uint256)',
+			], provider);
+			const [n, s, d, supply] = await Promise.all([
+				token.name().catch(() => ''),
+				token.symbol().catch(() => ''),
+				token.decimals().catch(() => 18),
+				token.totalSupply().catch(() => 0n),
+			]);
+			if (!n && !s) { presetError = 'Could not read token'; return; }
+
+			// Reset all fields before applying preset
+			name = n;
+			symbol = s;
+			decimals = Number(d);
+			totalSupply = ethers.formatUnits(supply, Number(d));
+			tokenLogoUrl = '';
+			tokenDescription = '';
+			tokenWebsite = '';
+			tokenTwitter = '';
+			tokenTelegram = '';
+			delete (window as any).__pendingLogoFile;
+
+			// Reset tax to defaults (non-tax) — will be overridden if tax is detected
+			onPresetLoaded?.({ isTaxable: false, buyTaxPct: '', sellTaxPct: '', transferTaxPct: '' });
+
+			const addr = presetAddress.toLowerCase();
+
+			// Load metadata from DB
+			fetch(`/api/token-metadata?address=${addr}&chain_id=${net.chain_id}`)
+				.then(r => r.ok ? r.json() : null)
+				.then(data => {
+					if (data) {
+						if (data.logo_url) tokenLogoUrl = data.logo_url;
+						if (data.description) tokenDescription = data.description;
+						if (data.website) tokenWebsite = data.website;
+						if (data.twitter) tokenTwitter = data.twitter;
+						if (data.telegram) tokenTelegram = data.telegram;
+					}
+				}).catch(() => {});
+
+			// Logo fallback from GeckoTerminal
+			fetch(`https://api.geckoterminal.com/api/v2/networks/bsc/tokens/${addr}`)
+				.then(r => r.ok ? r.json() : null)
+				.then(data => {
+					const img = data?.data?.attributes?.image_url;
+					if (img && img !== 'missing.png' && !tokenLogoUrl) tokenLogoUrl = img;
+				}).catch(() => {});
+
+			// Simulate tax via TradeLens
+			if (net.dex_router) {
+				try {
+					const { queryTradeLens } = await import('$lib/tradeLens');
+					const result = await queryTradeLens(provider, net.dex_router, [addr], addr, ethers.parseEther('0.001'), ethers.ZeroAddress, net.chain_id);
+					if (result.taxInfo.success) {
+						const buy = result.taxInfo.buyTaxBps / 100;
+						const sell = result.taxInfo.sellTaxBps / 100;
+						const transfer = result.taxInfo.transferTaxBps / 100;
+						if (buy > 0 || sell > 0 || transfer > 0) {
+							onPresetLoaded?.({
+								isTaxable: true,
+								buyTaxPct: buy > 0 ? String(buy) : '',
+								sellTaxPct: sell > 0 ? String(sell) : '',
+								transferTaxPct: transfer > 0 ? String(transfer) : '',
+							});
+						}
+					}
+				} catch {}
+			}
+
+			showPresetLoader = false;
+			presetAddress = '';
+		} catch {
+			presetError = 'Could not read token';
+		} finally {
+			presetLoading = false;
+		}
+	}
 
 	const MAX_LOGO_SIZE = 256;
 	const SKIP_RESIZE_TYPES = ['image/gif', 'image/svg+xml'];
@@ -214,34 +317,57 @@
 		</div>
 	{/if}
 
-	<!-- Clone / existing token toggle -->
-	<button class="toggle-row" tabindex="-1" onclick={() => { useExistingToken = !useExistingToken; if (!useExistingToken) existingTokenAddress = ''; }}>
-		<span class="toggle-track" class:active={useExistingToken}>
-			<span class="toggle-thumb"></span>
-		</span>
-		<span class="toggle-label">{isCreateOnly ? 'Clone from existing token' : 'I already have a token'}</span>
-	</button>
-
-	{#if useExistingToken}
+	{#if !useExistingToken}
+		<!-- Existing token toggle for launch mode -->
+	{:else}
 		<div class="field-group">
-			<label class="label" for="bi-addr">{isCreateOnly ? 'Token to clone' : 'Token Address'}</label>
+			<label class="label" for="bi-addr">Token Address</label>
 			<input id="bi-addr" class="input-field" type="text" placeholder="0x..." bind:value={existingTokenAddress} />
 			{#if loading}
-				<span class="hint accent">{isCreateOnly ? 'Fetching token to clone...' : 'Fetching token info...'}</span>
+				<span class="hint accent">Fetching token info...</span>
 			{:else if fetchError}
 				<span class="hint error">{fetchError}</span>
-			{:else if name && useExistingToken && existingTokenAddress}
-				<span class="hint accent">{name} ({symbol}) &mdash; {Number(totalSupply).toLocaleString('en-US')} supply
-					{#if isCreateOnly}<span class="hint clone-hint"> — will create a new token with these settings</span>{/if}
-				</span>
+			{:else if name && existingTokenAddress}
+				<span class="hint accent">{name} ({symbol}) &mdash; {Number(totalSupply).toLocaleString('en-US')} supply</span>
 			{/if}
 		</div>
-		{#if isCreateOnly && name && !loading}
-			<!-- In clone mode, show the form below pre-filled -->
-		{/if}
 	{/if}
 
-	{#if !useExistingToken || isCreateOnly}
+	{#if !useExistingToken}
+		<!-- Load preset from contract -->
+		<button class="preset-trigger" type="button" onclick={() => showPresetLoader = true}>
+			<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg>
+			Load from existing token
+		</button>
+
+		{#if showPresetLoader}
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<!-- svelte-ignore a11y_click_events_have_key_events -->
+			<div class="preset-overlay" onclick={(e) => { if (e.target === e.currentTarget) { showPresetLoader = false; presetError = ''; } }}>
+				<div class="preset-modal">
+					<button class="preset-close" type="button" onclick={() => { showPresetLoader = false; presetError = ''; }}>
+						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+					</button>
+					<div class="preset-icon">
+						<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg>
+					</div>
+					<h3 class="syne preset-title">Load from Contract</h3>
+					<p class="preset-desc">Paste a token address to auto-fill name, symbol, supply, and tax settings.</p>
+					<div class="preset-input-wrap">
+						<input class="preset-input" type="text" placeholder="0x..." bind:value={presetAddress} onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); loadPreset(); } }} />
+					</div>
+					{#if presetError}<span class="preset-error">{presetError}</span>{/if}
+					<button class="btn-primary preset-btn" type="button" disabled={presetLoading} onclick={loadPreset}>
+						{#if presetLoading}
+							<span class="spinner-sm"></span> Loading...
+						{:else}
+							Load Settings
+						{/if}
+					</button>
+				</div>
+			</div>
+		{/if}
+
 		<!-- Logo upload -->
 		<div class="field-group">
 			<input type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" class="hidden-file" bind:this={logoFileInput} onchange={handleLogoUpload} />
@@ -349,6 +475,78 @@
 
 <style>
 	.basic-info { display: flex; flex-direction: column; gap: 1.1rem; }
+
+	/* Preset loader */
+	.preset-trigger {
+		display: inline-flex; align-items: center; gap: 6px;
+		font-family: 'Space Mono', monospace; font-size: 0.75rem; color: rgba(0,210,255,0.7);
+		background: none; border: 1px dashed rgba(0,210,255,0.2); border-radius: 8px;
+		padding: 8px 14px; cursor: pointer; transition: all 0.2s;
+	}
+	.preset-trigger:hover { border-color: rgba(0,210,255,0.4); color: #00d2ff; background: rgba(0,210,255,0.03); }
+
+	.preset-overlay {
+		position: fixed; inset: 0; z-index: 90;
+		background: rgba(0,0,0,0.65); backdrop-filter: blur(8px);
+		display: flex; align-items: center; justify-content: center;
+		padding: 16px; animation: fadeIn 0.15s ease-out;
+	}
+	@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+	.preset-modal {
+		background: #0d1117; border: 1px solid rgba(0,210,255,0.12);
+		border-radius: 16px; padding: 28px 24px; width: 100%; max-width: 380px;
+		box-shadow: 0 0 60px rgba(0,210,255,0.06), 0 24px 48px rgba(0,0,0,0.5);
+		text-align: center; position: relative;
+		animation: slideUp 0.2s ease-out;
+	}
+	@keyframes slideUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+
+	.preset-close {
+		position: absolute; top: 14px; right: 14px;
+		background: none; border: none; color: rgba(255,255,255,0.3); cursor: pointer;
+		padding: 4px; border-radius: 6px; transition: all 0.15s;
+	}
+	.preset-close:hover { color: white; background: rgba(255,255,255,0.06); }
+
+	.preset-icon {
+		width: 48px; height: 48px; border-radius: 12px;
+		background: rgba(0,210,255,0.08); border: 1px solid rgba(0,210,255,0.15);
+		display: flex; align-items: center; justify-content: center;
+		margin: 0 auto 14px; color: #00d2ff;
+	}
+
+	.preset-title { font-size: 1.05rem; font-weight: 700; color: white; margin: 0 0 6px; }
+	.preset-desc {
+		font-family: 'Space Mono', monospace; font-size: 0.7rem;
+		color: rgba(255,255,255,0.35); margin: 0 0 18px; line-height: 1.6;
+	}
+
+	.preset-input-wrap { margin-bottom: 6px; }
+	.preset-input {
+		width: 100%; box-sizing: border-box;
+		font-family: 'Space Mono', monospace; font-size: 0.82rem; color: white;
+		background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
+		border-radius: 10px; padding: 12px 14px; outline: none; transition: border-color 0.2s;
+	}
+	.preset-input::placeholder { color: rgba(255,255,255,0.2); }
+	.preset-input:focus { border-color: rgba(0,210,255,0.4); }
+
+	.preset-error {
+		display: block; font-family: 'Space Mono', monospace;
+		font-size: 0.72rem; color: #ff5e5e; margin-bottom: 4px;
+	}
+
+	.preset-btn {
+		width: 100%; justify-content: center; margin-top: 10px;
+	}
+
+	.spinner-sm {
+		width: 14px; height: 14px;
+		border: 2px solid rgba(255,255,255,0.15); border-top-color: #00d2ff;
+		border-radius: 50%; animation: spin 0.6s linear infinite;
+	}
+	@keyframes spin { to { transform: rotate(360deg); } }
 	.field-group { display: flex; flex-direction: column; gap: 0.3rem; }
 	.label { font-family: 'Space Mono', monospace; font-size: 0.82rem; color: #e2e8f0; letter-spacing: 0.02em; }
 	.label.small { font-size: 0.72rem; color: rgba(226,232,240,0.5); }

@@ -125,50 +125,23 @@
 	let listingPairs = $state<ListingPair[]>([{ base: 'native', amount: '' }]);
 	let listingPricePerToken = $state('');
 
-	// ── Clone: detect token type from DB + simulate tax via TradeLens ──
-	$effect(() => {
-		if (!useExistingToken || !existingTokenAddress || !chainId) return;
-		if (launchEnabled || listingEnabled) return;
-		if (!ethers.isAddress(existingTokenAddress)) return;
-
-		const addr = existingTokenAddress.toLowerCase();
-		const cid = chainId;
-		const network = supportedNetworks.find(n => n.chain_id == cid);
-
-		// Check our DB for token type
-		fetch(`/api/token-metadata?address=${addr}&chain_id=${cid}`)
-			.then(r => r.ok ? r.json() : null)
-			.then(data => {
-				if (data) {
-					if (data.is_taxable) isTaxable = true;
-					if (data.is_mintable) isMintable = true;
-					if (data.is_partner) isPartner = true;
-				}
-			}).catch(() => {});
-
-		// Simulate tax via TradeLens — works for any token
-		const providers = getNetworkProviders();
-		const provider = providers.get(cid);
-		if (provider && network?.dex_router) {
-			import('$lib/tradeLens').then(({ queryTradeLens }) => {
-				queryTradeLens(provider, network.dex_router, [addr], addr, ethers.parseEther('0.001'), ethers.ZeroAddress, cid)
-					.then((result) => {
-						const tax = result.taxInfo;
-						if (tax.success) {
-							const buy = tax.buyTaxBps / 100;
-							const sell = tax.sellTaxBps / 100;
-							const transfer = tax.transferTaxBps / 100;
-							if (buy > 0 || sell > 0 || transfer > 0) {
-								isTaxable = true;
-								if (buy > 0) buyTaxPct = String(buy);
-								if (sell > 0) sellTaxPct = String(sell);
-								if (transfer > 0) transferTaxPct = String(transfer);
-							}
-						}
-					}).catch(() => {});
-			}).catch(() => {});
+	// Handle preset loaded from BasicInfo's contract loader — resets all token features
+	function handlePresetLoaded(data: { isTaxable: boolean; buyTaxPct: string; sellTaxPct: string; transferTaxPct: string }) {
+		isTaxable = data.isTaxable;
+		buyTaxPct = data.buyTaxPct;
+		sellTaxPct = data.sellTaxPct;
+		transferTaxPct = data.transferTaxPct;
+		if (!data.isTaxable) {
+			taxWallets = [{ address: '', sharePct: '100' }];
 		}
-	});
+		// Reset other features — user can re-enable manually
+		isMintable = false;
+		isPartner = false;
+		protectionEnabled = false;
+		maxWalletPct = '2';
+		maxTransactionPct = '1';
+		cooldownSeconds = '0';
+	}
 
 	// ── Derived ────────────────────────────────────────────
 	let selectedNetwork = $derived(supportedNetworks.find(n => n.chain_id == chainId));
@@ -450,7 +423,7 @@
 	<!-- Step content -->
 	<div class="wz-content">
 		{#if wizardStep === 'basics'}
-			<BasicInfo bind:name bind:symbol bind:totalSupply bind:decimals bind:chainId bind:useExistingToken bind:existingTokenAddress bind:tokenLogoUrl bind:tokenDescription bind:tokenWebsite bind:tokenTwitter bind:tokenTelegram {supportedNetworks} {getNetworkProviders} isCreateOnly={!launchEnabled && !listingEnabled} />
+			<BasicInfo bind:name bind:symbol bind:totalSupply bind:decimals bind:chainId bind:useExistingToken bind:existingTokenAddress bind:tokenLogoUrl bind:tokenDescription bind:tokenWebsite bind:tokenTwitter bind:tokenTelegram {supportedNetworks} {getNetworkProviders} isCreateOnly={!launchEnabled && !listingEnabled} onPresetLoaded={handlePresetLoaded} />
 
 		{:else if wizardStep === 'features'}
 			<Features bind:isMintable bind:isTaxable bind:isPartner />

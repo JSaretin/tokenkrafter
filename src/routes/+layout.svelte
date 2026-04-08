@@ -93,6 +93,13 @@
 		return false;
 	}
 
+	// Clear wallet loading if PIN modal is dismissed without connecting
+	$effect(() => {
+		if (!showWalletModal && walletLoading && !userAddress) {
+			walletLoading = false;
+		}
+	});
+
 	function openWalletConnect() {
 		const kit = getAppKit();
 		if (kit) kit.open();
@@ -148,6 +155,7 @@
 	function handleWalletConnected(address: string, type: 'embedded' | 'external') {
 		userAddress = address;
 		walletType = type;
+		walletLoading = false;
 		if (type === 'embedded') {
 			// Use embedded wallet signer
 			const net = supportedNetworks[0];

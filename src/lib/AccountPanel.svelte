@@ -101,7 +101,7 @@
 			if (res.ok) {
 				const data = await res.json();
 				const img = data?.data?.attributes?.image_url;
-				if (img && img !== 'missing.png') return img;
+				if (img && !img.includes('missing') && img.startsWith('http')) return img;
 			}
 		} catch {}
 
@@ -164,10 +164,24 @@
 		} catch {}
 	});
 
-	// Refresh balances when address changes
+	// Refresh balances + missing logos when address changes
 	$effect(() => {
 		if (!userAddress || importedTokens.length === 0) return;
 		refreshTokenBalances();
+		// Fetch missing logos
+		for (const tok of importedTokens) {
+			if (!tok.logoUrl && tok.address) {
+				fetchTokenLogo(tok.address).then(url => {
+					if (url) {
+						tok.logoUrl = url;
+						importedTokens = [...importedTokens]; // trigger reactivity
+						// Update localStorage
+						const toSave = importedTokens.map(t => ({ address: t.address, name: t.name, symbol: t.symbol, decimals: t.decimals, logoUrl: t.logoUrl || '' }));
+						localStorage.setItem('imported_tokens', JSON.stringify(toSave));
+					}
+				});
+			}
+		}
 	});
 
 	async function refreshTokenBalances() {
