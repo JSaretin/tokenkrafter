@@ -2,6 +2,7 @@
 	import '../app.css';
 	import favicon from '$lib/assets/favicon.svg';
 	import { setContext, onMount } from 'svelte';
+	import { navigating } from '$app/state';
 	import { ethers } from 'ethers';
 	import { initAppKit, getAppKit } from '$lib/wagmiConfig';
 	import type { SupportedNetworks, SupportedNetwork, PaymentOption } from '$lib/structure';
@@ -380,6 +381,11 @@
 >Skip to main content</a>
 
 
+<!-- Navigation loading bar -->
+{#if navigating.to}
+	<div class="nav-progress"><div class="nav-progress-bar"></div></div>
+{/if}
+
 <!-- Toast Notifications -->
 <div class="fixed top-4 right-4 z-[100] flex flex-col gap-2 max-w-sm w-full pointer-events-none px-4">
 	{#each feedbacks as feedback (feedback.id)}
@@ -713,6 +719,22 @@
 
 <style>
 	:global(*) { box-sizing: border-box; }
+
+	/* Navigation loading bar */
+	.nav-progress {
+		position: fixed; top: 0; left: 0; right: 0; height: 2px; z-index: 9999;
+		background: transparent; overflow: hidden;
+	}
+	.nav-progress-bar {
+		height: 100%; background: linear-gradient(90deg, #00d2ff, #3a7bd5);
+		animation: nav-load 1.5s ease-in-out infinite;
+		transform-origin: left;
+	}
+	@keyframes nav-load {
+		0% { transform: scaleX(0) translateX(0); }
+		50% { transform: scaleX(0.6) translateX(20%); }
+		100% { transform: scaleX(0) translateX(100%); }
+	}
 	:global(body) {
 		background: var(--bg);
 		color: var(--text);
