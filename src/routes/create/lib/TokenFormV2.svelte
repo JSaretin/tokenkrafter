@@ -229,9 +229,10 @@
 	}
 
 	// ── Step navigation ────────────────────────────────────
-	// In clone mode (create-only + useExistingToken), we still show Features/Tax steps
-	let isCloneMode = $derived(useExistingToken && !launchEnabled && !listingEnabled);
-	let isRealExistingToken = $derived(useExistingToken && !isCloneMode);
+	// Clone mode: user toggled "clone" on BasicInfo step. They're creating a NEW token
+	// with pre-filled data. Even if they later enable launch/list, it's still a new token.
+	// Real existing token: only when entering via Launch flow with a pre-set token address.
+	let isRealExistingToken = $derived(useExistingToken && !!initialData?.existingTokenAddress);
 
 	let steps = $derived.by(() => {
 		const s: { id: WizardStep; label: string }[] = [{ id: 'basics', label: 'Basics' }];
