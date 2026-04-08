@@ -306,6 +306,7 @@
 	}
 
 	let showPreview = $state(false);
+	let showReviewDetails = $state(false);
 	let isCreating = $state(false);
 	let step = $state<'idle' | 'review' | 'checking-balance' | 'waiting-deposit' | 'approving' | 'creating' | 'approving-listing' | 'adding-liquidity' | 'done'>('idle');
 	let deployAfterConnect = $state(false);
@@ -1206,7 +1207,7 @@
 		onclick={closePreview}
 	>
 		<div
-			class="review-modal w-full sm:max-w-md max-h-full sm:max-h-[90vh] overflow-y-auto"
+			class="review-modal w-full sm:max-w-md max-h-[100dvh] sm:max-h-[90vh] overflow-y-auto"
 			onclick={(e) => e.stopPropagation()}
 		>
 			<!-- Mobile drag indicator -->
@@ -1266,8 +1267,12 @@
 					</div>
 
 					<div class="deposit-amount">
-						<span class="deposit-amount-label">Send exactly</span>
-						<span class="deposit-amount-value">{isNativePayment ? parseFloat(ethers.formatUnits(totalNativeNeeded, 18)).toFixed(4) : selectedFeeFormatted} {selectedPayment?.symbol}</span>
+						<span class="deposit-amount-label">Send at least</span>
+						<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+						<div class="deposit-amount-copy" onclick={() => { navigator.clipboard.writeText(isNativePayment ? parseFloat(ethers.formatUnits(totalNativeNeeded, 18)).toFixed(4) : selectedFeeFormatted || '0'); addFeedback({ message: 'Amount copied', type: 'success' }); }}>
+							<span class="deposit-amount-value">{isNativePayment ? parseFloat(ethers.formatUnits(totalNativeNeeded, 18)).toFixed(4) : selectedFeeFormatted} {selectedPayment?.symbol}</span>
+							<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+						</div>
 						<span class="deposit-amount-bal">Balance: {parseFloat(ethers.formatUnits(userBalance, selectedPayment?.decimals ?? 18)).toFixed(4)} {selectedPayment?.symbol}</span>
 					</div>
 
@@ -1278,10 +1283,17 @@
 								alt="QR" class="qr-img" width="120" height="120"
 							/>
 						</div>
-						<div class="deposit-addr-info">
-							<span class="deposit-addr-label">Your deposit address</span>
+						<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+						<div class="deposit-addr-info" onclick={() => { navigator.clipboard.writeText(userAddress || ''); addFeedback({ message: 'Address copied', type: 'success' }); }}>
+							<span class="deposit-addr-label">Deposit address</span>
 							<span class="deposit-addr">{userAddress}</span>
-							<span class="deposit-network">{tokenInfo.network.name} network only</span>
+							<div class="deposit-addr-actions">
+								<span class="deposit-copy-btn">
+									<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+									Copy
+								</span>
+								<span class="deposit-network">{tokenInfo.network.name} only</span>
+							</div>
 						</div>
 					</div>
 
@@ -1331,148 +1343,27 @@
 				</div>
 
 			{:else}
-				<!-- Review view -->
+				<!-- Review view — cost-first layout -->
 				<div class="modal-header">
 					<h2 class="syne text-xl font-bold text-white">{tokenInfo.existingTokenAddress ? 'Review Launch' : $t('ct.reviewTitle')}</h2>
 					<button onclick={closePreview} class="close-btn cursor-pointer">x</button>
 				</div>
 
-				<div class="modal-section">
-					<div class="label-text mb-3">{tokenInfo.existingTokenAddress ? 'Token' : $t('ct.tokenDetails')}</div>
-					<div class="detail-grid">
-						<div class="detail-row">
-							<span class="detail-label">{$t('ct.name')}</span>
-							<span class="detail-value">{tokenInfo.name} ({tokenInfo.symbol})</span>
-						</div>
-						{#if tokenInfo.existingTokenAddress}
-							<div class="detail-row">
-								<span class="detail-label">Contract</span>
-								<span class="detail-value text-cyan-300 text-xs">{tokenInfo.existingTokenAddress.slice(0, 10)}...{tokenInfo.existingTokenAddress.slice(-8)}</span>
-							</div>
-						{:else}
-							<div class="detail-row">
-								<span class="detail-label">{$t('ct.totalSupply')}</span>
-								<span class="detail-value">{Number(tokenInfo.totalSupply).toLocaleString()}</span>
-							</div>
-							<div class="detail-row">
-								<span class="detail-label">{$t('ct.decimals')}</span>
-								<span class="detail-value">{tokenInfo.decimals}</span>
-							</div>
-						{/if}
-						<div class="detail-row">
-							<span class="detail-label">{$t('ct.network')}</span>
-							<span class="detail-value text-cyan-300">{tokenInfo.network.name}</span>
-						</div>
+				<!-- Token summary (compact) -->
+				<div class="review-summary">
+					<span class="review-token-name">{tokenInfo.name} ({tokenInfo.symbol})</span>
+					<span class="review-token-chain">{tokenInfo.network.name}</span>
+					<div class="review-badges">
+						{#if tokenInfo.isMintable}<span class="badge badge-cyan">Mintable</span>{/if}
+						{#if tokenInfo.isTaxable}<span class="badge badge-amber">Taxable</span>{/if}
+						{#if tokenInfo.isPartner}<span class="badge badge-purple">Partner</span>{/if}
+						{#if tokenInfo.listing?.enabled}<span class="badge badge-emerald">DEX Listing</span>{/if}
+						{#if tokenInfo.launch?.enabled}<span class="badge badge-emerald">Launch</span>{/if}
+						{#if !tokenInfo.isMintable && !tokenInfo.isTaxable && !tokenInfo.isPartner}<span class="badge badge-emerald">Standard</span>{/if}
 					</div>
 				</div>
 
-				{#if !tokenInfo.existingTokenAddress}
-					<div class="modal-section">
-						<div class="label-text mb-3">{$t('ct.features')}</div>
-						<div class="flex gap-2 flex-wrap">
-							{#if tokenInfo.isMintable}
-								<span class="badge badge-cyan">{$t('ct.mintable')}</span>
-							{/if}
-							{#if tokenInfo.isTaxable}
-								<span class="badge badge-amber">{$t('ct.taxable')}</span>
-							{/if}
-							{#if tokenInfo.isPartner}
-								<span class="badge badge-purple">{$t('ct.partner')}</span>
-							{/if}
-							{#if !tokenInfo.isMintable && !tokenInfo.isTaxable && !tokenInfo.isPartner}
-								<span class="badge badge-emerald">{$t('ct.standardErc20')}</span>
-							{/if}
-						</div>
-					</div>
-				{/if}
-
-				<!-- Listing Details -->
-				{#if tokenInfo.listing?.enabled}
-					{@const listTokenAmt = tokenInfo.listing.mode === 'price'
-						? (Number(tokenInfo.listing.listBaseAmount) / Number(tokenInfo.listing.pricePerToken)).toFixed(6)
-						: tokenInfo.listing.tokenAmount}
-					{@const listBaseAmt = tokenInfo.listing.mode === 'price'
-						? tokenInfo.listing.listBaseAmount
-						: tokenInfo.listing.baseAmount}
-					{@const baseSymbol = getBaseSymbol(tokenInfo.network, tokenInfo.listing.baseCoin)}
-					<div class="modal-section">
-						<div class="label-text mb-3">{$t('ct.initialLiquidity')}</div>
-						<div class="detail-grid">
-							<div class="detail-row">
-								<span class="detail-label">{$t('ct.pair')}</span>
-								<span class="detail-value text-emerald-400">{tokenInfo.symbol}/{baseSymbol}</span>
-							</div>
-							<div class="detail-row">
-								<span class="detail-label">{$t('ct.tokens')}</span>
-								<span class="detail-value">{Number(listTokenAmt).toLocaleString()} {tokenInfo.symbol}</span>
-							</div>
-							<div class="detail-row">
-								<span class="detail-label">{baseSymbol}</span>
-								<span class="detail-value">{listBaseAmt} {baseSymbol}</span>
-							</div>
-							{#if tokenInfo.listing.mode === 'price'}
-								<div class="detail-row">
-									<span class="detail-label">{$t('ct.price')}</span>
-									<span class="detail-value">{tokenInfo.listing.pricePerToken} {baseSymbol}/token</span>
-								</div>
-							{/if}
-						</div>
-					</div>
-				{/if}
-
-				<!-- Launch Details -->
-				{#if tokenInfo.launch?.enabled}
-					<div class="modal-section">
-						<div class="label-text mb-3">Launchpad</div>
-						<div class="detail-grid">
-							<div class="detail-row">
-								<span class="detail-label">Curve</span>
-								<span class="detail-value">{['Linear', 'Square Root', 'Quadratic', 'Exponential'][tokenInfo.launch.curveType] ?? 'Linear'}</span>
-							</div>
-							<div class="detail-row">
-								<span class="detail-label">Tokens for Curve</span>
-								<span class="detail-value">{tokenInfo.launch.tokensForLaunchPct}% of supply</span>
-							</div>
-							<div class="detail-row">
-								<span class="detail-label">Soft Cap</span>
-								<span class="detail-value">${Number(tokenInfo.launch.softCap).toLocaleString()} USDT</span>
-							</div>
-							<div class="detail-row">
-								<span class="detail-label">Hard Cap</span>
-								<span class="detail-value">${Number(tokenInfo.launch.hardCap).toLocaleString()} USDT</span>
-							</div>
-							<div class="detail-row">
-								<span class="detail-label">Duration</span>
-								<span class="detail-value">{tokenInfo.launch.durationDays} days</span>
-							</div>
-							<div class="detail-row">
-								<span class="detail-label">Max Buy</span>
-								<span class="detail-value">{(parseInt(tokenInfo.launch.maxBuyBps) / 100).toFixed(1)}% of hard cap</span>
-							</div>
-							{#if parseInt(tokenInfo.launch.creatorAllocationBps) > 0}
-								<div class="detail-row">
-									<span class="detail-label">Creator Alloc</span>
-									<span class="detail-value">{(parseInt(tokenInfo.launch.creatorAllocationBps) / 100).toFixed(1)}% ({tokenInfo.launch.vestingDays}d vesting)</span>
-								</div>
-							{/if}
-							{#if tokenInfo.launch.startTimestamp}
-								<div class="detail-row">
-									<span class="detail-label">Starts</span>
-									<span class="detail-value text-amber-400">{new Date(tokenInfo.launch.startTimestamp * 1000).toLocaleString()}</span>
-								</div>
-							{/if}
-						</div>
-						<div class="mt-3 p-3 rounded-lg" style="background: rgba(0,210,255,0.04); border: 1px solid rgba(0,210,255,0.1);">
-							<div class="flex items-center gap-2 text-[10px] font-mono text-gray-500">
-								<span>Graduation fee: 1% USDT + 1% tokens | Buy fee: 1%</span>
-								<span class="text-gray-700">|</span>
-								<span>LP: auto-burned</span>
-							</div>
-						</div>
-					</div>
-				{/if}
-
-				<!-- Cost Breakdown Receipt -->
+				<!-- Cost Breakdown Receipt (always visible, top priority) -->
 				<div class="modal-section fee-section">
 					<div class="label-text mb-3">Cost Breakdown</div>
 
@@ -1538,6 +1429,48 @@
 						</div>
 					{/if}
 				</div>
+
+				<!-- Collapsible details -->
+				<button class="review-details-toggle" onclick={() => showReviewDetails = !showReviewDetails}>
+					<span>View details</span>
+					<svg class="review-chev" class:review-chev-open={showReviewDetails} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+				</button>
+
+				{#if showReviewDetails}
+					<div class="review-details">
+						<!-- Token info -->
+						<div class="detail-grid">
+							{#if !tokenInfo.existingTokenAddress}
+								<div class="detail-row"><span class="detail-label">Supply</span><span class="detail-value">{Number(tokenInfo.totalSupply).toLocaleString()}</span></div>
+								<div class="detail-row"><span class="detail-label">Decimals</span><span class="detail-value">{tokenInfo.decimals}</span></div>
+							{:else}
+								<div class="detail-row"><span class="detail-label">Contract</span><span class="detail-value text-cyan-300 text-xs">{tokenInfo.existingTokenAddress.slice(0, 10)}...{tokenInfo.existingTokenAddress.slice(-8)}</span></div>
+							{/if}
+						</div>
+
+						<!-- Listing details -->
+						{#if tokenInfo.listing?.enabled}
+							{@const baseSymbol = getBaseSymbol(tokenInfo.network, tokenInfo.listing.baseCoin)}
+							<div class="detail-grid" style="margin-top: 8px;">
+								<div class="detail-row"><span class="detail-label">Pair</span><span class="detail-value text-emerald-400">{tokenInfo.symbol}/{baseSymbol}</span></div>
+								{#if tokenInfo.listing.mode === 'price'}
+									<div class="detail-row"><span class="detail-label">Price</span><span class="detail-value">{tokenInfo.listing.pricePerToken} {baseSymbol}/token</span></div>
+								{/if}
+							</div>
+						{/if}
+
+						<!-- Launch details -->
+						{#if tokenInfo.launch?.enabled}
+							<div class="detail-grid" style="margin-top: 8px;">
+								<div class="detail-row"><span class="detail-label">Curve</span><span class="detail-value">{['Linear', 'Sqrt', 'Quadratic', 'Exp'][tokenInfo.launch.curveType]}</span></div>
+								<div class="detail-row"><span class="detail-label">Cap</span><span class="detail-value">${tokenInfo.launch.softCap}–${tokenInfo.launch.hardCap}</span></div>
+								<div class="detail-row"><span class="detail-label">Duration</span><span class="detail-value">{tokenInfo.launch.durationDays} days</span></div>
+								<div class="detail-row"><span class="detail-label">Max Buy</span><span class="detail-value">{(parseInt(tokenInfo.launch.maxBuyBps) / 100).toFixed(1)}%</span></div>
+							</div>
+							<div class="review-note">Graduation: 1% USDT + 1% tokens | Buy fee: 1% | LP: auto-burned</div>
+						{/if}
+					</div>
+				{/if}
 
 				<button
 					onclick={confirmAndDeploy}
@@ -1974,6 +1907,31 @@
 
 	.fee-section { background: rgba(0,210,255,0.03); border-radius: 10px; padding: 14px; border-color: rgba(0,210,255,0.1); }
 
+	/* Review summary */
+	.review-summary {
+		display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+		padding: 10px 14px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.04);
+		border-radius: 10px; margin-bottom: 10px;
+	}
+	.review-token-name { font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700; color: #fff; }
+	.review-token-chain { font-size: 10px; color: #00d2ff; font-family: 'Space Mono', monospace; }
+	.review-badges { display: flex; gap: 4px; flex-wrap: wrap; margin-left: auto; }
+
+	/* Collapsible details */
+	.review-details-toggle {
+		display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%;
+		padding: 8px; border: none; background: transparent; color: #475569; cursor: pointer;
+		font-family: 'Space Mono', monospace; font-size: 10px; transition: color 0.12s;
+	}
+	.review-details-toggle:hover { color: #00d2ff; }
+	.review-chev { transition: transform 0.15s; }
+	.review-chev-open { transform: rotate(180deg); }
+	.review-details {
+		padding: 10px 14px; background: rgba(255,255,255,0.015); border: 1px solid rgba(255,255,255,0.04);
+		border-radius: 10px; margin-bottom: 8px;
+	}
+	.review-note { font-size: 9px; color: #475569; font-family: 'Space Mono', monospace; margin-top: 8px; text-align: center; }
+
 	.receipt { display: flex; flex-direction: column; gap: 0; }
 	.receipt-row {
 		display: flex; justify-content: space-between; align-items: center;
@@ -2026,9 +1984,18 @@
 	.deposit-amount-value { display: block; font-family: 'Rajdhani', sans-serif; font-size: 26px; font-weight: 700; color: #00d2ff; font-variant-numeric: tabular-nums; }
 	.deposit-amount-bal { display: block; font-size: 9px; color: #f59e0b; font-family: 'Space Mono', monospace; }
 	.deposit-qr-row { display: flex; align-items: center; gap: 14px; padding: 12px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 10px; }
-	.deposit-addr-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+	.deposit-amount-copy {
+		display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+		transition: opacity 0.12s; justify-content: center;
+	}
+	.deposit-amount-copy:hover { opacity: 0.8; }
+	.deposit-amount-copy svg { color: #475569; }
+	.deposit-addr-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; cursor: pointer; transition: opacity 0.12s; }
+	.deposit-addr-info:hover { opacity: 0.8; }
 	.deposit-addr-label { font-size: 9px; color: #475569; font-family: 'Space Mono', monospace; text-transform: uppercase; letter-spacing: 0.04em; }
 	.deposit-addr { font-size: 10px; color: #e2e8f0; font-family: 'Space Mono', monospace; word-break: break-all; line-height: 1.5; }
+	.deposit-addr-actions { display: flex; align-items: center; gap: 8px; }
+	.deposit-copy-btn { display: inline-flex; align-items: center; gap: 3px; font-size: 9px; color: #00d2ff; font-family: 'Space Mono', monospace; }
 	.deposit-network { font-size: 9px; color: #f59e0b; font-family: 'Space Mono', monospace; }
 	.deposit-status { display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 10px; color: #475569; font-family: 'Space Mono', monospace; }
 
