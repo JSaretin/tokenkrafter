@@ -433,7 +433,9 @@
 			if (tokenAddrs.length === 0) return;
 
 			// Prices only, no tax simulation (address(0) skips simulation)
-			const result = await queryTradeLens(provider as any, net.dex_router, tokenAddrs, ethers.ZeroAddress, ethers.parseEther('0.001'), userAddress || ethers.ZeroAddress, net.chain_id);
+			// Pass all base tokens so each token is checked against BNB, USDT, USDC pools
+			const bases = [net.usdt_address, net.usdc_address].filter(a => a && a !== ZERO_ADDRESS);
+			const result = await queryTradeLens(provider as any, net.dex_router, tokenAddrs, ethers.ZeroAddress, ethers.parseEther('0.001'), userAddress || ethers.ZeroAddress, net.chain_id, bases);
 			wethAddr = result.weth;
 			pricesLoaded = true;
 
@@ -685,7 +687,8 @@
 					.filter(a => a && a !== ZERO_ADDRESS);
 				if (!allAddrs.find(a => a.toLowerCase() === addr.toLowerCase())) allAddrs.push(addr);
 
-				queryTradeLens(provider as any, selectedNetwork.dex_router, allAddrs, addr, ethers.parseEther('0.001'), userAddress || ethers.ZeroAddress, selectedNetwork.chain_id).then(result => {
+				const taxBases = [selectedNetwork.usdt_address, selectedNetwork.usdc_address].filter(a => a && a !== ZERO_ADDRESS);
+				queryTradeLens(provider as any, selectedNetwork.dex_router, allAddrs, addr, ethers.parseEther('0.001'), userAddress || ethers.ZeroAddress, selectedNetwork.chain_id, taxBases).then(result => {
 					pricesLoaded = true;
 					wethAddr = result.weth;
 

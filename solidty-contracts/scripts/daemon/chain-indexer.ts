@@ -300,6 +300,7 @@ async function indexNewTokens(
 	}
 
 	// 3. Post each to API
+	const startIndex = cs.lastTokenCount;
 	let indexed = 0;
 	for (let i = 0; i < tokenDataBatch.length; i++) {
 		const t = tokenDataBatch[i];
@@ -320,9 +321,10 @@ async function indexNewTokens(
 		});
 
 		if (ok) {
-			console.log(`    ✓ [${cs.lastTokenCount + i}] ${t.symbol} (${t.addr.slice(0, 10)}...)`);
+			const absIndex = startIndex + i;
+			console.log(`    ✓ [${absIndex}] ${t.symbol} (${t.addr.slice(0, 10)}...)`);
 			indexed++;
-			cs.lastTokenCount = cs.lastTokenCount + i + 1;
+			cs.lastTokenCount = absIndex + 1;
 		}
 	}
 
