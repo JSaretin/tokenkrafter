@@ -47,7 +47,7 @@
 					<span class="tax-card-label">Buy Tax</span>
 				</div>
 				<div class="tax-card-input">
-					<input id="tc-buy" type="number" class="tax-input" bind:value={buyTaxPct} min="0" max="10" step="0.5" placeholder="0" />
+					<input id="tc-buy" type="text" inputmode="decimal" class="tax-input" bind:value={buyTaxPct} min="0" max="10" step="0.5" placeholder="0" />
 					<span class="tax-unit">%</span>
 				</div>
 				<div class="tax-card-bar"><div class="tax-card-fill tax-fill-cyan" style="width: {Math.min(100, num(buyTaxPct) * 10)}%"></div></div>
@@ -59,7 +59,7 @@
 					<span class="tax-card-label">Sell Tax</span>
 				</div>
 				<div class="tax-card-input">
-					<input id="tc-sell" type="number" class="tax-input" bind:value={sellTaxPct} min="0" max="10" step="0.5" placeholder="0" />
+					<input id="tc-sell" type="text" inputmode="decimal" class="tax-input" bind:value={sellTaxPct} min="0" max="10" step="0.5" placeholder="0" />
 					<span class="tax-unit">%</span>
 				</div>
 				<div class="tax-card-bar"><div class="tax-card-fill tax-fill-amber" style="width: {Math.min(100, num(sellTaxPct) * 10)}%"></div></div>
@@ -71,7 +71,7 @@
 					<span class="tax-card-label">Transfer</span>
 				</div>
 				<div class="tax-card-input">
-					<input id="tc-transfer" type="number" class="tax-input" bind:value={transferTaxPct} min="0" max="10" step="0.5" placeholder="0" />
+					<input id="tc-transfer" type="text" inputmode="decimal" class="tax-input" bind:value={transferTaxPct} min="0" max="10" step="0.5" placeholder="0" />
 					<span class="tax-unit">%</span>
 				</div>
 				<div class="tax-card-bar"><div class="tax-card-fill tax-fill-purple" style="width: {Math.min(100, num(transferTaxPct) * 10)}%"></div></div>
