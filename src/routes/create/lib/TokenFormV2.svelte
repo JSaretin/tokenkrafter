@@ -99,6 +99,54 @@
 	let listingPairs = $state<ListingPair[]>([{ base: 'native', amount: '' }]);
 	let listingPricePerToken = $state('');
 
+	// ── Clone: detect token type from on-chain or DB ──────
+	$effect(() => {
+		if (!useExistingToken || !existingTokenAddress || !chainId) return;
+		// Only in clone mode (create-only)
+		if (launchEnabled || listingEnabled) return;
+		if (!ethers.isAddress(existingTokenAddress)) return;
+
+		const addr = existingTokenAddress.toLowerCase();
+		const cid = chainId;
+
+		// Check our DB for token type
+		fetch(`/api/token-metadata?address=${addr}&chain_id=${cid}`)
+			.then(r => r.ok ? r.json() : null)
+			.then(data => {
+				if (data) {
+					if (data.is_taxable) isTaxable = true;
+					if (data.is_mintable) isMintable = true;
+					if (data.is_partner) isPartner = true;
+				}
+			}).catch(() => {});
+
+		// Also try reading tax rates from on-chain
+		const providers = getNetworkProviders();
+		const provider = providers.get(cid);
+		if (provider) {
+			const contract = new ethers.Contract(addr, [
+				'function buyTaxBps() view returns (uint256)',
+				'function sellTaxBps() view returns (uint256)',
+				'function transferTaxBps() view returns (uint256)',
+			], provider);
+			Promise.all([
+				contract.buyTaxBps().catch(() => 0n),
+				contract.sellTaxBps().catch(() => 0n),
+				contract.transferTaxBps().catch(() => 0n),
+			]).then(([b, s, t]) => {
+				const buy = Number(b) / 100;
+				const sell = Number(s) / 100;
+				const transfer = Number(t) / 100;
+				if (buy > 0 || sell > 0 || transfer > 0) {
+					isTaxable = true;
+					if (buy > 0) buyTaxPct = String(buy);
+					if (sell > 0) sellTaxPct = String(sell);
+					if (transfer > 0) transferTaxPct = String(transfer);
+				}
+			}).catch(() => {});
+		}
+	});
+
 	// ── Derived ────────────────────────────────────────────
 	let selectedNetwork = $derived(supportedNetworks.find(n => n.chain_id == chainId));
 	let nativeCoin = $derived(selectedNetwork?.native_coin || 'BNB');
@@ -178,10 +226,14 @@
 	}
 
 	// ── Step navigation ────────────────────────────────────
+	// In clone mode (create-only + useExistingToken), we still show Features/Tax steps
+	let isCloneMode = $derived(useExistingToken && !launchEnabled && !listingEnabled);
+	let isRealExistingToken = $derived(useExistingToken && !isCloneMode);
+
 	let steps = $derived.by(() => {
 		const s: { id: WizardStep; label: string }[] = [{ id: 'basics', label: 'Basics' }];
-		if (!useExistingToken) s.push({ id: 'features', label: 'Features' });
-		if (isTaxable && !useExistingToken) s.push({ id: 'tax', label: 'Tax' });
+		if (!isRealExistingToken) s.push({ id: 'features', label: 'Features' });
+		if (isTaxable && !isRealExistingToken) s.push({ id: 'tax', label: 'Tax' });
 		if (launchEnabled) s.push({ id: 'launch', label: 'Launch' });
 		if (listingEnabled && !launchEnabled) s.push({ id: 'listing', label: 'DEX Listing' });
 		s.push({ id: 'review', label: 'Review' });
@@ -215,7 +267,7 @@
 
 		updateTokenInfo({
 			name, symbol, totalSupply, decimals, isMintable, isTaxable, isPartner, network,
-			existingTokenAddress: (useExistingToken && !(!launchEnabled && !listingEnabled)) ? existingTokenAddress : undefined,
+			existingTokenAddress: isRealExistingToken ? existingTokenAddress : undefined,
 			listing: {
 				enabled: listingEnabled, baseCoin: listingPairs[0]?.base ?? 'native',
 				mode: 'price', tokenAmount: String(totalTokensForListing),
