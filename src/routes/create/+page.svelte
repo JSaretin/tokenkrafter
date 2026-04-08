@@ -38,25 +38,18 @@
 		}
 	});
 
-	// Listen to store — nav clicks set it to null to reset wizard to mode step
+	// Listen to store — nav clicks set it to null to reset to selection
 	let _ignoreStoreUpdate = false;
 	const unsubCreateMode = createMode.subscribe((val) => {
 		if (_ignoreStoreUpdate) return;
 		if (val === null && mode !== null) {
-			mode = null;
+			selectMode(null);
 			resetSignal++;
-			// Clear URL
-			const url = new URL(window.location.href);
-			url.searchParams.delete('mode');
-			url.searchParams.delete('launch');
-			url.searchParams.delete('token');
-			url.searchParams.delete('chain');
-			history.replaceState({}, '', url.pathname);
 		}
 	});
 	onDestroy(unsubCreateMode);
 
-	function handleModeChange(m: IntentMode | null) {
+	function selectMode(m: IntentMode | null) {
 		mode = m;
 		_ignoreStoreUpdate = true;
 		createMode.set(m);
@@ -67,8 +60,18 @@
 			url.searchParams.set('mode', m);
 		} else {
 			url.searchParams.delete('mode');
+			url.searchParams.delete('launch');
+			url.searchParams.delete('token');
+			url.searchParams.delete('chain');
+			// Clear draft and preview on back to selection
+			try { sessionStorage.removeItem('tk_create_form_draft'); } catch {}
+			previewState = null;
 		}
-		history.replaceState({}, '', url.toString());
+		history.replaceState({}, '', m ? url.toString() : url.pathname);
+	}
+
+	function handleModeChange(_m: IntentMode | null) {
+		// no-op — mode is managed by selectMode and store
 	}
 
 	let initialFormData = $derived.by(() => {
@@ -1489,19 +1492,64 @@
 <!-- Page -->
 <div class="page-container max-w-6xl mx-auto px-3 sm:px-6 py-6 sm:py-12">
 
-	<!-- ═══════ TOKEN CREATION WIZARD ═══════ -->
-	<div class="create-split">
-		<div class="form-wrapper">
-			{#if mode}
+	{#if mode === null}
+		<!-- ═══════ INTENT SELECTION SCREEN ═══════ -->
+		<div class="text-center mb-10">
+			<h1 class="syne text-3xl sm:text-4xl font-bold text-white mt-4 mb-2">{$t('ci.pageTitle')}</h1>
+			<p class="text-gray-400 font-mono text-sm">{$t('ci.pageSub')}</p>
+		</div>
+
+		<div class="intent-grid">
+			<button class="intent-card card card-hover" onclick={() => selectMode('token')}>
+				<div class="intent-icon cyan">
+					<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v12M6 12h12"/></svg>
+				</div>
+				<h3 class="syne text-lg font-bold text-white mt-4 mb-1">{$t('ci.createToken')}</h3>
+				<p class="text-gray-400 font-mono text-xs">{$t('ci.createTokenSub')}</p>
+			</button>
+
+			<button class="intent-card intent-card-featured" onclick={() => selectMode('both')}>
+				<span class="badge badge-cyan intent-badge-top">{$t('ci.recommended')}</span>
+				<div class="intent-icon cyan">
+					<svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+				</div>
+				<h3 class="syne text-xl font-bold text-white mt-4 mb-1">{$t('ci.createAndLaunch')}</h3>
+				<p class="text-gray-500 font-mono text-xs leading-relaxed">{$t('ci.createAndLaunchSub')}</p>
+			</button>
+
+			<button class="intent-card card card-hover" onclick={() => selectMode('list')}>
+				<div class="intent-icon" style="color: #f59e0b;">
+					<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+				</div>
+				<h3 class="syne text-lg font-bold text-white mt-4 mb-1">Create & List on DEX</h3>
+				<p class="text-gray-400 font-mono text-xs">Create token and add liquidity to DEX instantly. One click.</p>
+			</button>
+
+			<button class="intent-card card card-hover" onclick={() => selectMode('launch')}>
+				<div class="intent-icon emerald">
+					<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="M12 15l-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg>
+				</div>
+				<h3 class="syne text-lg font-bold text-white mt-4 mb-1">{$t('ci.launchExisting')}</h3>
+				<p class="text-gray-400 font-mono text-xs">{$t('ci.launchExistingSub')}</p>
+			</button>
+		</div>
+
+	{:else}
+		<!-- ═══════ TOKEN CREATION WIZARD ═══════ -->
+		<div class="create-split">
+			<div class="form-wrapper">
+				<button class="back-link" onclick={() => selectMode(null)}>
+					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+					{$t('ci.backToSelection')}
+				</button>
 				<div class="form-header">
 					<span class="badge badge-cyan">{mode === 'token' ? $t('ci.titleToken') : mode === 'launch' ? $t('ci.titleLaunch') : mode === 'list' ? 'Create & List' : $t('ci.titleBoth')}</span>
 					<h1 class="syne text-2xl sm:text-3xl font-bold text-white mt-3 mb-1">{pageTitle}</h1>
 					<p class="text-gray-500 font-mono text-sm">{mode === 'token' ? $t('ci.metaToken') : mode === 'launch' ? $t('ci.metaLaunch') : mode === 'list' ? 'Create and list your token on a DEX.' : $t('ci.metaBoth')}</p>
 				</div>
-			{/if}
-			<TokenForm {supportedNetworks} {addFeedback} {updateTokenInfo} onPreviewChange={handlePreviewChange} initialData={initialFormData} initialMode={modeFromUrl ?? undefined} onModeChange={handleModeChange} {resetSignal} />
-		</div>
-			{#if previewState && mode}
+				<TokenForm {supportedNetworks} {addFeedback} {updateTokenInfo} onPreviewChange={handlePreviewChange} initialData={initialFormData} initialMode={mode} onModeChange={handleModeChange} {resetSignal} />
+			</div>
+			{#if previewState}
 				<div class="create-preview-col">
 					<DisplayPreview
 						name={previewState.name}
@@ -1533,6 +1581,7 @@
 				</div>
 			{/if}
 		</div>
+	{/if}
 </div>
 
 <style>
@@ -1842,6 +1891,53 @@
 	}
 
 	select option { background: var(--select-bg); color: var(--text-heading); }
+
+	/* ─── Intent Selection Grid ─── */
+	.intent-grid {
+		display: grid;
+		grid-template-columns: 1fr;
+		gap: 16px;
+		max-width: 800px;
+		margin: 0 auto;
+	}
+	@media (min-width: 640px) {
+		.intent-grid {
+			grid-template-columns: 1fr 1.3fr 1fr;
+			gap: 20px;
+			align-items: stretch;
+		}
+	}
+	.intent-card {
+		display: flex; flex-direction: column; align-items: center; text-align: center;
+		padding: 28px 20px; cursor: pointer; transition: all 0.25s;
+		border: 1px solid var(--border); background: var(--bg-surface);
+		border-radius: 16px; position: relative;
+	}
+	.intent-card:hover {
+		transform: translateY(-3px); box-shadow: 0 12px 40px rgba(0,0,0,0.3);
+		border-color: rgba(0,210,255,0.2); background: rgba(0,210,255,0.03);
+	}
+	.intent-card-featured {
+		padding: 36px 24px; border: 1.5px solid rgba(0, 210, 255, 0.3);
+		background: var(--bg-surface); position: relative; overflow: hidden;
+	}
+	.intent-card-featured::before {
+		content: ''; position: absolute; inset: 0;
+		background: radial-gradient(ellipse at 50% 0%, rgba(0, 210, 255, 0.08), transparent 70%);
+		pointer-events: none;
+	}
+	.intent-card-featured:hover {
+		border-color: rgba(0, 210, 255, 0.5);
+		box-shadow: 0 0 40px rgba(0, 210, 255, 0.15), 0 12px 40px rgba(0, 0, 0, 0.3);
+		background: rgba(0, 210, 255, 0.03);
+	}
+	.intent-badge-top { margin-bottom: 12px; }
+	.intent-icon {
+		width: 56px; height: 56px; display: flex; align-items: center;
+		justify-content: center; border-radius: 14px;
+	}
+	.intent-icon.cyan { background: rgba(0,210,255,0.1); color: #00d2ff; border: 1px solid rgba(0,210,255,0.2); }
+	.intent-icon.emerald { background: rgba(16,185,129,0.1); color: #10b981; border: 1px solid rgba(16,185,129,0.2); }
 
 	.back-link {
 		display: inline-flex;

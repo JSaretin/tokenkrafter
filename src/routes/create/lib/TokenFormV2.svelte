@@ -37,11 +37,11 @@
 	import { getContext } from 'svelte';
 	import { ethers } from 'ethers';
 	import type { SupportedNetwork } from '$lib/structure';
-	import { DeployMode as DeployModeStep, BasicInfo, Features, TaxConfig as TaxStep, ListingConfig as ListingStep, Review } from './steps';
+	import { BasicInfo, Features, TaxConfig as TaxStep, ListingConfig as ListingStep, Review } from './steps';
 	import BondingCurveChart from '$lib/BondingCurveChart.svelte';
 
-	type WizardStep = 'mode' | 'basics' | 'features' | 'tax' | 'launch' | 'listing' | 'review';
-	let wizardStep = $state<WizardStep>('mode');
+	type WizardStep = 'basics' | 'features' | 'tax' | 'launch' | 'listing' | 'review';
+	let wizardStep = $state<WizardStep>('basics');
 
 	// ── Props ──────────────────────────────────────────────
 	let {
@@ -100,8 +100,6 @@
 		}
 	});
 
-	// Skip mode step if initialMode provided (e.g. from URL param)
-	if (initialMode) wizardStep = 'basics';
 
 	let buyTaxPct = $state('');
 	let sellTaxPct = $state('');
@@ -355,25 +353,18 @@
 	let isRealExistingToken = $derived(useExistingToken && !!initialData?.existingTokenAddress);
 
 	let steps = $derived.by(() => {
-		const s: { id: WizardStep; label: string }[] = [{ id: 'mode', label: 'Mode' }];
-		if (deployMode) {
-			s.push({ id: 'basics', label: 'Basics' });
-			if (!isRealExistingToken) s.push({ id: 'features', label: 'Features' });
-			if (isTaxable && !isRealExistingToken) s.push({ id: 'tax', label: 'Tax' });
-			if (launchEnabled) s.push({ id: 'launch', label: 'Launch' });
-			if (listingEnabled && !launchEnabled) s.push({ id: 'listing', label: 'DEX Listing' });
-			s.push({ id: 'review', label: 'Review' });
-		}
+		const s: { id: WizardStep; label: string }[] = [{ id: 'basics', label: 'Basics' }];
+		if (!isRealExistingToken) s.push({ id: 'features', label: 'Features' });
+		if (isTaxable && !isRealExistingToken) s.push({ id: 'tax', label: 'Tax' });
+		if (launchEnabled) s.push({ id: 'launch', label: 'Launch' });
+		if (listingEnabled && !launchEnabled) s.push({ id: 'listing', label: 'DEX Listing' });
+		s.push({ id: 'review', label: 'Review' });
 		return s;
 	});
 
 	let currentStepIdx = $derived(steps.findIndex(s => s.id === wizardStep));
 
 	function nextStep() {
-		if (wizardStep === 'mode' && !deployMode) {
-			addFeedback({ message: 'Please select a deployment mode', type: 'error' });
-			return;
-		}
 		const idx = currentStepIdx;
 		if (idx < steps.length - 1) wizardStep = steps[idx + 1].id;
 		else submit();
@@ -461,10 +452,7 @@
 
 	<!-- Step content -->
 	<div class="wz-content">
-		{#if wizardStep === 'mode'}
-			<DeployModeStep bind:deployMode />
-
-		{:else if wizardStep === 'basics'}
+		{#if wizardStep === 'basics'}
 			<BasicInfo bind:name bind:symbol bind:totalSupply bind:decimals bind:chainId bind:useExistingToken bind:existingTokenAddress bind:tokenLogoUrl bind:tokenDescription bind:tokenWebsite bind:tokenTwitter bind:tokenTelegram {supportedNetworks} {getNetworkProviders} isCreateOnly={!launchEnabled && !listingEnabled} />
 
 		{:else if wizardStep === 'features'}

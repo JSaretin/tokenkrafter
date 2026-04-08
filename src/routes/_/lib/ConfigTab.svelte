@@ -24,7 +24,10 @@
 		router_address: '',
 		dex_router: '',
 		trade_router_address: '',
-		rpc: ''
+		trade_lens_address: '',
+		rpc: '',
+		explorer_url: '',
+		gecko_network: ''
 	});
 
 	onMount(async () => {
@@ -72,7 +75,7 @@
 		}
 		networks = [...networks, net];
 		showAddNetwork = false;
-		newNetwork = { chain_id: '', name: '', symbol: '', native_coin: '', usdt_address: '', usdc_address: '', platform_address: '', launchpad_address: '', router_address: '', dex_router: '', trade_router_address: '', rpc: '' };
+		newNetwork = { chain_id: '', name: '', symbol: '', native_coin: '', usdt_address: '', usdc_address: '', platform_address: '', launchpad_address: '', router_address: '', dex_router: '', trade_router_address: '', trade_lens_address: '', rpc: '', explorer_url: '', gecko_network: '' };
 	}
 
 	function removeNetwork(idx: number) {
@@ -204,6 +207,18 @@
 							<label class="label-text">Trade Router</label>
 							<input class="input-field" placeholder="0x..." bind:value={newNetwork.trade_router_address} />
 						</div>
+						<div>
+							<label class="label-text">TradeLens</label>
+							<input class="input-field" placeholder="0x..." bind:value={newNetwork.trade_lens_address} />
+						</div>
+						<div>
+							<label class="label-text">Explorer URL</label>
+							<input class="input-field" placeholder="https://bscscan.com" bind:value={newNetwork.explorer_url} />
+						</div>
+						<div>
+							<label class="label-text">Gecko Network</label>
+							<input class="input-field" placeholder="bsc" bind:value={newNetwork.gecko_network} />
+						</div>
 					</div>
 					<button class="btn-primary text-xs px-4 py-2 cursor-pointer" onclick={addNetwork}>
 						Add Network
@@ -256,6 +271,18 @@
 						<div>
 							<label class="label-text text-[9px]">USDC</label>
 							<input class="input-field text-xs" bind:value={net.usdc_address} />
+						</div>
+						<div>
+							<label class="label-text text-[9px]">TradeLens</label>
+							<input class="input-field text-xs" bind:value={net.trade_lens_address} />
+						</div>
+						<div>
+							<label class="label-text text-[9px]">Explorer URL</label>
+							<input class="input-field text-xs" bind:value={net.explorer_url} />
+						</div>
+						<div>
+							<label class="label-text text-[9px]">Gecko Network</label>
+							<input class="input-field text-xs" bind:value={net.gecko_network} />
 						</div>
 					</div>
 				</div>
