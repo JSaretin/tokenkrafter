@@ -1553,48 +1553,46 @@
 
 	{:else if mode === 'token' || mode === 'both' || mode === 'launch' || mode === 'list'}
 		<!-- ═══════ TOKEN / BOTH / LAUNCH WIZARD ═══════ -->
-		<div class="form-wrapper">
-			<button class="back-link" onclick={backToSelection}>
-				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-				{$t('ci.backToSelection')}
-			</button>
-			<div class="form-header">
-				<span class="badge badge-cyan">{mode === 'token' ? $t('ci.titleToken') : mode === 'launch' ? $t('ci.titleLaunch') : $t('ci.titleBoth')}</span>
-				<h1 class="syne text-2xl sm:text-3xl font-bold text-white mt-3 mb-1">{pageTitle}</h1>
-				<p class="text-gray-500 font-mono text-sm">{mode === 'token' ? $t('ci.metaToken') : mode === 'launch' ? $t('ci.metaLaunch') : $t('ci.metaBoth')}</p>
-			</div>
-			<div class="create-split">
-				<div class="create-form-col">
-					<TokenForm {supportedNetworks} {addFeedback} {updateTokenInfo} onPreviewChange={handlePreviewChange} initialData={initialFormData} forceMode={mode === 'token' ? 'token' : mode === 'launch' ? 'launch' : mode === 'list' ? 'list' : 'both'} />
+		<div class="create-split">
+			<div class="form-wrapper">
+				<button class="back-link" onclick={backToSelection}>
+					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+					{$t('ci.backToSelection')}
+				</button>
+				<div class="form-header">
+					<span class="badge badge-cyan">{mode === 'token' ? $t('ci.titleToken') : mode === 'launch' ? $t('ci.titleLaunch') : $t('ci.titleBoth')}</span>
+					<h1 class="syne text-2xl sm:text-3xl font-bold text-white mt-3 mb-1">{pageTitle}</h1>
+					<p class="text-gray-500 font-mono text-sm">{mode === 'token' ? $t('ci.metaToken') : mode === 'launch' ? $t('ci.metaLaunch') : $t('ci.metaBoth')}</p>
 				</div>
-				{#if previewState}
-					<div class="create-preview-col">
-						<DisplayPreview
-							name={previewState.name}
-							symbol={previewState.symbol}
-							totalSupply={previewState.totalSupply}
-							decimals={previewState.decimals}
-							isMintable={previewState.isMintable}
-							isTaxable={previewState.isTaxable}
-							isPartner={previewState.isPartner}
-							networkName={previewState.networkName}
-							launchEnabled={previewState.launchEnabled}
-							launchTokensPct={previewState.launchTokensPct}
-							launchCurveType={previewState.launchCurveType}
-							launchSoftCap={previewState.launchSoftCap}
-							launchHardCap={previewState.launchHardCap}
-							protectionEnabled={previewState.protectionEnabled}
-							maxWalletPct={previewState.maxWalletPct}
-							maxTransactionPct={previewState.maxTransactionPct}
-							buyTaxPct={previewState.buyTaxPct}
-							sellTaxPct={previewState.sellTaxPct}
-							transferTaxPct={previewState.transferTaxPct}
-							wizardStep={previewState.wizardStep}
-							logoUrl={previewState.logoUrl}
-						/>
-					</div>
-				{/if}
+				<TokenForm {supportedNetworks} {addFeedback} {updateTokenInfo} onPreviewChange={handlePreviewChange} initialData={initialFormData} forceMode={mode === 'token' ? 'token' : mode === 'launch' ? 'launch' : mode === 'list' ? 'list' : 'both'} />
 			</div>
+			{#if previewState}
+				<div class="create-preview-col">
+					<DisplayPreview
+						name={previewState.name}
+						symbol={previewState.symbol}
+						totalSupply={previewState.totalSupply}
+						decimals={previewState.decimals}
+						isMintable={previewState.isMintable}
+						isTaxable={previewState.isTaxable}
+						isPartner={previewState.isPartner}
+						networkName={previewState.networkName}
+						launchEnabled={previewState.launchEnabled}
+						launchTokensPct={previewState.launchTokensPct}
+						launchCurveType={previewState.launchCurveType}
+						launchSoftCap={previewState.launchSoftCap}
+						launchHardCap={previewState.launchHardCap}
+						protectionEnabled={previewState.protectionEnabled}
+						maxWalletPct={previewState.maxWalletPct}
+						maxTransactionPct={previewState.maxTransactionPct}
+						buyTaxPct={previewState.buyTaxPct}
+						sellTaxPct={previewState.sellTaxPct}
+						transferTaxPct={previewState.transferTaxPct}
+						wizardStep={previewState.wizardStep}
+						logoUrl={previewState.logoUrl}
+					/>
+				</div>
+			{/if}
 		</div>
 
 	{:else if mode === 'launch'}
@@ -1832,10 +1830,10 @@
 </div>
 
 <style>
-	.create-split { display: flex; gap: 24px; align-items: flex-start; }
-	.create-form-col { flex: 1; min-width: 0; }
+	.create-split { display: flex; gap: 28px; align-items: flex-start; }
+	.create-split > .form-wrapper { flex: 1; min-width: 0; max-width: none; }
 	.create-preview-col { width: 280px; flex-shrink: 0; position: sticky; top: 80px; }
-	@media (max-width: 900px) { .create-preview-col { display: none; } }
+	@media (max-width: 960px) { .create-preview-col { display: none; } .create-split { display: block; } }
 
 	.page-grid {
 		display: grid;
