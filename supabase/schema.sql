@@ -421,3 +421,73 @@ select cron.schedule(
   '0 * * * *',
   $$select update_exchange_rates()$$
 );
+
+-- ============================================================
+-- Wallet vaults (embedded wallet — encrypted seed storage)
+-- ============================================================
+create table if not exists wallet_vaults (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  primary_blob text not null,          -- AES(seed, PBKDF2(pin, salt))
+  recovery_blob_1 text not null,       -- AES(seed, PBKDF2(code1, salt))
+  recovery_blob_2 text not null,       -- AES(seed, PBKDF2(code2, salt))
+  recovery_blob_3 text not null,       -- AES(seed, PBKDF2(code3, salt))
+  account_count integer not null default 1,
+  default_address text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table wallet_vaults enable row level security;
+-- No anon read — vault data only accessible via service role (server API)
+
+drop trigger if exists wallet_vaults_updated_at on wallet_vaults;
+create trigger wallet_vaults_updated_at
+  before update on wallet_vaults
+  for each row execute function update_updated_at();
+
+-- ============================================================
+-- Token metadata (logo, description, socials)
+-- ============================================================
+-- Add columns to existing created_tokens table
+alter table created_tokens add column if not exists logo_url text;
+alter table created_tokens add column if not exists description text;
+alter table created_tokens add column if not exists website text;
+alter table created_tokens add column if not exists twitter text;
+alter table created_tokens add column if not exists telegram text;
+
+-- ============================================================
+-- Creator profiles (badges, reputation)
+-- ============================================================
+create table if not exists creator_profiles (
+  wallet_address text primary key,
+  display_name text,
+  avatar_url text,
+  bio text,
+  website text,
+  twitter text,
+  telegram text,
+  is_verified boolean not null default false,
+  graduated_count integer not null default 0,
+  total_launches integer not null default 0,
+  total_tokens integer not null default 0,
+  badges jsonb not null default '[]',    -- e.g. ["graduated", "verified", "partner"]
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table creator_profiles enable row level security;
+select create_policy_if_not_exists('creator_profiles', 'Anon read', 'select');
+
+drop trigger if exists creator_profiles_updated_at on creator_profiles;
+create trigger creator_profiles_updated_at
+  before update on creator_profiles
+  for each row execute function update_updated_at();
+
+-- ============================================================
+-- Enable Realtime for wallet vaults (for multi-device sync)
+-- ============================================================
+do $$ begin
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'created_tokens') then
+    alter publication supabase_realtime add table created_tokens;
+  end if;
+end $$;

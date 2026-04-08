@@ -1009,11 +1009,14 @@
 				withdrawStep = 3;
 				const referrer = ethers.ZeroAddress; // TODO: get from URL param or localStorage
 				if (tokenInIsNative) {
-					tx = await router.depositETH(minOut, bankRef, referrer, { value: parsedIn });
+					const est = await router.depositETH.estimateGas(minOut, bankRef, referrer, { value: parsedIn });
+					tx = await router.depositETH(minOut, bankRef, referrer, { value: parsedIn, gasLimit: est * 130n / 100n });
 				} else if (tokenInAddr.toLowerCase() === selectedNetwork.usdt_address.toLowerCase()) {
-					tx = await router.deposit(parsedIn, bankRef, referrer);
+					const est = await router.deposit.estimateGas(parsedIn, bankRef, referrer);
+					tx = await router.deposit(parsedIn, bankRef, referrer, { gasLimit: est * 130n / 100n });
 				} else {
-					tx = await router.depositAndSwap(tokenInAddr, parsedIn, minOut, true, bankRef, referrer);
+					const est = await router.depositAndSwap.estimateGas(tokenInAddr, parsedIn, minOut, true, bankRef, referrer);
+					tx = await router.depositAndSwap(tokenInAddr, parsedIn, minOut, true, bankRef, referrer, { gasLimit: est * 130n / 100n });
 				}
 				const receipt = await tx.wait();
 
@@ -1094,16 +1097,22 @@
 				swapStep = 2;
 				try {
 				if (tokenInIsNative) {
+					const est = await dex.swapExactETHForTokensSupportingFeeOnTransferTokens.estimateGas(
+						minOut, path, userAddress, deadline, { value: parsedIn });
 					tx = await dex.swapExactETHForTokensSupportingFeeOnTransferTokens(
-						minOut, path, userAddress, deadline, { value: parsedIn, gasLimit: 300000n }
+						minOut, path, userAddress, deadline, { value: parsedIn, gasLimit: est * 130n / 100n }
 					);
 				} else if (tokenOutIsNative) {
+					const est2 = await dex.swapExactTokensForETHSupportingFeeOnTransferTokens.estimateGas(
+						parsedIn, minOut, path, userAddress, deadline);
 					tx = await dex.swapExactTokensForETHSupportingFeeOnTransferTokens(
-						parsedIn, minOut, path, userAddress, deadline, { gasLimit: 300000n }
+						parsedIn, minOut, path, userAddress, deadline, { gasLimit: est2 * 130n / 100n }
 					);
 				} else {
+					const est3 = await dex.swapExactTokensForTokensSupportingFeeOnTransferTokens.estimateGas(
+						parsedIn, minOut, path, userAddress, deadline);
 					tx = await dex.swapExactTokensForTokensSupportingFeeOnTransferTokens(
-						parsedIn, minOut, path, userAddress, deadline, { gasLimit: 300000n }
+						parsedIn, minOut, path, userAddress, deadline, { gasLimit: est3 * 130n / 100n }
 					);
 				}
 				const swapReceipt = await tx.wait();
@@ -2266,12 +2275,15 @@
 		display: flex; justify-content: space-between; align-items: center;
 	}
 	.usd-value {
-		color: var(--text-muted); font-size: 11px;
+		color: var(--text-muted); font-size: 12px;
+		font-family: 'Rajdhani', sans-serif; font-weight: 500;
+		font-variant-numeric: tabular-nums;
 	}
 	.amount-input {
 		flex: 1; background: transparent; border: none; outline: none;
-		color: var(--text-heading); font-family: 'Syne', sans-serif;
-		font-size: 28px; font-weight: 700; padding: 0; min-width: 0;
+		color: var(--text-heading); font-family: 'Rajdhani', sans-serif;
+		font-size: 30px; font-weight: 700; padding: 0; min-width: 0;
+		font-variant-numeric: tabular-nums;
 	}
 	.amount-input::placeholder { color: var(--text-dim); opacity: 0.4; }
 	.amount-input-out { color: var(--text-muted); }
@@ -2344,15 +2356,15 @@
 		border-bottom: 1px solid rgba(255,255,255,0.04);
 	}
 	.bank-payout-ngn {
-		display: block; font-family: 'Syne', sans-serif; font-size: 24px; font-weight: 800;
-		color: #10b981; line-height: 1.2;
+		display: block; font-family: 'Rajdhani', sans-serif; font-size: 28px; font-weight: 700;
+		color: #10b981; line-height: 1.2; font-variant-numeric: tabular-nums;
 	}
 	.bank-payout-usd {
-		display: block; font-family: 'Space Mono', monospace; font-size: 11px;
-		color: var(--text-muted); margin-top: 2px;
+		display: block; font-family: 'Rajdhani', sans-serif; font-size: 13px; font-weight: 500;
+		color: var(--text-muted); margin-top: 2px; font-variant-numeric: tabular-nums;
 	}
 	.bank-preview-net { margin-top: 4px; }
-	.bank-preview-net span:last-child { color: #10b981; font-weight: 700; }
+	.bank-preview-net span:last-child { color: #10b981; font-weight: 700; font-family: 'Rajdhani', sans-serif; font-variant-numeric: tabular-nums; }
 
 	.bank-fields { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
 	.field-group { display: flex; flex-direction: column; }
@@ -2681,8 +2693,8 @@
 		text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 4px;
 	}
 	.confirm-ngn-value {
-		display: block; font-family: 'Syne', sans-serif; font-size: 28px; font-weight: 800;
-		color: #10b981;
+		display: block; font-family: 'Rajdhani', sans-serif; font-size: 32px; font-weight: 700;
+		color: #10b981; font-variant-numeric: tabular-nums;
 	}
 	.confirm-ngn-rate {
 		display: block; font-family: 'Space Mono', monospace; font-size: 10px;

@@ -1,0 +1,877 @@
+<script lang="ts">
+	import { goto } from '$app/navigation';
+	import { ethers } from 'ethers';
+	import { getWalletState, exportPrivateKey, exportSeedPhrase, setActiveAccount, addAccount, unlockWallet, onWalletStateChange, getSigner, type WalletState } from './embeddedWallet';
+
+	let {
+		open = $bindable(false),
+		userAddress = $bindable(''),
+		walletType = 'embedded' as 'embedded' | 'external',
+		networkName = 'BNB Smart Chain',
+		nativeCoin = 'BNB',
+		nativeBalance = 0n,
+		nativeDecimals = 18,
+		nativePriceUsd = 0,
+		tokens = [] as { address: string; symbol: string; name: string; balance: bigint; decimals: number; priceUsd?: number }[],
+		onDisconnect = () => {},
+		onAddFeedback = (_: { message: string; type: string }) => {},
+		onAccountSwitch = (_addr: string) => {},
+		onRefreshBalance = () => {},
+	}: {
+		open: boolean;
+		userAddress: string;
+		walletType: 'embedded' | 'external';
+		networkName: string;
+		nativeCoin: string;
+		nativeBalance: bigint;
+		nativeDecimals: number;
+		nativePriceUsd: number;
+		tokens: { address: string; symbol: string; name: string; balance: bigint; decimals: number; priceUsd?: number }[];
+		onDisconnect: () => void;
+		onAddFeedback: (f: { message: string; type: string }) => void;
+		onAccountSwitch: (addr: string) => void;
+		onRefreshBalance: () => void;
+	} = $props();
+
+	// ── Reactive wallet state (re-renders on account switch, add, etc.) ──
+	let walletState = $state<WalletState>(getWalletState());
+	$effect(() => {
+		const unsub = onWalletStateChange((s) => {
+			walletState = s;
+			// Update parent's userAddress when active account changes
+			if (s.activeAccount?.address && s.activeAccount.address !== userAddress) {
+				userAddress = s.activeAccount.address;
+			}
+		});
+		return unsub;
+	});
+
+	let accounts = $derived(walletState.accounts || []);
+	let activeIndex = $derived(walletState.activeAccount?.index ?? 0);
+
+	let nativeBalFormatted = $derived(parseFloat(ethers.formatUnits(nativeBalance, nativeDecimals)));
+	let nativeUsd = $derived(nativeBalFormatted * nativePriceUsd);
+	let totalUsd = $derived.by(() => {
+		let total = nativeUsd;
+		for (const t of tokens) {
+			if (t.priceUsd) total += parseFloat(ethers.formatUnits(t.balance, t.decimals)) * t.priceUsd;
+		}
+		return total;
+	});
+
+	// ── UI state ──
+	type View = 'main' | 'receive' | 'send' | 'security' | 'export-key' | 'export-seed';
+	let view = $state<View>('main');
+	let showAccountDropdown = $state(false);
+	let renamingIndex = $state<number | null>(null);
+	let renameValue = $state('');
+	let accountNames = $state<Record<number, string>>({});
+
+	// Load saved names from localStorage
+	$effect(() => {
+		try {
+			const saved = localStorage.getItem('account_names');
+			if (saved) accountNames = JSON.parse(saved);
+		} catch {}
+	});
+
+	function getAccountName(idx: number): string {
+		return accountNames[idx] || `Account ${idx + 1}`;
+	}
+
+	function saveAccountName(idx: number, name: string) {
+		accountNames[idx] = name;
+		localStorage.setItem('account_names', JSON.stringify(accountNames));
+		renamingIndex = null;
+		renameValue = '';
+	}
+	let creatingAccount = $state(false);
+	let copiedAddr = $state(false);
+
+	// Export
+	let exportPin = $state('');
+	let exportedValue = $state('');
+	let exportError = $state('');
+
+	// Send
+	let sendTo = $state('');
+	let sendAmount = $state('');
+	let sending = $state(false);
+	let sendAsset = $state<'native' | string>('native'); // 'native' or token address
+
+	let sendAssetInfo = $derived.by(() => {
+		if (sendAsset === 'native') return { symbol: nativeCoin, decimals: nativeDecimals, balance: nativeBalance };
+		const tok = [...tokens, ...importedTokens].find(t => t.address.toLowerCase() === sendAsset.toLowerCase());
+		return tok ? { symbol: tok.symbol, decimals: tok.decimals, balance: tok.balance } : { symbol: nativeCoin, decimals: nativeDecimals, balance: nativeBalance };
+	});
+
+	// Import
+	let importAddress = $state('');
+	let showImport = $state(false);
+	let importLoading = $state(false);
+	let importedTokens = $state<{ address: string; symbol: string; name: string; balance: bigint; decimals: number; priceUsd?: number }[]>([]);
+
+	// Load imported tokens from localStorage on mount
+	$effect(() => {
+		try {
+			const saved = localStorage.getItem('imported_tokens');
+			if (saved) {
+				const parsed = JSON.parse(saved);
+				importedTokens = parsed.map((t: any) => ({ ...t, balance: 0n }));
+			}
+		} catch {}
+	});
+
+	// Refresh balances when address changes
+	$effect(() => {
+		if (!userAddress || importedTokens.length === 0) return;
+		refreshTokenBalances();
+	});
+
+	async function refreshTokenBalances() {
+		const net = getNetwork();
+		if (!net) return;
+		for (const tok of importedTokens) {
+			try {
+				const c = new ethers.Contract(tok.address, [
+					'function balanceOf(address) view returns (uint256)'
+				], net.provider);
+				tok.balance = await c.balanceOf(userAddress);
+			} catch {}
+		}
+		importedTokens = [...importedTokens]; // trigger reactivity
+	}
+
+	function getNetwork() {
+		// Access the provider from window — simple approach
+		try {
+			// We know the first network's RPC from props
+			const rpc = 'https://bsc-rpc.publicnode.com'; // fallback
+			return { provider: new ethers.JsonRpcProvider(rpc) };
+		} catch { return null; }
+	}
+
+	async function handleImportToken() {
+		if (!importAddress || !ethers.isAddress(importAddress)) {
+			onAddFeedback({ message: 'Invalid address', type: 'error' });
+			return;
+		}
+
+		// Check if already imported
+		if (importedTokens.some(t => t.address.toLowerCase() === importAddress.toLowerCase())) {
+			onAddFeedback({ message: 'Token already imported', type: 'error' });
+			return;
+		}
+
+		importLoading = true;
+		try {
+			const net = getNetwork();
+			if (!net) throw new Error('No provider');
+
+			const c = new ethers.Contract(importAddress, [
+				'function name() view returns (string)',
+				'function symbol() view returns (string)',
+				'function decimals() view returns (uint8)',
+				'function balanceOf(address) view returns (uint256)',
+			], net.provider);
+
+			const [name, symbol, decimals, balance] = await Promise.all([
+				c.name().catch(() => 'Unknown'),
+				c.symbol().catch(() => '???'),
+				c.decimals().catch(() => 18),
+				userAddress ? c.balanceOf(userAddress).catch(() => 0n) : Promise.resolve(0n),
+			]);
+
+			const token = { address: importAddress, name, symbol, decimals: Number(decimals), balance };
+			importedTokens = [...importedTokens, token];
+
+			// Persist to localStorage (without balance — re-fetched on load)
+			const toSave = importedTokens.map(t => ({ address: t.address, name: t.name, symbol: t.symbol, decimals: t.decimals }));
+			localStorage.setItem('imported_tokens', JSON.stringify(toSave));
+
+			onAddFeedback({ message: `${symbol} imported`, type: 'success' });
+			showImport = false;
+			importAddress = '';
+		} catch (e: any) {
+			onAddFeedback({ message: e.message || 'Failed to fetch token', type: 'error' });
+		} finally {
+			importLoading = false;
+		}
+	}
+
+	// ── Helpers ──
+	function close() { open = false; view = 'main'; resetExport(); showAccountDropdown = false; renamingIndex = null; }
+
+	function resetExport() { exportPin = ''; exportedValue = ''; exportError = ''; }
+
+	function copyText(text: string) {
+		navigator.clipboard.writeText(text);
+		copiedAddr = true;
+		setTimeout(() => copiedAddr = false, 2000);
+	}
+
+	function fmtBal(bal: bigint, dec: number): string {
+		const v = parseFloat(ethers.formatUnits(bal, dec));
+		if (v === 0) return '0';
+		if (v >= 1000) return v.toLocaleString(undefined, { maximumFractionDigits: 2 });
+		if (v >= 1) return v.toFixed(4);
+		if (v >= 0.0001) return v.toFixed(6);
+		return v.toExponential(2);
+	}
+
+	function fmtUsd(val: number): string {
+		if (val === 0) return '$0.00';
+		if (val < 0.01) return '<$0.01';
+		return `$${val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+	}
+
+	function shortAddr(addr: string): string {
+		if (!addr || addr.length < 12) return addr || '';
+		return addr.slice(0, 8) + '...' + addr.slice(-6);
+	}
+
+	// ── Actions ──
+	async function handleAddAccount() {
+		creatingAccount = true;
+		try {
+			const acc = await addAccount();
+			setActiveAccount(acc.index);
+			onAccountSwitch(acc.address);
+			onAddFeedback({ message: `Account ${acc.index + 1} created`, type: 'success' });
+			showAccountDropdown = false;
+		} catch (e: any) {
+			onAddFeedback({ message: e.message || 'Failed to create account', type: 'error' });
+		} finally {
+			creatingAccount = false;
+		}
+	}
+
+	function handleSwitchAccount(idx: number) {
+		setActiveAccount(idx);
+		const acc = accounts.find(a => a.index === idx);
+		if (acc) onAccountSwitch(acc.address);
+		showAccountDropdown = false;
+	}
+
+	async function handleExport(type: 'key' | 'seed') {
+		exportError = '';
+		const ok = await unlockWallet(exportPin);
+		if (!ok) { exportError = 'Wrong PIN'; return; }
+		if (type === 'key') {
+			const pk = exportPrivateKey(activeIndex);
+			exportedValue = pk || '';
+		} else {
+			const seed = exportSeedPhrase();
+			exportedValue = seed || '';
+		}
+		if (!exportedValue) exportError = 'Failed to export';
+	}
+
+	const INPUT_ATTRS = {
+		autocomplete: 'one-time-code',
+		autocorrect: 'off',
+		autocapitalize: 'off',
+		spellcheck: false,
+		'data-lpignore': 'true',
+		'data-1p-ignore': 'true',
+		'data-form-type': 'other',
+		'data-protonpass-ignore': 'true',
+	} as const;
+</script>
+
+<svelte:window onkeydown={(e) => { if (e.key === 'Escape') { if (view !== 'main') view = 'main'; else close(); } }} />
+
+{#if open}
+<div class="ap-backdrop" onclick={close} role="presentation"></div>
+
+<div class="ap" class:ap-closing={!open}>
+	<!-- ═══ HEADER ═══ -->
+	<div class="ap-head">
+		{#if view !== 'main'}
+			<button class="ap-back" onclick={() => { view = 'main'; resetExport(); }}>
+				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+			</button>
+			<span class="ap-head-title">
+				{view === 'receive' ? 'Receive' : view === 'send' ? 'Send' : view === 'security' ? 'Security' : view === 'export-key' ? 'Private Key' : 'Recovery Phrase'}
+			</span>
+		{:else}
+			<!-- Account picker -->
+			<button class="ap-acct-btn" onclick={(e) => { e.stopPropagation(); showAccountDropdown = !showAccountDropdown; }}>
+				<div class="ap-avatar">{activeIndex + 1}</div>
+				<div class="ap-acct-meta">
+					<span class="ap-acct-name">{getAccountName(activeIndex)}</span>
+					<span class="ap-acct-addr">{shortAddr(userAddress)}</span>
+				</div>
+				<svg class="ap-chev" class:ap-chev-flip={showAccountDropdown} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+			</button>
+
+			{#if showAccountDropdown}
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<div class="ap-dd" onclick={(e) => e.stopPropagation()}>
+					{#each accounts as acc, i}
+						<div class="ap-dd-row">
+							{#if renamingIndex === i}
+								<input class="ap-dd-rename" bind:value={renameValue} placeholder={getAccountName(i)}
+									onkeydown={(e) => { if (e.key === 'Enter') saveAccountName(i, renameValue || getAccountName(i)); if (e.key === 'Escape') renamingIndex = null; }}
+									{...INPUT_ATTRS} />
+								<button class="ap-dd-gear" onclick={() => saveAccountName(i, renameValue || getAccountName(i))} title="Save">
+									<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+								</button>
+							{:else}
+								<button class="ap-dd-item" class:ap-dd-active={i === activeIndex} onclick={() => handleSwitchAccount(i)}>
+									<div class="ap-avatar ap-avatar-sm">{i + 1}</div>
+									<span class="ap-dd-name">{getAccountName(i)}</span>
+									<span class="ap-dd-addr">{acc.address.slice(0, 6)}...{acc.address.slice(-4)}</span>
+									<span class="ap-dd-check">{#if i === activeIndex}&#10003;{/if}</span>
+								</button>
+								<button class="ap-dd-gear" title="Rename" onclick={(e) => { e.stopPropagation(); renamingIndex = i; renameValue = getAccountName(i); }}>
+									<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+								</button>
+								{#if walletType === 'embedded'}
+									<button class="ap-dd-gear" title="Security" onclick={(e) => { e.stopPropagation(); setActiveAccount(i); onAccountSwitch(acc.address); showAccountDropdown = false; view = 'security'; }}>
+										<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+									</button>
+								{/if}
+							{/if}
+						</div>
+					{/each}
+					{#if walletType === 'embedded'}
+						<button class="ap-dd-item ap-dd-add" onclick={handleAddAccount} disabled={creatingAccount}>
+							<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+							{creatingAccount ? 'Creating...' : 'New Account'}
+						</button>
+					{/if}
+					<div class="ap-set-divider"></div>
+					<button class="ap-dd-item ap-dd-disconnect" onclick={() => { onDisconnect(); close(); }}>
+						<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+						Disconnect
+					</button>
+				</div>
+			{/if}
+		{/if}
+
+		<button class="ap-x" onclick={close}>
+			<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+		</button>
+	</div>
+
+	<!-- ═══ MAIN VIEW ═══ -->
+	{#if view === 'main'}
+		<!-- Network -->
+		<div class="ap-net"><span class="ap-net-dot"></span>{networkName}</div>
+
+		<!-- Balance -->
+		<div class="ap-bal">
+			<span class="ap-bal-total">{fmtUsd(totalUsd)}</span>
+			<span class="ap-bal-native">{fmtBal(nativeBalance, nativeDecimals)} {nativeCoin}</span>
+		</div>
+
+		<!-- Actions -->
+		<div class="ap-acts">
+			<button class="ap-act" onclick={() => { close(); goto('/trade'); }}>
+				<div class="ap-act-circle"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg></div>
+				<span>Buy</span>
+			</button>
+			<button class="ap-act" onclick={() => view = 'send'}>
+				<div class="ap-act-circle"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg></div>
+				<span>Send</span>
+			</button>
+			<button class="ap-act" onclick={() => view = 'receive'}>
+				<div class="ap-act-circle"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg></div>
+				<span>Receive</span>
+			</button>
+			<button class="ap-act" onclick={() => { close(); goto('/trade'); }}>
+				<div class="ap-act-circle"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg></div>
+				<span>Swap</span>
+			</button>
+		</div>
+
+		<!-- Assets header -->
+		<div class="ap-section-head">Assets</div>
+
+
+		{#if true}
+			<div class="ap-scroll">
+				<!-- Native -->
+				<div class="ap-row">
+					<div class="ap-row-icon ap-row-native">{nativeCoin.charAt(0)}</div>
+					<div class="ap-row-meta">
+						<span class="ap-row-name">{nativeCoin}</span>
+						<span class="ap-row-sub">Native</span>
+					</div>
+					<div class="ap-row-right">
+						<span class="ap-row-amt">{fmtBal(nativeBalance, nativeDecimals)}</span>
+						<span class="ap-row-usd">{fmtUsd(nativeUsd)}</span>
+					</div>
+				</div>
+
+				<!-- Tokens (props + imported) -->
+				{#each [...tokens, ...importedTokens] as tok}
+					{@const bal = parseFloat(ethers.formatUnits(tok.balance, tok.decimals))}
+					{@const usd = tok.priceUsd ? bal * tok.priceUsd : 0}
+					<div class="ap-row">
+						<div class="ap-row-icon">{tok.symbol.charAt(0)}</div>
+						<div class="ap-row-meta">
+							<span class="ap-row-name">{tok.symbol}</span>
+							<span class="ap-row-sub">{tok.name}</span>
+						</div>
+						<div class="ap-row-right">
+							<span class="ap-row-amt">{fmtBal(tok.balance, tok.decimals)}</span>
+							<span class="ap-row-usd">{usd > 0 ? fmtUsd(usd) : ''}</span>
+						</div>
+					</div>
+				{/each}
+
+				{#if tokens.length === 0 && importedTokens.length === 0}
+					<p class="ap-empty">No imported tokens</p>
+				{/if}
+
+				{#if showImport}
+					<div class="ap-import-form">
+						<input class="ap-input" type="text" placeholder="Token address (0x...)" bind:value={importAddress} {...INPUT_ATTRS} />
+						<div class="ap-import-btns">
+							<button class="ap-btn-s" onclick={() => { showImport = false; importAddress = ''; }}>Cancel</button>
+							<button class="ap-btn-s ap-btn-primary" disabled={importLoading} onclick={() => handleImportToken()}>
+								{importLoading ? 'Loading...' : 'Import'}
+							</button>
+						</div>
+					</div>
+				{:else}
+					<button class="ap-import-btn" onclick={() => showImport = true}>
+						<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+						Import Token
+					</button>
+				{/if}
+			</div>
+
+		{/if}
+
+		<!-- Disconnect footer -->
+		<button class="ap-disconnect" onclick={() => { onDisconnect(); close(); }}>
+			<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+			Disconnect
+		</button>
+
+	<!-- ═══ RECEIVE VIEW ═══ -->
+	{:else if view === 'receive'}
+		<div class="ap-view-content ap-receive">
+			<p class="ap-hint">Send only {nativeCoin} and tokens on {networkName} to this address.</p>
+			<div class="ap-qr">
+				<img
+					src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&bgcolor=0a0b10&color=ffffff&data={encodeURIComponent(userAddress)}"
+					alt="QR Code"
+					width="180"
+					height="180"
+					class="ap-qr-img"
+				/>
+			</div>
+			<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+			<div class="ap-addr-box" onclick={() => { copyText(userAddress); onAddFeedback({ message: 'Address copied', type: 'success' }); }}>
+				<span class="ap-addr-full">{userAddress}</span>
+				<span class="ap-addr-tap">{copiedAddr ? 'Copied!' : 'Tap to copy'}</span>
+			</div>
+		</div>
+
+	<!-- ═══ SEND VIEW ═══ -->
+	{:else if view === 'send'}
+		<div class="ap-view-content">
+			<label class="ap-label">Asset</label>
+			<select class="ap-input ap-select" bind:value={sendAsset}>
+				<option value="native">{nativeCoin} (Native)</option>
+				{#each [...tokens, ...importedTokens] as tok}
+					<option value={tok.address}>{tok.symbol} — {fmtBal(tok.balance, tok.decimals)}</option>
+				{/each}
+			</select>
+
+			<label class="ap-label">To</label>
+			<input class="ap-input" type="text" placeholder="Recipient (0x...)" bind:value={sendTo} {...INPUT_ATTRS} />
+
+			<label class="ap-label">Amount</label>
+			<input class="ap-input" type="text" inputmode="decimal" placeholder="0.0" bind:value={sendAmount} {...INPUT_ATTRS} />
+			<div class="ap-send-info">
+				<span>Balance: {fmtBal(sendAssetInfo.balance, sendAssetInfo.decimals)} {sendAssetInfo.symbol}</span>
+				<button class="ap-link" onclick={() => {
+					const dec = sendAsset === 'native' ? nativeDecimals : sendAssetInfo.decimals;
+					if (sendAsset === 'native') {
+						const reserve = ethers.parseUnits('0.001', dec);
+						const max = sendAssetInfo.balance > reserve ? sendAssetInfo.balance - reserve : 0n;
+						sendAmount = ethers.formatUnits(max, dec);
+					} else {
+						sendAmount = ethers.formatUnits(sendAssetInfo.balance, dec);
+					}
+				}}>MAX</button>
+			</div>
+
+			<button class="ap-btn ap-btn-primary ap-btn-full" disabled={sending || !sendTo || !sendAmount} onclick={async () => {
+				if (!ethers.isAddress(sendTo)) { onAddFeedback({ message: 'Invalid recipient address', type: 'error' }); return; }
+				const amt = parseFloat(sendAmount);
+				if (isNaN(amt) || amt <= 0) { onAddFeedback({ message: 'Invalid amount', type: 'error' }); return; }
+
+				sending = true;
+				try {
+					const net = getNetwork();
+					if (!net) throw new Error('No provider');
+					const wallet = getSigner(net.provider as any);
+					if (!wallet) throw new Error('Wallet locked — unlock first');
+
+					// Truncate decimals to token's precision
+					const dec = sendAsset === 'native' ? nativeDecimals : sendAssetInfo.decimals;
+					const parts = sendAmount.split('.');
+					const sanitized = parts.length > 1 ? `${parts[0]}.${parts[1].slice(0, dec)}` : sendAmount;
+
+					if (sendAsset === 'native') {
+						const tx = await wallet.sendTransaction({
+							to: sendTo,
+							value: ethers.parseUnits(sanitized, nativeDecimals),
+						});
+						await tx.wait();
+						onAddFeedback({ message: `Sent ${sanitized} ${nativeCoin}`, type: 'success' });
+					} else {
+						const erc20 = new ethers.Contract(sendAsset, [
+							'function transfer(address to, uint256 amount) returns (bool)',
+						], wallet);
+						const tx = await erc20.transfer(sendTo, ethers.parseUnits(sanitized, sendAssetInfo.decimals));
+						await tx.wait();
+						onAddFeedback({ message: `Sent ${sanitized} ${sendAssetInfo.symbol}`, type: 'success' });
+					}
+
+					sendTo = ''; sendAmount = ''; sendAsset = 'native'; view = 'main';
+					// Refresh balances
+					onRefreshBalance();
+					refreshTokenBalances();
+				} catch (e: any) {
+					const msg = e.shortMessage || e.message || 'Send failed';
+					onAddFeedback({ message: msg.slice(0, 80), type: 'error' });
+				} finally {
+					sending = false;
+				}
+			}}>
+				{sending ? 'Sending...' : `Send ${sendAssetInfo.symbol}`}
+			</button>
+		</div>
+
+	<!-- ═══ SECURITY VIEW ═══ -->
+	{:else if view === 'security'}
+		<div class="ap-view-content">
+			<div class="ap-sec-warn">
+				<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+				<p>These options expose sensitive data. Never share your private key or recovery phrase with anyone.</p>
+			</div>
+			<button class="ap-set-item" onclick={() => { resetExport(); view = 'export-key'; }}>
+				<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+				<span>Export Private Key</span>
+				<svg class="ap-set-arrow" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+			</button>
+			<button class="ap-set-item" onclick={() => { resetExport(); view = 'export-seed'; }}>
+				<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+				<span>Export Recovery Phrase</span>
+				<svg class="ap-set-arrow" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+			</button>
+		</div>
+
+	<!-- ═══ EXPORT VIEW (key or seed) ═══ -->
+	{:else if view === 'export-key' || view === 'export-seed'}
+		<div class="ap-view-content">
+			{#if !exportedValue}
+				<div class="ap-danger-box">
+					<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+					<div>
+						<strong>Warning</strong>
+						<p>{view === 'export-key' ? 'Your private key gives full control of this account. Anyone with it can steal all your funds.' : 'Your recovery phrase controls ALL accounts in this wallet. Guard it with your life.'}</p>
+					</div>
+				</div>
+
+				<label class="ap-label">Enter PIN to continue</label>
+				<input class="ap-input" type="tel" inputmode="numeric" style="-webkit-text-security: disc; text-security: disc;" placeholder="PIN" bind:value={exportPin}
+					{...INPUT_ATTRS}
+					onkeydown={(e) => { if (e.key === 'Enter') handleExport(view === 'export-key' ? 'key' : 'seed'); }} />
+
+				{#if exportError}<p class="ap-error">{exportError}</p>{/if}
+
+				<button class="ap-btn ap-btn-danger ap-btn-full" onclick={() => handleExport(view === 'export-key' ? 'key' : 'seed')}>
+					Reveal {view === 'export-key' ? 'Private Key' : 'Recovery Phrase'}
+				</button>
+			{:else}
+				<div class="ap-revealed" onclick={() => { navigator.clipboard.writeText(exportedValue); onAddFeedback({ message: 'Copied to clipboard', type: 'info' }); }}>
+					{exportedValue}
+				</div>
+				<p class="ap-revealed-hint">Tap to copy. Do not share this with anyone.</p>
+				<button class="ap-btn ap-btn-full" onclick={() => { view = 'security'; resetExport(); }}>Done</button>
+			{/if}
+		</div>
+	{/if}
+</div>
+{/if}
+
+<style>
+	.ap-backdrop { position: fixed; inset: 0; z-index: 9998; background: rgba(0,0,0,0.6); backdrop-filter: blur(3px); }
+
+	.ap {
+		position: fixed; top: 0; right: 0; bottom: 0; z-index: 9999;
+		width: 360px; background: #0a0b10;
+		border-left: 1px solid rgba(255,255,255,0.05);
+		display: flex; flex-direction: column;
+		animation: apSlide 0.2s ease-out;
+	}
+	@keyframes apSlide { from { transform: translateX(100%); } }
+	@media (max-width: 480px) { .ap { width: 100vw; border-left: none; } }
+
+	/* ── Header ── */
+	.ap-head {
+		display: flex; align-items: center; gap: 8px;
+		padding: 14px 16px 10px; position: relative; min-height: 52px;
+	}
+	.ap-back {
+		width: 30px; height: 30px; border-radius: 8px; border: none;
+		background: rgba(255,255,255,0.04); color: #94a3b8; cursor: pointer;
+		display: flex; align-items: center; justify-content: center;
+		transition: all 0.12s; flex-shrink: 0;
+	}
+	.ap-back:hover { background: rgba(255,255,255,0.08); color: #fff; }
+	.ap-head-title {
+		font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700; color: #e2e8f0; flex: 1;
+	}
+	.ap-x {
+		width: 28px; height: 28px; border-radius: 8px; border: none;
+		background: rgba(255,255,255,0.04); color: #64748b; cursor: pointer;
+		display: flex; align-items: center; justify-content: center;
+		transition: all 0.12s; flex-shrink: 0; margin-left: auto;
+	}
+	.ap-x:hover { background: rgba(255,255,255,0.08); color: #fff; }
+
+	/* Account picker */
+	.ap-acct-btn {
+		display: flex; align-items: center; gap: 10px; flex: 1;
+		background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
+		border-radius: 10px; padding: 7px 12px; cursor: pointer;
+		color: inherit; font-family: inherit; transition: border-color 0.15s;
+	}
+	.ap-acct-btn:hover { border-color: rgba(0,210,255,0.2); }
+	.ap-avatar {
+		width: 26px; height: 26px; border-radius: 50%;
+		background: linear-gradient(135deg, rgba(0,210,255,0.12), rgba(58,123,213,0.12));
+		border: 1px solid rgba(0,210,255,0.2);
+		display: flex; align-items: center; justify-content: center;
+		font-family: 'Syne', sans-serif; font-size: 10px; font-weight: 800;
+		color: #00d2ff; flex-shrink: 0;
+	}
+	.ap-avatar-sm { width: 20px; height: 20px; font-size: 8px; }
+	.ap-acct-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0; }
+	.ap-acct-name { font-family: 'Syne', sans-serif; font-size: 11px; font-weight: 700; color: #e2e8f0; }
+	.ap-acct-addr { font-family: 'Space Mono', monospace; font-size: 8px; color: #475569; }
+	.ap-chev { color: #475569; flex-shrink: 0; transition: transform 0.15s; }
+	.ap-chev-flip { transform: rotate(180deg); }
+
+	/* Dropdown */
+	.ap-dd {
+		position: absolute; top: 58px; left: 16px; right: 50px; z-index: 10;
+		background: #0f1118; border: 1px solid rgba(255,255,255,0.08);
+		border-radius: 10px; padding: 4px; box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+	}
+	.ap-dd-item {
+		display: flex; align-items: center; gap: 8px; width: 100%;
+		padding: 8px 10px; border-radius: 7px; border: none;
+		background: transparent; color: #94a3b8; cursor: pointer;
+		font-family: 'Space Mono', monospace; font-size: 10px; transition: all 0.1s;
+	}
+	.ap-dd-item:hover { background: rgba(255,255,255,0.04); color: #fff; }
+	.ap-dd-active { color: #00d2ff; }
+	.ap-dd-row { display: flex; align-items: center; gap: 0; }
+	.ap-dd-row .ap-dd-item { flex: 1; min-width: 0; }
+	.ap-dd-name { font-family: 'Syne', sans-serif; font-weight: 600; font-size: 11px; white-space: nowrap; }
+	.ap-dd-addr { font-size: 8px; color: #374151; margin-left: auto; white-space: nowrap; }
+	.ap-dd-check { color: #10b981; font-size: 11px; width: 16px; text-align: center; flex-shrink: 0; }
+	.ap-dd-gear {
+		width: 28px; height: 28px; border-radius: 6px; border: none;
+		background: transparent; color: #374151; cursor: pointer;
+		display: flex; align-items: center; justify-content: center;
+		transition: all 0.12s; flex-shrink: 0;
+	}
+	.ap-dd-gear:hover { background: rgba(255,255,255,0.04); color: #94a3b8; }
+	.ap-dd-rename {
+		flex: 1; padding: 6px 10px; border-radius: 6px;
+		background: rgba(255,255,255,0.04); border: 1px solid rgba(0,210,255,0.3);
+		color: #fff; font-family: 'Syne', sans-serif; font-size: 11px; font-weight: 600;
+		outline: none;
+	}
+	.ap-dd-add { color: #00d2ff; border-top: 1px solid rgba(255,255,255,0.04); margin-top: 2px; }
+	.ap-dd-disconnect { color: #f87171; border-top: 1px solid rgba(255,255,255,0.04); margin-top: 2px; }
+	.ap-dd-disconnect:hover { background: rgba(248,113,113,0.06); color: #f87171; }
+
+	/* Network */
+	.ap-net { display: flex; align-items: center; gap: 5px; padding: 0 16px 4px; font-size: 9px; color: #475569; font-family: 'Space Mono', monospace; }
+	.ap-net-dot { width: 5px; height: 5px; border-radius: 50%; background: #10b981; }
+
+	/* Balance */
+	.ap-bal { text-align: center; padding: 10px 16px 14px; }
+	.ap-bal-total {
+		display: block; font-family: 'Rajdhani', sans-serif; font-size: 34px;
+		font-weight: 700; color: #fff; line-height: 1; font-variant-numeric: tabular-nums;
+	}
+	.ap-bal-native {
+		display: block; font-family: 'Rajdhani', sans-serif; font-size: 18px;
+		font-weight: 600; color: #64748b; margin-top: 3px; font-variant-numeric: tabular-nums;
+	}
+
+	/* Action buttons */
+	.ap-acts { display: flex; justify-content: center; gap: 18px; padding: 0 16px 14px; }
+	.ap-act {
+		display: flex; flex-direction: column; align-items: center; gap: 5px;
+		background: none; border: none; cursor: pointer; color: #94a3b8;
+		font-family: 'Space Mono', monospace; font-size: 9px; transition: color 0.12s;
+	}
+	.ap-act:hover { color: #00d2ff; }
+	.ap-act-circle {
+		width: 40px; height: 40px; border-radius: 50%;
+		background: rgba(0,210,255,0.05); border: 1px solid rgba(0,210,255,0.1);
+		display: flex; align-items: center; justify-content: center; transition: all 0.15s;
+	}
+	.ap-act:hover .ap-act-circle { background: rgba(0,210,255,0.1); border-color: rgba(0,210,255,0.25); transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,210,255,0.1); }
+
+	/* Tabs */
+	.ap-tabs { display: flex; border-bottom: 1px solid rgba(255,255,255,0.04); padding: 0 16px; }
+	.ap-tab {
+		flex: 1; padding: 9px; text-align: center; border: none; background: none;
+		cursor: pointer; font-family: 'Space Mono', monospace; font-size: 10px;
+		color: #475569; position: relative; transition: color 0.12s;
+	}
+	.ap-tab:hover { color: #94a3b8; }
+	.ap-tab.active { color: #00d2ff; }
+	.ap-tab.active::after { content: ''; position: absolute; bottom: -1px; left: 20%; right: 20%; height: 2px; background: #00d2ff; border-radius: 1px; }
+
+	/* Section head */
+	.ap-section-head {
+		padding: 8px 16px 4px; font-family: 'Syne', sans-serif; font-size: 12px;
+		font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 0.04em;
+	}
+
+	/* Scrollable content area */
+	.ap-scroll { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 6px 0; }
+
+	/* Token rows */
+	.ap-row { display: flex; align-items: center; gap: 10px; padding: 9px 16px; transition: background 0.1s; }
+	.ap-row:hover { background: rgba(255,255,255,0.015); }
+	.ap-row-icon {
+		width: 30px; height: 30px; border-radius: 50%;
+		background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06);
+		display: flex; align-items: center; justify-content: center;
+		font-family: 'Syne', sans-serif; font-size: 11px; font-weight: 800; color: #475569; flex-shrink: 0;
+	}
+	.ap-row-native { background: rgba(245,158,11,0.08); border-color: rgba(245,158,11,0.15); color: #f59e0b; }
+	.ap-row-meta { flex: 1; min-width: 0; }
+	.ap-row-name { display: block; font-size: 12px; color: #e2e8f0; font-family: 'Syne', sans-serif; font-weight: 600; }
+	.ap-row-sub { display: block; font-size: 9px; color: #374151; font-family: 'Space Mono', monospace; }
+	.ap-row-right { text-align: right; flex-shrink: 0; }
+	.ap-row-amt { display: block; font-size: 12px; color: #e2e8f0; font-family: 'Rajdhani', sans-serif; font-weight: 600; font-variant-numeric: tabular-nums; }
+	.ap-row-usd { display: block; font-size: 10px; color: #374151; font-family: 'Rajdhani', sans-serif; font-weight: 500; font-variant-numeric: tabular-nums; }
+	.ap-empty { text-align: center; padding: 20px; font-size: 10px; color: #1e293b; font-family: 'Space Mono', monospace; }
+
+	/* Import */
+	.ap-import-form { padding: 6px 16px; display: flex; flex-direction: column; gap: 6px; }
+	.ap-import-btns { display: flex; gap: 6px; justify-content: flex-end; }
+	.ap-import-btn {
+		display: flex; align-items: center; justify-content: center; gap: 5px;
+		margin: 4px 16px; padding: 9px; border: 1px dashed rgba(255,255,255,0.06);
+		border-radius: 8px; background: transparent; color: #374151; cursor: pointer;
+		font-family: 'Space Mono', monospace; font-size: 10px; transition: all 0.15s;
+	}
+	.ap-import-btn:hover { border-color: rgba(0,210,255,0.15); color: #00d2ff; }
+
+	/* Settings items */
+	.ap-set-item {
+		display: flex; align-items: center; gap: 10px; width: 100%;
+		padding: 12px 16px; border: none; background: transparent;
+		color: #94a3b8; cursor: pointer; font-family: 'Space Mono', monospace;
+		font-size: 11px; transition: all 0.1s; text-align: left;
+	}
+	.ap-set-item:hover { background: rgba(255,255,255,0.02); color: #e2e8f0; }
+	.ap-set-arrow { margin-left: auto; color: #1e293b; }
+	.ap-set-danger { color: #f87171; }
+	.ap-set-danger:hover { background: rgba(248,113,113,0.04); }
+	.ap-set-divider { height: 1px; background: rgba(255,255,255,0.03); margin: 4px 16px; }
+
+	/* Disconnect footer — subtle, always visible at bottom */
+	.ap-disconnect {
+		display: flex; align-items: center; justify-content: center; gap: 6px;
+		padding: 10px 16px; margin: 4px 16px 12px; border-radius: 8px;
+		border: 1px solid rgba(255,255,255,0.04); background: transparent;
+		color: #374151; cursor: pointer; font-family: 'Space Mono', monospace;
+		font-size: 10px; transition: all 0.12s; flex-shrink: 0;
+	}
+	.ap-disconnect:hover { color: #f87171; border-color: rgba(248,113,113,0.15); background: rgba(248,113,113,0.04); }
+
+	/* Sub-views content */
+	.ap-view-content { flex: 1; padding: 16px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; }
+
+	/* Receive */
+	.ap-receive { align-items: center; }
+	.ap-qr {
+		padding: 16px; background: rgba(255,255,255,0.02);
+		border: 1px solid rgba(255,255,255,0.06); border-radius: 12px;
+	}
+	.ap-qr-img { display: block; border-radius: 4px; image-rendering: pixelated; }
+	.ap-addr-box {
+		padding: 16px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06);
+		border-radius: 10px; text-align: center; cursor: pointer; transition: border-color 0.15s;
+	}
+	.ap-addr-box:hover { border-color: rgba(0,210,255,0.2); }
+	.ap-addr-full { display: block; font-family: 'Space Mono', monospace; font-size: 10px; color: #94a3b8; word-break: break-all; line-height: 1.6; }
+	.ap-addr-tap { display: block; font-size: 9px; color: #00d2ff; margin-top: 6px; font-family: 'Space Mono', monospace; }
+
+	/* Send */
+	.ap-send-info { display: flex; justify-content: space-between; font-size: 10px; color: #374151; font-family: 'Space Mono', monospace; }
+	.ap-label { font-size: 9px; color: #475569; font-family: 'Space Mono', monospace; text-transform: uppercase; letter-spacing: 0.05em; }
+	.ap-link { background: none; border: none; color: #00d2ff; cursor: pointer; font-family: 'Space Mono', monospace; font-size: 10px; }
+
+	/* Security */
+	.ap-sec-warn {
+		display: flex; gap: 10px; padding: 12px; border-radius: 10px;
+		background: rgba(245,158,11,0.04); border: 1px solid rgba(245,158,11,0.1);
+	}
+	.ap-sec-warn svg { flex-shrink: 0; margin-top: 2px; }
+	.ap-sec-warn p { margin: 0; font-size: 10px; color: #f59e0b; font-family: 'Space Mono', monospace; line-height: 1.5; }
+
+	/* Export danger */
+	.ap-danger-box {
+		display: flex; gap: 10px; padding: 14px; border-radius: 10px;
+		background: rgba(248,113,113,0.04); border: 1px solid rgba(248,113,113,0.12);
+	}
+	.ap-danger-box svg { flex-shrink: 0; margin-top: 2px; }
+	.ap-danger-box strong { display: block; font-family: 'Syne', sans-serif; font-size: 12px; color: #f87171; margin-bottom: 4px; }
+	.ap-danger-box p { margin: 0; font-size: 10px; color: #94a3b8; font-family: 'Space Mono', monospace; line-height: 1.5; }
+	.ap-revealed {
+		padding: 14px; background: rgba(248,113,113,0.04); border: 1px solid rgba(248,113,113,0.12);
+		border-radius: 10px; font-family: 'Space Mono', monospace; font-size: 10px;
+		color: #f87171; word-break: break-all; line-height: 1.7; cursor: pointer; transition: background 0.12s;
+	}
+	.ap-revealed:hover { background: rgba(248,113,113,0.08); }
+	.ap-revealed-hint { text-align: center; font-size: 9px; color: #475569; font-family: 'Space Mono', monospace; margin: 0; }
+	.ap-error { font-size: 10px; color: #f87171; font-family: 'Space Mono', monospace; margin: 0; padding: 4px 8px; background: rgba(248,113,113,0.04); border-radius: 4px; }
+	.ap-hint { font-size: 10px; color: #475569; font-family: 'Space Mono', monospace; margin: 0; line-height: 1.5; }
+
+	/* Shared inputs/buttons */
+	.ap-input {
+		width: 100%; padding: 10px 12px; border-radius: 8px;
+		background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
+		color: #fff; font-family: 'Space Mono', monospace; font-size: 13px;
+		outline: none; transition: border-color 0.12s;
+	}
+	.ap-input:focus { border-color: rgba(0,210,255,0.3); }
+	.ap-input::placeholder { color: #1e293b; }
+	.ap-select { appearance: none; cursor: pointer; background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%2364748b' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; padding-right: 32px; }
+	.ap-select option { background: #0a0b10; color: #e2e8f0; }
+	.ap-btn {
+		padding: 10px 16px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.06);
+		background: rgba(255,255,255,0.03); color: #94a3b8; cursor: pointer;
+		font-family: 'Space Mono', monospace; font-size: 11px; transition: all 0.12s;
+	}
+	.ap-btn:hover { background: rgba(255,255,255,0.06); color: #fff; }
+	.ap-btn-s { padding: 6px 10px; font-size: 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.06); background: rgba(255,255,255,0.03); color: #94a3b8; cursor: pointer; font-family: 'Space Mono', monospace; transition: all 0.12s; }
+	.ap-btn-s:hover { background: rgba(255,255,255,0.06); color: #fff; }
+	.ap-btn-primary { background: linear-gradient(135deg, #00d2ff, #3a7bd5); border: none; color: white; font-family: 'Syne', sans-serif; font-weight: 700; }
+	.ap-btn-primary:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(0,210,255,0.2); }
+	.ap-btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+	.ap-btn-danger { background: rgba(248,113,113,0.1); border: 1px solid rgba(248,113,113,0.2); color: #f87171; font-family: 'Syne', sans-serif; font-weight: 700; }
+	.ap-btn-danger:hover { background: rgba(248,113,113,0.15); }
+	.ap-btn-full { width: 100%; }
+</style>

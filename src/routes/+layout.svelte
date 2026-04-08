@@ -10,8 +10,18 @@
 	import LanguageSwitcher from '$lib/LanguageSwitcher.svelte';
 	import { supabase } from '$lib/supabaseClient';
 	import { initApiFetch } from '$lib/apiFetch';
+	import WalletModal from '$lib/WalletModal.svelte';
+	import AccountPanel from '$lib/AccountPanel.svelte';
+	import { getSigner as getEmbeddedSigner, signOut, lockWallet, getWalletState, checkAuthReturn, hasVault, autoReconnect } from '$lib/embeddedWallet';
 
 	let { children } = $props();
+
+	let showWalletModal = $state(false);
+	let showAccountPanel = $state(false);
+	let walletModalRef: WalletModal | undefined = $state();
+	let nativeBalance = $state(0n);
+	let nativePriceUsd = $state(0);
+	let walletType: 'embedded' | 'external' | null = $state(null);
 
 	// Networks loaded from DB (admin-managed)
 	let supportedNetworks: SupportedNetworks = $state([]);
@@ -76,11 +86,73 @@
 	}
 
 	async function connectWallet() {
-		const kit = getAppKit();
-		if (kit) {
-			await kit.open();
-		}
+		showWalletModal = true;
 		return false;
+	}
+
+	function openWalletConnect() {
+		const kit = getAppKit();
+		if (kit) kit.open();
+	}
+
+
+	async function disconnectWallet() {
+		if (walletType === 'embedded') {
+			lockWallet();
+			await signOut();
+			localStorage.removeItem('_wp');
+			localStorage.removeItem('_active_acct');
+		} else {
+			const kit = getAppKit();
+			if (kit) await kit.disconnect?.();
+		}
+		userAddress = null;
+		signer = null;
+		provider = null;
+		nativeBalance = 0n;
+		nativePriceUsd = 0;
+		walletType = null;
+	}
+
+	// Fetch native balance + price when address or network changes
+	$effect(() => {
+		if (!userAddress || supportedNetworks.length === 0) { nativeBalance = 0n; nativePriceUsd = 0; return; }
+		const net = supportedNetworks[0];
+		const prov = networkProviders.get(net?.chain_id);
+		if (!prov) return;
+		prov.getBalance(userAddress).then(b => nativeBalance = b).catch(() => {});
+
+		// Fetch native price via DEX router
+		if (net.dex_router && net.usdt_address) {
+			const router = new ethers.Contract(net.dex_router, [
+				'function WETH() view returns (address)',
+				'function getAmountsOut(uint256, address[]) view returns (uint256[])'
+			], prov);
+			(async () => {
+				try {
+					const weth = await router.WETH();
+					const amounts = await router.getAmountsOut(ethers.parseEther('1'), [weth, net.usdt_address]);
+					nativePriceUsd = parseFloat(ethers.formatUnits(amounts[1], 18));
+				} catch {}
+			})();
+		}
+	});
+
+	function handleWalletConnected(address: string, type: 'embedded' | 'external') {
+		userAddress = address;
+		walletType = type;
+		if (type === 'embedded') {
+			// Use embedded wallet signer
+			const net = supportedNetworks[0];
+			if (net?.rpc) {
+				const rpcProvider = new ethers.JsonRpcProvider(net.rpc, net.chain_id, { staticNetwork: true });
+				const embeddedSigner = getEmbeddedSigner(rpcProvider);
+				if (embeddedSigner) {
+					signer = embeddedSigner;
+					provider = null; // no BrowserProvider for embedded wallet
+				}
+			}
+		}
 	}
 
 	function initProviders() {
@@ -99,6 +171,52 @@
 		// Restore theme from localStorage
 		const saved = localStorage.getItem('theme') as 'dark' | 'light' | null;
 		if (saved === 'light') applyTheme('light');
+
+		// Auto-reconnect wallet on page load
+		(async () => {
+			try {
+				// First check if returning from Google OAuth redirect
+				const authReturned = await checkAuthReturn();
+				if (authReturned && walletModalRef) {
+					const exists = await hasVault();
+					walletModalRef.openAt(exists ? 'pin-enter' : 'pin-setup');
+					return;
+				}
+
+				// Try auto-reconnect (session + cached PIN = silent unlock)
+				const result = await autoReconnect();
+				if (result === 'connected') {
+					const state = getWalletState();
+					if (state.activeAccount) {
+						userAddress = state.activeAccount.address;
+						walletType = 'embedded';
+						// Connect signer to first available network
+						const net = supportedNetworks[0];
+						if (net?.rpc) {
+							const rpcProvider = new ethers.JsonRpcProvider(net.rpc, net.chain_id, { staticNetwork: true });
+							signer = getEmbeddedSigner(rpcProvider);
+						}
+					}
+				} else if (result === 'needs-pin') {
+					// Session exists but PIN not cached — show address, prompt PIN on action
+					const state = getWalletState();
+					// Fetch default address from vault
+					const { data: { session } } = await supabase.auth.getSession();
+					if (session) {
+						const res = await fetch('/api/wallet', {
+							headers: { 'Authorization': `Bearer ${session.access_token}` }
+						});
+						if (res.ok) {
+							const { vault } = await res.json();
+							if (vault?.default_address) {
+								userAddress = vault.default_address;
+								walletType = 'embedded';
+							}
+						}
+					}
+				}
+			} catch {}
+		})();
 
 		// Load networks from DB, then init providers + AppKit
 		supabase
@@ -140,24 +258,32 @@
 			if (theme === 'light') kit.setThemeMode('light');
 			kit.subscribeAccount(async (account: any) => {
 				if (account.isConnected && account.address) {
-					const walletProvider = kit.getWalletProvider();
-					if (walletProvider) {
-						await setupEthersFromProvider(walletProvider);
+					// Only set external wallet if not already connected via embedded
+					if (walletType !== 'embedded' || !userAddress) {
+						walletType = 'external';
+						const walletProvider = kit.getWalletProvider();
+						if (walletProvider) {
+							await setupEthersFromProvider(walletProvider);
+						}
 					}
-				} else if (!account.isConnected) {
+				} else if (!account.isConnected && walletType === 'external') {
 					provider = null;
 					signer = null;
 					userAddress = null;
+					walletType = null;
 				}
 			});
 
-			// Check if already connected on page load
-			try {
-				const walletProvider = kit.getWalletProvider();
-				if (walletProvider) {
-					setupEthersFromProvider(walletProvider);
-				}
-			} catch {}
+			// Check if already connected on page load (only if no embedded wallet)
+			if (!userAddress) {
+				try {
+					const walletProvider = kit.getWalletProvider();
+					if (walletProvider) {
+						walletType = 'external';
+						setupEthersFromProvider(walletProvider);
+					}
+				} catch {}
+			}
 		}
 
 		// Capture referral from URL (address or alias)
@@ -242,7 +368,7 @@
 	<link rel="preconnect" href="https://fonts.googleapis.com" />
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
 	<link
-		href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap"
+		href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&family=Rajdhani:wght@400;500;600;700&display=swap"
 		rel="stylesheet"
 	/>
 </svelte:head>
@@ -252,6 +378,7 @@
 	href="#main-content"
 	class="skip-to-content"
 >Skip to main content</a>
+
 
 <!-- Toast Notifications -->
 <div class="fixed top-4 right-4 z-[100] flex flex-col gap-2 max-w-sm w-full pointer-events-none px-4">
@@ -326,10 +453,15 @@
 				</a>
 				<div class="lang-desktop"><LanguageSwitcher /></div>
 				{#if userAddress}
-					<appkit-network-button></appkit-network-button>
+					<button class="wallet-btn" onclick={() => { if (walletType === 'external') { const kit = getAppKit(); if (kit) kit.open(); } else { showAccountPanel = true; } }}>
+						<span class="wallet-dot"></span>
+						{userAddress.slice(0, 6)}...{userAddress.slice(-4)}
+					</button>
+				{:else}
+					<button class="wallet-btn wallet-btn-connect" onclick={() => showWalletModal = true}>
+						Connect Wallet
+					</button>
 				{/if}
-				<div class="wallet-desktop"><appkit-button size="sm"></appkit-button></div>
-				<!-- Wallet button only on desktop; mobile uses drawer -->
 			</div>
 		</div>
 	</nav>
@@ -404,7 +536,16 @@
 					<span class="text-xs font-mono uppercase tracking-wider" style="color: var(--text-dim)">Language</span>
 					<LanguageSwitcher />
 				</div>
-				<appkit-button size="sm"></appkit-button>
+				{#if userAddress}
+					<button class="wallet-btn wallet-btn-sm" onclick={() => { if (walletType === 'external') { const kit = getAppKit(); if (kit) kit.open(); } else { showAccountPanel = true; } mobileMenuOpen = false; }}>
+						<span class="wallet-dot"></span>
+						{userAddress.slice(0, 6)}...{userAddress.slice(-4)}
+					</button>
+				{:else}
+					<button class="wallet-btn wallet-btn-connect" onclick={() => { showWalletModal = true; mobileMenuOpen = false; }}>
+						Connect Wallet
+					</button>
+				{/if}
 			</div>
 		</div>
 	</div>
@@ -535,6 +676,41 @@
 	</div>
 </div>
 
+<WalletModal
+	bind:open={showWalletModal}
+	bind:this={walletModalRef}
+	onConnected={handleWalletConnected}
+	onWalletConnect={openWalletConnect}
+/>
+
+<AccountPanel
+	bind:open={showAccountPanel}
+	userAddress={userAddress || ''}
+	walletType={walletType || 'embedded'}
+	networkName={supportedNetworks[0]?.name || 'BNB Smart Chain'}
+	nativeCoin={supportedNetworks[0]?.native_coin || 'BNB'}
+	{nativeBalance}
+	nativeDecimals={18}
+	{nativePriceUsd}
+	tokens={[]}
+	onDisconnect={disconnectWallet}
+	onAddFeedback={addFeedback}
+	onAccountSwitch={(addr) => {
+		userAddress = addr;
+		const net = supportedNetworks[0];
+		if (net?.rpc && walletType === 'embedded') {
+			const rpcProvider = new ethers.JsonRpcProvider(net.rpc, net.chain_id, { staticNetwork: true });
+			signer = getEmbeddedSigner(rpcProvider);
+		}
+	}}
+	onRefreshBalance={() => {
+		if (!userAddress) return;
+		const net = supportedNetworks[0];
+		const prov = networkProviders.get(net?.chain_id);
+		if (prov) prov.getBalance(userAddress).then(b => nativeBalance = b).catch(() => {});
+	}}
+/>
+
 <style>
 	:global(*) { box-sizing: border-box; }
 	:global(body) {
@@ -569,6 +745,26 @@
 		.wallet-desktop { display: block; }
 	}
 
+	.wallet-btn {
+		display: inline-flex; align-items: center; gap: 6px;
+		padding: 6px 12px; border-radius: 8px;
+		background: var(--bg-surface, rgba(255,255,255,0.05));
+		border: 1px solid var(--border, rgba(255,255,255,0.08));
+		color: var(--text, #e2e8f0); font-family: 'Space Mono', monospace; font-size: 12px;
+		cursor: pointer; transition: all 0.15s;
+	}
+	.wallet-btn:hover { border-color: rgba(0,210,255,0.3); background: var(--bg-surface-hover, rgba(255,255,255,0.08)); }
+	.wallet-btn-connect {
+		background: linear-gradient(135deg, #0891b2, #1d4ed8); border: none;
+		color: white; font-family: 'Syne', sans-serif; font-weight: 700; font-size: 13px;
+		padding: 8px 16px; border-radius: 10px;
+		box-shadow: 0 2px 8px rgba(8,145,178,0.3);
+	}
+	.wallet-btn-connect:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(8,145,178,0.4); background: linear-gradient(135deg, #0e7490, #1e40af); }
+	.wallet-btn-sm { font-size: 11px; padding: 5px 10px; }
+	.wallet-dot {
+		width: 7px; height: 7px; border-radius: 50%; background: #10b981; flex-shrink: 0;
+	}
 	.nav-cta {
 		display: inline-flex;
 		align-items: center;

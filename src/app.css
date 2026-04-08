@@ -5,6 +5,12 @@ html, body {
   width: 100%;
 }
 
+/* Financial numbers: tabular figures for alignment */
+.fin, [data-fin] {
+  font-family: 'Rajdhani', sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+
 /* Global modal scrolling fix */
 body.modal-open {
   overflow: hidden;
