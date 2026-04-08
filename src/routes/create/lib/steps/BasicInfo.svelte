@@ -14,9 +14,11 @@
 		tokenWebsite = $bindable(''),
 		tokenTwitter = $bindable(''),
 		tokenTelegram = $bindable(''),
+		isCreateOnly = false,
 		supportedNetworks,
 		getNetworkProviders,
 	}: {
+		isCreateOnly?: boolean;
 		name: string;
 		symbol: string;
 		totalSupply: string;
@@ -105,6 +107,32 @@
 				symbol = s;
 				decimals = Number(d);
 				totalSupply = ethers.formatUnits(supply, Number(d));
+
+				// Clone metadata if in create-only mode
+				if (isCreateOnly) {
+					// Try our DB first
+					fetch(`/api/token-metadata?address=${addr.toLowerCase()}&chain_id=${net.chain_id}`)
+						.then(r => r.ok ? r.json() : null)
+						.then(data => {
+							if (data) {
+								if (data.logo_url) tokenLogoUrl = data.logo_url;
+								if (data.description) tokenDescription = data.description;
+								if (data.website) tokenWebsite = data.website;
+								if (data.twitter) tokenTwitter = data.twitter;
+								if (data.telegram) tokenTelegram = data.telegram;
+							}
+						}).catch(() => {});
+
+					// Try GeckoTerminal for logo fallback
+					if (!tokenLogoUrl) {
+						fetch(`https://api.geckoterminal.com/api/v2/networks/bsc/tokens/${addr}`)
+							.then(r => r.ok ? r.json() : null)
+							.then(data => {
+								const img = data?.data?.attributes?.image_url;
+								if (img && img !== 'missing.png' && !tokenLogoUrl) tokenLogoUrl = img;
+							}).catch(() => {});
+					}
+				}
 			} catch {
 				fetchError = 'Could not read token';
 			} finally {
@@ -126,39 +154,64 @@
 		</select>
 	</div>
 
-	<!-- Existing token toggle -->
+	<!-- Clone / existing token toggle -->
 	<button class="toggle-row" tabindex="-1" onclick={() => (useExistingToken = !useExistingToken)}>
 		<span class="toggle-track" class:active={useExistingToken}>
 			<span class="toggle-thumb"></span>
 		</span>
-		<span class="toggle-label">I already have a token</span>
+		<span class="toggle-label">{isCreateOnly ? 'Clone from existing token' : 'I already have a token'}</span>
 	</button>
 
 	{#if useExistingToken}
-		<!-- Existing token address -->
 		<div class="field-group">
-			<label class="label" for="bi-addr">Token Address</label>
+			<label class="label" for="bi-addr">{isCreateOnly ? 'Token to clone' : 'Token Address'}</label>
 			<input id="bi-addr" class="input-field" type="text" placeholder="0x..." bind:value={existingTokenAddress} />
 			{#if loading}
-				<span class="hint accent">Fetching token info...</span>
+				<span class="hint accent">{isCreateOnly ? 'Fetching token to clone...' : 'Fetching token info...'}</span>
 			{:else if fetchError}
 				<span class="hint error">{fetchError}</span>
 			{:else if name && useExistingToken && existingTokenAddress}
-				<span class="hint accent">{name} ({symbol}) &mdash; {Number(totalSupply).toLocaleString('en-US')} supply</span>
+				<span class="hint accent">{name} ({symbol}) &mdash; {Number(totalSupply).toLocaleString('en-US')} supply
+					{#if isCreateOnly}<span class="hint clone-hint"> — will create a new token with these settings</span>{/if}
+				</span>
 			{/if}
 		</div>
-	{:else}
-		<!-- Logo upload (prominent at top) -->
+		{#if isCreateOnly && name && !loading}
+			<!-- In clone mode, show the form below pre-filled -->
+		{/if}
+	{/if}
+
+	{#if !useExistingToken || isCreateOnly}
+		<!-- Logo upload -->
 		<div class="field-group">
 			<input type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" class="hidden-file" bind:this={logoFileInput} onchange={handleLogoUpload} />
-			<button class="logo-upload-btn" type="button" onclick={() => logoFileInput?.click()}>
-				{#if tokenLogoUrl}
-					<img src={tokenLogoUrl} alt="Logo" class="logo-upload-preview" />
-					<div class="logo-upload-text">
-						<span class="logo-upload-change">Change logo</span>
-						<span class="logo-upload-sub">PNG, JPEG, WebP, GIF, SVG (max 2 MB)</span>
+			{#if tokenLogoUrl}
+				<!-- Logo uploaded — show size previews -->
+				<div class="logo-preview-row">
+					<div class="logo-sizes">
+						<div class="logo-size">
+							<img src={tokenLogoUrl} alt="Logo" class="logo-sz logo-sz-lg" />
+							<span class="logo-sz-label">Profile</span>
+						</div>
+						<div class="logo-size">
+							<img src={tokenLogoUrl} alt="Logo" class="logo-sz logo-sz-md" />
+							<span class="logo-sz-label">Card</span>
+						</div>
+						<div class="logo-size">
+							<img src={tokenLogoUrl} alt="Logo" class="logo-sz logo-sz-sm" />
+							<span class="logo-sz-label">List</span>
+						</div>
 					</div>
-				{:else}
+					<button class="logo-change-btn" type="button" onclick={() => logoFileInput?.click()}>
+						<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+						Change
+					</button>
+					<button class="logo-remove-btn" type="button" onclick={() => { tokenLogoUrl = ''; delete (window as any).__pendingLogoFile; }}>
+						<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+					</button>
+				</div>
+			{:else}
+				<button class="logo-upload-btn" type="button" onclick={() => logoFileInput?.click()}>
 					<div class="logo-upload-placeholder">
 						<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
 					</div>
@@ -166,8 +219,8 @@
 						<span>Upload token logo</span>
 						<span class="logo-upload-sub">Optional — you can add it later</span>
 					</div>
-				{/if}
-			</button>
+				</button>
+			{/if}
 		</div>
 
 		<!-- Name + Symbol row -->
@@ -242,6 +295,7 @@
 	.hint { font-family: 'Space Mono', monospace; font-size: 0.72rem; color: rgba(226,232,240,0.45); }
 	.hint.accent { color: #00d2ff; }
 	.hint.error { color: #ff5e5e; }
+	.clone-hint { color: #10b981; }
 
 	.preset-row { display: flex; gap: 0.4rem; margin-top: 0.25rem; flex-wrap: wrap; }
 	.preset-btn {
@@ -310,7 +364,32 @@
 		font-family: 'Space Mono', monospace; font-size: 0.75rem;
 	}
 	.logo-upload-btn:hover { border-color: rgba(0,210,255,0.2); background: rgba(0,210,255,0.02); }
-	.logo-upload-preview { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; border: 2px solid rgba(255,255,255,0.08); flex-shrink: 0; }
+	.logo-preview-row {
+		display: flex; align-items: center; gap: 10px;
+		padding: 12px 14px; border-radius: 10px;
+		background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06);
+	}
+	.logo-sizes { display: flex; align-items: flex-end; gap: 12px; flex: 1; }
+	.logo-size { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+	.logo-sz { border-radius: 50%; object-fit: cover; border: 1px solid rgba(255,255,255,0.08); }
+	.logo-sz-lg { width: 48px; height: 48px; }
+	.logo-sz-md { width: 32px; height: 32px; }
+	.logo-sz-sm { width: 20px; height: 20px; }
+	.logo-sz-label { font-size: 8px; color: rgba(255,255,255,0.2); font-family: 'Space Mono', monospace; }
+	.logo-change-btn {
+		display: flex; align-items: center; gap: 4px; padding: 5px 10px; border-radius: 6px;
+		border: 1px solid rgba(255,255,255,0.06); background: transparent;
+		color: #00d2ff; font-family: 'Space Mono', monospace; font-size: 10px;
+		cursor: pointer; transition: all 0.12s; flex-shrink: 0;
+	}
+	.logo-change-btn:hover { background: rgba(0,210,255,0.06); }
+	.logo-remove-btn {
+		width: 26px; height: 26px; border-radius: 6px; border: none;
+		background: rgba(248,113,113,0.08); color: #f87171; cursor: pointer;
+		display: flex; align-items: center; justify-content: center;
+		flex-shrink: 0; transition: background 0.12s;
+	}
+	.logo-remove-btn:hover { background: rgba(248,113,113,0.15); }
 	.logo-upload-placeholder {
 		width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0;
 		background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);

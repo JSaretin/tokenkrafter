@@ -215,7 +215,7 @@
 
 		updateTokenInfo({
 			name, symbol, totalSupply, decimals, isMintable, isTaxable, isPartner, network,
-			existingTokenAddress: useExistingToken ? existingTokenAddress : undefined,
+			existingTokenAddress: (useExistingToken && !(!launchEnabled && !listingEnabled)) ? existingTokenAddress : undefined,
 			listing: {
 				enabled: listingEnabled, baseCoin: listingPairs[0]?.base ?? 'native',
 				mode: 'price', tokenAmount: String(totalTokensForListing),
@@ -279,7 +279,7 @@
 	<!-- Step content -->
 	<div class="wz-content">
 		{#if wizardStep === 'basics'}
-			<BasicInfo bind:name bind:symbol bind:totalSupply bind:decimals bind:chainId bind:useExistingToken bind:existingTokenAddress bind:tokenLogoUrl bind:tokenDescription bind:tokenWebsite bind:tokenTwitter bind:tokenTelegram {supportedNetworks} {getNetworkProviders} />
+			<BasicInfo bind:name bind:symbol bind:totalSupply bind:decimals bind:chainId bind:useExistingToken bind:existingTokenAddress bind:tokenLogoUrl bind:tokenDescription bind:tokenWebsite bind:tokenTwitter bind:tokenTelegram {supportedNetworks} {getNetworkProviders} isCreateOnly={!launchEnabled && !listingEnabled} />
 
 		{:else if wizardStep === 'features'}
 			<Features bind:isMintable bind:isTaxable bind:isPartner bind:launchEnabled bind:listingEnabled />

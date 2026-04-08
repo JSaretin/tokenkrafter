@@ -99,21 +99,25 @@
 
 
 	async function disconnectWallet() {
-		if (walletType === 'embedded') {
-			lockWallet();
-			await signOut();
-			localStorage.removeItem('_wp');
-			localStorage.removeItem('_active_acct');
-		} else {
-			const kit = getAppKit();
-			if (kit) await kit.disconnect?.();
-		}
+		// Optimistic UI — clear state instantly, cleanup in background
+		const wasEmbedded = walletType === 'embedded';
 		userAddress = null;
 		signer = null;
 		provider = null;
 		nativeBalance = 0n;
 		nativePriceUsd = 0;
 		walletType = null;
+
+		// Background cleanup
+		if (wasEmbedded) {
+			lockWallet();
+			localStorage.removeItem('_wp');
+			localStorage.removeItem('_active_acct');
+			signOut().catch(() => {});
+		} else {
+			const kit = getAppKit();
+			if (kit) kit.disconnect?.().catch(() => {});
+		}
 	}
 
 	// Fetch native balance + price when address or network changes
