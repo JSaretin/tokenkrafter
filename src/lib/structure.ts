@@ -1,6 +1,6 @@
 export interface SupportedNetwork {
 	name: string;
-	symbol: string;
+	symbol: string;              // chain slug (e.g. "bsc", "eth", "base")
 	chain_id: number;
 	native_coin: string;
 	usdt_address: string;
@@ -10,7 +10,10 @@ export interface SupportedNetwork {
 	router_address: string;
 	dex_router: string;
 	trade_router_address: string;
+	trade_lens_address?: string;
 	rpc: string;
+	explorer_url?: string;       // e.g. "https://bscscan.com"
+	gecko_network?: string;      // e.g. "bsc" for GeckoTerminal API
 }
 
 export interface PaymentOption {

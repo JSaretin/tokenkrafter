@@ -3,7 +3,7 @@
 	import favicon from '$lib/assets/favicon.svg';
 	import { setContext, onMount } from 'svelte';
 	import { navigating } from '$app/state';
-	import { goto } from '$app/navigation';
+	import { createMode } from '$lib/createModeStore';
 	import { ethers } from 'ethers';
 	import { initAppKit, getAppKit } from '$lib/wagmiConfig';
 	import type { SupportedNetworks, SupportedNetwork, PaymentOption } from '$lib/structure';
@@ -441,12 +441,7 @@
 				{#each navLinks as link}
 					<a
 						href={link.href}
-						onclick={(e) => {
-							if (link.href === '/create' && page.url.pathname.startsWith('/create')) {
-								e.preventDefault();
-								goto('/create', { replaceState: true });
-							}
-						}}
+						onclick={() => { if (link.href === '/create') createMode.set(null); }}
 						class="nav-link px-3 py-1.5 rounded-md text-[13px] transition font-mono
 						{page.url.pathname === link.href || (link.href !== '/' && page.url.pathname.startsWith(link.href))
 							? 'text-cyan-400 bg-cyan-400/10'
@@ -466,7 +461,7 @@
 
 			<!-- Right side: actions -->
 			<div class="flex items-center gap-2">
-				<a href="/create" onclick={(e) => { if (page.url.pathname.startsWith('/create')) { e.preventDefault(); goto('/create', { replaceState: true }); } }} class="nav-cta nav-cta-desktop no-underline">
+				<a href="/create" onclick={() => createMode.set(null)} class="nav-cta nav-cta-desktop no-underline">
 					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
 					Launch
 				</a>
@@ -519,7 +514,7 @@
 				<!-- Launch CTA in drawer -->
 				<a
 					href="/create"
-					onclick={(e) => { mobileMenuOpen = false; if (page.url.pathname.startsWith('/create')) { e.preventDefault(); goto('/create', { replaceState: true }); } }}
+					onclick={() => { mobileMenuOpen = false; createMode.set(null); }}
 					class="nav-cta no-underline mb-3 justify-center"
 				>
 					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -529,13 +524,7 @@
 				{#each navLinks as link}
 					<a
 						href={link.href}
-						onclick={(e) => {
-							mobileMenuOpen = false;
-							if (link.href === '/create' && page.url.pathname.startsWith('/create')) {
-								e.preventDefault();
-								goto('/create', { replaceState: true });
-							}
-						}}
+						onclick={() => { mobileMenuOpen = false; if (link.href === '/create') createMode.set(null); }}
 						class="mobile-nav-link px-4 py-3 rounded-lg text-sm transition font-mono flex items-center
 						{page.url.pathname === link.href || (link.href !== '/' && page.url.pathname.startsWith(link.href))
 							? 'text-cyan-400 bg-cyan-400/10'
@@ -694,7 +683,7 @@
 			<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4"/></svg>
 			<span>Trade</span>
 		</a>
-		<a href="/create" class="bottom-tab" class:bottom-tab-active={page.url.pathname.startsWith('/create')}>
+		<a href="/create" onclick={() => createMode.set(null)} class="bottom-tab" class:bottom-tab-active={page.url.pathname.startsWith('/create')}>
 			<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
 			<span>Create</span>
 		</a>

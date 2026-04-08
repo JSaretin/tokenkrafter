@@ -1,3 +1,4 @@
+export { default as DeployMode } from './DeployMode.svelte';
 export { default as BasicInfo } from './BasicInfo.svelte';
 export { default as Features } from './Features.svelte';
 export { default as TaxConfig } from './TaxConfig.svelte';

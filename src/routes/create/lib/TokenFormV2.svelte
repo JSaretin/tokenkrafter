@@ -37,20 +37,22 @@
 	import { getContext } from 'svelte';
 	import { ethers } from 'ethers';
 	import type { SupportedNetwork } from '$lib/structure';
-	import { BasicInfo, Features, TaxConfig as TaxStep, ListingConfig as ListingStep, Review } from './steps';
+	import { DeployMode as DeployModeStep, BasicInfo, Features, TaxConfig as TaxStep, ListingConfig as ListingStep, Review } from './steps';
 	import BondingCurveChart from '$lib/BondingCurveChart.svelte';
 
-	type WizardStep = 'basics' | 'features' | 'tax' | 'launch' | 'listing' | 'review';
-	let wizardStep = $state<WizardStep>('basics');
+	type WizardStep = 'mode' | 'basics' | 'features' | 'tax' | 'launch' | 'listing' | 'review';
+	let wizardStep = $state<WizardStep>('mode');
 
 	// ── Props ──────────────────────────────────────────────
 	let {
-		supportedNetworks, addFeedback, updateTokenInfo, onPreviewChange, initialData, autoSubmit, forceMode
+		supportedNetworks, addFeedback, updateTokenInfo, onPreviewChange, initialData, autoSubmit, initialMode, onModeChange, resetSignal
 	}: {
 		supportedNetworks: SupportedNetwork[]; addFeedback: (f: { message: string; type: string }) => void;
 		updateTokenInfo: (info: TokenFormData) => void; onPreviewChange?: (state: PreviewState) => void;
 		initialData?: Partial<TokenFormData>; autoSubmit?: boolean;
-		forceMode?: 'token' | 'both' | 'launch' | 'list';
+		initialMode?: 'token' | 'both' | 'launch' | 'list';
+		onModeChange?: (mode: 'token' | 'launch' | 'both' | 'list' | null) => void;
+		resetSignal?: number;
 	} = $props();
 
 	// ── All form state (bindable to child components) ──
@@ -74,6 +76,32 @@
 	let isPartner = $state(false);
 	let launchEnabled = $state(false);
 	let listingEnabled = $state(false);
+
+	// Deploy mode — drives launchEnabled/listingEnabled
+	let deployMode = $state<'token' | 'launch' | 'both' | 'list' | null>(initialMode ?? null);
+
+	// Sync launch/listing toggles from deploy mode and notify parent
+	$effect(() => {
+		if (deployMode === 'token') { launchEnabled = false; listingEnabled = false; }
+		else if (deployMode === 'both' || deployMode === 'launch') { launchEnabled = true; listingEnabled = false; }
+		else if (deployMode === 'list') { launchEnabled = false; listingEnabled = true; }
+		onModeChange?.(deployMode);
+	});
+
+	// React to parent reset signal (e.g. nav click)
+	let _lastResetSignal = resetSignal ?? 0;
+	$effect(() => {
+		const current = resetSignal ?? 0;
+		if (current !== _lastResetSignal) {
+			_lastResetSignal = current;
+			deployMode = null;
+			wizardStep = 'mode';
+			clearDraft();
+		}
+	});
+
+	// Skip mode step if initialMode provided (e.g. from URL param)
+	if (initialMode) wizardStep = 'basics';
 
 	let buyTaxPct = $state('');
 	let sellTaxPct = $state('');
@@ -181,14 +209,8 @@
 	let tokensForPool = $derived(Number(totalSupply) * (listingPoolPct / 100));
 	let autoPrice = $derived.by(() => tokensForPool > 0 && totalLiquidityUsd > 0 ? totalLiquidityUsd / tokensForPool : 0);
 
-	// ── Force mode ─────────────────────────────────────────
-	// Set initial mode from pre-selection (user can change on Features step)
-	if (forceMode === 'token') { launchEnabled = false; listingEnabled = false; }
-	else if (forceMode === 'both') { launchEnabled = true; listingEnabled = false; }
-	else if (forceMode === 'launch') { launchEnabled = true; listingEnabled = false; }
-	else if (forceMode === 'list') { launchEnabled = false; listingEnabled = true; }
 	// Only set useExistingToken if explicitly launching an existing token (URL param)
-	if (forceMode === 'launch' && initialData?.existingTokenAddress) { useExistingToken = true; }
+	if (deployMode === 'launch' && initialData?.existingTokenAddress) { useExistingToken = true; }
 
 	// ── Initial data ───────────────────────────────────────
 	if (initialData) {
@@ -233,6 +255,7 @@
 
 	function getFormSnapshot() {
 		return {
+			deployMode,
 			name, symbol, totalSupply, decimals, chainId, useExistingToken, existingTokenAddress,
 			tokenLogoUrl, tokenDescription, tokenWebsite, tokenTwitter, tokenTelegram,
 			isMintable, isTaxable, isPartner, launchEnabled, listingEnabled,
@@ -245,6 +268,7 @@
 	}
 
 	function restoreFormSnapshot(s: any) {
+		if (s.deployMode) deployMode = s.deployMode;
 		if (s.name) name = s.name;
 		if (s.symbol) symbol = s.symbol;
 		if (s.totalSupply) totalSupply = s.totalSupply;
@@ -319,8 +343,8 @@
 		}, 500);
 	});
 
-	/** Clear saved draft (call after successful deploy) */
-	export function clearDraft() {
+	/** Clear saved draft */
+	function clearDraft() {
 		try { sessionStorage.removeItem(FORM_STORAGE_KEY); } catch {}
 	}
 
@@ -331,18 +355,25 @@
 	let isRealExistingToken = $derived(useExistingToken && !!initialData?.existingTokenAddress);
 
 	let steps = $derived.by(() => {
-		const s: { id: WizardStep; label: string }[] = [{ id: 'basics', label: 'Basics' }];
-		if (!isRealExistingToken) s.push({ id: 'features', label: 'Features' });
-		if (isTaxable && !isRealExistingToken) s.push({ id: 'tax', label: 'Tax' });
-		if (launchEnabled) s.push({ id: 'launch', label: 'Launch' });
-		if (listingEnabled && !launchEnabled) s.push({ id: 'listing', label: 'DEX Listing' });
-		s.push({ id: 'review', label: 'Review' });
+		const s: { id: WizardStep; label: string }[] = [{ id: 'mode', label: 'Mode' }];
+		if (deployMode) {
+			s.push({ id: 'basics', label: 'Basics' });
+			if (!isRealExistingToken) s.push({ id: 'features', label: 'Features' });
+			if (isTaxable && !isRealExistingToken) s.push({ id: 'tax', label: 'Tax' });
+			if (launchEnabled) s.push({ id: 'launch', label: 'Launch' });
+			if (listingEnabled && !launchEnabled) s.push({ id: 'listing', label: 'DEX Listing' });
+			s.push({ id: 'review', label: 'Review' });
+		}
 		return s;
 	});
 
 	let currentStepIdx = $derived(steps.findIndex(s => s.id === wizardStep));
 
 	function nextStep() {
+		if (wizardStep === 'mode' && !deployMode) {
+			addFeedback({ message: 'Please select a deployment mode', type: 'error' });
+			return;
+		}
 		const idx = currentStepIdx;
 		if (idx < steps.length - 1) wizardStep = steps[idx + 1].id;
 		else submit();
@@ -430,11 +461,14 @@
 
 	<!-- Step content -->
 	<div class="wz-content">
-		{#if wizardStep === 'basics'}
+		{#if wizardStep === 'mode'}
+			<DeployModeStep bind:deployMode />
+
+		{:else if wizardStep === 'basics'}
 			<BasicInfo bind:name bind:symbol bind:totalSupply bind:decimals bind:chainId bind:useExistingToken bind:existingTokenAddress bind:tokenLogoUrl bind:tokenDescription bind:tokenWebsite bind:tokenTwitter bind:tokenTelegram {supportedNetworks} {getNetworkProviders} isCreateOnly={!launchEnabled && !listingEnabled} />
 
 		{:else if wizardStep === 'features'}
-			<Features bind:isMintable bind:isTaxable bind:isPartner bind:launchEnabled bind:listingEnabled />
+			<Features bind:isMintable bind:isTaxable bind:isPartner />
 
 		{:else if wizardStep === 'tax'}
 			<TaxStep bind:buyTaxPct bind:sellTaxPct bind:transferTaxPct bind:taxWallets bind:protectionEnabled bind:maxWalletPct bind:maxTransactionPct bind:cooldownSeconds />

@@ -8,10 +8,14 @@
 	import { LAUNCHPAD_FACTORY_ABI, LAUNCH_INSTANCE_ABI, CURVE_TYPES, type CurveType } from '$lib/launchpad';
 	import TokenForm from './lib/TokenFormV2.svelte';
 	import type { ListingConfig, ListingPairConfig, TokenFormData, PreviewState } from './lib/TokenFormV2.svelte';
+
+	let resetSignal = $state(0);
 	import DisplayPreview from './lib/DisplayPreview.svelte';
 	import Tooltip from '$lib/Tooltip.svelte';
 
-	// ─── Intent mode state ───
+	import { createMode, type CreateMode } from '$lib/createModeStore';
+
+	// ─── Intent mode state (synced with global store) ───
 	type IntentMode = 'token' | 'launch' | 'both' | 'list';
 	let mode: IntentMode | null = $state(null);
 
@@ -21,76 +25,55 @@
 	let tokenFromUrl = $derived(page.url.searchParams.get('token') || '');
 	let chainFromUrl = $derived(page.url.searchParams.get('chain') || '');
 
-	// Resolve mode from URL params — also resets when navigating to bare /create
-	let prevModeParam: string | null = null;
+	// Resolve mode from URL params on mount
 	$effect(() => {
-		const currentModeParam = modeFromUrl;
-		const hadMode = prevModeParam;
-		prevModeParam = currentModeParam;
-
+		if (mode !== null) return;
 		if (tokenFromUrl) {
 			mode = 'launch';
 			launchTokenAddress = tokenFromUrl;
-		} else if (currentModeParam === 'token' || currentModeParam === 'launch' || currentModeParam === 'both' || currentModeParam === 'list') {
-			mode = currentModeParam;
+		} else if (modeFromUrl === 'token' || modeFromUrl === 'launch' || modeFromUrl === 'both' || modeFromUrl === 'list') {
+			mode = modeFromUrl;
 		} else if (launchFromUrl) {
 			mode = 'both';
-		} else if (mode !== null && hadMode && !currentModeParam) {
-			// URL lost its mode param (user clicked nav link to bare /create) — reset
-			mode = null;
 		}
 	});
 
-	function selectMode(m: IntentMode) {
-		mode = m;
-		// Update URL so OAuth redirects back to the correct wizard
-		const url = new URL(window.location.href);
-		url.searchParams.set('mode', m);
-		history.replaceState({}, '', url.toString());
-	}
+	// Listen to store — nav clicks set it to null to reset wizard to mode step
+	let _ignoreStoreUpdate = false;
+	const unsubCreateMode = createMode.subscribe((val) => {
+		if (_ignoreStoreUpdate) return;
+		if (val === null && mode !== null) {
+			mode = null;
+			resetSignal++;
+			// Clear URL
+			const url = new URL(window.location.href);
+			url.searchParams.delete('mode');
+			url.searchParams.delete('launch');
+			url.searchParams.delete('token');
+			url.searchParams.delete('chain');
+			history.replaceState({}, '', url.pathname);
+		}
+	});
+	onDestroy(unsubCreateMode);
 
-	function backToSelection() {
-		mode = null;
-		// Clear mode from URL
+	function handleModeChange(m: IntentMode | null) {
+		mode = m;
+		_ignoreStoreUpdate = true;
+		createMode.set(m);
+		_ignoreStoreUpdate = false;
+		// Sync URL
 		const url = new URL(window.location.href);
-		url.searchParams.delete('mode');
-		url.searchParams.delete('launch');
-		url.searchParams.delete('token');
-		url.searchParams.delete('chain');
-		history.replaceState({}, '', url.pathname);
-		// Clear saved form draft
-		try { sessionStorage.removeItem('tk_create_form_draft'); } catch {}
-		// Reset launch form state
-		launchTokenAddress = '';
-		launchTokenName = '';
-		launchTokenSymbol = '';
-		launchTokenDecimals = 18;
-		launchTokenBalance = 0n;
-		launchTokenSupply = 0n;
-		launchTokenLoading = false;
-		launchAmount = '';
-		launchChainId = undefined;
-		launchCurveType = 0;
-		launchSoftCap = '5';
-		launchHardCap = '50';
-		launchDurationDays = '30';
-		launchMaxBuyPct = '2';
-		launchCreatorAllocPct = '0';
-		launchVestingDays = '0';
-		launchSubmitting = false;
-		launchStep = 'idle';
-		launchDeployedAddress = null;
+		if (m) {
+			url.searchParams.set('mode', m);
+		} else {
+			url.searchParams.delete('mode');
+		}
+		history.replaceState({}, '', url.toString());
 	}
 
 	let initialFormData = $derived.by(() => {
 		const data: any = {};
-		if (mode === 'both' || mode === 'launch' || launchFromUrl) {
-			data.launch = { enabled: true, tokensForLaunchPct: 80, curveType: 0, softCap: '', hardCap: '', durationDays: '30', maxBuyBps: '200', creatorAllocationBps: '0', vestingDays: '0', launchPaymentToken: '' };
-		}
-		if (mode === 'list') {
-			data.listing = { enabled: true, baseCoin: 'native', mode: 'manual', tokenAmount: '', baseAmount: '', pricePerToken: '', listBaseAmount: '' };
-		}
-		if (mode === 'launch' && tokenFromUrl) {
+		if (tokenFromUrl) {
 			data.existingTokenAddress = tokenFromUrl;
 		}
 		if (chainFromUrl) {
@@ -345,15 +328,8 @@
 	let deployedTokenAddress: string | null = $state(null);
 	let deployTxHash: string | null = $state(null);
 
-	const EXPLORER_URLS: Record<number, string> = {
-		1: 'https://etherscan.io',
-		56: 'https://bscscan.com',
-		97: 'https://testnet.bscscan.com',
-		11155111: 'https://sepolia.etherscan.io'
-	};
-
 	function getExplorerUrl(chainId: number, type: 'tx' | 'address', hash: string) {
-		const base = EXPLORER_URLS[chainId] || 'https://bscscan.com';
+		const net = supportedNetworks.find(n => n.chain_id === chainId); const base = net?.explorer_url || 'https://bscscan.com';
 		return `${base}/${type}/${hash}`;
 	}
 
@@ -1513,68 +1489,19 @@
 <!-- Page -->
 <div class="page-container max-w-6xl mx-auto px-3 sm:px-6 py-6 sm:py-12">
 
-	{#if mode === null}
-		<!-- ═══════ INTENT SELECTION SCREEN ═══════ -->
-		<div class="text-center mb-10">
-			<h1 class="syne text-3xl sm:text-4xl font-bold text-white mt-4 mb-2">{$t('ci.pageTitle')}</h1>
-			<p class="text-gray-400 font-mono text-sm">{$t('ci.pageSub')}</p>
-		</div>
-
-		<div class="intent-grid">
-			<!-- Create Token -->
-			<button class="intent-card card card-hover" onclick={() => selectMode('token')}>
-				<div class="intent-icon cyan">
-					<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v12M6 12h12"/></svg>
-				</div>
-				<h3 class="syne text-lg font-bold text-white mt-4 mb-1">{$t('ci.createToken')}</h3>
-				<p class="text-gray-400 font-mono text-xs">{$t('ci.createTokenSub')}</p>
-			</button>
-
-			<!-- Create & Launch (FEATURED) -->
-			<button class="intent-card intent-card-featured" onclick={() => selectMode('both')}>
-				<span class="badge badge-cyan intent-badge-top">{$t('ci.recommended')}</span>
-				<div class="intent-icon cyan">
-					<svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-				</div>
-				<h3 class="syne text-xl font-bold text-white mt-4 mb-1">{$t('ci.createAndLaunch')}</h3>
-				<p class="text-gray-500 font-mono text-xs leading-relaxed">{$t('ci.createAndLaunchSub')}</p>
-			</button>
-
-			<!-- Create & List on DEX -->
-			<button class="intent-card card card-hover" onclick={() => selectMode('list')}>
-				<div class="intent-icon" style="color: #f59e0b;">
-					<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-				</div>
-				<h3 class="syne text-lg font-bold text-white mt-4 mb-1">Create & List on DEX</h3>
-				<p class="text-gray-400 font-mono text-xs">Create token and add liquidity to DEX instantly. One click.</p>
-			</button>
-
-			<!-- Launch Existing Token -->
-			<button class="intent-card card card-hover" onclick={() => selectMode('launch')}>
-				<div class="intent-icon emerald">
-					<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="M12 15l-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg>
-				</div>
-				<h3 class="syne text-lg font-bold text-white mt-4 mb-1">{$t('ci.launchExisting')}</h3>
-				<p class="text-gray-400 font-mono text-xs">{$t('ci.launchExistingSub')}</p>
-			</button>
-		</div>
-
-	{:else if mode === 'token' || mode === 'both' || mode === 'launch' || mode === 'list'}
-		<!-- ═══════ TOKEN / BOTH / LAUNCH WIZARD ═══════ -->
-		<div class="create-split">
-			<div class="form-wrapper">
-				<button class="back-link" onclick={backToSelection}>
-					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-					{$t('ci.backToSelection')}
-				</button>
+	<!-- ═══════ TOKEN CREATION WIZARD ═══════ -->
+	<div class="create-split">
+		<div class="form-wrapper">
+			{#if mode}
 				<div class="form-header">
-					<span class="badge badge-cyan">{mode === 'token' ? $t('ci.titleToken') : mode === 'launch' ? $t('ci.titleLaunch') : $t('ci.titleBoth')}</span>
+					<span class="badge badge-cyan">{mode === 'token' ? $t('ci.titleToken') : mode === 'launch' ? $t('ci.titleLaunch') : mode === 'list' ? 'Create & List' : $t('ci.titleBoth')}</span>
 					<h1 class="syne text-2xl sm:text-3xl font-bold text-white mt-3 mb-1">{pageTitle}</h1>
-					<p class="text-gray-500 font-mono text-sm">{mode === 'token' ? $t('ci.metaToken') : mode === 'launch' ? $t('ci.metaLaunch') : $t('ci.metaBoth')}</p>
+					<p class="text-gray-500 font-mono text-sm">{mode === 'token' ? $t('ci.metaToken') : mode === 'launch' ? $t('ci.metaLaunch') : mode === 'list' ? 'Create and list your token on a DEX.' : $t('ci.metaBoth')}</p>
 				</div>
-				<TokenForm {supportedNetworks} {addFeedback} {updateTokenInfo} onPreviewChange={handlePreviewChange} initialData={initialFormData} forceMode={mode === 'token' ? 'token' : mode === 'launch' ? 'launch' : mode === 'list' ? 'list' : 'both'} />
-			</div>
-			{#if previewState}
+			{/if}
+			<TokenForm {supportedNetworks} {addFeedback} {updateTokenInfo} onPreviewChange={handlePreviewChange} initialData={initialFormData} initialMode={modeFromUrl ?? undefined} onModeChange={handleModeChange} {resetSignal} />
+		</div>
+			{#if previewState && mode}
 				<div class="create-preview-col">
 					<DisplayPreview
 						name={previewState.name}
@@ -1606,239 +1533,6 @@
 				</div>
 			{/if}
 		</div>
-
-	{:else if mode === 'launch'}
-		<!-- ═══════ LAUNCH EXISTING TOKEN FORM ═══════ -->
-		<div class="form-wrapper">
-			<button class="back-link" onclick={backToSelection}>
-				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-				{$t('ci.backToSelection')}
-			</button>
-			<div class="form-header">
-				<span class="badge badge-cyan">{$t('ci.titleLaunch')}</span>
-				<h1 class="syne text-2xl sm:text-3xl font-bold text-white mt-3 mb-1">{$t('ci.titleLaunch')}</h1>
-				<p class="text-gray-500 font-mono text-sm">{$t('ci.metaLaunch')}</p>
-			</div>
-			<div class="form-box card p-5 sm:p-8">
-
-				{#if launchStep === 'done' && launchDeployedAddress}
-					<!-- Success state -->
-					<div class="card p-6 text-center">
-						<div class="text-4xl mb-4 syne font-bold text-emerald-400">Done</div>
-						<h2 class="syne text-xl font-bold text-white mb-2">{$t('ci.launchSuccess')}</h2>
-						<p class="text-gray-400 font-mono text-sm mb-4">{launchTokenName} ({launchTokenSymbol}) is now live on {launchNetwork?.name}.</p>
-						<div class="flex gap-3 justify-center flex-wrap">
-							<a href="/launchpad/{launchDeployedAddress}" class="btn-primary text-sm px-5 py-2.5 no-underline">
-								{$t('ci.viewLaunch')} ->
-							</a>
-							<button onclick={backToSelection} class="btn-secondary text-sm px-5 py-2.5 cursor-pointer">
-								{$t('common.back')}
-							</button>
-						</div>
-					</div>
-				{:else}
-					<form class="launch-form" autocomplete="off" onsubmit={(e) => { e.preventDefault(); submitLaunch(); }}>
-						<!-- 1. Network select -->
-						<div class="field-group mb-4">
-							<label class="label-text" for="launch-network">{$t('ci.selectNetwork')} <Tooltip text="The network where your token is deployed." /></label>
-							<select id="launch-network" class="input-field" bind:value={launchChainId}>
-								<option value={undefined}>Select a network</option>
-								{#each launchNetworks as n (n.chain_id)}
-									<option value={n.chain_id}>{n.name} ({n.native_coin})</option>
-								{/each}
-							</select>
-						</div>
-
-						<!-- 2. Token address -->
-						<div class="field-group mb-4">
-							<label class="label-text" for="launch-token-addr">{$t('ci.tokenAddress')} <Tooltip text="Paste the contract address of your ERC-20 token." /></label>
-							<input
-								id="launch-token-addr"
-								type="text"
-								class="input-field"
-								placeholder="0x..."
-								bind:value={launchTokenAddress}
-							/>
-							{#if launchTokenLoading}
-								<span class="text-gray-500 text-xs font-mono mt-1">{$t('ci.loadingTokenInfo')}</span>
-							{:else if launchTokenName && launchTokenAddress}
-								<div class="card p-3 mt-2">
-									<div class="flex justify-between items-center">
-										<span class="text-emerald-400 text-sm font-mono font-semibold">{launchTokenName} ({launchTokenSymbol})</span>
-										<span class="text-gray-500 text-xs font-mono">{launchTokenDecimals} decimals</span>
-									</div>
-									<div class="flex justify-between items-center mt-1">
-										<span class="text-gray-400 text-xs font-mono">{$t('ci.supply')}: {parseFloat(ethers.formatUnits(launchTokenSupply, launchTokenDecimals)).toLocaleString()}</span>
-										<span class="text-gray-400 text-xs font-mono">{$t('ci.balance')}: {launchTokenBalance > 0n ? parseFloat(ethers.formatUnits(launchTokenBalance, launchTokenDecimals)).toLocaleString() : '0'}</span>
-									</div>
-								</div>
-							{:else if launchTokenAddress && ethers.isAddress(launchTokenAddress) && !launchTokenLoading && launchChainId}
-								<span class="text-red-400 text-xs font-mono mt-1">{$t('ci.tokenNotFound')}</span>
-							{/if}
-						</div>
-
-						<!-- 3. Tokens for launch -->
-						{#if launchTokenName}
-							<div class="field-group mb-4">
-								<label class="label-text" for="launch-amount">{$t('ci.tokensForLaunch')} <Tooltip text="How many tokens to deposit into the bonding curve for sale." /></label>
-								<input
-									id="launch-amount"
-									type="text"
-									class="input-field"
-									placeholder="0"
-									bind:value={launchAmount}
-								/>
-								<div class="flex gap-2 mt-2">
-									{#each [25, 50, 75, 100] as pct}
-										<button
-											type="button"
-											class="btn-secondary text-xs px-3 py-1.5 cursor-pointer"
-											onclick={() => setLaunchAmountPct(pct)}
-										>{pct}%</button>
-									{/each}
-								</div>
-							</div>
-
-							<!-- 4. Launch config -->
-							<div class="card p-4 mb-4">
-								<h3 class="syne text-base font-bold text-white mb-4">{$t('ci.launchConfig')}</h3>
-
-								<div class="field-group mb-3">
-									<label class="label-text" for="launch-curve">{$t('ci.curveType')} <Tooltip text="Controls how price increases as tokens are bought." /></label>
-									<select id="launch-curve" class="input-field" bind:value={launchCurveType}>
-										{#each CURVE_TYPES as ct, i}
-											<option value={i}>{ct}</option>
-										{/each}
-									</select>
-								</div>
-
-								<div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
-									<div class="field-group">
-										<label class="label-text" for="launch-soft-cap">{$t('ci.softCap')} <Tooltip text="Minimum to raise. If not reached, buyers get a full refund." /></label>
-										<input id="launch-soft-cap" type="number" class="input-field" bind:value={launchSoftCap} min="0" step="any" />
-									</div>
-									<div class="field-group">
-										<label class="label-text" for="launch-hard-cap">{$t('ci.hardCap')} <Tooltip text="Maximum raise. When hit, token auto-graduates to DEX." /></label>
-										<input id="launch-hard-cap" type="number" class="input-field" bind:value={launchHardCap} min="0" step="any" />
-									</div>
-								</div>
-
-								<div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
-									<div class="field-group">
-										<label class="label-text" for="launch-duration">{$t('ci.durationDays')} <Tooltip text="How long the curve stays open. If soft cap isn't met, refunds are enabled." /></label>
-										<select id="launch-duration" class="input-field" bind:value={launchDurationDays}>
-											<option value="7">7 days</option>
-											<option value="14">14 days</option>
-											<option value="30">30 days</option>
-											<option value="60">60 days</option>
-											<option value="90">90 days</option>
-										</select>
-									</div>
-									<div class="field-group">
-										<label class="label-text" for="launch-max-buy">Max buy per wallet <Tooltip text="Max % of hard cap one wallet can buy." /></label>
-										<select id="launch-max-buy" class="input-field" bind:value={launchMaxBuyPct}>
-											<option value="0.5">0.5%</option>
-											<option value="1">1%</option>
-											<option value="2">2%</option>
-											<option value="3">3%</option>
-											<option value="5">5%</option>
-										</select>
-									</div>
-								</div>
-
-								<div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
-									<div class="field-group">
-										<label class="label-text" for="launch-creator-alloc">Creator allocation <Tooltip text="% of launch tokens reserved for you, released over vesting period." /></label>
-										<select id="launch-creator-alloc" class="input-field" bind:value={launchCreatorAllocPct}>
-											<option value="0">None</option>
-											<option value="1">1%</option>
-											<option value="2">2%</option>
-											<option value="3">3%</option>
-											<option value="5">5%</option>
-											<option value="10">10%</option>
-										</select>
-									</div>
-									{#if parseFloat(launchCreatorAllocPct) > 0}
-										<div class="field-group">
-											<label class="label-text" for="launch-vesting">{$t('ci.vestingDays')} <Tooltip text="Tokens unlock gradually over this period. Longer = stronger commitment signal." /></label>
-											<select id="launch-vesting" class="input-field" bind:value={launchVestingDays}>
-												<option value="0">No vesting</option>
-												<option value="7">7 days</option>
-												<option value="14">14 days</option>
-												<option value="30">30 days</option>
-												<option value="60">60 days</option>
-												<option value="90">90 days</option>
-											</select>
-										</div>
-									{/if}
-								</div>
-							</div>
-
-							<!-- 5. Review -->
-							<div class="card p-4 mb-4">
-								<h3 class="syne text-base font-bold text-white mb-3">{$t('ci.reviewLaunch')}</h3>
-								<div class="detail-grid">
-									<div class="detail-row">
-										<span class="detail-label">Token</span>
-										<span class="detail-value text-cyan-300">{launchTokenName} ({launchTokenSymbol})</span>
-									</div>
-									<div class="detail-row">
-										<span class="detail-label">Network</span>
-										<span class="detail-value">{launchNetwork?.name ?? '-'}</span>
-									</div>
-									<div class="detail-row">
-										<span class="detail-label">Tokens for launch</span>
-										<span class="detail-value">{launchAmount ? parseFloat(launchAmount).toLocaleString() : '0'}</span>
-									</div>
-									<div class="detail-row">
-										<span class="detail-label">Curve</span>
-										<span class="detail-value">{CURVE_TYPES[launchCurveType as 0|1|2|3] ?? 'Linear'}</span>
-									</div>
-									<div class="detail-row">
-										<span class="detail-label">Soft / Hard Cap</span>
-										<span class="detail-value">${launchSoftCap} / ${launchHardCap}</span>
-									</div>
-									<div class="detail-row">
-										<span class="detail-label">Duration</span>
-										<span class="detail-value">{launchDurationDays} days</span>
-									</div>
-									<div class="detail-row">
-										<span class="detail-label">Max buy</span>
-										<span class="detail-value">{launchMaxBuyPct}%</span>
-									</div>
-									{#if parseFloat(launchCreatorAllocPct) > 0}
-										<div class="detail-row">
-											<span class="detail-label">Creator alloc</span>
-											<span class="detail-value">{launchCreatorAllocPct}% ({launchVestingDays}d vesting)</span>
-										</div>
-									{/if}
-								</div>
-							</div>
-
-							<!-- 6. Submit -->
-							<button
-								type="submit"
-								class="btn-primary w-full py-3.5 text-base justify-center cursor-pointer"
-								disabled={launchSubmitting || !launchTokenName || !launchAmount || parseFloat(launchAmount) <= 0}
-							>
-								{#if launchSubmitting}
-									<span class="spinner-inline"></span>
-									{launchStep === 'fee' ? 'Fetching fee...' :
-									 launchStep === 'approving-fee' ? $t('ci.approvingFee') :
-									 launchStep === 'creating' ? $t('ci.creatingLaunch') :
-									 launchStep === 'approving-tokens' ? $t('ci.approvingTokens') :
-									 launchStep === 'depositing' ? $t('ci.depositingTokens') :
-									 launchStep === 'saving' ? 'Saving...' : $t('ci.creatingLaunch')}
-								{:else}
-									{$t('ci.createLaunch')}
-								{/if}
-							</button>
-						{/if}
-					</form>
-				{/if}
-			</div>
-		</div>
-	{/if}
 </div>
 
 <style>
@@ -2148,90 +1842,6 @@
 	}
 
 	select option { background: var(--select-bg); color: var(--text-heading); }
-
-	/* ─── Intent Selection Grid ─── */
-	.intent-grid {
-		display: grid;
-		grid-template-columns: 1fr;
-		gap: 16px;
-		max-width: 800px;
-		margin: 0 auto;
-	}
-	@media (min-width: 640px) {
-		.intent-grid {
-			grid-template-columns: 1fr 1.3fr 1fr;
-			gap: 20px;
-			align-items: stretch;
-		}
-	}
-
-	.intent-card {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		text-align: center;
-		padding: 28px 20px;
-		cursor: pointer;
-		transition: all 0.25s;
-		border: 1px solid var(--border);
-		background: var(--bg-surface);
-		border-radius: 16px;
-		position: relative;
-	}
-	.intent-card:hover {
-		transform: translateY(-3px);
-		box-shadow: 0 12px 40px rgba(0,0,0,0.3);
-		border-color: rgba(0,210,255,0.2);
-		background: rgba(0,210,255,0.03);
-	}
-
-	.intent-card-featured {
-		padding: 36px 24px;
-		border: 1.5px solid rgba(0, 210, 255, 0.3);
-		background: var(--bg-surface);
-		position: relative;
-		overflow: hidden;
-	}
-	.intent-card-featured::before {
-		content: '';
-		position: absolute;
-		inset: 0;
-		background: radial-gradient(ellipse at 50% 0%, rgba(0, 210, 255, 0.08), transparent 70%);
-		pointer-events: none;
-	}
-	.intent-card-featured:hover {
-		border-color: rgba(0, 210, 255, 0.5);
-		box-shadow: 0 0 40px rgba(0, 210, 255, 0.15), 0 12px 40px rgba(0, 0, 0, 0.3);
-		background: rgba(0, 210, 255, 0.03);
-	}
-
-	.intent-badge-top {
-		margin-bottom: 12px;
-	}
-
-	.intent-icon {
-		width: 56px;
-		height: 56px;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		border-radius: 14px;
-	}
-	.intent-icon.cyan {
-		background: rgba(0,210,255,0.1);
-		color: #00d2ff;
-		border: 1px solid rgba(0,210,255,0.2);
-	}
-	.intent-icon.emerald {
-		background: rgba(16,185,129,0.1);
-		color: #10b981;
-		border: 1px solid rgba(16,185,129,0.2);
-	}
-	.intent-icon.purple {
-		background: rgba(139,92,246,0.1);
-		color: #a78bfa;
-		border: 1px solid rgba(139,92,246,0.2);
-	}
 
 	.back-link {
 		display: inline-flex;

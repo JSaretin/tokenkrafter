@@ -3,20 +3,16 @@
 		isMintable = $bindable(false),
 		isTaxable = $bindable(false),
 		isPartner = $bindable(false),
-		launchEnabled = $bindable(false),
-		listingEnabled = $bindable(false)
 	}: {
 		isMintable: boolean;
 		isTaxable: boolean;
 		isPartner: boolean;
-		launchEnabled: boolean;
-		listingEnabled: boolean;
 	} = $props();
 
 	const features: { key: string; icon: string; title: string; desc: string; badge?: string }[] = [
-		{ key: 'mintable', icon: '🪙', title: 'Mintable', desc: 'Mint additional tokens after deployment' },
-		{ key: 'taxable', icon: '💸', title: 'Taxable', desc: 'Collect a fee on every trade' },
-		{ key: 'partner', icon: '🤝', title: 'Partnership', desc: 'Platform promotion & visibility boost', badge: 'Recommended' }
+		{ key: 'mintable', icon: '\u{1FA99}', title: 'Mintable', desc: 'Mint additional tokens after deployment' },
+		{ key: 'taxable', icon: '\u{1F4B8}', title: 'Taxable', desc: 'Collect a fee on every trade' },
+		{ key: 'partner', icon: '\u{1F91D}', title: 'Partnership', desc: 'Platform promotion & visibility boost', badge: 'Recommended' }
 	];
 
 	function toggleFeature(key: string) {
@@ -31,20 +27,6 @@
 		if (key === 'partner') return isPartner;
 		return false;
 	}
-
-	type DeployMode = 'launch' | 'list' | 'none';
-	let mode: DeployMode = $derived(launchEnabled ? 'launch' : listingEnabled ? 'list' : 'none');
-
-	function setMode(m: DeployMode) {
-		launchEnabled = m === 'launch';
-		listingEnabled = m === 'list';
-	}
-
-	const modes = [
-		{ key: 'launch' as DeployMode, icon: '\u{1F680}', title: 'Launch with bonding curve', desc: 'Fundraise before DEX listing' },
-		{ key: 'list' as DeployMode, icon: '\u{1F4CA}', title: 'List directly on DEX', desc: 'Provide your own liquidity' },
-		{ key: 'none' as DeployMode, icon: '\u{1F4E6}', title: 'Deploy token only', desc: 'Manual setup later' }
-	];
 </script>
 
 <div class="features">
@@ -59,20 +41,6 @@
 					{#if f.key === 'partner' && isPartner}<span class="note">1% platform fee on trades</span>{/if}
 				</div>
 				<span class="toggle" class:on={featureOn(f.key)}><span class="knob"></span></span>
-			</button>
-		{/each}
-	</div>
-
-	<h3 class="heading">Deployment Mode</h3>
-	<div class="cards">
-		{#each modes as m}
-			<button class="card radio" class:on={mode === m.key} onclick={() => setMode(m.key)}>
-				<span class="icon">{m.icon}</span>
-				<div class="info">
-					<span class="title">{m.title}</span>
-					<span class="desc">{m.desc}</span>
-				</div>
-				<span class="radio-dot" class:on={mode === m.key}></span>
 			</button>
 		{/each}
 	</div>
@@ -106,13 +74,4 @@
 		border-radius: 50%; background: rgba(255,255,255,0.5); transition: all 0.2s;
 	}
 	.toggle.on .knob { left: 18px; background: #00d2ff; }
-	.radio-dot {
-		width: 18px; height: 18px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.15);
-		flex-shrink: 0; position: relative; transition: border-color 0.2s;
-	}
-	.radio-dot.on { border-color: #00d2ff; }
-	.radio-dot.on::after {
-		content: ''; position: absolute; top: 3px; left: 3px; width: 8px; height: 8px;
-		border-radius: 50%; background: #00d2ff;
-	}
 </style>

@@ -3,7 +3,15 @@
 	import { ethers } from 'ethers';
 	import { getContext, onMount } from 'svelte';
 
-	const CHAIN_MAP: Record<string, { id: number; name: string; symbol: string; rpc: string; gecko: string; explorer: string }> = {
+	import type { SupportedNetworks } from '$lib/structure';
+
+	// Try to get networks from context (layout provides them)
+	let _getNetworks: (() => SupportedNetworks) | undefined;
+	try { _getNetworks = getContext('supportedNetworks'); } catch {}
+	let supportedNetworks = $derived(_getNetworks?.() || []);
+
+	// Fallback chain data for public pages where context may not exist
+	const CHAIN_FALLBACK: Record<string, { id: number; name: string; symbol: string; rpc: string; gecko: string; explorer: string }> = {
 		bsc: { id: 56, name: 'BNB Smart Chain', symbol: 'BNB', rpc: 'https://bsc-rpc.publicnode.com', gecko: 'bsc', explorer: 'https://bscscan.com' },
 		eth: { id: 1, name: 'Ethereum', symbol: 'ETH', rpc: 'https://eth.llamarpc.com', gecko: 'eth', explorer: 'https://etherscan.io' },
 		base: { id: 8453, name: 'Base', symbol: 'ETH', rpc: 'https://mainnet.base.org', gecko: 'base', explorer: 'https://basescan.org' },
@@ -13,7 +21,17 @@
 
 	let chainSlug = $derived(page.params.chain?.toLowerCase() || 'bsc');
 	let tokenAddress = $derived(page.params.address?.toLowerCase() || '');
-	let chainInfo = $derived(CHAIN_MAP[chainSlug] || CHAIN_MAP.bsc);
+
+	// Prefer DB config, fallback to hardcoded
+	let chainInfo = $derived.by(() => {
+		const dbNet = supportedNetworks.find(n => n.symbol?.toLowerCase() === chainSlug || n.chain_id === CHAIN_FALLBACK[chainSlug]?.id);
+		if (dbNet) return {
+			id: dbNet.chain_id, name: dbNet.name, symbol: dbNet.native_coin,
+			rpc: dbNet.rpc, gecko: dbNet.gecko_network || chainSlug,
+			explorer: dbNet.explorer_url || CHAIN_FALLBACK[chainSlug]?.explorer || 'https://bscscan.com',
+		};
+		return CHAIN_FALLBACK[chainSlug] || CHAIN_FALLBACK.bsc;
+	});
 
 	// ── Data states ──
 	let dbData = $state<any>(null);
