@@ -185,13 +185,11 @@
 		<!-- Total Supply -->
 		<div class="field-group">
 			<label class="label" for="bi-supply">Total Supply</label>
-			<div class="supply-row">
-				<input id="bi-supply" class="input-field supply-input" type="number" placeholder="e.g. 1000000000" bind:value={totalSupply} min="1" />
-				<div class="preset-row">
-					{#each supplyPresets as p}
-						<button class="preset-btn" tabindex="-1" onclick={() => (totalSupply = p.value)}>{p.label}</button>
-					{/each}
-				</div>
+			<input id="bi-supply" class="input-field" type="number" placeholder="e.g. 1000000000" bind:value={totalSupply} min="1" />
+			<div class="supply-quick">
+				{#each supplyPresets as p}
+					<button class="supply-pill" class:active={totalSupply === p.value} tabindex="-1" onclick={() => (totalSupply = p.value)}>{p.label}</button>
+				{/each}
 			</div>
 			{#if formattedSupply()}
 				<span class="hint">{formattedSupply()}</span>
@@ -292,9 +290,16 @@
 	.meta-fields { display: flex; flex-direction: column; gap: 0.75rem; padding-top: 0.25rem; }
 	.meta-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
 	.name-symbol-row { display: flex; gap: 0.75rem; }
-	.supply-row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
-	.supply-input { flex: 1; min-width: 0; }
 	@media (max-width: 500px) { .name-symbol-row { flex-direction: column; } }
+	.supply-quick { display: flex; gap: 4px; margin-top: 4px; }
+	.supply-pill {
+		font-family: 'Space Mono', monospace; font-size: 0.68rem;
+		padding: 3px 10px; border-radius: 99px;
+		border: 1px solid rgba(255,255,255,0.06); background: rgba(255,255,255,0.02);
+		color: rgba(255,255,255,0.35); cursor: pointer; transition: all 0.12s;
+	}
+	.supply-pill:hover { border-color: rgba(0,210,255,0.2); color: rgba(255,255,255,0.6); }
+	.supply-pill.active { border-color: rgba(0,210,255,0.3); color: #00d2ff; background: rgba(0,210,255,0.06); }
 
 	.hidden-file { display: none; }
 	.logo-upload-btn {

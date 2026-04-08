@@ -38,6 +38,7 @@
 	import type { SupportedNetwork } from '$lib/structure';
 	import { BasicInfo, Features, TaxConfig as TaxStep, ListingConfig as ListingStep, Review } from './steps';
 	import BondingCurveChart from '$lib/BondingCurveChart.svelte';
+	import DisplayPreview from './DisplayPreview.svelte';
 
 	type WizardStep = 'basics' | 'features' | 'tax' | 'launch' | 'listing' | 'review';
 	let wizardStep = $state<WizardStep>('basics');
@@ -259,6 +260,7 @@
 	const CURVE_LABELS = ['Linear', 'Square Root', 'Quadratic', 'Exponential'];
 </script>
 
+<div class="wz-split">
 <div class="wz">
 	<!-- Step indicator -->
 	<div class="wz-steps">
@@ -410,8 +412,31 @@
 	</div>
 </div>
 
+<!-- Live Preview (desktop: sticky sidebar, mobile: hidden) -->
+<div class="wz-preview">
+	<DisplayPreview
+		{name} {symbol} {totalSupply} {decimals}
+		{isMintable} {isTaxable} {isPartner}
+		networkName={selectedNetwork?.name ?? ''}
+		{launchEnabled}
+		launchTokensPct={launchTokensPct}
+		launchCurveType={launchCurveType}
+		launchSoftCap={launchSoftCap}
+		launchHardCap={launchHardCap}
+		{protectionEnabled}
+		{maxWalletPct} {maxTransactionPct}
+		{buyTaxPct} {sellTaxPct} {transferTaxPct}
+		{wizardStep}
+		logoUrl={tokenLogoUrl}
+	/>
+</div>
+</div>
+
 <style>
-	.wz { max-width: 640px; margin: 0 auto; }
+	.wz-split { display: flex; gap: 24px; max-width: 1000px; margin: 0 auto; }
+	.wz { flex: 1; min-width: 0; max-width: 640px; }
+	.wz-preview { width: 280px; flex-shrink: 0; }
+	@media (max-width: 860px) { .wz-preview { display: none; } .wz-split { max-width: 640px; } }
 
 	/* Steps indicator */
 	.wz-steps { display: flex; align-items: center; gap: 0; margin-bottom: 24px; padding: 0 8px; }

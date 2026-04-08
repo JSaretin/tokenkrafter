@@ -147,6 +147,7 @@
 	let activeWithdrawal: any = $state(null);
 	let withdrawals: any[] = $state([]);
 	let historyLoading = $state(false);
+	let historyFilter = $state<'all' | 'pending' | 'completed' | 'timeout'>('all');
 
 	let selectedNetwork = $derived(tradeNetworks[selectedNetworkIdx]);
 
@@ -1749,12 +1750,24 @@
 		{#if showHistory}
 			<div class="history-panel">
 				<h3 class="history-title">Withdrawal History</h3>
+				<div class="history-filters">
+					{#each ['all', 'pending', 'completed', 'timeout'] as f}
+						<button class="history-filter" class:active={historyFilter === f} onclick={() => historyFilter = f}>{f === 'all' ? 'All' : f === 'pending' ? 'Pending' : f === 'completed' ? 'Completed' : 'Timeout'}</button>
+					{/each}
+				</div>
 				{#if historyLoading}
 					<div class="history-loading"><div class="spinner"></div></div>
 				{:else if withdrawals.length === 0}
 					<p class="history-empty">No withdrawals yet</p>
 				{:else}
-					{#each [...withdrawals].sort((a, b) => Number(b.createdAt) - Number(a.createdAt)) as w, i}
+					{#each [...withdrawals].sort((a, b) => Number(b.createdAt) - Number(a.createdAt)).filter(w => {
+						if (historyFilter === 'all') return true;
+						const to = w.status === 0 && Date.now() / 1000 > w.createdAt + payoutTimeoutMins * 60;
+						if (historyFilter === 'timeout') return to;
+						if (historyFilter === 'pending') return w.status === 0 && !to;
+						if (historyFilter === 'completed') return w.status === 1;
+						return true;
+					}) as w, i}
 						{@const timedOut = w.status === 0 && Date.now() / 1000 > w.createdAt + payoutTimeoutMins * 60}
 						{@const sc = timedOut ? 'red' : withdrawStatusColor(w.status)}
 						{@const canCancel = timedOut}
@@ -2512,8 +2525,16 @@
 	}
 	.history-title {
 		font-family: 'Syne', sans-serif; font-size: 15px; font-weight: 700;
-		color: var(--text-heading); margin: 0 0 12px;
+		color: var(--text-heading); margin: 0 0 8px;
 	}
+	.history-filters { display: flex; gap: 4px; margin-bottom: 10px; }
+	.history-filter {
+		padding: 4px 10px; border-radius: 99px; border: 1px solid rgba(255,255,255,0.06);
+		background: transparent; color: #475569; font-family: 'Space Mono', monospace;
+		font-size: 10px; cursor: pointer; transition: all 0.12s; text-transform: capitalize;
+	}
+	.history-filter:hover { color: #94a3b8; border-color: rgba(255,255,255,0.1); }
+	.history-filter.active { color: #00d2ff; border-color: rgba(0,210,255,0.25); background: rgba(0,210,255,0.06); }
 	.history-loading { display: flex; justify-content: center; padding: 20px; }
 	.history-empty { text-align: center; color: var(--text-muted); font-family: 'Space Mono', monospace; font-size: 12px; padding: 20px; }
 	.history-row {

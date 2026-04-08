@@ -912,6 +912,24 @@
 			if (deployedTokenAddress && tokenInfo.metadata) {
 				const m = tokenInfo.metadata;
 				if (m.logoUrl || m.description || m.website || m.twitter || m.telegram) {
+					// Upload logo file if pending
+					let finalLogoUrl = m.logoUrl;
+					const pendingFile = (window as any).__pendingLogoFile as File | undefined;
+					if (pendingFile && deployedTokenAddress) {
+						try {
+							const fd = new FormData();
+							fd.append('file', pendingFile);
+							fd.append('address', deployedTokenAddress.toLowerCase());
+							fd.append('chain_id', String(tokenInfo.network.chain_id));
+							const uploadRes = await fetch('/api/token-metadata/upload', { method: 'POST', body: fd });
+							if (uploadRes.ok) {
+								const { logo_url } = await uploadRes.json();
+								finalLogoUrl = logo_url;
+							}
+							delete (window as any).__pendingLogoFile;
+						} catch {}
+					}
+
 					fetch('/api/token-metadata', {
 						method: 'PUT',
 						headers: { 'Content-Type': 'application/json' },
@@ -920,13 +938,13 @@
 							chain_id: tokenInfo.network.chain_id,
 							name: tokenInfo.name,
 							symbol: tokenInfo.symbol,
-							logo_url: m.logoUrl || null,
+							logo_url: finalLogoUrl?.startsWith('data:') ? null : finalLogoUrl || null,
 							description: m.description || null,
 							website: m.website || null,
 							twitter: m.twitter || null,
 							telegram: m.telegram || null,
 						}),
-					}).catch(() => {}); // best-effort, don't block
+					}).catch(() => {});
 				}
 			}
 

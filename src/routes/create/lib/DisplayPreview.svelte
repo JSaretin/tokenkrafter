@@ -19,7 +19,8 @@
 		buyTaxPct,
 		sellTaxPct,
 		transferTaxPct,
-		wizardStep
+		wizardStep,
+		logoUrl = '',
 	}: {
 		name: string;
 		symbol: string;
@@ -41,6 +42,7 @@
 		sellTaxPct: string;
 		transferTaxPct: string;
 		wizardStep: string;
+		logoUrl?: string;
 	} = $props();
 
 	const CURVE_LABELS = ['Linear', 'Sqrt', 'Quadratic', 'Exponential'];
@@ -63,9 +65,13 @@
 <div class="preview-card">
 	<!-- Token Identity -->
 	<div class="token-header">
-		<div class="token-icon" class:has-name={name.trim()}>
-			{symbol ? symbol.slice(0, 3).toUpperCase() : '?'}
-		</div>
+		{#if logoUrl}
+			<img src={logoUrl} alt={symbol} class="token-logo" />
+		{:else}
+			<div class="token-icon" class:has-name={name.trim()}>
+				{symbol ? symbol.slice(0, 3).toUpperCase() : '?'}
+			</div>
+		{/if}
 		<div class="token-identity">
 			<div class="token-name syne">{name || 'Token Name'}</div>
 			<div class="token-symbol">{symbol ? `$${symbol.toUpperCase()}` : '$SYMBOL'}</div>
@@ -208,6 +214,10 @@
 	}
 	.token-icon.has-name {
 		background: linear-gradient(135deg, rgba(0,210,255,0.2), rgba(58,123,213,0.2));
+	}
+	.token-logo {
+		width: 44px; height: 44px; border-radius: 12px; object-fit: cover;
+		border: 1px solid rgba(0,210,255,0.2); flex-shrink: 0;
 	}
 
 	.token-identity { min-width: 0; }
