@@ -346,8 +346,14 @@
 			if (net.trade_router_address) {
 				try {
 					const router = new ethers.Contract(net.trade_router_address, TRADE_ROUTER_ABI, provider);
-					const state = await router.getState();
-					payoutTimeoutMins = Math.round(Number(state.payoutTimeout) / 60);
+					try {
+						const state = await router.getState();
+						payoutTimeoutMins = Math.round(Number(state.payoutTimeout) / 60);
+					} catch {
+						// Fallback: read payoutTimeout directly
+						const timeout = await router.payoutTimeout();
+						payoutTimeoutMins = Math.round(Number(timeout) / 60);
+					}
 				} catch {}
 			}
 
@@ -1050,6 +1056,10 @@
 
 				withdrawStep = 4; // all done
 				showConfirmModal = false;
+				// Reset form
+				amountIn = '';
+				previewFee = 0n;
+				previewNet = 0n;
 
 				activeWithdrawal = {
 					id: preData.id,

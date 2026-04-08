@@ -38,6 +38,7 @@ export const TRADE_ROUTER_ABI = [
 	'function pendingCount() view returns (uint256)',
 	'function totalWithdrawals() view returns (uint256)',
 	'function getAdmins() view returns (address[])',
+	'function getState() view returns (tuple(address owner, uint256 feeBps, uint256 payoutTimeout, address platformWallet, uint256 totalEscrow, uint256 pendingCount, uint256 totalWithdrawals, bool paused, uint256 maxSlippageBps, bool affiliateEnabled, uint256 affiliateShareBps, address[] admins))',
 	'function paused() view returns (bool)',
 	'function maxSlippageBps() view returns (uint256)',
 	'function setFeeBps(uint256 newFee) external',

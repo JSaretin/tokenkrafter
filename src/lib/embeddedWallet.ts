@@ -93,7 +93,7 @@ export async function signInWithGoogle(forceAccountPicker = false): Promise<void
 	sessionStorage.setItem('wallet_pending', 'true');
 
 	const opts: any = {
-		redirectTo: window.location.origin + window.location.pathname,
+		redirectTo: window.location.origin + window.location.pathname + window.location.search,
 	};
 	// Force Google to show account picker
 	if (forceAccountPicker) {

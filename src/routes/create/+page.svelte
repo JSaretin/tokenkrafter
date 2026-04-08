@@ -21,25 +21,45 @@
 	let tokenFromUrl = $derived(page.url.searchParams.get('token') || '');
 	let chainFromUrl = $derived(page.url.searchParams.get('chain') || '');
 
-	// Resolve initial mode from URL params
+	// Resolve mode from URL params — also resets when navigating to bare /create
+	let prevModeParam: string | null = null;
 	$effect(() => {
-		if (mode !== null) return; // already set by user click
+		const currentModeParam = modeFromUrl;
+		const hadMode = prevModeParam;
+		prevModeParam = currentModeParam;
+
 		if (tokenFromUrl) {
 			mode = 'launch';
 			launchTokenAddress = tokenFromUrl;
-		} else if (modeFromUrl === 'token' || modeFromUrl === 'launch' || modeFromUrl === 'both' || modeFromUrl === 'list') {
-			mode = modeFromUrl;
+		} else if (currentModeParam === 'token' || currentModeParam === 'launch' || currentModeParam === 'both' || currentModeParam === 'list') {
+			mode = currentModeParam;
 		} else if (launchFromUrl) {
 			mode = 'both';
+		} else if (mode !== null && hadMode && !currentModeParam) {
+			// URL lost its mode param (user clicked nav link to bare /create) — reset
+			mode = null;
 		}
 	});
 
 	function selectMode(m: IntentMode) {
 		mode = m;
+		// Update URL so OAuth redirects back to the correct wizard
+		const url = new URL(window.location.href);
+		url.searchParams.set('mode', m);
+		history.replaceState({}, '', url.toString());
 	}
 
 	function backToSelection() {
 		mode = null;
+		// Clear mode from URL
+		const url = new URL(window.location.href);
+		url.searchParams.delete('mode');
+		url.searchParams.delete('launch');
+		url.searchParams.delete('token');
+		url.searchParams.delete('chain');
+		history.replaceState({}, '', url.pathname);
+		// Clear saved form draft
+		try { sessionStorage.removeItem('tk_create_form_draft'); } catch {}
 		// Reset launch form state
 		launchTokenAddress = '';
 		launchTokenName = '';
@@ -300,6 +320,15 @@
 	let networkProviders = $derived(getNetworkProviders());
 	let providersReady = $derived(getProvidersReady());
 
+	const COIN_LOGOS: Record<string, string> = {
+		BNB: 'https://assets.coingecko.com/coins/images/825/small/bnb-icon2_2x.png',
+		ETH: 'https://assets.coingecko.com/coins/images/279/small/ethereum.png',
+		USDT: 'https://assets.coingecko.com/coins/images/325/small/Tether.png',
+		USDC: 'https://assets.coingecko.com/coins/images/6319/small/usdc.png',
+		BUSD: 'https://assets.coingecko.com/coins/images/9576/small/BUSD.png',
+		MATIC: 'https://assets.coingecko.com/coins/images/4713/small/polygon.png',
+	};
+
 	let previewState: PreviewState | null = $state(null);
 	function handlePreviewChange(state: PreviewState) {
 		previewState = state;
@@ -310,7 +339,9 @@
 	let showPaymentModal = $state(false);
 	let isCreating = $state(false);
 	let step = $state<'idle' | 'review' | 'checking-balance' | 'waiting-deposit' | 'approving' | 'creating' | 'approving-listing' | 'adding-liquidity' | 'done'>('idle');
-	let deployAfterConnect = $state(false);
+	let deployAfterConnect = $state(
+		typeof sessionStorage !== 'undefined' && sessionStorage.getItem('tk_deploy_after_connect') === 'true'
+	);
 	let deployedTokenAddress: string | null = $state(null);
 	let deployTxHash: string | null = $state(null);
 
@@ -416,6 +447,7 @@
 	$effect(() => {
 		if (deployAfterConnect && signer && userAddress) {
 			deployAfterConnect = false;
+			try { sessionStorage.removeItem('tk_deploy_after_connect'); } catch {}
 			confirmAndDeploy();
 		}
 	});
@@ -984,6 +1016,7 @@
 			}
 
 			step = 'done';
+				try { sessionStorage.removeItem('tk_create_form_draft'); } catch {}
 		} catch (e: any) {
 			const msg = e.shortMessage || e.message || 'Transaction failed';
 			addFeedback({ message: `Error: ${msg}`, type: 'error' });
@@ -1120,6 +1153,7 @@
 		if (!tokenInfo) return;
 		if (!signer || !userAddress) {
 			deployAfterConnect = true;
+			try { sessionStorage.setItem('tk_deploy_after_connect', 'true'); } catch {}
 			connectWallet();
 			return;
 		}
@@ -1309,37 +1343,43 @@
 				</div>
 
 			{:else if step !== 'idle' && step !== 'review'}
-				<!-- Progress view -->
-				<div class="text-center py-10">
-					<div class="spinner w-12 h-12 rounded-full border-2 border-white/10 border-t-cyan-400 mx-auto mb-6"></div>
-					<p class="text-cyan-300 font-mono text-sm mb-6">
-						{step === 'checking-balance' ? $t('ct.checkingBalance') :
-						 step === 'approving' ? `${$t('ct.approvingSpend')} (${selectedPayment?.symbol})...` :
-						 step === 'creating' ? $t('ct.deployingContract') + '...' :
-						 step === 'approving-listing' ? $t('ct.approvingDex') + '...' :
-						 step === 'adding-liquidity' ? $t('ct.addingLiquidity') + '...' : $t('ct.processing')}
-					</p>
-					<div class="flex flex-col gap-2 text-left">
-						{#each deploySteps() as ds}
+				<!-- Progress view — redesigned stepper -->
+				<div class="deploy-progress">
+					<div class="dp-header">
+						<h2 class="dp-title">Deploying your token</h2>
+						<p class="dp-sub">Please wait — do not close this window</p>
+					</div>
+
+					<div class="dp-steps">
+						{#each deploySteps() as ds, i}
 							{@const status = stepStatus(ds.key)}
-							<div class="flex items-center gap-3 text-sm font-mono {status === 'active' ? 'text-cyan-300' : status === 'done' ? 'text-emerald-400' : 'text-gray-600'}">
-								<span class="w-4">{status === 'done' ? 'v' : status === 'active' ? 'o' : '-'}</span>
-								{ds.label}
-								{#if ds.key === 'approving' && isNativePayment}
-									<span class="text-gray-600 text-xs">{$t('ct.skipped')}</span>
-								{/if}
+							{@const isSkipped = ds.key === 'approving' && isNativePayment}
+							<div class="dp-step" class:dp-done={status === 'done' || isSkipped} class:dp-active={status === 'active' && !isSkipped} class:dp-pending={status === 'pending'}>
+								<div class="dp-step-icon">
+									{#if status === 'done' || isSkipped}
+										<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+									{:else if status === 'active'}
+										<div class="dp-spinner"></div>
+									{:else}
+										<span class="dp-num">{i + 1}</span>
+									{/if}
+								</div>
+								<div class="dp-step-info">
+									<span class="dp-step-label">{ds.label}</span>
+									{#if isSkipped}<span class="dp-skipped">Skipped</span>{/if}
+								</div>
 							</div>
+							{#if i < deploySteps().length - 1}
+								<div class="dp-line" class:dp-line-done={status === 'done' || isSkipped}></div>
+							{/if}
 						{/each}
 					</div>
+
 					{#if deployTxHash && tokenInfo}
-						<div class="mt-4">
-							<a
-								href={getExplorerUrl(tokenInfo.network.chain_id, 'tx', deployTxHash)}
-								target="_blank"
-								rel="noopener noreferrer"
-								class="text-gray-500 text-[11px] font-mono hover:text-gray-300 transition no-underline"
-							>Tx: {deployTxHash.slice(0, 10)}...{deployTxHash.slice(-8)} -></a>
-						</div>
+						<a href={getExplorerUrl(tokenInfo.network.chain_id, 'tx', deployTxHash)}
+							target="_blank" rel="noopener" class="dp-tx-link">
+							View transaction →
+						</a>
 					{/if}
 				</div>
 
@@ -1405,7 +1445,11 @@
 						<div class="pay-method-section mt-3">
 							<span class="pay-method-label">Pay with</span>
 							<button class="pay-method-card" onclick={() => showPaymentModal = true}>
+								{#if COIN_LOGOS[selectedPayment?.symbol?.toUpperCase()]}
+								<img src={COIN_LOGOS[selectedPayment.symbol.toUpperCase()]} alt={selectedPayment.symbol} class="pay-method-logo" />
+							{:else}
 								<span class="pay-method-icon">{selectedPayment?.symbol?.charAt(0) || '?'}</span>
+							{/if}
 								<div class="pay-method-info">
 									<span class="pay-method-name">{selectedPayment?.symbol}</span>
 									<span class="pay-method-amount">{selectedFeeFormatted} {selectedPayment?.symbol}</span>
@@ -1429,9 +1473,13 @@
 									{#each paymentOptions as opt, i}
 										<button class="pay-modal-option" class:pay-modal-active={selectedPaymentIndex === i}
 											onclick={() => { selectedPaymentIndex = i; showPaymentModal = false; }}>
-											<span class="pay-modal-icon" class:pay-icon-native={opt.symbol === tokenInfo.network.native_coin}>
-												{opt.symbol.charAt(0)}
-											</span>
+											{#if COIN_LOGOS[opt.symbol.toUpperCase()]}
+												<img src={COIN_LOGOS[opt.symbol.toUpperCase()]} alt={opt.symbol} class="pay-modal-logo" />
+											{:else}
+												<span class="pay-modal-icon" class:pay-icon-native={opt.symbol === tokenInfo.network.native_coin}>
+													{opt.symbol.charAt(0)}
+												</span>
+											{/if}
 											<div class="pay-modal-meta">
 												<span class="pay-modal-sym">{opt.symbol}</span>
 												<span class="pay-modal-name">{opt.name}</span>
@@ -1893,6 +1941,45 @@
 	.review-token-chain { font-size: 10px; color: #00d2ff; font-family: 'Space Mono', monospace; }
 	.review-badges { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 12px; }
 
+	/* Deploy progress stepper */
+	.deploy-progress { padding: 8px 0; }
+	.dp-header { text-align: center; margin-bottom: 20px; }
+	.dp-title { font-family: 'Syne', sans-serif; font-size: 18px; font-weight: 800; color: #fff; margin: 0; }
+	.dp-sub { font-size: 11px; color: #475569; font-family: 'Space Mono', monospace; margin: 4px 0 0; }
+	.dp-steps { display: flex; flex-direction: column; gap: 0; padding: 0 8px; }
+	.dp-step {
+		display: flex; align-items: center; gap: 12px; padding: 10px 0;
+	}
+	.dp-step-icon {
+		width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
+		display: flex; align-items: center; justify-content: center;
+		border: 2px solid rgba(255,255,255,0.06); background: transparent;
+		transition: all 0.3s;
+	}
+	.dp-done .dp-step-icon { border-color: #10b981; color: #10b981; background: rgba(16,185,129,0.1); }
+	.dp-active .dp-step-icon { border-color: #00d2ff; background: rgba(0,210,255,0.1); }
+	.dp-pending .dp-step-icon { border-color: rgba(255,255,255,0.06); }
+	.dp-num { font-family: 'Space Mono', monospace; font-size: 10px; color: #374151; }
+	.dp-spinner {
+		width: 14px; height: 14px; border: 2px solid rgba(0,210,255,0.2);
+		border-top-color: #00d2ff; border-radius: 50%; animation: spin 0.8s linear infinite;
+	}
+	@keyframes spin { to { transform: rotate(360deg); } }
+	.dp-step-info { flex: 1; }
+	.dp-step-label { font-family: 'Space Mono', monospace; font-size: 12px; color: #e2e8f0; }
+	.dp-done .dp-step-label { color: #10b981; }
+	.dp-active .dp-step-label { color: #00d2ff; }
+	.dp-pending .dp-step-label { color: #374151; }
+	.dp-skipped { font-size: 9px; color: #374151; font-family: 'Space Mono', monospace; margin-left: 6px; }
+	.dp-line { width: 2px; height: 16px; background: rgba(255,255,255,0.04); margin-left: 13px; transition: background 0.3s; }
+	.dp-line-done { background: #10b981; }
+	.dp-tx-link {
+		display: block; text-align: center; margin-top: 16px; padding: 8px;
+		font-size: 11px; color: #00d2ff; font-family: 'Space Mono', monospace;
+		text-decoration: none; transition: opacity 0.12s;
+	}
+	.dp-tx-link:hover { opacity: 0.7; }
+
 	/* Payment method card + modal */
 	.pay-method-section { display: flex; flex-direction: column; gap: 6px; }
 	.pay-method-label { font-size: 9px; color: #475569; font-family: 'Space Mono', monospace; text-transform: uppercase; letter-spacing: 0.04em; }
@@ -1909,6 +1996,7 @@
 		display: flex; align-items: center; justify-content: center;
 		font-family: 'Syne', sans-serif; font-size: 12px; font-weight: 800; color: #00d2ff; flex-shrink: 0;
 	}
+	.pay-method-logo { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
 	.pay-method-info { flex: 1; }
 	.pay-method-name { display: block; font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700; color: #fff; }
 	.pay-method-amount { display: block; font-family: 'Rajdhani', sans-serif; font-size: 12px; color: #64748b; font-variant-numeric: tabular-nums; }
@@ -1944,6 +2032,7 @@
 		font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 800; color: #64748b; flex-shrink: 0;
 	}
 	.pay-icon-native { background: rgba(245,158,11,0.1); border-color: rgba(245,158,11,0.15); color: #f59e0b; }
+	.pay-modal-logo { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
 	.pay-modal-meta { flex: 1; }
 	.pay-modal-sym { display: block; font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700; color: #e2e8f0; }
 	.pay-modal-name { display: block; font-size: 10px; color: #475569; font-family: 'Space Mono', monospace; }

@@ -228,6 +228,102 @@
 		}
 	}
 
+	// ── Persist form state across OAuth redirects ──────────
+	const FORM_STORAGE_KEY = 'tk_create_form_draft';
+
+	function getFormSnapshot() {
+		return {
+			name, symbol, totalSupply, decimals, chainId, useExistingToken, existingTokenAddress,
+			tokenLogoUrl, tokenDescription, tokenWebsite, tokenTwitter, tokenTelegram,
+			isMintable, isTaxable, isPartner, launchEnabled, listingEnabled,
+			buyTaxPct, sellTaxPct, transferTaxPct, taxWallets,
+			protectionEnabled, maxWalletPct, maxTransactionPct, cooldownSeconds,
+			launchTokensPct, launchCurveType, launchSoftCap, launchHardCap,
+			launchDurationDays, launchMaxBuyPct, launchCreatorAllocPct, launchVestingDays,
+			listingPoolPct, listingPairs, listingPricePerToken, wizardStep,
+		};
+	}
+
+	function restoreFormSnapshot(s: any) {
+		if (s.name) name = s.name;
+		if (s.symbol) symbol = s.symbol;
+		if (s.totalSupply) totalSupply = s.totalSupply;
+		if (s.decimals != null) decimals = s.decimals;
+		if (s.chainId != null) chainId = s.chainId;
+		if (s.useExistingToken) useExistingToken = s.useExistingToken;
+		if (s.existingTokenAddress) existingTokenAddress = s.existingTokenAddress;
+		if (s.tokenLogoUrl) tokenLogoUrl = s.tokenLogoUrl;
+		if (s.tokenDescription) tokenDescription = s.tokenDescription;
+		if (s.tokenWebsite) tokenWebsite = s.tokenWebsite;
+		if (s.tokenTwitter) tokenTwitter = s.tokenTwitter;
+		if (s.tokenTelegram) tokenTelegram = s.tokenTelegram;
+		if (s.isMintable != null) isMintable = s.isMintable;
+		if (s.isTaxable != null) isTaxable = s.isTaxable;
+		if (s.isPartner != null) isPartner = s.isPartner;
+		if (s.launchEnabled != null) launchEnabled = s.launchEnabled;
+		if (s.listingEnabled != null) listingEnabled = s.listingEnabled;
+		if (s.buyTaxPct) buyTaxPct = s.buyTaxPct;
+		if (s.sellTaxPct) sellTaxPct = s.sellTaxPct;
+		if (s.transferTaxPct) transferTaxPct = s.transferTaxPct;
+		if (s.taxWallets?.length) taxWallets = s.taxWallets;
+		if (s.protectionEnabled != null) protectionEnabled = s.protectionEnabled;
+		if (s.maxWalletPct) maxWalletPct = s.maxWalletPct;
+		if (s.maxTransactionPct) maxTransactionPct = s.maxTransactionPct;
+		if (s.cooldownSeconds) cooldownSeconds = s.cooldownSeconds;
+		if (s.launchTokensPct != null) launchTokensPct = s.launchTokensPct;
+		if (s.launchCurveType != null) launchCurveType = s.launchCurveType;
+		if (s.launchSoftCap) launchSoftCap = s.launchSoftCap;
+		if (s.launchHardCap) launchHardCap = s.launchHardCap;
+		if (s.launchDurationDays) launchDurationDays = s.launchDurationDays;
+		if (s.launchMaxBuyPct) launchMaxBuyPct = s.launchMaxBuyPct;
+		if (s.launchCreatorAllocPct) launchCreatorAllocPct = s.launchCreatorAllocPct;
+		if (s.launchVestingDays) launchVestingDays = s.launchVestingDays;
+		if (s.listingPoolPct != null) listingPoolPct = s.listingPoolPct;
+		if (s.listingPairs?.length) listingPairs = s.listingPairs;
+		if (s.listingPricePerToken) listingPricePerToken = s.listingPricePerToken;
+		if (s.wizardStep) wizardStep = s.wizardStep;
+	}
+
+	// Restore draft if returning from OAuth redirect or page reload
+	if (typeof sessionStorage !== 'undefined') {
+		const saved = sessionStorage.getItem(FORM_STORAGE_KEY);
+		if (saved) {
+			try {
+				const parsed = JSON.parse(saved);
+				// Only restore if there's actual user input (not just defaults)
+				if (parsed.name || parsed.symbol || parsed.totalSupply || parsed.existingTokenAddress) {
+					restoreFormSnapshot(parsed);
+					// Reconstruct pending logo file from data URL
+					if (parsed.tokenLogoUrl && parsed.tokenLogoUrl.startsWith('data:')) {
+						try {
+							const [header, b64] = parsed.tokenLogoUrl.split(',');
+							const mime = header.match(/:(.*?);/)?.[1] || 'image/png';
+							const binary = atob(b64);
+							const bytes = new Uint8Array(binary.length);
+							for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+							(window as any).__pendingLogoFile = new File([bytes], `logo.${mime.split('/')[1]}`, { type: mime });
+						} catch {}
+					}
+				}
+			} catch {}
+		}
+	}
+
+	// Save form state whenever it changes (debounced)
+	let _saveTimer: ReturnType<typeof setTimeout>;
+	$effect(() => {
+		const snapshot = getFormSnapshot();
+		clearTimeout(_saveTimer);
+		_saveTimer = setTimeout(() => {
+			try { sessionStorage.setItem(FORM_STORAGE_KEY, JSON.stringify(snapshot)); } catch {}
+		}, 500);
+	});
+
+	/** Clear saved draft (call after successful deploy) */
+	export function clearDraft() {
+		try { sessionStorage.removeItem(FORM_STORAGE_KEY); } catch {}
+	}
+
 	// ── Step navigation ────────────────────────────────────
 	// Clone mode: user toggled "clone" on BasicInfo step. They're creating a NEW token
 	// with pre-filled data. Even if they later enable launch/list, it's still a new token.

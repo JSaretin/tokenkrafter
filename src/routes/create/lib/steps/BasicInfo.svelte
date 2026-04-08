@@ -106,9 +106,9 @@
 	let selectedNetwork = $derived(supportedNetworks.find((n) => n.chain_id == chainId));
 	let availableNetworks = $derived(supportedNetworks.filter(n => n.platform_address?.length > 2));
 
-	// Auto-select if only one network
+	// Auto-select first available network if none selected
 	$effect(() => {
-		if (!chainId && availableNetworks.length === 1) {
+		if (!chainId && availableNetworks.length > 0) {
 			chainId = availableNetworks[0].chain_id;
 		}
 	});
