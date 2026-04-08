@@ -307,6 +307,7 @@
 
 	let showPreview = $state(false);
 	let showReviewDetails = $state(false);
+	let showPaymentModal = $state(false);
 	let isCreating = $state(false);
 	let step = $state<'idle' | 'review' | 'checking-balance' | 'waiting-deposit' | 'approving' | 'creating' | 'approving-listing' | 'adding-liquidity' | 'done'>('idle');
 	let deployAfterConnect = $state(false);
@@ -1401,14 +1402,51 @@
 					</div>
 
 					{#if !feeLoading && paymentOptions.length > 0}
-						<div class="field-group mt-3">
-							<label class="label-text" for="payment-method">{$t('ct.paymentMethod')}</label>
-							<select id="payment-method" class="input-field" bind:value={selectedPaymentIndex}>
-								{#each paymentOptions as opt, i}
-									<option value={i}>{opt.name} ({parseFloat(ethers.formatUnits(feeAmounts[i] ?? 0n, opt.decimals)).toFixed(4)} {opt.symbol})</option>
-								{/each}
-							</select>
+						<div class="pay-method-section mt-3">
+							<span class="pay-method-label">Pay with</span>
+							<button class="pay-method-card" onclick={() => showPaymentModal = true}>
+								<span class="pay-method-icon">{selectedPayment?.symbol?.charAt(0) || '?'}</span>
+								<div class="pay-method-info">
+									<span class="pay-method-name">{selectedPayment?.symbol}</span>
+									<span class="pay-method-amount">{selectedFeeFormatted} {selectedPayment?.symbol}</span>
+								</div>
+								<svg class="pay-method-chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+							</button>
 						</div>
+
+						<!-- Payment method modal -->
+						{#if showPaymentModal}
+							<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+							<div class="pay-modal-overlay" onclick={() => showPaymentModal = false}>
+								<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+								<div class="pay-modal" onclick={(e) => e.stopPropagation()}>
+									<div class="pay-modal-head">
+										<span class="pay-modal-title">Select payment</span>
+										<button class="pay-modal-close" onclick={() => showPaymentModal = false}>
+											<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+										</button>
+									</div>
+									{#each paymentOptions as opt, i}
+										<button class="pay-modal-option" class:pay-modal-active={selectedPaymentIndex === i}
+											onclick={() => { selectedPaymentIndex = i; showPaymentModal = false; }}>
+											<span class="pay-modal-icon" class:pay-icon-native={opt.symbol === tokenInfo.network.native_coin}>
+												{opt.symbol.charAt(0)}
+											</span>
+											<div class="pay-modal-meta">
+												<span class="pay-modal-sym">{opt.symbol}</span>
+												<span class="pay-modal-name">{opt.name}</span>
+											</div>
+											<span class="pay-modal-fee">
+												{parseFloat(ethers.formatUnits(feeAmounts[i] ?? 0n, opt.decimals)).toFixed(4)}
+											</span>
+											{#if selectedPaymentIndex === i}
+												<span class="pay-modal-check">&#10003;</span>
+											{/if}
+										</button>
+									{/each}
+								</div>
+							</div>
+						{/if}
 					{/if}
 				</div>
 
@@ -1854,6 +1892,63 @@
 	.review-token-name { font-family: 'Syne', sans-serif; font-size: 15px; font-weight: 700; color: #fff; }
 	.review-token-chain { font-size: 10px; color: #00d2ff; font-family: 'Space Mono', monospace; }
 	.review-badges { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 12px; }
+
+	/* Payment method card + modal */
+	.pay-method-section { display: flex; flex-direction: column; gap: 6px; }
+	.pay-method-label { font-size: 9px; color: #475569; font-family: 'Space Mono', monospace; text-transform: uppercase; letter-spacing: 0.04em; }
+	.pay-method-card {
+		display: flex; align-items: center; gap: 10px; width: 100%;
+		padding: 10px 12px; border-radius: 10px;
+		background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
+		cursor: pointer; transition: border-color 0.12s; font-family: inherit; color: inherit; text-align: left;
+	}
+	.pay-method-card:hover { border-color: rgba(0,210,255,0.2); }
+	.pay-method-icon {
+		width: 32px; height: 32px; border-radius: 50%;
+		background: rgba(0,210,255,0.08); border: 1px solid rgba(0,210,255,0.15);
+		display: flex; align-items: center; justify-content: center;
+		font-family: 'Syne', sans-serif; font-size: 12px; font-weight: 800; color: #00d2ff; flex-shrink: 0;
+	}
+	.pay-method-info { flex: 1; }
+	.pay-method-name { display: block; font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700; color: #fff; }
+	.pay-method-amount { display: block; font-family: 'Rajdhani', sans-serif; font-size: 12px; color: #64748b; font-variant-numeric: tabular-nums; }
+	.pay-method-chev { color: #374151; flex-shrink: 0; }
+
+	.pay-modal-overlay {
+		position: fixed; inset: 0; z-index: 100;
+		background: rgba(0,0,0,0.6); backdrop-filter: blur(3px);
+		display: flex; align-items: flex-end; justify-content: center;
+	}
+	.pay-modal {
+		width: 100%; max-width: 400px; background: #0a0b10;
+		border: 1px solid rgba(255,255,255,0.06); border-bottom: none;
+		border-radius: 16px 16px 0 0; padding: 16px;
+		animation: paySlide 0.2s ease-out;
+	}
+	@keyframes paySlide { from { transform: translateY(100%); } }
+	.pay-modal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+	.pay-modal-title { font-family: 'Syne', sans-serif; font-size: 15px; font-weight: 700; color: #fff; }
+	.pay-modal-close { width: 28px; height: 28px; border-radius: 8px; border: none; background: rgba(255,255,255,0.04); color: #64748b; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+	.pay-modal-option {
+		display: flex; align-items: center; gap: 10px; width: 100%;
+		padding: 10px; border-radius: 10px; border: 1px solid transparent;
+		background: transparent; cursor: pointer; transition: all 0.1s;
+		font-family: inherit; color: inherit; text-align: left;
+	}
+	.pay-modal-option:hover { background: rgba(255,255,255,0.03); }
+	.pay-modal-active { border-color: rgba(0,210,255,0.2); background: rgba(0,210,255,0.03); }
+	.pay-modal-icon {
+		width: 36px; height: 36px; border-radius: 50%;
+		background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06);
+		display: flex; align-items: center; justify-content: center;
+		font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 800; color: #64748b; flex-shrink: 0;
+	}
+	.pay-icon-native { background: rgba(245,158,11,0.1); border-color: rgba(245,158,11,0.15); color: #f59e0b; }
+	.pay-modal-meta { flex: 1; }
+	.pay-modal-sym { display: block; font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700; color: #e2e8f0; }
+	.pay-modal-name { display: block; font-size: 10px; color: #475569; font-family: 'Space Mono', monospace; }
+	.pay-modal-fee { font-family: 'Rajdhani', sans-serif; font-size: 14px; font-weight: 600; color: #e2e8f0; font-variant-numeric: tabular-nums; }
+	.pay-modal-check { color: #10b981; font-size: 14px; flex-shrink: 0; }
 
 	.receipt { display: flex; flex-direction: column; gap: 0; }
 	.receipt-row {
