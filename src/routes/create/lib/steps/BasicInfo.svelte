@@ -39,19 +39,64 @@
 	let logoUploading = $state(false);
 	let logoFileInput: HTMLInputElement | undefined = $state();
 
+	const MAX_LOGO_SIZE = 256;
+	const SKIP_RESIZE_TYPES = ['image/gif', 'image/svg+xml'];
+
+	/** Resize a raster image to max 256x256 using canvas */
+	function resizeImage(file: File): Promise<File> {
+		return new Promise((resolve) => {
+			// GIF and SVG — skip resize
+			if (SKIP_RESIZE_TYPES.includes(file.type)) { resolve(file); return; }
+
+			const img = new Image();
+			img.onload = () => {
+				// Skip if already small enough
+				if (img.width <= MAX_LOGO_SIZE && img.height <= MAX_LOGO_SIZE) {
+					URL.revokeObjectURL(img.src);
+					resolve(file);
+					return;
+				}
+
+				const canvas = document.createElement('canvas');
+				const scale = Math.min(MAX_LOGO_SIZE / img.width, MAX_LOGO_SIZE / img.height);
+				canvas.width = Math.round(img.width * scale);
+				canvas.height = Math.round(img.height * scale);
+
+				const ctx = canvas.getContext('2d')!;
+				ctx.imageSmoothingQuality = 'high';
+				ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+				URL.revokeObjectURL(img.src);
+
+				canvas.toBlob((blob) => {
+					if (blob) {
+						const resized = new File([blob], file.name, { type: file.type });
+						resolve(resized);
+					} else {
+						resolve(file); // fallback to original
+					}
+				}, file.type, 0.9);
+			};
+			img.onerror = () => resolve(file);
+			img.src = URL.createObjectURL(file);
+		});
+	}
+
 	async function handleLogoUpload(e: Event) {
 		const file = (e.target as HTMLInputElement).files?.[0];
 		if (!file) return;
 		if (file.size > 2 * 1024 * 1024) { alert('Max 2 MB'); return; }
 		if (!['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/svg+xml'].includes(file.type)) { alert('PNG, JPEG, WebP, GIF, or SVG only'); return; }
 
-		// Preview immediately using data URL
+		// Resize (skip for GIF/SVG)
+		const processed = await resizeImage(file);
+
+		// Preview
 		const reader = new FileReader();
 		reader.onload = () => { tokenLogoUrl = reader.result as string; };
-		reader.readAsDataURL(file);
+		reader.readAsDataURL(processed);
 
-		// Store the file for later upload (after token is deployed and we have the address)
-		(window as any).__pendingLogoFile = file;
+		// Store for upload after deploy
+		(window as any).__pendingLogoFile = processed;
 	}
 
 	let loading = $state(false);
