@@ -49,6 +49,7 @@ let _chainId: number = 56;
 let _pollIntervalMs: number = 30_000;
 let _visibilityHandler: (() => void) | null = null;
 let _started = false;
+let _generation = 0; // incremented on address change to discard stale results
 
 /** Get imported tokens from localStorage */
 function getImportedTokens(): { address: string; symbol: string; name: string; decimals: number; logoUrl?: string }[] {
@@ -63,13 +64,15 @@ function getImportedTokens(): { address: string; symbol: string; name: string; d
 async function fetchBalances(): Promise<void> {
 	if (!_provider || !_userAddress) return;
 
+	const gen = _generation;
+	const addr = _userAddress;
 	const imported = getImportedTokens();
-	const paddedAddr = ethers.zeroPadValue(_userAddress, 32);
+	const paddedAddr = ethers.zeroPadValue(addr, 32);
 	const multicallAddr = MULTICALL_ADDRESSES[_chainId];
 
 	try {
 		// Always fetch native balance
-		const nativeBal = await _provider.getBalance(_userAddress);
+		const nativeBal = await _provider.getBalance(addr);
 
 		let tokenBalances: TokenBalance[] = [];
 
@@ -109,6 +112,9 @@ async function fetchBalances(): Promise<void> {
 			// No multicall on this chain — individual calls
 			tokenBalances = await fetchBalancesIndividual(imported);
 		}
+
+		// Discard if address changed while fetching
+		if (gen !== _generation) return;
 
 		balanceState.set({
 			nativeBalance: nativeBal,
@@ -170,6 +176,7 @@ export function startBalancePoller(
 	_provider = provider;
 	_userAddress = userAddress;
 	_chainId = chainId;
+	_generation++;
 	_pollIntervalMs = intervalMs;
 	_started = true;
 
@@ -203,5 +210,8 @@ export function refreshBalancesNow(): void {
 /** Update the user address (e.g. on account switch) */
 export function updatePollerAddress(address: string): void {
 	_userAddress = address;
+	_generation++;
+	// Clear stale balances immediately
+	balanceState.set({ nativeBalance: 0n, tokens: [], lastUpdated: 0 });
 	if (_started) fetchBalances();
 }
