@@ -538,8 +538,14 @@
 	}
 
 	.preset-btn {
-		width: 100%; justify-content: center; margin-top: 10px;
+		display: flex; align-items: center; justify-content: center; gap: 8px;
+		width: 100%; padding: 11px; margin-top: 8px; border-radius: 10px; border: none;
+		background: linear-gradient(135deg, #0891b2, #1d4ed8); color: white;
+		font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700;
+		cursor: pointer; transition: all 0.15s;
 	}
+	.preset-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(8,145,178,0.3); }
+	.preset-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
 
 	.spinner-sm {
 		width: 14px; height: 14px;
@@ -564,13 +570,7 @@
 	.network-badge-name { font-weight: 600; }
 
 	.preset-row { display: flex; gap: 0.4rem; margin-top: 0.25rem; flex-wrap: wrap; }
-	.preset-btn {
-		font-family: 'Space Mono', monospace; font-size: 0.72rem;
-		padding: 0.25rem 0.65rem; border-radius: 4px;
-		border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.03);
-		color: #e2e8f0; cursor: pointer; transition: border-color 0.15s, background 0.15s;
-	}
-	.preset-btn:hover { border-color: #00d2ff; background: rgba(0,210,255,0.06); }
+	/* duplicate preset-btn removed — defined above */
 
 	.decimals-row { flex-direction: row; align-items: center; gap: 0.5rem; }
 	.small-input { width: 4rem; text-align: center; }
