@@ -112,8 +112,24 @@ export async function checkAuthReturn(): Promise<boolean> {
 	if (sessionStorage.getItem('wallet_pending') !== 'true') return false;
 	sessionStorage.removeItem('wallet_pending');
 
-	// Supabase auto-processes the hash token on load
-	const { data: { session } } = await supabase.auth.getSession();
+	// Wait for Supabase to process the hash token — it fires an event when ready
+	let session = (await supabase.auth.getSession()).data.session;
+
+	// If not ready yet, listen for the auth state change
+	if (!session) {
+		session = await new Promise((resolve) => {
+			const timeout = setTimeout(() => resolve(null), 5000); // 5s max wait
+			const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
+				if (s) {
+					clearTimeout(timeout);
+					subscription.unsubscribe();
+					resolve(s);
+				}
+			});
+		});
+	}
+
+	if (!session) return false;
 	if (!session) return false;
 
 	_jwt = session.access_token;
