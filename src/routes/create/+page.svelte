@@ -1758,8 +1758,8 @@
 <style>
 	.create-split { display: flex; gap: 28px; align-items: flex-start; }
 	.create-split > .form-wrapper { flex: 1; min-width: 0; max-width: none; }
-	.create-preview-col { width: 280px; flex-shrink: 0; position: sticky; top: 80px; }
-	@media (max-width: 960px) { .create-preview-col { display: none; } .create-split { display: block; } }
+	.create-preview-col { width: 320px; flex-shrink: 0; position: sticky; top: 80px; }
+	@media (max-width: 1000px) { .create-preview-col { display: none; } .create-split { display: block; } }
 
 	.page-grid {
 		display: grid;

@@ -19,6 +19,7 @@
 
 	let showWalletModal = $state(false);
 	let showAccountPanel = $state(false);
+	let walletLoading = $state(true);
 	let walletModalRef: WalletModal | undefined = $state();
 	let nativeBalance = $state(0n);
 	let nativePriceUsd = $state(0);
@@ -217,6 +218,7 @@
 					}
 				}
 			} catch {}
+			walletLoading = false;
 		})();
 
 		// Load networks from DB, then init providers + AppKit
@@ -458,7 +460,9 @@
 					Launch
 				</a>
 				<div class="lang-desktop"><LanguageSwitcher /></div>
-				{#if userAddress}
+				{#if walletLoading}
+					<div class="wallet-btn wallet-skeleton"><span class="skeleton-bar"></span></div>
+				{:else if userAddress}
 					<button class="wallet-btn" onclick={() => { if (walletType === 'external') { const kit = getAppKit(); if (kit) kit.open(); } else { showAccountPanel = true; } }}>
 						<span class="wallet-dot"></span>
 						{userAddress.slice(0, 6)}...{userAddress.slice(-4)}
@@ -542,7 +546,9 @@
 					<span class="text-xs font-mono uppercase tracking-wider" style="color: var(--text-dim)">Language</span>
 					<LanguageSwitcher />
 				</div>
-				{#if userAddress}
+				{#if walletLoading}
+					<div class="wallet-btn wallet-skeleton"><span class="skeleton-bar"></span></div>
+				{:else if userAddress}
 					<button class="wallet-btn wallet-btn-sm" onclick={() => { if (walletType === 'external') { const kit = getAppKit(); if (kit) kit.open(); } else { showAccountPanel = true; } mobileMenuOpen = false; }}>
 						<span class="wallet-dot"></span>
 						{userAddress.slice(0, 6)}...{userAddress.slice(-4)}
@@ -786,6 +792,13 @@
 	.wallet-btn-sm { font-size: 11px; padding: 5px 10px; }
 	.show-mobile { display: none; }
 	@media (max-width: 640px) { .hide-mobile { display: none; } .show-mobile { display: inline; } }
+	.wallet-skeleton { width: 100px; cursor: default; }
+	.skeleton-bar {
+		display: block; width: 100%; height: 10px; border-radius: 4px;
+		background: linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.06) 50%, rgba(255,255,255,0.03) 75%);
+		background-size: 200% 100%; animation: shimmer 1.5s infinite;
+	}
+	@keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 	.wallet-dot {
 		width: 7px; height: 7px; border-radius: 50%; background: #10b981; flex-shrink: 0;
 	}
