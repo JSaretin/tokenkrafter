@@ -1493,44 +1493,74 @@
 <div class="page-container max-w-6xl mx-auto px-3 sm:px-6 py-6 sm:py-12">
 
 	{#if mode === null}
-		<!-- ═══════ INTENT SELECTION SCREEN ═══════ -->
-		<div class="text-center mb-10">
-			<h1 class="syne text-3xl sm:text-4xl font-bold text-white mt-4 mb-2">{$t('ci.pageTitle')}</h1>
-			<p class="text-gray-400 font-mono text-sm">{$t('ci.pageSub')}</p>
+		<!-- ═══════ INTENT SELECTION ═══════ -->
+		<div class="sel-header">
+			<h1 class="sel-title">What do you want to build?</h1>
+			<p class="sel-sub">Choose how to deploy your token</p>
 		</div>
 
-		<div class="intent-grid">
-			<button class="intent-card card card-hover" onclick={() => selectMode('token')}>
-				<div class="intent-icon cyan">
-					<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v12M6 12h12"/></svg>
+		<div class="sel-grid">
+			<!-- Featured: Create + Launch -->
+			<button class="sel-card sel-featured" onclick={() => selectMode('both')}>
+				<div class="sel-card-glow"></div>
+				<div class="sel-card-inner">
+					<div class="sel-tag">Recommended</div>
+					<div class="sel-icon sel-icon-cyan">
+						<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+					</div>
+					<h3 class="sel-name">Create & Launch</h3>
+					<p class="sel-desc">Deploy token + bonding curve fundraise. Graduates to DEX automatically.</p>
+					<div class="sel-features">
+						<span>Bonding curve</span>
+						<span>Auto DEX listing</span>
+						<span>Anti-whale</span>
+					</div>
 				</div>
-				<h3 class="syne text-lg font-bold text-white mt-4 mb-1">{$t('ci.createToken')}</h3>
-				<p class="text-gray-400 font-mono text-xs">{$t('ci.createTokenSub')}</p>
 			</button>
 
-			<button class="intent-card intent-card-featured" onclick={() => selectMode('both')}>
-				<span class="badge badge-cyan intent-badge-top">{$t('ci.recommended')}</span>
-				<div class="intent-icon cyan">
-					<svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+			<!-- Create + List on DEX -->
+			<button class="sel-card" onclick={() => selectMode('list')}>
+				<div class="sel-card-inner">
+					<div class="sel-icon sel-icon-amber">
+						<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+					</div>
+					<h3 class="sel-name">Create & List on DEX</h3>
+					<p class="sel-desc">Deploy and add liquidity to PancakeSwap in one transaction.</p>
+					<div class="sel-features">
+						<span>Instant trading</span>
+						<span>Set your price</span>
+					</div>
 				</div>
-				<h3 class="syne text-xl font-bold text-white mt-4 mb-1">{$t('ci.createAndLaunch')}</h3>
-				<p class="text-gray-500 font-mono text-xs leading-relaxed">{$t('ci.createAndLaunchSub')}</p>
 			</button>
 
-			<button class="intent-card card card-hover" onclick={() => selectMode('list')}>
-				<div class="intent-icon" style="color: #f59e0b;">
-					<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+			<!-- Create Token Only -->
+			<button class="sel-card" onclick={() => selectMode('token')}>
+				<div class="sel-card-inner">
+					<div class="sel-icon sel-icon-default">
+						<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v12M6 12h12"/></svg>
+					</div>
+					<h3 class="sel-name">Deploy Token Only</h3>
+					<p class="sel-desc">Create your ERC-20 token. Add liquidity or launch later.</p>
+					<div class="sel-features">
+						<span>Fastest</span>
+						<span>Flexible</span>
+					</div>
 				</div>
-				<h3 class="syne text-lg font-bold text-white mt-4 mb-1">Create & List on DEX</h3>
-				<p class="text-gray-400 font-mono text-xs">Create token and add liquidity to DEX instantly. One click.</p>
 			</button>
 
-			<button class="intent-card card card-hover" onclick={() => selectMode('launch')}>
-				<div class="intent-icon emerald">
-					<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="M12 15l-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg>
+			<!-- Launch Existing Token -->
+			<button class="sel-card" onclick={() => selectMode('launch')}>
+				<div class="sel-card-inner">
+					<div class="sel-icon sel-icon-emerald">
+						<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="M12 15l-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/></svg>
+					</div>
+					<h3 class="sel-name">Launch Existing Token</h3>
+					<p class="sel-desc">Already have a token? Create a bonding curve launch for it.</p>
+					<div class="sel-features">
+						<span>Bring your token</span>
+						<span>Fundraise</span>
+					</div>
 				</div>
-				<h3 class="syne text-lg font-bold text-white mt-4 mb-1">{$t('ci.launchExisting')}</h3>
-				<p class="text-gray-400 font-mono text-xs">{$t('ci.launchExistingSub')}</p>
 			</button>
 		</div>
 
@@ -1893,6 +1923,60 @@
 	select option { background: var(--select-bg); color: var(--text-heading); }
 
 	/* ─── Intent Selection Grid ─── */
+	/* ── Selection screen ── */
+	.sel-header { text-align: center; margin-bottom: 28px; }
+	.sel-title { font-family: 'Syne', sans-serif; font-size: 28px; font-weight: 800; color: #fff; margin: 0; }
+	.sel-sub { font-size: 13px; color: #475569; font-family: 'Space Mono', monospace; margin: 6px 0 0; }
+
+	.sel-grid { display: grid; grid-template-columns: 1fr; gap: 10px; max-width: 640px; margin: 0 auto; }
+	@media (min-width: 640px) { .sel-grid { grid-template-columns: 1fr 1fr; } }
+
+	.sel-card {
+		position: relative; border-radius: 14px; overflow: hidden;
+		background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05);
+		cursor: pointer; transition: all 0.2s; text-align: left;
+		font-family: inherit; color: inherit;
+	}
+	.sel-card:hover { border-color: rgba(0,210,255,0.2); transform: translateY(-2px); box-shadow: 0 8px 30px rgba(0,0,0,0.2); }
+	.sel-card-inner { padding: 20px; display: flex; flex-direction: column; gap: 8px; position: relative; z-index: 1; }
+
+	.sel-featured { grid-column: 1 / -1; border-color: rgba(0,210,255,0.15); }
+	.sel-featured .sel-card-inner { flex-direction: row; align-items: center; gap: 16px; flex-wrap: wrap; }
+	.sel-featured .sel-name { font-size: 18px; }
+	.sel-featured .sel-desc { flex: 1; min-width: 200px; }
+	.sel-featured:hover { border-color: rgba(0,210,255,0.4); box-shadow: 0 0 40px rgba(0,210,255,0.08), 0 8px 30px rgba(0,0,0,0.2); }
+	.sel-card-glow {
+		position: absolute; inset: 0; z-index: 0;
+		background: radial-gradient(ellipse at 30% 50%, rgba(0,210,255,0.06), transparent 60%);
+		pointer-events: none;
+	}
+
+	.sel-tag {
+		position: absolute; top: 10px; right: 12px; z-index: 2;
+		font-size: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
+		padding: 3px 8px; border-radius: 4px;
+		background: rgba(0,210,255,0.12); color: #00d2ff; font-family: 'Space Mono', monospace;
+	}
+
+	.sel-icon {
+		width: 42px; height: 42px; border-radius: 12px; flex-shrink: 0;
+		display: flex; align-items: center; justify-content: center;
+	}
+	.sel-icon-cyan { background: rgba(0,210,255,0.1); color: #00d2ff; border: 1px solid rgba(0,210,255,0.15); }
+	.sel-icon-amber { background: rgba(245,158,11,0.1); color: #f59e0b; border: 1px solid rgba(245,158,11,0.15); }
+	.sel-icon-emerald { background: rgba(16,185,129,0.1); color: #10b981; border: 1px solid rgba(16,185,129,0.15); }
+	.sel-icon-default { background: rgba(255,255,255,0.04); color: #64748b; border: 1px solid rgba(255,255,255,0.06); }
+
+	.sel-name { font-family: 'Syne', sans-serif; font-size: 15px; font-weight: 700; color: #fff; margin: 0; }
+	.sel-desc { font-size: 11px; color: #475569; font-family: 'Space Mono', monospace; line-height: 1.5; margin: 0; }
+	.sel-features { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 2px; }
+	.sel-features span {
+		font-size: 9px; padding: 2px 8px; border-radius: 99px;
+		background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05);
+		color: #64748b; font-family: 'Space Mono', monospace;
+	}
+
+	/* Legacy — keep for backward compat */
 	.intent-grid {
 		display: grid;
 		grid-template-columns: 1fr;

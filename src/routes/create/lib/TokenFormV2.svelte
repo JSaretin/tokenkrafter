@@ -125,15 +125,15 @@
 	let listingPairs = $state<ListingPair[]>([{ base: 'native', amount: '' }]);
 	let listingPricePerToken = $state('');
 
-	// ── Clone: detect token type from on-chain or DB ──────
+	// ── Clone: detect token type from DB + simulate tax via TradeLens ──
 	$effect(() => {
 		if (!useExistingToken || !existingTokenAddress || !chainId) return;
-		// Only in clone mode (create-only)
 		if (launchEnabled || listingEnabled) return;
 		if (!ethers.isAddress(existingTokenAddress)) return;
 
 		const addr = existingTokenAddress.toLowerCase();
 		const cid = chainId;
+		const network = supportedNetworks.find(n => n.chain_id == cid);
 
 		// Check our DB for token type
 		fetch(`/api/token-metadata?address=${addr}&chain_id=${cid}`)
@@ -146,29 +146,26 @@
 				}
 			}).catch(() => {});
 
-		// Also try reading tax rates from on-chain
+		// Simulate tax via TradeLens — works for any token
 		const providers = getNetworkProviders();
 		const provider = providers.get(cid);
-		if (provider) {
-			const contract = new ethers.Contract(addr, [
-				'function buyTaxBps() view returns (uint256)',
-				'function sellTaxBps() view returns (uint256)',
-				'function transferTaxBps() view returns (uint256)',
-			], provider);
-			Promise.all([
-				contract.buyTaxBps().catch(() => 0n),
-				contract.sellTaxBps().catch(() => 0n),
-				contract.transferTaxBps().catch(() => 0n),
-			]).then(([b, s, t]) => {
-				const buy = Number(b) / 100;
-				const sell = Number(s) / 100;
-				const transfer = Number(t) / 100;
-				if (buy > 0 || sell > 0 || transfer > 0) {
-					isTaxable = true;
-					if (buy > 0) buyTaxPct = String(buy);
-					if (sell > 0) sellTaxPct = String(sell);
-					if (transfer > 0) transferTaxPct = String(transfer);
-				}
+		if (provider && network?.dex_router) {
+			import('$lib/tradeLens').then(({ queryTradeLens }) => {
+				queryTradeLens(provider, network.dex_router, [addr], addr, ethers.parseEther('0.001'), ethers.ZeroAddress, cid)
+					.then((result) => {
+						const tax = result.taxInfo;
+						if (tax.success) {
+							const buy = tax.buyTaxBps / 100;
+							const sell = tax.sellTaxBps / 100;
+							const transfer = tax.transferTaxBps / 100;
+							if (buy > 0 || sell > 0 || transfer > 0) {
+								isTaxable = true;
+								if (buy > 0) buyTaxPct = String(buy);
+								if (sell > 0) sellTaxPct = String(sell);
+								if (transfer > 0) transferTaxPct = String(transfer);
+							}
+						}
+					}).catch(() => {});
 			}).catch(() => {});
 		}
 	});

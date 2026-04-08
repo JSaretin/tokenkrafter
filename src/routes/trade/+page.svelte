@@ -485,29 +485,6 @@
 		showBankDropdown = false;
 	}
 
-	// ── Tax detection ──────────────────────────────────────────
-	async function detectTax(address: string, isNative: boolean): Promise<{ buyTax: number; sellTax: number; hasTax: boolean }> {
-		if (isNative || !address || address === ZERO_ADDRESS) return { buyTax: 0, sellTax: 0, hasTax: false };
-		const provider = networkProviders.get(selectedNetwork?.chain_id ?? 0);
-		if (!provider) return { buyTax: 0, sellTax: 0, hasTax: false };
-
-		try {
-			const token = new ethers.Contract(address, [
-				'function buyTaxBps() view returns (uint256)',
-				'function sellTaxBps() view returns (uint256)'
-			], provider);
-			const [buy, sell] = await Promise.all([
-				token.buyTaxBps().catch(() => 0n),
-				token.sellTaxBps().catch(() => 0n)
-			]);
-			const b = Number(buy);
-			const s = Number(sell);
-			return { buyTax: b, sellTax: s, hasTax: b > 0 || s > 0 };
-		} catch {
-			return { buyTax: 0, sellTax: 0, hasTax: false };
-		}
-	}
-
 	// ── Token metadata fetch ───────────────────────────────────
 	async function fetchMeta(address: string, isNative: boolean) {
 		if (!selectedNetwork) return { symbol: '???', name: 'Unknown', decimals: 18, balance: 0n };

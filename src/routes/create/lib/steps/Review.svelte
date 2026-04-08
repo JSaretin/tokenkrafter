@@ -58,7 +58,7 @@
 	<!-- Token -->
 	<div class="rv-section">
 		<div class="rv-section-title">Token</div>
-		{#if useExistingToken}
+		{#if useExistingToken && existingTokenAddress}
 			<div class="rv-row"><span>Address</span><span class="rv-mono">{fmtAddr(existingTokenAddress)}</span></div>
 		{:else}
 			<div class="rv-row"><span>Name</span><span>{name} ({symbol})</span></div>
