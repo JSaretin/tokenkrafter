@@ -1442,7 +1442,7 @@
 						</div>
 						<div class="mt-3 p-3 rounded-lg" style="background: rgba(0,210,255,0.04); border: 1px solid rgba(0,210,255,0.1);">
 							<div class="flex items-center gap-2 text-[10px] font-mono text-gray-500">
-								<span>Graduation fee: 3% USDT + 3% tokens</span>
+								<span>Graduation fee: 1% USDT + 1% tokens | Buy fee: 1%</span>
 								<span class="text-gray-700">|</span>
 								<span>LP: auto-burned</span>
 							</div>
@@ -1450,17 +1450,53 @@
 					</div>
 				{/if}
 
-				<!-- Fee & Payment Method -->
+				<!-- Cost Breakdown Receipt -->
 				<div class="modal-section fee-section">
-					<div class="flex justify-between items-center mb-3">
-						<span class="label-text mb-0">{$t('ct.creationFee')}</span>
-						{#if feeLoading}
-							<div class="spinner-sm w-5 h-5 rounded-full border-2 border-white/10 border-t-cyan-400"></div>
-						{:else}
-							<span class="syne text-xl font-bold text-white">
-								${feeUsdAmount}
-							</span>
+					<div class="label-text mb-3">Cost Breakdown</div>
+
+					<div class="receipt">
+						<!-- Creation fee -->
+						<div class="receipt-row">
+							<span class="receipt-label">Token creation fee</span>
+							<span class="receipt-value">{feeLoading ? '...' : `$${feeUsdAmount}`}</span>
+						</div>
+
+						<!-- Liquidity costs (if listing) -->
+						{#if tokenInfo.listing?.enabled}
+							{#each (tokenInfo.listing.pairs || []).filter(p => Number(p.amount) > 0) as pair}
+								{@const baseLabel = pair.base === 'native' ? tokenInfo.network.native_coin : pair.base.toUpperCase()}
+								<div class="receipt-row">
+									<span class="receipt-label">Liquidity ({tokenInfo.symbol}/{baseLabel})</span>
+									<span class="receipt-value">{pair.amount} {baseLabel}</span>
+								</div>
+							{/each}
 						{/if}
+
+						<!-- Launch fee (if launching) -->
+						{#if tokenInfo.launch?.enabled}
+							<div class="receipt-row">
+								<span class="receipt-label">Launch fee (on graduation)</span>
+								<span class="receipt-value receipt-note">1% of raised</span>
+							</div>
+						{/if}
+
+						<!-- Divider + Total -->
+						<div class="receipt-divider"></div>
+						<div class="receipt-row receipt-total">
+							<span class="receipt-label">You pay now</span>
+							<span class="receipt-value">
+								{#if feeLoading}
+									...
+								{:else}
+									{selectedFeeFormatted} {selectedPayment?.symbol}
+									{#if tokenInfo.listing?.enabled}
+										{#each (tokenInfo.listing.pairs || []).filter(p => Number(p.amount) > 0 && p.base === 'native') as pair}
+											+ {pair.amount} {tokenInfo.network.native_coin}
+										{/each}
+									{/if}
+								{/if}
+							</span>
+						</div>
 					</div>
 
 					{#if !feeLoading && paymentOptions.length > 0}
@@ -1477,15 +1513,6 @@
 									</option>
 								{/each}
 							</select>
-						</div>
-
-						<div class="payment-summary mt-3">
-							<div class="flex justify-between items-center">
-								<span class="text-gray-500 text-xs font-mono">{$t('ct.youPay')}</span>
-								<span class="text-white text-sm font-mono font-bold">
-									{selectedFeeFormatted} {selectedPayment?.symbol}
-								</span>
-							</div>
 						</div>
 					{/if}
 				</div>
@@ -1924,6 +1951,18 @@
 	.modal-section { margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px solid var(--bg-surface-hover); }
 
 	.fee-section { background: rgba(0,210,255,0.03); border-radius: 10px; padding: 14px; border-color: rgba(0,210,255,0.1); }
+
+	.receipt { display: flex; flex-direction: column; gap: 0; }
+	.receipt-row {
+		display: flex; justify-content: space-between; align-items: center;
+		padding: 6px 0; font-family: 'Space Mono', monospace; font-size: 11px;
+	}
+	.receipt-label { color: #64748b; }
+	.receipt-value { color: #e2e8f0; font-weight: 600; font-family: 'Rajdhani', sans-serif; font-size: 13px; font-variant-numeric: tabular-nums; text-align: right; }
+	.receipt-note { color: #64748b; font-weight: 400; font-size: 10px; font-family: 'Space Mono', monospace; }
+	.receipt-divider { height: 1px; background: rgba(255,255,255,0.06); margin: 6px 0; }
+	.receipt-total .receipt-label { color: #fff; font-weight: 700; }
+	.receipt-total .receipt-value { color: #00d2ff; font-size: 15px; font-weight: 700; }
 
 	.payment-summary {
 		padding: 10px 12px;

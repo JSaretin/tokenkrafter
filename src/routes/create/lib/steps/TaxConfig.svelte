@@ -40,33 +40,51 @@
 	<!-- Tax Rates -->
 	<div class="section">
 		<h3 class="heading">Tax Rates</h3>
-		<div class="rate-row">
-			<div class="field-group">
-				<label class="label-text" for="tc-buy">Buy %</label>
-				<input id="tc-buy" type="number" class="input-field" bind:value={buyTaxPct} min="0" max="10" step="0.5" placeholder="0" />
-				<span class="hint">Max 10%</span>
+		<div class="tax-cards">
+			<div class="tax-card" class:tax-active={num(buyTaxPct) > 0}>
+				<div class="tax-card-head">
+					<span class="tax-card-icon">B</span>
+					<span class="tax-card-label">Buy Tax</span>
+				</div>
+				<div class="tax-card-input">
+					<input id="tc-buy" type="number" class="tax-input" bind:value={buyTaxPct} min="0" max="10" step="0.5" placeholder="0" />
+					<span class="tax-unit">%</span>
+				</div>
+				<div class="tax-card-bar"><div class="tax-card-fill tax-fill-cyan" style="width: {Math.min(100, num(buyTaxPct) * 10)}%"></div></div>
 			</div>
-			<div class="field-group">
-				<label class="label-text" for="tc-sell">Sell %</label>
-				<input id="tc-sell" type="number" class="input-field" bind:value={sellTaxPct} min="0" max="10" step="0.5" placeholder="0" />
-				<span class="hint">Max 10%</span>
+
+			<div class="tax-card" class:tax-active={num(sellTaxPct) > 0}>
+				<div class="tax-card-head">
+					<span class="tax-card-icon tax-icon-amber">S</span>
+					<span class="tax-card-label">Sell Tax</span>
+				</div>
+				<div class="tax-card-input">
+					<input id="tc-sell" type="number" class="tax-input" bind:value={sellTaxPct} min="0" max="10" step="0.5" placeholder="0" />
+					<span class="tax-unit">%</span>
+				</div>
+				<div class="tax-card-bar"><div class="tax-card-fill tax-fill-amber" style="width: {Math.min(100, num(sellTaxPct) * 10)}%"></div></div>
 			</div>
-			<div class="field-group">
-				<label class="label-text" for="tc-transfer">Transfer %</label>
-				<input id="tc-transfer" type="number" class="input-field" bind:value={transferTaxPct} min="0" max="10" step="0.5" placeholder="0" />
-				<span class="hint">Max 10%</span>
+
+			<div class="tax-card" class:tax-active={num(transferTaxPct) > 0}>
+				<div class="tax-card-head">
+					<span class="tax-card-icon tax-icon-purple">T</span>
+					<span class="tax-card-label">Transfer</span>
+				</div>
+				<div class="tax-card-input">
+					<input id="tc-transfer" type="number" class="tax-input" bind:value={transferTaxPct} min="0" max="10" step="0.5" placeholder="0" />
+					<span class="tax-unit">%</span>
+				</div>
+				<div class="tax-card-bar"><div class="tax-card-fill tax-fill-purple" style="width: {Math.min(100, num(transferTaxPct) * 10)}%"></div></div>
 			</div>
 		</div>
 
 		{#if totalTax > 0}
 			<div class="tax-total">
-				<span class="total-label">Total tax:</span>
+				<span class="total-label">Total:</span>
 				<span class="total-value" class:over={totalTax > 25}>{totalTax}%</span>
 				<span class="total-detail">({taxParts})</span>
-				{#if totalTax > 25}<span class="total-warn">Max 25% total</span>{/if}
+				{#if totalTax > 25}<span class="total-warn">Max 25%</span>{/if}
 			</div>
-		{:else}
-			<span class="muted">No tax -- set to 0</span>
 		{/if}
 	</div>
 
@@ -160,9 +178,36 @@
 	.section { display: flex; flex-direction: column; gap: 0.75rem; }
 	.heading { font-family: 'Syne', sans-serif; font-size: 0.85rem; color: rgba(255,255,255,0.5); text-transform: uppercase; letter-spacing: 0.08em; margin: 0; }
 	.field-group { display: flex; flex-direction: column; gap: 4px; }
-	.hint, .muted { font-size: 10px; color: rgba(255,255,255,0.25); font-family: 'Space Mono', monospace; }
-	.muted { font-size: 0.75rem; }
-	.rate-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem; }
+	.tax-cards { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.6rem; }
+	.tax-card {
+		padding: 12px; border-radius: 10px;
+		background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05);
+		transition: border-color 0.15s;
+	}
+	.tax-card.tax-active { border-color: rgba(0,210,255,0.2); }
+	.tax-card-head { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+	.tax-card-icon {
+		width: 20px; height: 20px; border-radius: 5px; display: flex; align-items: center; justify-content: center;
+		font-family: 'Syne', sans-serif; font-size: 9px; font-weight: 800;
+		background: rgba(0,210,255,0.1); color: #00d2ff; flex-shrink: 0;
+	}
+	.tax-icon-amber { background: rgba(245,158,11,0.1); color: #f59e0b; }
+	.tax-icon-purple { background: rgba(139,92,246,0.1); color: #a78bfa; }
+	.tax-card-label { font-size: 10px; color: rgba(255,255,255,0.4); font-family: 'Space Mono', monospace; }
+	.tax-card-input { display: flex; align-items: center; gap: 2px; margin-bottom: 6px; }
+	.tax-input {
+		width: 100%; background: transparent; border: none; outline: none;
+		font-family: 'Rajdhani', sans-serif; font-size: 24px; font-weight: 700;
+		color: #fff; font-variant-numeric: tabular-nums; padding: 0;
+	}
+	.tax-input::placeholder { color: rgba(255,255,255,0.1); }
+	.tax-unit { font-family: 'Space Mono', monospace; font-size: 12px; color: rgba(255,255,255,0.2); }
+	.tax-card-bar { height: 3px; border-radius: 2px; background: rgba(255,255,255,0.04); overflow: hidden; }
+	.tax-card-fill { height: 100%; border-radius: 2px; transition: width 0.2s; }
+	.tax-fill-cyan { background: #00d2ff; }
+	.tax-fill-amber { background: #f59e0b; }
+	.tax-fill-purple { background: #a78bfa; }
+	@media (max-width: 500px) { .tax-cards { grid-template-columns: 1fr; } }
 	.prot-fields { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem; }
 	.tax-total { display: flex; align-items: center; gap: 6px; padding: 8px 12px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 8px; flex-wrap: wrap; }
 	.total-label, .total-detail { font-family: 'Space Mono', monospace; color: rgba(255,255,255,0.35); }
@@ -193,7 +238,6 @@
 	.knob { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: rgba(255,255,255,0.5); transition: all 0.2s; }
 	.toggle.on .knob { left: 18px; background: #fbbf24; }
 	@media (max-width: 640px) {
-		.rate-row { grid-template-columns: 1fr 1fr 1fr; }
 		.prot-fields { grid-template-columns: 1fr 1fr; gap: 0.5rem; }
 		.prot-fields .field-group:last-child { grid-column: 1 / -1; }
 		.wallet-row { flex-wrap: wrap; }
