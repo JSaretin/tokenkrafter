@@ -1343,38 +1343,34 @@
 				</div>
 
 			{:else}
-				<!-- Review view — cost-first layout -->
+				<!-- Payment-focused review -->
 				<div class="modal-header">
-					<h2 class="syne text-xl font-bold text-white">{tokenInfo.existingTokenAddress ? 'Review Launch' : $t('ct.reviewTitle')}</h2>
+					<h2 class="syne text-xl font-bold text-white">Confirm Payment</h2>
 					<button onclick={closePreview} class="close-btn cursor-pointer">x</button>
 				</div>
 
-				<!-- Token summary (compact) -->
-				<div class="review-summary">
+				<!-- Token identifier (one line) -->
+				<div class="review-id">
 					<span class="review-token-name">{tokenInfo.name} ({tokenInfo.symbol})</span>
 					<span class="review-token-chain">{tokenInfo.network.name}</span>
-					<div class="review-badges">
-						{#if tokenInfo.isMintable}<span class="badge badge-cyan">Mintable</span>{/if}
-						{#if tokenInfo.isTaxable}<span class="badge badge-amber">Taxable</span>{/if}
-						{#if tokenInfo.isPartner}<span class="badge badge-purple">Partner</span>{/if}
-						{#if tokenInfo.listing?.enabled}<span class="badge badge-emerald">DEX Listing</span>{/if}
-						{#if tokenInfo.launch?.enabled}<span class="badge badge-emerald">Launch</span>{/if}
-						{#if !tokenInfo.isMintable && !tokenInfo.isTaxable && !tokenInfo.isPartner}<span class="badge badge-emerald">Standard</span>{/if}
-					</div>
+				</div>
+				<div class="review-badges">
+					{#if tokenInfo.isMintable}<span class="badge badge-cyan">Mintable</span>{/if}
+					{#if tokenInfo.isTaxable}<span class="badge badge-amber">Taxable</span>{/if}
+					{#if tokenInfo.isPartner}<span class="badge badge-purple">Partner</span>{/if}
+					{#if tokenInfo.listing?.enabled}<span class="badge badge-emerald">DEX Listing</span>{/if}
+					{#if tokenInfo.launch?.enabled}<span class="badge badge-emerald">Launch</span>{/if}
+					{#if !tokenInfo.isMintable && !tokenInfo.isTaxable && !tokenInfo.isPartner && !tokenInfo.listing?.enabled && !tokenInfo.launch?.enabled}<span class="badge badge-emerald">Standard</span>{/if}
 				</div>
 
-				<!-- Cost Breakdown Receipt (always visible, top priority) -->
+				<!-- Cost Breakdown -->
 				<div class="modal-section fee-section">
-					<div class="label-text mb-3">Cost Breakdown</div>
-
 					<div class="receipt">
-						<!-- Creation fee -->
 						<div class="receipt-row">
-							<span class="receipt-label">Token creation fee</span>
+							<span class="receipt-label">Creation fee</span>
 							<span class="receipt-value">{feeLoading ? '...' : `$${feeUsdAmount}`}</span>
 						</div>
 
-						<!-- Liquidity costs (if listing) -->
 						{#if tokenInfo.listing?.enabled}
 							{#each (tokenInfo.listing.pairs || []).filter(p => Number(p.amount) > 0) as pair}
 								{@const baseLabel = pair.base === 'native' ? tokenInfo.network.native_coin : pair.base.toUpperCase()}
@@ -1385,7 +1381,6 @@
 							{/each}
 						{/if}
 
-						<!-- Launch fee (if launching) -->
 						{#if tokenInfo.launch?.enabled}
 							<div class="receipt-row">
 								<span class="receipt-label">Launch fee (on graduation)</span>
@@ -1393,20 +1388,13 @@
 							</div>
 						{/if}
 
-						<!-- Divider + Total -->
 						<div class="receipt-divider"></div>
 						<div class="receipt-row receipt-total">
 							<span class="receipt-label">You pay now</span>
 							<span class="receipt-value">
-								{#if feeLoading}
-									...
+								{#if feeLoading}...
 								{:else}
-									{selectedFeeFormatted} {selectedPayment?.symbol}
-									{#if tokenInfo.listing?.enabled}
-										{#each (tokenInfo.listing.pairs || []).filter(p => Number(p.amount) > 0 && p.base === 'native') as pair}
-											+ {pair.amount} {tokenInfo.network.native_coin}
-										{/each}
-									{/if}
+									{selectedFeeFormatted} {selectedPayment?.symbol}{#if tokenInfo.listing?.enabled}{#each (tokenInfo.listing.pairs || []).filter(p => Number(p.amount) > 0 && p.base === 'native') as pair} + {pair.amount} {tokenInfo.network.native_coin}{/each}{/if}
 								{/if}
 							</span>
 						</div>
@@ -1415,62 +1403,14 @@
 					{#if !feeLoading && paymentOptions.length > 0}
 						<div class="field-group mt-3">
 							<label class="label-text" for="payment-method">{$t('ct.paymentMethod')}</label>
-							<select
-								id="payment-method"
-								class="input-field"
-								bind:value={selectedPaymentIndex}
-							>
+							<select id="payment-method" class="input-field" bind:value={selectedPaymentIndex}>
 								{#each paymentOptions as opt, i}
-									<option value={i}>
-										{opt.name} ({parseFloat(ethers.formatUnits(feeAmounts[i] ?? 0n, opt.decimals)).toFixed(4)} {opt.symbol})
-									</option>
+									<option value={i}>{opt.name} ({parseFloat(ethers.formatUnits(feeAmounts[i] ?? 0n, opt.decimals)).toFixed(4)} {opt.symbol})</option>
 								{/each}
 							</select>
 						</div>
 					{/if}
 				</div>
-
-				<!-- Collapsible details -->
-				<button class="review-details-toggle" onclick={() => showReviewDetails = !showReviewDetails}>
-					<span>View details</span>
-					<svg class="review-chev" class:review-chev-open={showReviewDetails} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
-				</button>
-
-				{#if showReviewDetails}
-					<div class="review-details">
-						<!-- Token info -->
-						<div class="detail-grid">
-							{#if !tokenInfo.existingTokenAddress}
-								<div class="detail-row"><span class="detail-label">Supply</span><span class="detail-value">{Number(tokenInfo.totalSupply).toLocaleString()}</span></div>
-								<div class="detail-row"><span class="detail-label">Decimals</span><span class="detail-value">{tokenInfo.decimals}</span></div>
-							{:else}
-								<div class="detail-row"><span class="detail-label">Contract</span><span class="detail-value text-cyan-300 text-xs">{tokenInfo.existingTokenAddress.slice(0, 10)}...{tokenInfo.existingTokenAddress.slice(-8)}</span></div>
-							{/if}
-						</div>
-
-						<!-- Listing details -->
-						{#if tokenInfo.listing?.enabled}
-							{@const baseSymbol = getBaseSymbol(tokenInfo.network, tokenInfo.listing.baseCoin)}
-							<div class="detail-grid" style="margin-top: 8px;">
-								<div class="detail-row"><span class="detail-label">Pair</span><span class="detail-value text-emerald-400">{tokenInfo.symbol}/{baseSymbol}</span></div>
-								{#if tokenInfo.listing.mode === 'price'}
-									<div class="detail-row"><span class="detail-label">Price</span><span class="detail-value">{tokenInfo.listing.pricePerToken} {baseSymbol}/token</span></div>
-								{/if}
-							</div>
-						{/if}
-
-						<!-- Launch details -->
-						{#if tokenInfo.launch?.enabled}
-							<div class="detail-grid" style="margin-top: 8px;">
-								<div class="detail-row"><span class="detail-label">Curve</span><span class="detail-value">{['Linear', 'Sqrt', 'Quadratic', 'Exp'][tokenInfo.launch.curveType]}</span></div>
-								<div class="detail-row"><span class="detail-label">Cap</span><span class="detail-value">${tokenInfo.launch.softCap}–${tokenInfo.launch.hardCap}</span></div>
-								<div class="detail-row"><span class="detail-label">Duration</span><span class="detail-value">{tokenInfo.launch.durationDays} days</span></div>
-								<div class="detail-row"><span class="detail-label">Max Buy</span><span class="detail-value">{(parseInt(tokenInfo.launch.maxBuyBps) / 100).toFixed(1)}%</span></div>
-							</div>
-							<div class="review-note">Graduation: 1% USDT + 1% tokens | Buy fee: 1% | LP: auto-burned</div>
-						{/if}
-					</div>
-				{/if}
 
 				<button
 					onclick={confirmAndDeploy}
@@ -1907,30 +1847,13 @@
 
 	.fee-section { background: rgba(0,210,255,0.03); border-radius: 10px; padding: 14px; border-color: rgba(0,210,255,0.1); }
 
-	/* Review summary */
-	.review-summary {
-		display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-		padding: 10px 14px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.04);
-		border-radius: 10px; margin-bottom: 10px;
+	/* Review payment modal */
+	.review-id {
+		display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px;
 	}
-	.review-token-name { font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700; color: #fff; }
+	.review-token-name { font-family: 'Syne', sans-serif; font-size: 15px; font-weight: 700; color: #fff; }
 	.review-token-chain { font-size: 10px; color: #00d2ff; font-family: 'Space Mono', monospace; }
-	.review-badges { display: flex; gap: 4px; flex-wrap: wrap; margin-left: auto; }
-
-	/* Collapsible details */
-	.review-details-toggle {
-		display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%;
-		padding: 8px; border: none; background: transparent; color: #475569; cursor: pointer;
-		font-family: 'Space Mono', monospace; font-size: 10px; transition: color 0.12s;
-	}
-	.review-details-toggle:hover { color: #00d2ff; }
-	.review-chev { transition: transform 0.15s; }
-	.review-chev-open { transform: rotate(180deg); }
-	.review-details {
-		padding: 10px 14px; background: rgba(255,255,255,0.015); border: 1px solid rgba(255,255,255,0.04);
-		border-radius: 10px; margin-bottom: 8px;
-	}
-	.review-note { font-size: 9px; color: #475569; font-family: 'Space Mono', monospace; margin-top: 8px; text-align: center; }
+	.review-badges { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 12px; }
 
 	.receipt { display: flex; flex-direction: column; gap: 0; }
 	.receipt-row {
