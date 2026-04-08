@@ -6,6 +6,8 @@
 	import { supabase } from '$lib/supabaseClient';
 	import RecentTransactionsTicker from '$lib/RecentTransactionsTicker.svelte';
 
+	let { data: serverData }: { data: any } = $props();
+
 	let liveLaunches: any[] = $state([]);
 	let scheduledLaunches: any[] = $state([]);
 	let graduatedLaunches: any[] = $state([]);
@@ -46,19 +48,27 @@
 	// Supabase Realtime channel
 	let channel: any;
 
+	// Process server data immediately (no loading spinner)
+	if (serverData?.launches?.length) {
+		processLaunches(serverData.launches);
+		launchesLoading = false;
+	}
+
 	onMount(() => {
 		tickInterval = setInterval(() => { tickNow = Date.now(); }, 1000);
 
-		// Initial fetch from Supabase directly
-		supabase
-			.from('launches')
-			.select('*')
-			.order('created_at', { ascending: false })
-			.limit(100)
-			.then(({ data }) => {
-				if (data) processLaunches(data);
-				launchesLoading = false;
-			});
+		// If SSR data was empty, fetch client-side as fallback
+		if (!serverData?.launches?.length) {
+			supabase
+				.from('launches')
+				.select('*')
+				.order('created_at', { ascending: false })
+				.limit(100)
+				.then(({ data }) => {
+					if (data) processLaunches(data);
+					launchesLoading = false;
+				});
+		}
 
 		// Subscribe to realtime changes
 		channel = supabase

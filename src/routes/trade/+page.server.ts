@@ -1,5 +1,6 @@
 import type { PageServerLoad } from './$types';
 import { supabaseAdmin } from '$lib/supabaseServer';
+import { getBanks } from '$lib/flutterwave';
 
 export const load: PageServerLoad = async () => {
 	const [launchesResult, banksResult, ratesResult] = await Promise.all([
@@ -10,12 +11,32 @@ export const load: PageServerLoad = async () => {
 			.order('created_at', { ascending: false })
 			.limit(50),
 
-		// Nigerian banks (cached in DB)
-		supabaseAdmin
-			.from('ng_banks')
-			.select('code, name, slug')
-			.eq('active', true)
-			.order('name'),
+		// Nigerian banks — DB cache with Flutterwave fallback
+		(async () => {
+			const { data } = await supabaseAdmin
+				.from('ng_banks')
+				.select('code, name, slug')
+				.order('name');
+
+			if (data && data.length > 0) return { data };
+
+			// DB empty — fetch from Flutterwave and cache
+			try {
+				const flwBanks = await getBanks();
+				if (flwBanks.length > 0) {
+					const rows = flwBanks.map(b => ({
+						code: b.code,
+						name: b.name,
+						slug: b.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''),
+						active: true
+					}));
+					await supabaseAdmin.from('ng_banks').update({ active: false }).neq('code', '');
+					await supabaseAdmin.from('ng_banks').upsert(rows, { onConflict: 'code' });
+					return { data: rows.map(b => ({ code: b.code, name: b.name, slug: b.slug })) };
+				}
+			} catch {}
+			return { data: [] };
+		})(),
 
 		// Exchange rates
 		(async () => {
