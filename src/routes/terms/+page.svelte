@@ -13,13 +13,13 @@
 
 	<div class="space-y-10 text-sm leading-relaxed" style="color: var(--text);">
 
-		<!-- 1 -->
+		<!-- 1. Acceptance -->
 		<section>
 			<h2 class="syne text-lg font-semibold mb-3" style="color: var(--text-heading);">{$t('tos.s1.title')}</h2>
 			<p>{$t('tos.s1.body')}</p>
 		</section>
 
-		<!-- 2 -->
+		<!-- 2. Platform Overview -->
 		<section>
 			<h2 class="syne text-lg font-semibold mb-3" style="color: var(--text-heading);">{$t('tos.s2.title')}</h2>
 			<p class="mb-3">{$t('tos.s2.intro')}</p>
@@ -32,31 +32,41 @@
 			</ul>
 		</section>
 
-		<!-- 3 -->
+		<!-- 3. Risk Disclaimer -->
 		<section>
 			<h2 class="syne text-lg font-semibold mb-3" style="color: var(--text-heading);">{$t('tos.s3.title')}</h2>
-			<p>{$t('tos.s3.body')}</p>
-		</section>
-
-		<!-- 4 -->
-		<section>
-			<h2 class="syne text-lg font-semibold mb-3" style="color: var(--text-heading);">{$t('tos.s4.title')}</h2>
-			<p class="mb-3">{$t('tos.s4.intro')}</p>
+			<p class="mb-3">{$t('tos.s3.intro')}</p>
 			<ul class="list-disc pl-5 space-y-2" style="color: var(--text-muted);">
-				<li>{$t('tos.s4.l1')}</li>
-				<li>{$t('tos.s4.l2')}</li>
-				<li>{$t('tos.s4.l3')}</li>
-				<li>{$t('tos.s4.l4')}</li>
+				<li>{$t('tos.s3.l1')}</li>
+				<li>{$t('tos.s3.l2')}</li>
+				<li>{$t('tos.s3.l3')}</li>
+				<li>{$t('tos.s3.l4')}</li>
+				<li>{$t('tos.s3.l5')}</li>
+				<li>{$t('tos.s3.l6')}</li>
+				<li>{$t('tos.s3.l7')}</li>
 			</ul>
 		</section>
 
-		<!-- 5 -->
+		<!-- 4. No Financial Advice -->
 		<section>
-			<h2 class="syne text-lg font-semibold mb-3" style="color: var(--text-heading);">{$t('tos.s5.title')}</h2>
-			<p>{$t('tos.s5.body')}</p>
+			<h2 class="syne text-lg font-semibold mb-3" style="color: var(--text-heading);">{$t('tos.s4.title')}</h2>
+			<p>{$t('tos.s4.body')}</p>
 		</section>
 
-		<!-- 6 -->
+		<!-- 5. Embedded Wallet -->
+		<section>
+			<h2 class="syne text-lg font-semibold mb-3" style="color: var(--text-heading);">{$t('tos.s5.title')}</h2>
+			<p class="mb-3">{$t('tos.s5.intro')}</p>
+			<ul class="list-disc pl-5 space-y-2" style="color: var(--text-muted);">
+				<li>{$t('tos.s5.l1')}</li>
+				<li>{$t('tos.s5.l2')}</li>
+				<li>{$t('tos.s5.l3')}</li>
+				<li>{$t('tos.s5.l4')}</li>
+				<li>{$t('tos.s5.l5')}</li>
+			</ul>
+		</section>
+
+		<!-- 6. User Responsibility -->
 		<section>
 			<h2 class="syne text-lg font-semibold mb-3" style="color: var(--text-heading);">{$t('tos.s6.title')}</h2>
 			<p class="mb-3">{$t('tos.s6.intro')}</p>
@@ -68,44 +78,91 @@
 				<li>{$t('tos.s6.l5')}</li>
 				<li>{$t('tos.s6.l6')}</li>
 			</ul>
-			<p class="mt-3">{$t('tos.s6.outro')}</p>
 		</section>
 
-		<!-- 7 -->
+		<!-- 7. Fees & Transparency -->
 		<section>
 			<h2 class="syne text-lg font-semibold mb-3" style="color: var(--text-heading);">{$t('tos.s7.title')}</h2>
-			<p>{$t('tos.s7.body')}</p>
-		</section>
-
-		<!-- 8 -->
-		<section>
-			<h2 class="syne text-lg font-semibold mb-3" style="color: var(--text-heading);">{$t('tos.s8.title')}</h2>
-			<p>{$t('tos.s8.body')}</p>
-		</section>
-
-		<!-- 9 -->
-		<section>
-			<h2 class="syne text-lg font-semibold mb-3" style="color: var(--text-heading);">{$t('tos.s9.title')}</h2>
-			<p class="mb-3">{$t('tos.s9.intro')}</p>
+			<p class="mb-3">{$t('tos.s7.intro')}</p>
 			<ul class="list-disc pl-5 space-y-2" style="color: var(--text-muted);">
-				<li>{$t('tos.s9.l1')}</li>
-				<li>{$t('tos.s9.l2')}</li>
-				<li>{$t('tos.s9.l3')}</li>
-				<li>{$t('tos.s9.l4')}</li>
-				<li>{$t('tos.s9.l5')}</li>
+				<li>{$t('tos.s7.l1')}</li>
+				<li>{$t('tos.s7.l2')}</li>
+				<li>{$t('tos.s7.l3')}</li>
+				<li>{$t('tos.s7.l4')}</li>
+				<li>{$t('tos.s7.l5')}</li>
+				<li>{$t('tos.s7.l6')}</li>
 			</ul>
 		</section>
 
-		<!-- 10 -->
+		<!-- 8. Fiat Off-Ramp -->
 		<section>
-			<h2 class="syne text-lg font-semibold mb-3" style="color: var(--text-heading);">{$t('tos.s10.title')}</h2>
-			<p>{$t('tos.s10.body')}</p>
+			<h2 class="syne text-lg font-semibold mb-3" style="color: var(--text-heading);">{$t('tos.s8.title')}</h2>
+			<p class="mb-3">{$t('tos.s8.intro')}</p>
+			<ul class="list-disc pl-5 space-y-2" style="color: var(--text-muted);">
+				<li>{$t('tos.s8.l1')}</li>
+				<li>{$t('tos.s8.l2')}</li>
+				<li>{$t('tos.s8.l3')}</li>
+				<li>{$t('tos.s8.l4')}</li>
+				<li>{$t('tos.s8.l5')}</li>
+			</ul>
 		</section>
 
-		<!-- 11 -->
+		<!-- 9. Platform Liability -->
+		<section>
+			<h2 class="syne text-lg font-semibold mb-3" style="color: var(--text-heading);">{$t('tos.s9.title')}</h2>
+			<p>{$t('tos.s9.body')}</p>
+		</section>
+
+		<!-- 10. Prohibited Use -->
+		<section>
+			<h2 class="syne text-lg font-semibold mb-3" style="color: var(--text-heading);">{$t('tos.s10.title')}</h2>
+			<p class="mb-3">{$t('tos.s10.intro')}</p>
+			<ul class="list-disc pl-5 space-y-2" style="color: var(--text-muted);">
+				<li>{$t('tos.s10.l1')}</li>
+				<li>{$t('tos.s10.l2')}</li>
+				<li>{$t('tos.s10.l3')}</li>
+				<li>{$t('tos.s10.l4')}</li>
+				<li>{$t('tos.s10.l5')}</li>
+				<li>{$t('tos.s10.l6')}</li>
+			</ul>
+			<p class="mt-3">{$t('tos.s10.outro')}</p>
+		</section>
+
+		<!-- 11. Token Creator Responsibility -->
 		<section>
 			<h2 class="syne text-lg font-semibold mb-3" style="color: var(--text-heading);">{$t('tos.s11.title')}</h2>
 			<p>{$t('tos.s11.body')}</p>
+		</section>
+
+		<!-- 12. Smart Contract Risk -->
+		<section>
+			<h2 class="syne text-lg font-semibold mb-3" style="color: var(--text-heading);">{$t('tos.s12.title')}</h2>
+			<p>{$t('tos.s12.body')}</p>
+		</section>
+
+		<!-- 13. Partnership Tokens -->
+		<section>
+			<h2 class="syne text-lg font-semibold mb-3" style="color: var(--text-heading);">{$t('tos.s13.title')}</h2>
+			<p class="mb-3">{$t('tos.s13.intro')}</p>
+			<ul class="list-disc pl-5 space-y-2" style="color: var(--text-muted);">
+				<li>{$t('tos.s13.l1')}</li>
+				<li>{$t('tos.s13.l2')}</li>
+				<li>{$t('tos.s13.l3')}</li>
+				<li>{$t('tos.s13.l4')}</li>
+				<li>{$t('tos.s13.l5')}</li>
+			</ul>
+		</section>
+
+		<!-- 14. Jurisdictional Compliance -->
+		<section>
+			<h2 class="syne text-lg font-semibold mb-3" style="color: var(--text-heading);">{$t('tos.s14.title')}</h2>
+			<p>{$t('tos.s14.body')}</p>
+		</section>
+
+		<!-- 15. Modification of Terms -->
+		<section>
+			<h2 class="syne text-lg font-semibold mb-3" style="color: var(--text-heading);">{$t('tos.s15.title')}</h2>
+			<p>{$t('tos.s15.body')}</p>
 		</section>
 
 		<!-- Divider -->

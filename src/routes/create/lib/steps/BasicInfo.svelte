@@ -200,7 +200,7 @@
 	</div>
 
 	<!-- Clone / existing token toggle -->
-	<button class="toggle-row" tabindex="-1" onclick={() => (useExistingToken = !useExistingToken)}>
+	<button class="toggle-row" tabindex="-1" onclick={() => { useExistingToken = !useExistingToken; if (!useExistingToken) existingTokenAddress = ''; }}>
 		<span class="toggle-track" class:active={useExistingToken}>
 			<span class="toggle-thumb"></span>
 		</span>

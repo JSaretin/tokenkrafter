@@ -182,10 +182,13 @@
 	let autoPrice = $derived.by(() => tokensForPool > 0 && totalLiquidityUsd > 0 ? totalLiquidityUsd / tokensForPool : 0);
 
 	// ── Force mode ─────────────────────────────────────────
+	// Set initial mode from pre-selection (user can change on Features step)
 	if (forceMode === 'token') { launchEnabled = false; listingEnabled = false; }
 	else if (forceMode === 'both') { launchEnabled = true; listingEnabled = false; }
-	else if (forceMode === 'launch') { useExistingToken = true; launchEnabled = true; listingEnabled = false; }
+	else if (forceMode === 'launch') { launchEnabled = true; listingEnabled = false; }
 	else if (forceMode === 'list') { launchEnabled = false; listingEnabled = true; }
+	// Only set useExistingToken if explicitly launching an existing token (URL param)
+	if (forceMode === 'launch' && initialData?.existingTokenAddress) { useExistingToken = true; }
 
 	// ── Initial data ───────────────────────────────────────
 	if (initialData) {
