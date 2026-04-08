@@ -34,6 +34,23 @@
 	} = $props();
 
 	let showMetadata = $state(false);
+	let logoUploading = $state(false);
+	let logoFileInput: HTMLInputElement | undefined = $state();
+
+	async function handleLogoUpload(e: Event) {
+		const file = (e.target as HTMLInputElement).files?.[0];
+		if (!file) return;
+		if (file.size > 2 * 1024 * 1024) { alert('Max 2 MB'); return; }
+		if (!['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/svg+xml'].includes(file.type)) { alert('PNG, JPEG, WebP, GIF, or SVG only'); return; }
+
+		// Preview immediately using data URL
+		const reader = new FileReader();
+		reader.onload = () => { tokenLogoUrl = reader.result as string; };
+		reader.readAsDataURL(file);
+
+		// Store the file for later upload (after token is deployed and we have the address)
+		(window as any).__pendingLogoFile = file;
+	}
 
 	let loading = $state(false);
 	let fetchError = $state('');
@@ -131,58 +148,71 @@
 			{/if}
 		</div>
 	{:else}
-		<!-- Token Name -->
+		<!-- Logo upload (prominent at top) -->
 		<div class="field-group">
-			<label class="label" for="bi-name">Token Name</label>
-			<input id="bi-name" class="input-field" type="text" placeholder="e.g. My Token" bind:value={name} />
+			<input type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" class="hidden-file" bind:this={logoFileInput} onchange={handleLogoUpload} />
+			<button class="logo-upload-btn" type="button" onclick={() => logoFileInput?.click()}>
+				{#if tokenLogoUrl}
+					<img src={tokenLogoUrl} alt="Logo" class="logo-upload-preview" />
+					<div class="logo-upload-text">
+						<span class="logo-upload-change">Change logo</span>
+						<span class="logo-upload-sub">PNG, JPEG, WebP, GIF, SVG (max 2 MB)</span>
+					</div>
+				{:else}
+					<div class="logo-upload-placeholder">
+						<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+					</div>
+					<div class="logo-upload-text">
+						<span>Upload token logo</span>
+						<span class="logo-upload-sub">Optional — you can add it later</span>
+					</div>
+				{/if}
+			</button>
 		</div>
 
-		<!-- Symbol -->
-		<div class="field-group">
-			<label class="label" for="bi-symbol">Symbol</label>
-			<input id="bi-symbol" class="input-field" type="text" placeholder="e.g. MTK" value={symbol} oninput={handleSymbolInput} maxlength="11" />
+		<!-- Name + Symbol row -->
+		<div class="name-symbol-row">
+			<div class="field-group" style="flex: 2;">
+				<label class="label" for="bi-name">Token Name</label>
+				<input id="bi-name" class="input-field" type="text" placeholder="e.g. My Token" bind:value={name} />
+			</div>
+			<div class="field-group" style="flex: 1;">
+				<label class="label" for="bi-symbol">Symbol</label>
+				<input id="bi-symbol" class="input-field" type="text" placeholder="e.g. MTK" value={symbol} oninput={handleSymbolInput} maxlength="11" />
+			</div>
 		</div>
 
 		<!-- Total Supply -->
 		<div class="field-group">
 			<label class="label" for="bi-supply">Total Supply</label>
-			<input id="bi-supply" class="input-field" type="number" placeholder="e.g. 1000000000" bind:value={totalSupply} min="1" />
-			<div class="preset-row">
-				{#each supplyPresets as p}
-					<button class="preset-btn" tabindex="-1" onclick={() => (totalSupply = p.value)}>{p.label}</button>
-				{/each}
+			<div class="supply-row">
+				<input id="bi-supply" class="input-field supply-input" type="number" placeholder="e.g. 1000000000" bind:value={totalSupply} min="1" />
+				<div class="preset-row">
+					{#each supplyPresets as p}
+						<button class="preset-btn" tabindex="-1" onclick={() => (totalSupply = p.value)}>{p.label}</button>
+					{/each}
+				</div>
 			</div>
 			{#if formattedSupply()}
 				<span class="hint">{formattedSupply()}</span>
 			{/if}
 		</div>
-	{/if}
 
-	<!-- Decimals (always visible, subtle) -->
-	<div class="field-group decimals-row">
-		<label class="label small" for="bi-decimals">Decimals</label>
-		<input id="bi-decimals" class="input-field small-input" type="number" bind:value={decimals} min="0" max="18" />
-	</div>
+		<!-- Decimals -->
+		<div class="field-group decimals-row">
+			<label class="label small" for="bi-decimals">Decimals</label>
+			<input id="bi-decimals" class="input-field small-input" type="number" bind:value={decimals} min="0" max="18" />
+		</div>
 
-	<!-- Token Info (optional, collapsible) -->
-	{#if !useExistingToken}
+		<!-- About (collapsible) -->
 		<button class="meta-toggle" onclick={() => showMetadata = !showMetadata}>
-			<span class="meta-toggle-label">Token Info</span>
-			<span class="meta-toggle-hint">Logo, description, socials (optional)</span>
+			<span class="meta-toggle-label">About this token</span>
+			<span class="meta-toggle-hint">Description, website, socials</span>
 			<svg class="meta-toggle-chev" class:meta-open={showMetadata} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
 		</button>
 
 		{#if showMetadata}
 			<div class="meta-fields">
-				<div class="field-group">
-					<label class="label small" for="bi-logo">Logo URL</label>
-					<input id="bi-logo" class="input-field" type="url" placeholder="https://example.com/logo.png" bind:value={tokenLogoUrl} />
-					{#if tokenLogoUrl}
-						<div class="meta-logo-preview">
-							<img src={tokenLogoUrl} alt="Logo" class="meta-logo-img" onerror={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-						</div>
-					{/if}
-				</div>
 				<div class="field-group">
 					<label class="label small" for="bi-desc">Description</label>
 					<textarea id="bi-desc" class="input-field" rows="2" placeholder="What is this token about?" bind:value={tokenDescription} style="resize: vertical;"></textarea>
@@ -261,7 +291,28 @@
 	.meta-toggle-chev.meta-open { transform: rotate(180deg); }
 	.meta-fields { display: flex; flex-direction: column; gap: 0.75rem; padding-top: 0.25rem; }
 	.meta-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
-	.meta-logo-preview { margin-top: 4px; }
-	.meta-logo-img { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; border: 1px solid rgba(255,255,255,0.08); }
+	.name-symbol-row { display: flex; gap: 0.75rem; }
+	.supply-row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+	.supply-input { flex: 1; min-width: 0; }
+	@media (max-width: 500px) { .name-symbol-row { flex-direction: column; } }
+
+	.hidden-file { display: none; }
+	.logo-upload-btn {
+		display: flex; align-items: center; gap: 12px; width: 100%;
+		padding: 12px 14px; border-radius: 10px;
+		background: rgba(255,255,255,0.02); border: 1px dashed rgba(255,255,255,0.08);
+		color: rgba(255,255,255,0.35); cursor: pointer; transition: all 0.15s;
+		font-family: 'Space Mono', monospace; font-size: 0.75rem;
+	}
+	.logo-upload-btn:hover { border-color: rgba(0,210,255,0.2); background: rgba(0,210,255,0.02); }
+	.logo-upload-preview { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; border: 2px solid rgba(255,255,255,0.08); flex-shrink: 0; }
+	.logo-upload-placeholder {
+		width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0;
+		background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
+		display: flex; align-items: center; justify-content: center; color: rgba(255,255,255,0.15);
+	}
+	.logo-upload-text { display: flex; flex-direction: column; gap: 2px; }
+	.logo-upload-change { color: #00d2ff; font-size: 0.72rem; }
+	.logo-upload-sub { font-size: 0.6rem; color: rgba(255,255,255,0.15); }
 	@media (max-width: 500px) { .meta-row { grid-template-columns: 1fr; } }
 </style>

@@ -65,6 +65,48 @@
 	let showAccountDropdown = $state(false);
 	let renamingIndex = $state<number | null>(null);
 	let renameValue = $state('');
+
+	// Well-known token logos (native + major stables)
+	const KNOWN_LOGOS: Record<string, string> = {
+		'BNB': 'https://assets.coingecko.com/coins/images/825/small/bnb-icon2_2x.png',
+		'ETH': 'https://assets.coingecko.com/coins/images/279/small/ethereum.png',
+		'USDT': 'https://assets.coingecko.com/coins/images/325/small/Tether.png',
+		'USDC': 'https://assets.coingecko.com/coins/images/6319/small/usdc.png',
+		'BUSD': 'https://assets.coingecko.com/coins/images/9576/small/BUSD.png',
+		'DAI': 'https://assets.coingecko.com/coins/images/9956/small/Badge_Dai.png',
+		'MATIC': 'https://assets.coingecko.com/coins/images/4713/small/polygon.png',
+		'AVAX': 'https://assets.coingecko.com/coins/images/12559/small/Avalanche_Circle_RedWhite_Trans.png',
+	};
+
+	function getTokenLogo(tok: { symbol: string; logoUrl?: string; address?: string }): string {
+		if (tok.logoUrl) return tok.logoUrl;
+		if (KNOWN_LOGOS[tok.symbol?.toUpperCase()]) return KNOWN_LOGOS[tok.symbol.toUpperCase()];
+		return '';
+	}
+
+	/** Fetch logo from our DB or GeckoTerminal for an imported token */
+	async function fetchTokenLogo(address: string): Promise<string> {
+		// Try our DB first
+		try {
+			const res = await fetch(`/api/token-metadata?address=${address.toLowerCase()}&chain_id=56`);
+			if (res.ok) {
+				const data = await res.json();
+				if (data?.logo_url) return data.logo_url;
+			}
+		} catch {}
+
+		// Try GeckoTerminal
+		try {
+			const res = await fetch(`https://api.geckoterminal.com/api/v2/networks/bsc/tokens/${address}`);
+			if (res.ok) {
+				const data = await res.json();
+				const img = data?.data?.attributes?.image_url;
+				if (img && img !== 'missing.png') return img;
+			}
+		} catch {}
+
+		return '';
+	}
 	let accountNames = $state<Record<number, string>>({});
 
 	// Load saved names from localStorage
@@ -109,7 +151,7 @@
 	let importAddress = $state('');
 	let showImport = $state(false);
 	let importLoading = $state(false);
-	let importedTokens = $state<{ address: string; symbol: string; name: string; balance: bigint; decimals: number; priceUsd?: number }[]>([]);
+	let importedTokens = $state<{ address: string; symbol: string; name: string; balance: bigint; decimals: number; priceUsd?: number; logoUrl?: string }[]>([]);
 
 	// Load imported tokens from localStorage on mount
 	$effect(() => {
@@ -117,7 +159,7 @@
 			const saved = localStorage.getItem('imported_tokens');
 			if (saved) {
 				const parsed = JSON.parse(saved);
-				importedTokens = parsed.map((t: any) => ({ ...t, balance: 0n }));
+				importedTokens = parsed.map((t: any) => ({ ...t, balance: 0n, logoUrl: t.logoUrl || '' }));
 			}
 		} catch {}
 	});
@@ -182,11 +224,14 @@
 				userAddress ? c.balanceOf(userAddress).catch(() => 0n) : Promise.resolve(0n),
 			]);
 
-			const token = { address: importAddress, name, symbol, decimals: Number(decimals), balance };
+			// Fetch logo
+			const logoUrl = KNOWN_LOGOS[symbol.toUpperCase()] || await fetchTokenLogo(importAddress);
+
+			const token = { address: importAddress, name, symbol, decimals: Number(decimals), balance, logoUrl };
 			importedTokens = [...importedTokens, token];
 
 			// Persist to localStorage (without balance — re-fetched on load)
-			const toSave = importedTokens.map(t => ({ address: t.address, name: t.name, symbol: t.symbol, decimals: t.decimals }));
+			const toSave = importedTokens.map(t => ({ address: t.address, name: t.name, symbol: t.symbol, decimals: t.decimals, logoUrl: (t as any).logoUrl || '' }));
 			localStorage.setItem('imported_tokens', JSON.stringify(toSave));
 
 			onAddFeedback({ message: `${symbol} imported`, type: 'success' });
@@ -394,7 +439,11 @@
 			<div class="ap-scroll">
 				<!-- Native -->
 				<div class="ap-row">
-					<div class="ap-row-icon ap-row-native">{nativeCoin.charAt(0)}</div>
+					{#if KNOWN_LOGOS[nativeCoin.toUpperCase()]}
+						<img src={KNOWN_LOGOS[nativeCoin.toUpperCase()]} alt={nativeCoin} class="ap-row-logo" />
+					{:else}
+						<div class="ap-row-icon ap-row-native">{nativeCoin.charAt(0)}</div>
+					{/if}
 					<div class="ap-row-meta">
 						<span class="ap-row-name">{nativeCoin}</span>
 						<span class="ap-row-sub">Native</span>
@@ -409,8 +458,13 @@
 				{#each [...tokens, ...importedTokens] as tok}
 					{@const bal = parseFloat(ethers.formatUnits(tok.balance, tok.decimals))}
 					{@const usd = tok.priceUsd ? bal * tok.priceUsd : 0}
+					{@const logo = getTokenLogo(tok)}
 					<div class="ap-row">
+					{#if logo}
+						<img src={logo} alt={tok.symbol} class="ap-row-logo" />
+					{:else}
 						<div class="ap-row-icon">{tok.symbol.charAt(0)}</div>
+					{/if}
 						<div class="ap-row-meta">
 							<span class="ap-row-name">{tok.symbol}</span>
 							<span class="ap-row-sub">{tok.name}</span>
@@ -758,6 +812,7 @@
 		font-family: 'Syne', sans-serif; font-size: 11px; font-weight: 800; color: #475569; flex-shrink: 0;
 	}
 	.ap-row-native { background: rgba(245,158,11,0.08); border-color: rgba(245,158,11,0.15); color: #f59e0b; }
+	.ap-row-logo { width: 30px; height: 30px; border-radius: 50%; object-fit: cover; flex-shrink: 0; border: 1px solid rgba(255,255,255,0.06); }
 	.ap-row-meta { flex: 1; min-width: 0; }
 	.ap-row-name { display: block; font-size: 12px; color: #e2e8f0; font-family: 'Syne', sans-serif; font-weight: 600; }
 	.ap-row-sub { display: block; font-size: 9px; color: #374151; font-family: 'Space Mono', monospace; }
