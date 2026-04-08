@@ -10,6 +10,7 @@
 	import { formatUsdt } from '$lib/launchpad';
 	import { apiFetch } from '$lib/apiFetch';
 	import { queryTradeLens, getInstantQuote, getWeth, isCacheLoaded, getUsdValue, type TaxInfo } from '$lib/tradeLens';
+	import { resolveTokenLogo } from '$lib/tokenLogo';
 
 	let getSigner: () => ethers.Signer | null = getContext('signer');
 	let getUserAddress: () => string | null = getContext('userAddress');
@@ -212,22 +213,7 @@
 
 	/** Fetch token logo from our DB or GeckoTerminal */
 	async function fetchTokenLogoUrl(address: string): Promise<string> {
-		// Try our DB
-		try {
-			const res = await fetch(`/api/token-metadata?address=${address.toLowerCase()}&chain_id=${selectedNetwork?.chain_id || 56}`);
-			if (res.ok) { const d = await res.json(); if (d?.logo_url) return d.logo_url; }
-		} catch {}
-		// Try GeckoTerminal
-		try {
-			const gecko = selectedNetwork?.gecko_network || 'bsc';
-			const res = await fetch(`https://api.geckoterminal.com/api/v2/networks/${gecko}/tokens/${address}`);
-			if (res.ok) {
-				const d = await res.json();
-				const img = d?.data?.attributes?.image_url;
-				if (img && !img.includes('missing') && img.startsWith('http')) return img;
-			}
-		} catch {}
-		return '';
+		return resolveTokenLogo(address, selectedNetwork?.chain_id || 56, selectedNetwork?.gecko_network || 'bsc');
 	}
 
 	$effect(() => {

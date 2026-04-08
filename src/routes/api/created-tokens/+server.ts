@@ -33,7 +33,7 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	const body = await request.json();
 
-	const row = {
+	const row: Record<string, any> = {
 		address: (body.address || '').toLowerCase(),
 		chain_id: body.chain_id,
 		creator: (body.creator || '').toLowerCase(),
@@ -46,6 +46,9 @@ export const POST: RequestHandler = async ({ request }) => {
 		is_partner: body.is_partner ?? false,
 		type_key: body.type_key ?? 0,
 	};
+	// Optional metadata (from activity bot or other sources)
+	if (body.description) row.description = body.description;
+	if (body.logo_url) row.logo_url = body.logo_url;
 
 	const { data, error: dbErr } = await supabaseAdmin
 		.from('created_tokens')

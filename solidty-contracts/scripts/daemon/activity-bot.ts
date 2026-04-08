@@ -69,7 +69,69 @@ const SUFFIXES = [
 const pick = <T>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
 const randInt = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
 
-function generateToken(): { name: string; symbol: string; supply: bigint; typeKey: number } {
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
+
+/** Generate token via Claude API — realistic meme token names */
+async function generateTokenAI(): Promise<{ name: string; symbol: string; supply: bigint; typeKey: number; description?: string } | null> {
+	if (!ANTHROPIC_API_KEY) return null;
+
+	try {
+		const res = await fetch('https://api.anthropic.com/v1/messages', {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+				'x-api-key': ANTHROPIC_API_KEY,
+				'anthropic-version': '2023-06-01',
+			},
+			body: JSON.stringify({
+				model: 'claude-haiku-4-5-20251001',
+				max_tokens: 200,
+				messages: [{
+					role: 'user',
+					content: `Generate a realistic BSC meme/utility token. Return ONLY valid JSON, no markdown:
+{"name": "Token Name", "symbol": "TKN", "supply": "1000000000", "type": "basic", "description": "One sentence about the token"}
+
+Rules:
+- Name: creative, catchy, could be real. Mix of meme, DeFi, gaming, AI, culture themes
+- Symbol: 3-5 uppercase letters derived from the name
+- Supply: realistic (1M to 1T)
+- Type: one of "basic", "mintable", "taxable", "partner" (weighted toward basic/partner)
+- Description: one sentence, what the token does
+- Be diverse — don't repeat common patterns. Think like a real crypto degen launching today.`
+				}]
+			})
+		});
+
+		if (!res.ok) return null;
+		const data = await res.json();
+		const text = data.content?.[0]?.text?.trim();
+		if (!text) return null;
+
+		// Extract JSON from response
+		const jsonMatch = text.match(/\{[\s\S]*\}/);
+		if (!jsonMatch) return null;
+		const parsed = JSON.parse(jsonMatch[0]);
+
+		const typeMap: Record<string, number> = {
+			basic: 0, mintable: 1, taxable: 2, 'tax+mint': 3,
+			partner: 4, 'partner+mint': 5, 'partner+tax': 6, 'partner+tax+mint': 7,
+		};
+
+		return {
+			name: parsed.name || 'AI Token',
+			symbol: (parsed.symbol || 'AIT').toUpperCase().slice(0, 5),
+			supply: BigInt(parsed.supply || '1000000000'),
+			typeKey: typeMap[parsed.type] ?? 0,
+			description: parsed.description,
+		};
+	} catch (e) {
+		console.log(`  ⚠️ AI generation failed: ${(e as any).message?.slice(0, 60)}`);
+		return null;
+	}
+}
+
+/** Fallback: generate token from hardcoded pools */
+function generateTokenLocal(): { name: string; symbol: string; supply: bigint; typeKey: number } {
 	const prefix = pick(PREFIXES);
 	const suffix = pick(SUFFIXES);
 	const name = suffix ? `${prefix} ${suffix}` : prefix;
@@ -85,8 +147,6 @@ function generateToken(): { name: string; symbol: string; supply: bigint; typeKe
 	];
 	const supply = pick(supplyTiers) * BigInt(randInt(1, 9));
 
-	// Type distribution: 0=basic(30%), 1=mintable(10%), 2=taxable(15%), 3=tax+mint(5%)
-	// 4=partner(20%), 5=partner+mint(5%), 6=partner+tax(10%), 7=partner+tax+mint(5%)
 	const typeWeights = [30, 10, 15, 5, 20, 5, 10, 5];
 	const totalWeight = typeWeights.reduce((a, b) => a + b, 0);
 	let roll = randInt(1, totalWeight);
@@ -97,6 +157,16 @@ function generateToken(): { name: string; symbol: string; supply: bigint; typeKe
 	}
 
 	return { name, symbol, supply, typeKey };
+}
+
+/** Generate token — tries AI first, falls back to local */
+async function generateToken(): Promise<{ name: string; symbol: string; supply: bigint; typeKey: number; description?: string }> {
+	const aiToken = await generateTokenAI();
+	if (aiToken) {
+		console.log(`    🤖 AI generated: ${aiToken.name} ($${aiToken.symbol})`);
+		return aiToken;
+	}
+	return generateTokenLocal();
 }
 
 // ── ABIs ──
@@ -255,7 +325,7 @@ async function createToken(
 	provider: any,
 	deployment: any
 ): Promise<{ gasCost: bigint } | null> {
-	const token = generateToken();
+	const token = await generateToken();
 	const typeLabels = ['Basic', 'Mintable', 'Taxable', 'Tax+Mint', 'Partner', 'Partner+Mint', 'Partner+Tax', 'Partner+Tax+Mint'];
 	const label = typeLabels[token.typeKey] || 'Basic';
 	const supplyStr = ethers.formatUnits(token.supply * 10n ** 18n, 18);
@@ -314,6 +384,32 @@ async function createToken(
 
 		console.log(`    ✅ Created! Token: ${tokenAddr.slice(0, 10)}...`);
 		console.log(`    Gas: ${ethers.formatEther(gasCost)} BNB | Fee: ${ethers.formatEther(feeNative)} BNB`);
+
+		// Save description to DB if AI-generated
+		if (token.description && tokenAddr) {
+			const API_BASE = process.env.API_BASE_URL || 'https://tokenkrafter.com';
+			const SYNC_SECRET = process.env.SYNC_SECRET || '';
+			try {
+				await fetch(`${API_BASE}/api/created-tokens`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SYNC_SECRET}` },
+					body: JSON.stringify({
+						address: tokenAddr.toLowerCase(),
+						chain_id: 56,
+						creator: wallet.address.toLowerCase(),
+						name: token.name,
+						symbol: token.symbol,
+						total_supply: (token.supply * 10n ** 18n).toString(),
+						decimals: 18,
+						is_mintable: (token.typeKey & 1) !== 0,
+						is_taxable: (token.typeKey & 2) !== 0,
+						is_partner: (token.typeKey & 4) !== 0,
+						type_key: token.typeKey,
+						description: token.description,
+					})
+				});
+			} catch {}
+		}
 
 		return { gasCost };
 	} catch (e: any) {

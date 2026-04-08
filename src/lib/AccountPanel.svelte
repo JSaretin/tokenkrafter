@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { ethers } from 'ethers';
 	import { getWalletState, exportPrivateKey, exportSeedPhrase, setActiveAccount, addAccount, unlockWallet, onWalletStateChange, getSigner, type WalletState } from './embeddedWallet';
+	import { getKnownLogo, resolveTokenLogo } from './tokenLogo';
 
 	let {
 		open = $bindable(false),
@@ -67,45 +68,9 @@
 	let renameValue = $state('');
 
 	// Well-known token logos (native + major stables)
-	const KNOWN_LOGOS: Record<string, string> = {
-		'BNB': 'https://assets.coingecko.com/coins/images/825/small/bnb-icon2_2x.png',
-		'ETH': 'https://assets.coingecko.com/coins/images/279/small/ethereum.png',
-		'USDT': 'https://assets.coingecko.com/coins/images/325/small/Tether.png',
-		'USDC': 'https://assets.coingecko.com/coins/images/6319/small/usdc.png',
-		'BUSD': 'https://assets.coingecko.com/coins/images/9576/small/BUSD.png',
-		'DAI': 'https://assets.coingecko.com/coins/images/9956/small/Badge_Dai.png',
-		'MATIC': 'https://assets.coingecko.com/coins/images/4713/small/polygon.png',
-		'AVAX': 'https://assets.coingecko.com/coins/images/12559/small/Avalanche_Circle_RedWhite_Trans.png',
-	};
-
 	function getTokenLogo(tok: { symbol: string; logoUrl?: string; address?: string }): string {
 		if (tok.logoUrl) return tok.logoUrl;
-		if (KNOWN_LOGOS[tok.symbol?.toUpperCase()]) return KNOWN_LOGOS[tok.symbol.toUpperCase()];
-		return '';
-	}
-
-	/** Fetch logo from our DB or GeckoTerminal for an imported token */
-	async function fetchTokenLogo(address: string): Promise<string> {
-		// Try our DB first
-		try {
-			const res = await fetch(`/api/token-metadata?address=${address.toLowerCase()}&chain_id=56`);
-			if (res.ok) {
-				const data = await res.json();
-				if (data?.logo_url) return data.logo_url;
-			}
-		} catch {}
-
-		// Try GeckoTerminal
-		try {
-			const res = await fetch(`https://api.geckoterminal.com/api/v2/networks/bsc/tokens/${address}`);
-			if (res.ok) {
-				const data = await res.json();
-				const img = data?.data?.attributes?.image_url;
-				if (img && !img.includes('missing') && img.startsWith('http')) return img;
-			}
-		} catch {}
-
-		return '';
+		return getKnownLogo(tok.symbol || '');
 	}
 	let accountNames = $state<Record<number, string>>({});
 
@@ -168,14 +133,13 @@
 	$effect(() => {
 		if (!userAddress || importedTokens.length === 0) return;
 		refreshTokenBalances();
-		// Fetch missing logos
+		// Fetch missing logos via shared cache
 		for (const tok of importedTokens) {
 			if (!tok.logoUrl && tok.address) {
-				fetchTokenLogo(tok.address).then(url => {
+				resolveTokenLogo(tok.address, 56).then(url => {
 					if (url) {
 						tok.logoUrl = url;
-						importedTokens = [...importedTokens]; // trigger reactivity
-						// Update localStorage
+						importedTokens = [...importedTokens];
 						const toSave = importedTokens.map(t => ({ address: t.address, name: t.name, symbol: t.symbol, decimals: t.decimals, logoUrl: t.logoUrl || '' }));
 						localStorage.setItem('imported_tokens', JSON.stringify(toSave));
 					}
@@ -239,7 +203,7 @@
 			]);
 
 			// Fetch logo
-			const logoUrl = KNOWN_LOGOS[symbol.toUpperCase()] || await fetchTokenLogo(importAddress);
+			const logoUrl = getKnownLogo(symbol) || await resolveTokenLogo(importAddress, 56);
 
 			const token = { address: importAddress, name, symbol, decimals: Number(decimals), balance, logoUrl };
 			importedTokens = [...importedTokens, token];
@@ -453,8 +417,8 @@
 			<div class="ap-scroll">
 				<!-- Native -->
 				<div class="ap-row">
-					{#if KNOWN_LOGOS[nativeCoin.toUpperCase()]}
-						<img src={KNOWN_LOGOS[nativeCoin.toUpperCase()]} alt={nativeCoin} class="ap-row-logo" />
+					{#if getKnownLogo(nativeCoin)}
+						<img src={getKnownLogo(nativeCoin)} alt={nativeCoin} class="ap-row-logo" />
 					{:else}
 						<div class="ap-row-icon ap-row-native">{nativeCoin.charAt(0)}</div>
 					{/if}

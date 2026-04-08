@@ -15,6 +15,7 @@
 	import WalletModal from '$lib/WalletModal.svelte';
 	import AccountPanel from '$lib/AccountPanel.svelte';
 	import { getSigner as getEmbeddedSigner, signOut, lockWallet, getWalletState, checkAuthReturn, hasVault, autoReconnect } from '$lib/embeddedWallet';
+	import { startBalancePoller, stopBalancePoller, updatePollerAddress, balanceState, refreshBalancesNow } from '$lib/balancePoller';
 
 	let { children } = $props();
 
@@ -115,6 +116,7 @@
 		nativeBalance = 0n;
 		nativePriceUsd = 0;
 		walletType = null;
+		stopBalancePoller();
 
 		// Background cleanup
 		if (wasEmbedded) {
@@ -152,6 +154,13 @@
 		}
 	});
 
+	// Sync balance poller state to layout state (for embedded wallet)
+	const unsubBalance = balanceState.subscribe((state) => {
+		if (state.lastUpdated > 0 && walletType === 'embedded') {
+			nativeBalance = state.nativeBalance;
+		}
+	});
+
 	function handleWalletConnected(address: string, type: 'embedded' | 'external') {
 		userAddress = address;
 		walletType = type;
@@ -166,6 +175,8 @@
 					signer = embeddedSigner;
 					provider = null; // no BrowserProvider for embedded wallet
 				}
+				// Start background balance polling
+				startBalancePoller(rpcProvider, address, net.chain_id);
 			}
 		}
 	}
@@ -210,6 +221,8 @@
 						if (net?.rpc) {
 							const rpcProvider = new ethers.JsonRpcProvider(net.rpc, net.chain_id, { staticNetwork: true });
 							signer = getEmbeddedSigner(rpcProvider);
+							// Start background balance polling
+							startBalancePoller(rpcProvider, state.activeAccount.address, net.chain_id);
 						}
 					}
 				} else if (result === 'needs-pin') {
@@ -728,12 +741,10 @@
 			const rpcProvider = new ethers.JsonRpcProvider(net.rpc, net.chain_id, { staticNetwork: true });
 			signer = getEmbeddedSigner(rpcProvider);
 		}
+		updatePollerAddress(addr);
 	}}
 	onRefreshBalance={() => {
-		if (!userAddress) return;
-		const net = supportedNetworks[0];
-		const prov = networkProviders.get(net?.chain_id);
-		if (prov) prov.getBalance(userAddress).then(b => nativeBalance = b).catch(() => {});
+		refreshBalancesNow();
 	}}
 />
 

@@ -28,13 +28,21 @@
 	// Resolve mode from URL params on mount
 	$effect(() => {
 		if (mode !== null) return;
+		let resolved: IntentMode | null = null;
 		if (tokenFromUrl) {
-			mode = 'launch';
+			resolved = 'launch';
 			launchTokenAddress = tokenFromUrl;
 		} else if (modeFromUrl === 'token' || modeFromUrl === 'launch' || modeFromUrl === 'both' || modeFromUrl === 'list') {
-			mode = modeFromUrl;
+			resolved = modeFromUrl;
 		} else if (launchFromUrl) {
-			mode = 'both';
+			resolved = 'both';
+		}
+		if (resolved) {
+			mode = resolved;
+			// Sync store so nav click (setting store to null) triggers reset
+			_ignoreStoreUpdate = true;
+			createMode.set(resolved);
+			_ignoreStoreUpdate = false;
 		}
 	});
 
