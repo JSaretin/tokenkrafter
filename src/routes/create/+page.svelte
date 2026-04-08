@@ -1590,6 +1590,10 @@
 						transferTaxPct={previewState.transferTaxPct}
 						wizardStep={previewState.wizardStep}
 						logoUrl={previewState.logoUrl}
+						description={previewState.description}
+						website={previewState.website}
+						twitter={previewState.twitter}
+						telegram={previewState.telegram}
 					/>
 				</div>
 			{/if}
