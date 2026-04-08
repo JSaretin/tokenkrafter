@@ -3,6 +3,7 @@
 	import { ethers } from 'ethers';
 	import { getWalletState, exportPrivateKey, exportSeedPhrase, setActiveAccount, addAccount, unlockWallet, onWalletStateChange, getSigner, type WalletState } from './embeddedWallet';
 	import { getKnownLogo, resolveTokenLogo } from './tokenLogo';
+	import { balanceState } from './balancePoller';
 
 	let {
 		open = $bindable(false),
@@ -148,6 +149,20 @@
 		}
 	});
 
+	// Sync balances from background poller
+	const unsubPoller = balanceState.subscribe((state) => {
+		if (state.lastUpdated === 0 || importedTokens.length === 0) return;
+		let changed = false;
+		for (const tok of importedTokens) {
+			const polled = state.tokens.find(t => t.address.toLowerCase() === tok.address.toLowerCase());
+			if (polled && polled.balance !== tok.balance) {
+				tok.balance = polled.balance;
+				changed = true;
+			}
+		}
+		if (changed) importedTokens = [...importedTokens];
+	});
+
 	async function refreshTokenBalances() {
 		const net = getNetwork();
 		if (!net) return;
@@ -159,7 +174,7 @@
 				tok.balance = await c.balanceOf(userAddress);
 			} catch {}
 		}
-		importedTokens = [...importedTokens]; // trigger reactivity
+		importedTokens = [...importedTokens];
 	}
 
 	function getNetwork() {

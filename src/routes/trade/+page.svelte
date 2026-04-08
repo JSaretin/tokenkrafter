@@ -186,19 +186,60 @@
 	type ImportedToken = { address: string; symbol: string; name: string; decimals: number; chainId: number; logo_url?: string };
 	let importedTokens: ImportedToken[] = $state([]);
 
-	// Load from localStorage on mount
+	// Load from localStorage on mount — merge both trade + wallet imported tokens
 	function loadImportedTokens() {
 		try {
+			// Trade page tokens
 			const stored = localStorage.getItem('importedTokens');
 			if (stored) importedTokens = JSON.parse(stored);
 		} catch {}
+		// Also load wallet imported tokens (different localStorage key)
+		try {
+			const walletTokens = localStorage.getItem('imported_tokens');
+			if (walletTokens) {
+				const parsed = JSON.parse(walletTokens);
+				for (const t of parsed) {
+					const addr = t.address?.toLowerCase();
+					if (addr && !importedTokens.find(x => x.address.toLowerCase() === addr)) {
+						importedTokens.push({
+							address: t.address,
+							symbol: t.symbol || '???',
+							name: t.name || 'Unknown',
+							decimals: t.decimals || 18,
+							chainId: 56,
+							logo_url: t.logoUrl || '',
+						});
+					}
+				}
+			}
+		} catch {}
+		// Resolve missing logos via shared cache
+		for (const t of importedTokens) {
+			if (!t.logo_url && t.address) {
+				resolveTokenLogo(t.address, t.chainId || 56).then(url => {
+					if (url) {
+						t.logo_url = url;
+						importedTokens = [...importedTokens];
+					}
+				});
+			}
+		}
 	}
 
 	function saveImportedToken(token: ImportedToken) {
 		if (importedTokens.find(t => t.address.toLowerCase() === token.address.toLowerCase() && t.chainId === token.chainId)) return;
+		// Resolve logo before saving
+		if (!token.logo_url && token.address) {
+			resolveTokenLogo(token.address, token.chainId || 56).then(url => {
+				if (url) {
+					token.logo_url = url;
+					importedTokens = [...importedTokens];
+					try { localStorage.setItem('importedTokens', JSON.stringify(importedTokens)); } catch {}
+				}
+			});
+		}
 		importedTokens = [...importedTokens, token];
 		try { localStorage.setItem('importedTokens', JSON.stringify(importedTokens)); } catch {}
-		// Refresh prices to include the new token
 		refreshPrices();
 	}
 
