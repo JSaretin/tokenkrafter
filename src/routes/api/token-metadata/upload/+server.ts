@@ -37,9 +37,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		}
 	}
 
-	// Upload to Supabase Storage
-	const ext = file.name.split('.').pop() || 'png';
-	const filePath = `${chainId}/${address}/logo.${ext}`;
+	// Upload to Supabase Storage — always save as .png for consistency
+	const filePath = `${chainId}/${address}/logo.png`;
 	const arrayBuffer = await file.arrayBuffer();
 
 	const { error: uploadError } = await supabaseAdmin.storage

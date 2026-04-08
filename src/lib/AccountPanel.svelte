@@ -106,6 +106,7 @@
 	let sendAmount = $state('');
 	let sending = $state(false);
 	let sendAsset = $state<'native' | string>('native'); // 'native' or token address
+	let showAssetPicker = $state(false);
 
 	let sendAssetInfo = $derived.by(() => {
 		if (sendAsset === 'native') return { symbol: nativeCoin, decimals: nativeDecimals, balance: nativeBalance };
@@ -523,12 +524,72 @@
 	{:else if view === 'send'}
 		<div class="ap-view-content">
 			<label class="ap-label">Asset</label>
-			<select class="ap-input ap-select" bind:value={sendAsset}>
-				<option value="native">{nativeCoin} (Native)</option>
-				{#each [...tokens, ...importedTokens] as tok}
-					<option value={tok.address}>{tok.symbol} — {fmtBal(tok.balance, tok.decimals)}</option>
-				{/each}
-			</select>
+			<button class="ap-asset-btn" type="button" onclick={() => showAssetPicker = true}>
+				{#if sendAsset === 'native'}
+					{#if getKnownLogo(nativeCoin)}
+						<img src={getKnownLogo(nativeCoin)} alt="" class="ap-asset-logo" />
+					{:else}
+						<span class="ap-asset-letter">{nativeCoin.charAt(0)}</span>
+					{/if}
+					<span class="ap-asset-name">{nativeCoin}</span>
+					<span class="ap-asset-bal">{fmtBal(nativeBalance, nativeDecimals)}</span>
+				{:else}
+					{@const tok = [...tokens, ...importedTokens].find(t => t.address.toLowerCase() === sendAsset.toLowerCase())}
+					{#if tok}
+						{#if getTokenLogo(tok)}
+							<img src={getTokenLogo(tok)} alt="" class="ap-asset-logo" />
+						{:else}
+							<span class="ap-asset-letter">{tok.symbol.charAt(0)}</span>
+						{/if}
+						<span class="ap-asset-name">{tok.symbol}</span>
+						<span class="ap-asset-bal">{fmtBal(tok.balance, tok.decimals)}</span>
+					{/if}
+				{/if}
+				<svg class="ap-asset-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+			</button>
+
+			{#if showAssetPicker}
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<!-- svelte-ignore a11y_click_events_have_key_events -->
+				<div class="ap-picker-overlay" onclick={(e) => { if (e.target === e.currentTarget) showAssetPicker = false; }}>
+					<div class="ap-picker">
+						<div class="ap-picker-header">
+							<span class="ap-picker-title">Select Asset</span>
+							<button class="ap-picker-close" type="button" onclick={() => showAssetPicker = false}>
+								<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+							</button>
+						</div>
+						<div class="ap-picker-list">
+							<button class="ap-picker-item" class:active={sendAsset === 'native'} onclick={() => { sendAsset = 'native'; showAssetPicker = false; }}>
+								{#if getKnownLogo(nativeCoin)}
+									<img src={getKnownLogo(nativeCoin)} alt="" class="ap-picker-logo" />
+								{:else}
+									<span class="ap-picker-letter">{nativeCoin.charAt(0)}</span>
+								{/if}
+								<div class="ap-picker-info">
+									<span class="ap-picker-symbol">{nativeCoin}</span>
+									<span class="ap-picker-name">Native</span>
+								</div>
+								<span class="ap-picker-bal">{fmtBal(nativeBalance, nativeDecimals)}</span>
+							</button>
+							{#each [...tokens, ...importedTokens] as tok}
+								<button class="ap-picker-item" class:active={sendAsset.toLowerCase() === tok.address.toLowerCase()} onclick={() => { sendAsset = tok.address; showAssetPicker = false; }}>
+									{#if getTokenLogo(tok)}
+										<img src={getTokenLogo(tok)} alt="" class="ap-picker-logo" />
+									{:else}
+										<span class="ap-picker-letter">{tok.symbol.charAt(0)}</span>
+									{/if}
+									<div class="ap-picker-info">
+										<span class="ap-picker-symbol">{tok.symbol}</span>
+										<span class="ap-picker-name">{tok.name || tok.symbol}</span>
+									</div>
+									<span class="ap-picker-bal">{fmtBal(tok.balance, tok.decimals)}</span>
+								</button>
+							{/each}
+						</div>
+					</div>
+				</div>
+			{/if}
 
 			<label class="ap-label">To</label>
 			<input class="ap-input" type="text" placeholder="Recipient (0x...)" bind:value={sendTo} {...INPUT_ATTRS} />
@@ -906,8 +967,67 @@
 	}
 	.ap-input:focus { border-color: rgba(0,210,255,0.3); }
 	.ap-input::placeholder { color: #1e293b; }
-	.ap-select { appearance: none; cursor: pointer; background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%2364748b' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; padding-right: 32px; }
-	.ap-select option { background: #0a0b10; color: #e2e8f0; }
+	/* Asset picker button */
+	.ap-asset-btn {
+		display: flex; align-items: center; gap: 10px; width: 100%;
+		padding: 10px 12px; border-radius: 10px; cursor: pointer;
+		background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);
+		color: #e2e8f0; font-family: 'Space Mono', monospace; font-size: 13px;
+		transition: border-color 0.15s;
+	}
+	.ap-asset-btn:hover { border-color: rgba(0,210,255,0.3); }
+	.ap-asset-logo { width: 24px; height: 24px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
+	.ap-asset-letter {
+		width: 24px; height: 24px; border-radius: 50%; flex-shrink: 0;
+		display: flex; align-items: center; justify-content: center;
+		background: rgba(0,210,255,0.15); color: #00d2ff;
+		font-size: 11px; font-weight: 700;
+	}
+	.ap-asset-name { flex: 1; text-align: left; font-weight: 600; }
+	.ap-asset-bal { color: rgba(255,255,255,0.35); font-size: 11px; }
+	.ap-asset-chevron { flex-shrink: 0; color: rgba(255,255,255,0.3); }
+
+	/* Asset picker modal — contained within wallet panel */
+	.ap-picker-overlay {
+		position: absolute; inset: 0; z-index: 10;
+		background: rgba(0,0,0,0.5); backdrop-filter: blur(4px);
+		display: flex; align-items: flex-end; justify-content: center;
+		border-radius: inherit;
+	}
+	.ap-picker {
+		background: #0d1117; border-top: 1px solid rgba(255,255,255,0.08);
+		border-radius: 16px 16px 0 0; width: 100%;
+		max-height: 70%; display: flex; flex-direction: column;
+		animation: slideUp 0.2s ease-out;
+	}
+	@keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+	.ap-picker-header {
+		display: flex; justify-content: space-between; align-items: center;
+		padding: 16px 16px 12px; border-bottom: 1px solid rgba(255,255,255,0.06);
+	}
+	.ap-picker-title { font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700; color: white; }
+	.ap-picker-close { background: none; border: none; color: rgba(255,255,255,0.4); cursor: pointer; padding: 4px; border-radius: 6px; }
+	.ap-picker-close:hover { color: white; background: rgba(255,255,255,0.06); }
+	.ap-picker-list { overflow-y: auto; padding: 8px; }
+	.ap-picker-item {
+		display: flex; align-items: center; gap: 10px; width: 100%;
+		padding: 10px 8px; border-radius: 10px; cursor: pointer;
+		background: none; border: none; color: #e2e8f0;
+		font-family: 'Space Mono', monospace; transition: background 0.1s;
+	}
+	.ap-picker-item:hover { background: rgba(255,255,255,0.04); }
+	.ap-picker-item.active { background: rgba(0,210,255,0.08); }
+	.ap-picker-logo { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
+	.ap-picker-letter {
+		width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0;
+		display: flex; align-items: center; justify-content: center;
+		background: rgba(0,210,255,0.12); color: #00d2ff;
+		font-size: 13px; font-weight: 700;
+	}
+	.ap-picker-info { flex: 1; text-align: left; display: flex; flex-direction: column; gap: 1px; }
+	.ap-picker-symbol { font-size: 13px; font-weight: 600; color: white; }
+	.ap-picker-name { font-size: 10px; color: rgba(255,255,255,0.3); }
+	.ap-picker-bal { font-size: 12px; color: rgba(255,255,255,0.4); font-family: 'Space Mono', monospace; }
 	.ap-btn {
 		padding: 10px 16px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.06);
 		background: rgba(255,255,255,0.03); color: #94a3b8; cursor: pointer;

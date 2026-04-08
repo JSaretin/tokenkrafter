@@ -6,6 +6,7 @@
 	import { TOKEN_ABI, ROUTER_ABI, FACTORY_V2_ABI, PAIR_ABI, ERC20_ABI, FACTORY_ABI, ZERO_ADDRESS } from '$lib/tokenCrafter';
 	import { LAUNCHPAD_FACTORY_ABI } from '$lib/launchpad';
 	import { t } from '$lib/i18n';
+	import { apiFetch } from '$lib/apiFetch';
 
 	let _getNetworks: () => SupportedNetworks = getContext('supportedNetworks');
 	let supportedNetworks = $derived(_getNetworks());
@@ -150,7 +151,7 @@
 			form.append('file', metaLogoFile);
 			form.append('address', contractAddress.toLowerCase());
 			form.append('chain_id', String(chainId));
-			const res = await fetch('/api/token-metadata/upload', { method: 'POST', body: form });
+			const res = await apiFetch('/api/token-metadata/upload', { method: 'POST', body: form });
 			if (!res.ok) { const e = await res.json().catch(() => ({ message: 'Upload failed' })); throw new Error(e.message); }
 			const data = await res.json();
 			return data.logo_url || null;
@@ -481,10 +482,11 @@
 		tokenAliasSaving = true;
 		try {
 			const ts = Date.now();
-			const message = `Set token alias "${tokenAliasInput}" for ${contractAddress}\nTimestamp: ${ts}`;
+			const origin = window.location.origin;
+			const message = `Set token alias "${tokenAliasInput}" for ${contractAddress}\nOrigin: ${origin}\nTimestamp: ${ts}`;
 			const signature = await s.signMessage(message);
 
-			const res = await fetch('/api/token-alias', {
+			const res = await apiFetch('/api/token-alias', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
@@ -2615,11 +2617,17 @@
 
 	/* Tax rates in stat card */
 	.stat-card-tax { grid-column: span 1; }
-	.tax-rates-row { display: flex; align-items: center; gap: 6px; margin: 4px 0 2px; }
-	.tax-rate-item { display: flex; flex-direction: column; align-items: center; gap: 0; }
-	.tax-rate-val { font-size: 20px; font-weight: 700; color: var(--text-heading); line-height: 1.2; }
-	.tax-rate-type { font-size: 9px; color: #6b7280; font-family: 'Space Mono', monospace; text-transform: uppercase; letter-spacing: 0.04em; }
-	.tax-rate-sep { color: #374151; font-size: 16px; margin-top: -4px; }
+	.tax-rates-row { display: flex; align-items: center; gap: 4px; margin: 4px 0 2px; flex-wrap: wrap; }
+	.tax-rate-item { display: flex; flex-direction: column; align-items: center; gap: 0; min-width: 0; }
+	.tax-rate-val { font-size: 14px; font-weight: 700; color: var(--text-heading); line-height: 1.2; font-family: 'Rajdhani', sans-serif; font-variant-numeric: tabular-nums; }
+	.tax-rate-type { font-size: 8px; color: #6b7280; font-family: 'Space Mono', monospace; text-transform: uppercase; letter-spacing: 0.04em; }
+	.tax-rate-sep { color: #374151; font-size: 12px; margin-top: -4px; }
+	@media (min-width: 640px) {
+		.tax-rate-val { font-size: 20px; }
+		.tax-rate-type { font-size: 9px; }
+		.tax-rate-sep { font-size: 16px; }
+		.tax-rates-row { gap: 6px; }
+	}
 
 	/* Token avatar (logo) */
 	.token-avatar-img {

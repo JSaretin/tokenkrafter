@@ -6,6 +6,7 @@
 	import type { SupportedNetwork, PaymentOption } from '$lib/structure';
 	import { FACTORY_ABI, PLATFORM_ROUTER_ABI, ROUTER_ABI, ERC20_ABI, ZERO_ADDRESS } from '$lib/tokenCrafter';
 	import { LAUNCHPAD_FACTORY_ABI, LAUNCH_INSTANCE_ABI, CURVE_TYPES, type CurveType } from '$lib/launchpad';
+	import { apiFetch } from '$lib/apiFetch';
 	import TokenForm from './lib/TokenFormV2.svelte';
 	import type { ListingConfig, ListingPairConfig, TokenFormData, PreviewState } from './lib/TokenFormV2.svelte';
 
@@ -922,65 +923,120 @@
 
 				addFeedback({ message: 'Token created & listed on DEX!', type: 'success' });
 			} else {
-				// Simple token creation (no launch, no listing)
-				const factory = new ethers.Contract(tokenInfo.network.platform_address, FACTORY_ABI, signer);
+				// Token-only creation via PlatformRouter.createAndList with empty list params
+				// Routes through router for consistent: create + tax + protection + enableTrading + transferOwnership
+				const router = new ethers.Contract(tokenInfo.network.router_address, PLATFORM_ROUTER_ABI, signer);
+
+				const taxParams = {
+					buyTaxBps: BigInt(Math.round(parseFloat(String(tokenInfo.tax?.buyTaxPct || '0')) * 100)),
+					sellTaxBps: BigInt(Math.round(parseFloat(String(tokenInfo.tax?.sellTaxPct || '0')) * 100)),
+					transferTaxBps: BigInt(Math.round(parseFloat(String(tokenInfo.tax?.transferTaxPct || '0')) * 100)),
+					taxWallets: tokenInfo.tax?.wallets?.map((w: any) => w.address).filter((a: string) => ethers.isAddress(a)) || [],
+					taxSharesBps: tokenInfo.tax?.wallets?.map((w: any) => Math.round(parseFloat(String(w.sharePct || '0')) * 100)) || []
+				};
+
+				const protectionParams = {
+					maxWalletAmount: tokenInfo.protection?.maxWalletPct
+						? (totalSupplyWei * BigInt(Math.round(parseFloat(String(tokenInfo.protection.maxWalletPct)) * 100))) / 10000n
+						: 0n,
+					maxTransactionAmount: tokenInfo.protection?.maxTransactionPct
+						? (totalSupplyWei * BigInt(Math.round(parseFloat(String(tokenInfo.protection.maxTransactionPct)) * 100))) / 10000n
+						: 0n,
+					cooldownSeconds: BigInt(tokenInfo.protection?.cooldownSeconds || 0)
+				};
+
+				const listParams = { bases: [], baseAmounts: [], tokenAmounts: [] };
 
 				addFeedback({ message: 'Deploying token...', type: 'info' });
-				const tx = await factory.createToken(tokenParams, referral, txOptions);
+				const tx = await router.createAndList(tokenParams, listParams, protectionParams, taxParams, referral, txOptions);
 				deployTxHash = tx.hash;
 				const receipt = await tx.wait();
 
-				const createdEvent = receipt?.logs?.find((log: any) => {
-					try {
-						const parsed = factory.interface.parseLog({ topics: [...log.topics], data: log.data });
-						return parsed?.name === 'TokenCreated';
-					} catch { return false; }
+				const event = receipt?.logs?.find((log: any) => {
+					try { return router.interface.parseLog({ topics: [...log.topics], data: log.data })?.name === 'TokenCreatedAndListed'; } catch { return false; }
 				});
-				if (createdEvent) {
-					const parsed = factory.interface.parseLog({ topics: [...createdEvent.topics], data: createdEvent.data });
-					deployedTokenAddress = parsed?.args?.tokenAddress ?? null;
+				if (event) {
+					const parsed = router.interface.parseLog({ topics: [...event.topics], data: event.data });
+					deployedTokenAddress = parsed?.args?.token ?? null;
 				}
 
 				addFeedback({ message: 'Token created successfully!', type: 'success' });
 			}
 
-			// Save token metadata to DB if provided
-			if (deployedTokenAddress && tokenInfo.metadata) {
+			// Save token metadata to DB
+			if (deployedTokenAddress) {
 				const m = tokenInfo.metadata;
-				if (m.logoUrl || m.description || m.website || m.twitter || m.telegram) {
-					// Upload logo file if pending
-					let finalLogoUrl = m.logoUrl;
-					const pendingFile = (window as any).__pendingLogoFile as File | undefined;
-					if (pendingFile && deployedTokenAddress) {
-						try {
+				let logoUrl = m?.logoUrl || '';
+
+				// First PUT: save token info + metadata (also establishes auth session for upload)
+				await apiFetch('/api/token-metadata', {
+					method: 'PUT',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						address: deployedTokenAddress.toLowerCase(),
+						chain_id: tokenInfo.network.chain_id,
+						name: tokenInfo.name,
+						symbol: tokenInfo.symbol,
+						total_supply: tokenInfo.totalSupply,
+						decimals: tokenInfo.decimals,
+						is_taxable: tokenInfo.isTaxable,
+						is_mintable: tokenInfo.isMintable,
+						is_partner: tokenInfo.isPartner,
+						logo_url: null,
+						description: m?.description || null,
+						website: m?.website || null,
+						twitter: m?.twitter || null,
+						telegram: m?.telegram || null,
+					}),
+				}).catch(() => {});
+
+				// Upload logo to our storage (session cookie set from PUT above)
+				if (logoUrl) {
+					try {
+						let fileToUpload: File | null = (window as any).__pendingLogoFile as File | null;
+
+						// If logo is an external URL, fetch and convert to File
+						if (!fileToUpload && logoUrl.startsWith('http')) {
+							const res = await fetch(logoUrl);
+							if (res.ok) {
+								const blob = await res.blob();
+								fileToUpload = new File([blob], 'logo.png', { type: 'image/png' });
+							}
+						}
+
+						// If logo is a data URL, convert to File
+						if (!fileToUpload && logoUrl.startsWith('data:')) {
+							const [header, b64] = logoUrl.split(',');
+							const binary = atob(b64);
+							const bytes = new Uint8Array(binary.length);
+							for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+							fileToUpload = new File([bytes], 'logo.png', { type: 'image/png' });
+						}
+
+						if (fileToUpload) {
 							const fd = new FormData();
-							fd.append('file', pendingFile);
+							fd.append('file', fileToUpload);
 							fd.append('address', deployedTokenAddress.toLowerCase());
 							fd.append('chain_id', String(tokenInfo.network.chain_id));
-							const uploadRes = await fetch('/api/token-metadata/upload', { method: 'POST', body: fd });
+							const uploadRes = await apiFetch('/api/token-metadata/upload', { method: 'POST', body: fd });
 							if (uploadRes.ok) {
 								const { logo_url } = await uploadRes.json();
-								finalLogoUrl = logo_url;
+								if (logo_url) {
+									// Update DB with our storage URL
+									apiFetch('/api/token-metadata', {
+										method: 'PUT',
+										headers: { 'Content-Type': 'application/json' },
+										body: JSON.stringify({
+											address: deployedTokenAddress.toLowerCase(),
+											chain_id: tokenInfo.network.chain_id,
+											logo_url: logo_url,
+										}),
+									}).catch(() => {});
+								}
 							}
-							delete (window as any).__pendingLogoFile;
-						} catch {}
-					}
-
-					fetch('/api/token-metadata', {
-						method: 'PUT',
-						headers: { 'Content-Type': 'application/json' },
-						body: JSON.stringify({
-							address: deployedTokenAddress.toLowerCase(),
-							chain_id: tokenInfo.network.chain_id,
-							name: tokenInfo.name,
-							symbol: tokenInfo.symbol,
-							logo_url: finalLogoUrl?.startsWith('data:') ? null : finalLogoUrl || null,
-							description: m.description || null,
-							website: m.website || null,
-							twitter: m.twitter || null,
-							telegram: m.telegram || null,
-						}),
-					}).catch(() => {});
+						}
+						delete (window as any).__pendingLogoFile;
+					} catch {}
 				}
 			}
 

@@ -33,7 +33,7 @@ export const PUT: RequestHandler = async ({ request, locals }) => {
 	if (!wallet) return error(401, 'Wallet session required');
 
 	const body = await request.json();
-	const { address, chain_id, logo_url, description, website, twitter, telegram } = body;
+	const { address, chain_id, logo_url, description, website, twitter, telegram, name: tokenName, symbol, total_supply, decimals, is_taxable, is_mintable, is_partner } = body;
 
 	if (!address || !chain_id) return error(400, 'address and chain_id required');
 
@@ -46,10 +46,12 @@ export const PUT: RequestHandler = async ({ request, locals }) => {
 			.eq('chain_id', chain_id)
 			.single();
 
-		if (!token) return error(404, 'Token not found');
-		if (token.creator.toLowerCase() !== wallet) {
+		// Token exists in DB — verify ownership
+		if (token && token.creator.toLowerCase() !== wallet) {
 			return error(403, 'Only the token creator can update metadata');
 		}
+		// If token not in DB yet (daemon hasn't indexed), allow the creator to save metadata
+		// The upsert below sets creator = wallet, so ownership is established
 	}
 
 	// Build metadata updates
@@ -83,18 +85,20 @@ export const PUT: RequestHandler = async ({ request, locals }) => {
 		if (dbErr) return error(500, dbErr.message);
 		data = d;
 	} else {
-		// Token not indexed yet — create placeholder row with metadata
-		// Daemon will fill in name/symbol/supply later via upsert
+		// Token not indexed yet — create full row with all available data
 		const { data: d, error: dbErr } = await supabaseAdmin
 			.from('created_tokens')
 			.upsert({
 				address: address.toLowerCase(),
 				chain_id: chain_id,
 				creator: wallet,
-				name: body.name || 'Pending',
-				symbol: body.symbol || '???',
-				total_supply: '0',
-				decimals: 18,
+				name: tokenName || 'Pending',
+				symbol: symbol || '???',
+				total_supply: total_supply || '0',
+				decimals: decimals ?? 18,
+				is_taxable: is_taxable ?? false,
+				is_mintable: is_mintable ?? false,
+				is_partner: is_partner ?? false,
 				...updates,
 			}, { onConflict: 'address,chain_id' })
 			.select()

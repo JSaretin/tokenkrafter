@@ -415,25 +415,23 @@
 {/if}
 
 <!-- Toast Notifications -->
-<div class="fixed top-4 right-4 z-[100] flex flex-col gap-2 max-w-sm w-full pointer-events-none px-4">
+<div class="toast-container">
 	{#each feedbacks as feedback (feedback.id)}
-		<div
-			class="toast pointer-events-auto flex items-start gap-3 p-4 rounded-lg border backdrop-blur-md
-			{feedback.type === 'success'
-				? 'bg-emerald-950/90 border-emerald-500/40 text-emerald-300'
-				: feedback.type === 'error'
-					? 'bg-red-950/90 border-red-500/40 text-red-300'
-					: 'bg-cyan-950/90 border-cyan-500/40 text-cyan-300'}"
-		>
-			<span class="text-lg flex-shrink-0">
-				{feedback.type === 'success' ? '✓' : feedback.type === 'error' ? '✕' : 'i'}
-			</span>
-			<span class="text-sm font-mono flex-1">{feedback.message}</span>
-			<button
-				onclick={() => hideFeedback(feedback.id)}
-				class="text-current opacity-50 hover:opacity-100 transition ml-2 flex-shrink-0 cursor-pointer"
-				aria-label="Dismiss notification"
-			>x</button>
+		<div class="toast toast-{feedback.type}">
+			<div class="toast-icon">
+				{#if feedback.type === 'success'}
+					<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M20 6L9 17l-5-5"/></svg>
+				{:else if feedback.type === 'error'}
+					<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+				{:else}
+					<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+				{/if}
+			</div>
+			<span class="toast-msg">{feedback.message}</span>
+			<button class="toast-close" onclick={() => hideFeedback(feedback.id)} aria-label="Dismiss">
+				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+			</button>
+			<div class="toast-progress"></div>
 		</div>
 	{/each}
 </div>
@@ -846,10 +844,52 @@
 		transform: translateY(-1px);
 		box-shadow: 0 4px 16px rgba(0, 210, 255, 0.3);
 	}
-	.toast { animation: slideIn 0.3s ease-out; }
-	@keyframes slideIn {
-		from { opacity: 0; transform: translateX(20px); }
-		to   { opacity: 1; transform: translateX(0); }
+	/* Toast notifications */
+	.toast-container {
+		position: fixed; top: 16px; right: 16px; z-index: 100;
+		display: flex; flex-direction: column; gap: 8px;
+		max-width: 380px; width: calc(100% - 32px);
+		pointer-events: none;
+	}
+	.toast {
+		pointer-events: auto; position: relative; overflow: hidden;
+		display: flex; align-items: flex-start; gap: 10px;
+		padding: 12px 14px; border-radius: 12px;
+		background: #111318; border: 1px solid rgba(255,255,255,0.06);
+		box-shadow: 0 8px 32px rgba(0,0,0,0.4), 0 0 0 1px rgba(0,0,0,0.2);
+		animation: toastIn 0.3s ease-out;
+	}
+	@keyframes toastIn {
+		from { opacity: 0; transform: translateY(-8px) scale(0.96); }
+		to   { opacity: 1; transform: translateY(0) scale(1); }
+	}
+	.toast-icon {
+		width: 28px; height: 28px; border-radius: 8px; flex-shrink: 0;
+		display: flex; align-items: center; justify-content: center;
+	}
+	.toast-success .toast-icon { background: rgba(16,185,129,0.12); color: #10b981; }
+	.toast-error .toast-icon { background: rgba(239,68,68,0.12); color: #ef4444; }
+	.toast-info .toast-icon { background: rgba(0,210,255,0.12); color: #00d2ff; }
+	.toast-msg {
+		flex: 1; font-family: 'Space Mono', monospace; font-size: 12px;
+		color: rgba(255,255,255,0.85); line-height: 1.5; padding-top: 4px;
+	}
+	.toast-close {
+		flex-shrink: 0; background: none; border: none; cursor: pointer;
+		color: rgba(255,255,255,0.25); padding: 2px; border-radius: 4px;
+		transition: all 0.15s;
+	}
+	.toast-close:hover { color: rgba(255,255,255,0.6); background: rgba(255,255,255,0.05); }
+	.toast-progress {
+		position: absolute; bottom: 0; left: 0; height: 2px;
+		animation: toastProgress 5s linear forwards;
+	}
+	.toast-success .toast-progress { background: #10b981; }
+	.toast-error .toast-progress { background: #ef4444; }
+	.toast-info .toast-progress { background: #00d2ff; }
+	@keyframes toastProgress {
+		from { width: 100%; }
+		to { width: 0%; }
 	}
 	.spinner { animation: spin 0.8s linear infinite; }
 	@keyframes spin { to { transform: rotate(360deg); } }

@@ -3,6 +3,7 @@
 	import { getContext, onDestroy } from 'svelte';
 	import { page } from '$app/state';
 	import { t } from '$lib/i18n';
+	import { apiFetch } from '$lib/apiFetch';
 	import { favorites, toggleFavorite } from '$lib/favorites';
 	import RecentTransactionsTicker from '$lib/RecentTransactionsTicker.svelte';
 	import type { SupportedNetwork } from '$lib/structure';
@@ -152,7 +153,7 @@
 			fd.append('signature', signature);
 			fd.append('signed_message', msg);
 
-			const res = await fetch('/api/launches/upload', { method: 'POST', body: fd });
+			const res = await apiFetch('/api/launches/upload', { method: 'POST', body: fd });
 			if (!res.ok) {
 				const err = await res.json().catch(() => ({ message: 'Upload failed' }));
 				throw new Error(err.message || 'Upload failed');
