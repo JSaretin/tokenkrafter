@@ -42,6 +42,7 @@
 	let tokenInTaxSell = $state(0);
 	let tokenInHasTax = $state(false);
 	let tokenInLoading = $state(false);
+	let tokenInLogo = $state('');
 
 	// Token Out
 	let tokenOutAddr = $state('');
@@ -53,6 +54,7 @@
 	let tokenOutTaxBuy = $state(0);
 	let tokenOutTaxSell = $state(0);
 	let tokenOutHasTax = $state(false);
+	let tokenOutLogo = $state('');
 	let tokenOutLoading = $state(false);
 
 	// Token tax detection (from TradeLens simulation)
@@ -160,12 +162,22 @@
 	});
 
 	// ── Built-in token presets ──────────────────────────────────
+	const TOKEN_LOGOS: Record<string, string> = {
+		BNB: 'https://assets.coingecko.com/coins/images/825/small/bnb-icon2_2x.png',
+		ETH: 'https://assets.coingecko.com/coins/images/279/small/ethereum.png',
+		USDT: 'https://assets.coingecko.com/coins/images/325/small/Tether.png',
+		USDC: 'https://assets.coingecko.com/coins/images/6319/small/usdc.png',
+		BUSD: 'https://assets.coingecko.com/coins/images/9576/small/BUSD.png',
+		MATIC: 'https://assets.coingecko.com/coins/images/4713/small/polygon.png',
+	};
+
 	let builtInTokens = $derived.by(() => {
 		if (!selectedNetwork) return [];
+		const nc = selectedNetwork.native_coin;
 		const tokens: { address: string; symbol: string; name: string; decimals: number; isNative?: boolean; logo_url?: string }[] = [];
-		tokens.push({ address: ZERO_ADDRESS, symbol: selectedNetwork.native_coin, name: selectedNetwork.native_coin, decimals: 18, isNative: true });
-		if (selectedNetwork.usdt_address) tokens.push({ address: selectedNetwork.usdt_address, symbol: 'USDT', name: 'Tether USD', decimals: 18 });
-		if (selectedNetwork.usdc_address) tokens.push({ address: selectedNetwork.usdc_address, symbol: 'USDC', name: 'USD Coin', decimals: 18 });
+		tokens.push({ address: ZERO_ADDRESS, symbol: nc, name: nc, decimals: 18, isNative: true, logo_url: TOKEN_LOGOS[nc.toUpperCase()] });
+		if (selectedNetwork.usdt_address) tokens.push({ address: selectedNetwork.usdt_address, symbol: 'USDT', name: 'Tether USD', decimals: 18, logo_url: TOKEN_LOGOS.USDT });
+		if (selectedNetwork.usdc_address) tokens.push({ address: selectedNetwork.usdc_address, symbol: 'USDC', name: 'USD Coin', decimals: 18, logo_url: TOKEN_LOGOS.USDC });
 		return tokens;
 	});
 
@@ -537,6 +549,7 @@
 			tokenInTaxBuy = 0;
 			tokenInTaxSell = 0;
 			tokenInHasTax = false;
+			tokenInLogo = (token as any).logo_url || TOKEN_LOGOS[token.symbol.toUpperCase()] || '';
 		} else {
 			tokenOutAddr = addr;
 			tokenOutSymbol = token.symbol;
@@ -549,6 +562,7 @@
 			tokenOutTaxBuy = 0;
 			tokenOutTaxSell = 0;
 			tokenOutHasTax = false;
+			tokenOutLogo = (token as any).logo_url || TOKEN_LOGOS[token.symbol.toUpperCase()] || '';
 		}
 
 		// Fetch metadata quickly (balance, decimals, symbol)
@@ -646,12 +660,12 @@
 		const tmpIn = {
 			addr: tokenInAddr, sym: tokenInSymbol, name: tokenInName, dec: tokenInDecimals,
 			native: tokenInIsNative, bal: tokenInBalance,
-			taxB: tokenInTaxBuy, taxS: tokenInTaxSell, hasTax: tokenInHasTax, sim: tokenInTax
+			taxB: tokenInTaxBuy, taxS: tokenInTaxSell, hasTax: tokenInHasTax, sim: tokenInTax, logo: tokenInLogo
 		};
 		const tmpOut = {
 			addr: tokenOutAddr, sym: tokenOutSymbol, name: tokenOutName, dec: tokenOutDecimals,
 			native: tokenOutIsNative, bal: tokenOutBalance,
-			taxB: tokenOutTaxBuy, taxS: tokenOutTaxSell, hasTax: tokenOutHasTax, sim: tokenOutTax
+			taxB: tokenOutTaxBuy, taxS: tokenOutTaxSell, hasTax: tokenOutHasTax, sim: tokenOutTax, logo: tokenOutLogo
 		};
 
 		// Swap in ← out
@@ -659,12 +673,14 @@
 		tokenInDecimals = tmpOut.dec; tokenInIsNative = tmpOut.native; tokenInBalance = tmpOut.bal;
 		tokenInTaxBuy = tmpOut.taxB; tokenInTaxSell = tmpOut.taxS; tokenInHasTax = tmpOut.hasTax;
 		tokenInTax = tmpOut.sim;
+		tokenInLogo = tmpOut.logo;
 
 		// Swap out ← in
 		tokenOutAddr = tmpIn.addr; tokenOutSymbol = tmpIn.sym; tokenOutName = tmpIn.name;
 		tokenOutDecimals = tmpIn.dec; tokenOutIsNative = tmpIn.native; tokenOutBalance = tmpIn.bal;
 		tokenOutTaxBuy = tmpIn.taxB; tokenOutTaxSell = tmpIn.taxS; tokenOutHasTax = tmpIn.hasTax;
 		tokenOutTax = tmpIn.sim;
+		tokenOutLogo = tmpIn.logo;
 
 		// Keep the input amount, clear output (preview will recalculate)
 		amountOut = '';
@@ -821,12 +837,12 @@
 			// If input IS a stablecoin, USD = amount
 			if (stablecoins.includes(tokenInSymbol.toUpperCase())) {
 				const val = parseFloat(amountIn);
-				return `~$${val.toFixed(2)} USD`;
+				return `≈$${val.toFixed(2)} USD`;
 			}
 			// Otherwise, use the output value (if output is stablecoin, that's the USD value)
 			if (stablecoins.includes(tokenOutSymbol.toUpperCase()) && displayAmountOut) {
 				const val = parseFloat(displayAmountOut);
-				if (val > 0) return `~$${val.toFixed(2)} USD`;
+				if (val > 0) return `≈$${val.toFixed(2)} USD`;
 			}
 			// Fallback: use reserves spot price
 			if (!selectedNetwork?.usdt_address || !pricesLoaded) return '';
@@ -834,7 +850,7 @@
 			const addr = tokenInIsNative ? (wethAddr || getWeth()) : tokenInAddr;
 			const usd = getUsdValue(addr, parsed, tokenInDecimals, selectedNetwork.usdt_address);
 			if (usd === null || usd === 0) return '';
-			return `~$${usd < 0.01 ? usd.toFixed(4) : usd.toFixed(2)} USD`;
+			return `≈$${usd < 0.01 ? usd.toFixed(4) : usd.toFixed(2)} USD`;
 		} catch { return ''; }
 	});
 
@@ -845,7 +861,7 @@
 			// If output IS a stablecoin, USD = the post-tax amount directly
 			if (stablecoins.includes(tokenOutSymbol.toUpperCase())) {
 				const val = parseFloat(raw);
-				return `~$${val.toFixed(2)} USD`;
+				return `≈$${val.toFixed(2)} USD`;
 			}
 			// Otherwise, derive USD from the input value minus tax
 			// This reflects the actual dollar value the user receives
@@ -856,7 +872,7 @@
 				const totalTax = buyTax + sellTax;
 				const afterTax = totalTax > 0 ? inputVal * (1 - totalTax / 10000) : inputVal;
 				// Also subtract slippage (DEX fee already in the quote)
-				if (afterTax > 0) return `~$${afterTax.toFixed(2)} USD`;
+				if (afterTax > 0) return `≈$${afterTax.toFixed(2)} USD`;
 			}
 			// Fallback: use reserves spot price
 			if (!selectedNetwork?.usdt_address || !pricesLoaded) return '';
@@ -864,7 +880,7 @@
 			const addr = tokenOutIsNative ? (wethAddr || getWeth()) : tokenOutAddr;
 			const usd = getUsdValue(addr, parsed, tokenOutDecimals, selectedNetwork.usdt_address);
 			if (usd === null || usd === 0) return '';
-			return `~$${usd < 0.01 ? usd.toFixed(4) : usd.toFixed(2)} USD`;
+			return `≈$${usd < 0.01 ? usd.toFixed(4) : usd.toFixed(2)} USD`;
 		} catch { return ''; }
 	});
 
@@ -1425,6 +1441,7 @@
 					<span class="section-label">You pay</span>
 					<button class="token-selector" onclick={() => { tokenModalTarget = 'in'; showTokenModal = true; }}>
 						{#if tokenInSymbol}
+							{#if tokenInLogo}<img src={tokenInLogo} alt="" class="token-selector-logo" />{/if}
 							<span class="token-selector-symbol">{tokenInSymbol}</span>
 						{:else}
 							<span class="token-selector-placeholder">Select token</span>
@@ -1497,6 +1514,7 @@
 						<span class="section-label">You receive</span>
 						<button class="token-selector" onclick={() => { tokenModalTarget = 'out'; showTokenModal = true; }}>
 							{#if tokenOutSymbol}
+								{#if tokenOutLogo}<img src={tokenOutLogo} alt="" class="token-selector-logo" />{/if}
 								<span class="token-selector-symbol">{tokenOutSymbol}</span>
 							{:else}
 								<span class="token-selector-placeholder">Select token</span>
@@ -1682,7 +1700,7 @@
 							: ''}
 						<div class="detail-line">
 							<span>Min. received</span>
-							<span>{minReceived} {tokenOutSymbol}{#if minUsd} <span class="usd-value">(~${minUsd})</span>{/if}</span>
+							<span>{minReceived} {tokenOutSymbol}{#if minUsd} <span class="usd-value">(≈${minUsd})</span>{/if}</span>
 						</div>
 					{/if}
 					<div class="detail-line">
@@ -1829,6 +1847,7 @@
 			<div class="quick-tokens">
 				{#each builtInTokens as t}
 					<button class="quick-token-btn" onclick={() => selectToken(tokenModalTarget, t)}>
+						{#if t.logo_url}<img src={t.logo_url} alt="" class="quick-token-logo" />{/if}
 						{t.symbol}
 					</button>
 				{/each}
@@ -2107,7 +2126,7 @@
 							: ''}
 						<div class="confirm-detail-row">
 							<span>Min. received</span>
-							<span>{minReceived} {tokenOutSymbol}{#if confirmMinUsd} <span class="usd-value">(~${confirmMinUsd})</span>{/if}</span>
+							<span>{minReceived} {tokenOutSymbol}{#if confirmMinUsd} <span class="usd-value">(≈${confirmMinUsd})</span>{/if}</span>
 						</div>
 						<div class="confirm-detail-row">
 							<span>Slippage</span>
@@ -2307,6 +2326,7 @@
 		flex-shrink: 0;
 	}
 	.token-selector:hover { border-color: rgba(0,210,255,0.3); background: rgba(0,210,255,0.05); }
+	.token-selector-logo { width: 20px; height: 20px; border-radius: 50%; object-fit: cover; }
 	.token-selector-symbol {
 		font-family: 'Space Mono', monospace; font-size: 14px; font-weight: 700; color: var(--text-heading);
 	}
@@ -2588,7 +2608,9 @@
 	.modal-search { margin: 12px 16px; width: calc(100% - 32px); }
 
 	.quick-tokens { display: flex; gap: 6px; padding: 0 16px 12px; flex-wrap: wrap; }
+	.quick-token-logo { width: 16px; height: 16px; border-radius: 50%; object-fit: cover; vertical-align: -2px; }
 	.quick-token-btn {
+		display: inline-flex; align-items: center; gap: 5px;
 		padding: 6px 14px; border-radius: 20px; border: 1px solid var(--border);
 		background: var(--bg-surface); color: var(--text); cursor: pointer;
 		font-family: 'Space Mono', monospace; font-size: 12px; font-weight: 700;
