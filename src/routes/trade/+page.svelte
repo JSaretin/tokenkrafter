@@ -1754,8 +1754,8 @@
 				{:else if withdrawals.length === 0}
 					<p class="history-empty">No withdrawals yet</p>
 				{:else}
-					{#each withdrawals.toReversed() as w, i}
-						{@const timedOut = w.status === 0 && Date.now() / 1000 > w.createdAt + 300}
+					{#each [...withdrawals].sort((a, b) => Number(b.createdAt) - Number(a.createdAt)) as w, i}
+						{@const timedOut = w.status === 0 && Date.now() / 1000 > w.createdAt + payoutTimeoutMins * 60}
 						{@const sc = timedOut ? 'red' : withdrawStatusColor(w.status)}
 						{@const canCancel = timedOut}
 						<button class="history-row" onclick={() => {
@@ -1787,9 +1787,10 @@
 							</div>
 							{#if w.status === 0}
 								{@const elapsed = Math.floor(Date.now() / 1000) - Number(w.createdAt)}
-								{@const remaining = Math.max(0, 300 - elapsed)}
+								{@const timeoutSecs = payoutTimeoutMins * 60}
+								{@const remaining = Math.max(0, timeoutSecs - elapsed)}
 								<div class="history-progress">
-									<div class="progress-track"><div class="progress-fill progress-amber" style="width: {Math.min(100, (elapsed / 300) * 100)}%"></div></div>
+									<div class="progress-track"><div class="progress-fill progress-amber" style="width: {Math.min(100, (elapsed / timeoutSecs) * 100)}%"></div></div>
 									<span class="history-timer">{remaining > 0 ? `${Math.floor(remaining / 60)}m ${remaining % 60}s` : 'Timed out'}</span>
 								</div>
 							{/if}

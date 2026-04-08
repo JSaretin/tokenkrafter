@@ -9,6 +9,11 @@
 		chainId = $bindable(undefined as number | undefined),
 		useExistingToken = $bindable(false),
 		existingTokenAddress = $bindable(''),
+		tokenLogoUrl = $bindable(''),
+		tokenDescription = $bindable(''),
+		tokenWebsite = $bindable(''),
+		tokenTwitter = $bindable(''),
+		tokenTelegram = $bindable(''),
 		supportedNetworks,
 		getNetworkProviders,
 	}: {
@@ -19,9 +24,16 @@
 		chainId: number | undefined;
 		useExistingToken: boolean;
 		existingTokenAddress: string;
+		tokenLogoUrl: string;
+		tokenDescription: string;
+		tokenWebsite: string;
+		tokenTwitter: string;
+		tokenTelegram: string;
 		supportedNetworks: any[];
 		getNetworkProviders: () => Map<number, any>;
 	} = $props();
+
+	let showMetadata = $state(false);
 
 	let loading = $state(false);
 	let fetchError = $state('');
@@ -151,6 +163,47 @@
 		<label class="label small" for="bi-decimals">Decimals</label>
 		<input id="bi-decimals" class="input-field small-input" type="number" bind:value={decimals} min="0" max="18" />
 	</div>
+
+	<!-- Token Info (optional, collapsible) -->
+	{#if !useExistingToken}
+		<button class="meta-toggle" onclick={() => showMetadata = !showMetadata}>
+			<span class="meta-toggle-label">Token Info</span>
+			<span class="meta-toggle-hint">Logo, description, socials (optional)</span>
+			<svg class="meta-toggle-chev" class:meta-open={showMetadata} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+		</button>
+
+		{#if showMetadata}
+			<div class="meta-fields">
+				<div class="field-group">
+					<label class="label small" for="bi-logo">Logo URL</label>
+					<input id="bi-logo" class="input-field" type="url" placeholder="https://example.com/logo.png" bind:value={tokenLogoUrl} />
+					{#if tokenLogoUrl}
+						<div class="meta-logo-preview">
+							<img src={tokenLogoUrl} alt="Logo" class="meta-logo-img" onerror={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+						</div>
+					{/if}
+				</div>
+				<div class="field-group">
+					<label class="label small" for="bi-desc">Description</label>
+					<textarea id="bi-desc" class="input-field" rows="2" placeholder="What is this token about?" bind:value={tokenDescription} style="resize: vertical;"></textarea>
+				</div>
+				<div class="field-group">
+					<label class="label small" for="bi-web">Website</label>
+					<input id="bi-web" class="input-field" type="url" placeholder="https://yourtoken.com" bind:value={tokenWebsite} />
+				</div>
+				<div class="meta-row">
+					<div class="field-group">
+						<label class="label small" for="bi-tw">Twitter / X</label>
+						<input id="bi-tw" class="input-field" type="text" placeholder="@handle" bind:value={tokenTwitter} />
+					</div>
+					<div class="field-group">
+						<label class="label small" for="bi-tg">Telegram</label>
+						<input id="bi-tg" class="input-field" type="text" placeholder="@group" bind:value={tokenTelegram} />
+					</div>
+				</div>
+			</div>
+		{/if}
+	{/if}
 </div>
 
 <style>
@@ -192,4 +245,23 @@
 		background: #e2e8f0; transition: transform 0.2s;
 	}
 	.toggle-track.active .toggle-thumb { transform: translateX(1rem); }
+
+	/* Metadata */
+	.meta-toggle {
+		display: flex; align-items: center; gap: 8px; width: 100%;
+		padding: 10px 14px; border-radius: 10px;
+		background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05);
+		cursor: pointer; font-family: inherit; color: inherit; text-align: left;
+		transition: border-color 0.15s;
+	}
+	.meta-toggle:hover { border-color: rgba(0,210,255,0.15); }
+	.meta-toggle-label { font-family: 'Syne', sans-serif; font-size: 0.8rem; font-weight: 600; color: rgba(255,255,255,0.8); }
+	.meta-toggle-hint { font-size: 0.65rem; color: rgba(255,255,255,0.25); font-family: 'Space Mono', monospace; flex: 1; }
+	.meta-toggle-chev { color: rgba(255,255,255,0.2); transition: transform 0.15s; flex-shrink: 0; }
+	.meta-toggle-chev.meta-open { transform: rotate(180deg); }
+	.meta-fields { display: flex; flex-direction: column; gap: 0.75rem; padding-top: 0.25rem; }
+	.meta-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+	.meta-logo-preview { margin-top: 4px; }
+	.meta-logo-img { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; border: 1px solid rgba(255,255,255,0.08); }
+	@media (max-width: 500px) { .meta-row { grid-template-columns: 1fr; } }
 </style>

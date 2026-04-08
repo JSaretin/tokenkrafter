@@ -14,11 +14,13 @@
 	};
 	export type ProtectionConfig = { maxWalletPct: string; maxTransactionPct: string; cooldownSeconds: string };
 	export type TaxConfig = { buyTaxPct: string; sellTaxPct: string; transferTaxPct: string; wallets: { address: string; sharePct: string }[] };
+	export type TokenMetadata = { logoUrl: string; description: string; website: string; twitter: string; telegram: string };
 	export type TokenFormData = {
 		name: string; symbol: string; totalSupply: string; decimals: number;
 		isMintable: boolean; isTaxable: boolean; isPartner: boolean;
 		network: any; existingTokenAddress?: string;
 		listing: ListingConfig; launch: LaunchConfig; protection: ProtectionConfig; tax: TaxConfig;
+		metadata?: TokenMetadata;
 	};
 	export type PreviewState = {
 		name: string; symbol: string; totalSupply: string; decimals: number;
@@ -58,6 +60,13 @@
 	let chainId: number | undefined = $state();
 	let useExistingToken = $state(false);
 	let existingTokenAddress = $state('');
+
+	// Token metadata (optional)
+	let tokenLogoUrl = $state('');
+	let tokenDescription = $state('');
+	let tokenWebsite = $state('');
+	let tokenTwitter = $state('');
+	let tokenTelegram = $state('');
 
 	let isMintable = $state(false);
 	let isTaxable = $state(false);
@@ -222,6 +231,10 @@
 			},
 			protection: { maxWalletPct: protectionEnabled ? maxWalletPct : '0', maxTransactionPct: protectionEnabled ? maxTransactionPct : '0', cooldownSeconds: protectionEnabled ? cooldownSeconds : '0' },
 			tax: { buyTaxPct, sellTaxPct, transferTaxPct, wallets: validWallets },
+			metadata: (tokenLogoUrl || tokenDescription || tokenWebsite || tokenTwitter || tokenTelegram) ? {
+				logoUrl: tokenLogoUrl, description: tokenDescription,
+				website: tokenWebsite, twitter: tokenTwitter, telegram: tokenTelegram,
+			} : undefined,
 		});
 	}
 
@@ -263,7 +276,7 @@
 	<!-- Step content -->
 	<div class="wz-content">
 		{#if wizardStep === 'basics'}
-			<BasicInfo bind:name bind:symbol bind:totalSupply bind:decimals bind:chainId bind:useExistingToken bind:existingTokenAddress {supportedNetworks} {getNetworkProviders} />
+			<BasicInfo bind:name bind:symbol bind:totalSupply bind:decimals bind:chainId bind:useExistingToken bind:existingTokenAddress bind:tokenLogoUrl bind:tokenDescription bind:tokenWebsite bind:tokenTwitter bind:tokenTelegram {supportedNetworks} {getNetworkProviders} />
 
 		{:else if wizardStep === 'features'}
 			<Features bind:isMintable bind:isTaxable bind:isPartner bind:launchEnabled bind:listingEnabled />

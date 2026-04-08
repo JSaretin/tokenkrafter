@@ -47,7 +47,7 @@
 	let isLoading = $state(true);
 	let network: SupportedNetwork | null = $state(null);
 	let contractAddress = $state('');
-	let activeTab = $state<'overview' | 'mint' | 'burn' | 'tax' | 'pools' | 'liquidity' | 'protection'>('overview');
+	let activeTab = $state<'overview' | 'mint' | 'burn' | 'tax' | 'pools' | 'liquidity' | 'protection' | 'about'>('overview');
 	let isOwner = $state(false);
 
 	// Form states
@@ -68,6 +68,63 @@
 	let poolAddressInput = $state('');
 	let poolCheckAddr = $state('');
 	let poolCheckResult: boolean | null = $state(null);
+
+	// Token metadata (about)
+	let metaLogoUrl = $state('');
+	let metaDescription = $state('');
+	let metaWebsite = $state('');
+	let metaTwitter = $state('');
+	let metaTelegram = $state('');
+	let metaLoading = $state(false);
+	let metaSaving = $state(false);
+	let metaLoaded = $state(false);
+
+	async function loadMetadata() {
+		if (metaLoaded || !contractAddr) return;
+		metaLoading = true;
+		try {
+			const chainId = selectedNetwork?.chain_id || 56;
+			const res = await fetch(`/api/token-metadata?address=${contractAddr.toLowerCase()}&chain_id=${chainId}`);
+			if (res.ok) {
+				const data = await res.json();
+				if (data) {
+					metaLogoUrl = data.logo_url || '';
+					metaDescription = data.description || '';
+					metaWebsite = data.website || '';
+					metaTwitter = data.twitter || '';
+					metaTelegram = data.telegram || '';
+				}
+			}
+			metaLoaded = true;
+		} catch {} finally { metaLoading = false; }
+	}
+
+	async function saveMetadata() {
+		metaSaving = true;
+		try {
+			const chainId = selectedNetwork?.chain_id || 56;
+			const res = await fetch('/api/token-metadata', {
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					address: contractAddr.toLowerCase(),
+					chain_id: chainId,
+					logo_url: metaLogoUrl || null,
+					description: metaDescription || null,
+					website: metaWebsite || null,
+					twitter: metaTwitter || null,
+					telegram: metaTelegram || null,
+				}),
+			});
+			if (!res.ok) {
+				const err = await res.json().catch(() => ({ message: 'Save failed' }));
+				throw new Error(err.message || `HTTP ${res.status}`);
+			}
+			addFeedback({ message: 'Token info saved', type: 'success' });
+		} catch (e: any) {
+			addFeedback({ message: e.message || 'Failed to save', type: 'error' });
+		} finally { metaSaving = false; }
+	}
 
 	// Protection features
 	let maxWalletInput = $state('');
@@ -1047,7 +1104,8 @@
 		{ id: 'burn', labelKey: 'mt.tabBurn', icon: 'x', requires: 'mintable' as const },
 		{ id: 'tax', labelKey: 'mt.tabTax', icon: '%', requires: 'taxable' as const },
 		{ id: 'pools', labelKey: 'mt.tabPools', icon: '@', requires: 'pools' as const },
-		{ id: 'liquidity', labelKey: 'mt.tabLiquidity', icon: '~' }
+		{ id: 'liquidity', labelKey: 'mt.tabLiquidity', icon: '~' },
+		{ id: 'about', labelKey: 'About', icon: 'i' }
 	];
 
 	function isTabVisible(tab: (typeof tabs)[0]) {
@@ -2228,6 +2286,61 @@
 							{/if}
 						</div>
 					</div>
+				</div>
+			{/if}
+
+			<!-- ═══ About Tab ═══ -->
+			{#if activeTab === 'about'}
+				{#if !metaLoaded}
+					{(() => { loadMetadata(); return ''; })()}
+				{/if}
+				<div class="panel">
+					<h3 class="syne text-base font-bold text-white mb-3">Token Info</h3>
+					<p class="text-gray-500 text-xs font-mono mb-4">Add details about your token. This info appears on the explore page and token profile.</p>
+
+					{#if metaLoading}
+						<div class="flex justify-center py-8">
+							<div class="spinner w-8 h-8 rounded-full border-2 border-white/10 border-t-cyan-400" style="animation: spin 0.8s linear infinite;"></div>
+						</div>
+					{:else}
+						<div class="space-y-3">
+							<div>
+								<label class="label-text" for="meta-logo">Logo URL</label>
+								<input id="meta-logo" class="input-field" type="url" placeholder="https://example.com/logo.png" bind:value={metaLogoUrl} />
+								{#if metaLogoUrl}
+									<div class="mt-2 flex items-center gap-2">
+										<img src={metaLogoUrl} alt="Logo preview" class="w-8 h-8 rounded-full object-cover" onerror={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+										<span class="text-gray-500 text-[10px] font-mono">Preview</span>
+									</div>
+								{/if}
+							</div>
+
+							<div>
+								<label class="label-text" for="meta-desc">Description</label>
+								<textarea id="meta-desc" class="input-field" rows="3" placeholder="What is this token about?" bind:value={metaDescription} style="resize: vertical;"></textarea>
+							</div>
+
+							<div>
+								<label class="label-text" for="meta-web">Website</label>
+								<input id="meta-web" class="input-field" type="url" placeholder="https://yourtoken.com" bind:value={metaWebsite} />
+							</div>
+
+							<div class="grid grid-cols-2 gap-3">
+								<div>
+									<label class="label-text" for="meta-tw">Twitter / X</label>
+									<input id="meta-tw" class="input-field" type="text" placeholder="@handle or URL" bind:value={metaTwitter} />
+								</div>
+								<div>
+									<label class="label-text" for="meta-tg">Telegram</label>
+									<input id="meta-tg" class="input-field" type="text" placeholder="@group or URL" bind:value={metaTelegram} />
+								</div>
+							</div>
+
+							<button class="action-btn syne cursor-pointer w-full mt-2" disabled={metaSaving} onclick={saveMetadata}>
+								{metaSaving ? 'Saving...' : 'Save Token Info'}
+							</button>
+						</div>
+					{/if}
 				</div>
 			{/if}
 		</div>

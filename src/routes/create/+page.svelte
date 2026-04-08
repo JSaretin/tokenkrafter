@@ -908,6 +908,28 @@
 				addFeedback({ message: 'Token created successfully!', type: 'success' });
 			}
 
+			// Save token metadata to DB if provided
+			if (deployedTokenAddress && tokenInfo.metadata) {
+				const m = tokenInfo.metadata;
+				if (m.logoUrl || m.description || m.website || m.twitter || m.telegram) {
+					fetch('/api/token-metadata', {
+						method: 'PUT',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify({
+							address: deployedTokenAddress.toLowerCase(),
+							chain_id: tokenInfo.network.chain_id,
+							name: tokenInfo.name,
+							symbol: tokenInfo.symbol,
+							logo_url: m.logoUrl || null,
+							description: m.description || null,
+							website: m.website || null,
+							twitter: m.twitter || null,
+							telegram: m.telegram || null,
+						}),
+					}).catch(() => {}); // best-effort, don't block
+				}
+			}
+
 			step = 'done';
 		} catch (e: any) {
 			const msg = e.shortMessage || e.message || 'Transaction failed';
