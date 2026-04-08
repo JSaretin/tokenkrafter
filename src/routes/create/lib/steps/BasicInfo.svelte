@@ -104,6 +104,14 @@
 	let fetchTimeout: ReturnType<typeof setTimeout> | null = null;
 
 	let selectedNetwork = $derived(supportedNetworks.find((n) => n.chain_id == chainId));
+	let availableNetworks = $derived(supportedNetworks.filter(n => n.platform_address?.length > 2));
+
+	// Auto-select if only one network
+	$effect(() => {
+		if (!chainId && availableNetworks.length === 1) {
+			chainId = availableNetworks[0].chain_id;
+		}
+	});
 
 	let formattedSupply = $derived(() => {
 		const n = Number(totalSupply);
@@ -188,16 +196,23 @@
 </script>
 
 <div class="basic-info">
-	<!-- Network -->
-	<div class="field-group">
-		<label class="label" for="bi-network">Network</label>
-		<select id="bi-network" class="input-field" bind:value={chainId}>
-			<option value={undefined} disabled>Select network</option>
-			{#each supportedNetworks.filter((n) => n.platform_address.length > 2) as n (n.chain_id)}
-				<option value={n.chain_id}>{n.name} ({n.native_coin})</option>
-			{/each}
-		</select>
-	</div>
+	<!-- Network (hidden if only one) -->
+	{#if availableNetworks.length > 1}
+		<div class="field-group">
+			<label class="label" for="bi-network">Network</label>
+			<select id="bi-network" class="input-field" bind:value={chainId}>
+				<option value={undefined} disabled>Select network</option>
+				{#each availableNetworks as n (n.chain_id)}
+					<option value={n.chain_id}>{n.name} ({n.native_coin})</option>
+				{/each}
+			</select>
+		</div>
+	{:else if availableNetworks.length === 1}
+		<div class="network-badge">
+			<span class="network-badge-dot"></span>
+			<span class="network-badge-name">{availableNetworks[0].name}</span>
+		</div>
+	{/if}
 
 	<!-- Clone / existing token toggle -->
 	<button class="toggle-row" tabindex="-1" onclick={() => { useExistingToken = !useExistingToken; if (!useExistingToken) existingTokenAddress = ''; }}>
@@ -341,6 +356,14 @@
 	.hint.accent { color: #00d2ff; }
 	.hint.error { color: #ff5e5e; }
 	.clone-hint { color: #10b981; }
+	.network-badge {
+		display: inline-flex; align-items: center; gap: 6px;
+		padding: 6px 12px; border-radius: 8px;
+		background: rgba(0,210,255,0.04); border: 1px solid rgba(0,210,255,0.1);
+		font-family: 'Space Mono', monospace; font-size: 11px; color: #00d2ff;
+	}
+	.network-badge-dot { width: 6px; height: 6px; border-radius: 50%; background: #10b981; }
+	.network-badge-name { font-weight: 600; }
 
 	.preset-row { display: flex; gap: 0.4rem; margin-top: 0.25rem; flex-wrap: wrap; }
 	.preset-btn {
