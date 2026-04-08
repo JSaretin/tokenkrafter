@@ -459,7 +459,7 @@
 					</button>
 				{:else}
 					<button class="wallet-btn wallet-btn-connect" onclick={() => showWalletModal = true}>
-						Connect Wallet
+						<span class="hide-mobile">Connect Wallet</span><span class="show-mobile">Connect</span>
 					</button>
 				{/if}
 			</div>
@@ -543,7 +543,7 @@
 					</button>
 				{:else}
 					<button class="wallet-btn wallet-btn-connect" onclick={() => { showWalletModal = true; mobileMenuOpen = false; }}>
-						Connect Wallet
+						<span class="hide-mobile">Connect Wallet</span><span class="show-mobile">Connect</span>
 					</button>
 				{/if}
 			</div>
@@ -762,6 +762,8 @@
 	}
 	.wallet-btn-connect:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(8,145,178,0.4); background: linear-gradient(135deg, #0e7490, #1e40af); }
 	.wallet-btn-sm { font-size: 11px; padding: 5px 10px; }
+	.show-mobile { display: none; }
+	@media (max-width: 640px) { .hide-mobile { display: none; } .show-mobile { display: inline; } }
 	.wallet-dot {
 		width: 7px; height: 7px; border-radius: 50%; background: #10b981; flex-shrink: 0;
 	}
