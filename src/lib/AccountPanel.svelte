@@ -4,6 +4,7 @@
 	import { getWalletState, exportPrivateKey, exportSeedPhrase, setActiveAccount, addAccount, unlockWallet, onWalletStateChange, getSigner, pushPreferences, type WalletState } from './embeddedWallet';
 	import { getKnownLogo, resolveTokenLogo } from './tokenLogo';
 	import { balanceState } from './balancePoller';
+	import { queryTradeLens } from './tradeLens';
 
 	let {
 		open = $bindable(false),
@@ -14,6 +15,11 @@
 		nativeBalance = 0n,
 		nativeDecimals = 18,
 		nativePriceUsd = 0,
+		rpcUrl = 'https://bsc-rpc.publicnode.com',
+		dexRouter = '',
+		usdtAddress = '',
+		usdcAddress = '',
+		chainId = 56,
 		tokens = [] as { address: string; symbol: string; name: string; balance: bigint; decimals: number; priceUsd?: number }[],
 		onDisconnect = () => {},
 		onAddFeedback = (_: { message: string; type: string }) => {},
@@ -28,6 +34,11 @@
 		nativeBalance: bigint;
 		nativeDecimals: number;
 		nativePriceUsd: number;
+		rpcUrl: string;
+		dexRouter: string;
+		usdtAddress: string;
+		usdcAddress: string;
+		chainId: number;
 		tokens: { address: string; symbol: string; name: string; balance: bigint; decimals: number; priceUsd?: number }[];
 		onDisconnect: () => void;
 		onAddFeedback: (f: { message: string; type: string }) => void;
@@ -58,7 +69,25 @@
 		for (const t of tokens) {
 			if (t.priceUsd) total += parseFloat(ethers.formatUnits(t.balance, t.decimals)) * t.priceUsd;
 		}
+		for (const t of importedTokens) {
+			if (t.priceUsd && t.balance > 0n) total += parseFloat(ethers.formatUnits(t.balance, t.decimals)) * t.priceUsd;
+		}
 		return total;
+	});
+
+	// Total portfolio in native coin equivalent
+	let totalNativeEquiv = $derived(nativePriceUsd > 0 ? totalUsd / nativePriceUsd : 0);
+
+	// All displayable tokens sorted by USD value (highest first, hide zero balance)
+	let sortedTokens = $derived.by(() => {
+		const all = [...tokens, ...importedTokens]
+			.filter(t => t.balance > 0n)
+			.map(t => {
+				const bal = parseFloat(ethers.formatUnits(t.balance, t.decimals));
+				const usd = t.priceUsd ? bal * t.priceUsd : 0;
+				return { ...t, _bal: bal, _usd: usd };
+			});
+		return all.sort((a, b) => b._usd - a._usd);
 	});
 
 	// ── UI state ──
@@ -165,28 +194,95 @@
 		if (changed) importedTokens = [...importedTokens];
 	});
 
-	async function refreshTokenBalances() {
-		const net = getNetwork();
-		if (!net) return;
-		for (const tok of importedTokens) {
-			try {
-				const c = new ethers.Contract(tok.address, [
-					'function balanceOf(address) view returns (uint256)'
-				], net.provider);
-				tok.balance = await c.balanceOf(userAddress);
-			} catch {}
-		}
-		importedTokens = [...importedTokens];
+	let portfolioLoading = $state(false);
+	let portfolioPolling = $state(false);
+
+	function getProvider(): { provider: ethers.JsonRpcProvider } | null {
+		try { return { provider: new ethers.JsonRpcProvider(rpcUrl) }; } catch { return null; }
 	}
 
-	function getNetwork() {
-		// Access the provider from window — simple approach
+	async function refreshTokenBalances() {
+		if (!userAddress || !dexRouter) return;
+		if (portfolioPolling) return; // guard against double-polling
+		portfolioPolling = true;
+		portfolioLoading = true;
 		try {
-			// We know the first network's RPC from props
-			const rpc = 'https://bsc-rpc.publicnode.com'; // fallback
-			return { provider: new ethers.JsonRpcProvider(rpc) };
-		} catch { return null; }
+			const provider = new ethers.JsonRpcProvider(rpcUrl);
+			const tokenAddrs = importedTokens.map(t => t.address).filter(a => a);
+
+			// Include USDT in the query so we can calc USD values
+			const queryTokens = [...tokenAddrs];
+			if (usdtAddress && !queryTokens.find(a => a.toLowerCase() === usdtAddress.toLowerCase())) {
+				queryTokens.push(usdtAddress);
+			}
+
+			if (queryTokens.length === 0) { portfolioLoading = false; return; }
+
+			const bases = [usdtAddress, usdcAddress].filter(a => a);
+			const result = await queryTradeLens(provider, dexRouter, queryTokens, ethers.ZeroAddress, 0n, userAddress, chainId, bases);
+
+			// Update native balance
+			if (result.nativeBalance > 0n) {
+				nativeBalance = result.nativeBalance;
+			}
+
+			// Calculate WETH→USDT price for USD conversions
+			const weth = result.weth.toLowerCase();
+			const usdtLower = usdtAddress.toLowerCase();
+			let wethPriceUsdt = 0;
+			const usdtResult = result.tokens.find(t => t.token.toLowerCase() === usdtLower);
+			if (usdtResult) {
+				const usdtWethPool = usdtResult.pools.find(p => p.base.toLowerCase() === weth && p.hasLiquidity);
+				if (usdtWethPool && usdtWethPool.reserveBase > 0n) {
+					wethPriceUsdt = Number(usdtWethPool.reserveToken) / Number(usdtWethPool.reserveBase);
+				}
+			}
+
+			// Update native price
+			if (wethPriceUsdt > 0) {
+				nativePriceUsd = wethPriceUsdt / 1; // WETH = native on BSC
+			}
+
+			// Update imported token balances + prices
+			for (const tok of importedTokens) {
+				const lensToken = result.tokens.find(t => t.token.toLowerCase() === tok.address.toLowerCase());
+				if (!lensToken) continue;
+
+				tok.balance = lensToken.balance;
+
+				// Calculate price from WETH pool reserves
+				if (wethPriceUsdt > 0) {
+					const wethPool = lensToken.pools.find(p => p.base.toLowerCase() === weth && p.hasLiquidity);
+					if (wethPool && wethPool.reserveToken > 0n) {
+						const tokenPriceWeth = Number(wethPool.reserveBase) / Number(wethPool.reserveToken);
+						tok.priceUsd = tokenPriceWeth * wethPriceUsdt;
+					} else {
+						// Try USDT direct pool
+						const usdtPool = lensToken.pools.find(p => p.base.toLowerCase() === usdtLower && p.hasLiquidity);
+						if (usdtPool && usdtPool.reserveToken > 0n) {
+							tok.priceUsd = Number(usdtPool.reserveBase) / Number(usdtPool.reserveToken);
+						} else {
+							tok.priceUsd = 0;
+						}
+					}
+				}
+			}
+			importedTokens = [...importedTokens];
+		} catch (e) {
+			console.warn('Portfolio refresh failed:', (e as Error).message?.slice(0, 80));
+		} finally {
+			portfolioLoading = false;
+			portfolioPolling = false;
+		}
 	}
+
+	// Auto-refresh portfolio every 10s when panel is open (pause when account dropdown is open)
+	$effect(() => {
+		if (!open || !userAddress || !dexRouter || showAccountDropdown) return;
+		refreshTokenBalances();
+		const interval = setInterval(refreshTokenBalances, 10000);
+		return () => clearInterval(interval);
+	});
 
 	async function handleImportToken() {
 		if (!importAddress || !ethers.isAddress(importAddress)) {
@@ -202,7 +298,7 @@
 
 		importLoading = true;
 		try {
-			const net = getNetwork();
+			const net = getProvider();
 			if (!net) throw new Error('No provider');
 
 			const c = new ethers.Contract(importAddress, [
@@ -292,6 +388,16 @@
 		const acc = accounts.find(a => a.index === idx);
 		if (acc) onAccountSwitch(acc.address);
 		showAccountDropdown = false;
+
+		// Reset everything for instant visual feedback — no stale data
+		nativeBalance = 0n;
+		nativePriceUsd = 0;
+		for (const t of importedTokens) { t.balance = 0n; t.priceUsd = 0; }
+		for (const t of tokens) { t.balance = 0n; t.priceUsd = 0; }
+		importedTokens = [...importedTokens];
+		portfolioPolling = false; // allow immediate re-poll
+		// Small delay to let the new userAddress propagate before fetching
+		setTimeout(() => refreshTokenBalances(), 100);
 	}
 
 	async function handleExport(type: 'key' | 'seed') {
@@ -403,8 +509,14 @@
 
 		<!-- Balance -->
 		<div class="ap-bal">
-			<span class="ap-bal-total">{fmtUsd(totalUsd)}</span>
-			<span class="ap-bal-native">{fmtBal(nativeBalance, nativeDecimals)} {nativeCoin}</span>
+			<span class="ap-bal-total">{fmtUsd(totalUsd)}{#if portfolioLoading && totalUsd === 0} <span class="ap-bal-loading">...</span>{/if}</span>
+			<span class="ap-bal-native">
+				{#if totalNativeEquiv > 0}
+					≈ {totalNativeEquiv.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {nativeCoin}
+				{:else}
+					{fmtBal(nativeBalance, nativeDecimals)} {nativeCoin}
+				{/if}
+			</span>
 		</div>
 
 		<!-- Actions -->
@@ -450,10 +562,9 @@
 					</div>
 				</div>
 
-				<!-- Tokens (props + imported) -->
-				{#each [...tokens, ...importedTokens] as tok}
-					{@const bal = parseFloat(ethers.formatUnits(tok.balance, tok.decimals))}
-					{@const usd = tok.priceUsd ? bal * tok.priceUsd : 0}
+				<!-- Tokens sorted by USD value -->
+				{#each sortedTokens as tok}
+					{@const usd = tok._usd}
 					{@const logo = getTokenLogo(tok)}
 					<div class="ap-row">
 					{#if logo}
@@ -619,7 +730,7 @@
 
 				sending = true;
 				try {
-					const net = getNetwork();
+					const net = getProvider();
 					if (!net) throw new Error('No provider');
 					const wallet = getSigner(net.provider as any);
 					if (!wallet) throw new Error('Wallet locked — unlock first');
@@ -818,6 +929,9 @@
 		display: block; font-family: 'Rajdhani', sans-serif; font-size: 34px;
 		font-weight: 700; color: #fff; line-height: 1; font-variant-numeric: tabular-nums;
 	}
+	.ap-bal-loading { font-size: 18px; color: #374151; animation: blink 1s infinite; }
+	.ap-bal-equiv { font-size: 12px; color: #374151; margin-left: 6px; }
+	@keyframes blink { 0%,100% { opacity: 0.3; } 50% { opacity: 1; } }
 	.ap-bal-native {
 		display: block; font-family: 'Rajdhani', sans-serif; font-size: 18px;
 		font-weight: 600; color: #64748b; margin-top: 3px; font-variant-numeric: tabular-nums;
