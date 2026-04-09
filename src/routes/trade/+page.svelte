@@ -1671,131 +1671,65 @@
 
 			<!-- Payout details (bank mode) -->
 			{#if outputMode === 'bank'}
-				<div class="bank-section">
-					<div class="bank-info-strip">
-						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
-						<span>Funds held in smart contract. Cancel anytime if not processed within {payoutTimeoutMins} minutes.</span>
+				<!-- Payout preview -->
+				{#if fiatEquivalent}
+					<div class="bank-payout-card">
+						<div class="bank-payout-row">
+							<span class="bank-payout-label">You receive</span>
+							<span class="bank-payout-ngn">{fiatEquivalent}</span>
+						</div>
+						{#if previewNet > 0n}
+							<div class="bank-payout-detail">
+								<span>≈${parseFloat(ethers.formatUnits(previewNet, usdtDecimals)).toFixed(2)} after {previewFee > 0n && previewNet > 0n ? ((Number(previewFee) / Number(previewFee + previewNet)) * 100).toFixed(1) : '1'}% fee</span>
+							</div>
+						{/if}
 					</div>
+				{/if}
 
-					{#if previewNet > 0n || fiatEquivalent}
-						<div class="bank-preview">
-							{#if fiatEquivalent}
-								<div class="bank-payout-highlight">
-									<span class="bank-payout-ngn">{fiatEquivalent}</span>
-									<span class="bank-payout-usd">≈ ${parseFloat(ethers.formatUnits(previewNet, usdtDecimals)).toFixed(2)} USD</span>
-								</div>
+				<!-- Bank fields -->
+				<div class="bank-section-compact">
+					<div class="field-group">
+						<label class="field-label">Account Number</label>
+						<input
+							class="input-field"
+							placeholder="10-digit account number"
+							bind:value={bankAccount}
+							maxlength="10"
+							inputmode="numeric"
+						/>
+					</div>
+					<div class="field-group">
+						<label class="field-label">Bank</label>
+						<button class="bank-selector-btn" onclick={() => { showBankModal = true; bankSearchQuery = ''; }}>
+							{#if bankBankName}
+								<span class="bank-selector-name">{bankBankName}</span>
+							{:else}
+								<span class="bank-selector-placeholder">Select your bank</span>
 							{/if}
-							{#if previewNet > 0n}
-								<div class="bank-preview-row">
-									<span>Platform fee ({previewFee > 0n && previewNet > 0n ? ((Number(previewFee) / Number(previewFee + previewNet)) * 100).toFixed(1) : '1'}%)</span>
-									<span>${parseFloat(ethers.formatUnits(previewFee, usdtDecimals)).toFixed(2)}</span>
-								</div>
-								<div class="bank-preview-row bank-preview-net">
-									<span>Net amount</span>
-									<span>${parseFloat(ethers.formatUnits(previewNet, usdtDecimals)).toFixed(2)}</span>
-								</div>
-							{/if}
+							<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M6 9l6 6 6-6"/></svg>
+						</button>
+					</div>
+					{#if bankResolving}
+						<div class="resolve-status resolve-loading">
+							<div class="resolve-spinner"></div>
+							Verifying...
+						</div>
+					{:else if bankResolved}
+						<div class="resolve-status resolve-success">
+							<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+							{bankName}
+						</div>
+					{:else if bankError}
+						<div class="resolve-status resolve-error">
+							<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+							{bankError}
 						</div>
 					{/if}
+				</div>
 
-					<!-- Payment method tabs -->
-					<div class="pay-method-tabs">
-						{#each [
-							{ key: 'bank', label: 'Bank Transfer', icon: 'M3 21h18M3 10h18M5 6l7-3 7 3M4 10v11M20 10v11M8 14v3M12 14v3M16 14v3' },
-							// { key: 'paypal', label: 'PayPal', icon: '...' }, // Coming soon
-							// { key: 'wise', label: 'Wise', icon: '...' },     // Coming soon
-						] as method}
-							<button
-								class="pay-method-tab"
-								class:pay-method-active={paymentMethod === method.key}
-								onclick={() => (paymentMethod = method.key as any)}
-							>
-								<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d={method.icon}/></svg>
-								{method.label}
-							</button>
-						{/each}
-					</div>
-
-					<!-- Bank Transfer fields -->
-					{#if paymentMethod === 'bank'}
-						<div class="bank-fields">
-							<div class="field-group">
-								<label class="field-label">Account Number</label>
-								<input
-									class="input-field"
-									placeholder="Enter 10-digit account number"
-									bind:value={bankAccount}
-									maxlength="10"
-									inputmode="numeric"
-								/>
-							</div>
-
-							<div class="field-group">
-								<label class="field-label">Bank</label>
-								<button class="bank-selector-btn" onclick={() => { showBankModal = true; bankSearchQuery = ''; }}>
-									{#if bankBankName}
-										<span class="bank-selector-name">{bankBankName}</span>
-									{:else}
-										<span class="bank-selector-placeholder">Select your bank</span>
-									{/if}
-									<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M6 9l6 6 6-6"/></svg>
-								</button>
-							</div>
-
-							<!-- Resolve status -->
-							{#if bankResolving}
-								<div class="resolve-status resolve-loading">
-									<div class="resolve-spinner"></div>
-									Verifying account...
-								</div>
-							{:else if bankResolved}
-								<div class="resolve-status resolve-success">
-									<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-									{bankName}
-								</div>
-							{:else if bankError}
-								<div class="resolve-status resolve-error">
-									<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-									{bankError}
-								</div>
-							{/if}
-						</div>
-
-					<!-- PayPal fields -->
-					{:else if paymentMethod === 'paypal'}
-						<div class="bank-fields">
-							<div class="field-group">
-								<label class="field-label">PayPal Email</label>
-								<input class="input-field" type="email" placeholder="your@email.com" bind:value={paypalEmail} />
-							</div>
-							<div class="pay-method-note">
-								We'll send your funds to this PayPal email address.
-							</div>
-						</div>
-
-					<!-- Wise fields -->
-					{:else if paymentMethod === 'wise'}
-						<div class="bank-fields">
-							<div class="field-group">
-								<label class="field-label">Wise Email</label>
-								<input class="input-field" type="email" placeholder="your@email.com" bind:value={wiseEmail} />
-							</div>
-							<div class="field-group">
-								<label class="field-label">Receive Currency</label>
-								<select class="input-field" bind:value={wiseCurrency}>
-									<option value="NGN">NGN (Nigerian Naira)</option>
-									<option value="USD">USD (US Dollar)</option>
-									<option value="GBP">GBP (British Pound)</option>
-									<option value="EUR">EUR (Euro)</option>
-									<option value="KES">KES (Kenyan Shilling)</option>
-									<option value="GHS">GHS (Ghanaian Cedi)</option>
-								</select>
-							</div>
-							<div class="pay-method-note">
-								Funds will be converted and sent to your Wise account.
-							</div>
-						</div>
-					{/if}
+				<div class="bank-safety-pill">
+					<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+					Escrowed on-chain &middot; Cancel if not processed in {payoutTimeoutMins}min
 				</div>
 			{/if}
 
@@ -2015,7 +1949,17 @@
 							<span class="token-list-name">{t.name}</span>
 						</div>
 						{#if t.address !== ZERO_ADDRESS}
-							<span class="token-list-addr">{t.address.slice(0, 6)}...{t.address.slice(-4)}</span>
+							<div class="token-list-actions">
+								<span class="token-list-addr">{t.address.slice(0, 6)}...{t.address.slice(-4)}</span>
+								<button class="token-action-btn" title="Copy address" onclick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(t.address); addFeedback({ message: 'Address copied', type: 'success' }); }}>
+									<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+								</button>
+								{#if selectedNetwork?.explorer_url}
+									<a class="token-action-btn" title="View on explorer" href="{selectedNetwork.explorer_url}/address/{t.address}" target="_blank" rel="noopener" onclick={(e) => e.stopPropagation()}>
+										<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+									</a>
+								{/if}
+							</div>
 						{/if}
 					</button>
 				{/each}
@@ -2472,36 +2416,35 @@
 
 	/* Bank section */
 	.bank-section { padding: 12px 12px 0; }
-	.bank-info-strip {
-		display: flex; align-items: flex-start; gap: 8px; padding: 10px 12px;
-		background: rgba(16,185,129,0.05); border: 1px solid rgba(16,185,129,0.12);
-		border-radius: 10px; margin-bottom: 12px;
-		font-family: 'Space Mono', monospace; font-size: 10px; color: #10b981; line-height: 1.5;
+	.bank-safety-pill {
+		display: flex; align-items: center; justify-content: center; gap: 5px;
+		padding: 6px 10px; border-radius: 20px;
+		background: rgba(16,185,129,0.06); border: 1px solid rgba(16,185,129,0.1);
+		font-family: 'Space Mono', monospace; font-size: 9px; color: rgba(16,185,129,0.7);
+		margin-top: 8px;
 	}
-	.bank-info-strip svg { flex-shrink: 0; margin-top: 1px; }
-	.bank-preview {
-		background: var(--bg-surface-input); border-radius: 10px; padding: 10px 12px; margin-bottom: 12px;
+	.bank-safety-pill svg { flex-shrink: 0; }
+	.bank-payout-card {
+		background: rgba(16,185,129,0.05); border: 1px solid rgba(16,185,129,0.1);
+		border-radius: 10px; padding: 10px 14px; margin-bottom: 10px;
 	}
-	.bank-preview-row {
-		display: flex; justify-content: space-between;
-		font-family: 'Space Mono', monospace; font-size: 11px; color: var(--text-muted);
+	.bank-payout-row {
+		display: flex; justify-content: space-between; align-items: center;
 	}
-	.bank-payout-highlight {
-		text-align: center; padding: 10px 0 8px; margin-bottom: 6px;
-		border-bottom: 1px solid rgba(255,255,255,0.04);
+	.bank-payout-label {
+		font-family: 'Space Mono', monospace; font-size: 10px; font-weight: 600;
+		text-transform: uppercase; letter-spacing: 0.05em; color: rgba(16,185,129,0.7);
 	}
 	.bank-payout-ngn {
-		display: block; font-family: 'Rajdhani', sans-serif; font-size: 28px; font-weight: 700;
-		color: #10b981; line-height: 1.2; font-variant-numeric: tabular-nums;
+		font-family: 'Rajdhani', sans-serif; font-size: 22px; font-weight: 700;
+		color: #10b981; font-variant-numeric: tabular-nums;
 	}
-	.bank-payout-usd {
-		display: block; font-family: 'Rajdhani', sans-serif; font-size: 13px; font-weight: 500;
-		color: var(--text-muted); margin-top: 2px; font-variant-numeric: tabular-nums;
+	.bank-payout-detail {
+		font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text-dim);
+		text-align: right; margin-top: 2px;
 	}
-	.bank-preview-net { margin-top: 4px; }
-	.bank-preview-net span:last-child { color: #10b981; font-weight: 700; font-family: 'Rajdhani', sans-serif; font-variant-numeric: tabular-nums; }
 
-	.bank-fields { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
+	.bank-section-compact { display: flex; flex-direction: column; gap: 10px; margin-bottom: 8px; }
 	.field-group { display: flex; flex-direction: column; }
 	.field-label {
 		font-family: 'Space Mono', monospace; font-size: 10px; font-weight: 600;
@@ -2774,9 +2717,19 @@
 		display: block; font-family: 'Space Mono', monospace; font-size: 10px;
 		color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 	}
-	.token-list-addr {
-		font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text-dim); flex-shrink: 0;
+	.token-list-actions {
+		display: flex; align-items: center; gap: 4px; flex-shrink: 0;
 	}
+	.token-list-addr {
+		font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text-dim);
+	}
+	.token-action-btn {
+		display: flex; align-items: center; justify-content: center;
+		width: 22px; height: 22px; border-radius: 5px; border: none;
+		background: rgba(255,255,255,0.04); color: var(--text-dim);
+		cursor: pointer; transition: all 0.15s; text-decoration: none;
+	}
+	.token-action-btn:hover { background: rgba(0,210,255,0.1); color: #00d2ff; }
 	.token-list-empty {
 		text-align: center; padding: 20px; color: var(--text-muted);
 		font-family: 'Space Mono', monospace; font-size: 12px;
@@ -2784,10 +2737,11 @@
 
 	/* Confirm modal */
 	.confirm-modal {
-		width: 100%; max-width: 420px; background: var(--bg);
+		width: 100%; max-width: 420px; max-height: 80vh; background: var(--bg);
 		border: 1px solid var(--border); border-radius: 20px; overflow: hidden;
+		display: flex; flex-direction: column;
 	}
-	.confirm-body { padding: 16px 20px 20px; }
+	.confirm-body { padding: 16px 20px 20px; overflow-y: auto; flex: 1; }
 	.confirm-token-box {
 		background: var(--bg-surface-input); border-radius: 12px; padding: 14px 16px;
 	}
