@@ -1,9 +1,12 @@
 /**
  * Chain Indexer Daemon
  *
+ * One-directional: Chain → DB. Never reads from DB.
+ * On-chain is the source of truth.
+ *
  * Polls the blockchain for new tokens, launches, and transactions.
- * Sends changes to the backend API via HTTP (webhook-style).
- * Stores state locally in a JSON file — no DB dependency.
+ * Posts changes to the backend API via HTTP.
+ * Stores state locally in a JSON file.
  *
  * Usage:
  *   npx hardhat run scripts/daemon/chain-indexer.ts --network localhost
@@ -11,9 +14,8 @@
  * Environment:
  *   API_BASE_URL   — Backend URL (e.g. https://tokenkrafter.com)
  *   SYNC_SECRET    — Auth token for backend API
- *   POLL_INTERVAL  — Seconds between polls (default: 10)
+ *   POLL_INTERVAL  — Seconds between polls (default: 30)
  *   STATE_FILE     — Path to state JSON (default: ./daemon-state.json)
- *   DEPLOYMENT_FILE — Path to deployment JSON (default: auto-detect)
  */
 
 import { ethers } from 'hardhat';
@@ -21,7 +23,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 // ── Config ─────────────────────────────────────────────────
-const POLL_INTERVAL = parseInt(process.env.POLL_INTERVAL || '10') * 1000;
+const POLL_INTERVAL = parseInt(process.env.POLL_INTERVAL || '30') * 1000;
 const API_BASE = process.env.API_BASE_URL || 'http://localhost:5173';
 const SYNC_SECRET = process.env.SYNC_SECRET || '';
 const STATE_FILE = process.env.STATE_FILE || path.resolve(__dirname, 'daemon-state.json');
@@ -68,11 +70,18 @@ const LAUNCH_EVENTS_ABI = [
 ];
 
 // ── State (local JSON file) ───────────────────────────────
+interface LaunchCache {
+	address: string;
+	state: number;          // last known state (0=pending, 1=active, 2=graduated, 3=refunding)
+	totalBaseRaised: string; // last known raised amount
+}
+
 interface ChainState {
 	lastTokenCount: number;
 	lastLaunchCount: number;
 	lastWithdrawalCount: number;
 	lastSyncedBlock: number;
+	launches: LaunchCache[];  // tracked launches (only non-terminal)
 }
 
 type DaemonState = Record<string, ChainState>;
@@ -93,12 +102,13 @@ function saveState(state: DaemonState) {
 function getChainState(state: DaemonState, chainId: number): ChainState {
 	const key = String(chainId);
 	if (!state[key]) {
-		state[key] = { lastTokenCount: 0, lastLaunchCount: 0, lastWithdrawalCount: 0, lastSyncedBlock: 0 };
+		state[key] = { lastTokenCount: 0, lastLaunchCount: 0, lastWithdrawalCount: 0, lastSyncedBlock: 0, launches: [] };
 	}
+	if (!state[key].launches) state[key].launches = [];
 	return state[key];
 }
 
-// ── HTTP helper ───────────────────────────────────────────
+// ── HTTP helper (POST only — daemon never GETs from DB) ───
 async function apiPost(endpoint: string, body: any): Promise<boolean> {
 	try {
 		const res = await fetch(`${API_BASE}${endpoint}`, {
@@ -137,9 +147,9 @@ async function apiPatch(endpoint: string, body: any): Promise<boolean> {
 interface NetworkConfig {
 	chain_id: number;
 	name: string;
-	platform_address: string;   // TokenFactory
-	launchpad_address: string;  // LaunchpadFactory
-	router_address: string;     // PlatformRouter
+	platform_address: string;
+	launchpad_address: string;
+	router_address: string;
 	trade_router_address: string;
 	dex_router: string;
 	usdt_address: string;
@@ -147,7 +157,7 @@ interface NetworkConfig {
 }
 
 async function fetchNetworkConfig(chainId: number): Promise<NetworkConfig> {
-	// Try backend first
+	// Try backend first (this is config, not data — one-time read on startup)
 	try {
 		const res = await fetch(`${API_BASE}/api/config?keys=networks`);
 		if (res.ok) {
@@ -188,7 +198,6 @@ async function fetchNetworkConfig(chainId: number): Promise<NetworkConfig> {
 }
 
 // ── MultiCallLens — batch reads in one eth_call ──────────
-// Try artifacts first (local dev), then same dir (VPS deploy)
 const LENS_PATHS = [
 	path.resolve(__dirname, '../../artifacts/contracts/MultiCallLens.sol/MultiCallLens.json'),
 	path.resolve(__dirname, 'MultiCallLens.json'),
@@ -222,7 +231,6 @@ async function batchTokenMeta(
 	if (tokenAddresses.length === 0) return [];
 	if (!MultiCallLensArtifact) throw new Error('MultiCallLens artifact not loaded');
 
-	// Encode constructor args manually (hardhat ethers ContractFactory needs a runner)
 	const abiCoder = ethers.AbiCoder.defaultAbiCoder();
 	const constructorArgs = abiCoder.encode(
 		['address', 'address', 'address', 'address', 'address', 'address', 'address[]', 'address[]'],
@@ -232,9 +240,9 @@ async function batchTokenMeta(
 			config.trade_router_address || ethers.ZeroAddress,
 			config.usdt_address || ethers.ZeroAddress,
 			config.dex_router || ethers.ZeroAddress,
-			ethers.ZeroAddress,  // user (skip balances)
+			ethers.ZeroAddress,
 			tokenAddresses,
-			[]                   // balanceTokens (skip)
+			[]
 		]
 	);
 
@@ -245,11 +253,8 @@ async function batchTokenMeta(
 
 	const decoded = abiCoder.decode(
 		[
-			// PlatformData
 			'tuple(address,uint256,uint256,uint256[8],uint256[8],address,uint256,uint256,uint256,address,uint256,uint256,address,uint256,uint256,uint256,bool,bool,uint256)',
-			// TokenData[]
 			'tuple(address addr,string name,string symbol,uint8 decimals,uint256 totalSupply,uint256 userBalance,address creator,bool isMintable,bool isTaxable,bool isPartner)[]',
-			// BalanceInfo[]
 			'tuple(address,uint256,uint8)[]'
 		],
 		raw
@@ -283,12 +288,9 @@ async function indexNewTokens(
 	const newCount = currentCount - cs.lastTokenCount;
 	console.log(`  📦 ${newCount} new token(s) found`);
 
-	// 1. Batch-fetch all new token addresses (one RPC call)
 	const { tokens: addresses } = await tokenFactory.getTokens(cs.lastTokenCount, newCount);
 	const tokenAddresses: string[] = addresses.map((a: string) => a.toLowerCase());
-	console.log(`    Fetched ${tokenAddresses.length} addresses`);
 
-	// 2. Batch-fetch all metadata via MultiCallLens (one RPC call)
 	let tokenDataBatch: LensTokenData[];
 	try {
 		tokenDataBatch = await batchTokenMeta(provider, tokenAddresses, config);
@@ -299,7 +301,6 @@ async function indexNewTokens(
 		return await indexNewTokensFallback(tokenFactory, provider, chainId, cs);
 	}
 
-	// 3. Post each to API
 	const startIndex = cs.lastTokenCount;
 	let indexed = 0;
 	for (let i = 0; i < tokenDataBatch.length; i++) {
@@ -331,7 +332,6 @@ async function indexNewTokens(
 	return indexed;
 }
 
-// Fallback: per-token queries if MultiCallLens fails
 async function indexNewTokensFallback(
 	tokenFactory: any,
 	provider: any,
@@ -370,42 +370,14 @@ async function indexNewTokensFallback(
 	return indexed;
 }
 
-// ── Launch indexer ─────────────────────────────────────────
-async function indexNewLaunches(
-	launchpadFactory: any,
-	tokenFactory: any,
-	provider: any,
-	chainId: number,
-	usdtDecimals: number,
-	cs: ChainState
-): Promise<number> {
-	const currentCount = Number(await launchpadFactory.totalLaunches());
-	if (currentCount <= cs.lastLaunchCount) return 0;
-
-	const newCount = currentCount - cs.lastLaunchCount;
-	console.log(`  🚀 ${newCount} new launch(es) found`);
-
-	for (let i = cs.lastLaunchCount; i < currentCount; i++) {
-		try {
-			const launchAddress = await launchpadFactory.launches(i);
-			const ok = await syncLaunch(launchAddress, tokenFactory, provider, chainId, usdtDecimals);
-			if (ok) console.log(`    ✓ Launch #${i}: ${launchAddress.slice(0, 10)}...`);
-		} catch (e: any) {
-			console.error(`    ✗ Launch #${i}: ${e.message?.slice(0, 80)}`);
-		}
-	}
-
-	cs.lastLaunchCount = currentCount;
-	return newCount;
-}
-
-async function syncLaunch(
+// ── Launch sync (from chain only) ─────────────────────────
+async function syncLaunchFromChain(
 	launchAddress: string,
 	tokenFactory: any,
 	provider: any,
 	chainId: number,
 	usdtDecimals: number
-): Promise<boolean> {
+): Promise<{ ok: boolean; state: number; totalBaseRaised: string }> {
 	const addr = launchAddress.toLowerCase();
 	const instance = new ethers.Contract(launchAddress, LAUNCH_INSTANCE_ABI, provider);
 
@@ -455,41 +427,85 @@ async function syncLaunch(
 		is_partner: isPartner,
 	};
 
-	return await apiPost('/api/launches', row);
+	const ok = await apiPost('/api/launches', row);
+	return { ok, state: Number(info.state_), totalBaseRaised: info.totalBaseRaised_.toString() };
 }
 
-// ── Update active launches ────────────────────────────────
-async function updateActiveLaunches(
+// ── Index new launches ────────────────────────────────────
+async function indexNewLaunches(
 	launchpadFactory: any,
 	tokenFactory: any,
 	provider: any,
 	chainId: number,
-	usdtDecimals: number
-) {
-	// Fetch non-terminal launches (state 0=pending, 1=active) from backend
-	try {
-		const [pendingRes, activeRes] = await Promise.all([
-			fetch(`${API_BASE}/api/launches?state=0&chain_id=${chainId}&limit=50`),
-			fetch(`${API_BASE}/api/launches?state=1&chain_id=${chainId}&limit=100`),
-		]);
-		const pending = pendingRes.ok ? await pendingRes.json() : [];
-		const active = activeRes.ok ? await activeRes.json() : [];
-		const launches = [...(pending || []), ...(active || [])];
-		if (!launches.length) return;
+	usdtDecimals: number,
+	cs: ChainState
+): Promise<number> {
+	const currentCount = Number(await launchpadFactory.totalLaunches());
+	if (currentCount <= cs.lastLaunchCount) return 0;
 
-		let updated = 0;
-		for (const launch of launches) {
-			try {
-				await syncLaunch(launch.address, tokenFactory, provider, chainId, usdtDecimals);
-				updated++;
-			} catch {}
+	const newCount = currentCount - cs.lastLaunchCount;
+	console.log(`  🚀 ${newCount} new launch(es) found`);
+
+	for (let i = cs.lastLaunchCount; i < currentCount; i++) {
+		try {
+			const launchAddress = (await launchpadFactory.launches(i)).toLowerCase();
+			const result = await syncLaunchFromChain(launchAddress, tokenFactory, provider, chainId, usdtDecimals);
+			if (result.ok) {
+				console.log(`    ✓ Launch #${i}: ${launchAddress.slice(0, 10)}...`);
+				// Track non-terminal launches for updates
+				if (result.state <= 1) {
+					cs.launches.push({ address: launchAddress, state: result.state, totalBaseRaised: result.totalBaseRaised });
+				}
+			}
+		} catch (e: any) {
+			console.error(`    ✗ Launch #${i}: ${e.message?.slice(0, 80)}`);
 		}
+	}
 
-		if (updated > 0) console.log(`  🔄 Updated ${updated} launch(es)`);
-	} catch {}
+	cs.lastLaunchCount = currentCount;
+	return newCount;
 }
 
-// ── Index buy events ──────────────────────────────────────
+// ── Update tracked launches (from chain, no DB reads) ─────
+async function updateTrackedLaunches(
+	tokenFactory: any,
+	provider: any,
+	chainId: number,
+	usdtDecimals: number,
+	cs: ChainState
+) {
+	if (cs.launches.length === 0) return;
+
+	let updated = 0;
+	const stillActive: LaunchCache[] = [];
+
+	for (const cached of cs.launches) {
+		try {
+			const instance = new ethers.Contract(cached.address, LAUNCH_INSTANCE_ABI, provider);
+			const info = await instance.getLaunchInfo();
+			const currentState = Number(info.state_);
+			const currentRaised = info.totalBaseRaised_.toString();
+
+			// Only sync to DB if something changed
+			if (currentState !== cached.state || currentRaised !== cached.totalBaseRaised) {
+				const result = await syncLaunchFromChain(cached.address, tokenFactory, provider, chainId, usdtDecimals);
+				if (result.ok) updated++;
+				cached.state = currentState;
+				cached.totalBaseRaised = currentRaised;
+			}
+
+			// Keep tracking if still non-terminal (pending or active)
+			if (currentState <= 1) {
+				stillActive.push(cached);
+			}
+		} catch {}
+	}
+
+	cs.launches = stillActive;
+	if (updated > 0) console.log(`  🔄 Updated ${updated} launch(es)`);
+}
+
+// ── Index buy events (uses tracked launches, no DB reads) ─
 async function indexEvents(
 	provider: any,
 	chainId: number,
@@ -502,17 +518,11 @@ async function indexEvents(
 
 	if (fromBlock > currentBlock) return;
 
-	// Get active launches from backend
-	let launches: any[] = [];
-	try {
-		const res = await fetch(`${API_BASE}/api/launches?chain_id=${chainId}&limit=200`);
-		if (res.ok) launches = await res.json();
-	} catch {}
-
 	const launchIface = new ethers.Interface(LAUNCH_EVENTS_ABI);
 	let txCount = 0;
 
-	for (const launch of launches.filter((l: any) => l.state === 1 || l.state === 2)) {
+	// Only scan active launches from local state — no DB read
+	for (const launch of cs.launches.filter(l => l.state === 1)) {
 		try {
 			const logs = await provider.getLogs({
 				address: launch.address,
@@ -548,7 +558,7 @@ async function indexEvents(
 	cs.lastSyncedBlock = currentBlock;
 }
 
-// ── Sync withdrawals ──────────────────────────────────────
+// ── Sync withdrawals (from chain only) ────────────────────
 async function syncWithdrawals(
 	tradeRouter: any | null,
 	chainId: number,
@@ -557,110 +567,28 @@ async function syncWithdrawals(
 	if (!tradeRouter) return;
 
 	const totalOnChain = Number(await tradeRouter.totalWithdrawals());
+	if (totalOnChain <= cs.lastWithdrawalCount) return;
 
-	// Part 1: Check new on-chain withdrawals → send to verify endpoint
-	if (totalOnChain > cs.lastWithdrawalCount) {
-		const newCount = totalOnChain - cs.lastWithdrawalCount;
-		console.log(`  💰 ${newCount} new on-chain withdrawal(s)`);
+	const newCount = totalOnChain - cs.lastWithdrawalCount;
+	console.log(`  💰 ${newCount} new on-chain withdrawal(s)`);
 
-		for (let i = cs.lastWithdrawalCount; i < totalOnChain; i++) {
-			try {
-				const req = await tradeRouter.getWithdrawal(i);
-				// Get tx hash from events would require block scanning
-				// Instead, notify backend about the withdrawal for bankRef matching
-				await apiPost('/api/withdrawals/verify', {
-					withdraw_id: i,
-					chain_id: chainId,
-					wallet_address: req.user.toLowerCase(),
-					gross_amount: req.grossAmount.toString(),
-					fee: req.fee.toString(),
-					net_amount: req.netAmount.toString(),
-					status: Number(req.status),
-					bank_ref: req.bankRef,
-				});
-			} catch {}
-		}
-
-		cs.lastWithdrawalCount = totalOnChain;
+	for (let i = cs.lastWithdrawalCount; i < totalOnChain; i++) {
+		try {
+			const req = await tradeRouter.getWithdrawal(i);
+			await apiPost('/api/withdrawals/verify', {
+				withdraw_id: i,
+				chain_id: chainId,
+				wallet_address: req.user.toLowerCase(),
+				gross_amount: req.grossAmount.toString(),
+				fee: req.fee.toString(),
+				net_amount: req.netAmount.toString(),
+				status: Number(req.status),
+				bank_ref: req.bankRef,
+			});
+		} catch {}
 	}
 
-	// Part 2: Check status of known pending withdrawals
-	try {
-		const res = await fetch(`${API_BASE}/api/withdrawals?status=pending&chain_id=${chainId}`);
-		if (!res.ok) return;
-		const pending = await res.json();
-
-		let synced = 0;
-		for (const row of pending || []) {
-			if (!row.withdraw_id || row.withdraw_id <= 0) continue;
-			try {
-				const req = await tradeRouter.getWithdrawal(row.withdraw_id);
-				const onChainStatus = Number(req.status);
-
-				let newStatus: string | null = null;
-				if (onChainStatus === 1) newStatus = 'confirmed';
-				else if (onChainStatus === 2) newStatus = 'cancelled';
-
-				if (newStatus && newStatus !== row.status) {
-					await apiPatch('/api/withdrawals/sync-status', {
-						id: row.id,
-						status: newStatus,
-						admin_note: `Daemon: ${newStatus} on-chain`,
-					});
-					synced++;
-				}
-			} catch {}
-		}
-
-		if (synced > 0) console.log(`  💰 Synced ${synced} withdrawal status(es)`);
-	} catch {}
-
-	// Part 3: Retry awaiting_trade records (frontend verify failed)
-	// Only run if there are actually orphaned records
-	try {
-		const res = await fetch(`${API_BASE}/api/withdrawals?status=awaiting_trade`);
-		if (!res.ok) return;
-		let awaiting = await res.json();
-		if (!awaiting?.length) return;
-
-		// Track which DB record IDs we've already matched to avoid duplicates
-		const matchedDbIds = new Set<number>();
-		let matched = 0;
-
-		for (let i = 0; i < totalOnChain && awaiting.length > 0; i++) {
-			try {
-				const req = await tradeRouter.getWithdrawal(i);
-				if (Number(req.status) !== 0) continue; // only pending on-chain
-
-				const user = req.user.toLowerCase();
-				const hasMatch = awaiting.some((w: any) =>
-					w.wallet_address?.toLowerCase() === user && !matchedDbIds.has(w.id)
-				);
-				if (!hasMatch) continue;
-
-				const ok = await apiPost('/api/withdrawals/verify', {
-					withdraw_id: i,
-					chain_id: chainId,
-					wallet_address: user,
-					gross_amount: req.grossAmount.toString(),
-					fee: req.fee.toString(),
-					net_amount: req.netAmount.toString(),
-					status: Number(req.status),
-					bank_ref: req.bankRef,
-				});
-
-				if (ok) {
-					matched++;
-					// Remove matched record from awaiting list
-					const matchedRecord = awaiting.find((w: any) => w.wallet_address?.toLowerCase() === user);
-					if (matchedRecord) matchedDbIds.add(matchedRecord.id);
-					awaiting = awaiting.filter((w: any) => !matchedDbIds.has(w.id));
-				}
-			} catch {}
-		}
-
-		if (matched > 0) console.log(`  🔗 Matched ${matched} awaiting_trade record(s)`);
-	} catch {}
+	cs.lastWithdrawalCount = totalOnChain;
 }
 
 // ── Main loop ──────────────────────────────────────────────
@@ -687,7 +615,6 @@ async function main() {
 		? new ethers.Contract(config.trade_router_address, TRADE_ROUTER_ABI, provider)
 		: null;
 
-	// Fetch USDT decimals from chain
 	let usdtDecimals = 18;
 	if (config.usdt_address) {
 		try {
@@ -699,7 +626,7 @@ async function main() {
 
 	const allState = loadState();
 	const cs = getChainState(allState, chainId);
-	console.log(`   Resuming from: tokens=${cs.lastTokenCount}, launches=${cs.lastLaunchCount}, withdrawals=${cs.lastWithdrawalCount}, block=${cs.lastSyncedBlock}\n`);
+	console.log(`   Resuming from: tokens=${cs.lastTokenCount}, launches=${cs.lastLaunchCount}, withdrawals=${cs.lastWithdrawalCount}, block=${cs.lastSyncedBlock}, tracked=${cs.launches.length}\n`);
 
 	let pollCount = 0;
 	let running = true;
@@ -712,22 +639,23 @@ async function main() {
 			const ts = new Date().toLocaleTimeString();
 			console.log(`[${ts}] Poll #${pollCount}`);
 
-			// 1. Index new tokens
+			// 1. Index new tokens (chain → DB)
 			try { await indexNewTokens(tokenFactory, provider, chainId, cs, config); } catch (e: any) { console.error(`  ⚠️ Token indexing: ${e.message?.slice(0, 80)}`); }
 			saveState(allState);
 
-			// 2. Index new launches
+			// 2. Index new launches (chain → DB, adds to tracked list)
 			try { await indexNewLaunches(launchpadFactory, tokenFactory, provider, chainId, usdtDecimals, cs); } catch (e: any) { console.error(`  ⚠️ Launch indexing: ${e.message?.slice(0, 80)}`); }
 			saveState(allState);
 
-			// 3. Update active launches
-			try { await updateActiveLaunches(launchpadFactory, tokenFactory, provider, chainId, usdtDecimals); } catch (e: any) { console.error(`  ⚠️ Launch updates: ${e.message?.slice(0, 80)}`); }
+			// 3. Update tracked launches (chain → compare → DB only if changed)
+			try { await updateTrackedLaunches(tokenFactory, provider, chainId, usdtDecimals, cs); } catch (e: any) { console.error(`  ⚠️ Launch updates: ${e.message?.slice(0, 80)}`); }
+			saveState(allState);
 
-			// 4. Index buy events
+			// 4. Index buy events (uses tracked launches from local state)
 			try { await indexEvents(provider, chainId, cs); } catch (e: any) { console.error(`  ⚠️ Event indexing: ${e.message?.slice(0, 80)}`); }
 			saveState(allState);
 
-			// 5. Sync withdrawals
+			// 5. Sync new withdrawals (chain → DB, only new ones)
 			try { await syncWithdrawals(tradeRouter, chainId, cs); } catch (e: any) { console.error(`  ⚠️ Withdrawal sync: ${e.message?.slice(0, 80)}`); }
 			saveState(allState);
 		} catch (e: any) {

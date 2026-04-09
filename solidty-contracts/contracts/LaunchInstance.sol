@@ -268,6 +268,20 @@ contract LaunchInstance is ReentrancyGuard {
     mapping(address => uint256) public basePaid;
     mapping(address => uint256) public tokensBought;
 
+    // ── Purchase history (on-chain, enumerable) ───────────────
+    struct Purchase {
+        address buyer;
+        uint256 baseAmount;      // USDT paid (after fee)
+        uint256 tokensReceived;  // tokens received
+        uint256 fee;             // buy fee taken
+        uint256 price;           // price at time of purchase
+        uint256 timestamp;       // block.timestamp
+    }
+
+    Purchase[] private _purchases;
+    address[] private _buyers;                    // unique buyer list
+    mapping(address => bool) private _isBuyer;    // dedup
+
     // ── Events ─────────────────────────────────────────────────
     event TokensDeposited(address indexed creator, uint256 amount);
     event LaunchActivated();
@@ -544,10 +558,25 @@ contract LaunchInstance is ReentrancyGuard {
         basePaid[buyer] += baseForTokens;
         tokensBought[buyer] += tokensOut;
 
+        // Record purchase history
+        uint256 currentPrice = getCurrentPrice();
+        _purchases.push(Purchase({
+            buyer: buyer,
+            baseAmount: baseForTokens,
+            tokensReceived: tokensOut,
+            fee: buyFee,
+            price: currentPrice,
+            timestamp: block.timestamp
+        }));
+        if (!_isBuyer[buyer]) {
+            _isBuyer[buyer] = true;
+            _buyers.push(buyer);
+        }
+
         // Transfer tokens to buyer
         token.safeTransfer(buyer, tokensOut);
 
-        emit TokenBought(buyer, tokensOut, baseForTokens, getCurrentPrice());
+        emit TokenBought(buyer, tokensOut, baseForTokens, currentPrice);
 
         // Auto-graduate on hard cap or curve sell-out
         if (totalBaseRaised >= hardCap || tokensSold >= tokensForCurve) {
@@ -798,6 +827,52 @@ contract LaunchInstance is ReentrancyGuard {
     function progressBps() external view returns (uint256 softCapBps, uint256 hardCapBps) {
         softCapBps = softCap > 0 ? Math.min((totalBaseRaised * BPS) / softCap, BPS) : 0;
         hardCapBps = hardCap > 0 ? Math.min((totalBaseRaised * BPS) / hardCap, BPS) : 0;
+    }
+
+    // ── Purchase history reads ──────────────────────────────────
+
+    /// @notice Total number of purchases.
+    function totalPurchases() external view returns (uint256) { return _purchases.length; }
+
+    /// @notice Total unique buyers.
+    function totalBuyers() external view returns (uint256) { return _buyers.length; }
+
+    /// @notice Get a single purchase by index.
+    function getPurchase(uint256 index) external view returns (Purchase memory) {
+        return _purchases[index];
+    }
+
+    /// @notice Get a batch of purchases.
+    function getPurchases(uint256 offset, uint256 limit) external view returns (Purchase[] memory purchases, uint256 total) {
+        total = _purchases.length;
+        if (offset >= total) return (new Purchase[](0), total);
+        uint256 end = offset + limit;
+        if (end > total) end = total;
+        purchases = new Purchase[](end - offset);
+        for (uint256 i = offset; i < end; i++) {
+            purchases[i - offset] = _purchases[i];
+        }
+    }
+
+    /// @notice Get unique buyer addresses.
+    function getBuyers(uint256 offset, uint256 limit) external view returns (address[] memory buyers, uint256 total) {
+        total = _buyers.length;
+        if (offset >= total) return (new address[](0), total);
+        uint256 end = offset + limit;
+        if (end > total) end = total;
+        buyers = new address[](end - offset);
+        for (uint256 i = offset; i < end; i++) {
+            buyers[i - offset] = _buyers[i];
+        }
+    }
+
+    /// @notice Cheap state hash for change detection. Daemon compares this against cache —
+    ///         only fetches full data when hash changes.
+    function stateHash() external view returns (bytes32) {
+        return keccak256(abi.encodePacked(
+            state, totalBaseRaised, tokensSold, totalTokensDeposited,
+            _purchases.length, _buyers.length
+        ));
     }
 
     /// @notice Creator vesting details.
