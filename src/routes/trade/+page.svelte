@@ -2101,9 +2101,6 @@
 								</button>
 							</div>
 						{:else}
-							<div class="ws-stepper-header">
-								<span class="ws-stepper-amount">{amountIn} {tokenInSymbol} → {amountOut} {tokenOutSymbol}</span>
-							</div>
 							<div class="withdraw-steps">
 								{#each [
 									{ n: 1, title: 'Approve Token', desc: tokenInIsNative ? 'Skipped for native' : `Allow ${tokenInSymbol}`, activeDesc: tokenInIsNative ? 'Skipping...' : 'Confirm in wallet...' },
@@ -2136,96 +2133,51 @@
 					{/if}
 				{:else}
 				<!-- ═══ REVIEW (before clicking confirm) ═══ -->
-				<div class="confirm-token-box">
-					<span class="confirm-label">You pay</span>
-					<div class="confirm-amount-row">
-						<span class="confirm-amount">{amountIn}</span>
-						<span class="confirm-symbol">{tokenInSymbol}</span>
+				<div class="cr-swap-row">
+					<div class="cr-side">
+						<span class="cr-label">Pay</span>
+						<span class="cr-amount">{amountIn} <span class="cr-sym">{tokenInSymbol}</span></span>
+						{#if tokenInHasTax}<span class="cr-tax">-{tokenInTaxSell / 100}% tax</span>{/if}
 					</div>
-					{#if tokenInHasTax}
-						<span class="confirm-tax">Sell tax: {tokenInTaxSell / 100}%</span>
-					{/if}
-				</div>
-
-				<div class="confirm-arrow">
-					<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14m0 0l-4-4m4 4l4-4"/></svg>
-				</div>
-
-				<div class="confirm-token-box">
-					{#if outputMode === 'token'}
-						<span class="confirm-label">You receive</span>
-						<div class="confirm-amount-row">
-							<span class="confirm-amount">{displayAmountOut || '0'}</span>
-							<span class="confirm-symbol">{tokenOutSymbol}</span>
-						</div>
-						{#if tokenOutHasTax}
-							<span class="confirm-tax">Buy tax: {tokenOutTaxBuy / 100}%</span>
-						{/if}
-					{:else}
-						<span class="confirm-label">Withdraw to</span>
-						<div class="confirm-bank-info">
-							<span class="confirm-bank-method">
-								{paymentMethod === 'bank' ? bankBankName : paymentMethod === 'paypal' ? 'PayPal' : 'Wise'}
-							</span>
+					<div class="cr-arrow">
+						<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14m0 0l-4-4m4 4l4-4"/></svg>
+					</div>
+					<div class="cr-side cr-side-right">
+						{#if outputMode === 'token'}
+							<span class="cr-label">Receive</span>
+							<span class="cr-amount">{displayAmountOut || '0'} <span class="cr-sym">{tokenOutSymbol}</span></span>
+							{#if tokenOutHasTax}<span class="cr-tax">-{tokenOutTaxBuy / 100}% tax</span>{/if}
+						{:else}
+							<span class="cr-label">To</span>
+							<span class="cr-bank-name">{paymentMethod === 'bank' ? bankBankName : paymentMethod === 'paypal' ? 'PayPal' : 'Wise'}</span>
 							{#if paymentMethod === 'bank' && bankResolved}
-								<span class="confirm-bank-holder">{bankName}</span>
-								<span class="confirm-bank-acc">{bankAccount}</span>
+								<span class="cr-bank-holder">{bankName}</span>
 							{:else if paymentMethod === 'paypal'}
-								<span class="confirm-bank-holder">{paypalEmail}</span>
+								<span class="cr-bank-holder">{paypalEmail}</span>
 							{:else if paymentMethod === 'wise'}
-								<span class="confirm-bank-holder">{wiseEmail} ({wiseCurrency})</span>
+								<span class="cr-bank-holder">{wiseEmail}</span>
 							{/if}
-						</div>
-					{/if}
+						{/if}
+					</div>
 				</div>
 
-				<div class="confirm-details">
+				<div class="cr-details">
 					{#if outputMode === 'token' && rate}
-						<div class="confirm-detail-row">
-							<span>Rate</span>
-							<span>1 {tokenInSymbol} = {rate} {tokenOutSymbol}</span>
-						</div>
 						{@const confirmMinUsd = usdValueOut && displayAmountOut && parseFloat(displayAmountOut) > 0
 							? (parseFloat(usdValueOut.replace(/[^0-9.]/g, '')) * parseFloat(minReceived) / parseFloat(displayAmountOut)).toFixed(2)
 							: ''}
-						<div class="confirm-detail-row">
-							<span>Min. received</span>
-							<span>{minReceived} {tokenOutSymbol}{#if confirmMinUsd} <span class="usd-value">(≈${confirmMinUsd})</span>{/if}</span>
-						</div>
-						<div class="confirm-detail-row">
-							<span>Slippage</span>
-							<span>{slippageBps / 100}%</span>
-						</div>
-						{#if tokenInTaxSell > 0}
-							<div class="confirm-detail-row confirm-detail-warn">
-								<span>Sell tax ({tokenInSymbol})</span>
-								<span>{(tokenInTaxSell / 100).toFixed(1)}%</span>
-							</div>
-						{/if}
-						{#if tokenOutTaxBuy > 0}
-							<div class="confirm-detail-row confirm-detail-warn">
-								<span>Buy tax ({tokenOutSymbol})</span>
-								<span>{(tokenOutTaxBuy / 100).toFixed(1)}%</span>
-							</div>
-						{/if}
+						<div class="cr-row"><span>Rate</span><span>1 {tokenInSymbol} = {rate}</span></div>
+						<div class="cr-row"><span>Min. received</span><span>{minReceived} {tokenOutSymbol}{#if confirmMinUsd} <span class="usd-value">(≈${confirmMinUsd})</span>{/if}</span></div>
+						<div class="cr-row"><span>Slippage</span><span>{slippageBps / 100}%</span></div>
+						{#if tokenInTaxSell > 0}<div class="cr-row cr-row-warn"><span>Sell tax ({tokenInSymbol})</span><span>{(tokenInTaxSell / 100).toFixed(1)}%</span></div>{/if}
+						{#if tokenOutTaxBuy > 0}<div class="cr-row cr-row-warn"><span>Buy tax ({tokenOutSymbol})</span><span>{(tokenOutTaxBuy / 100).toFixed(1)}%</span></div>{/if}
 					{:else if outputMode === 'bank'}
 						{#if fiatEquivalent}
-							<div class="confirm-ngn-amount">
-								<span class="confirm-ngn-label">You will receive</span>
-								<span class="confirm-ngn-value">{fiatEquivalent}</span>
-								{#if ngnRate > 0}
-									<span class="confirm-ngn-rate">1 USD = NGN {ngnRate.toFixed(2)}</span>
-								{/if}
-							</div>
+							<div class="cr-row cr-row-highlight"><span>You receive</span><span class="cr-ngn">{fiatEquivalent}</span></div>
+							{#if ngnRate > 0}<div class="cr-row"><span>Rate</span><span>1 USD = ₦{ngnRate.toFixed(2)}</span></div>{/if}
 						{/if}
-						<div class="confirm-detail-row">
-							<span>Processing time</span>
-							<span>Under {payoutTimeoutMins} minutes</span>
-						</div>
-						<div class="confirm-detail-row">
-							<span>Safety</span>
-							<span>Cancel anytime if not processed</span>
-						</div>
+						<div class="cr-row"><span>Processing</span><span>Under {payoutTimeoutMins} min</span></div>
+						<div class="cr-row"><span>Safety</span><span>Cancel anytime</span></div>
 					{/if}
 				</div>
 
@@ -2755,68 +2707,57 @@
 		border: 1px solid var(--border); border-radius: 20px; overflow: hidden;
 		display: flex; flex-direction: column;
 	}
-	.confirm-body { padding: 16px 20px 20px; overflow-y: auto; flex: 1; }
-	.confirm-token-box {
-		background: var(--bg-surface-input); border-radius: 12px; padding: 14px 16px;
+	.confirm-body { padding: 14px 16px 16px; overflow-y: auto; flex: 1; }
+
+	/* Confirm review */
+	.cr-swap-row {
+		display: flex; flex-direction: column;
+		background: var(--bg-surface-input); border-radius: 12px; overflow: hidden;
 	}
-	.confirm-label {
-		font-family: 'Space Mono', monospace; font-size: 10px; font-weight: 600;
-		text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted);
+	.cr-side { padding: 10px 14px; }
+	.cr-side-right { border-top: 1px solid var(--border); }
+	.cr-arrow {
+		width: 28px; height: 28px; border-radius: 50%;
+		background: var(--bg); border: 1px solid var(--border);
+		display: flex; align-items: center; justify-content: center;
+		color: var(--text-dim); margin: -14px auto; z-index: 1;
 	}
-	.confirm-amount-row { display: flex; align-items: baseline; gap: 8px; margin-top: 4px; }
-	.confirm-amount {
-		font-family: 'Syne', sans-serif; font-size: 24px; font-weight: 700; color: var(--text-heading);
+	.cr-label {
+		display: block; font-family: 'Space Mono', monospace; font-size: 9px; font-weight: 600;
+		text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 2px;
 	}
-	.confirm-symbol {
-		font-family: 'Space Mono', monospace; font-size: 14px; font-weight: 700; color: var(--text-muted);
+	.cr-amount {
+		display: block; font-family: 'Rajdhani', sans-serif; font-size: 22px; font-weight: 700;
+		color: var(--text-heading); line-height: 1.3; font-variant-numeric: tabular-nums;
 	}
-	.confirm-tax {
-		display: inline-block; margin-top: 6px; font-family: 'Space Mono', monospace;
-		font-size: 10px; color: #f59e0b; background: rgba(245,158,11,0.08);
-		padding: 2px 8px; border-radius: 4px;
+	.cr-sym { font-size: 14px; color: var(--text-muted); font-weight: 600; }
+	.cr-tax {
+		display: inline-block; margin-top: 3px; font-family: 'Space Mono', monospace;
+		font-size: 9px; color: #f59e0b; background: rgba(245,158,11,0.08);
+		padding: 1px 6px; border-radius: 3px;
 	}
-	.confirm-arrow {
-		display: flex; justify-content: center; padding: 8px 0; color: var(--text-dim);
+	.cr-bank-name {
+		display: block; font-family: 'Syne', sans-serif; font-size: 13px;
+		font-weight: 700; color: var(--text-heading); line-height: 1.3;
 	}
-	.confirm-bank-info { margin-top: 6px; }
-	.confirm-bank-method {
-		display: block; font-family: 'Syne', sans-serif; font-size: 16px;
-		font-weight: 700; color: var(--text-heading);
+	.cr-bank-holder {
+		display: block; font-family: 'Space Mono', monospace; font-size: 10px;
+		color: #10b981; font-weight: 600; margin-top: 2px;
 	}
-	.confirm-bank-holder {
-		display: block; font-family: 'Space Mono', monospace; font-size: 13px;
-		color: #10b981; font-weight: 700; margin-top: 4px;
-	}
-	.confirm-bank-acc {
-		display: block; font-family: 'Space Mono', monospace; font-size: 12px;
-		color: var(--text-muted); margin-top: 2px;
-	}
-	.confirm-details {
-		margin: 12px 0 16px; padding: 12px; background: var(--bg-surface);
+
+	.cr-details {
+		margin: 10px 0 12px; padding: 10px 12px;
 		border: 1px solid var(--border); border-radius: 10px;
 	}
-	.confirm-detail-row {
-		display: flex; justify-content: space-between; padding: 4px 0;
-		font-family: 'Space Mono', monospace; font-size: 11px;
+	.cr-row {
+		display: flex; justify-content: space-between; padding: 3px 0;
+		font-family: 'Space Mono', monospace; font-size: 10px;
 	}
-	.confirm-detail-row span:first-child { color: var(--text-muted); }
-	.confirm-detail-row span:last-child { color: var(--text); }
-	.confirm-detail-warn span:last-child { color: #f59e0b; }
-	.confirm-ngn-amount {
-		text-align: center; padding: 12px 0 8px;
-	}
-	.confirm-ngn-label {
-		display: block; font-family: 'Space Mono', monospace; font-size: 10px;
-		text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 4px;
-	}
-	.confirm-ngn-value {
-		display: block; font-family: 'Rajdhani', sans-serif; font-size: 32px; font-weight: 700;
-		color: #10b981; font-variant-numeric: tabular-nums;
-	}
-	.confirm-ngn-rate {
-		display: block; font-family: 'Space Mono', monospace; font-size: 10px;
-		color: var(--text-dim); margin-top: 4px;
-	}
+	.cr-row span:first-child { color: var(--text-muted); }
+	.cr-row span:last-child { color: var(--text); }
+	.cr-row-warn span:last-child { color: #f59e0b; }
+	.cr-row-highlight { padding: 6px 0; }
+	.cr-ngn { font-family: 'Rajdhani', sans-serif; font-size: 16px; font-weight: 700; color: #10b981; font-variant-numeric: tabular-nums; }
 	.confirm-processing {
 		display: flex; align-items: center; justify-content: center; gap: 10px;
 		padding: 16px; font-family: 'Space Mono', monospace; font-size: 13px; color: var(--text-muted);
@@ -2870,17 +2811,23 @@
 		font-family: 'Space Mono', monospace; font-size: 10px; font-weight: 700;
 		color: #10b981; flex-shrink: 0;
 	}
-	.ws-stepper-header {
-		text-align: center; padding: 8px 0 16px;
+	.ws-stepper-header { padding: 4px 0 12px; }
+	.ws-swap-summary {
+		display: flex; align-items: center; gap: 8px;
+		background: var(--bg-surface-input); border-radius: 10px; padding: 10px 12px;
 	}
-	.ws-stepper-amount {
-		font-family: 'Syne', sans-serif; font-size: 18px; font-weight: 700;
-		color: var(--text-heading);
+	.ws-swap-side { flex: 1; min-width: 0; }
+	.ws-swap-side-right { text-align: right; }
+	.ws-swap-amount {
+		display: block; font-family: 'Rajdhani', sans-serif; font-size: 18px; font-weight: 700;
+		color: var(--text-heading); line-height: 1.2; font-variant-numeric: tabular-nums;
+		overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 	}
-	.ws-stepper-fiat {
-		display: block; font-family: 'Space Mono', monospace; font-size: 14px;
-		font-weight: 700; color: #10b981; margin-top: 2px;
+	.ws-swap-sym {
+		font-family: 'Space Mono', monospace; font-size: 10px; font-weight: 600;
+		color: var(--text-muted); text-transform: uppercase;
 	}
+	.ws-swap-arrow { flex-shrink: 0; color: var(--text-dim); }
 	.ws-complete {
 		text-align: center; padding: 16px 0 8px;
 	}
@@ -2909,11 +2856,11 @@
 		.modal-backdrop { align-items: flex-end; padding: 0; }
 		.token-modal { max-width: 100%; border-radius: 20px 20px 0 0; max-height: 85vh; }
 
-		/* Confirm trade modal: full-screen */
-		.modal-backdrop:has(.confirm-modal) { padding: 0; align-items: stretch; }
+		/* Confirm trade modal: bottom sheet */
+		.modal-backdrop:has(.confirm-modal) { padding: 0; align-items: flex-end; }
 		.confirm-modal {
-			max-width: 100%; width: 100%; height: 100vh;
-			border-radius: 0; max-height: 100vh;
+			max-width: 100%; width: 100%; height: 80vh;
+			border-radius: 20px 20px 0 0;
 			display: flex; flex-direction: column;
 		}
 		.confirm-body { flex: 1; overflow-y: auto; }

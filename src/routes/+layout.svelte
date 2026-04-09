@@ -17,7 +17,8 @@
 	import { getSigner as getEmbeddedSigner, signOut, lockWallet, getWalletState, checkAuthReturn, hasVault, autoReconnect } from '$lib/embeddedWallet';
 	import { startBalancePoller, stopBalancePoller, updatePollerAddress, balanceState, refreshBalancesNow } from '$lib/balancePoller';
 
-	let { children } = $props();
+	let { children, data }: { children: any; data: any } = $props();
+	let isAdmin = $derived(data?.isAdmin || false);
 
 	let showWalletModal = $state(false);
 	let showAccountPanel = $state(false);
@@ -198,6 +199,69 @@
 		networkProviders = map;
 		providersReady = true;
 	}
+
+	// ── Admin realtime notifications (daemon-confirmed events) ──
+	let adminChannel: any = null;
+	$effect(() => {
+		if (!isAdmin) return;
+		adminChannel = supabase
+			.channel('admin-activity')
+			// Token confirmed by daemon (UPDATE with total_supply changing from '0' to actual)
+			.on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'created_tokens' }, (payload: any) => {
+				const prev = payload.old;
+				const curr = payload.new;
+				// Daemon just indexed this token (supply was 0 or missing, now populated)
+				if ((!prev.total_supply || prev.total_supply === '0') && curr.total_supply && curr.total_supply !== '0') {
+					const fee = curr.is_partner ? 'Partner' : curr.is_taxable ? 'Taxable' : curr.is_mintable ? 'Mintable' : 'Basic';
+					addFeedback({ message: `Token confirmed: ${curr.name} (${curr.symbol}) — ${fee}`, type: 'success' });
+				}
+			})
+			// New token created (INSERT from daemon or frontend pre-save)
+			.on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'created_tokens' }, (payload: any) => {
+				const t = payload.new;
+				if (t.total_supply && t.total_supply !== '0') {
+					const fee = t.is_partner ? 'Partner' : t.is_taxable ? 'Taxable' : t.is_mintable ? 'Mintable' : 'Basic';
+					addFeedback({ message: `New token: ${t.name} (${t.symbol}) — ${fee}`, type: 'success' });
+				}
+			})
+			// Launch state changes (daemon syncs state 0→1, 1→2)
+			.on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'launches' }, (payload: any) => {
+				const prev = payload.old;
+				const curr = payload.new;
+				if (prev.state !== curr.state) {
+					const states: Record<number, string> = { 0: 'Pending', 1: 'Active', 2: 'Graduated', 3: 'Refunding' };
+					addFeedback({ message: `Launch ${curr.token_symbol || curr.address?.slice(0, 10)}: ${states[prev.state] || '?'} → ${states[curr.state] || '?'}`, type: 'info' });
+				}
+				// New buy detected (total_base_raised increased)
+				if (prev.total_base_raised !== curr.total_base_raised && curr.total_base_raised !== '0') {
+					const raised = parseFloat(curr.total_base_raised) / 1e18;
+					const prevRaised = parseFloat(prev.total_base_raised || '0') / 1e18;
+					const delta = raised - prevRaised;
+					if (delta > 0) {
+						addFeedback({ message: `Launch buy: +$${delta.toFixed(2)} → ${curr.token_symbol || '???'} ($${raised.toFixed(2)} total)`, type: 'info' });
+					}
+				}
+			})
+			// Withdrawal status changes
+			.on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'withdrawals' }, (payload: any) => {
+				const w = payload.new;
+				addFeedback({ message: `New withdrawal: $${(parseFloat(w.gross_amount || '0') / 1e18).toFixed(2)} → Bank`, type: 'info' });
+			})
+			.on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'withdrawals' }, (payload: any) => {
+				const prev = payload.old;
+				const curr = payload.new;
+				if (prev.status !== curr.status) {
+					const statuses: Record<number, string> = { 0: 'Pending', 1: 'Processing', 2: 'Completed', 3: 'Cancelled', 4: 'Timeout' };
+					addFeedback({ message: `Withdrawal ${statuses[prev.status] || '?'} → ${statuses[curr.status] || '?'}: $${(parseFloat(curr.gross_amount || '0') / 1e18).toFixed(2)}`, type: curr.status === 2 ? 'success' : 'info' });
+				}
+			})
+			.subscribe();
+
+		return () => {
+			if (adminChannel) supabase.removeChannel(adminChannel);
+			adminChannel = null;
+		};
+	});
 
 	onMount(() => {
 		isLoading = false;

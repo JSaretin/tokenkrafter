@@ -102,22 +102,6 @@ contract TokenFactory is Ownable, ReentrancyGuard {
         address paymentToken;
     }
 
-    /// @notice Tax configuration applied after token creation.
-    struct TaxParams {
-        uint256 buyTaxBps;
-        uint256 sellTaxBps;
-        uint256 transferTaxBps;
-        address[] taxWallets;
-        uint16[] taxSharesBps;
-    }
-
-    /// @notice Protection configuration applied after token creation.
-    struct ProtectionParams {
-        uint256 maxWalletAmount;
-        uint256 maxTransactionAmount;
-        uint256 cooldownSeconds;
-    }
-
     /// @notice Daily statistics snapshot.
     struct DayStats {
         uint256 basic;
@@ -580,18 +564,13 @@ contract TokenFactory is Ownable, ReentrancyGuard {
     // TOKEN CREATION
     // =============================================================
 
-    /// @notice Creates a new token with optional tax and protection configured in one transaction.
+    /// @notice Creates a new token by cloning the appropriate implementation.
     /// @param p Token creation parameters
-    /// @param tax Tax configuration (ignored if token is not taxable or all values are 0)
-    /// @param protection Protection limits (ignored if all values are 0)
     /// @param referral The address that referred this creator (address(0) if none)
     /// @return tokenAddress The address of the newly created token clone
-    function createToken(
-        CreateTokenParams calldata p,
-        TaxParams calldata tax,
-        ProtectionParams calldata protection,
-        address referral
-    ) external payable nonReentrant returns (address tokenAddress) {
+    function createToken(CreateTokenParams calldata p, address referral)
+        external payable nonReentrant returns (address tokenAddress)
+    {
         if (p.totalSupply == 0 || p.totalSupply > 1e30 || p.decimals > 18
             || bytes(p.name).length == 0 || bytes(p.symbol).length == 0)
             revert InvalidParams();
@@ -608,36 +587,17 @@ contract TokenFactory is Ownable, ReentrancyGuard {
         tokenAddress = Clones.cloneDeterministic(impl, salt);
         _initAndRecord(p, msg.sender, msg.sender, tokenAddress, typeKey);
 
-        // Configure tax if applicable
-        if ((p.isTaxable || p.isPartner) && (tax.buyTaxBps > 0 || tax.sellTaxBps > 0 || tax.transferTaxBps > 0)) {
-            ITaxableToken(tokenAddress).setTaxes(tax.buyTaxBps, tax.sellTaxBps, tax.transferTaxBps);
-            if (tax.taxWallets.length > 0) {
-                ITaxableToken(tokenAddress).setTaxDistribution(tax.taxWallets, tax.taxSharesBps);
-            }
-        }
-
-        // Configure protection if applicable
-        if (protection.maxWalletAmount > 0) IProtectedToken(tokenAddress).setMaxWalletAmount(protection.maxWalletAmount);
-        if (protection.maxTransactionAmount > 0) IProtectedToken(tokenAddress).setMaxTransactionAmount(protection.maxTransactionAmount);
-        if (protection.cooldownSeconds > 0) IProtectedToken(tokenAddress).setCooldownTime(protection.cooldownSeconds);
-
         return tokenAddress;
     }
 
     /// @notice Creates a token on behalf of another address. Only callable by the factory owner.
     /// @param creator The address that will own the token and pay the creation fee
     /// @param p Token creation parameters
-    /// @param tax Tax configuration
-    /// @param protection Protection limits
     /// @param referral The address that referred the creator (address(0) if none)
     /// @return tokenAddress The address of the newly created token clone
-    function ownerCreateToken(
-        address creator,
-        CreateTokenParams calldata p,
-        TaxParams calldata tax,
-        ProtectionParams calldata protection,
-        address referral
-    ) external payable onlyOwner nonReentrant returns (address tokenAddress) {
+    function ownerCreateToken(address creator, CreateTokenParams calldata p, address referral)
+        external payable onlyOwner nonReentrant returns (address tokenAddress)
+    {
         if (creator == address(0)) revert InvalidAddress();
         if (p.totalSupply == 0 || p.totalSupply > 1e30 || p.decimals > 18
             || bytes(p.name).length == 0 || bytes(p.symbol).length == 0)
@@ -654,19 +614,6 @@ contract TokenFactory is Ownable, ReentrancyGuard {
         bytes32 salt = _computeSalt(creator);
         tokenAddress = Clones.cloneDeterministic(impl, salt);
         _initAndRecord(p, creator, creator, tokenAddress, typeKey);
-
-        // Configure tax if applicable
-        if ((p.isTaxable || p.isPartner) && (tax.buyTaxBps > 0 || tax.sellTaxBps > 0 || tax.transferTaxBps > 0)) {
-            ITaxableToken(tokenAddress).setTaxes(tax.buyTaxBps, tax.sellTaxBps, tax.transferTaxBps);
-            if (tax.taxWallets.length > 0) {
-                ITaxableToken(tokenAddress).setTaxDistribution(tax.taxWallets, tax.taxSharesBps);
-            }
-        }
-
-        // Configure protection if applicable
-        if (protection.maxWalletAmount > 0) IProtectedToken(tokenAddress).setMaxWalletAmount(protection.maxWalletAmount);
-        if (protection.maxTransactionAmount > 0) IProtectedToken(tokenAddress).setMaxTransactionAmount(protection.maxTransactionAmount);
-        if (protection.cooldownSeconds > 0) IProtectedToken(tokenAddress).setCooldownTime(protection.cooldownSeconds);
 
         return tokenAddress;
     }

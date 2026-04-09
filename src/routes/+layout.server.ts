@@ -1,0 +1,8 @@
+import type { LayoutServerLoad } from './$types';
+
+export const load: LayoutServerLoad = async ({ locals }) => {
+	return {
+		isAdmin: locals.isAdmin || false,
+		wallet: locals.wallet || null,
+	};
+};

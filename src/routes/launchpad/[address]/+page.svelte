@@ -4,6 +4,7 @@
 	import { page } from '$app/state';
 	import { t } from '$lib/i18n';
 	import { apiFetch } from '$lib/apiFetch';
+	import { supabase } from '$lib/supabaseClient';
 	import { getKnownLogo } from '$lib/tokenLogo';
 	import { favorites, toggleFavorite } from '$lib/favorites';
 	import RecentTransactionsTicker from '$lib/RecentTransactionsTicker.svelte';
@@ -907,6 +908,7 @@
 
 	onDestroy(() => {
 		if (txRefreshInterval) clearInterval(txRefreshInterval);
+		if (commentChannel) { commentChannel.unsubscribe(); commentChannel = null; }
 	});
 
 	// ── Comments / Discussion ──
@@ -944,7 +946,7 @@
 			const signMsg = `TokenKrafter Comment\nLaunch: ${launchAddress}\nOrigin: ${window.location.origin}\nTimestamp: ${timestamp}`;
 			const signature = await signer.signMessage(signMsg);
 
-			const res = await fetch('/api/launches/comments', {
+			const res = await apiFetch('/api/launches/comments', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
@@ -959,8 +961,12 @@
 				const err = await res.json().catch(() => ({ message: 'Failed to post comment' }));
 				throw new Error(err.message || 'Failed to post comment');
 			}
+			// Optimistically add to list
+			const posted = await res.json();
+			if (posted && !comments.find(c => c.id === posted.id)) {
+				comments = [posted, ...comments];
+			}
 			commentText = '';
-			await loadComments();
 		} catch (e: any) {
 			addFeedback({ message: e.message || 'Failed to post comment', type: 'error' });
 		} finally {
@@ -968,8 +974,32 @@
 		}
 	}
 
+	// Subscribe to live comments via Supabase Realtime
+	let commentChannel: ReturnType<typeof supabase.channel> | null = null;
+
+	function subscribeToComments() {
+		if (!launchAddress || commentChannel) return;
+		commentChannel = supabase
+			.channel(`comments-${launchAddress}`)
+			.on('postgres_changes', {
+				event: 'INSERT',
+				schema: 'public',
+				table: 'comments',
+				filter: `launch_address=eq.${launchAddress.toLowerCase()}`
+			}, (payload: any) => {
+				const newComment = payload.new as Comment;
+				if (newComment && !comments.find(c => c.id === newComment.id)) {
+					comments = [newComment, ...comments];
+				}
+			})
+			.subscribe();
+	}
+
 	$effect(() => {
-		if (launch) loadComments();
+		if (launch) {
+			loadComments();
+			subscribeToComments();
+		}
 	});
 </script>
 
