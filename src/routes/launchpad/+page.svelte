@@ -353,7 +353,7 @@
 	<meta name="description" content={$t('lp.metaDesc')} />
 </svelte:head>
 
-<div class="page-wrap max-w-[1400px] mx-auto px-4 sm:px-6 py-8 xl:grid xl:grid-cols-[1fr_320px] xl:gap-6">
+<div class="page-wrap max-w-[1400px] mx-auto px-4 sm:px-6 py-8 {launches.length > 0 ? 'xl:grid xl:grid-cols-[1fr_320px] xl:gap-6' : ''}">
 	<div class="min-w-0">
 	<!-- Header row -->
 	<div class="flex flex-wrap items-end justify-between gap-4 mb-6">
@@ -367,89 +367,64 @@
 		</div>
 	</div>
 
-	<!-- Stats bar -->
-	<div class="stats-bar mb-6">
-		<div class="stat-item">
-			<span class="stat-value">{liveCount}</span>
-			<span class="stat-label">{$t('lp.live')}</span>
-		</div>
-		{#if upcomingCount > 0}
+	<!-- Stats bar (hide when all zeros) -->
+	{#if launches.length > 0}
+		<div class="stats-bar mb-5">
 			<div class="stat-item">
-				<span class="stat-value">{upcomingCount}</span>
-				<span class="stat-label">Upcoming</span>
+				<span class="stat-value">{liveCount}</span>
+				<span class="stat-label">{$t('lp.live')}</span>
 			</div>
-		{/if}
-		<div class="stat-item">
-			<span class="stat-value">{graduatedCount}</span>
-			<span class="stat-label">{$t('lp.graduated')}</span>
+			{#if upcomingCount > 0}
+				<div class="stat-item">
+					<span class="stat-value">{upcomingCount}</span>
+					<span class="stat-label">Upcoming</span>
+				</div>
+			{/if}
+			<div class="stat-item">
+				<span class="stat-value">{graduatedCount}</span>
+				<span class="stat-label">{$t('lp.graduated')}</span>
+			</div>
+			<div class="stat-item">
+				<span class="stat-value">{formatUsdt(totalRaised)}</span>
+				<span class="stat-label">{$t('lp.totalRaised')}</span>
+			</div>
 		</div>
-		<div class="stat-item">
-			<span class="stat-value">{formatUsdt(totalRaised)}</span>
-			<span class="stat-label">{$t('lp.totalRaised')}</span>
-		</div>
-	</div>
+	{/if}
 
-	<!-- Tabs + filters row -->
-	<div class="flex flex-wrap items-center gap-3 mb-6">
-		<!-- State tabs -->
-		<div class="tab-row">
-			<button class="tab-btn {activeTab === 'live' ? 'tab-active' : ''}" onclick={() => activeTab = 'live'}>{$t('lp.live')} {liveCount > 0 ? `(${liveCount})` : ''}</button>
-			<button class="tab-btn {activeTab === 'upcoming' ? 'tab-active' : ''}" onclick={() => activeTab = 'upcoming'}>{$t('lp.upcoming')} {upcomingCount > 0 ? `(${upcomingCount})` : ''}</button>
-			<button class="tab-btn {activeTab === 'graduated' ? 'tab-active' : ''}" onclick={() => activeTab = 'graduated'}>{$t('lp.graduated')} {graduatedCount > 0 ? `(${graduatedCount})` : ''}</button>
-			<button class="tab-btn {activeTab === 'all' ? 'tab-active' : ''}" onclick={() => activeTab = 'all'}>{$t('lp.all')} ({launches.length})</button>
-		</div>
-
-		<div class="flex-1"></div>
-
-		<!-- Search bar -->
-		<div class="search-wrap">
-			<svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-				<circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
-			</svg>
-			<input
-				type="text"
-				class="input-field search-input"
-				placeholder={$t('lp.searchPlaceholder')}
-				bind:value={searchQuery}
-			/>
-		</div>
-
-		<!-- Sort -->
-		<select class="filter-select" bind:value={sortBy}>
-			<option value="newest">{$t('lp.newest')}</option>
-			<option value="ending">{$t('lp.endingSoon')}</option>
-			<option value="raised">{$t('lp.mostRaised')}</option>
-			<option value="progress">{$t('lp.mostProgress')}</option>
-			<option value="trending">{$t('lp.trending')}</option>
-		</select>
-
-		<!-- Network -->
-		<select class="filter-select" bind:value={selectedNetwork}>
-			<option value="all">{$t('lp.allChains')}</option>
-			{#each supportedNetworks.filter(n => n.launchpad_address && n.launchpad_address !== '0x') as net}
-				<option value={net.chain_id}>{net.name}</option>
-			{/each}
-		</select>
-
-		<button
-			onclick={() => { showFavorites = !showFavorites; if (showFavorites) showMyLaunches = false; }}
-			class="filter-btn {showFavorites ? 'filter-btn-active' : ''}"
-		>
-			<svg width="12" height="12" viewBox="0 0 24 24" fill={showFavorites ? '#00d2ff' : 'none'} stroke={showFavorites ? '#00d2ff' : 'currentColor'} stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline;vertical-align:-1px;margin-right:4px"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
-			{$t('lp.favorites')}
-		</button>
-
-		{#if userAddress}
+	<!-- Filters: tabs + search + sort on one row -->
+	<div class="lp-controls">
+		<div class="lp-controls-left">
+			<div class="tab-row">
+				<button class="tab-btn {activeTab === 'live' ? 'tab-active' : ''}" onclick={() => activeTab = 'live'}>{$t('lp.live')}{#if liveCount > 0} <span class="tab-count">{liveCount}</span>{/if}</button>
+				<button class="tab-btn {activeTab === 'upcoming' ? 'tab-active' : ''}" onclick={() => activeTab = 'upcoming'}>{$t('lp.upcoming')}{#if upcomingCount > 0} <span class="tab-count">{upcomingCount}</span>{/if}</button>
+				<button class="tab-btn {activeTab === 'graduated' ? 'tab-active' : ''}" onclick={() => activeTab = 'graduated'}>{$t('lp.graduated')}{#if graduatedCount > 0} <span class="tab-count">{graduatedCount}</span>{/if}</button>
+				<button class="tab-btn {activeTab === 'all' ? 'tab-active' : ''}" onclick={() => activeTab = 'all'}>{$t('lp.all')}{#if launches.length > 0} <span class="tab-count">{launches.length}</span>{/if}</button>
+			</div>
 			<button
-				onclick={() => { showMyLaunches = !showMyLaunches; if (showMyLaunches) showFavorites = false; }}
-				class="filter-btn {showMyLaunches ? 'filter-btn-active' : ''}"
-			>{$t('lp.myLaunches')}</button>
-		{/if}
-	</div>
-
-	<!-- Results count -->
-	<div class="text-gray-600 text-xs font-mono mb-4">
-		{filteredLaunches.length} launch{filteredLaunches.length !== 1 ? 'es' : ''}
+				onclick={() => { showFavorites = !showFavorites; if (showFavorites) showMyLaunches = false; }}
+				class="tab-btn {showFavorites ? 'tab-active' : ''}"
+			>
+				<svg width="11" height="11" viewBox="0 0 24 24" fill={showFavorites ? '#00d2ff' : 'none'} stroke={showFavorites ? '#00d2ff' : 'currentColor'} stroke-width="2.5" style="display:inline;vertical-align:-1px;"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
+			</button>
+			{#if userAddress}
+				<button
+					onclick={() => { showMyLaunches = !showMyLaunches; if (showMyLaunches) showFavorites = false; }}
+					class="tab-btn {showMyLaunches ? 'tab-active' : ''}"
+				>Mine</button>
+			{/if}
+		</div>
+		<div class="lp-controls-right">
+			<div class="search-wrap">
+				<svg class="search-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+				<input type="text" class="input-field search-input" placeholder="Search..." bind:value={searchQuery} />
+			</div>
+			<select class="filter-select" bind:value={sortBy}>
+				<option value="newest">{$t('lp.newest')}</option>
+				<option value="ending">{$t('lp.endingSoon')}</option>
+				<option value="raised">{$t('lp.mostRaised')}</option>
+				<option value="trending">{$t('lp.trending')}</option>
+			</select>
+		</div>
 	</div>
 
 	<!-- Grid -->
@@ -474,27 +449,25 @@
 			{/each}
 		</div>
 	{:else if filteredLaunches.length === 0}
-		<div class="empty-state text-center py-16">
-			<div class="empty-icon mx-auto mb-6">
-				<svg width="64" height="64" viewBox="0 0 64 64" fill="none">
-					<circle cx="32" cy="32" r="30" stroke="rgba(0,210,255,0.15)" stroke-width="2" stroke-dasharray="6 4" />
-					<path d="M24 38 L32 22 L40 38" stroke="rgba(0,210,255,0.4)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none" />
-					<circle cx="32" cy="42" r="1.5" fill="rgba(0,210,255,0.4)" />
-				</svg>
-			</div>
+		<div class="lp-empty">
 			{#if showFavorites}
-				<h3 class="syne text-lg font-bold text-white mb-2">{$t('lp.noFavorites')}</h3>
-				<p class="text-gray-500 font-mono text-sm max-w-sm mx-auto">{$t('lp.noFavoritesHint')}</p>
+				<svg class="lp-empty-icon" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#374151" stroke-width="1.5"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
+				<h3 class="lp-empty-title">No favorites yet</h3>
+				<p class="lp-empty-sub">Tap the heart on any launch to save it here</p>
 			{:else if showMyLaunches}
-				<h3 class="syne text-lg font-bold text-white mb-2">{$t('lp.noLaunchesYet')}</h3>
-				<p class="text-gray-500 font-mono text-sm max-w-sm mx-auto">{$t('lp.noCreated')}</p>
+				<svg class="lp-empty-icon" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#374151" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M8 12l2 2 4-4"/></svg>
+				<h3 class="lp-empty-title">No launches yet</h3>
+				<p class="lp-empty-sub">Create your first bonding curve launch</p>
+			{:else if launches.length === 0}
+				<svg class="lp-empty-icon" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#374151" stroke-width="1.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+				<h3 class="lp-empty-title">No launches on the platform yet</h3>
+				<p class="lp-empty-sub">Be the first to launch a token with bonding curve pricing</p>
 			{:else}
-				<h3 class="syne text-lg font-bold text-white mb-2">{$t('lp.noMatching')}</h3>
-				<p class="text-gray-500 font-mono text-sm max-w-sm mx-auto">{$t('lp.tryFilters')}</p>
+				<svg class="lp-empty-icon" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#374151" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+				<h3 class="lp-empty-title">No matching launches</h3>
+				<p class="lp-empty-sub">Try adjusting your filters</p>
 			{/if}
-			<div class="flex gap-3 justify-center mt-6">
-				<a href="/create?launch=true" class="btn-primary text-sm px-5 py-2.5 no-underline">{$t('lp.createLaunch')}</a>
-			</div>
+			<a href="/create?launch=true" class="lp-empty-cta">Create Launch</a>
 		</div>
 	{:else}
 		<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -654,10 +627,12 @@
 		{/if}
 	{/if}
 	</div>
-	<!-- Market Flow sidebar -->
-	<div class="lp-sidebar hidden xl:block">
-		<MarketFlow />
-	</div>
+	<!-- Market Flow sidebar (only show when there are launches) -->
+	{#if launches.length > 0}
+		<div class="lp-sidebar hidden xl:block">
+			<MarketFlow />
+		</div>
+	{/if}
 </div>
 
 <style>
@@ -667,6 +642,28 @@
 		height: calc(100vh - 56px);
 		overflow: hidden;
 	}
+	/* Controls row */
+	.lp-controls { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+	.lp-controls-left { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+	.lp-controls-right { display: flex; align-items: center; gap: 8px; }
+	.tab-count { font-size: 9px; opacity: 0.5; margin-left: 2px; }
+
+	/* Empty state */
+	.lp-empty {
+		display: flex; flex-direction: column; align-items: center; gap: 8px;
+		padding: 48px 20px; text-align: center;
+	}
+	.lp-empty-icon { margin-bottom: 4px; }
+	.lp-empty-title { font-family: 'Syne', sans-serif; font-size: 17px; font-weight: 700; color: #fff; margin: 0; }
+	.lp-empty-sub { font-family: 'Space Mono', monospace; font-size: 12px; color: #374151; margin: 0; max-width: 300px; }
+	.lp-empty-cta {
+		margin-top: 10px; padding: 10px 22px; border-radius: 10px;
+		background: linear-gradient(135deg, #00d2ff, #3a7bd5); color: white;
+		font-family: 'Syne', sans-serif; font-weight: 700; font-size: 13px;
+		text-decoration: none; transition: all 0.2s;
+	}
+	.lp-empty-cta:hover { transform: translateY(-1px); box-shadow: 0 6px 24px rgba(0,210,255,0.3); }
+
 	/* Stats bar */
 	.stats-bar {
 		display: flex;
