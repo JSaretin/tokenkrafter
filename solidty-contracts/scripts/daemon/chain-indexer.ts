@@ -50,6 +50,11 @@ const LAUNCH_INSTANCE_ABI = [
 	'function getLaunchInfo() view returns (address token_, address creator_, uint8 curveType_, uint8 state_, uint256 softCap_, uint256 hardCap_, uint256 deadline_, uint256 totalBaseRaised_, uint256 tokensSold_, uint256 tokensForCurve_, uint256 tokensForLP_, uint256 creatorAllocationBps_, uint256 currentPrice_, address usdt_, uint256 startTimestamp_)',
 	'function totalTokensRequired() view returns (uint256)',
 	'function totalTokensDeposited() view returns (uint256)',
+	'function stateHash() view returns (bytes32)',
+	'function totalPurchases() view returns (uint256)',
+	'function totalBuyers() view returns (uint256)',
+	'function getPurchases(uint256 offset, uint256 limit) view returns (tuple(address buyer, uint256 baseAmount, uint256 tokensReceived, uint256 fee, uint256 price, uint256 timestamp)[] purchases, uint256 total)',
+	'function getBuyers(uint256 offset, uint256 limit) view returns (address[] buyers, uint256 total)',
 ];
 
 const TOKEN_META_ABI = [
@@ -65,15 +70,15 @@ const TRADE_ROUTER_ABI = [
 	'function getWithdrawal(uint256 id) view returns (tuple(address user, address token, uint256 grossAmount, uint256 fee, uint256 netAmount, uint256 createdAt, uint8 status, bytes32 bankRef, address referrer))',
 ];
 
-const LAUNCH_EVENTS_ABI = [
-	'event TokensPurchased(address indexed buyer, uint256 baseAmount, uint256 tokensReceived, uint256 fee)',
-];
+// Event ABI no longer needed — purchases read directly from contract via getPurchases()
 
 // ── State (local JSON file) ───────────────────────────────
 interface LaunchCache {
 	address: string;
-	state: number;          // last known state (0=pending, 1=active, 2=graduated, 3=refunding)
-	totalBaseRaised: string; // last known raised amount
+	state: number;              // last known state (0=pending, 1=active, 2=graduated, 3=refunding)
+	totalBaseRaised: string;    // last known raised amount
+	stateHash: string;          // keccak256 hash for cheap change detection
+	lastPurchaseCount: number;  // last synced purchase index
 }
 
 interface ChainState {
@@ -454,7 +459,14 @@ async function indexNewLaunches(
 				console.log(`    ✓ Launch #${i}: ${launchAddress.slice(0, 10)}...`);
 				// Track non-terminal launches for updates
 				if (result.state <= 1) {
-					cs.launches.push({ address: launchAddress, state: result.state, totalBaseRaised: result.totalBaseRaised });
+					let hash = '';
+					let purchaseCount = 0;
+					try {
+						const inst = new ethers.Contract(launchAddress, LAUNCH_INSTANCE_ABI, provider);
+						hash = await inst.stateHash();
+						purchaseCount = Number(await inst.totalPurchases());
+					} catch {}
+					cs.launches.push({ address: launchAddress, state: result.state, totalBaseRaised: result.totalBaseRaised, stateHash: hash, lastPurchaseCount: purchaseCount });
 				}
 			}
 		} catch (e: any) {
@@ -466,7 +478,7 @@ async function indexNewLaunches(
 	return newCount;
 }
 
-// ── Update tracked launches (from chain, no DB reads) ─────
+// ── Update tracked launches (stateHash for cheap change detection) ─
 async function updateTrackedLaunches(
 	tokenFactory: any,
 	provider: any,
@@ -477,86 +489,73 @@ async function updateTrackedLaunches(
 	if (cs.launches.length === 0) return;
 
 	let updated = 0;
+	let txSynced = 0;
 	const stillActive: LaunchCache[] = [];
 
 	for (const cached of cs.launches) {
 		try {
 			const instance = new ethers.Contract(cached.address, LAUNCH_INSTANCE_ABI, provider);
-			const info = await instance.getLaunchInfo();
-			const currentState = Number(info.state_);
-			const currentRaised = info.totalBaseRaised_.toString();
 
-			// Only sync to DB if something changed
-			if (currentState !== cached.state || currentRaised !== cached.totalBaseRaised) {
-				const result = await syncLaunchFromChain(cached.address, tokenFactory, provider, chainId, usdtDecimals);
-				if (result.ok) updated++;
-				cached.state = currentState;
-				cached.totalBaseRaised = currentRaised;
+			// 1. Cheap check — has anything changed?
+			let hash: string;
+			try {
+				hash = await instance.stateHash();
+			} catch {
+				// Old impl without stateHash — fall back to getLaunchInfo
+				const info = await instance.getLaunchInfo();
+				hash = info.totalBaseRaised_.toString() + '-' + info.state_.toString();
 			}
 
-			// Keep tracking if still non-terminal (pending or active)
-			if (currentState <= 1) {
+			if (hash === cached.stateHash) {
+				// Nothing changed — keep tracking if non-terminal
+				if (cached.state <= 1) stillActive.push(cached);
+				continue;
+			}
+
+			// 2. Something changed — full sync
+			const result = await syncLaunchFromChain(cached.address, tokenFactory, provider, chainId, usdtDecimals);
+			if (result.ok) updated++;
+			cached.state = result.state;
+			cached.totalBaseRaised = result.totalBaseRaised;
+			cached.stateHash = hash;
+
+			// 3. Sync new purchases (only delta)
+			try {
+				const totalPurchases = Number(await instance.totalPurchases());
+				const newCount = totalPurchases - (cached.lastPurchaseCount || 0);
+				if (newCount > 0) {
+					const { purchases } = await instance.getPurchases(cached.lastPurchaseCount || 0, newCount);
+					for (const p of purchases) {
+						await apiPost('/api/launches/transactions', {
+							launch_address: cached.address,
+							chain_id: chainId,
+							buyer: p.buyer.toLowerCase(),
+							base_amount: p.baseAmount.toString(),
+							tokens_received: p.tokensReceived.toString(),
+							fee: p.fee.toString(),
+							price: p.price.toString(),
+							timestamp: Number(p.timestamp),
+						});
+						txSynced++;
+					}
+					cached.lastPurchaseCount = totalPurchases;
+				}
+			} catch {
+				// Old impl without getPurchases — skip tx sync
+			}
+
+			// Keep tracking if still non-terminal
+			if (cached.state <= 1) {
 				stillActive.push(cached);
 			}
 		} catch {}
 	}
 
 	cs.launches = stillActive;
-	if (updated > 0) console.log(`  🔄 Updated ${updated} launch(es)`);
+	if (updated > 0) console.log(`  🔄 Updated ${updated} launch(es)${txSynced > 0 ? `, ${txSynced} tx(s)` : ''}`);
 }
 
-// ── Index buy events (uses tracked launches, no DB reads) ─
-async function indexEvents(
-	provider: any,
-	chainId: number,
-	cs: ChainState
-) {
-	const currentBlock = await provider.getBlockNumber();
-	const fromBlock = cs.lastSyncedBlock > 0
-		? cs.lastSyncedBlock + 1
-		: Math.max(0, currentBlock - 100);
-
-	if (fromBlock > currentBlock) return;
-
-	const launchIface = new ethers.Interface(LAUNCH_EVENTS_ABI);
-	let txCount = 0;
-
-	// Only scan active launches from local state — no DB read
-	for (const launch of cs.launches.filter(l => l.state === 1)) {
-		try {
-			const logs = await provider.getLogs({
-				address: launch.address,
-				fromBlock,
-				toBlock: currentBlock,
-				topics: [launchIface.getEvent('TokensPurchased')!.topicHash],
-			});
-
-			for (const log of logs) {
-				try {
-					const parsed = launchIface.parseLog({ topics: [...log.topics], data: log.data });
-					if (!parsed) continue;
-
-					const ok = await apiPost('/api/launches/transactions', {
-						launch_address: launch.address,
-						chain_id: chainId,
-						buyer: parsed.args[0].toLowerCase(),
-						base_amount: parsed.args[1].toString(),
-						tokens_received: parsed.args[2].toString(),
-						tx_hash: log.transactionHash,
-					});
-
-					if (ok) txCount++;
-				} catch {}
-			}
-		} catch {}
-	}
-
-	if (txCount > 0) {
-		console.log(`  📝 Indexed ${txCount} transaction(s) from blocks ${fromBlock}–${currentBlock}`);
-	}
-
-	cs.lastSyncedBlock = currentBlock;
-}
+// Purchase indexing now handled in updateTrackedLaunches via getPurchases() — no event scanning needed
 
 // ── Sync withdrawals (from chain only) ────────────────────
 async function syncWithdrawals(
@@ -652,7 +651,7 @@ async function main() {
 			saveState(allState);
 
 			// 4. Index buy events (uses tracked launches from local state)
-			try { await indexEvents(provider, chainId, cs); } catch (e: any) { console.error(`  ⚠️ Event indexing: ${e.message?.slice(0, 80)}`); }
+			// Purchase indexing now handled in updateTrackedLaunches via getPurchases()
 			saveState(allState);
 
 			// 5. Sync new withdrawals (chain → DB, only new ones)

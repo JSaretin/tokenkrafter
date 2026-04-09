@@ -898,15 +898,46 @@
 	}
 
 	async function loadTransactions() {
+		// Try reading from contract first (new impl with on-chain history)
+		try {
+			const net = network;
+			if (net) {
+				const provider = networkProviders.get(net.chain_id);
+				if (provider) {
+					const instance = new ethers.Contract(launchAddress, [
+						'function getPurchases(uint256 offset, uint256 limit) view returns (tuple(address buyer, uint256 baseAmount, uint256 tokensReceived, uint256 fee, uint256 price, uint256 timestamp)[] purchases, uint256 total)',
+						'function totalPurchases() view returns (uint256)',
+					], provider);
+					const total = Number(await instance.totalPurchases());
+					if (total > 0) {
+						// Get last 20 purchases (most recent first)
+						const offset = Math.max(0, total - 20);
+						const { purchases } = await instance.getPurchases(offset, 20);
+						transactions = purchases.map((p: any) => ({
+							buyer: p.buyer.toLowerCase(),
+							base_amount: p.baseAmount.toString(),
+							tokens_received: p.tokensReceived.toString(),
+							fee: p.fee.toString(),
+							price: p.price.toString(),
+							created_at: new Date(Number(p.timestamp) * 1000).toISOString(),
+						})).reverse(); // newest first
+						txLoading = false;
+						return;
+					}
+				}
+			}
+		} catch {}
+
+		// Fallback to API (old launches without on-chain history)
 		try {
 			const res = await fetch(`/api/launches/transactions?address=${launchAddress}&limit=20`);
 			if (res.ok) transactions = await res.json();
-		} catch { /* best effort */ }
+		} catch {}
 		txLoading = false;
 	}
 
 	async function recordTransaction(_baseAmount: string, _tokensReceived: string, _txHash?: string) {
-		// Transactions indexed by daemon from on-chain events
+		// Refresh from chain — new purchase will appear via getPurchases()
 		await loadTransactions();
 	}
 
