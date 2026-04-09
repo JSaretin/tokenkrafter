@@ -5,6 +5,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
 
 interface ITokenFactory {
     struct CreateTokenParams {
@@ -82,42 +83,36 @@ interface IUniswapV2Router02 {
 }
 
 interface IUniswapV2Factory {
+    function createPair(address tokenA, address tokenB) external returns (address pair);
     function getPair(address tokenA, address tokenB) external view returns (address pair);
-}
-
-interface IPoolToken {
-    function setupPools(address[] calldata pools) external;
-    function addPool(address pool) external;
 }
 
 interface IProtectedToken {
     function enableTrading() external;
-    function setMaxWalletAmount(uint256 amount) external;
-    function setMaxTransactionAmount(uint256 amount) external;
-    function setCooldownTime(uint256 _seconds) external;
-    function setExcludedFromLimits(address account, bool excluded) external;
+    function setMaxWalletAmount(uint256) external;
+    function setMaxTransactionAmount(uint256) external;
+    function setCooldownTime(uint256) external;
+    function setExcludedFromLimits(address, bool) external;
 }
 
 interface ITaxableToken {
-    function setTaxes(
-        uint256 buyTaxBps,
-        uint256 sellTaxBps,
-        uint256 transferTaxBps
-    ) external;
+    function setTaxes(uint256, uint256, uint256) external;
+    function setTaxDistribution(address[] calldata, uint16[] calldata) external;
+    function excludeFromTax(address, bool) external;
+}
 
-    function setTaxDistribution(
-        address[] calldata wallets,
-        uint16[] calldata sharesBps
-    ) external;
-
-    function excludeFromTax(address account, bool exempt) external;
+interface IPoolToken {
+    function addPool(address pool) external;
 }
 
 interface IOwnableToken {
     function transferOwnership(address newOwner) external;
 }
 
-contract PlatformRouter is ReentrancyGuard {
+// Dead address for burning LP tokens
+address constant DEAD = 0x000000000000000000000000000000000000dEaD;
+
+contract PlatformRouter is Ownable, ReentrancyGuard, Pausable {
     using SafeERC20 for IERC20;
 
     // ----------------------------------------------------------------
@@ -129,20 +124,16 @@ contract PlatformRouter is ReentrancyGuard {
     error TokensForLaunchExceedsSupply();
     error ArrayLengthMismatch();
     error InsufficientTokensForLiquidity();
+    error BelowMinLiquidity();
 
     // ----------------------------------------------------------------
     // Events
     // ----------------------------------------------------------------
-    event TokenCreatedAndLaunched(
-        address indexed creator,
-        address indexed token,
-        address indexed launch
-    );
-    event TokenCreatedAndListed(
-        address indexed creator,
-        address indexed token,
-        uint256 poolCount
-    );
+    event TokenCreatedAndLaunched(address indexed creator, address indexed token, address indexed launch);
+    event TokenCreatedAndListed(address indexed creator, address indexed token, uint256 poolCount, bool lpBurned);
+    event TokenCreated(address indexed creator, address indexed token);
+    event TokenListed(address indexed owner, address indexed token, uint256 poolCount, bool lpBurned);
+    event LiquidityBurned(address indexed token, address indexed pair, uint256 lpAmount);
 
     // ----------------------------------------------------------------
     // State
@@ -150,6 +141,8 @@ contract PlatformRouter is ReentrancyGuard {
     ITokenFactory public immutable tokenFactory;
     ILaunchpadFactory public immutable launchpadFactory;
     IUniswapV2Router02 public immutable dexRouter;
+
+    uint256 public minLiquidity;  // minimum base amount per pool (0 = no minimum)
 
     // ----------------------------------------------------------------
     // Structs
@@ -172,6 +165,7 @@ contract PlatformRouter is ReentrancyGuard {
         address[] bases;           // base tokens for LP (address(0) = native coin)
         uint256[] baseAmounts;     // amount of each base token for LP
         uint256[] tokenAmounts;    // amount of created token per pool
+        bool burnLP;               // burn LP tokens to dead address
     }
 
     struct LaunchParams {
@@ -190,7 +184,7 @@ contract PlatformRouter is ReentrancyGuard {
     // ----------------------------------------------------------------
     // Constructor
     // ----------------------------------------------------------------
-    constructor(address tokenFactory_, address launchpadFactory_, address dexRouter_) {
+    constructor(address tokenFactory_, address launchpadFactory_, address dexRouter_) Ownable(msg.sender) {
         if (tokenFactory_ == address(0) || launchpadFactory_ == address(0) || dexRouter_ == address(0))
             revert ZeroAddress();
 
@@ -199,9 +193,10 @@ contract PlatformRouter is ReentrancyGuard {
         dexRouter = IUniswapV2Router02(dexRouter_);
     }
 
-    // ----------------------------------------------------------------
-    // Main entry point
-    // ----------------------------------------------------------------
+    // ================================================================
+    //  CREATE + LAUNCH (bonding curve)
+    // ================================================================
+
     function createTokenAndLaunch(
         ITokenFactory.CreateTokenParams calldata p,
         LaunchParams calldata launch,
@@ -212,84 +207,45 @@ contract PlatformRouter is ReentrancyGuard {
         external
         payable
         nonReentrant
+        whenNotPaused
         returns (address tokenAddress, address launchAddress)
     {
-        // 0. Snapshot ETH balance before this call to ignore residual dust
+        if (launch.tokensForLaunch == 0 || p.totalSupply == 0) revert ZeroAddress();
+        uint256 totalSupplyWei = p.totalSupply * 10 ** p.decimals;
+        if (launch.tokensForLaunch > totalSupplyWei) revert TokensForLaunchExceedsSupply();
+
         uint256 preBalance = address(this).balance - msg.value;
 
-        // 1. Compute token type key
         uint8 typeKey = uint8(
-            (p.isPartner ? 4 : 0) |
-            (p.isTaxable ? 2 : 0) |
-            (p.isMintable ? 1 : 0)
+            (p.isPartner ? 4 : 0) | (p.isTaxable ? 2 : 0) | (p.isMintable ? 1 : 0)
         );
 
-        // 2. Handle token creation fee
-        uint256 creationFeeNativeValue;
+        // Fee handling
+        uint256 totalUsdtFee = tokenFactory.creationFee(typeKey) + launchpadFactory.launchFee();
+        uint256 nativeValue;
+
         if (p.paymentToken == address(0)) {
-            // Native payment: send ALL msg.value to the factory.
-            // Factory takes the exact fee and refunds excess back to this router.
-            // This eliminates the race condition from pre-computing the fee.
-            creationFeeNativeValue = msg.value;
+            nativeValue = msg.value;
         } else {
-            // ERC20 payment: pull from user, approve factory, factory pulls from router.
-            uint256 creationFeeAmount = tokenFactory.convertFee(
-                tokenFactory.creationFee(typeKey),
-                p.paymentToken
-            );
-            if (creationFeeAmount > 0) {
-                IERC20(p.paymentToken).safeTransferFrom(
-                    msg.sender,
-                    address(this),
-                    creationFeeAmount
-                );
-                IERC20(p.paymentToken).forceApprove(
-                    address(tokenFactory),
-                    creationFeeAmount
-                );
+            uint256 erc20Fee = tokenFactory.convertFee(totalUsdtFee, p.paymentToken);
+            if (erc20Fee > 0) {
+                IERC20(p.paymentToken).safeTransferFrom(msg.sender, address(this), erc20Fee);
+                uint256 factoryFee = tokenFactory.convertFee(tokenFactory.creationFee(typeKey), p.paymentToken);
+                IERC20(p.paymentToken).forceApprove(address(tokenFactory), factoryFee);
+                uint256 launchFee = erc20Fee - factoryFee;
+                IERC20(p.paymentToken).forceApprove(address(launchpadFactory), launchFee);
             }
         }
 
-        // 3. Create the token via TokenFactory.
-        //    After this call, the router holds the entire token supply AND
-        //    is the token owner (factory transfers both at the end of routerCreateToken).
-        //    Any excess native is refunded back to the router.
-        tokenAddress = tokenFactory.routerCreateToken{
-            value: creationFeeNativeValue
-        }(msg.sender, p, referral);
+        // Create token
+        uint256 factoryNativeValue = p.paymentToken == address(0) ? nativeValue : 0;
+        tokenAddress = tokenFactory.routerCreateToken{value: factoryNativeValue}(
+            msg.sender, p, referral
+        );
 
-        // 3b. Validate tokensForLaunch doesn't exceed minted supply
-        uint256 totalMinted = IERC20(tokenAddress).balanceOf(address(this));
-        if (launch.tokensForLaunch > totalMinted) revert TokensForLaunchExceedsSupply();
-
-        // 4. Handle launch fee
-        uint256 launchNativeValue;
-        if (launch.launchPaymentToken == address(0)) {
-            // Native payment: use only this call's remaining ETH (ignore residual dust)
-            launchNativeValue = address(this).balance - preBalance;
-        } else {
-            // ERC20 payment: pull from user, approve factory, factory pulls from router.
-            uint256 launchFeeAmount = launchpadFactory.convertFee(
-                launchpadFactory.launchFee(),
-                launch.launchPaymentToken
-            );
-            if (launchFeeAmount > 0) {
-                IERC20(launch.launchPaymentToken).safeTransferFrom(
-                    msg.sender,
-                    address(this),
-                    launchFeeAmount
-                );
-                IERC20(launch.launchPaymentToken).forceApprove(
-                    address(launchpadFactory),
-                    launchFeeAmount
-                );
-            }
-        }
-
-        // 5. Create the launch via LaunchpadFactory
-        launchAddress = launchpadFactory.routerCreateLaunch{
-            value: launchNativeValue
-        }(
+        // Create launch
+        uint256 remainingNative = address(this).balance - preBalance;
+        launchAddress = launchpadFactory.routerCreateLaunch{value: remainingNative}(
             msg.sender,
             tokenAddress,
             launch.tokensForLaunch,
@@ -304,46 +260,29 @@ contract PlatformRouter is ReentrancyGuard {
             launch.startTimestamp
         );
 
-        // 6. Transfer launch tokens to the launch instance and notify
-        IERC20(tokenAddress).safeTransfer(launchAddress, launch.tokensForLaunch);
-        launchpadFactory.notifyDeposit(launchAddress, launch.tokensForLaunch);
+        // Configure protections (router is owner)
+        _configureLaunchProtections(tokenAddress, launchAddress, protection, tax, p.isTaxable || p.isPartner);
 
-        // 7. Configure token protections (router is owner, set by factory)
-        _configureLaunchProtections(
-            tokenAddress,
-            launchAddress,
-            protection,
-            tax,
-            p.isTaxable
-        );
-
-        // 8. Transfer remaining tokens to the creator
-        uint256 remaining = IERC20(tokenAddress).balanceOf(address(this));
-        if (remaining > 0) {
-            IERC20(tokenAddress).safeTransfer(msg.sender, remaining);
+        // Deposit tokens to launch
+        uint256 tokenBal = IERC20(tokenAddress).balanceOf(address(this));
+        if (tokenBal > 0) {
+            IERC20(tokenAddress).forceApprove(launchAddress, tokenBal);
+            IERC20(tokenAddress).safeTransfer(launchAddress, tokenBal);
+            launchpadFactory.notifyDeposit(launchAddress, tokenBal);
         }
 
-        // 9. Transfer token ownership from router to the creator
+        // Transfer ownership to creator
         IOwnableToken(tokenAddress).transferOwnership(msg.sender);
 
-        // 10. Refund any excess native (only this call's ETH, not residual)
-        uint256 excess = address(this).balance > preBalance ? address(this).balance - preBalance : 0;
-        if (excess > 0) {
-            (bool ok, ) = payable(msg.sender).call{value: excess}("");
-            if (!ok) revert NativeTransferFailed();
-        }
+        _refundExcess(preBalance);
 
         emit TokenCreatedAndLaunched(msg.sender, tokenAddress, launchAddress);
     }
 
-    // ----------------------------------------------------------------
-    // Create token and list on DEX directly (no bonding curve)
-    // ----------------------------------------------------------------
+    // ================================================================
+    //  CREATE + LIST ON DEX
+    // ================================================================
 
-    /// @notice Create a token and add liquidity to one or more DEX pools.
-    ///         Supports native (ETH/BNB) and ERC20 base pairs in a single call.
-    ///         For native pairs, use address(0) in list.bases[] and send ETH via msg.value.
-    ///         For ERC20-only listing, send msg.value = 0 (or just enough for creation fee if paying native).
     function createAndList(
         ITokenFactory.CreateTokenParams calldata p,
         ListParams calldata list,
@@ -354,15 +293,14 @@ contract PlatformRouter is ReentrancyGuard {
         external
         payable
         nonReentrant
+        whenNotPaused
         returns (address tokenAddress)
     {
         if (list.bases.length != list.baseAmounts.length || list.bases.length != list.tokenAmounts.length)
             revert ArrayLengthMismatch();
 
-        // 0. Snapshot ETH balance before this call
         uint256 preBalance = address(this).balance - msg.value;
 
-        // 1. Compute token type and handle creation fee
         uint8 typeKey = uint8(
             (p.isPartner ? 4 : 0) | (p.isTaxable ? 2 : 0) | (p.isMintable ? 1 : 0)
         );
@@ -380,44 +318,93 @@ contract PlatformRouter is ReentrancyGuard {
             }
         }
 
-        // 2. Create token — router receives full supply + ownership
+        // Create token — router receives full supply + ownership
         tokenAddress = tokenFactory.routerCreateToken{value: creationFeeNativeValue}(
             msg.sender, p, referral
         );
 
-        // 3. Add liquidity + configure
+        // Add liquidity + configure
         uint256 poolCount = _addLiquidity(tokenAddress, list, preBalance);
 
-        // 4. Configure protections + tax
+        // Configure protections + tax
         _configureAndEnableTrading(tokenAddress, protection, tax, p.isTaxable || p.isPartner);
 
-        // 5. Transfer remaining tokens + ownership to creator
+        // Transfer remaining tokens + ownership to creator
         uint256 remaining = IERC20(tokenAddress).balanceOf(address(this));
         if (remaining > 0) IERC20(tokenAddress).safeTransfer(msg.sender, remaining);
         IOwnableToken(tokenAddress).transferOwnership(msg.sender);
 
-        // 6. Refund excess native (only this call's ETH)
+        // Refund excess native
         _refundExcess(preBalance);
 
-        emit TokenCreatedAndListed(msg.sender, tokenAddress, poolCount);
+        emit TokenCreatedAndListed(msg.sender, tokenAddress, poolCount, list.burnLP);
     }
 
-    // ----------------------------------------------------------------
-    // List existing token on DEX (no token creation)
-    // ----------------------------------------------------------------
+    // ================================================================
+    //  CREATE TOKEN ONLY (no listing, no launch)
+    // ================================================================
 
-    event TokenListed(address indexed owner, address indexed token, uint256 poolCount);
+    /// @notice Create a token with protections and tax in one transaction.
+    ///         No liquidity, no launch. Creator receives full supply + ownership.
+    function createTokenOnly(
+        ITokenFactory.CreateTokenParams calldata p,
+        ProtectionParams calldata protection,
+        TaxParams calldata tax,
+        address referral
+    )
+        external
+        payable
+        nonReentrant
+        whenNotPaused
+        returns (address tokenAddress)
+    {
+        uint256 preBalance = address(this).balance - msg.value;
 
-    /// @notice Add liquidity for an existing token to one or more DEX pools.
-    ///         Caller must approve this router for both the token and base amounts.
-    ///         For native pairs, use address(0) in list.bases[] and send ETH via msg.value.
-    function listTokenToDex(
+        uint8 typeKey = uint8(
+            (p.isPartner ? 4 : 0) | (p.isTaxable ? 2 : 0) | (p.isMintable ? 1 : 0)
+        );
+
+        uint256 creationFeeNativeValue;
+        if (p.paymentToken == address(0)) {
+            creationFeeNativeValue = msg.value;
+        } else {
+            uint256 creationFeeAmount = tokenFactory.convertFee(
+                tokenFactory.creationFee(typeKey), p.paymentToken
+            );
+            if (creationFeeAmount > 0) {
+                IERC20(p.paymentToken).safeTransferFrom(msg.sender, address(this), creationFeeAmount);
+                IERC20(p.paymentToken).forceApprove(address(tokenFactory), creationFeeAmount);
+            }
+        }
+
+        tokenAddress = tokenFactory.routerCreateToken{value: creationFeeNativeValue}(
+            msg.sender, p, referral
+        );
+
+        _configureAndEnableTrading(tokenAddress, protection, tax, p.isTaxable || p.isPartner);
+
+        uint256 balance = IERC20(tokenAddress).balanceOf(address(this));
+        if (balance > 0) IERC20(tokenAddress).safeTransfer(msg.sender, balance);
+        IOwnableToken(tokenAddress).transferOwnership(msg.sender);
+
+        _refundExcess(preBalance);
+
+        emit TokenCreated(msg.sender, tokenAddress);
+    }
+
+    // ================================================================
+    //  ADD LIQUIDITY TO EXISTING TOKEN
+    // ================================================================
+
+    /// @notice Add liquidity for an existing token with optional LP burn + pool registration.
+    function addLiquidityToExisting(
         address tokenAddress,
         ListParams calldata list
     )
         external
         payable
         nonReentrant
+        whenNotPaused
     {
         if (tokenAddress == address(0)) revert ZeroAddress();
         if (list.bases.length != list.baseAmounts.length || list.bases.length != list.tokenAmounts.length)
@@ -432,25 +419,53 @@ contract PlatformRouter is ReentrancyGuard {
         }
         IERC20(tokenAddress).safeTransferFrom(msg.sender, address(this), totalTokensNeeded);
 
-        // Add liquidity
+        // Add liquidity (handles burn internally)
         uint256 poolCount = _addLiquidity(tokenAddress, list, preBalance);
 
         // Return any unused tokens
         uint256 leftover = IERC20(tokenAddress).balanceOf(address(this));
         if (leftover > 0) IERC20(tokenAddress).safeTransfer(msg.sender, leftover);
 
-        // Refund excess native
         _refundExcess(preBalance);
 
-        emit TokenListed(msg.sender, tokenAddress, poolCount);
+        emit TokenListed(msg.sender, tokenAddress, poolCount, list.burnLP);
     }
 
-    // ----------------------------------------------------------------
-    // Internal helpers
-    // ----------------------------------------------------------------
+    // ================================================================
+    //  ADMIN
+    // ================================================================
 
-    /// @dev Add liquidity to DEX pools. Handles both native (address(0)) and ERC20 bases.
-    ///      Pulls ERC20 bases from msg.sender. Native ETH comes from contract balance.
+    /// @notice Pause all creation/listing. Emergency only.
+    function pause() external onlyOwner { _pause(); }
+
+    /// @notice Unpause.
+    function unpause() external onlyOwner { _unpause(); }
+
+    /// @notice Set minimum base amount per liquidity pool (0 = no minimum).
+    function setMinLiquidity(uint256 amount) external onlyOwner {
+        minLiquidity = amount;
+    }
+
+    /// @notice Recover tokens accidentally sent to this contract.
+    function withdrawStuckTokens(address token) external onlyOwner {
+        if (token == address(0)) {
+            uint256 bal = address(this).balance;
+            if (bal > 0) {
+                (bool ok, ) = payable(owner()).call{value: bal}("");
+                if (!ok) revert NativeTransferFailed();
+            }
+        } else {
+            uint256 bal = IERC20(token).balanceOf(address(this));
+            if (bal > 0) IERC20(token).safeTransfer(owner(), bal);
+        }
+    }
+
+    // ================================================================
+    //  INTERNAL HELPERS
+    // ================================================================
+
+    /// @dev Add liquidity to DEX pools. Handles both native and ERC20 bases.
+    ///      If list.burnLP is true, LP tokens go to dead address.
     function _addLiquidity(
         address tokenAddress,
         ListParams calldata list,
@@ -458,36 +473,40 @@ contract PlatformRouter is ReentrancyGuard {
     ) internal returns (uint256 poolCount) {
         IUniswapV2Factory factory = IUniswapV2Factory(dexRouter.factory());
         poolCount = list.bases.length;
+        address lpRecipient = list.burnLP ? DEAD : msg.sender;
         address[] memory pools = new address[](poolCount);
 
         for (uint256 i = 0; i < poolCount; i++) {
+            // Enforce minimum liquidity
+            if (minLiquidity > 0 && list.baseAmounts[i] < minLiquidity) revert BelowMinLiquidity();
+
             IERC20(tokenAddress).forceApprove(address(dexRouter), list.tokenAmounts[i]);
 
             if (list.bases[i] == address(0)) {
-                // Native pair — use remaining ETH from this call
                 uint256 ethAvailable = address(this).balance - preBalance;
-                dexRouter.addLiquidityETH{value: list.baseAmounts[i] > ethAvailable ? ethAvailable : list.baseAmounts[i]}(
+                uint256 ethToUse = list.baseAmounts[i] > ethAvailable ? ethAvailable : list.baseAmounts[i];
+                (,, uint256 lp) = dexRouter.addLiquidityETH{value: ethToUse}(
                     tokenAddress, list.tokenAmounts[i], 0, 0,
-                    msg.sender, block.timestamp + 300
+                    lpRecipient, block.timestamp + 300
                 );
                 pools[i] = factory.getPair(tokenAddress, dexRouter.WETH());
+                if (list.burnLP && lp > 0) emit LiquidityBurned(tokenAddress, pools[i], lp);
             } else {
-                // ERC20 pair — pull base from caller
                 IERC20(list.bases[i]).safeTransferFrom(msg.sender, address(this), list.baseAmounts[i]);
                 IERC20(list.bases[i]).forceApprove(address(dexRouter), list.baseAmounts[i]);
-                dexRouter.addLiquidity(
+                (,, uint256 lp) = dexRouter.addLiquidity(
                     tokenAddress, list.bases[i],
                     list.tokenAmounts[i], list.baseAmounts[i], 0, 0,
-                    msg.sender, block.timestamp + 300
+                    lpRecipient, block.timestamp + 300
                 );
                 pools[i] = factory.getPair(tokenAddress, list.bases[i]);
+                if (list.burnLP && lp > 0) emit LiquidityBurned(tokenAddress, pools[i], lp);
             }
         }
 
-        // Register pools on token — use addPool (not setupPools which may already be initialized)
+        // Register pools on token
         for (uint256 i = 0; i < pools.length; i++) {
             if (pools[i] != address(0)) {
-                // addPool sets isPool + isExcludedFromLimits in one call
                 try IPoolToken(tokenAddress).addPool(pools[i]) {} catch {}
             }
         }
@@ -550,7 +569,7 @@ contract PlatformRouter is ReentrancyGuard {
         token.enableTrading();
     }
 
-    /// @dev Refund any excess ETH from this call back to the caller.
+    /// @dev Refund any excess ETH back to the caller.
     function _refundExcess(uint256 preBalance) internal {
         uint256 excess = address(this).balance > preBalance ? address(this).balance - preBalance : 0;
         if (excess > 0) {
@@ -560,7 +579,7 @@ contract PlatformRouter is ReentrancyGuard {
     }
 
     // ----------------------------------------------------------------
-    // Receive native (for refunds)
+    // Receive native (for refunds from DEX router)
     // ----------------------------------------------------------------
     receive() external payable {}
 }
