@@ -12,6 +12,7 @@
 	import { formatUsdt } from '$lib/launchpad';
 	import { apiFetch } from '$lib/apiFetch';
 	import { queryTradeLens, getInstantQuote, getWeth, isCacheLoaded, getUsdValue, getCachedToken, type TaxInfo } from '$lib/tradeLens';
+	import { pushPreferences } from '$lib/embeddedWallet';
 	import { resolveTokenLogo } from '$lib/tokenLogo';
 
 	let getSigner: () => ethers.Signer | null = getContext('signer');
@@ -1215,6 +1216,25 @@
 				swapStep = 3; // done
 				addFeedback({ message: `Swapped ${amountIn} ${tokenInSymbol} → ${displayAmountOut} ${tokenOutSymbol}`, type: 'success' });
 				showConfirmModal = false;
+
+				// Auto-import "to" token to wallet portfolio
+				if (tokenOutAddr && tokenOutAddr !== ZERO_ADDRESS && tokenOutSymbol) {
+					try {
+						const saved = JSON.parse(localStorage.getItem('imported_tokens') || '[]');
+						const exists = saved.some((t: any) => t.address?.toLowerCase() === tokenOutAddr.toLowerCase());
+						if (!exists) {
+							saved.push({
+								address: tokenOutAddr.toLowerCase(),
+								name: tokenOutSymbol, // best we have
+								symbol: tokenOutSymbol,
+								decimals: tokenOutDecimals,
+								logoUrl: allTokens.find(t => t.address.toLowerCase() === tokenOutAddr.toLowerCase())?.logo_url || '',
+							});
+							localStorage.setItem('imported_tokens', JSON.stringify(saved));
+							pushPreferences();
+						}
+					} catch {}
+				}
 				} catch (swapErr: any) {
 					console.error('Swap error:', swapErr);
 					addFeedback({ message: swapErr.shortMessage || swapErr.reason || swapErr.message || 'Swap failed', type: 'error' });

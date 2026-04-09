@@ -46,6 +46,13 @@
 	let feedbacks: { message: string; type: string; id: number }[] = $state([]);
 	let feedbackCounter = 0;
 
+	// PWA install prompt
+	let installPrompt: any = $state(null);
+	let showInstallBanner = $state(false);
+
+	// Offline indicator
+	let isOffline = $state(false);
+
 	let provider: ethers.BrowserProvider | null = $state(null);
 	let signer: ethers.Signer | null = $state(null);
 	let userAddress: string | null = $state(null);
@@ -197,6 +204,23 @@
 		// Restore theme from localStorage
 		const saved = localStorage.getItem('theme') as 'dark' | 'light' | null;
 		if (saved === 'light') applyTheme('light');
+
+		// PWA install prompt
+		const dismissed = localStorage.getItem('pwa_install_dismissed');
+		window.addEventListener('beforeinstallprompt', (e: any) => {
+			e.preventDefault();
+			installPrompt = e;
+			if (!dismissed) showInstallBanner = true;
+		});
+
+		// Offline detection
+		isOffline = !navigator.onLine;
+		window.addEventListener('online', () => { isOffline = false; });
+		window.addEventListener('offline', () => { isOffline = true; });
+		navigator.serviceWorker?.addEventListener('message', (e) => {
+			if (e.data?.type === 'offline') isOffline = true;
+			if (e.data?.type === 'online') isOffline = false;
+		});
 
 		// Auto-reconnect wallet on page load
 		(async () => {
@@ -412,6 +436,47 @@
 <!-- Navigation loading bar -->
 {#if navigating.to}
 	<div class="nav-progress"><div class="nav-progress-bar"></div></div>
+{/if}
+
+<!-- Offline Banner -->
+{#if isOffline}
+	<div class="offline-banner">
+		<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="1" y1="1" x2="23" y2="23"/><path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"/><path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"/><path d="M10.71 5.05A16 16 0 0 1 22.56 9"/><path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
+		<span>You're offline</span>
+	</div>
+{/if}
+
+<!-- PWA Install Banner -->
+{#if showInstallBanner}
+	<div class="install-banner">
+		<div class="install-banner-content">
+			<div class="install-banner-icon">
+				<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+			</div>
+			<div class="install-banner-text">
+				<span class="install-banner-title">Install TokenKrafter</span>
+				<span class="install-banner-desc">Add to home screen for a faster experience</span>
+			</div>
+		</div>
+		<div class="install-banner-actions">
+			<button class="install-banner-btn install-banner-install" onclick={async () => {
+				if (installPrompt) {
+					installPrompt.prompt();
+					const result = await installPrompt.userChoice;
+					if (result.outcome === 'accepted') {
+						showInstallBanner = false;
+					}
+					installPrompt = null;
+				}
+			}}>Install</button>
+			<button class="install-banner-btn install-banner-dismiss" onclick={() => {
+				showInstallBanner = false;
+				localStorage.setItem('pwa_install_dismissed', '1');
+			}}>
+				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+			</button>
+		</div>
+	</div>
 {/if}
 
 <!-- Toast Notifications -->
@@ -729,6 +794,11 @@
 	{nativeBalance}
 	nativeDecimals={18}
 	{nativePriceUsd}
+	rpcUrl={supportedNetworks[0]?.rpc || 'https://bsc-rpc.publicnode.com'}
+	dexRouter={supportedNetworks[0]?.dex_router || ''}
+	usdtAddress={supportedNetworks[0]?.usdt_address || ''}
+	usdcAddress={supportedNetworks[0]?.usdc_address || ''}
+	chainId={supportedNetworks[0]?.chain_id || 56}
 	tokens={[]}
 	onDisconnect={disconnectWallet}
 	onAddFeedback={addFeedback}
@@ -844,6 +914,49 @@
 		transform: translateY(-1px);
 		box-shadow: 0 4px 16px rgba(0, 210, 255, 0.3);
 	}
+	/* Offline Banner */
+	.offline-banner {
+		position: fixed; top: 0; left: 0; right: 0; z-index: 110;
+		display: flex; align-items: center; justify-content: center; gap: 6px;
+		padding: 6px 12px;
+		background: #7f1d1d; color: #fca5a5;
+		font-family: 'Space Mono', monospace; font-size: 11px; font-weight: 600;
+		animation: slideDown 0.3s ease-out;
+	}
+	@keyframes slideDown { from { transform: translateY(-100%); } to { transform: translateY(0); } }
+
+	/* PWA Install Banner */
+	.install-banner {
+		position: fixed; bottom: 0; left: 0; right: 0; z-index: 90;
+		display: flex; align-items: center; justify-content: space-between; gap: 12px;
+		padding: 12px 16px;
+		background: #111318; border-top: 1px solid rgba(0,210,255,0.15);
+		box-shadow: 0 -4px 24px rgba(0,0,0,0.4);
+		animation: slideUpBanner 0.3s ease-out;
+	}
+	@keyframes slideUpBanner { from { transform: translateY(100%); } to { transform: translateY(0); } }
+	.install-banner-content { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
+	.install-banner-icon {
+		width: 36px; height: 36px; border-radius: 10px; flex-shrink: 0;
+		display: flex; align-items: center; justify-content: center;
+		background: rgba(0,210,255,0.1); color: #00d2ff;
+	}
+	.install-banner-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+	.install-banner-title { font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700; color: white; }
+	.install-banner-desc { font-size: 11px; color: rgba(255,255,255,0.4); }
+	.install-banner-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+	.install-banner-install {
+		font-family: 'Syne', sans-serif; font-size: 12px; font-weight: 700; color: white;
+		background: linear-gradient(135deg, #00d2ff, #3a7bd5); border: none; border-radius: 8px;
+		padding: 8px 16px; cursor: pointer; transition: all 0.15s;
+	}
+	.install-banner-install:hover { box-shadow: 0 4px 16px rgba(0,210,255,0.3); }
+	.install-banner-dismiss {
+		background: none; border: none; color: rgba(255,255,255,0.3); cursor: pointer;
+		padding: 4px; border-radius: 6px; transition: all 0.15s;
+	}
+	.install-banner-dismiss:hover { color: white; background: rgba(255,255,255,0.06); }
+
 	/* Toast notifications */
 	.toast-container {
 		position: fixed; top: 16px; right: 16px; z-index: 100;
