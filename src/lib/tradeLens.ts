@@ -238,12 +238,24 @@ export function getCachedBalance(addr: string): bigint {
 	return _tokenCache.get(addr.toLowerCase())?.balance || 0n;
 }
 
-/** Instant swap quote from cached reserves */
-export function getInstantQuote(
+/** Route info returned by findBestRoute */
+export interface SwapRoute {
+	path: string[];        // [tokenIn, ...intermediaries, tokenOut]
+	symbols: string[];     // human readable: ['RAVE', 'USDT', 'WBNB']
+	amountOut: bigint;     // expected output amount
+	hops: number;          // 1 = direct, 2 = through one intermediary
+}
+
+/**
+ * Find the best swap route by trying all possible paths through cached pools.
+ * Tries direct pairs first, then routes through each known base (WETH, USDT, USDC).
+ * Returns the route with the highest output.
+ */
+export function findBestRoute(
 	tokenIn: string,
 	tokenOut: string,
 	amountIn: bigint
-): bigint | null {
+): SwapRoute | null {
 	if (!_weth || amountIn === 0n) return null;
 
 	const inAddr = tokenIn.toLowerCase();
@@ -253,27 +265,95 @@ export function getInstantQuote(
 	const inInfo = _tokenCache.get(inAddr);
 	const outInfo = _tokenCache.get(outAddr);
 
-	const inPool = _findPool(inInfo, weth);
-	const outPool = _findPool(outInfo, weth);
-
 	const inIsWeth = inAddr === weth;
 	const outIsWeth = outAddr === weth;
 
-	if (outIsWeth && inPool) return _calcOut(amountIn, inPool.reserveToken, inPool.reserveBase);
-	if (inIsWeth && outPool) return _calcOut(amountIn, outPool.reserveBase, outPool.reserveToken);
-	if (inPool && outPool) {
-		const wethOut = _calcOut(amountIn, inPool.reserveToken, inPool.reserveBase);
-		if (wethOut === 0n) return null;
-		return _calcOut(wethOut, outPool.reserveBase, outPool.reserveToken);
+	const candidates: SwapRoute[] = [];
+
+	const inSymbol = inIsWeth ? 'WBNB' : (inInfo?.symbol || '???');
+	const outSymbol = outIsWeth ? 'WBNB' : (outInfo?.symbol || '???');
+
+	// ── Direct: tokenIn → tokenOut (if they share a pool) ──
+	if (outIsWeth && inInfo) {
+		// Selling token for native: use any pool with WETH base
+		const pool = inInfo.pools.find(p => p.base.toLowerCase() === weth && p.hasLiquidity);
+		if (pool) {
+			const out = _calcOut(amountIn, pool.reserveToken, pool.reserveBase);
+			if (out > 0n) candidates.push({ path: [inAddr, weth], symbols: [inSymbol, 'WBNB'], amountOut: out, hops: 1 });
+		}
+	} else if (inIsWeth && outInfo) {
+		// Buying token with native: use any pool with WETH base
+		const pool = outInfo.pools.find(p => p.base.toLowerCase() === weth && p.hasLiquidity);
+		if (pool) {
+			const out = _calcOut(amountIn, pool.reserveBase, pool.reserveToken);
+			if (out > 0n) candidates.push({ path: [weth, outAddr], symbols: ['WBNB', outSymbol], amountOut: out, hops: 1 });
+		}
 	}
-	return null;
+
+	// ── Routes through each base token (WETH, USDT, USDC, etc.) ──
+	// Collect all known bases from both tokens' pools
+	const allBases = new Set<string>();
+	if (inInfo?.pools) for (const p of inInfo.pools) if (p.hasLiquidity) allBases.add(p.base.toLowerCase());
+	if (outInfo?.pools) for (const p of outInfo.pools) if (p.hasLiquidity) allBases.add(p.base.toLowerCase());
+
+	for (const base of allBases) {
+		const baseInfo = _tokenCache.get(base);
+		const baseSymbol = base === weth ? 'WBNB' : (baseInfo?.symbol || base.slice(0, 6));
+
+		if (inAddr === base || outAddr === base) continue; // skip if token IS the base (handled above)
+
+		// tokenIn → base
+		let amountAtBase = 0n;
+		if (inIsWeth && base === weth) {
+			amountAtBase = amountIn;
+		} else if (inIsWeth) {
+			// WETH → base (base is a token with WETH pool)
+			const baseToken = _tokenCache.get(base);
+			const baseWethPool = baseToken?.pools.find(p => p.base.toLowerCase() === weth && p.hasLiquidity);
+			if (baseWethPool) amountAtBase = _calcOut(amountIn, baseWethPool.reserveBase, baseWethPool.reserveToken);
+		} else if (inInfo) {
+			const inPool = inInfo.pools.find(p => p.base.toLowerCase() === base && p.hasLiquidity);
+			if (inPool) amountAtBase = _calcOut(amountIn, inPool.reserveToken, inPool.reserveBase);
+		}
+
+		if (amountAtBase === 0n) continue;
+
+		// base → tokenOut
+		let finalOut = 0n;
+		if (outIsWeth && base === weth) {
+			finalOut = amountAtBase;
+		} else if (outIsWeth) {
+			// base → WETH
+			const baseToken = _tokenCache.get(base);
+			const baseWethPool = baseToken?.pools.find(p => p.base.toLowerCase() === weth && p.hasLiquidity);
+			if (baseWethPool) finalOut = _calcOut(amountAtBase, baseWethPool.reserveToken, baseWethPool.reserveBase);
+		} else if (outInfo) {
+			const outPool = outInfo.pools.find(p => p.base.toLowerCase() === base && p.hasLiquidity);
+			if (outPool) finalOut = _calcOut(amountAtBase, outPool.reserveBase, outPool.reserveToken);
+		}
+
+		if (finalOut > 0n) {
+			const path = [inAddr, base, outAddr].filter((v, i, a) => i === 0 || v !== a[i - 1]); // dedup adjacent
+			const symbols = [inSymbol, baseSymbol, outSymbol].slice(0, path.length);
+			candidates.push({ path, symbols, amountOut: finalOut, hops: path.length - 1 });
+		}
+	}
+
+	if (candidates.length === 0) return null;
+
+	// Return the route with the highest output
+	candidates.sort((a, b) => (b.amountOut > a.amountOut ? 1 : b.amountOut < a.amountOut ? -1 : 0));
+	return candidates[0];
 }
 
-function _findPool(info: TokenInfo | undefined, weth: string): PoolInfo | null {
-	if (!info?.pools?.length) return null;
-	const wethPool = info.pools.find(p => p.base.toLowerCase() === weth && p.hasLiquidity);
-	if (wethPool) return wethPool;
-	return info.pools.find(p => p.hasLiquidity) || null;
+/** Backwards-compatible wrapper — returns just the amount */
+export function getInstantQuote(
+	tokenIn: string,
+	tokenOut: string,
+	amountIn: bigint
+): bigint | null {
+	const route = findBestRoute(tokenIn, tokenOut, amountIn);
+	return route?.amountOut ?? null;
 }
 
 function _calcOut(amountIn: bigint, reserveIn: bigint, reserveOut: bigint): bigint {

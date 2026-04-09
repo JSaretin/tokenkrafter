@@ -11,7 +11,7 @@
 	import WithdrawalStatusModal from '$lib/WithdrawalStatusModal.svelte';
 	import { formatUsdt } from '$lib/launchpad';
 	import { apiFetch } from '$lib/apiFetch';
-	import { queryTradeLens, getInstantQuote, getWeth, isCacheLoaded, getUsdValue, getCachedToken, type TaxInfo } from '$lib/tradeLens';
+	import { queryTradeLens, getInstantQuote, getWeth, isCacheLoaded, getUsdValue, getCachedToken, findBestRoute, type TaxInfo, type SwapRoute } from '$lib/tradeLens';
 	import { pushPreferences } from '$lib/embeddedWallet';
 	import { resolveTokenLogo } from '$lib/tokenLogo';
 
@@ -70,6 +70,7 @@
 	let amountOut = $state('');
 	let previewLoading = $state(false);
 	let noLiquidity = $state(false);
+	let swapRoute = $state<SwapRoute | null>(null);
 
 	// Settings
 	let slippageBps = $state(50);
@@ -794,10 +795,11 @@
 			amountOut = '';
 			noLiquidity = false;
 			previewLoading = false;
+			swapRoute = null;
 			return;
 		}
 
-		// ── Instant calculation from MultiQuoter cache (0ms) ──
+		// ── Instant calculation from TradeLens cache (0ms, best route) ──
 		let hasInstant = false;
 		try {
 			if (pricesLoaded) {
@@ -806,11 +808,14 @@
 				const addrIn = tokenInIsNative ? (wethAddr || getWeth()) : inAddr;
 				const addrOut = tokenOutIsNative ? (wethAddr || getWeth()) : outAddr;
 
-				const instantOut = getInstantQuote(addrIn, addrOut, parsedIn);
-				if (instantOut !== null && instantOut > 0n) {
-					amountOut = ethers.formatUnits(instantOut, tokenOutDecimals);
+				const route = findBestRoute(addrIn, addrOut, parsedIn);
+				if (route && route.amountOut > 0n) {
+					amountOut = ethers.formatUnits(route.amountOut, tokenOutDecimals);
+					swapRoute = route;
 					noLiquidity = false;
 					hasInstant = true;
+				} else {
+					swapRoute = null;
 				}
 			}
 		} catch {}
@@ -1178,12 +1183,15 @@
 					}
 				}
 
-				// Build path
+				// Build path using best route from TradeLens
 				const addrIn = tokenInIsNative ? weth : tokenInAddr;
 				const addrOut = tokenOutIsNative ? weth : tokenOutAddr;
 				let path: string[];
-				if (addrIn !== weth && addrOut !== weth) {
-					path = [addrIn, weth, addrOut]; // route through WETH
+				if (swapRoute && swapRoute.path.length >= 2) {
+					// Use the optimal route found by findBestRoute
+					path = swapRoute.path;
+				} else if (addrIn !== weth && addrOut !== weth) {
+					path = [addrIn, weth, addrOut]; // fallback: route through WETH
 				} else {
 					path = [addrIn, addrOut];
 				}
@@ -1743,6 +1751,21 @@
 			{/if}
 
 			<!-- Trade details -->
+			<!-- Swap Route -->
+			{#if swapRoute && swapRoute.hops > 0 && amountOut && outputMode === 'token'}
+				<div class="swap-route">
+					<span class="swap-route-label">Route</span>
+					<div class="swap-route-path">
+						{#each swapRoute.symbols as sym, i}
+							<span class="swap-route-token">{sym}</span>
+							{#if i < swapRoute.symbols.length - 1}
+								<svg class="swap-route-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+							{/if}
+						{/each}
+					</div>
+				</div>
+			{/if}
+
 			{#if rate && outputMode === 'token'}
 				<div class="trade-details">
 					<div class="detail-line">
@@ -2503,6 +2526,22 @@
 	}
 
 	/* Trade details */
+	/* Swap route display */
+	.swap-route {
+		display: flex; align-items: center; justify-content: space-between;
+		padding: 8px 12px; margin-bottom: 4px;
+		background: rgba(0,210,255,0.03); border: 1px solid rgba(0,210,255,0.08);
+		border-radius: 8px;
+	}
+	.swap-route-label { font-size: 10px; color: #475569; font-family: 'Space Mono', monospace; }
+	.swap-route-path { display: flex; align-items: center; gap: 4px; }
+	.swap-route-token {
+		font-size: 11px; font-family: 'Space Mono', monospace; font-weight: 600;
+		color: #00d2ff; padding: 2px 6px; border-radius: 4px;
+		background: rgba(0,210,255,0.08);
+	}
+	.swap-route-arrow { color: #374151; flex-shrink: 0; }
+
 	.trade-details { padding: 10px 12px; }
 	.detail-line {
 		display: flex; justify-content: space-between; padding: 3px 0;
