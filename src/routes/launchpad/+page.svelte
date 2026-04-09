@@ -430,20 +430,30 @@
 	<!-- Grid -->
 	{#if loading}
 		<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-			{#each Array(6) as _}
-				<div class="skeleton-card card p-5">
-					<div class="flex items-start gap-3 mb-3">
-						<div class="skeleton-line w-10 h-10 rounded-full"></div>
+			{#each Array(3) as _}
+				<div class="skeleton-card card p-0">
+					<!-- Badges bar -->
+					<div class="flex gap-2 px-4 pt-3 pb-1">
+						<div class="skeleton-line" style="width:60px;height:18px;border-radius:99px;"></div>
+					</div>
+					<!-- Logo + name + state -->
+					<div class="flex items-start gap-3 px-4 pb-3">
+						<div class="skeleton-line" style="width:40px;height:40px;border-radius:50%;flex-shrink:0;"></div>
 						<div class="flex-1">
-							<div class="skeleton-line w-28 h-4 mb-2"></div>
-							<div class="skeleton-line w-36 h-3"></div>
+							<div class="skeleton-line" style="width:120px;height:14px;margin-bottom:6px;"></div>
+							<div class="skeleton-line" style="width:80px;height:10px;"></div>
 						</div>
 					</div>
-					<div class="skeleton-line w-full h-2.5 rounded-full mb-3"></div>
-					<div class="skeleton-line w-full h-10 mb-3"></div>
-					<div class="flex justify-between">
-						<div class="skeleton-line w-20 h-3"></div>
-						<div class="skeleton-line w-16 h-3"></div>
+					<!-- Progress -->
+					<div class="px-4 pb-4">
+						<div class="flex justify-between mb-1.5">
+							<div class="skeleton-line" style="width:70px;height:10px;"></div>
+							<div class="skeleton-line" style="width:60px;height:10px;"></div>
+						</div>
+						<div class="skeleton-line" style="width:100%;height:6px;border-radius:99px;"></div>
+						<div class="flex justify-between mt-1.5">
+							<div class="skeleton-line" style="width:90px;height:9px;"></div>
+						</div>
 					</div>
 				</div>
 			{/each}

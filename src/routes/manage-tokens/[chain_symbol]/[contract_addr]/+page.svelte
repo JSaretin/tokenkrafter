@@ -290,6 +290,11 @@
 	let poolAddAmounts: Record<string, { baseAmount: string; tokenAmount: string; expanded: boolean }> = $state({});
 	let poolAddLoading: Record<string, boolean> = $state({});
 
+	// Per-pool remove liquidity states
+	let poolRemoveLoading: Record<string, boolean> = $state({});
+	let poolLpBalances: Record<string, bigint> = $state({});
+	let poolRemovePct: Record<string, number> = $state({});
+
 	// Deposit modal state
 	let showDepositModal = $state(false);
 	let depositInfo: {
@@ -715,6 +720,18 @@
 			}
 			existingPools = results;
 			poolsLoaded = true;
+
+			// Fetch LP token balances for each pool
+			if (userAddress) {
+				for (const pool of results) {
+					try {
+						const lpContract = new ethers.Contract(pool.pairAddress, [
+							'function balanceOf(address) view returns (uint256)'
+						], provider);
+						poolLpBalances[pool.pairAddress] = await lpContract.balanceOf(userAddress);
+					} catch { poolLpBalances[pool.pairAddress] = 0n; }
+				}
+			}
 		} catch (e: any) {
 			addFeedback({ message: 'Failed to lookup pools: ' + (e.shortMessage || e.message), type: 'error' });
 		} finally { poolsLoading = false; }
@@ -960,6 +977,69 @@
 		} catch (e: any) {
 			addFeedback({ message: e.shortMessage || e.message || 'Liquidity failed', type: 'error' });
 		} finally { poolAddLoading[pool.pairAddress] = false; }
+	}
+
+	async function doRemoveLiquidity(pool: ExistingPool) {
+		const s = await ensureSigner();
+		if (!s || !network || !selectedRouter || !userAddress) return;
+
+		const pct = poolRemovePct[pool.pairAddress] || 100;
+		const lpBal = poolLpBalances[pool.pairAddress] || 0n;
+		if (lpBal === 0n) {
+			addFeedback({ message: 'No LP tokens to remove', type: 'error' });
+			return;
+		}
+
+		const lpAmount = (lpBal * BigInt(pct)) / 100n;
+		if (lpAmount === 0n) return;
+
+		poolRemoveLoading[pool.pairAddress] = true;
+		try {
+			// Approve LP tokens to router
+			const lpContract = new ethers.Contract(pool.pairAddress, [
+				'function approve(address, uint256) returns (bool)',
+				'function allowance(address, address) view returns (uint256)',
+			], s);
+			const allowance = await lpContract.allowance(userAddress, selectedRouter);
+			if (allowance < lpAmount) {
+				addFeedback({ message: 'Approving LP tokens...', type: 'info' });
+				const approveTx = await lpContract.approve(selectedRouter, lpAmount);
+				await approveTx.wait();
+			}
+
+			const router = new ethers.Contract(selectedRouter, ROUTER_ABI, s);
+			const deadline = Math.floor(Date.now() / 1000) + 1200;
+
+			if (pool.baseKey === 'native') {
+				addFeedback({ message: 'Removing liquidity...', type: 'info' });
+				const tx = await router.removeLiquidityETH(
+					contractAddress,
+					lpAmount,
+					0, 0,
+					userAddress,
+					deadline
+				);
+				await tx.wait();
+			} else {
+				const baseOption = getBaseCoinOptions().find(b => b.symbol === pool.baseSymbol);
+				addFeedback({ message: 'Removing liquidity...', type: 'info' });
+				const tx = await router.removeLiquidity(
+					contractAddress,
+					baseOption!.address,
+					lpAmount,
+					0, 0,
+					userAddress,
+					deadline
+				);
+				await tx.wait();
+			}
+
+			addFeedback({ message: `Removed ${pct}% liquidity from ${tokenInfo?.symbol}/${pool.baseSymbol}`, type: 'success' });
+			poolRemovePct[pool.pairAddress] = 100;
+			await lookupExistingPools();
+		} catch (e: any) {
+			addFeedback({ message: e.shortMessage || e.message || 'Remove liquidity failed', type: 'error' });
+		} finally { poolRemoveLoading[pool.pairAddress] = false; }
 	}
 
 	async function doCreateNewPool() {
@@ -2248,6 +2328,31 @@
 													>
 														{poolAddLoading[pool.pairAddress] ? $t('mt.addingLiquidity') : `${$t('mt.addToPool')} ${tokenInfo.symbol}/${pool.baseSymbol} ${$t('mt.pool')}`}
 													</button>
+
+													<!-- Remove Liquidity -->
+													{#if (poolLpBalances[pool.pairAddress] || 0n) > 0n}
+														<div class="remove-liq-section">
+															<div class="remove-liq-header">
+																<span class="remove-liq-label">Remove Liquidity</span>
+																<span class="remove-liq-bal">LP: {parseFloat(ethers.formatEther(poolLpBalances[pool.pairAddress] || 0n)).toFixed(6)}</span>
+															</div>
+															<div class="remove-liq-pct-row">
+																{#each [25, 50, 75, 100] as pct}
+																	<button
+																		class="remove-liq-pct-btn {(poolRemovePct[pool.pairAddress] || 100) === pct ? 'active' : ''}"
+																		onclick={() => poolRemovePct[pool.pairAddress] = pct}
+																	>{pct}%</button>
+																{/each}
+															</div>
+															<button
+																onclick={() => doRemoveLiquidity(pool)}
+																disabled={poolRemoveLoading[pool.pairAddress]}
+																class="action-btn burn-btn syne cursor-pointer"
+															>
+																{poolRemoveLoading[pool.pairAddress] ? 'Removing...' : `Remove ${poolRemovePct[pool.pairAddress] || 100}% from ${tokenInfo.symbol}/${pool.baseSymbol}`}
+															</button>
+														</div>
+													{/if}
 												</div>
 											{/if}
 										</div>
@@ -2950,6 +3055,24 @@
 		transform: translateY(-1px);
 		box-shadow: 0 8px 28px rgba(245,158,11,0.3);
 	}
+
+	/* Remove liquidity */
+	.remove-liq-section {
+		margin-top: 14px; padding-top: 14px;
+		border-top: 1px solid var(--bg-surface-hover);
+	}
+	.remove-liq-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+	.remove-liq-label { font-size: 12px; font-weight: 600; color: #f87171; font-family: 'Space Mono', monospace; }
+	.remove-liq-bal { font-size: 10px; color: #6b7280; font-family: 'Space Mono', monospace; }
+	.remove-liq-pct-row { display: flex; gap: 6px; margin-bottom: 10px; }
+	.remove-liq-pct-btn {
+		flex: 1; padding: 6px; border-radius: 6px;
+		border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.03);
+		color: #94a3b8; font-family: 'Space Mono', monospace; font-size: 11px;
+		cursor: pointer; transition: all 0.15s;
+	}
+	.remove-liq-pct-btn:hover { border-color: rgba(248,113,113,0.3); color: #f87171; }
+	.remove-liq-pct-btn.active { border-color: rgba(248,113,113,0.4); background: rgba(248,113,113,0.08); color: #f87171; }
 
 	.liq-btn {
 		background: linear-gradient(135deg, #8b5cf6, #6d28d9);
