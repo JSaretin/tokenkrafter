@@ -1853,15 +1853,12 @@
 								</div>
 								{#if preview.priceImpactBps > 0n}
 									<div class="preview-row">
-										<span class="text-gray-500">{$t('lpd.priceImpact')}</span>
-										<span
-											class="{Number(preview.priceImpactBps) > 1000
-												? 'text-amber-400'
-												: Number(preview.priceImpactBps) > 300
-													? 'text-yellow-400'
-													: 'text-emerald-400'}"
-										>
+										<span class="text-gray-500">Price impact</span>
+										<span class="text-emerald-400">
 											{(Number(preview.priceImpactBps) / 100).toFixed(2)}%
+											{#if Number(preview.priceImpactBps) > 500}
+												· Early entry
+											{/if}
 										</span>
 									</div>
 								{/if}
