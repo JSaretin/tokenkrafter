@@ -139,9 +139,9 @@
 	let showAssetPicker = $state(false);
 
 	let sendAssetInfo = $derived.by(() => {
-		if (sendAsset === 'native') return { symbol: nativeCoin, decimals: nativeDecimals, balance: nativeBalance };
+		if (sendAsset === 'native') return { symbol: nativeCoin, decimals: nativeDecimals, balance: nativeBalance, priceUsd: nativePriceUsd };
 		const tok = [...tokens, ...importedTokens].find(t => t.address.toLowerCase() === sendAsset.toLowerCase());
-		return tok ? { symbol: tok.symbol, decimals: tok.decimals, balance: tok.balance } : { symbol: nativeCoin, decimals: nativeDecimals, balance: nativeBalance };
+		return tok ? { symbol: tok.symbol, decimals: tok.decimals, balance: tok.balance, priceUsd: tok.priceUsd || 0 } : { symbol: nativeCoin, decimals: nativeDecimals, balance: nativeBalance, priceUsd: nativePriceUsd };
 	});
 
 	// Import
@@ -201,32 +201,56 @@
 		try { return { provider: new ethers.JsonRpcProvider(rpcUrl) }; } catch { return null; }
 	}
 
+	// ── Wallet cache (per address, localStorage) ──
+	function cacheKey(addr: string) { return `wc_${addr.toLowerCase()}`; }
+
+
+	function restoreWalletCache(addr: string): boolean {
+		try {
+			const raw = localStorage.getItem(cacheKey(addr));
+			if (!raw) return false;
+			const cache = JSON.parse(raw);
+			if (!cache.updatedAt) return false;
+
+			nativeBalance = BigInt(cache.nativeBalance || '0');
+			nativePriceUsd = cache.nativePriceUsd || 0;
+
+			for (const cached of cache.tokens || []) {
+				const tok = importedTokens.find(t => t.address.toLowerCase() === cached.address.toLowerCase());
+				if (tok) {
+					tok.balance = BigInt(cached.balance || '0');
+					tok.priceUsd = cached.priceUsd || 0;
+					if (cached.logoUrl && !(tok as any).logoUrl) (tok as any).logoUrl = cached.logoUrl;
+				}
+			}
+			importedTokens = [...importedTokens];
+			return true;
+		} catch { return false; }
+	}
+
 	async function refreshTokenBalances() {
 		if (!userAddress || !dexRouter) return;
-		if (portfolioPolling) return; // guard against double-polling
+		if (portfolioPolling) return;
 		portfolioPolling = true;
 		portfolioLoading = true;
+
 		try {
 			const provider = new ethers.JsonRpcProvider(rpcUrl);
 			const tokenAddrs = importedTokens.map(t => t.address).filter(a => a);
 
-			// Include USDT in the query so we can calc USD values
 			const queryTokens = [...tokenAddrs];
 			if (usdtAddress && !queryTokens.find(a => a.toLowerCase() === usdtAddress.toLowerCase())) {
 				queryTokens.push(usdtAddress);
 			}
 
-			if (queryTokens.length === 0) { portfolioLoading = false; return; }
+			if (queryTokens.length === 0) { portfolioLoading = false; portfolioPolling = false; return; }
 
+			// Query all wallet accounts at once
+			const allAddresses = accounts.map(a => a.address).filter(a => a);
 			const bases = [usdtAddress, usdcAddress].filter(a => a);
-			const result = await queryTradeLens(provider, dexRouter, queryTokens, ethers.ZeroAddress, 0n, userAddress, chainId, bases);
+			const result = await queryTradeLens(provider, dexRouter, queryTokens, ethers.ZeroAddress, 0n, allAddresses, chainId, bases);
 
-			// Update native balance
-			if (result.nativeBalance > 0n) {
-				nativeBalance = result.nativeBalance;
-			}
-
-			// Calculate WETH→USDT price for USD conversions
+			// ── Calculate WETH price ──
 			const weth = result.weth.toLowerCase();
 			const usdtLower = usdtAddress.toLowerCase();
 			let wethPriceUsdt = 0;
@@ -238,36 +262,63 @@
 				}
 			}
 
-			// Update native price
-			if (wethPriceUsdt > 0) {
-				nativePriceUsd = wethPriceUsdt / 1; // WETH = native on BSC
-			}
-
-			// Update imported token balances + prices
-			for (const tok of importedTokens) {
-				const lensToken = result.tokens.find(t => t.token.toLowerCase() === tok.address.toLowerCase());
-				if (!lensToken) continue;
-
-				tok.balance = lensToken.balance;
-
-				// Calculate price from WETH pool reserves
+			// ── Calculate token prices (shared across accounts) ──
+			const tokenPrices: Record<string, number> = {};
+			for (const lensToken of result.tokens) {
+				const addr = lensToken.token.toLowerCase();
 				if (wethPriceUsdt > 0) {
 					const wethPool = lensToken.pools.find(p => p.base.toLowerCase() === weth && p.hasLiquidity);
 					if (wethPool && wethPool.reserveToken > 0n) {
-						const tokenPriceWeth = Number(wethPool.reserveBase) / Number(wethPool.reserveToken);
-						tok.priceUsd = tokenPriceWeth * wethPriceUsdt;
+						tokenPrices[addr] = (Number(wethPool.reserveBase) / Number(wethPool.reserveToken)) * wethPriceUsdt;
 					} else {
-						// Try USDT direct pool
 						const usdtPool = lensToken.pools.find(p => p.base.toLowerCase() === usdtLower && p.hasLiquidity);
 						if (usdtPool && usdtPool.reserveToken > 0n) {
-							tok.priceUsd = Number(usdtPool.reserveBase) / Number(usdtPool.reserveToken);
-						} else {
-							tok.priceUsd = 0;
+							tokenPrices[addr] = Number(usdtPool.reserveBase) / Number(usdtPool.reserveToken);
 						}
 					}
 				}
 			}
-			importedTokens = [...importedTokens];
+
+			// ── Save cache for ALL accounts ──
+			for (let acctIdx = 0; acctIdx < allAddresses.length; acctIdx++) {
+				const addr = allAddresses[acctIdx];
+				const userResult = result.users[acctIdx];
+				const cachedTokens = importedTokens.map(tok => {
+					const lensToken = result.tokens.find(t => t.token.toLowerCase() === tok.address.toLowerCase());
+					const bal = lensToken?.balances[acctIdx] ?? 0n;
+					return {
+						address: tok.address, symbol: tok.symbol, name: tok.name,
+						decimals: tok.decimals, balance: bal.toString(),
+						priceUsd: tokenPrices[tok.address.toLowerCase()] || 0,
+						logoUrl: (tok as any).logoUrl || '',
+					};
+				});
+				try {
+					localStorage.setItem(cacheKey(addr), JSON.stringify({
+						nativeBalance: (userResult?.nativeBalance ?? 0n).toString(),
+						nativePriceUsd: wethPriceUsdt > 0 ? wethPriceUsdt : nativePriceUsd,
+						tokens: cachedTokens,
+						updatedAt: Date.now(),
+					}));
+				} catch {}
+			}
+
+			// ── Update current account state (single batch) ──
+			const activeIdx = allAddresses.findIndex(a => a.toLowerCase() === userAddress.toLowerCase());
+			const activeUserInfo = activeIdx >= 0 ? result.users[activeIdx] : null;
+			const newNativeBalance = activeUserInfo?.nativeBalance ?? nativeBalance;
+			const newNativePriceUsd = wethPriceUsdt > 0 ? wethPriceUsdt : nativePriceUsd;
+
+			const updatedTokens = importedTokens.map(tok => {
+				const lensToken = result.tokens.find(t => t.token.toLowerCase() === tok.address.toLowerCase());
+				const bal = activeIdx >= 0 && lensToken ? (lensToken.balances[activeIdx] ?? 0n) : tok.balance;
+				const price = tokenPrices[tok.address.toLowerCase()] ?? tok.priceUsd ?? 0;
+				return { ...tok, balance: bal, priceUsd: price };
+			});
+
+			nativeBalance = newNativeBalance;
+			nativePriceUsd = newNativePriceUsd;
+			importedTokens = updatedTokens;
 		} catch (e) {
 			console.warn('Portfolio refresh failed:', (e as Error).message?.slice(0, 80));
 		} finally {
@@ -275,6 +326,15 @@
 			portfolioPolling = false;
 		}
 	}
+
+	// Restore cache when panel opens (one-time, not reactive on balance changes)
+	let lastRestoredAddr = '';
+	$effect(() => {
+		if (open && userAddress && userAddress !== lastRestoredAddr) {
+			lastRestoredAddr = userAddress;
+			restoreWalletCache(userAddress);
+		}
+	});
 
 	// Auto-refresh portfolio every 10s when panel is open (pause when account dropdown is open)
 	$effect(() => {
@@ -389,15 +449,11 @@
 		if (acc) onAccountSwitch(acc.address);
 		showAccountDropdown = false;
 
-		// Reset everything for instant visual feedback — no stale data
-		nativeBalance = 0n;
-		nativePriceUsd = 0;
-		for (const t of importedTokens) { t.balance = 0n; t.priceUsd = 0; }
-		for (const t of tokens) { t.balance = 0n; t.priceUsd = 0; }
-		importedTokens = [...importedTokens];
-		portfolioPolling = false; // allow immediate re-poll
-		// Small delay to let the new userAddress propagate before fetching
-		setTimeout(() => refreshTokenBalances(), 100);
+		// Restore from cache (already populated by polling all accounts)
+		if (acc) {
+			lastRestoredAddr = acc.address;
+			restoreWalletCache(acc.address);
+		}
 	}
 
 	async function handleExport(type: 'key' | 'seed') {
@@ -673,22 +729,30 @@
 							</button>
 						</div>
 						<div class="ap-picker-list">
-							<button class="ap-picker-item" class:active={sendAsset === 'native'} onclick={() => { sendAsset = 'native'; showAssetPicker = false; }}>
-								{#if getKnownLogo(nativeCoin)}
-									<img src={getKnownLogo(nativeCoin)} alt="" class="ap-picker-logo" />
-								{:else}
-									<span class="ap-picker-letter">{nativeCoin.charAt(0)}</span>
-								{/if}
-								<div class="ap-picker-info">
-									<span class="ap-picker-symbol">{nativeCoin}</span>
-									<span class="ap-picker-name">Native</span>
-								</div>
-								<span class="ap-picker-bal">{fmtBal(nativeBalance, nativeDecimals)}</span>
-							</button>
-							{#each [...tokens, ...importedTokens] as tok}
-								<button class="ap-picker-item" class:active={sendAsset.toLowerCase() === tok.address.toLowerCase()} onclick={() => { sendAsset = tok.address; showAssetPicker = false; }}>
-									{#if getTokenLogo(tok)}
-										<img src={getTokenLogo(tok)} alt="" class="ap-picker-logo" />
+							<!-- Native coin (always first if has balance) -->
+							{#if nativeBalance > 0n}
+								<button class="ap-picker-item" class:active={sendAsset === 'native'} onclick={() => { sendAsset = 'native'; showAssetPicker = false; }}>
+									{#if getKnownLogo(nativeCoin)}
+										<img src={getKnownLogo(nativeCoin)} alt="" class="ap-picker-logo" />
+									{:else}
+										<span class="ap-picker-letter">{nativeCoin.charAt(0)}</span>
+									{/if}
+									<div class="ap-picker-info">
+										<span class="ap-picker-symbol">{nativeCoin}</span>
+										<span class="ap-picker-name">Native</span>
+									</div>
+									<div class="ap-picker-right">
+										<span class="ap-picker-bal">{fmtBal(nativeBalance, nativeDecimals)}</span>
+										{#if nativeUsd > 0}<span class="ap-picker-usd">{fmtUsd(nativeUsd)}</span>{/if}
+									</div>
+								</button>
+							{/if}
+							<!-- Tokens sorted by USD value, hide zero balance -->
+							{#each sortedTokens as tok}
+								{@const logo = getTokenLogo(tok)}
+								<button class="ap-picker-item" class:active={sendAsset.toLowerCase() === tok.address?.toLowerCase()} onclick={() => { sendAsset = tok.address; showAssetPicker = false; }}>
+									{#if logo}
+										<img src={logo} alt="" class="ap-picker-logo" />
 									{:else}
 										<span class="ap-picker-letter">{tok.symbol.charAt(0)}</span>
 									{/if}
@@ -696,7 +760,10 @@
 										<span class="ap-picker-symbol">{tok.symbol}</span>
 										<span class="ap-picker-name">{tok.name || tok.symbol}</span>
 									</div>
-									<span class="ap-picker-bal">{fmtBal(tok.balance, tok.decimals)}</span>
+									<div class="ap-picker-right">
+										<span class="ap-picker-bal">{fmtBal(tok.balance, tok.decimals)}</span>
+										{#if tok._usd > 0}<span class="ap-picker-usd">{fmtUsd(tok._usd)}</span>{/if}
+									</div>
 								</button>
 							{/each}
 						</div>
@@ -709,6 +776,12 @@
 
 			<label class="ap-label">Amount</label>
 			<input class="ap-input" type="text" inputmode="decimal" placeholder="0.0" bind:value={sendAmount} {...INPUT_ATTRS} />
+			{#if sendAmount && sendAssetInfo.priceUsd > 0}
+				{@const sendUsdEstimate = parseFloat(sendAmount || '0') * sendAssetInfo.priceUsd}
+				{#if sendUsdEstimate > 0}
+					<div class="ap-send-estimate">≈ {fmtUsd(sendUsdEstimate)}</div>
+				{/if}
+			{/if}
 			<div class="ap-send-info">
 				<span>Balance: {fmtBal(sendAssetInfo.balance, sendAssetInfo.decimals)} {sendAssetInfo.symbol}</span>
 				<button class="ap-link" onclick={() => {
@@ -1143,7 +1216,10 @@
 	.ap-picker-info { flex: 1; text-align: left; display: flex; flex-direction: column; gap: 1px; }
 	.ap-picker-symbol { font-size: 13px; font-weight: 600; color: white; }
 	.ap-picker-name { font-size: 10px; color: rgba(255,255,255,0.3); }
+	.ap-picker-right { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
 	.ap-picker-bal { font-size: 12px; color: rgba(255,255,255,0.4); font-family: 'Space Mono', monospace; }
+	.ap-picker-usd { font-size: 10px; color: #374151; font-family: 'Rajdhani', sans-serif; font-variant-numeric: tabular-nums; }
+	.ap-send-estimate { font-family: 'Rajdhani', sans-serif; font-size: 13px; color: #475569; margin: -4px 0 4px; font-variant-numeric: tabular-nums; }
 	.ap-btn {
 		padding: 10px 16px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.06);
 		background: rgba(255,255,255,0.03); color: #94a3b8; cursor: pointer;

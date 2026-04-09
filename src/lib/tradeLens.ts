@@ -2,6 +2,7 @@
  * TradeLensV2 — constructor-only contract for batch token info + tax simulation.
  * No deployment needed. Uses eth_call with bytecode + encoded args.
  * Checks each token against ALL provided base tokens for liquidity.
+ * Supports multiple users for balance queries.
  */
 import { ethers } from 'ethers';
 import { TRADE_LENS_BYTECODE } from './tradeLensV2Bytecode';
@@ -20,9 +21,16 @@ export interface TokenInfo {
 	symbol: string;
 	decimals: number;
 	totalSupply: bigint;
-	balance: bigint;
-	hasLiquidity: boolean;  // true if ANY pool has liquidity
+	hasLiquidity: boolean;
 	pools: PoolInfo[];
+	balances: bigint[];  // one per user (same order as users[] input)
+	// Convenience: first user's balance (backwards compat)
+	balance: bigint;
+}
+
+export interface UserInfo {
+	user: string;
+	nativeBalance: bigint;
 }
 
 export interface TaxInfo {
@@ -41,21 +49,19 @@ export interface TaxInfo {
 export interface TradeLensResult {
 	weth: string;
 	factory: string;
-	nativeBalance: bigint;
+	users: UserInfo[];
+	nativeBalance: bigint;  // first user's native balance (backwards compat)
 	tokens: TokenInfo[];
 	taxInfo: TaxInfo;
 	taxToken: string;
 }
 
-// ABI types for decoding constructor return
 const RESULT_TYPES = [
 	'address', // weth
 	'address', // factory
-	'uint256', // nativeBalance
-	// TokenInfo[] with nested PoolInfo[]
-	'tuple(address token, string name, string symbol, uint8 decimals, uint256 totalSupply, uint256 balance, bool hasLiquidity, tuple(address base, address pairAddress, uint256 reserveToken, uint256 reserveBase, bool hasLiquidity)[] pools)[]',
-	// TaxInfo
-	'tuple(bool success, bool canBuy, bool canSell, uint256 buyTaxBps, uint256 sellTaxBps, uint256 transferTaxBps, uint256 buyGas, uint256 sellGas, string buyError, string sellError)',
+	'tuple(address user, uint256 nativeBalance)[]', // userInfos
+	'tuple(address token, string name, string symbol, uint8 decimals, uint256 totalSupply, bool hasLiquidity, tuple(address base, address pairAddress, uint256 reserveToken, uint256 reserveBase, bool hasLiquidity)[] pools, uint256[] balances)[]', // tokens
+	'tuple(bool success, bool canBuy, bool canSell, uint256 buyTaxBps, uint256 sellTaxBps, uint256 transferTaxBps, uint256 buyGas, uint256 sellGas, string buyError, string sellError)', // taxInfo
 	'address', // taxToken
 ];
 
@@ -63,20 +69,19 @@ const RESULT_TYPES = [
 let _tokenCache: Map<string, TokenInfo> = new Map();
 let _weth = '';
 let _lastFetch = 0;
-let _nativeBalance = 0n;
+let _usersCache: UserInfo[] = [];
 
 /**
  * Fetch all token info + balances + optionally simulate tax — one eth_call.
- * Checks each token against all provided base tokens for liquidity.
  *
  * @param provider JSON-RPC provider
- * @param dexRouter DEX router address (e.g. PancakeSwap)
+ * @param dexRouter DEX router address
  * @param tokens Token addresses to query
  * @param simulateTax Token to simulate tax for (ZeroAddress to skip)
  * @param simBuyAmount ETH amount for tax simulation
- * @param user User address for balances (ZeroAddress to skip)
- * @param chainId Chain ID (unused now — no deployed address needed)
- * @param baseTokens Base tokens to check pools against (default: just WETH via router)
+ * @param users User addresses for balances (empty array to skip)
+ * @param chainId Chain ID (unused — no deployed address)
+ * @param baseTokens Base tokens to check pools against
  */
 export async function queryTradeLens(
 	provider: ethers.JsonRpcProvider,
@@ -84,15 +89,20 @@ export async function queryTradeLens(
 	tokens: string[],
 	simulateTax: string = ethers.ZeroAddress,
 	simBuyAmount: bigint = ethers.parseEther('0.001'),
-	user: string = ethers.ZeroAddress,
+	users: string | string[] = [],
 	chainId: number = 56,
 	baseTokens: string[] = []
 ): Promise<TradeLensResult> {
+	// Backwards compat: accept single address string
+	const usersArr = typeof users === 'string'
+		? (users === ethers.ZeroAddress ? [] : [users])
+		: users.filter(u => u && u !== ethers.ZeroAddress);
+
 	const abiCoder = ethers.AbiCoder.defaultAbiCoder();
 
 	const args = abiCoder.encode(
-		['address', 'address[]', 'address[]', 'address', 'address', 'uint256'],
-		[dexRouter, tokens, baseTokens, user, simulateTax, simBuyAmount]
+		['address', 'address[]', 'address[]', 'address[]', 'address', 'uint256'],
+		[dexRouter, tokens, baseTokens, usersArr, simulateTax, simBuyAmount]
 	);
 
 	const callData = TRADE_LENS_BYTECODE + args.slice(2);
@@ -109,13 +119,17 @@ export async function queryTradeLens(
 
 	const decoded = abiCoder.decode(RESULT_TYPES, raw);
 
+	const userInfos: UserInfo[] = (decoded[2] as any[]).map((u: any) => ({
+		user: u.user,
+		nativeBalance: u.nativeBalance,
+	}));
+
 	const tokenInfos: TokenInfo[] = (decoded[3] as any[]).map((t: any) => ({
 		token: t.token,
 		name: t.name,
 		symbol: t.symbol,
 		decimals: Number(t.decimals),
 		totalSupply: t.totalSupply,
-		balance: t.balance,
 		hasLiquidity: t.hasLiquidity,
 		pools: (t.pools as any[]).map((p: any) => ({
 			base: p.base,
@@ -124,6 +138,8 @@ export async function queryTradeLens(
 			reserveBase: p.reserveBase,
 			hasLiquidity: p.hasLiquidity,
 		})),
+		balances: (t.balances as bigint[]).map(b => b),
+		balance: t.balances.length > 0 ? t.balances[0] : 0n,
 	}));
 
 	const taxInfo: TaxInfo = {
@@ -141,7 +157,7 @@ export async function queryTradeLens(
 
 	// Update cache
 	_weth = decoded[0] as string;
-	_nativeBalance = decoded[2] as bigint;
+	_usersCache = userInfos;
 	for (const t of tokenInfos) {
 		_tokenCache.set(t.token.toLowerCase(), t);
 	}
@@ -150,7 +166,8 @@ export async function queryTradeLens(
 	return {
 		weth: decoded[0] as string,
 		factory: decoded[1] as string,
-		nativeBalance: decoded[2] as bigint,
+		users: userInfos,
+		nativeBalance: userInfos.length > 0 ? userInfos[0].nativeBalance : 0n,
 		tokens: tokenInfos,
 		taxInfo,
 		taxToken: decoded[5] as string,
@@ -160,12 +177,17 @@ export async function queryTradeLens(
 /** Get cached WETH address */
 export function getWeth(): string { return _weth; }
 
-/** Get cached token info (includes pools) */
+/** Get cached token info (includes pools + balances) */
 export function getCachedToken(addr: string): TokenInfo | null {
 	return _tokenCache.get(addr.toLowerCase()) || null;
 }
 
-/** Get USD value of a token amount using cached reserves (WETH as intermediary) */
+/** Get cached user info by address */
+export function getCachedUser(addr: string): UserInfo | null {
+	return _usersCache.find(u => u.user.toLowerCase() === addr.toLowerCase()) || null;
+}
+
+/** Get USD value of a token amount using cached reserves */
 export function getUsdValue(tokenAddr: string, amount: bigint, tokenDecimals: number, usdtAddr: string): number | null {
 	if (amount === 0n || !_weth) return null;
 
@@ -179,7 +201,6 @@ export function getUsdValue(tokenAddr: string, amount: bigint, tokenDecimals: nu
 
 	const usdtInfo = _tokenCache.get(usdt);
 	if (!usdtInfo) return null;
-	// Find USDT's WETH pool
 	const usdtWethPool = usdtInfo.pools.find(p => p.base.toLowerCase() === weth && p.hasLiquidity);
 	if (!usdtWethPool || usdtWethPool.reserveBase === 0n) return null;
 	const wethPriceUsdt = Number(usdtWethPool.reserveToken) / Number(usdtWethPool.reserveBase);
@@ -190,7 +211,6 @@ export function getUsdValue(tokenAddr: string, amount: bigint, tokenDecimals: nu
 
 	const tokenInfo = _tokenCache.get(addr);
 	if (!tokenInfo) return null;
-	// Find token's WETH pool
 	const tokenWethPool = tokenInfo.pools.find(p => p.base.toLowerCase() === weth && p.hasLiquidity);
 	if (!tokenWethPool || tokenWethPool.reserveToken === 0n) return null;
 	const tokenPriceWeth = Number(tokenWethPool.reserveBase) / Number(tokenWethPool.reserveToken);
@@ -208,19 +228,17 @@ export function isCacheLoaded(): boolean {
 	return _lastFetch > 0 && _tokenCache.size > 0;
 }
 
-/** Get cached native balance */
-export function getNativeBalance(): bigint { return _nativeBalance; }
+/** Get cached native balance for first user */
+export function getNativeBalance(): bigint {
+	return _usersCache.length > 0 ? _usersCache[0].nativeBalance : 0n;
+}
 
-/** Get cached token balance */
+/** Get cached token balance for first user */
 export function getCachedBalance(addr: string): bigint {
 	return _tokenCache.get(addr.toLowerCase())?.balance || 0n;
 }
 
-/**
- * Instant swap quote from cached reserves (pure math, 0ms).
- * Tries WETH pair first, falls back to any liquid pool.
- * Uses constant product formula: dy = (dx * 9975 * ry) / (rx * 10000 + dx * 9975)
- */
+/** Instant swap quote from cached reserves */
 export function getInstantQuote(
 	tokenIn: string,
 	tokenOut: string,
@@ -235,47 +253,31 @@ export function getInstantQuote(
 	const inInfo = _tokenCache.get(inAddr);
 	const outInfo = _tokenCache.get(outAddr);
 
-	// Find best liquid pool for each token (prefer WETH)
 	const inPool = _findPool(inInfo, weth);
 	const outPool = _findPool(outInfo, weth);
 
 	const inIsWeth = inAddr === weth;
 	const outIsWeth = outAddr === weth;
 
-	// token → WETH
-	if (outIsWeth && inPool) {
-		return _calcOut(amountIn, inPool.reserveToken, inPool.reserveBase);
-	}
-
-	// WETH → token
-	if (inIsWeth && outPool) {
-		return _calcOut(amountIn, outPool.reserveBase, outPool.reserveToken);
-	}
-
-	// token → WETH → token (two hops via WETH pools)
+	if (outIsWeth && inPool) return _calcOut(amountIn, inPool.reserveToken, inPool.reserveBase);
+	if (inIsWeth && outPool) return _calcOut(amountIn, outPool.reserveBase, outPool.reserveToken);
 	if (inPool && outPool) {
 		const wethOut = _calcOut(amountIn, inPool.reserveToken, inPool.reserveBase);
 		if (wethOut === 0n) return null;
 		return _calcOut(wethOut, outPool.reserveBase, outPool.reserveToken);
 	}
-
 	return null;
 }
 
-/** Find the best liquid pool (prefer WETH base) */
 function _findPool(info: TokenInfo | undefined, weth: string): PoolInfo | null {
 	if (!info?.pools?.length) return null;
-	// Prefer WETH pool
 	const wethPool = info.pools.find(p => p.base.toLowerCase() === weth && p.hasLiquidity);
 	if (wethPool) return wethPool;
-	// Fall back to any liquid pool
 	return info.pools.find(p => p.hasLiquidity) || null;
 }
 
 function _calcOut(amountIn: bigint, reserveIn: bigint, reserveOut: bigint): bigint {
 	if (reserveIn === 0n || reserveOut === 0n) return 0n;
 	const amtWithFee = amountIn * 9975n;
-	const num = amtWithFee * reserveOut;
-	const den = reserveIn * 10000n + amtWithFee;
-	return num / den;
+	return (amtWithFee * reserveOut) / (reserveIn * 10000n + amtWithFee);
 }

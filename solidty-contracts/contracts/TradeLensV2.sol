@@ -5,11 +5,12 @@ pragma solidity ^0.8.20;
  * @title TradeLensV2
  * @notice Constructor-only — never deployed. All work in constructor, returns via assembly.
  *         Checks each token against ALL provided base tokens for liquidity.
+ *         Supports multiple users for balance queries (e.g. all HD wallet accounts).
  *
  * Usage (ethers.js):
  *   const args = abiCoder.encode(
- *     ['address','address[]','address[]','address','address','uint256'],
- *     [router, tokens, baseTokens, user, simulateTax, simBuyAmount]
+ *     ['address','address[]','address[]','address[]','address','uint256'],
+ *     [router, tokens, baseTokens, users, simulateTax, simBuyAmount]
  *   );
  *   const raw = await provider.call({ data: bytecode + args.slice(2), value: simBuyAmount, gasLimit: 15_000_000 });
  */
@@ -48,11 +49,11 @@ interface IPair {
 contract TradeLensV2 {
 
     struct PoolInfo {
-        address base;           // base token address (WETH, USDT, USDC...)
-        address pairAddress;    // LP pair address (0x0 if no pair)
-        uint256 reserveToken;   // token reserve in pool
-        uint256 reserveBase;    // base reserve in pool
-        bool hasLiquidity;      // both reserves > 0
+        address base;
+        address pairAddress;
+        uint256 reserveToken;
+        uint256 reserveBase;
+        bool hasLiquidity;
     }
 
     struct TokenInfo {
@@ -61,9 +62,14 @@ contract TradeLensV2 {
         string symbol;
         uint8 decimals;
         uint256 totalSupply;
-        uint256 balance;        // user balance (0 if user is address(0))
-        bool hasLiquidity;      // true if ANY pool has liquidity
-        PoolInfo[] pools;       // one entry per base token
+        bool hasLiquidity;
+        PoolInfo[] pools;
+        uint256[] balances;     // one per user (same order as users[] input)
+    }
+
+    struct UserInfo {
+        address user;
+        uint256 nativeBalance;
     }
 
     struct TaxInfo {
@@ -82,8 +88,8 @@ contract TradeLensV2 {
     constructor(
         address router,
         address[] memory tokens,
-        address[] memory baseTokens,    // e.g. [WETH, USDT, USDC]
-        address user,
+        address[] memory baseTokens,
+        address[] memory users,         // multiple wallet addresses
         address simulateTax,
         uint256 simBuyAmount
     ) payable {
@@ -91,11 +97,6 @@ contract TradeLensV2 {
         address weth = dex.WETH();
         address factory;
         try dex.factory() returns (address f) { factory = f; } catch {}
-
-        uint256 nativeBalance;
-        if (user != address(0)) {
-            nativeBalance = user.balance;
-        }
 
         // Always include WETH in base tokens
         bool hasWeth = false;
@@ -111,10 +112,17 @@ contract TradeLensV2 {
             baseTokens = newBases;
         }
 
-        // ── Batch token info with multi-base pool check ──
+        // ── User native balances ──
+        UserInfo[] memory userInfos = new UserInfo[](users.length);
+        for (uint256 i = 0; i < users.length; i++) {
+            userInfos[i].user = users[i];
+            userInfos[i].nativeBalance = users[i].balance;
+        }
+
+        // ── Batch token info with multi-base pool check + multi-user balances ──
         TokenInfo[] memory tokenResults = new TokenInfo[](tokens.length);
         for (uint256 i = 0; i < tokens.length; i++) {
-            tokenResults[i] = _getTokenInfo(tokens[i], baseTokens, factory, user);
+            tokenResults[i] = _getTokenInfo(tokens[i], baseTokens, factory, users);
         }
 
         // ── Tax simulation (uses WETH pair) ──
@@ -125,7 +133,7 @@ contract TradeLensV2 {
         }
 
         // ── Encode and return ──
-        bytes memory encoded = abi.encode(weth, factory, nativeBalance, tokenResults, taxInfo, taxToken);
+        bytes memory encoded = abi.encode(weth, factory, userInfos, tokenResults, taxInfo, taxToken);
         assembly {
             return(add(encoded, 32), mload(encoded))
         }
@@ -135,7 +143,7 @@ contract TradeLensV2 {
         address token,
         address[] memory baseTokens,
         address factory,
-        address user
+        address[] memory users
     ) internal view returns (TokenInfo memory info) {
         info.token = token;
         try IERC20(token).name() returns (string memory n) { info.name = n; } catch {}
@@ -143,9 +151,11 @@ contract TradeLensV2 {
         try IERC20(token).decimals() returns (uint8 d) { info.decimals = d; } catch { info.decimals = 18; }
         try IERC20(token).totalSupply() returns (uint256 s) { info.totalSupply = s; } catch {}
 
-        if (user != address(0)) {
-            try IERC20(token).balanceOf(user) returns (uint256 bal) {
-                info.balance = bal;
+        // Balances for each user
+        info.balances = new uint256[](users.length);
+        for (uint256 u = 0; u < users.length; u++) {
+            try IERC20(token).balanceOf(users[u]) returns (uint256 bal) {
+                info.balances[u] = bal;
             } catch {}
         }
 
@@ -154,7 +164,6 @@ contract TradeLensV2 {
         for (uint256 i = 0; i < baseTokens.length; i++) {
             info.pools[i].base = baseTokens[i];
 
-            // Skip if token IS the base
             if (token == baseTokens[i]) {
                 info.pools[i].hasLiquidity = true;
                 info.hasLiquidity = true;
@@ -197,7 +206,6 @@ contract TradeLensV2 {
             expectedBuy = amounts[1];
         } catch { t.buyError = "Quote failed"; return t; }
 
-        // ── BUY ──
         uint256 gasBefore = gasleft();
         uint256 balBefore = IERC20(token).balanceOf(address(this));
 
@@ -216,7 +224,6 @@ contract TradeLensV2 {
             t.buyError = "Buy reverted"; t.buyGas = gasBefore - gasleft(); return t;
         }
 
-        // ── TRANSFER TAX ──
         {
             uint256 testAmount = IERC20(token).balanceOf(address(this)) / 10;
             if (testAmount > 0) {
@@ -231,7 +238,6 @@ contract TradeLensV2 {
             }
         }
 
-        // ── SELL ──
         uint256 tokensToSell = IERC20(token).balanceOf(address(this));
         if (tokensToSell == 0) { t.sellError = "No tokens"; return t; }
 
