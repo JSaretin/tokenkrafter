@@ -903,7 +903,7 @@
 					tokenAmounts.push(ethers.parseUnits((baseAmt / price).toFixed(6), tokenInfo.decimals));
 				}
 
-				const listParams = { bases, baseAmounts, tokenAmounts };
+				const listParams = { bases, baseAmounts, tokenAmounts, burnLP: false };
 				const nativeValue = (isNativePayment ? selectedFee * 108n / 100n : 0n) + ethValue;
 
 				const tx = await router.createAndList(
@@ -924,8 +924,7 @@
 
 				addFeedback({ message: 'Token created & listed on DEX!', type: 'success' });
 			} else {
-				// Token-only creation via PlatformRouter.createAndList with empty list params
-				// Routes through router for consistent: create + tax + protection + enableTrading + transferOwnership
+				// Token-only creation via PlatformRouter.createTokenOnly
 				const router = new ethers.Contract(tokenInfo.network.router_address, PLATFORM_ROUTER_ABI, signer);
 
 				const taxParams = {
@@ -946,15 +945,13 @@
 					cooldownSeconds: BigInt(tokenInfo.protection?.cooldownSeconds || 0)
 				};
 
-				const listParams = { bases: [], baseAmounts: [], tokenAmounts: [] };
-
 				addFeedback({ message: 'Deploying token...', type: 'info' });
-				const tx = await router.createAndList(tokenParams, listParams, protectionParams, taxParams, referral, txOptions);
+				const tx = await router.createTokenOnly(tokenParams, protectionParams, taxParams, referral, txOptions);
 				deployTxHash = tx.hash;
 				const receipt = await tx.wait();
 
 				const event = receipt?.logs?.find((log: any) => {
-					try { return router.interface.parseLog({ topics: [...log.topics], data: log.data })?.name === 'TokenCreatedAndListed'; } catch { return false; }
+					try { return router.interface.parseLog({ topics: [...log.topics], data: log.data })?.name === 'TokenCreated'; } catch { return false; }
 				});
 				if (event) {
 					const parsed = router.interface.parseLog({ topics: [...event.topics], data: event.data });

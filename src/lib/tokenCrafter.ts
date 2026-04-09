@@ -87,19 +87,24 @@ export const FACTORY_ABI = [
 ];
 
 export const PLATFORM_ROUTER_ABI = [
-	// Create token + bonding curve launch (one-click)
+	// Create token + bonding curve launch
 	'function createTokenAndLaunch(tuple(string name, string symbol, uint256 totalSupply, uint8 decimals, bool isTaxable, bool isMintable, bool isPartner, address paymentToken) p, tuple(uint256 tokensForLaunch, uint8 curveType, uint256 softCap, uint256 hardCap, uint256 durationDays, uint256 maxBuyBps, uint256 creatorAllocationBps, uint256 vestingDays, address launchPaymentToken, uint256 startTimestamp) launch, tuple(uint256 maxWalletAmount, uint256 maxTransactionAmount, uint256 cooldownSeconds) protection, tuple(uint256 buyTaxBps, uint256 sellTaxBps, uint256 transferTaxBps, address[] taxWallets, uint16[] taxSharesBps) tax, address referral) external payable returns (address tokenAddress, address launchAddress)',
 
-	// Create token + add liquidity to DEX pools (native via address(0) in bases[], ERC20, or both)
-	'function createAndList(tuple(string name, string symbol, uint256 totalSupply, uint8 decimals, bool isTaxable, bool isMintable, bool isPartner, address paymentToken) p, tuple(address[] bases, uint256[] baseAmounts, uint256[] tokenAmounts) list, tuple(uint256 maxWalletAmount, uint256 maxTransactionAmount, uint256 cooldownSeconds) protection, tuple(uint256 buyTaxBps, uint256 sellTaxBps, uint256 transferTaxBps, address[] taxWallets, uint16[] taxSharesBps) tax, address referral) external payable returns (address tokenAddress)',
+	// Create token + add liquidity to DEX pools (with optional LP burn)
+	'function createAndList(tuple(string name, string symbol, uint256 totalSupply, uint8 decimals, bool isTaxable, bool isMintable, bool isPartner, address paymentToken) p, tuple(address[] bases, uint256[] baseAmounts, uint256[] tokenAmounts, bool burnLP) list, tuple(uint256 maxWalletAmount, uint256 maxTransactionAmount, uint256 cooldownSeconds) protection, tuple(uint256 buyTaxBps, uint256 sellTaxBps, uint256 transferTaxBps, address[] taxWallets, uint16[] taxSharesBps) tax, address referral) external payable returns (address tokenAddress)',
 
-	// List existing token on DEX pools (native via address(0) in bases[], ERC20, or both)
-	'function listTokenToDex(address tokenAddress, tuple(address[] bases, uint256[] baseAmounts, uint256[] tokenAmounts) list) external payable',
+	// Create token only (no listing, no launch)
+	'function createTokenOnly(tuple(string name, string symbol, uint256 totalSupply, uint8 decimals, bool isTaxable, bool isMintable, bool isPartner, address paymentToken) p, tuple(uint256 maxWalletAmount, uint256 maxTransactionAmount, uint256 cooldownSeconds) protection, tuple(uint256 buyTaxBps, uint256 sellTaxBps, uint256 transferTaxBps, address[] taxWallets, uint16[] taxSharesBps) tax, address referral) external payable returns (address tokenAddress)',
+
+	// Add liquidity to existing token (with optional LP burn + pool registration)
+	'function addLiquidityToExisting(address tokenAddress, tuple(address[] bases, uint256[] baseAmounts, uint256[] tokenAmounts, bool burnLP) list) external payable',
 
 	// Events
 	'event TokenCreatedAndLaunched(address indexed creator, address indexed token, address indexed launch)',
-	'event TokenCreatedAndListed(address indexed creator, address indexed token, uint256 poolCount)',
-	'event TokenListed(address indexed owner, address indexed token, uint256 poolCount)'
+	'event TokenCreatedAndListed(address indexed creator, address indexed token, uint256 poolCount, bool lpBurned)',
+	'event TokenCreated(address indexed creator, address indexed token)',
+	'event TokenListed(address indexed owner, address indexed token, uint256 poolCount, bool lpBurned)',
+	'event LiquidityBurned(address indexed token, address indexed pair, uint256 lpAmount)'
 ];
 
 export const TOKEN_ABI = [
