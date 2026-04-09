@@ -249,7 +249,7 @@
 				{@const gecko = geckoLookup[tok.address?.toLowerCase()]}
 				<div class="token-card">
 					<!-- Header: clickable to detail page -->
-					<a href="/token/{slug}/{tok.address}" class="tc-header">
+					<a href="/explore/{slug}/{tok.address}" class="tc-header">
 						{#if tok.logo_url}
 							<img src={tok.logo_url} alt={tok.symbol} class="tc-logo" />
 						{:else}
@@ -328,7 +328,7 @@
 								Trade
 							</a>
 						{/if}
-						<a href="/token/{slug}/{tok.address}" class="tc-action tc-action-view" class:tc-action-full={!gecko?.has_data}>
+						<a href="/explore/{slug}/{tok.address}" class="tc-action tc-action-view" class:tc-action-full={!gecko?.has_data}>
 							View
 							<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
 						</a>

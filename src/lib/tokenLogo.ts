@@ -77,22 +77,22 @@ export async function resolveTokenLogo(
 async function _fetchLogo(address: string, chainId: number, geckoNetwork: string): Promise<string> {
 	const addr = address.toLowerCase();
 
-	// 1. Our DB
-	try {
-		const res = await fetch(`/api/token-metadata?address=${addr}&chain_id=${chainId}`);
-		if (res.ok) {
-			const data = await res.json();
-			if (data?.logo_url) return data.logo_url;
-		}
-	} catch {}
-
-	// 2. GeckoTerminal
+	// 1. GeckoTerminal (free, no DB cost)
 	try {
 		const res = await fetch(`https://api.geckoterminal.com/api/v2/networks/${geckoNetwork}/tokens/${addr}`);
 		if (res.ok) {
 			const data = await res.json();
 			const img = data?.data?.attributes?.image_url;
 			if (img && !img.includes('missing') && img.startsWith('http')) return img;
+		}
+	} catch {}
+
+	// 2. Our DB (last resort — costs IO budget)
+	try {
+		const res = await fetch(`/api/token-metadata?address=${addr}&chain_id=${chainId}`);
+		if (res.ok) {
+			const data = await res.json();
+			if (data?.logo_url) return data.logo_url;
 		}
 	} catch {}
 

@@ -29,6 +29,7 @@ const API_CACHE_RULES: Record<string, number> = {
 	'/api/token-metadata': 3600,     // token metadata — 1h
 	'/api/launches': 120,            // launch list — 2min
 	'/api/recent-transactions': 60,  // recent txs — 1min
+	'/api/config': 604800,           // platform config (contracts) — 1 week
 };
 
 // Install: precache app shell
