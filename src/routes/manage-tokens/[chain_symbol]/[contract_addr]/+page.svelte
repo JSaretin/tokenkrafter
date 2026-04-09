@@ -1007,18 +1007,22 @@
 				await approveTx.wait();
 			}
 
-			const router = new ethers.Contract(selectedRouter, ROUTER_ABI, s);
+			const router = new ethers.Contract(selectedRouter, [
+				...ROUTER_ABI,
+				'function removeLiquidityETHSupportingFeeOnTransferTokens(address token, uint256 liquidity, uint256 amountTokenMin, uint256 amountETHMin, address to, uint256 deadline) returns (uint256)',
+			], s);
 			const deadline = Math.floor(Date.now() / 1000) + 1200;
+			const hasTax = tokenInfo?.isTaxable || tokenInfo?.isPartner;
 
 			if (pool.baseKey === 'native') {
 				addFeedback({ message: 'Removing liquidity...', type: 'info' });
-				const tx = await router.removeLiquidityETH(
-					contractAddress,
-					lpAmount,
-					0, 0,
-					userAddress,
-					deadline
-				);
+				const tx = hasTax
+					? await router.removeLiquidityETHSupportingFeeOnTransferTokens(
+						contractAddress, lpAmount, 0, 0, userAddress, deadline
+					)
+					: await router.removeLiquidityETH(
+						contractAddress, lpAmount, 0, 0, userAddress, deadline
+					);
 				await tx.wait();
 			} else {
 				const baseOption = getBaseCoinOptions().find(b => b.symbol === pool.baseSymbol);

@@ -1,18 +1,18 @@
 export const TRADE_ROUTER_ABI = [
-	// Swap (without deadline — defaults to block.timestamp + 300)
-	'function swapTokens(address tokenIn, address tokenOut, uint256 amountIn, uint256 amountOutMin, bool hasTax) external returns (uint256 amountOut)',
-	'function swapETHForTokens(address tokenOut, uint256 amountOutMin, bool hasTax) external payable returns (uint256 amountOut)',
-	'function swapTokensForETH(address tokenIn, uint256 amountIn, uint256 amountOutMin, bool hasTax) external returns (uint256 amountOut)',
-	// Swap (with deadline)
-	'function swapTokens(address tokenIn, address tokenOut, uint256 amountIn, uint256 amountOutMin, bool hasTax, uint256 deadline) external returns (uint256 amountOut)',
-	'function swapETHForTokens(address tokenOut, uint256 amountOutMin, bool hasTax, uint256 deadline) external payable returns (uint256 amountOut)',
-	'function swapTokensForETH(address tokenIn, uint256 amountIn, uint256 amountOutMin, bool hasTax, uint256 deadline) external returns (uint256 amountOut)',
-	'function getAmountOut(address tokenIn, address tokenOut, uint256 amountIn) external view returns (uint256)',
+	// Swap — path-based routing (without deadline — defaults to block.timestamp + 300)
+	'function swapTokens(address[] path, uint256 amountIn, uint256 amountOutMin, bool hasTax) external returns (uint256 amountOut)',
+	'function swapETHForTokens(address[] path, uint256 amountOutMin, bool hasTax) external payable returns (uint256 amountOut)',
+	'function swapTokensForETH(address[] path, uint256 amountIn, uint256 amountOutMin, bool hasTax) external returns (uint256 amountOut)',
+	// Swap — with deadline
+	'function swapTokens(address[] path, uint256 amountIn, uint256 amountOutMin, bool hasTax, uint256 deadline) external returns (uint256 amountOut)',
+	'function swapETHForTokens(address[] path, uint256 amountOutMin, bool hasTax, uint256 deadline) external payable returns (uint256 amountOut)',
+	'function swapTokensForETH(address[] path, uint256 amountIn, uint256 amountOutMin, bool hasTax, uint256 deadline) external returns (uint256 amountOut)',
+	'function getAmountOut(address[] path, uint256 amountIn) external view returns (uint256)',
 
 	// Off-ramp
 	'function deposit(uint256 amount, bytes32 bankRef, address referrer) external returns (uint256 id)',
-	'function depositAndSwap(address tokenIn, uint256 amountIn, uint256 minUsdtOut, bool hasTax, bytes32 bankRef, address referrer) external returns (uint256 id)',
-	'function depositETH(uint256 minUsdtOut, bytes32 bankRef, address referrer) external payable returns (uint256 id)',
+	'function depositAndSwap(address[] path, uint256 amountIn, uint256 minUsdtOut, bool hasTax, bytes32 bankRef, address referrer) external returns (uint256 id)',
+	'function depositETH(address[] path, uint256 minUsdtOut, bytes32 bankRef, address referrer) external payable returns (uint256 id)',
 	'function confirm(uint256 id) external',
 	'function confirm(uint256 id, address to) external',
 	'function confirm(uint256 id, address to, uint256 amount) external',

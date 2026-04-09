@@ -185,43 +185,42 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
     //  SWAP (direct, no escrow)
     // ════════════════════════════════════════════════════════════════
 
-    /// @notice Swap token → token via DEX (supports fee-on-transfer tokens)
+    /// @notice Swap token → token via DEX with caller-specified path
     function swapTokens(
-        address tokenIn,
-        address tokenOut,
+        address[] calldata path,
         uint256 amountIn,
         uint256 amountOutMin,
         bool hasTax
     ) external nonReentrant whenNotPaused returns (uint256 amountOut) {
-        return _swapTokens(tokenIn, tokenOut, amountIn, amountOutMin, hasTax, block.timestamp + 300);
+        return _swapTokens(path, amountIn, amountOutMin, hasTax, block.timestamp + 300);
     }
 
     /// @notice Swap token → token with explicit deadline
     function swapTokens(
-        address tokenIn,
-        address tokenOut,
+        address[] calldata path,
         uint256 amountIn,
         uint256 amountOutMin,
         bool hasTax,
         uint256 deadline
     ) external nonReentrant whenNotPaused returns (uint256 amountOut) {
-        return _swapTokens(tokenIn, tokenOut, amountIn, amountOutMin, hasTax, deadline);
+        return _swapTokens(path, amountIn, amountOutMin, hasTax, deadline);
     }
 
     function _swapTokens(
-        address tokenIn,
-        address tokenOut,
+        address[] calldata path,
         uint256 amountIn,
         uint256 amountOutMin,
         bool hasTax,
         uint256 deadline
     ) internal returns (uint256 amountOut) {
         if (amountIn == 0) revert ZeroAmount();
+        require(path.length >= 2, "Invalid path");
+
+        address tokenIn = path[0];
+        address tokenOut = path[path.length - 1];
 
         IERC20(tokenIn).safeTransferFrom(msg.sender, address(this), amountIn);
         _safeResetApprove(tokenIn, address(dexRouter), amountIn);
-
-        address[] memory path = _buildPath(tokenIn, tokenOut);
         _validateSlippage(path, amountIn, amountOutMin);
 
         if (hasTax) {
@@ -240,36 +239,35 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
         emit Swap(msg.sender, tokenIn, tokenOut, amountIn, amountOut);
     }
 
-    /// @notice Swap ETH → token via DEX
+    /// @notice Swap ETH → token via DEX with caller-specified path
     function swapETHForTokens(
-        address tokenOut,
+        address[] calldata path,
         uint256 amountOutMin,
         bool hasTax
     ) external payable nonReentrant whenNotPaused returns (uint256 amountOut) {
-        return _swapETHForTokens(tokenOut, amountOutMin, hasTax, block.timestamp + 300);
+        return _swapETHForTokens(path, amountOutMin, hasTax, block.timestamp + 300);
     }
 
     /// @notice Swap ETH → token with explicit deadline
     function swapETHForTokens(
-        address tokenOut,
+        address[] calldata path,
         uint256 amountOutMin,
         bool hasTax,
         uint256 deadline
     ) external payable nonReentrant whenNotPaused returns (uint256 amountOut) {
-        return _swapETHForTokens(tokenOut, amountOutMin, hasTax, deadline);
+        return _swapETHForTokens(path, amountOutMin, hasTax, deadline);
     }
 
     function _swapETHForTokens(
-        address tokenOut,
+        address[] calldata path,
         uint256 amountOutMin,
         bool hasTax,
         uint256 deadline
     ) internal returns (uint256 amountOut) {
         if (msg.value == 0) revert ZeroAmount();
+        require(path.length >= 2 && path[0] == weth, "Path must start with WETH");
 
-        address[] memory path = new address[](2);
-        path[0] = weth;
-        path[1] = tokenOut;
+        address tokenOut = path[path.length - 1];
         _validateSlippage(path, msg.value, amountOutMin);
 
         if (hasTax) {
@@ -288,42 +286,41 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
         emit Swap(msg.sender, address(0), tokenOut, msg.value, amountOut);
     }
 
-    /// @notice Swap token → ETH via DEX
+    /// @notice Swap token → ETH via DEX with caller-specified path
     function swapTokensForETH(
-        address tokenIn,
+        address[] calldata path,
         uint256 amountIn,
         uint256 amountOutMin,
         bool hasTax
     ) external nonReentrant whenNotPaused returns (uint256 amountOut) {
-        return _swapTokensForETH(tokenIn, amountIn, amountOutMin, hasTax, block.timestamp + 300);
+        return _swapTokensForETH(path, amountIn, amountOutMin, hasTax, block.timestamp + 300);
     }
 
     /// @notice Swap token → ETH with explicit deadline
     function swapTokensForETH(
-        address tokenIn,
+        address[] calldata path,
         uint256 amountIn,
         uint256 amountOutMin,
         bool hasTax,
         uint256 deadline
     ) external nonReentrant whenNotPaused returns (uint256 amountOut) {
-        return _swapTokensForETH(tokenIn, amountIn, amountOutMin, hasTax, deadline);
+        return _swapTokensForETH(path, amountIn, amountOutMin, hasTax, deadline);
     }
 
     function _swapTokensForETH(
-        address tokenIn,
+        address[] calldata path,
         uint256 amountIn,
         uint256 amountOutMin,
         bool hasTax,
         uint256 deadline
     ) internal returns (uint256 amountOut) {
         if (amountIn == 0) revert ZeroAmount();
+        require(path.length >= 2 && path[path.length - 1] == weth, "Path must end with WETH");
+
+        address tokenIn = path[0];
 
         IERC20(tokenIn).safeTransferFrom(msg.sender, address(this), amountIn);
         _safeResetApprove(tokenIn, address(dexRouter), amountIn);
-
-        address[] memory path = new address[](2);
-        path[0] = tokenIn;
-        path[1] = weth;
         _validateSlippage(path, amountIn, amountOutMin);
 
         if (hasTax) {
@@ -344,13 +341,11 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
         emit Swap(msg.sender, tokenIn, address(0), amountIn, amountOut);
     }
 
-    /// @notice Get expected output for a swap (for UI preview)
+    /// @notice Get expected output for a swap with caller-specified path
     function getAmountOut(
-        address tokenIn,
-        address tokenOut,
+        address[] calldata path,
         uint256 amountIn
     ) external view returns (uint256) {
-        address[] memory path = _buildPath(tokenIn, tokenOut);
         uint256[] memory amounts = dexRouter.getAmountsOut(amountIn, path);
         return amounts[amounts.length - 1];
     }
@@ -372,8 +367,9 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
     }
 
     /// @notice Swap any token → USDT and deposit for fiat withdrawal
+    /// @notice Swap token → USDT and deposit for fiat withdrawal with caller-specified path
     function depositAndSwap(
-        address tokenIn,
+        address[] calldata path,
         uint256 amountIn,
         uint256 minUsdtOut,
         bool hasTax,
@@ -381,14 +377,12 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
         address referrer
     ) external nonReentrant whenNotPaused returns (uint256 id) {
         if (amountIn == 0) revert ZeroAmount();
+        require(path.length >= 2 && path[path.length - 1] == address(usdt), "Path must end with USDT");
 
-        IERC20(tokenIn).safeTransferFrom(msg.sender, address(this), amountIn);
-        _safeResetApprove(tokenIn, address(dexRouter), amountIn);
-
-        address[] memory path = _buildPath(tokenIn, address(usdt));
+        IERC20(path[0]).safeTransferFrom(msg.sender, address(this), amountIn);
+        _safeResetApprove(path[0], address(dexRouter), amountIn);
         _validateSlippage(path, amountIn, minUsdtOut);
 
-        uint256 usdtReceived;
         uint256 balBefore = usdt.balanceOf(address(this));
         if (hasTax) {
             dexRouter.swapExactTokensForTokensSupportingFeeOnTransferTokens(
@@ -399,23 +393,22 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
                 amountIn, minUsdtOut, path, address(this), block.timestamp + 300
             );
         }
-        usdtReceived = usdt.balanceOf(address(this)) - balBefore;
+        uint256 usdtReceived = usdt.balanceOf(address(this)) - balBefore;
         if (usdtReceived < minUsdtOut) revert SlippageTooHigh();
 
         id = _createWithdrawRequest(msg.sender, address(usdt), usdtReceived, bankRef, referrer);
     }
 
-    /// @notice Swap ETH → USDT and deposit for fiat withdrawal
+    /// @notice Swap ETH → USDT and deposit for fiat withdrawal with caller-specified path
     function depositETH(
+        address[] calldata path,
         uint256 minUsdtOut,
         bytes32 bankRef,
         address referrer
     ) external payable nonReentrant whenNotPaused returns (uint256 id) {
         if (msg.value == 0) revert ZeroAmount();
+        require(path.length >= 2 && path[0] == weth && path[path.length - 1] == address(usdt), "Path must be WETH -> ... -> USDT");
 
-        address[] memory path = new address[](2);
-        path[0] = weth;
-        path[1] = address(usdt);
         _validateSlippage(path, msg.value, minUsdtOut);
 
         uint256 balBefore = usdt.balanceOf(address(this));
@@ -775,7 +768,7 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
 
     /// @dev Validate that slippage tolerance isn't too loose
     /// Compares amountOutMin against expected output from DEX quote
-    function _validateSlippage(address[] memory path, uint256 amountIn, uint256 amountOutMin) internal view {
+    function _validateSlippage(address[] calldata path, uint256 amountIn, uint256 amountOutMin) internal view {
         if (amountOutMin == 0) return; // user opted out of slippage protection
         try dexRouter.getAmountsOut(amountIn, path) returns (uint256[] memory amounts) {
             uint256 expected = amounts[amounts.length - 1];
@@ -792,19 +785,6 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
         IERC20(token).forceApprove(spender, amount);
     }
 
-    function _buildPath(address tokenIn, address tokenOut) internal view returns (address[] memory path) {
-        if (tokenIn != weth && tokenOut != weth) {
-            path = new address[](3);
-            path[0] = tokenIn;
-            path[1] = weth;
-            path[2] = tokenOut;
-            return path;
-        }
-        path = new address[](2);
-        path[0] = tokenIn;
-        path[1] = tokenOut;
-        return path;
-    }
 
     receive() external payable {}
 }

@@ -109,14 +109,8 @@ sw.addEventListener('fetch', (event) => {
 				const cacheKey = request.url;
 				const cached = await cache.match(cacheKey);
 
-				// If cached and fresh, return immediately
+				// If cached and fresh, return from cache — no background fetch
 				if (cached && isApiFresh(cached, ttl)) {
-					// Revalidate in background
-					fetch(request).then(async (response) => {
-						if (response.ok) {
-							cache.put(cacheKey, await tagResponse(response));
-						}
-					}).catch(() => {});
 					return cached;
 				}
 

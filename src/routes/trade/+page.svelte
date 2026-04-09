@@ -832,7 +832,9 @@
 				const addrOut = tokenOutIsNative ? weth : outAddr;
 				const sanitized = parseFloat(amt).toFixed(tokenInDecimals);
 				const parsedIn = ethers.parseUnits(sanitized, tokenInDecimals);
-				const out = await router.getAmountOut(addrIn, addrOut, parsedIn);
+				// Use best route path for on-chain quote
+				const quotePath = swapRoute?.path.length ? swapRoute.path : (addrIn !== weth && addrOut !== weth ? [addrIn, weth, addrOut] : [addrIn, addrOut]);
+				const out = await router.getAmountOut(quotePath, parsedIn);
 				amountOut = ethers.formatUnits(out, tokenOutDecimals);
 				noLiquidity = false;
 			} catch {
@@ -869,8 +871,11 @@
 				} else {
 					const weth = await router.weth();
 					const addrIn = tokenInIsNative ? weth : inAddr;
+					// Build path for off-ramp quote
+					const offRampPath = swapRoute?.path.length ? [...swapRoute.path] : (addrIn !== weth ? [addrIn, weth, net.usdt_address] : [addrIn, net.usdt_address]);
+					if (offRampPath[offRampPath.length - 1].toLowerCase() !== net.usdt_address.toLowerCase()) offRampPath.push(net.usdt_address);
 					// Raw DEX quote (before tax)
-					let rawOut = await router.getAmountOut(addrIn, net.usdt_address, parsedAmt);
+					let rawOut = await router.getAmountOut(offRampPath, parsedAmt);
 					// Apply token taxes: transfer tax (user→router) + sell tax (router→DEX)
 					const transferTax = tokenInTax?.transferTaxBps || 0;
 					const sellTax = tokenInTax?.sellTaxBps || tokenInTaxSell || 0;
@@ -1106,15 +1111,33 @@
 				// Step 3: Execute trade
 				withdrawStep = 3;
 				const referrer = ethers.ZeroAddress; // TODO: get from URL param or localStorage
+				const weth = wethAddr || getWeth();
+				const usdtAddr = selectedNetwork.usdt_address;
 				if (tokenInIsNative) {
-					const est = await router.depositETH.estimateGas(minOut, bankRef, referrer, { value: parsedIn });
-					tx = await router.depositETH(minOut, bankRef, referrer, { value: parsedIn, gasLimit: est * 130n / 100n });
-				} else if (tokenInAddr.toLowerCase() === selectedNetwork.usdt_address.toLowerCase()) {
+					// ETH → USDT: build path through best intermediary
+					const ethPath = swapRoute?.path.length
+						? swapRoute.path.map(a => a.toLowerCase() === ethers.ZeroAddress.toLowerCase() ? weth : a)
+						: [weth, usdtAddr];
+					// Ensure path ends at USDT
+					if (ethPath[ethPath.length - 1].toLowerCase() !== usdtAddr.toLowerCase()) {
+						ethPath.push(usdtAddr);
+					}
+					const est = await router.depositETH.estimateGas(ethPath, minOut, bankRef, referrer, { value: parsedIn });
+					tx = await router.depositETH(ethPath, minOut, bankRef, referrer, { value: parsedIn, gasLimit: est * 130n / 100n });
+				} else if (tokenInAddr.toLowerCase() === usdtAddr.toLowerCase()) {
 					const est = await router.deposit.estimateGas(parsedIn, bankRef, referrer);
 					tx = await router.deposit(parsedIn, bankRef, referrer, { gasLimit: est * 130n / 100n });
 				} else {
-					const est = await router.depositAndSwap.estimateGas(tokenInAddr, parsedIn, minOut, true, bankRef, referrer);
-					tx = await router.depositAndSwap(tokenInAddr, parsedIn, minOut, true, bankRef, referrer, { gasLimit: est * 130n / 100n });
+					// Token → USDT: use best route path
+					const tokenPath = swapRoute?.path.length
+						? [...swapRoute.path]
+						: [tokenInAddr, weth, usdtAddr];
+					// Ensure path ends at USDT
+					if (tokenPath[tokenPath.length - 1].toLowerCase() !== usdtAddr.toLowerCase()) {
+						tokenPath.push(usdtAddr);
+					}
+					const est = await router.depositAndSwap.estimateGas(tokenPath, parsedIn, minOut, true, bankRef, referrer);
+					tx = await router.depositAndSwap(tokenPath, parsedIn, minOut, true, bankRef, referrer, { gasLimit: est * 130n / 100n });
 				}
 				const receipt = await tx.wait();
 
