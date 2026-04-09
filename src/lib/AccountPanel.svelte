@@ -137,6 +137,7 @@
 	let sending = $state(false);
 	let sendAsset = $state<'native' | string>('native'); // 'native' or token address
 	let showAssetPicker = $state(false);
+	let showContactBook = $state(false);
 
 	let sendAssetInfo = $derived.by(() => {
 		if (sendAsset === 'native') return { symbol: nativeCoin, decimals: nativeDecimals, balance: nativeBalance, priceUsd: nativePriceUsd };
@@ -772,7 +773,40 @@
 			{/if}
 
 			<label class="ap-label">To</label>
-			<input class="ap-input" type="text" placeholder="Recipient (0x...)" bind:value={sendTo} {...INPUT_ATTRS} />
+			<div class="ap-to-wrap">
+				<input class="ap-input" style="padding-right: 40px;" type="text" placeholder="Recipient (0x...)" bind:value={sendTo} {...INPUT_ATTRS} />
+				{#if walletType === 'embedded' && accounts.length > 1}
+					<button class="ap-book-btn" type="button" title="My accounts" onclick={() => showContactBook = !showContactBook}>
+						<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/><path d="M8 7h6"/><path d="M8 11h4"/></svg>
+					</button>
+				{/if}
+			</div>
+
+			{#if showContactBook}
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<!-- svelte-ignore a11y_click_events_have_key_events -->
+				<div class="ap-book-overlay" onclick={() => showContactBook = false}>
+					<div class="ap-book-modal" onclick={(e) => e.stopPropagation()}>
+						<div class="ap-book-header">
+							<span class="ap-book-title">My Accounts</span>
+							<button class="ap-book-close" type="button" onclick={() => showContactBook = false}>
+								<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+							</button>
+						</div>
+						{#each accounts.filter(a => a.address.toLowerCase() !== userAddress.toLowerCase()) as acc}
+							{@const cached = (() => { try { const c = JSON.parse(localStorage.getItem(cacheKey(acc.address)) || '{}'); return c.nativeBalance ? parseFloat(ethers.formatEther(BigInt(c.nativeBalance))).toFixed(4) : '0'; } catch { return '0'; } })()}
+							<button class="ap-book-item" type="button" onclick={() => { sendTo = acc.address; showContactBook = false; }}>
+								<div class="ap-book-avatar">{(accountNames[acc.index] || `A${acc.index + 1}`).charAt(0)}</div>
+								<div class="ap-book-info">
+									<span class="ap-book-name">{accountNames[acc.index] || `Account ${acc.index + 1}`}</span>
+									<span class="ap-book-addr">{acc.address.slice(0, 8)}...{acc.address.slice(-6)}</span>
+								</div>
+								<span class="ap-book-bal">{cached} {nativeCoin}</span>
+							</button>
+						{/each}
+					</div>
+				</div>
+			{/if}
 
 			<label class="ap-label">Amount</label>
 			<input class="ap-input" type="text" inputmode="decimal" placeholder="0.0" bind:value={sendAmount} {...INPUT_ATTRS} />
@@ -1220,6 +1254,57 @@
 	.ap-picker-bal { font-size: 12px; color: rgba(255,255,255,0.4); font-family: 'Space Mono', monospace; }
 	.ap-picker-usd { font-size: 10px; color: #374151; font-family: 'Rajdhani', sans-serif; font-variant-numeric: tabular-nums; }
 	.ap-send-estimate { font-family: 'Rajdhani', sans-serif; font-size: 13px; color: #475569; margin: -4px 0 4px; font-variant-numeric: tabular-nums; }
+
+	/* To input with book button */
+	.ap-to-wrap { position: relative; }
+	.ap-book-btn {
+		position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+		width: 28px; height: 28px; border-radius: 6px;
+		border: none; background: rgba(255,255,255,0.05);
+		color: #475569; cursor: pointer; transition: all 0.15s;
+		display: flex; align-items: center; justify-content: center;
+	}
+	.ap-book-btn:hover { color: #00d2ff; background: rgba(0,210,255,0.1); }
+
+	/* Contact book modal */
+	.ap-book-overlay {
+		position: absolute; inset: 0; z-index: 20;
+		background: rgba(0,0,0,0.5); backdrop-filter: blur(2px);
+		display: flex; align-items: center; justify-content: center; padding: 20px;
+	}
+	.ap-book-modal {
+		width: 100%; max-width: 320px; border-radius: 14px;
+		background: var(--bg, #07070d); border: 1px solid rgba(255,255,255,0.08);
+		box-shadow: 0 16px 48px rgba(0,0,0,0.4); overflow: hidden;
+	}
+	.ap-book-header {
+		display: flex; align-items: center; justify-content: space-between;
+		padding: 14px 16px; border-bottom: 1px solid rgba(255,255,255,0.06);
+	}
+	.ap-book-title { font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700; color: #fff; }
+	.ap-book-close {
+		width: 28px; height: 28px; border-radius: 6px; border: none;
+		background: rgba(255,255,255,0.05); color: #64748b;
+		display: flex; align-items: center; justify-content: center; cursor: pointer;
+	}
+	.ap-book-close:hover { background: rgba(255,255,255,0.1); color: #fff; }
+	.ap-book-item {
+		display: flex; align-items: center; gap: 10px; width: 100%;
+		padding: 12px 16px; border: none; background: transparent;
+		cursor: pointer; transition: background 0.12s; color: inherit;
+	}
+	.ap-book-item:hover { background: rgba(0,210,255,0.05); }
+	.ap-book-avatar {
+		width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0;
+		background: linear-gradient(135deg, rgba(0,210,255,0.15), rgba(139,92,246,0.15));
+		border: 1px solid rgba(0,210,255,0.2);
+		display: flex; align-items: center; justify-content: center;
+		font-family: 'Syne', sans-serif; font-size: 12px; font-weight: 800; color: #00d2ff;
+	}
+	.ap-book-info { flex: 1; min-width: 0; text-align: left; }
+	.ap-book-name { display: block; font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 600; color: #e2e8f0; }
+	.ap-book-addr { display: block; font-family: 'Space Mono', monospace; font-size: 9px; color: #475569; }
+	.ap-book-bal { font-family: 'Rajdhani', sans-serif; font-size: 12px; color: #374151; font-variant-numeric: tabular-nums; flex-shrink: 0; }
 	.ap-btn {
 		padding: 10px 16px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.06);
 		background: rgba(255,255,255,0.03); color: #94a3b8; cursor: pointer;
