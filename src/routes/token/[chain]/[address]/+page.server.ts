@@ -17,7 +17,8 @@ const ERC20_ABI = [
 	'function totalSupply() view returns (uint256)',
 ];
 
-export const load: PageServerLoad = async ({ params }) => {
+export const load: PageServerLoad = async ({ params, setHeaders }) => {
+	setHeaders({ 'cache-control': 'public, max-age=30, s-maxage=60' });
 	const chainSlug = params.chain?.toLowerCase() || 'bsc';
 	const tokenAddress = params.address?.toLowerCase() || '';
 	const chain = CHAIN_MAP[chainSlug] || CHAIN_MAP.bsc;

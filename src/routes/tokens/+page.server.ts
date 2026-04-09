@@ -3,7 +3,8 @@ import { supabaseAdmin } from '$lib/supabaseServer';
 
 const GECKO_NETWORKS: Record<number, string> = { 56: 'bsc', 1: 'eth', 8453: 'base', 42161: 'arbitrum', 137: 'polygon_pos' };
 
-export const load: PageServerLoad = async () => {
+export const load: PageServerLoad = async ({ setHeaders }) => {
+	setHeaders({ 'cache-control': 'public, max-age=30, s-maxage=60' });
 	const { data } = await supabaseAdmin
 		.from('created_tokens')
 		.select('address, chain_id, name, symbol, decimals, creator, is_taxable, is_mintable, is_partner, type_key, logo_url, description, total_supply, created_at')

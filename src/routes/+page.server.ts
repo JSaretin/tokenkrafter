@@ -1,7 +1,8 @@
 import type { PageServerLoad } from './$types';
 import { supabaseAdmin } from '$lib/supabaseServer';
 
-export const load: PageServerLoad = async () => {
+export const load: PageServerLoad = async ({ setHeaders }) => {
+	setHeaders({ 'cache-control': 'public, max-age=30, s-maxage=60' });
 	const { data } = await supabaseAdmin
 		.from('launches')
 		.select('*')

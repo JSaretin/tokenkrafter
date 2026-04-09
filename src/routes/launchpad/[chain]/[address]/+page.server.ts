@@ -8,7 +8,8 @@ const CHAIN_ID_TO_SLUG: Record<number, string> = Object.fromEntries(
 	Object.entries(CHAIN_MAP).map(([k, v]) => [v, k])
 );
 
-export const load: PageServerLoad = async ({ params }) => {
+export const load: PageServerLoad = async ({ params, setHeaders }) => {
+	setHeaders({ 'cache-control': 'public, max-age=30, s-maxage=60' });
 	const chainSlug = params.chain?.toLowerCase() || 'bsc';
 	const launchAddress = params.address?.toLowerCase() || '';
 	const chainId = CHAIN_MAP[chainSlug] || 56;
