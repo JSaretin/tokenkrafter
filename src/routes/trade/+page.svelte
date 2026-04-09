@@ -979,11 +979,19 @@
 			}
 			// Fallback: use reserves spot price
 			if (!selectedNetwork?.usdt_address || !pricesLoaded) return '';
-			const parsed = ethers.parseUnits(parseFloat(raw).toFixed(tokenOutDecimals), tokenOutDecimals);
-			const addr = tokenOutIsNative ? (wethAddr || getWeth()) : tokenOutAddr;
-			const usd = getUsdValue(addr, parsed, tokenOutDecimals, selectedNetwork.usdt_address);
-			if (usd === null || usd === 0) return '';
-			return `≈$${usd < 0.01 ? usd.toFixed(4) : usd.toFixed(2)} USD`;
+			try {
+				const rawNum = parseFloat(raw);
+				const decimals = tokenOutDecimals || 18;
+				const truncated = rawNum.toFixed(Math.min(decimals, 8)); // avoid massive precision strings
+				const parsed = ethers.parseUnits(truncated, decimals);
+				const addr = tokenOutIsNative ? (wethAddr || getWeth()) : tokenOutAddr;
+				const usd = getUsdValue(addr, parsed, decimals, selectedNetwork.usdt_address);
+				if (usd === null || usd === 0 || !isFinite(usd)) return '';
+				// Sanity: if input is worth $X, output shouldn't be worth 100x that
+				const inputUsd = parseFloat(usdValueIn?.replace(/[^0-9.]/g, '') || '0');
+				if (inputUsd > 0 && usd > inputUsd * 10) return `≈$${inputUsd.toFixed(2)} USD`;
+				return `≈$${usd < 0.01 ? usd.toFixed(4) : usd.toFixed(2)} USD`;
+			} catch { return ''; }
 		} catch { return ''; }
 	});
 
@@ -1774,20 +1782,7 @@
 			{/if}
 
 			<!-- Trade details -->
-			<!-- Swap Route -->
-			{#if swapRoute && swapRoute.hops > 0 && amountOut && outputMode === 'token'}
-				<div class="swap-route">
-					<span class="swap-route-label">Route</span>
-					<div class="swap-route-path">
-						{#each swapRoute.symbols as sym, i}
-							<span class="swap-route-token">{sym}</span>
-							{#if i < swapRoute.symbols.length - 1}
-								<svg class="swap-route-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
-							{/if}
-						{/each}
-					</div>
-				</div>
-			{/if}
+			<!-- Route is handled automatically by findBestRoute — no display needed -->
 
 			{#if rate && outputMode === 'token'}
 				<div class="trade-details">
@@ -2549,22 +2544,6 @@
 	}
 
 	/* Trade details */
-	/* Swap route display */
-	.swap-route {
-		display: flex; align-items: center; justify-content: space-between;
-		padding: 8px 12px; margin-bottom: 4px;
-		background: rgba(0,210,255,0.03); border: 1px solid rgba(0,210,255,0.08);
-		border-radius: 8px;
-	}
-	.swap-route-label { font-size: 10px; color: #475569; font-family: 'Space Mono', monospace; }
-	.swap-route-path { display: flex; align-items: center; gap: 4px; }
-	.swap-route-token {
-		font-size: 11px; font-family: 'Space Mono', monospace; font-weight: 600;
-		color: #00d2ff; padding: 2px 6px; border-radius: 4px;
-		background: rgba(0,210,255,0.08);
-	}
-	.swap-route-arrow { color: #374151; flex-shrink: 0; }
-
 	.trade-details { padding: 10px 12px; }
 	.detail-line {
 		display: flex; justify-content: space-between; padding: 3px 0;
