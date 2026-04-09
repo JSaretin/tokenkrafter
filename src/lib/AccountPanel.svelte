@@ -162,9 +162,46 @@
 		} catch {}
 	});
 
-	// Refresh balances + missing logos when address changes
+	// Auto-import tokens the user created on the platform
+	let autoImportDone = $state<string>('');
+	async function autoImportCreatedTokens() {
+		if (!userAddress || autoImportDone === userAddress) return;
+		autoImportDone = userAddress;
+		try {
+			const res = await fetch(`/api/created-tokens?creator=${userAddress}&limit=50`);
+			if (!res.ok) return;
+			const rows = await res.json();
+			if (!rows?.length) return;
+
+			let changed = false;
+			for (const r of rows) {
+				const addr = r.address?.toLowerCase();
+				if (!addr) continue;
+				if (importedTokens.some(t => t.address.toLowerCase() === addr)) continue;
+				importedTokens.push({
+					address: addr,
+					symbol: r.symbol || '???',
+					name: r.name || 'Unknown',
+					decimals: r.decimals || 18,
+					balance: 0n,
+					logoUrl: r.logo_url || '',
+				});
+				changed = true;
+			}
+			if (changed) {
+				importedTokens = [...importedTokens];
+				const toSave = importedTokens.map(t => ({ address: t.address, name: t.name, symbol: t.symbol, decimals: t.decimals, logoUrl: t.logoUrl || '' }));
+				localStorage.setItem('imported_tokens', JSON.stringify(toSave));
+				pushPreferences();
+			}
+		} catch {}
+	}
+
+	// Refresh balances + auto-import when address changes
 	$effect(() => {
-		if (!userAddress || importedTokens.length === 0) return;
+		if (!userAddress) return;
+		autoImportCreatedTokens();
+		if (importedTokens.length === 0) return;
 		refreshTokenBalances();
 		// Fetch missing logos via shared cache
 		for (const tok of importedTokens) {
