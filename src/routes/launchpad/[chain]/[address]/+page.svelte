@@ -5,6 +5,7 @@
 	import { t } from '$lib/i18n';
 	import { apiFetch } from '$lib/apiFetch';
 	import { getKnownLogo } from '$lib/tokenLogo';
+	import { supabase } from '$lib/supabaseClient';
 	import { favorites, toggleFavorite } from '$lib/favorites';
 	import RecentTransactionsTicker from '$lib/RecentTransactionsTicker.svelte';
 	import type { SupportedNetwork } from '$lib/structure';
@@ -233,7 +234,7 @@
 		const l = launch;
 		return l ? progressPercent(l.totalBaseRaised, l.hardCap) : 0;
 	});
-	let paySymbol = $derived(buyPaymentMethod === 'native' ? nativeCoin : buyPaymentMethod.toUpperCase());
+	let paySymbol = $derived(buyPaymentMethod === 'native' ? (network?.native_coin || 'BNB') : buyPaymentMethod.toUpperCase());
 	let softCapPct = $derived.by(() => {
 		const l = launch;
 		return l && l.hardCap > 0n ? Math.min(100, Number((l.softCap * 100n) / l.hardCap)) : 0;
@@ -272,6 +273,7 @@
 	});
 
 	let highImpact = $derived(preview ? Number(preview.priceImpactBps) > 1500 : false); // >15%
+	let impactAccepted = $state(false);
 
 	let paymentLabel = $derived(
 		buyPaymentMethod === 'native' ? (network?.native_coin ?? 'BNB') :
@@ -457,12 +459,12 @@
 			const tokensOut = (baseForTokens * BigInt(10 ** tokenMeta.decimals)) / currentPrice;
 			if (tokensOut === 0n) return null;
 
-			// Rough price impact estimate using linear approximation
-			const remaining = launch ? launch.tokensForCurve - launch.tokensSold : 0n;
+			// Price impact estimate: buyAmount relative to (totalRaised + hardCap) / 2
+			// This gives a reasonable estimate for bonding curves
 			let priceImpactBps = 0n;
-			if (remaining > 0n && tokensOut > 0n) {
-				// Impact ≈ tokensOut / remaining * 10000 (simple linear estimate)
-				priceImpactBps = (tokensOut * 10000n) / remaining;
+			if (launch && launch.hardCap > 0n) {
+				const poolSize = launch.totalBaseRaised > 0n ? launch.totalBaseRaised : launch.hardCap / 10n;
+				priceImpactBps = (baseForTokens * 10000n) / poolSize;
 			}
 
 			return { tokensOut, fee, priceImpactBps };
@@ -480,8 +482,10 @@
 		if (!amt || !net || !l || l.state !== 1 || isNaN(amtNum) || amtNum <= 0) {
 			preview = null;
 			previewError = '';
+			impactAccepted = false;
 			return;
 		}
+		impactAccepted = false;
 		previewTimeout = setTimeout(async () => {
 			previewLoading = true;
 			previewError = '';
@@ -921,6 +925,7 @@
 
 	onDestroy(() => {
 		if (txRefreshInterval) clearInterval(txRefreshInterval);
+		if (commentChannel) { commentChannel.unsubscribe(); commentChannel = null; }
 	});
 
 	// ── Comments / Discussion ──
@@ -958,7 +963,7 @@
 			const signMsg = `TokenKrafter Comment\nLaunch: ${launchAddress}\nOrigin: ${window.location.origin}\nTimestamp: ${timestamp}`;
 			const signature = await signer.signMessage(signMsg);
 
-			const res = await fetch('/api/launches/comments', {
+			const res = await apiFetch('/api/launches/comments', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
@@ -973,8 +978,11 @@
 				const err = await res.json().catch(() => ({ message: 'Failed to post comment' }));
 				throw new Error(err.message || 'Failed to post comment');
 			}
+			const posted = await res.json();
+			if (posted && !comments.find(c => c.id === posted.id)) {
+				comments = [posted, ...comments];
+			}
 			commentText = '';
-			await loadComments();
 		} catch (e: any) {
 			addFeedback({ message: e.message || 'Failed to post comment', type: 'error' });
 		} finally {
@@ -982,8 +990,32 @@
 		}
 	}
 
+	// Subscribe to live comments via Supabase Realtime
+	let commentChannel: ReturnType<typeof supabase.channel> | null = null;
+
+	function subscribeToComments() {
+		if (!launchAddress || commentChannel) return;
+		commentChannel = supabase
+			.channel(`comments-${launchAddress}`)
+			.on('postgres_changes', {
+				event: 'INSERT',
+				schema: 'public',
+				table: 'comments',
+				filter: `launch_address=eq.${launchAddress.toLowerCase()}`
+			}, (payload: any) => {
+				const newComment = payload.new as Comment;
+				if (newComment && !comments.find(c => c.id === newComment.id)) {
+					comments = [newComment, ...comments];
+				}
+			})
+			.subscribe();
+	}
+
 	$effect(() => {
-		if (launch) loadComments();
+		if (launch) {
+			loadComments();
+			subscribeToComments();
+		}
 	});
 </script>
 
@@ -1870,25 +1902,28 @@
 							</div>
 						{/if}
 						{#if highImpact}
-							<div class="exceed-warning mb-3">
-								<span class="text-red-400 text-xs font-mono">
-									{$t('lpd.impactTooHigh').replace('{pct}', String(preview ? (Number(preview.priceImpactBps) / 100).toFixed(1) : 0))}
-								</span>
+							<div class="impact-notice mb-3">
+								<div class="impact-notice-header">
+									<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+									<span>High price impact ({preview ? (Number(preview.priceImpactBps) / 100).toFixed(1) : 0}%)</span>
+								</div>
+								<span class="impact-notice-desc">Normal for early-stage launches. You're getting an early entry price — the curve price rises as more people buy.</span>
+								{#if !impactAccepted}
+									<button class="impact-notice-btn" onclick={() => impactAccepted = true}>I understand, continue</button>
+								{/if}
 							</div>
 						{/if}
 
 						{#if userAddress}
 							<button
 								onclick={handleBuy}
-								disabled={isBuying || !buyAmount || parseFloat(String(buyAmount)) <= 0 || exceedsMaxBuy || atMaxBuy || highImpact}
+								disabled={isBuying || !buyAmount || parseFloat(String(buyAmount)) <= 0 || exceedsMaxBuy || atMaxBuy || (highImpact && !impactAccepted)}
 								class="btn-primary w-full py-3 text-sm cursor-pointer"
 							>
 								{#if atMaxBuy}
 									{$t('lpd.maxBuyReached')}
 								{:else if exceedsMaxBuy}
 									{$t('lpd.exceedsMaxBuyBtn')}
-								{:else if highImpact}
-									{$t('lpd.impactTooHighBtn')}
 								{:else}
 									{isBuying ? $t('lpd.buying') : `${$t('lpd.buyWith')} ${paymentLabel}`}
 								{/if}
@@ -2097,6 +2132,28 @@
 		border: 1px solid rgba(239, 68, 68, 0.15);
 		border-radius: 8px;
 	}
+	.impact-notice {
+		padding: 10px 12px;
+		background: rgba(245, 158, 11, 0.05);
+		border: 1px solid rgba(245, 158, 11, 0.15);
+		border-radius: 10px;
+		display: flex; flex-direction: column; gap: 6px;
+	}
+	.impact-notice-header {
+		display: flex; align-items: center; gap: 6px;
+		color: #f59e0b; font-size: 12px; font-family: 'Space Mono', monospace; font-weight: 600;
+	}
+	.impact-notice-desc {
+		font-size: 11px; color: #92400e; font-family: 'Space Mono', monospace; line-height: 1.5;
+	}
+	.impact-notice-btn {
+		align-self: flex-start;
+		padding: 5px 14px; border-radius: 6px; border: 1px solid rgba(0, 210, 255, 0.25);
+		background: rgba(0, 210, 255, 0.08); color: #00d2ff;
+		font-family: 'Space Mono', monospace; font-size: 11px;
+		cursor: pointer; transition: all 0.15s;
+	}
+	.impact-notice-btn:hover { background: rgba(0, 210, 255, 0.15); border-color: rgba(0, 210, 255, 0.4); }
 
 	/* Progress bar with soft cap marker */
 	.lp-progress-wrap { position: relative; }
