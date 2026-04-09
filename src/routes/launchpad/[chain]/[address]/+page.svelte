@@ -1844,25 +1844,31 @@
 								<div class="preview-row">
 									<span class="text-gray-500">{$t('lpd.youReceive')}</span>
 									<span class="text-white font-semibold">
-										~{formatTokens(preview.tokensOut, tokenMeta.decimals)} {launch.tokenSymbol}
+										{previewError === 'estimate' ? '~' : ''}{formatTokens(preview.tokensOut, tokenMeta.decimals)} {launch.tokenSymbol}
 									</span>
 								</div>
 								<div class="preview-row">
-									<span class="text-gray-500">Buy Fee</span>
-									<span class="text-emerald-400">None</span>
+									<span class="text-gray-500">Buy Fee (1%)</span>
+									<span class="text-amber-400">{preview.fee > 0n ? formatUsdt(preview.fee, ud) : 'None'}</span>
 								</div>
 								{#if preview.priceImpactBps > 0n}
 									<div class="preview-row">
 										<span class="text-gray-500">{$t('lpd.priceImpact')}</span>
 										<span
-											class="{Number(preview.priceImpactBps) > 500
-												? 'text-red-400'
-												: Number(preview.priceImpactBps) > 200
-													? 'text-amber-400'
+											class="{Number(preview.priceImpactBps) > 1000
+												? 'text-amber-400'
+												: Number(preview.priceImpactBps) > 300
+													? 'text-yellow-400'
 													: 'text-emerald-400'}"
 										>
-											{previewError === 'estimate' ? '~' : ''}{(Number(preview.priceImpactBps) / 100).toFixed(2)}%
+											{(Number(preview.priceImpactBps) / 100).toFixed(2)}%
 										</span>
+									</div>
+								{/if}
+								{#if maxBuyPerWallet > 0n}
+									<div class="preview-row">
+										<span class="text-gray-500">Max buy per wallet</span>
+										<span class="text-cyan-300">{formatUsdt(maxBuyPerWallet, ud)} ({maxBuyPct}%)</span>
 									</div>
 								{/if}
 							</div>
@@ -1901,23 +1907,11 @@
 								</span>
 							</div>
 						{/if}
-						{#if highImpact}
-							<div class="impact-notice mb-3">
-								<div class="impact-notice-header">
-									<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-									<span>High price impact ({preview ? (Number(preview.priceImpactBps) / 100).toFixed(1) : 0}%)</span>
-								</div>
-								<span class="impact-notice-desc">Normal for early-stage launches. You're getting an early entry price — the curve price rises as more people buy.</span>
-								{#if !impactAccepted}
-									<button class="impact-notice-btn" onclick={() => impactAccepted = true}>I understand, continue</button>
-								{/if}
-							</div>
-						{/if}
 
 						{#if userAddress}
 							<button
 								onclick={handleBuy}
-								disabled={isBuying || !buyAmount || parseFloat(String(buyAmount)) <= 0 || exceedsMaxBuy || atMaxBuy || (highImpact && !impactAccepted)}
+								disabled={isBuying || !buyAmount || parseFloat(String(buyAmount)) <= 0 || exceedsMaxBuy || atMaxBuy}
 								class="btn-primary w-full py-3 text-sm cursor-pointer"
 							>
 								{#if atMaxBuy}
