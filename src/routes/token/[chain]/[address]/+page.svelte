@@ -109,7 +109,7 @@
 				saved.push({ address: tokenAddress.toLowerCase(), name: tokenName, symbol: tokenSymbol, decimals: tokenDecimals, logoUrl: logoUrl || '' });
 				localStorage.setItem('imported_tokens', JSON.stringify(saved));
 				// Sync to server if embedded wallet
-				import('./../../lib/embeddedWallet').then(m => m.pushPreferences()).catch(() => {});
+				import('$lib/embeddedWallet').then(m => m.pushPreferences()).catch(() => {});
 			}
 		} catch {}
 
