@@ -494,10 +494,14 @@ contract LaunchInstance is ReentrancyGuard {
     /// @dev Internal buy logic. All amounts are in USDT after conversion.
     ///      1% buy fee taken before curve math. Refunds return basePaid (net after fee).
     function _processBuy(address buyer, uint256 usdtAmount, uint256 minTokensOut) internal {
-        // Take buy fee upfront
+        // Take buy fee upfront — send immediately to platform
         uint256 buyFee = (usdtAmount * BUY_FEE_BPS) / BPS;
         uint256 baseForTokens = usdtAmount - buyFee;
         totalBuyFeesCollected += buyFee;
+        if (buyFee > 0) {
+            address _platformWallet = ILaunchpadFactory(factory).platformWallet();
+            usdt.safeTransfer(_platformWallet, buyFee);
+        }
 
         // Calculate tokens from curve
         uint256 tokensOut = _getTokensForBase(baseForTokens);
@@ -572,10 +576,7 @@ contract LaunchInstance is ReentrancyGuard {
 
         address platformWallet = ILaunchpadFactory(factory).platformWallet();
 
-        // Send accumulated buy fees to platform (earned regardless of graduation)
-        if (totalBuyFeesCollected > 0) {
-            usdt.safeTransfer(platformWallet, totalBuyFeesCollected);
-        }
+        // Buy fees already sent to platform on each buy — no transfer needed here
 
         // Graduation fees: 1% of USDT raised + 1% of LP tokens
         uint256 platformBaseFee = (totalBaseRaised * GRADUATION_FEE_BPS) / BPS;
@@ -639,12 +640,7 @@ contract LaunchInstance is ReentrancyGuard {
         state = LaunchState.Refunding;
         refundStartTimestamp = block.timestamp;
 
-        // Platform keeps buy fees even on failed launches
-        if (totalBuyFeesCollected > 0) {
-            address platformWallet = ILaunchpadFactory(factory).platformWallet();
-            usdt.safeTransfer(platformWallet, totalBuyFeesCollected);
-            totalBuyFeesCollected = 0;
-        }
+        // Buy fees already sent to platform on each buy — no transfer needed here
 
         emit RefundingEnabled();
     }

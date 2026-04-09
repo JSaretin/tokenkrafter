@@ -209,7 +209,9 @@ export function formatTokens(raw: bigint, tokenDecimals: number = 18, displayDec
 
 export function progressPercent(raised: bigint, cap: bigint): number {
 	if (cap === 0n) return 0;
-	return Math.min(100, Number((raised * 100n) / cap));
+	// Use 10000x precision to capture small percentages (e.g. 0.43%)
+	const bps = Number((raised * 10000n) / cap);
+	return Math.min(100, Math.round(bps) / 100);
 }
 
 export function timeRemaining(deadline: bigint): string {
