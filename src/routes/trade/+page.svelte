@@ -1672,15 +1672,24 @@
 			<!-- Payout details (bank mode) -->
 			{#if outputMode === 'bank'}
 				<!-- Payout preview -->
-				{#if fiatEquivalent}
+				{#if fiatEquivalent || previewNet > 0n}
 					<div class="bank-payout-card">
-						<div class="bank-payout-row">
-							<span class="bank-payout-label">You receive</span>
-							<span class="bank-payout-ngn">{fiatEquivalent}</span>
-						</div>
+						{#if fiatEquivalent}
+							<div class="bank-payout-highlight">
+								<span class="bank-payout-ngn">{fiatEquivalent}</span>
+								<span class="bank-payout-usd">≈${parseFloat(ethers.formatUnits(previewNet, usdtDecimals)).toFixed(2)} USD</span>
+							</div>
+						{/if}
 						{#if previewNet > 0n}
-							<div class="bank-payout-detail">
-								<span>≈${parseFloat(ethers.formatUnits(previewNet, usdtDecimals)).toFixed(2)} after {previewFee > 0n && previewNet > 0n ? ((Number(previewFee) / Number(previewFee + previewNet)) * 100).toFixed(1) : '1'}% fee</span>
+							<div class="bank-payout-breakdown">
+								<div class="bank-payout-row">
+									<span>Fee ({previewFee > 0n && previewNet > 0n ? ((Number(previewFee) / Number(previewFee + previewNet)) * 100).toFixed(1) : '1'}%)</span>
+									<span>${parseFloat(ethers.formatUnits(previewFee, usdtDecimals)).toFixed(2)}</span>
+								</div>
+								<div class="bank-payout-row bank-payout-net">
+									<span>You receive</span>
+									<span>${parseFloat(ethers.formatUnits(previewNet, usdtDecimals)).toFixed(2)}</span>
+								</div>
 							</div>
 						{/if}
 					</div>
@@ -2323,7 +2332,7 @@
 	/* Swap card */
 	.swap-card {
 		background: var(--bg-surface); border: 1px solid var(--border); border-radius: 20px;
-		padding: 4px;
+		padding: 4px 4px 12px;
 	}
 
 	/* Token section */
@@ -2415,7 +2424,7 @@
 	.flip-btn:hover { color: #00d2ff; background: rgba(0,210,255,0.1); transform: rotate(180deg); }
 
 	/* Bank section */
-	.bank-section { padding: 12px 12px 0; }
+	.bank-section { padding: 8px 14px 0; }
 	.bank-safety-pill {
 		display: flex; align-items: center; justify-content: center; gap: 5px;
 		padding: 6px 10px; border-radius: 20px;
@@ -2426,25 +2435,30 @@
 	.bank-safety-pill svg { flex-shrink: 0; }
 	.bank-payout-card {
 		background: rgba(16,185,129,0.05); border: 1px solid rgba(16,185,129,0.1);
-		border-radius: 10px; padding: 10px 14px; margin-bottom: 10px;
+		border-radius: 10px; padding: 14px; margin: 12px 0 10px;
 	}
-	.bank-payout-row {
-		display: flex; justify-content: space-between; align-items: center;
-	}
-	.bank-payout-label {
-		font-family: 'Space Mono', monospace; font-size: 10px; font-weight: 600;
-		text-transform: uppercase; letter-spacing: 0.05em; color: rgba(16,185,129,0.7);
+	.bank-payout-highlight {
+		text-align: center;
 	}
 	.bank-payout-ngn {
-		font-family: 'Rajdhani', sans-serif; font-size: 22px; font-weight: 700;
-		color: #10b981; font-variant-numeric: tabular-nums;
+		display: block; font-family: 'Rajdhani', sans-serif; font-size: 28px; font-weight: 700;
+		color: #10b981; line-height: 1.2; font-variant-numeric: tabular-nums;
 	}
-	.bank-payout-detail {
+	.bank-payout-usd {
+		display: block; font-family: 'Space Mono', monospace; font-size: 10px;
+		color: var(--text-dim); margin-top: 4px;
+	}
+	.bank-payout-breakdown {
+		margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.04);
+		display: flex; flex-direction: column; gap: 4px;
+	}
+	.bank-payout-row {
+		display: flex; justify-content: space-between;
 		font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text-dim);
-		text-align: right; margin-top: 2px;
 	}
+	.bank-payout-net span:last-child { color: #10b981; font-weight: 700; }
 
-	.bank-section-compact { display: flex; flex-direction: column; gap: 10px; margin-bottom: 8px; }
+	.bank-section-compact { display: flex; flex-direction: column; gap: 10px; margin-bottom: 8px; padding: 0 2px; }
 	.field-group { display: flex; flex-direction: column; }
 	.field-label {
 		font-family: 'Space Mono', monospace; font-size: 10px; font-weight: 600;
