@@ -466,12 +466,16 @@ async function updateActiveLaunches(
 	chainId: number,
 	usdtDecimals: number
 ) {
-	// Fetch active launches from backend
+	// Fetch non-terminal launches (state 0=pending, 1=active) from backend
 	try {
-		const res = await fetch(`${API_BASE}/api/launches?state=1&chain_id=${chainId}&limit=100`);
-		if (!res.ok) return;
-		const launches = await res.json();
-		if (!launches?.length) return;
+		const [pendingRes, activeRes] = await Promise.all([
+			fetch(`${API_BASE}/api/launches?state=0&chain_id=${chainId}&limit=50`),
+			fetch(`${API_BASE}/api/launches?state=1&chain_id=${chainId}&limit=100`),
+		]);
+		const pending = pendingRes.ok ? await pendingRes.json() : [];
+		const active = activeRes.ok ? await activeRes.json() : [];
+		const launches = [...(pending || []), ...(active || [])];
+		if (!launches.length) return;
 
 		let updated = 0;
 		for (const launch of launches) {
@@ -481,7 +485,7 @@ async function updateActiveLaunches(
 			} catch {}
 		}
 
-		if (updated > 0) console.log(`  🔄 Updated ${updated} active launch(es)`);
+		if (updated > 0) console.log(`  🔄 Updated ${updated} launch(es)`);
 	} catch {}
 }
 
