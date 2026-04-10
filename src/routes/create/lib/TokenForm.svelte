@@ -1,290 +1,189 @@
+<script lang="ts" module>
+	// Re-export types for parent compatibility
+	export type ListingPairConfig = { base: 'native' | 'usdt' | 'usdc'; amount: string; tokenAmount?: string };
+	export type ListingConfig = {
+		enabled: boolean; baseCoin: 'native' | 'usdt' | 'usdc';
+		mode: 'manual' | 'price'; tokenAmount: string; baseAmount: string;
+		pricePerToken: string; listBaseAmount: string; pairs: ListingPairConfig[];
+	};
+	export type LaunchConfig = {
+		enabled: boolean; tokensForLaunchPct: number; curveType: number;
+		softCap: string; hardCap: string; durationDays: string;
+		maxBuyBps: string; creatorAllocationBps: string; vestingDays: string;
+		launchPaymentToken: string;
+	};
+	export type ProtectionConfig = { maxWalletPct: string; maxTransactionPct: string; cooldownSeconds: string };
+	export type TaxConfig = { buyTaxPct: string; sellTaxPct: string; transferTaxPct: string; wallets: { address: string; sharePct: string }[] };
+	export type TokenMetadata = { logoUrl: string; description: string; website: string; twitter: string; telegram: string };
+	export type TokenFormData = {
+		name: string; symbol: string; totalSupply: string; decimals: number;
+		isMintable: boolean; isTaxable: boolean; isPartner: boolean;
+		network: any; existingTokenAddress?: string;
+		listing: ListingConfig; launch: LaunchConfig; protection: ProtectionConfig; tax: TaxConfig;
+		metadata?: TokenMetadata;
+	};
+	export type PreviewState = {
+		name: string; symbol: string; totalSupply: string; decimals: number;
+		isMintable: boolean; isTaxable: boolean; isPartner: boolean; networkName: string;
+		launchEnabled: boolean; launchTokensPct: number; launchCurveType: number;
+		launchSoftCap: string; launchHardCap: string; protectionEnabled: boolean;
+		maxWalletPct: string; maxTransactionPct: string; buyTaxPct: string;
+		sellTaxPct: string; transferTaxPct: string; wizardStep: string;
+		logoUrl: string; description: string; website: string; twitter: string; telegram: string;
+	};
+</script>
+
 <script lang="ts">
 	import { getContext } from 'svelte';
 	import { ethers } from 'ethers';
 	import type { SupportedNetwork } from '$lib/structure';
+	import { BasicInfo, Features, TaxConfig as TaxStep, ListingConfig as ListingStep, Review } from './steps';
 	import BondingCurveChart from '$lib/BondingCurveChart.svelte';
-	import Tooltip from '$lib/Tooltip.svelte';
 
-	export type ListingPairConfig = {
-		base: 'native' | 'usdt' | 'usdc';
-		amount: string;
-	};
-
-	export type ListingConfig = {
-		enabled: boolean;
-		baseCoin: 'native' | 'usdt' | 'usdc';
-		mode: 'manual' | 'price';
-		tokenAmount: string;
-		baseAmount: string;
-		pricePerToken: string;
-		listBaseAmount: string;
-		pairs: ListingPairConfig[];
-	};
-
-	export type LaunchConfig = {
-		enabled: boolean;
-		tokensForLaunchPct: number;
-		curveType: number;
-		softCap: string;
-		hardCap: string;
-		durationDays: string;
-		maxBuyBps: string;
-		creatorAllocationBps: string;
-		vestingDays: string;
-		launchPaymentToken: string;
-	};
-
-	export type ProtectionConfig = {
-		maxWalletPct: string;
-		maxTransactionPct: string;
-		cooldownSeconds: string;
-	};
-
-	export type TaxConfig = {
-		buyTaxPct: string;
-		sellTaxPct: string;
-		transferTaxPct: string;
-		wallets: { address: string; sharePct: string }[];
-	};
-
-	export type TokenFormData = {
-		name: string;
-		symbol: string;
-		totalSupply: string;
-		decimals: number;
-		isMintable: boolean;
-		isTaxable: boolean;
-		isPartner: boolean;
-		network: SupportedNetwork;
-		existingTokenAddress?: string;
-		listing: ListingConfig;
-		launch: LaunchConfig;
-		protection: ProtectionConfig;
-		tax: TaxConfig;
-	};
-
-	// --- State ---
-	type WizardStep = 'basics' | 'features' | 'tax' | 'launch' | 'listing';
+	type WizardStep = 'basics' | 'features' | 'tax' | 'launch' | 'listing' | 'review';
 	let wizardStep = $state<WizardStep>('basics');
 
-	// Existing token mode — user already has a token, just wants to launch
-	let useExistingToken = $state(false);
-	let existingTokenAddress = $state('');
-	let existingTokenLoading = $state(false);
-	let existingTokenBalance = $state(0n);
+	// ── Props ──────────────────────────────────────────────
+	let {
+		supportedNetworks, addFeedback, updateTokenInfo, onPreviewChange, initialData, autoSubmit, initialMode, onModeChange, resetSignal
+	}: {
+		supportedNetworks: SupportedNetwork[]; addFeedback: (f: { message: string; type: string }) => void;
+		updateTokenInfo: (info: TokenFormData) => void; onPreviewChange?: (state: PreviewState) => void;
+		initialData?: Partial<TokenFormData>; autoSubmit?: boolean;
+		initialMode?: 'token' | 'both' | 'launch' | 'list';
+		onModeChange?: (mode: 'token' | 'launch' | 'both' | 'list' | null) => void;
+		resetSignal?: number;
+	} = $props();
 
-	// Step 1: Basics
+	// ── All form state (bindable to child components) ──
 	let name = $state('');
 	let symbol = $state('');
 	let totalSupply = $state('');
 	let decimals = $state(18);
 	let chainId: number | undefined = $state();
+	let useExistingToken = $state(false);
+	let existingTokenAddress = $state('');
 
-	// Step 2: Features
+	// Token metadata (optional)
+	let tokenLogoUrl = $state('');
+	let tokenDescription = $state('');
+	let tokenWebsite = $state('');
+	let tokenTwitter = $state('');
+	let tokenTelegram = $state('');
+
 	let isMintable = $state(false);
 	let isTaxable = $state(false);
 	let isPartner = $state(false);
 	let launchEnabled = $state(false);
+	let listingEnabled = $state(false);
 
-	// Step 3: Tax (if taxable/partner)
+	// Deploy mode — drives launchEnabled/listingEnabled
+	let deployMode = $state<'token' | 'launch' | 'both' | 'list' | null>(initialMode ?? null);
+
+	// Sync launch/listing toggles from deploy mode and notify parent
+	$effect(() => {
+		if (deployMode === 'token') { launchEnabled = false; listingEnabled = false; }
+		else if (deployMode === 'both' || deployMode === 'launch') { launchEnabled = true; listingEnabled = false; }
+		else if (deployMode === 'list') { launchEnabled = false; listingEnabled = true; }
+		onModeChange?.(deployMode);
+	});
+
+	// React to parent reset signal (e.g. nav click)
+	let _lastResetSignal = resetSignal ?? 0;
+	$effect(() => {
+		const current = resetSignal ?? 0;
+		if (current !== _lastResetSignal) {
+			_lastResetSignal = current;
+			deployMode = null;
+			wizardStep = 'mode';
+			clearDraft();
+		}
+	});
+
+
 	let buyTaxPct = $state('');
 	let sellTaxPct = $state('');
 	let transferTaxPct = $state('');
-	let taxWallets = $state<{ address: string; sharePct: string }[]>([
-		{ address: '', sharePct: '100' }
-	]);
+	let taxWallets = $state<{ address: string; sharePct: string }[]>([{ address: '', sharePct: '100' }]);
 
-	// Step 4: Launch
-	let launchTokensPct = $state(40);
-	let launchCurveType = $state(0);
-	let launchSoftCap = $state('5');
-	let launchHardCap = $state('50');
-	let launchDurationDays = $state('30');
-	let launchMaxBuyBps = $state('200');
-	let launchCreatorAllocBps = $state('0');
-	let launchVestingDays = $state('0');
-
-	// Protection (within launch step)
 	let protectionEnabled = $state(false);
 	let maxWalletPct = $state('2');
 	let maxTransactionPct = $state('1');
 	let cooldownSeconds = $state('0');
 
-	// Listing
-	let listingEnabled = $state(false);
-	let listingPoolPct = $state(80); // % of supply going to LP pools
-	let listingAdvanced = $state(false); // toggle advanced price input
+	let launchTokensPct = $state(40);
+	let launchCurveType = $state(0);
+	let showCurveModal = $state(false);
+	let launchSoftCap = $state('5');
+	let launchHardCap = $state('50');
+	let launchDurationDays = $state('30');
+	let launchMaxBuyPct = $state('2');
+	let launchCreatorAllocPct = $state('0');
+	let launchVestingDays = $state('0');
+
+	let listingPoolPct = $state(80);
 	type ListingPair = { base: 'native' | 'usdt' | 'usdc'; amount: string };
 	let listingPairs = $state<ListingPair[]>([{ base: 'native', amount: '' }]);
+	let listingPricePerToken = $state('');
 
-	// BNB price in USD (fetched once for display)
+	// Handle preset loaded from BasicInfo's contract loader — resets all token features
+	function handlePresetLoaded(data: { isTaxable: boolean; buyTaxPct: string; sellTaxPct: string; transferTaxPct: string }) {
+		isTaxable = data.isTaxable;
+		buyTaxPct = data.buyTaxPct;
+		sellTaxPct = data.sellTaxPct;
+		transferTaxPct = data.transferTaxPct;
+		if (!data.isTaxable) {
+			taxWallets = [{ address: '', sharePct: '100' }];
+		}
+		// Reset other features — user can re-enable manually
+		isMintable = false;
+		isPartner = false;
+		protectionEnabled = false;
+		maxWalletPct = '2';
+		maxTransactionPct = '1';
+		cooldownSeconds = '0';
+	}
+
+	// ── Derived ────────────────────────────────────────────
+	let selectedNetwork = $derived(supportedNetworks.find(n => n.chain_id == chainId));
+	let nativeCoin = $derived(selectedNetwork?.native_coin || 'BNB');
+	let getNetworkProviders: () => Map<number, ethers.JsonRpcProvider> = getContext('networkProviders');
+
+	// BNB price for listing preview
 	let bnbPriceUsd = $state(0);
 	$effect(() => {
-		if (!selectedNetwork) return;
+		if (!selectedNetwork?.dex_router || !selectedNetwork?.usdt_address) return;
 		const provider = getNetworkProviders?.()?.get(selectedNetwork.chain_id);
-		if (!provider || !selectedNetwork.usdt_address) return;
-		const routerContract = new ethers.Contract(selectedNetwork.dex_router || '', [
+		if (!provider) return;
+		const router = new ethers.Contract(selectedNetwork.dex_router, [
 			'function getAmountsOut(uint256, address[]) view returns (uint256[])',
 			'function WETH() view returns (address)'
 		], provider);
 		(async () => {
 			try {
-				const weth = await routerContract.WETH();
-				const amounts = await routerContract.getAmountsOut(ethers.parseEther('1'), [weth, selectedNetwork.usdt_address]);
-				bnbPriceUsd = parseFloat(ethers.formatUnits(amounts[1], 18)); // BSC USDT = 18 dec
+				const weth = await router.WETH();
+				const amounts = await router.getAmountsOut(ethers.parseEther('1'), [weth, selectedNetwork.usdt_address]);
+				bnbPriceUsd = parseFloat(ethers.formatUnits(amounts[1], 18));
 			} catch {}
 		})();
 	});
 
-	// Calculate USD value per pair
-	function pairUsdValue(pair: ListingPair): number {
+	// Auto price from listing
+	function pairUsd(pair: ListingPair): number {
 		const amt = Number(pair.amount);
 		if (!amt || amt <= 0) return 0;
-		if (pair.base === 'native') return amt * bnbPriceUsd;
-		return amt; // USDT/USDC = 1:1 USD
+		return pair.base === 'native' ? amt * bnbPriceUsd : amt;
 	}
+	let totalLiquidityUsd = $derived(listingPairs.reduce((s, p) => s + pairUsd(p), 0));
+	let tokensForPool = $derived(Number(totalSupply) * (listingPoolPct / 100));
+	let autoPrice = $derived.by(() => tokensForPool > 0 && totalLiquidityUsd > 0 ? totalLiquidityUsd / tokensForPool : 0);
 
-	// Total USD value across all pairs
-	let totalLiquidityUsd = $derived(listingPairs.reduce((sum, p) => sum + pairUsdValue(p), 0));
+	// Only set useExistingToken if explicitly launching an existing token (URL param)
+	if (deployMode === 'launch' && initialData?.existingTokenAddress) { useExistingToken = true; }
 
-	// Tokens allocated to pools
-	let tokensForPool = $derived.by(() => {
-		const supply = Number(totalSupply);
-		if (!supply || supply <= 0) return 0;
-		return supply * (listingPoolPct / 100);
-	});
-
-	// Auto-calculated price: total USD ÷ total tokens for pool
-	let autoPrice = $derived.by(() => {
-		if (tokensForPool <= 0 || totalLiquidityUsd <= 0) return 0;
-		return totalLiquidityUsd / tokensForPool;
-	});
-
-	// Price per token in USDT (auto-derived or manual in advanced mode)
-	let listingPricePerToken = $state('');
-	$effect(() => {
-		if (!listingAdvanced && autoPrice > 0) {
-			listingPricePerToken = autoPrice.toFixed(18).replace(/0+$/, '').replace(/\.$/, '');
-		}
-	});
-
-	// Tokens allocated per pair (proportional to USD value)
-	function tokensForPair(pair: ListingPair): string {
-		if (totalLiquidityUsd <= 0 || tokensForPool <= 0) return '0';
-		const pairUsd = pairUsdValue(pair);
-		const share = pairUsd / totalLiquidityUsd;
-		return (tokensForPool * share).toFixed(2);
-	}
-
-	// Share % per pair
-	function pairSharePct(pair: ListingPair): number {
-		if (totalLiquidityUsd <= 0) return 0;
-		return (pairUsdValue(pair) / totalLiquidityUsd) * 100;
-	}
-
-	let totalTokensForListing = $derived(
-		listingPairs.reduce((sum, p) => sum + Number(tokensForPair(p)), 0)
-	);
-
-	// Legacy compat
-	let listingBaseCoin = $derived(listingPairs[0]?.base ?? 'native');
-	let listingMode = 'price' as const;
-	let listingTokenAmount = $derived('');
-	let listingBaseAmount = $derived(listingPairs[0]?.amount ?? '');
-	let listingListBaseAmount = $derived(listingPairs[0]?.amount ?? '');
-
-	function addListingPair() {
-		const used = new Set(listingPairs.map(p => p.base));
-		const next = (['native', 'usdt', 'usdc'] as const).find(b => !used.has(b));
-		if (next) listingPairs = [...listingPairs, { base: next, amount: '' }];
-	}
-
-	function removeListingPair(index: number) {
-		listingPairs = listingPairs.filter((_, i) => i !== index);
-	}
-
-	function updatePairBase(index: number, base: 'native' | 'usdt' | 'usdc') {
-		listingPairs = listingPairs.map((p, i) => i === index ? { ...p, base } : p);
-	}
-
-	function updatePairAmount(index: number, amount: string) {
-		listingPairs = listingPairs.map((p, i) => i === index ? { ...p, amount } : p);
-	}
-
-	function getBaseLabel(base: string): string {
-		if (base === 'native') return selectedNetwork?.native_coin || 'ETH';
-		return base.toUpperCase();
-	}
-
-	const CURVE_TYPES_LABEL = ['Linear', 'Square Root', 'Quadratic', 'Exponential'] as const;
-
-	export type PreviewState = {
-		name: string;
-		symbol: string;
-		totalSupply: string;
-		decimals: number;
-		isMintable: boolean;
-		isTaxable: boolean;
-		isPartner: boolean;
-		networkName: string;
-		launchEnabled: boolean;
-		launchTokensPct: number;
-		launchCurveType: number;
-		launchSoftCap: string;
-		launchHardCap: string;
-		protectionEnabled: boolean;
-		maxWalletPct: string;
-		maxTransactionPct: string;
-		buyTaxPct: string;
-		sellTaxPct: string;
-		transferTaxPct: string;
-		wizardStep: string;
-	};
-
-	let {
-		supportedNetworks,
-		addFeedback,
-		updateTokenInfo,
-		onPreviewChange,
-		initialData,
-		autoSubmit,
-		forceMode
-	}: {
-		supportedNetworks: SupportedNetwork[];
-		addFeedback: (feedback: { message: string; type: string }) => void;
-		updateTokenInfo: (tokenInfo: TokenFormData) => void;
-		onPreviewChange?: (state: PreviewState) => void;
-		initialData?: Partial<TokenFormData>;
-		autoSubmit?: boolean;
-		forceMode?: 'token' | 'both' | 'launch' | 'list';
-	} = $props();
-
-	// Apply forceMode overrides
-	if (forceMode === 'token') {
-		useExistingToken = false;
-		launchEnabled = false;
-		listingEnabled = false;
-	} else if (forceMode === 'both') {
-		useExistingToken = false;
-		launchEnabled = true;
-		listingEnabled = false;
-	} else if (forceMode === 'launch') {
-		useExistingToken = true;
-		launchEnabled = true;
-		listingEnabled = false;
-	} else if (forceMode === 'list') {
-		useExistingToken = false;
-		launchEnabled = false;
-		listingEnabled = true;
-	}
-
-	// Populate form from initialData (e.g. from URL params)
+	// ── Initial data ───────────────────────────────────────
 	if (initialData) {
-		if ((initialData as any).existingTokenAddress) {
-			useExistingToken = true;
-			existingTokenAddress = (initialData as any).existingTokenAddress;
-		}
-		if ((initialData as any).chainId) chainId = (initialData as any).chainId;
+		if ((initialData as any).existingTokenAddress) { useExistingToken = true; existingTokenAddress = (initialData as any).existingTokenAddress; }
 		if (initialData.name) name = initialData.name;
 		if (initialData.symbol) symbol = initialData.symbol;
 		if (initialData.totalSupply) totalSupply = initialData.totalSupply;
@@ -300,17 +199,6 @@
 			if (initialData.launch.softCap) launchSoftCap = initialData.launch.softCap;
 			if (initialData.launch.hardCap) launchHardCap = initialData.launch.hardCap;
 			if (initialData.launch.durationDays) launchDurationDays = initialData.launch.durationDays;
-			if (initialData.launch.maxBuyBps) launchMaxBuyBps = initialData.launch.maxBuyBps;
-			if (initialData.launch.creatorAllocationBps) launchCreatorAllocBps = initialData.launch.creatorAllocationBps;
-			if (initialData.launch.vestingDays) launchVestingDays = initialData.launch.vestingDays;
-		}
-		if (initialData.protection) {
-			if (initialData.protection.maxWalletPct !== '0' || initialData.protection.maxTransactionPct !== '0') {
-				protectionEnabled = true;
-			}
-			if (initialData.protection.maxWalletPct) maxWalletPct = initialData.protection.maxWalletPct;
-			if (initialData.protection.maxTransactionPct) maxTransactionPct = initialData.protection.maxTransactionPct;
-			if (initialData.protection.cooldownSeconds) cooldownSeconds = initialData.protection.cooldownSeconds;
 		}
 		if (initialData.tax) {
 			if (initialData.tax.buyTaxPct) buyTaxPct = initialData.tax.buyTaxPct;
@@ -318,1743 +206,573 @@
 			if (initialData.tax.transferTaxPct) transferTaxPct = initialData.tax.transferTaxPct;
 			if (initialData.tax.wallets?.length) taxWallets = initialData.tax.wallets;
 		}
+		if (initialData.protection) {
+			if (initialData.protection.maxWalletPct !== '0' || initialData.protection.maxTransactionPct !== '0') protectionEnabled = true;
+			if (initialData.protection.maxWalletPct) maxWalletPct = initialData.protection.maxWalletPct;
+			if (initialData.protection.maxTransactionPct) maxTransactionPct = initialData.protection.maxTransactionPct;
+			if (initialData.protection.cooldownSeconds) cooldownSeconds = initialData.protection.cooldownSeconds;
+		}
 		if (initialData.listing?.enabled != null) {
 			listingEnabled = initialData.listing.enabled;
-			if (initialData.listing.pricePerToken) {
-				listingPricePerToken = initialData.listing.pricePerToken;
-				listingAdvanced = true; // use advanced mode when restoring a specific price
-			}
-			if (initialData.listing.pairs?.length) {
-				listingPairs = initialData.listing.pairs.map((p: any) => ({ base: p.base, amount: p.amount }));
-			} else if (initialData.listing.baseAmount) {
-				listingPairs = [{ base: (initialData.listing.baseCoin || 'native') as any, amount: initialData.listing.baseAmount }];
-			}
-		}
-		// Jump to last step if auto-submitting
-		if (autoSubmit && name && symbol && totalSupply && chainId) {
-			wizardStep = launchEnabled ? 'launch' : isTaxable ? 'tax' : 'features';
+			if (initialData.listing.pricePerToken) listingPricePerToken = initialData.listing.pricePerToken;
+			if (initialData.listing.pairs?.length) listingPairs = initialData.listing.pairs.map(p => ({ base: p.base, amount: p.amount }));
 		}
 	}
 
-	// Auto-submit after initial render if requested
-	let didAutoSubmit = false;
-	$effect(() => {
-		if (autoSubmit && !didAutoSubmit && name && symbol && totalSupply && chainId) {
-			didAutoSubmit = true;
-			submit();
-		}
-	});
+	// ── Persist form state across OAuth redirects ──────────
+	const FORM_STORAGE_KEY = 'tk_create_form_draft';
 
-	let selectedNetwork = $derived(supportedNetworks.find((n) => n.chain_id == chainId));
-	let nativeCoinSymbol = $derived(selectedNetwork?.native_coin ?? 'ETH');
+	function getFormSnapshot() {
+		return {
+			deployMode,
+			name, symbol, totalSupply, decimals, chainId, useExistingToken, existingTokenAddress,
+			tokenLogoUrl, tokenDescription, tokenWebsite, tokenTwitter, tokenTelegram,
+			isMintable, isTaxable, isPartner, launchEnabled, listingEnabled,
+			buyTaxPct, sellTaxPct, transferTaxPct, taxWallets,
+			protectionEnabled, maxWalletPct, maxTransactionPct, cooldownSeconds,
+			launchTokensPct, launchCurveType, launchSoftCap, launchHardCap,
+			launchDurationDays, launchMaxBuyPct, launchCreatorAllocPct, launchVestingDays,
+			listingPoolPct, listingPairs, listingPricePerToken, wizardStep,
+		};
+	}
 
-	// Auto-fetch existing token metadata
-	let getNetworkProviders: () => Map<number, ethers.JsonRpcProvider> = getContext('networkProviders');
-	let getUserAddress: () => string | null = getContext('userAddress');
-	let existingTokenTimeout: ReturnType<typeof setTimeout> | null = null;
+	function restoreFormSnapshot(s: any) {
+		if (s.deployMode) deployMode = s.deployMode;
+		if (s.name) name = s.name;
+		if (s.symbol) symbol = s.symbol;
+		if (s.totalSupply) totalSupply = s.totalSupply;
+		if (s.decimals != null) decimals = s.decimals;
+		if (s.chainId != null) chainId = s.chainId;
+		if (s.useExistingToken) useExistingToken = s.useExistingToken;
+		if (s.existingTokenAddress) existingTokenAddress = s.existingTokenAddress;
+		if (s.tokenLogoUrl) tokenLogoUrl = s.tokenLogoUrl;
+		if (s.tokenDescription) tokenDescription = s.tokenDescription;
+		if (s.tokenWebsite) tokenWebsite = s.tokenWebsite;
+		if (s.tokenTwitter) tokenTwitter = s.tokenTwitter;
+		if (s.tokenTelegram) tokenTelegram = s.tokenTelegram;
+		if (s.isMintable != null) isMintable = s.isMintable;
+		if (s.isTaxable != null) isTaxable = s.isTaxable;
+		if (s.isPartner != null) isPartner = s.isPartner;
+		if (s.launchEnabled != null) launchEnabled = s.launchEnabled;
+		if (s.listingEnabled != null) listingEnabled = s.listingEnabled;
+		if (s.buyTaxPct) buyTaxPct = s.buyTaxPct;
+		if (s.sellTaxPct) sellTaxPct = s.sellTaxPct;
+		if (s.transferTaxPct) transferTaxPct = s.transferTaxPct;
+		if (s.taxWallets?.length) taxWallets = s.taxWallets;
+		if (s.protectionEnabled != null) protectionEnabled = s.protectionEnabled;
+		if (s.maxWalletPct) maxWalletPct = s.maxWalletPct;
+		if (s.maxTransactionPct) maxTransactionPct = s.maxTransactionPct;
+		if (s.cooldownSeconds) cooldownSeconds = s.cooldownSeconds;
+		if (s.launchTokensPct != null) launchTokensPct = s.launchTokensPct;
+		if (s.launchCurveType != null) launchCurveType = s.launchCurveType;
+		if (s.launchSoftCap) launchSoftCap = s.launchSoftCap;
+		if (s.launchHardCap) launchHardCap = s.launchHardCap;
+		if (s.launchDurationDays) launchDurationDays = s.launchDurationDays;
+		if (s.launchMaxBuyPct) launchMaxBuyPct = s.launchMaxBuyPct;
+		if (s.launchCreatorAllocPct) launchCreatorAllocPct = s.launchCreatorAllocPct;
+		if (s.launchVestingDays) launchVestingDays = s.launchVestingDays;
+		if (s.listingPoolPct != null) listingPoolPct = s.listingPoolPct;
+		if (s.listingPairs?.length) listingPairs = s.listingPairs;
+		if (s.listingPricePerToken) listingPricePerToken = s.listingPricePerToken;
+		if (s.wizardStep) wizardStep = s.wizardStep;
+	}
 
-	$effect(() => {
-		if (existingTokenTimeout) clearTimeout(existingTokenTimeout);
-		const addr = existingTokenAddress;
-		const net = selectedNetwork;
-		if (!useExistingToken || !addr || !ethers.isAddress(addr) || !net) return;
-		existingTokenTimeout = setTimeout(async () => {
-			existingTokenLoading = true;
+	// Restore draft if returning from OAuth redirect or page reload
+	if (typeof sessionStorage !== 'undefined') {
+		const saved = sessionStorage.getItem(FORM_STORAGE_KEY);
+		if (saved) {
 			try {
-				const providers = getNetworkProviders();
-				const provider = providers.get(net.chain_id);
-				if (!provider) return;
-				const token = new ethers.Contract(addr, [
-					'function name() view returns (string)',
-					'function symbol() view returns (string)',
-					'function decimals() view returns (uint8)',
-					'function balanceOf(address) view returns (uint256)',
-					'function totalSupply() view returns (uint256)'
-				], provider);
-				const userAddr = getUserAddress();
-				const [n, s, d, bal, supply] = await Promise.all([
-					token.name().catch(() => ''),
-					token.symbol().catch(() => ''),
-					token.decimals().catch(() => 18),
-					userAddr ? token.balanceOf(userAddr).catch(() => 0n) : Promise.resolve(0n),
-					token.totalSupply().catch(() => 0n)
-				]);
-				name = n;
-				symbol = s;
-				decimals = Number(d);
-				totalSupply = ethers.formatUnits(supply, Number(d));
-				existingTokenBalance = bal;
-			} catch {
-				name = '';
-				symbol = '';
-			} finally {
-				existingTokenLoading = false;
-			}
+				const parsed = JSON.parse(saved);
+				// Only restore if there's actual user input (not just defaults)
+				if (parsed.name || parsed.symbol || parsed.totalSupply || parsed.existingTokenAddress) {
+					restoreFormSnapshot(parsed);
+					// Reconstruct pending logo file from data URL
+					if (parsed.tokenLogoUrl && parsed.tokenLogoUrl.startsWith('data:')) {
+						try {
+							const [header, b64] = parsed.tokenLogoUrl.split(',');
+							const mime = header.match(/:(.*?);/)?.[1] || 'image/png';
+							const binary = atob(b64);
+							const bytes = new Uint8Array(binary.length);
+							for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+							(window as any).__pendingLogoFile = new File([bytes], `logo.${mime.split('/')[1]}`, { type: mime });
+						} catch {}
+					}
+				}
+			} catch {}
+		}
+	}
+
+	// Save form state whenever it changes (debounced)
+	let _saveTimer: ReturnType<typeof setTimeout>;
+	$effect(() => {
+		const snapshot = getFormSnapshot();
+		clearTimeout(_saveTimer);
+		_saveTimer = setTimeout(() => {
+			try { sessionStorage.setItem(FORM_STORAGE_KEY, JSON.stringify(snapshot)); } catch {}
 		}, 500);
 	});
 
-	// Emit preview state on every change
-	$effect(() => {
-		onPreviewChange?.({
-			name, symbol, totalSupply, decimals,
-			isMintable, isTaxable, isPartner,
-			networkName: selectedNetwork?.name ?? '',
-			launchEnabled, launchTokensPct, launchCurveType: launchCurveType,
-			launchSoftCap, launchHardCap,
-			protectionEnabled, maxWalletPct, maxTransactionPct,
-			buyTaxPct, sellTaxPct, transferTaxPct,
-			wizardStep
-		});
-	});
+	/** Clear saved draft */
+	function clearDraft() {
+		try { sessionStorage.removeItem(FORM_STORAGE_KEY); } catch {}
+	}
 
-	let launchTokensAmount = $derived(() => {
-		if (!totalSupply || launchTokensPct <= 0) return '0';
-		return Math.floor(Number(totalSupply) * launchTokensPct / 100).toString();
-	});
+	// ── Step navigation ────────────────────────────────────
+	// Clone mode: user toggled "clone" on BasicInfo step. They're creating a NEW token
+	// with pre-filled data. Even if they later enable launch/list, it's still a new token.
+	// Real existing token: only when entering via Launch flow with a pre-set token address.
+	let isRealExistingToken = $derived(useExistingToken && !!initialData?.existingTokenAddress);
 
-	// Tax validation
-	let totalTaxPct = $derived(() => {
-		return (parseFloat(buyTaxPct) || 0) + (parseFloat(sellTaxPct) || 0) + (parseFloat(transferTaxPct) || 0);
-	});
-	let maxBuyTax = $derived(isPartner ? 9 : 10);
-	let maxSellTax = $derived(isPartner ? 9 : 10);
-	let maxTotalTax = $derived(isPartner ? 24 : 25);
-	let totalSharePct = $derived(() => {
-		return taxWallets.reduce((sum, w) => sum + (parseFloat(w.sharePct) || 0), 0);
-	});
-
-	// --- Inline validation ---
-	let touched = $state<Record<string, boolean>>({});
-	function markTouched(field: string) { touched[field] = true; }
-
-	let nameError = $derived(touched['name'] && !name.trim() ? 'Required' : '');
-	let symbolError = $derived(touched['symbol'] && !symbol.trim() ? 'Required' : '');
-	let supplyError = $derived(touched['supply'] && (!totalSupply || Number(totalSupply) <= 0) ? 'Must be > 0' : '');
-	let networkError = $derived(touched['network'] && !chainId ? 'Select a network' : '');
-
-	// Tax inline validation
-	let buyTaxError = $derived(() => {
-		if (!touched['buyTax']) return '';
-		const v = parseFloat(buyTaxPct) || 0;
-		return v > maxBuyTax ? `Max ${maxBuyTax}%` : '';
-	});
-	let sellTaxError = $derived(() => {
-		if (!touched['sellTax']) return '';
-		const v = parseFloat(sellTaxPct) || 0;
-		return v > maxSellTax ? `Max ${maxSellTax}%` : '';
-	});
-	let transferTaxError = $derived(() => {
-		if (!touched['transferTax']) return '';
-		const v = parseFloat(transferTaxPct) || 0;
-		return v > 5 ? 'Max 5%' : '';
-	});
-	let totalTaxError = $derived(() => {
-		if (!touched['buyTax'] && !touched['sellTax'] && !touched['transferTax']) return '';
-		return totalTaxPct() > maxTotalTax ? `Total exceeds ${maxTotalTax}%` : '';
-	});
-
-	// --- Step navigation ---
-	let stepList = $derived(() => {
-		if (forceMode === 'launch') {
-			// Existing token: just token address → launch config
-			return [
-				{ id: 'basics' as WizardStep, label: 'Token' },
-				{ id: 'launch' as WizardStep, label: 'Launch' }
-			];
-		}
-		const s: { id: WizardStep; label: string }[] = [
-			{ id: 'basics', label: 'Basics' },
-			{ id: 'features', label: 'Features' }
-		];
-		if (isTaxable) s.push({ id: 'tax', label: 'Tax' });
+	let steps = $derived.by(() => {
+		const s: { id: WizardStep; label: string }[] = [{ id: 'basics', label: 'Basics' }];
+		if (!isRealExistingToken) s.push({ id: 'features', label: 'Features' });
+		if (isTaxable && !isRealExistingToken) s.push({ id: 'tax', label: 'Tax' });
 		if (launchEnabled) s.push({ id: 'launch', label: 'Launch' });
 		if (listingEnabled && !launchEnabled) s.push({ id: 'listing', label: 'DEX Listing' });
+		s.push({ id: 'review', label: 'Review' });
 		return s;
 	});
 
-	let currentStepIndex = $derived(stepList().findIndex((s) => s.id === wizardStep));
-
-	function validateBasics(): boolean {
-		if (useExistingToken) {
-			if (!chainId) { addFeedback({ message: 'Please select a network', type: 'error' }); return false; }
-			if (!ethers.isAddress(existingTokenAddress)) { addFeedback({ message: 'Invalid token address', type: 'error' }); return false; }
-			if (!name) { addFeedback({ message: 'Could not fetch token info. Check the address.', type: 'error' }); return false; }
-			if (!launchEnabled) { addFeedback({ message: 'Enable launchpad to use an existing token', type: 'error' }); return false; }
-			return true;
-		}
-		touched = { ...touched, name: true, symbol: true, supply: true, network: true };
-		if (!name.trim()) { addFeedback({ message: 'Token name is required', type: 'error' }); return false; }
-		if (!symbol.trim()) { addFeedback({ message: 'Token symbol is required', type: 'error' }); return false; }
-		if (!totalSupply || Number(totalSupply) <= 0) { addFeedback({ message: 'Total supply must be > 0', type: 'error' }); return false; }
-		if (!chainId) { addFeedback({ message: 'Please select a network', type: 'error' }); return false; }
-		return true;
-	}
-
-	function validateTax(): boolean {
-		touched = { ...touched, buyTax: true, sellTax: true, transferTax: true };
-		const buy = parseFloat(buyTaxPct) || 0;
-		const sell = parseFloat(sellTaxPct) || 0;
-		const transfer = parseFloat(transferTaxPct) || 0;
-		if (buy > maxBuyTax) { addFeedback({ message: `Buy tax must be <= ${maxBuyTax}%`, type: 'error' }); return false; }
-		if (sell > maxSellTax) { addFeedback({ message: `Sell tax must be <= ${maxSellTax}%`, type: 'error' }); return false; }
-		if (transfer > 5) { addFeedback({ message: 'Transfer tax must be <= 5%', type: 'error' }); return false; }
-		if (buy + sell + transfer > maxTotalTax) { addFeedback({ message: `Total tax must be <= ${maxTotalTax}%`, type: 'error' }); return false; }
-
-		// Validate wallets if any tax is set
-		if (buy > 0 || sell > 0 || transfer > 0) {
-			const hasWallets = taxWallets.some((w) => w.address.trim());
-			if (hasWallets) {
-				const sharePctSum = totalSharePct();
-				if (sharePctSum > 100.01) {
-					addFeedback({ message: `Tax wallet shares cannot exceed 100% (currently ${sharePctSum.toFixed(1)}%)`, type: 'error' });
-					return false;
-				}
-				for (const w of taxWallets) {
-					if (w.address.trim() && !/^0x[a-fA-F0-9]{40}$/.test(w.address.trim())) {
-						addFeedback({ message: `Invalid wallet address: ${w.address}`, type: 'error' });
-						return false;
-					}
-				}
-			}
-		}
-		return true;
-	}
-
-	function validateLaunch(): boolean {
-		const network = supportedNetworks.find((n) => n.chain_id == chainId);
-		if (!network?.launchpad_address || network.launchpad_address === '0x') {
-			addFeedback({ message: 'Launchpad not available on this network yet.', type: 'error' });
-			return false;
-		}
-		if (!launchSoftCap || !launchHardCap || parseFloat(launchHardCap) < parseFloat(launchSoftCap)) {
-			addFeedback({ message: 'Hard cap must be >= soft cap.', type: 'error' });
-			return false;
-		}
-		if (launchTokensPct <= 0 || launchTokensPct > 100) {
-			addFeedback({ message: 'Launch token % must be 1-100.', type: 'error' });
-			return false;
-		}
-		return true;
-	}
+	let currentStepIdx = $derived(steps.findIndex(s => s.id === wizardStep));
 
 	function nextStep() {
-		if (wizardStep === 'basics') {
-			if (!validateBasics()) return;
-			if (forceMode === 'launch') {
-				wizardStep = 'launch';
-			} else {
-				wizardStep = 'features';
-			}
-		} else if (wizardStep === 'features') {
-			if (isTaxable) wizardStep = 'tax';
-			else if (launchEnabled) wizardStep = 'launch';
-			else if (listingEnabled) wizardStep = 'listing';
-			else submit();
-		} else if (wizardStep === 'tax') {
-			if (!validateTax()) return;
-			if (launchEnabled) wizardStep = 'launch';
-			else if (listingEnabled) wizardStep = 'listing';
-			else submit();
-		} else if (wizardStep === 'launch') {
-			if (!validateLaunch()) return;
-			submit();
-		} else if (wizardStep === 'listing') {
-			submit();
-		}
+		const idx = currentStepIdx;
+		if (idx < steps.length - 1) wizardStep = steps[idx + 1].id;
+		else submit();
 	}
 
 	function prevStep() {
-		if (wizardStep === 'features') wizardStep = 'basics';
-		else if (wizardStep === 'tax') wizardStep = 'features';
-		else if (wizardStep === 'launch') {
-			if (forceMode === 'launch') {
-				wizardStep = 'basics';
-			} else if (isTaxable) {
-				wizardStep = 'tax';
-			} else {
-				wizardStep = 'features';
-			}
-		} else if (wizardStep === 'listing') {
-			if (isTaxable) wizardStep = 'tax';
-			else wizardStep = 'features';
-		}
+		const idx = currentStepIdx;
+		if (idx > 0) wizardStep = steps[idx - 1].id;
 	}
 
-	function addTaxWallet() {
-		if (taxWallets.length >= 10) return;
-		taxWallets = [...taxWallets, { address: '', sharePct: '' }];
-	}
-
-	function removeTaxWallet(index: number) {
-		if (taxWallets.length <= 1) return;
-		taxWallets = taxWallets.filter((_, i) => i !== index);
-	}
-
+	// ── Submit ─────────────────────────────────────────────
 	function submit() {
-		const network = supportedNetworks.find((n) => n.chain_id == chainId);
-		if (!network) return;
-
-		// Filter valid tax wallets
-		const validWallets = taxWallets.filter((w) => w.address.trim() && /^0x[a-fA-F0-9]{40}$/.test(w.address.trim()));
+		const network = supportedNetworks.find(n => n.chain_id == chainId);
+		if (!network) { addFeedback({ message: 'Please select a network', type: 'error' }); return; }
+		if (!useExistingToken && (!name.trim() || !symbol.trim())) { addFeedback({ message: 'Token name and symbol are required', type: 'error' }); return; }
+		if (!useExistingToken && (!totalSupply || Number(totalSupply) <= 0)) { addFeedback({ message: 'Total supply must be greater than 0', type: 'error' }); return; }
+		const validWallets = taxWallets.filter(w => w.address.trim() && /^0x[a-fA-F0-9]{40}$/.test(w.address.trim()));
+		const totalTokensForListing = listingPairs.reduce((sum, p) => {
+			if (totalLiquidityUsd <= 0 || tokensForPool <= 0) return sum;
+			return sum + tokensForPool * (pairUsd(p) / totalLiquidityUsd);
+		}, 0);
+		// Pre-compute per-pair token amounts using USD-normalized liquidity. This is the
+		// single source of truth for listing math — every downstream consumer must use
+		// pair.tokenAmount and never re-derive from (baseAmount / price), because BNB/USD
+		// ≠ USDT/USD and re-deriving mixes units, producing mispriced pools.
+		const pairsWithTokens: ListingPairConfig[] = listingPairs
+			.filter(p => Number(p.amount) > 0)
+			.map(p => {
+				const tokens = totalLiquidityUsd > 0 && tokensForPool > 0
+					? tokensForPool * (pairUsd(p) / totalLiquidityUsd)
+					: 0;
+				return { base: p.base, amount: p.amount, tokenAmount: String(tokens) };
+			});
 
 		updateTokenInfo({
 			name, symbol, totalSupply, decimals, isMintable, isTaxable, isPartner, network,
-			existingTokenAddress: useExistingToken ? existingTokenAddress : undefined,
+			existingTokenAddress: isRealExistingToken ? existingTokenAddress : undefined,
 			listing: {
-				enabled: listingEnabled,
-				baseCoin: listingPairs[0]?.base ?? 'native',
-				mode: 'price',
-				tokenAmount: String(totalTokensForListing),
-				baseAmount: listingPairs[0]?.amount ?? '',
-				pricePerToken: listingPricePerToken,
+				enabled: listingEnabled, baseCoin: listingPairs[0]?.base ?? 'native',
+				mode: 'price', tokenAmount: String(totalTokensForListing),
+				baseAmount: listingPairs[0]?.amount ?? '', pricePerToken: listingPricePerToken,
 				listBaseAmount: listingPairs[0]?.amount ?? '',
-				pairs: listingPairs.filter(p => Number(p.amount) > 0),
+				pairs: pairsWithTokens,
 			},
 			launch: {
-				enabled: launchEnabled,
-				tokensForLaunchPct: launchTokensPct,
-				curveType: launchCurveType,
-				softCap: launchSoftCap,
-				hardCap: launchHardCap,
-				durationDays: launchDurationDays,
-				maxBuyBps: launchMaxBuyBps,
-				creatorAllocationBps: launchCreatorAllocBps,
-				vestingDays: launchVestingDays,
-				launchPaymentToken: '0x0000000000000000000000000000000000000000'
+				enabled: launchEnabled, tokensForLaunchPct: launchTokensPct,
+				curveType: launchCurveType, softCap: launchSoftCap, hardCap: launchHardCap,
+				durationDays: launchDurationDays, maxBuyBps: String(Math.round(parseFloat(launchMaxBuyPct || '0') * 100)),
+				creatorAllocationBps: String(Math.round(parseFloat(launchCreatorAllocPct || '0') * 100)), vestingDays: launchVestingDays,
+				launchPaymentToken: '',
 			},
-			protection: {
-				maxWalletPct: (launchEnabled && protectionEnabled) ? maxWalletPct : '0',
-				maxTransactionPct: (launchEnabled && protectionEnabled) ? maxTransactionPct : '0',
-				cooldownSeconds: (launchEnabled && protectionEnabled) ? cooldownSeconds : '0'
-			},
-			tax: {
-				buyTaxPct: isTaxable ? buyTaxPct : '0',
-				sellTaxPct: isTaxable ? sellTaxPct : '0',
-				transferTaxPct: isTaxable ? transferTaxPct : '0',
-				wallets: isTaxable ? validWallets : []
-			}
+			protection: { maxWalletPct: protectionEnabled ? maxWalletPct : '0', maxTransactionPct: protectionEnabled ? maxTransactionPct : '0', cooldownSeconds: protectionEnabled ? cooldownSeconds : '0' },
+			tax: { buyTaxPct, sellTaxPct, transferTaxPct, wallets: validWallets },
+			metadata: (tokenLogoUrl || tokenDescription || tokenWebsite || tokenTwitter || tokenTelegram) ? {
+				logoUrl: tokenLogoUrl, description: tokenDescription,
+				website: tokenWebsite, twitter: tokenTwitter, telegram: tokenTelegram,
+			} : undefined,
 		});
+	}
+
+	// ── Preview callback ───────────────────────────────────
+	$effect(() => {
+		onPreviewChange?.({
+			name, symbol, totalSupply, decimals, isMintable, isTaxable, isPartner,
+			networkName: selectedNetwork?.name ?? '', launchEnabled, launchTokensPct, launchCurveType,
+			launchSoftCap, launchHardCap, protectionEnabled, maxWalletPct, maxTransactionPct,
+			buyTaxPct, sellTaxPct, transferTaxPct, wizardStep,
+			logoUrl: tokenLogoUrl, description: tokenDescription,
+			website: tokenWebsite, twitter: tokenTwitter, telegram: tokenTelegram,
+		});
+	});
+
+	// Auto-submit
+	let didAutoSubmit = false;
+	$effect(() => {
+		if (autoSubmit && !didAutoSubmit && name && symbol && totalSupply && chainId) {
+			didAutoSubmit = true; submit();
+		}
+	});
+
+	const CURVE_LABELS = ['Linear', 'Square Root', 'Quadratic', 'Exponential'];
+
+	// Simple curve path for mini thumbnails (no axes, no labels — just the line)
+	function curveMiniPath(type: number, w: number, h: number): string {
+		const pad = 2;
+		const pw = w - pad * 2, ph = h - pad * 2;
+		const pts: string[] = [];
+		const steps = 30;
+		for (let i = 0; i <= steps; i++) {
+			const x = i / steps;
+			let y: number;
+			switch (type) {
+				case 0: y = x; break;
+				case 1: y = Math.sqrt(x); break;
+				case 2: y = x * x; break;
+				case 3: y = (Math.exp(x * 3) - 1) / (Math.E ** 3 - 1); break;
+				default: y = x;
+			}
+			const px = pad + x * pw;
+			const py = pad + ph - y * ph;
+			pts.push(`${i === 0 ? 'M' : 'L'}${px.toFixed(1)},${py.toFixed(1)}`);
+		}
+		return pts.join(' ');
 	}
 </script>
 
-{#snippet networkSelect()}
-	<div class="field-group">
-		<label class="label-text" for="token-network">Network <Tooltip text="Which blockchain to deploy on. BSC has low fees and fast transactions." /></label>
-		<select id="token-network" required class="input-field" class:field-error={networkError} bind:value={chainId} onblur={() => markTouched('network')}>
-			<option value="">Select a network</option>
-			{#each supportedNetworks.filter((n) => n.platform_address.length > 2) as n (n.chain_id)}
-				<option value={n.chain_id}>{n.name} ({n.native_coin})</option>
-			{/each}
-		</select>
-		{#if networkError}<span class="field-error-text">{networkError}</span>{/if}
-	</div>
-{/snippet}
-
-<form class="wizard" autocomplete="off" onsubmit={(e) => e.preventDefault()}>
-	<!-- Step Indicator -->
-	<div class="step-indicator">
-		{#each stepList() as step, i}
-			<button
-				type="button"
-				class="step-dot {step.id === wizardStep ? 'active' : i < currentStepIndex ? 'done' : ''}"
-				onclick={() => {
-					// Allow going back to completed steps
-					if (i < currentStepIndex) wizardStep = step.id;
-				}}
-			>
-				<span class="step-num">{i < currentStepIndex ? 'v' : i + 1}</span>
-				<span class="step-label">{step.label}</span>
+<div class="wz">
+	<!-- Step indicator -->
+	<div class="wz-steps">
+		{#each steps as step, i}
+			<button class="wz-step" class:wz-step-done={i < currentStepIdx} class:wz-step-active={step.id === wizardStep} tabindex="-1" onclick={() => { if (i <= currentStepIdx) wizardStep = step.id; }}>
+				<span class="wz-step-num">{i < currentStepIdx ? '✓' : i + 1}</span>
+				<span class="wz-step-label">{step.label}</span>
 			</button>
-			{#if i < stepList().length - 1}
-				<div class="step-line {i < currentStepIndex ? 'done' : ''}"></div>
+			{#if i < steps.length - 1}
+				<div class="wz-step-line" class:wz-step-line-done={i < currentStepIdx}></div>
 			{/if}
 		{/each}
 	</div>
 
-	<!-- ==================== STEP: BASICS ==================== -->
-	{#if wizardStep === 'basics'}
-		<div class="wizard-step" style="animation: fadeIn 0.2s ease-out">
-			<div class="step-header">
-				<div class="flex items-center justify-between">
-					<div>
-						<h2 class="syne text-xl font-bold text-white">{useExistingToken ? 'Existing Token' : 'Token Basics'}</h2>
-						<p class="text-sm text-gray-500 font-mono mt-1">{useExistingToken ? 'Enter the address of your existing token to launch it.' : 'The identity of your token on the blockchain.'}</p>
-					</div>
-					{#if !forceMode}
-<button
-						type="button"
-						onclick={() => { useExistingToken = !useExistingToken; if (useExistingToken) { launchEnabled = true; } }}
-						class="text-xs font-mono transition cursor-pointer border-none bg-transparent shrink-0
-							{useExistingToken ? 'text-cyan-400' : 'text-gray-500 hover:text-cyan-400'}"
-					>
-						{useExistingToken ? '← Create new token' : 'I already have a token →'}
+	<!-- Step content -->
+	<div class="wz-content">
+		{#if wizardStep === 'basics'}
+			<BasicInfo bind:name bind:symbol bind:totalSupply bind:decimals bind:chainId bind:useExistingToken bind:existingTokenAddress bind:tokenLogoUrl bind:tokenDescription bind:tokenWebsite bind:tokenTwitter bind:tokenTelegram {supportedNetworks} {getNetworkProviders} isCreateOnly={!launchEnabled && !listingEnabled} onPresetLoaded={handlePresetLoaded} />
+
+		{:else if wizardStep === 'features'}
+			<Features bind:isMintable bind:isTaxable bind:isPartner />
+
+		{:else if wizardStep === 'tax'}
+			<TaxStep bind:buyTaxPct bind:sellTaxPct bind:transferTaxPct bind:taxWallets bind:protectionEnabled bind:maxWalletPct bind:maxTransactionPct bind:cooldownSeconds />
+
+		{:else if wizardStep === 'launch'}
+			<div class="wz-section">
+				<h2 class="wz-title">Bonding Curve Launch</h2>
+				<div class="wz-field">
+					<label class="wz-label">Tokens for launch ({launchTokensPct}%)</label>
+					<input type="range" class="wz-slider" min="20" max="90" step="5" bind:value={launchTokensPct} />
+				</div>
+				<div class="wz-field">
+					<label class="wz-label">Curve type</label>
+					<button class="curve-pick-btn" type="button" onclick={() => showCurveModal = true}>
+						<svg class="curve-pick-preview" viewBox="0 0 60 32" fill="none"><path d={curveMiniPath(launchCurveType, 60, 32)} stroke="#00d2ff" stroke-width="2" stroke-linecap="round" fill="none"/></svg>
+						<span class="curve-pick-name">{CURVE_LABELS[launchCurveType]}</span>
+						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
 					</button>
-{/if}
 				</div>
-			</div>
-
-			<div class="step-body">
-				{#if useExistingToken}
-					<!-- Network first for existing token -->
-					{@render networkSelect()}
-
-					<!-- Existing token address input -->
-					<div class="field-group">
-						<label class="label-text" for="existing-token-addr">Token Contract Address <Tooltip text="Paste the contract address of your existing ERC-20 token." /></label>
-						<input
-							id="existing-token-addr"
-							type="text"
-							class="input-field"
-							placeholder="0x..."
-							bind:value={existingTokenAddress}
-						/>
-						{#if existingTokenLoading}
-							<span class="text-gray-500 text-xs font-mono mt-1">Loading token info...</span>
-						{:else if name && existingTokenAddress}
-							<div class="existing-token-info mt-2">
-								<div class="flex justify-between items-center">
-									<span class="text-emerald-400 text-sm font-mono font-semibold">{name} ({symbol})</span>
-									<span class="text-gray-500 text-xs font-mono">{decimals} decimals</span>
-								</div>
-								<div class="flex justify-between items-center mt-1">
-									<span class="text-gray-400 text-xs font-mono">Supply: {Number(totalSupply).toLocaleString()}</span>
-									<span class="text-gray-400 text-xs font-mono">Balance: {existingTokenBalance > 0n ? parseFloat(ethers.formatUnits(existingTokenBalance, decimals)).toLocaleString() : '0'}</span>
-								</div>
-							</div>
-						{:else if existingTokenAddress && ethers.isAddress(existingTokenAddress) && !existingTokenLoading}
-							<span class="text-red-400 text-xs font-mono mt-1">Could not fetch token info. Check address and network.</span>
-						{/if}
-						</div>
-				{:else}
-					<!-- New token creation fields first -->
-					<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-						<div class="field-group">
-							<label class="label-text" for="token-name">Token Name <Tooltip text="The full name shown on explorers and wallets." /></label>
-							<input id="token-name" required class="input-field" class:field-error={nameError} bind:value={name} onblur={() => markTouched('name')} placeholder="My Awesome Token" />
-							{#if nameError}<span class="field-error-text">{nameError}</span>{/if}
-						</div>
-						<div class="field-group">
-							<label class="label-text" for="token-symbol">Symbol <Tooltip text="3-5 character ticker symbol (like BTC, ETH)." /></label>
-							<input id="token-symbol" required class="input-field" class:field-error={symbolError} bind:value={symbol} onblur={() => markTouched('symbol')} placeholder="MAT" maxlength="8" />
-							{#if symbolError}<span class="field-error-text">{symbolError}</span>{/if}
-							<span class="field-hint">{symbol.length}/8 chars</span>
-						</div>
-					</div>
-
-					<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-						<div class="field-group">
-							<label class="label-text" for="token-supply">Total Supply <Tooltip text="How many tokens exist. Common: 1M, 100M, 1B." /></label>
-							<input id="token-supply" required class="input-field" class:field-error={supplyError} bind:value={totalSupply} onblur={() => markTouched('supply')} placeholder="1,000,000" type="number" min="1" />
-							{#if supplyError}<span class="field-error-text">{supplyError}</span>{/if}
-						</div>
-						<div class="field-group">
-							<label class="label-text" for="token-decimals">Decimals <Tooltip text="How divisible the token is. 18 is standard (like ETH)." /></label>
-							<input id="token-decimals" required class="input-field" bind:value={decimals} type="number" min="0" max="18" />
-							<span class="field-hint">Standard: 18</span>
-						</div>
-					</div>
-
-					<!-- Network at bottom for new token -->
-					{@render networkSelect()}
-				{/if}
-			</div>
-		</div>
-
-	<!-- ==================== STEP: FEATURES ==================== -->
-	{:else if wizardStep === 'features'}
-		<div class="wizard-step" style="animation: fadeIn 0.2s ease-out">
-			<div class="step-header">
-				<h2 class="syne text-xl font-bold text-white">Token Features</h2>
-				<p class="text-sm text-gray-500 font-mono mt-1">Choose what your token can do. Features affect the creation fee.</p>
-			</div>
-
-			<div class="step-body">
-				<div class="flex flex-col gap-4">
-					<!-- Mintable -->
-					<div>
-						<label class="toggle-card {isMintable ? 'active' : ''}">
-							<div class="toggle-info">
-								<div class="toggle-icon">+</div>
-								<div>
-									<div class="text-sm font-semibold text-white syne">Mintable</div>
-									<div class="text-xs text-gray-500 font-mono mt-0.5">Create new tokens after deploy</div>
-								</div>
-							</div>
-							<div class="toggle-switch {isMintable ? 'on' : ''}">
-								<div class="toggle-thumb"></div>
-							</div>
-							<input type="checkbox" bind:checked={isMintable} class="sr-only" />
-						</label>
-						{#if isMintable}
-							<div class="edu-box cyan">
-								<div class="edu-title">What is Mintable?</div>
-								<div class="edu-text">As the owner, you can create new tokens anytime. Useful for staking rewards, airdrops, or game economies. Holders can also burn (destroy) their own tokens. Be transparent about minting plans — unlimited minting can dilute existing holders.</div>
-							</div>
-						{/if}
-					</div>
-
-					<!-- Taxable -->
-					<div>
-						<label class="toggle-card {isTaxable ? 'active tax-active' : ''}">
-							<div class="toggle-info">
-								<div class="toggle-icon tax-icon">%</div>
-								<div>
-									<div class="text-sm font-semibold text-white syne">Taxable</div>
-									<div class="text-xs text-gray-500 font-mono mt-0.5">Collect fee on every trade</div>
-								</div>
-							</div>
-							<div class="toggle-switch {isTaxable ? 'on tax-switch-on' : ''}">
-								<div class="toggle-thumb"></div>
-							</div>
-							<input type="checkbox" bind:checked={isTaxable} class="sr-only" />
-						</label>
-						{#if isTaxable}
-							<div class="edu-box amber">
-								<div class="edu-title">What is a Token Tax?</div>
-								<div class="edu-text">A small percentage is automatically deducted on buys, sells, or transfers. The tax is split between wallets you configure (marketing, development, rewards, etc). You'll set the exact rates and wallets in the next step. <strong>Max rates:</strong> buy 10%, sell 10%, transfer 5%, total 25%{isPartner ? ' (reduced by 1% for partner fee)' : ''}.</div>
-							</div>
-						{/if}
-					</div>
-
-					<!-- Partner -->
-					<div>
-						<div class="partner-recommend-badge">Recommended</div>
-						<label class="toggle-card partner-card {isPartner ? 'active' : ''}">
-							<div class="toggle-info">
-								<div class="toggle-icon partner-icon">P</div>
-								<div>
-									<div class="text-sm font-semibold text-white syne">Partnership</div>
-									<div class="text-xs text-gray-500 font-mono mt-0.5">Get promoted across our platform</div>
-								</div>
-							</div>
-							<div class="toggle-switch partner-switch {isPartner ? 'on' : ''}">
-								<div class="toggle-thumb"></div>
-							</div>
-							<input type="checkbox" bind:checked={isPartner} class="sr-only" />
-						</label>
-						{#if isPartner}
-							<div class="edu-box purple">
-								<div class="edu-title">Partner Benefits</div>
-								<div class="edu-text">Your token gets featured on our homepage, promoted across our social channels, and receives auto-created DEX liquidity pools. In exchange, a built-in 1% fee on buy &amp; sell sustains your ongoing promotion. You can add your own tax on top (up to 9% buy/sell).</div>
-							</div>
-						{/if}
-					</div>
-
-					{#if !forceMode}
-					<!-- Divider -->
-					<div class="section-divider"></div>
-
-					<!-- Launch toggle -->
-					<div>
-						<label class="toggle-card {launchEnabled ? 'active launch-active' : ''}">
-							<div class="toggle-info">
-								<div class="toggle-icon launch-icon">R</div>
-								<div>
-									<div class="text-sm font-semibold text-white syne">Launch on Launchpad</div>
-									<div class="text-xs text-gray-500 font-mono mt-0.5">Bonding curve launch with auto DEX graduation</div>
-								</div>
-							</div>
-							<div class="toggle-switch {launchEnabled ? 'on launch-switch-on' : ''}">
-								<div class="toggle-thumb"></div>
-							</div>
-							<input type="checkbox" bind:checked={launchEnabled} class="sr-only" />
-						</label>
-						{#if launchEnabled}
-							<div class="edu-box cyan">
-								<div class="edu-title">How does a Bonding Curve Launch work?</div>
-								<div class="edu-text">Your token starts at a low price that increases as people buy. Early buyers get a better price — rewarding early supporters. When the fundraise hits the <strong>hard cap</strong>, the token automatically "graduates" and gets listed on a DEX (like PancakeSwap) with real liquidity. If the <strong>soft cap</strong> isn't reached by the deadline, all buyers get a full refund. Everything happens in one click — no manual setup needed. You'll configure the curve and caps in the launch step.</div>
-							</div>
-						{:else}
-							<div class="tip mt-2">
-								Skip the launchpad to deploy a standard token. You can add DEX liquidity manually from Manage Tokens after deployment. You'll also need to configure protection settings and enable trading separately.
-							</div>
-						{/if}
-					</div>
-					{/if}
+				<div class="wz-row">
+					<div class="wz-field"><label class="wz-label">Soft cap ($)</label><input class="input-field" type="text" bind:value={launchSoftCap} /></div>
+					<div class="wz-field"><label class="wz-label">Hard cap ($)</label><input class="input-field" type="text" bind:value={launchHardCap} /></div>
 				</div>
-
-				{#if isMintable || isTaxable || isPartner}
-					<div class="fee-notice mt-4">
-						<span class="text-amber-400 text-sm font-mono">Fee applies:</span>
-						<span class="text-gray-400 text-xs font-mono ml-2">
-							{[isMintable && 'Mintable', isTaxable && 'Taxable', isPartner && 'Partner'].filter(Boolean).join(' + ')}
-							fee will be shown in the review step.
-						</span>
-					</div>
-				{/if}
-			</div>
-		</div>
-
-	<!-- ==================== STEP: TAX ==================== -->
-	{:else if wizardStep === 'tax'}
-		<div class="wizard-step" style="animation: fadeIn 0.2s ease-out">
-			<div class="step-header">
-				<h2 class="syne text-xl font-bold text-white">Tax Configuration</h2>
-				<p class="text-sm text-gray-500 font-mono mt-1">
-					Set fees collected on every trade and where they go.{isPartner ? ' Partner tokens also have a built-in 1% platform fee on top.' : ''}
-				</p>
-			</div>
-
-			<div class="step-body">
-				<!-- Tax Rates -->
-				<div class="subsection">
-					<h3 class="subsection-title syne">Tax Rates</h3>
-
-					<div class="edu-box amber compact mb-4">
-						<div class="edu-text">Taxes are automatically deducted from every transaction. A 3% buy tax means for every $100 purchase, $3 goes to your configured wallets. Set to 0 to disable a tax type. You can change rates anytime after deployment.</div>
-					</div>
-
-					<div class="grid grid-cols-3 gap-3">
-						<div class="field-group">
-							<label class="label-text" for="tax-buy">Buy Tax % <Tooltip text="Charged when someone buys on a DEX. Typical: 2-5%." /></label>
-							<input id="tax-buy" type="number" class="input-field" class:field-error={buyTaxError()} bind:value={buyTaxPct} onblur={() => markTouched('buyTax')} min="0" max={maxBuyTax} step="0.5" placeholder="0" />
-							{#if buyTaxError()}<span class="field-error-text">{buyTaxError()}</span>{/if}
-						</div>
-						<div class="field-group">
-							<label class="label-text" for="tax-sell">Sell Tax % <Tooltip text="Charged on sells. Higher discourages selling but can deter new buyers." /></label>
-							<input id="tax-sell" type="number" class="input-field" class:field-error={sellTaxError()} bind:value={sellTaxPct} onblur={() => markTouched('sellTax')} min="0" max={maxSellTax} step="0.5" placeholder="0" />
-							{#if sellTaxError()}<span class="field-error-text">{sellTaxError()}</span>{/if}
-						</div>
-						<div class="field-group">
-							<label class="label-text" for="tax-transfer">Transfer % <Tooltip text="On wallet-to-wallet transfers. Usually 0." /></label>
-							<input id="tax-transfer" type="number" class="input-field" class:field-error={transferTaxError()} bind:value={transferTaxPct} onblur={() => markTouched('transferTax')} min="0" max="5" step="0.5" placeholder="0" />
-							{#if transferTaxError()}<span class="field-error-text">{transferTaxError()}</span>{/if}
-						</div>
-					</div>
-
-					{#if totalTaxError()}
-						<div class="field-error-text mt-2">{totalTaxError()}</div>
-					{/if}
-
-					{#if totalTaxPct() > 0}
-						<div class="tax-summary">
-							<span class="text-gray-400 text-xs font-mono">Total tax:</span>
-							<span class="text-white text-sm font-mono font-bold {totalTaxPct() > maxTotalTax ? 'text-red-400' : ''}">{totalTaxPct().toFixed(1)}%</span>
-							<span class="text-gray-600 text-xs font-mono">/ {maxTotalTax}% max</span>
-							{#if isPartner}
-								<span class="text-purple-400 text-xs font-mono ml-2">+ 1% partner fee</span>
-							{/if}
-						</div>
-					{/if}
-				</div>
-
-				<!-- Tax Wallets -->
-				{#if totalTaxPct() > 0}
-					<div class="subsection">
-						<h3 class="subsection-title syne">Tax Distribution</h3>
-
-						<div class="edu-box cyan compact mb-4">
-							<div class="edu-text">Where the collected tax goes. Split it across multiple wallets — for example, 50% to marketing, 30% to development, 20% to a rewards pool. Shares must total 100%. You can change wallets and shares after deployment.</div>
-						</div>
-
-						<div class="flex flex-col gap-3">
-							{#each taxWallets as wallet, i}
-								<div class="wallet-row">
-									<div class="wallet-fields">
-										<input
-											class="input-field wallet-addr"
-											bind:value={wallet.address}
-											placeholder="0x... wallet address"
-										/>
-										<div class="share-input-wrap">
-											<input
-												class="input-field share-input"
-												type="number"
-												bind:value={wallet.sharePct}
-												placeholder="50"
-												min="1"
-												max="100"
-												step="1"
-											/>
-											<span class="share-suffix">%</span>
-										</div>
-										{#if taxWallets.length > 1}
-											<button type="button" class="remove-wallet-btn" onclick={() => removeTaxWallet(i)}>x</button>
-										{/if}
-									</div>
-								</div>
-							{/each}
-						</div>
-
-						{#if taxWallets.length < 10}
-							<button type="button" class="add-wallet-btn" onclick={addTaxWallet}>
-								+ Add wallet ({taxWallets.length}/10)
-							</button>
-						{/if}
-
-						<div class="tax-summary">
-							<span class="text-gray-400 text-xs font-mono">Share total:</span>
-							<span class="text-sm font-mono font-bold {totalSharePct() > 100.01 ? 'text-red-400' : 'text-emerald-400'}">
-								{totalSharePct().toFixed(0)}%
-							</span>
-							<span class="text-gray-600 text-xs font-mono">/ 100% max</span>
-							{#if totalSharePct() > 0 && totalSharePct() < 99.99}
-								<span class="text-amber-400 text-xs font-mono ml-1">({(100 - totalSharePct()).toFixed(0)}% burned)</span>
-							{/if}
-						</div>
-					</div>
-
-					<div class="edu-box subtle mt-2">
-						{#if totalSharePct() > 0 && totalSharePct() < 99.99}
-							<div class="edu-text">Shares total less than 100% — the remaining <strong>{(100 - totalSharePct()).toFixed(0)}%</strong> of collected tax will be <strong>burned</strong> (sent to the zero address), permanently reducing supply. This is a deflationary mechanism.</div>
-						{:else}
-							<div class="edu-text">No wallets configured? Tax will accumulate in the token contract. You can set up wallets later from the Manage Tokens page.</div>
-						{/if}
-					</div>
-				{:else}
-					<div class="edu-box subtle">
-						<div class="edu-text">All tax rates are set to 0 — no tax will be collected. You can enable taxes later from the Manage Tokens page since tax settings are never locked.</div>
-					</div>
-				{/if}
-			</div>
-		</div>
-
-	<!-- ==================== STEP: LAUNCH ==================== -->
-	{:else if wizardStep === 'launch'}
-		<div class="wizard-step" style="animation: fadeIn 0.2s ease-out">
-			<div class="step-header">
-				<h2 class="syne text-xl font-bold text-white">Launch Configuration</h2>
-				<p class="text-sm text-gray-500 font-mono mt-1">Configure your bonding curve launch. Everything happens in one click.</p>
-			</div>
-
-			<div class="step-body">
-				<!-- Tokens % -->
-				<div class="field-group">
-					<label class="label-text" for="launch-pct">Tokens for Launch ({launchTokensPct}%) <Tooltip text="% of total supply for the bonding curve. 70% sold on curve, 30% to DEX liquidity + creator allocation." /></label>
-					<input
-						id="launch-pct"
-						type="range"
-						min="10" max="90" step="5"
-						bind:value={launchTokensPct}
-						class="range-input"
-					/>
-					<div class="flex justify-between text-[10px] font-mono text-gray-600">
-						<span>10%</span>
-						<span class="text-cyan-400">{launchTokensAmount()} {symbol || 'tokens'} (70% curve / 30% LP+alloc)</span>
-						<span>90%</span>
-					</div>
-				</div>
-
-				<!-- Curve Type -->
-				<div class="field-group">
-					<label class="label-text" for="launch-curve">Bonding Curve Shape <Tooltip text="Controls how price increases as tokens are bought. Linear is simplest; exponential rewards early buyers most." /></label>
-					<select id="launch-curve" class="input-field" bind:value={launchCurveType}>
-						{#each CURVE_TYPES_LABEL as ct, i}
-							<option value={i}>{ct}</option>
-						{/each}
-					</select>
-					<div class="mt-2">
-						<BondingCurveChart curveType={launchCurveType} width={240} height={130} />
-					</div>
-				</div>
-
-				<!-- Caps -->
-				<div class="grid grid-cols-2 gap-3">
-					<div class="field-group">
-						<label class="label-text" for="launch-soft">Soft Cap (USDT) <Tooltip text="Minimum to raise. If not reached, all buyers get a full refund." /></label>
-						<input id="launch-soft" type="number" class="input-field" bind:value={launchSoftCap} step="any" min="0" placeholder="500" />
-					</div>
-					<div class="field-group">
-						<label class="label-text" for="launch-hard">Hard Cap (USDT) <Tooltip text="Maximum raise. When hit, token auto-graduates to DEX with liquidity." /></label>
-						<input id="launch-hard" type="number" class="input-field" bind:value={launchHardCap} step="any" min="0" placeholder="5000" />
-					</div>
-				</div>
-
-				<!-- Duration + Max Buy -->
-				<div class="grid grid-cols-2 gap-3">
-					<div class="field-group">
-						<label class="label-text" for="launch-dur">Duration <Tooltip text="How long the curve stays open. If soft cap isn't met by deadline, refunds are enabled." /></label>
-						<select id="launch-dur" class="input-field" bind:value={launchDurationDays}>
-							{#each [7, 14, 21, 30, 45, 60, 90] as d}
-								<option value={String(d)}>{d} days</option>
-							{/each}
+				<div class="wz-row">
+					<div class="wz-field">
+						<label class="wz-label">Duration</label>
+						<select class="input-field" bind:value={launchDurationDays}>
+							<option value="7">7 days</option>
+							<option value="14">14 days</option>
+							<option value="30">30 days</option>
+							<option value="60">60 days</option>
+							<option value="90">90 days</option>
 						</select>
 					</div>
-					<div class="field-group">
-						<label class="label-text" for="launch-max">Max Buy / Wallet <Tooltip text="Max % of curve tokens one wallet can buy. Prevents one buyer from taking the entire launch." /></label>
-						<select id="launch-max" class="input-field" bind:value={launchMaxBuyBps}>
-							<option value="50">0.5%</option>
-							<option value="100">1%</option>
-							<option value="200">2%</option>
-							<option value="300">3%</option>
-							<option value="500">5%</option>
+					<div class="wz-field">
+						<label class="wz-label">Max buy per wallet</label>
+						<select class="input-field" bind:value={launchMaxBuyPct}>
+							<option value="0.5">0.5%</option>
+							<option value="1">1%</option>
+							<option value="2">2%</option>
+							<option value="3">3%</option>
+							<option value="5">5%</option>
 						</select>
+						<span class="wz-field-hint">Max % of hard cap one wallet can buy</span>
 					</div>
 				</div>
-
-				<!-- Creator Alloc + Vesting -->
-				<div class="grid grid-cols-2 gap-3">
-					<div class="field-group">
-						<label class="label-text" for="launch-alloc">Creator Allocation <Tooltip text="% of launch tokens reserved for you, released over the vesting period. Builds investor trust." /></label>
-						<select id="launch-alloc" class="input-field" bind:value={launchCreatorAllocBps} onchange={() => { if (launchCreatorAllocBps !== '0' && launchVestingDays === '0') launchVestingDays = '30'; }}>
+				<div class="wz-row">
+					<div class="wz-field">
+						<label class="wz-label">Creator allocation</label>
+						<select class="input-field" bind:value={launchCreatorAllocPct}>
 							<option value="0">None</option>
-							<option value="100">1%</option>
-							<option value="200">2%</option>
-							<option value="300">3%</option>
-							<option value="500">5%</option>
+							<option value="1">1%</option>
+							<option value="2">2%</option>
+							<option value="3">3%</option>
+							<option value="5">5%</option>
+							<option value="10">10%</option>
 						</select>
+						<span class="wz-field-hint">Tokens reserved for you (vested)</span>
 					</div>
-					{#if launchCreatorAllocBps !== '0'}
-						<div class="field-group">
-							<label class="label-text" for="launch-vest">Vesting Period <Tooltip text="Tokens unlock gradually over this period. Longer vesting signals stronger commitment." /></label>
-							<select id="launch-vest" class="input-field" bind:value={launchVestingDays}>
-								<option value="30">30 days</option>
-								<option value="60">60 days</option>
-								<option value="90">90 days</option>
-							</select>
-						</div>
-					{/if}
+					<div class="wz-field">
+						<label class="wz-label">Vesting period</label>
+						<select class="input-field" bind:value={launchVestingDays}>
+							<option value="0">No vesting</option>
+							<option value="7">7 days</option>
+							<option value="14">14 days</option>
+							<option value="30">30 days</option>
+							<option value="60">60 days</option>
+							<option value="90">90 days</option>
+						</select>
+						<span class="wz-field-hint">Lock period for creator tokens</span>
+					</div>
 				</div>
 
-				<!-- Section divider -->
-				{#if forceMode !== 'launch'}
-				<div class="section-divider"></div>
-
-				<!-- Anti-Whale Protection -->
-				<div class="subsection">
-					<label class="toggle-card mini {protectionEnabled ? 'active protection-active' : ''}">
-						<div class="toggle-info">
-							<div>
-								<div class="text-xs font-semibold text-white syne">Anti-Whale Protection</div>
-								<div class="text-[10px] text-gray-500 font-mono mt-0.5">Limit max wallet &amp; transaction size</div>
-							</div>
+				<!-- Anti-whale protection -->
+				<div class="wz-toggle-card" class:wz-toggle-on={protectionEnabled}>
+					<label class="wz-toggle-row">
+						<div>
+							<span class="wz-toggle-title">Anti-Whale Protection</span>
+							<span class="wz-toggle-desc">Limit max wallet & transaction size</span>
 						</div>
-						<div class="toggle-switch small {protectionEnabled ? 'on protection-switch-on' : ''}">
-							<div class="toggle-thumb"></div>
+						<div class="wz-switch" class:wz-switch-on={protectionEnabled}>
+							<div class="wz-switch-thumb"></div>
 						</div>
 						<input type="checkbox" bind:checked={protectionEnabled} class="sr-only" />
 					</label>
-
 					{#if protectionEnabled}
-						<div class="edu-box amber compact mt-3 mb-3">
-							<div class="edu-text">Anti-whale limits prevent large holders from manipulating the price. Once trading is enabled (which happens automatically during launch), these limits are <strong>permanently locked</strong> — they can only be relaxed or removed, never made more restrictive. This protects investors from rug pulls via limit manipulation.</div>
-						</div>
-
-						<div class="grid grid-cols-2 gap-3">
-							<div class="field-group">
-								<label class="label-text" for="prot-wallet">Max Wallet (%) <Tooltip text="Max tokens one wallet can hold. 2% = no one holds more than 2% of supply." /></label>
-								<select id="prot-wallet" class="input-field" bind:value={maxWalletPct}>
-									<option value="0">No limit</option>
-									<option value="1">1%</option>
-									<option value="2">2%</option>
-									<option value="3">3%</option>
-									<option value="5">5%</option>
-									<option value="10">10%</option>
-								</select>
+						<div class="wz-toggle-body">
+							<div class="wz-row">
+								<div class="wz-field"><label class="wz-label">Max wallet (%)</label><input class="input-field" type="text" bind:value={maxWalletPct} placeholder="2" /></div>
+								<div class="wz-field"><label class="wz-label">Max transaction (%)</label><input class="input-field" type="text" bind:value={maxTransactionPct} placeholder="1" /></div>
 							</div>
-							<div class="field-group">
-								<label class="label-text" for="prot-tx">Max Transaction (%) <Tooltip text="Max tokens per transaction. Prevents large buys/sells that could crash the price." /></label>
-								<select id="prot-tx" class="input-field" bind:value={maxTransactionPct}>
-									<option value="0">No limit</option>
-									<option value="0.5">0.5%</option>
-									<option value="1">1%</option>
-									<option value="2">2%</option>
-									<option value="3">3%</option>
-									<option value="5">5%</option>
-								</select>
-							</div>
+							<div class="wz-field"><label class="wz-label">Cooldown (seconds)</label><input class="input-field" type="text" bind:value={cooldownSeconds} placeholder="0" /></div>
 						</div>
-						<div class="field-group">
-							<label class="label-text" for="prot-cool">Buy Cooldown <Tooltip text="Time between buys from the same wallet. Slows down bots and snipers." /></label>
-							<select id="prot-cool" class="input-field" bind:value={cooldownSeconds}>
-								<option value="0">Disabled</option>
-								<option value="30">30 seconds</option>
-								<option value="60">1 minute</option>
-								<option value="300">5 minutes</option>
-							</select>
-						</div>
-					{:else}
-						<div class="tip mt-2">No whale protection — anyone can buy or hold any amount.</div>
-					{/if}
-				</div>
-			{/if}
-
-				<div class="edu-box subtle mt-2">
-					<div class="edu-text">{forceMode === 'launch' ? 'Your token will be launched on a bonding curve. You\'ll need to approve and deposit tokens after creation. No buy fee — 3% platform fee on graduation only.' : 'Token is created and launched in one transaction. Remaining supply goes to your wallet. No buy fee — 3% platform fee on graduation only.'}</div>
-				</div>
-			</div>
-		</div>
-	<!-- ═══ STEP: LISTING ═══ -->
-	{:else if wizardStep === 'listing'}
-		<div class="wizard-step" style="animation: fadeIn 0.2s ease-out">
-			<div class="step-header">
-				<h2 class="syne text-xl font-bold text-white">DEX Listing</h2>
-				<p class="text-sm text-gray-500 font-mono mt-1">Add liquidity and your token is instantly tradable.</p>
-			</div>
-
-			<div class="step-body">
-				<!-- Step 1: How many tokens for trading -->
-				<div class="field-group">
-					<label class="label-text">How many tokens for trading? ({listingPoolPct}%)</label>
-					<p class="text-xs text-gray-600 font-mono mb-3">This is how much of your supply goes into the liquidity pool. The rest stays in your wallet.</p>
-					<div class="pool-slider-row">
-						<input type="range" class="pool-slider" min="10" max="100" step="5" bind:value={listingPoolPct} />
-						<span class="pool-slider-value">{listingPoolPct}%</span>
-					</div>
-					<div class="pool-slider-labels">
-						<span>{tokensForPool > 0 ? Number(tokensForPool).toLocaleString(undefined, { maximumFractionDigits: 0 }) : '0'} {symbol || 'TOKEN'} for pools</span>
-						<span>{Number(totalSupply) > 0 ? Number(Number(totalSupply) - tokensForPool).toLocaleString(undefined, { maximumFractionDigits: 0 }) : '0'} stays in your wallet</span>
-					</div>
-				</div>
-
-				<!-- Step 2: How much liquidity -->
-				<div class="field-group">
-					<label class="label-text">How much liquidity are you adding?</label>
-					<p class="text-xs text-gray-600 font-mono mb-3">Pick a currency and enter the amount. More liquidity = higher starting price.</p>
-
-					{#each listingPairs as pair, i}
-						<div class="pair-card">
-							<div class="pair-card-header">
-								<div class="pair-header-left">
-									<select
-										class="pair-base-select"
-										value={pair.base}
-										onchange={(e) => updatePairBase(i, (e.target as HTMLSelectElement).value as any)}
-									>
-										<option value="native">{selectedNetwork?.native_coin || 'BNB'}</option>
-										<option value="usdt">USDT</option>
-										<option value="usdc">USDC</option>
-									</select>
-								</div>
-								{#if listingPairs.length > 1}
-									<button type="button" class="pair-remove" onclick={() => removeListingPair(i)} title="Remove">
-										<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
-									</button>
-								{/if}
-							</div>
-
-							<div class="pair-card-body">
-								<div class="pair-amount-row">
-									<input
-										type="text"
-										class="pair-amount-input"
-										inputmode="decimal"
-										value={pair.amount}
-										oninput={(e) => updatePairAmount(i, (e.target as HTMLInputElement).value)}
-										placeholder="0.00"
-									/>
-									<span class="pair-amount-label">{getBaseLabel(pair.base)}</span>
-								</div>
-								{#if pairUsdValue(pair) > 0}
-									<div class="pair-usd">≈ ${pairUsdValue(pair).toLocaleString(undefined, { maximumFractionDigits: 2 })} USD</div>
-								{/if}
-							</div>
-
-							<!-- Pool share bar -->
-							{#if totalLiquidityUsd > 0 && pairUsdValue(pair) > 0}
-								<div class="pair-share">
-									<div class="pair-share-bar">
-										<div class="pair-share-fill" style="width: {pairSharePct(pair)}%"></div>
-									</div>
-									<div class="pair-share-info">
-										<span class="pair-share-name">{symbol || 'TOKEN'}/{getBaseLabel(pair.base)}</span>
-										<span class="pair-share-pct">{pairSharePct(pair).toFixed(1)}% · {Number(tokensForPair(pair)).toLocaleString(undefined, { maximumFractionDigits: 0 })} {symbol || 'TOKEN'}</span>
-									</div>
-								</div>
-							{/if}
-						</div>
-					{/each}
-
-					{#if listingPairs.length < 3}
-						<button type="button" class="add-pair-btn" onclick={addListingPair}>
-							<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v8M8 12h8"/></svg>
-							Add another pair ({listingPairs.length}/3)
-						</button>
 					{/if}
 				</div>
 
-				<!-- Live Preview -->
-				{#if totalLiquidityUsd > 0 && tokensForPool > 0}
-					<div class="listing-preview">
-						<div class="listing-preview-title">Preview</div>
-						<div class="listing-preview-grid">
-							<div class="listing-preview-item">
-								<span class="listing-preview-label">Starting Price</span>
-								<span class="listing-preview-value">${autoPrice > 0 ? autoPrice.toFixed(12).replace(/0+$/, '').replace(/\.$/, '') : '—'}</span>
-							</div>
-							<div class="listing-preview-item">
-								<span class="listing-preview-label">Market Cap</span>
-								<span class="listing-preview-value text-emerald-400">${totalLiquidityUsd > 0 ? (autoPrice * Number(totalSupply)).toLocaleString(undefined, { maximumFractionDigits: 0 }) : '—'}</span>
-							</div>
-							<div class="listing-preview-item">
-								<span class="listing-preview-label">Total Liquidity</span>
-								<span class="listing-preview-value">${totalLiquidityUsd.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
-							</div>
-							<div class="listing-preview-item">
-								<span class="listing-preview-label">$10 buys</span>
-								<span class="listing-preview-value">{autoPrice > 0 ? (10 / autoPrice).toLocaleString(undefined, { maximumFractionDigits: 0 }) : '—'} {symbol || 'TOKEN'}</span>
-							</div>
-						</div>
-
-						<!-- Pool breakdown -->
-						{#if listingPairs.filter(p => Number(p.amount) > 0).length > 0}
-							<div class="listing-preview-pools">
-								{#each listingPairs as pair}
-									{#if Number(pair.amount) > 0}
-										<div class="listing-pool-row">
-											<div class="listing-pool-bar-wrap">
-												<div class="listing-pool-bar" style="width: {pairSharePct(pair)}%; background: {pair.base === 'native' ? '#f59e0b' : pair.base === 'usdt' ? '#10b981' : '#3b82f6'}"></div>
-											</div>
-											<span class="listing-pool-name">{symbol}/{getBaseLabel(pair.base)}</span>
-											<span class="listing-pool-detail">{pair.amount} {getBaseLabel(pair.base)} ↔ {Number(tokensForPair(pair)).toLocaleString(undefined, { maximumFractionDigits: 0 })} {symbol}</span>
-											<span class="listing-pool-pct">{pairSharePct(pair).toFixed(0)}%</span>
-										</div>
-									{/if}
-								{/each}
-							</div>
-						{/if}
-					</div>
-				{/if}
-
-				<!-- Advanced toggle -->
-				<button type="button" class="advanced-toggle" onclick={() => listingAdvanced = !listingAdvanced}>
-					{listingAdvanced ? '▾ Hide' : '▸ Advanced'}: set price manually
-				</button>
-				{#if listingAdvanced}
-					<div class="field-group" style="margin-top: 8px;">
-						<label class="label-text" for="listing-price">Token Price (USDT)</label>
-						<div class="input-with-suffix">
-							<input id="listing-price" type="text" class="input-field" bind:value={listingPricePerToken} placeholder="0.001" />
-							<span class="input-suffix">USDT per {symbol || 'token'}</span>
-						</div>
-					</div>
-				{/if}
-
-				<div class="edu-box subtle">
-					<div class="edu-text">Token is created, liquidity added to {listingPairs.length > 1 ? `all ${listingPairs.length} pairs` : 'DEX'}, and trading enabled — all in one flow. Remaining supply goes to your wallet.</div>
-				</div>
+				<!-- Curve chart moved into modal -->
 			</div>
-		</div>
-	{/if}
 
-	<!-- Navigation Buttons -->
-	<div class="wizard-nav">
-		{#if wizardStep !== 'basics'}
-			<button type="button" class="nav-btn back" onclick={prevStep}>
-				Back
-			</button>
+		{:else if wizardStep === 'listing'}
+			<div class="wz-section">
+				<h2 class="wz-title">DEX Listing</h2>
+				<p class="wz-hint">Add liquidity and your token is instantly tradable.</p>
+				<ListingStep bind:symbol bind:totalSupply bind:poolPct={listingPoolPct} bind:pairs={listingPairs} bind:pricePerToken={listingPricePerToken} {nativeCoin} {bnbPriceUsd} />
+			</div>
+
+		{:else if wizardStep === 'review'}
+			<div class="wz-section">
+				<h2 class="wz-title">Review</h2>
+				<p class="wz-hint">Confirm your settings before deploying.</p>
+				<Review {name} {symbol} {totalSupply} {decimals} network={selectedNetwork} {isMintable} {isTaxable} {isPartner} {launchEnabled} {listingEnabled} {buyTaxPct} {sellTaxPct} {transferTaxPct} {taxWallets} {protectionEnabled} {maxWalletPct} {maxTransactionPct} {cooldownSeconds} {launchTokensPct} {launchCurveType} {launchSoftCap} {launchHardCap} {launchDurationDays} launchMaxBuyPct={launchMaxBuyPct} launchCreatorAllocPct={launchCreatorAllocPct} {launchVestingDays} {listingPoolPct} {listingPairs} {autoPrice} {totalLiquidityUsd} {nativeCoin} {useExistingToken} {existingTokenAddress} />
+			</div>
+		{/if}
+	</div>
+
+	<!-- Navigation -->
+	<div class="wz-nav">
+		{#if currentStepIdx > 0}
+			<button class="wz-btn wz-btn-back" onclick={prevStep}>Back</button>
 		{:else}
 			<div></div>
 		{/if}
-
-		<button type="button" class="nav-btn next syne" onclick={nextStep}>
-			{#if wizardStep === stepList()[stepList().length - 1]?.id}
-				{launchEnabled ? 'Review Token & Launch' : listingEnabled ? 'Review Token & Listing' : 'Review Transaction'} ->
-			{:else}
-				Next ->
-			{/if}
+		<button class="wz-btn wz-btn-next" onclick={nextStep}>
+			{wizardStep === 'review' ? (launchEnabled ? 'Deploy & Launch' : listingEnabled ? 'Deploy & List' : 'Deploy Token') : 'Next →'}
 		</button>
 	</div>
-</form>
+</div>
+
+<!-- Curve Type Picker Modal -->
+{#if showCurveModal}
+	<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+	<div class="curve-modal-overlay" onclick={() => showCurveModal = false} role="presentation">
+		<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+		<div class="curve-modal" onclick={(e) => e.stopPropagation()} role="dialog" aria-label="Choose curve type" tabindex="-1">
+			<div class="curve-modal-header">
+				<h3 class="curve-modal-title">Choose Curve Type</h3>
+				<button class="curve-modal-close" aria-label="Close" onclick={() => showCurveModal = false}>
+					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+				</button>
+			</div>
+
+			<div class="curve-modal-body">
+				<div class="curve-modal-chart">
+					<BondingCurveChart curveType={launchCurveType} width={320} height={200} />
+				</div>
+
+				<div class="curve-modal-options">
+					{#each CURVE_LABELS as label, i}
+						<button
+							class="curve-option"
+							class:curve-option-active={launchCurveType === i}
+							onclick={() => launchCurveType = i}
+						>
+							<svg class="curve-option-mini" viewBox="0 0 48 28" fill="none"><path d={curveMiniPath(i, 48, 28)} stroke={launchCurveType === i ? '#00d2ff' : '#475569'} stroke-width="2" stroke-linecap="round" fill="none"/></svg>
+							<div class="curve-option-info">
+								<span class="curve-option-name">{label}</span>
+								<span class="curve-option-desc">
+									{#if i === 0}Price rises steadily as tokens sell
+									{:else if i === 1}Cheaper early, flattens later
+									{:else if i === 2}Cheap early, expensive late
+									{:else}Slow start, rapid price surge
+									{/if}
+								</span>
+							</div>
+							{#if launchCurveType === i}
+								<svg class="curve-option-check" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#00d2ff" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+							{/if}
+						</button>
+					{/each}
+				</div>
+			</div>
+
+			<button class="curve-modal-done" onclick={() => showCurveModal = false}>
+				Done
+			</button>
+		</div>
+	</div>
+{/if}
 
 <style>
-	.wizard {
-		max-width: 580px;
-		width: 100%;
-		margin: 0 auto;
+	.wz { max-width: 640px; margin: 0 auto; }
+
+	/* Steps indicator */
+	.wz-steps { display: flex; align-items: center; gap: 0; margin-bottom: 24px; padding: 0 8px; }
+	.wz-step { display: flex; flex-direction: column; align-items: center; gap: 4px; background: none; border: none; cursor: pointer; padding: 0; }
+	.wz-step-num { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; font-family: 'Space Mono', monospace; border: 2px solid rgba(255,255,255,0.1); color: #64748b; background: transparent; transition: all 200ms; }
+	.wz-step-active .wz-step-num { border-color: #00d2ff; color: #00d2ff; background: rgba(0,210,255,0.1); }
+	.wz-step-done .wz-step-num { border-color: #10b981; color: #10b981; background: rgba(16,185,129,0.1); }
+	.wz-step-label { font-size: 9px; color: #64748b; font-family: 'Space Mono', monospace; text-transform: uppercase; letter-spacing: 0.05em; white-space: nowrap; }
+	.wz-step-active .wz-step-label { color: #00d2ff; }
+	.wz-step-done .wz-step-label { color: #10b981; }
+	.wz-step-line { flex: 1; height: 2px; background: rgba(255,255,255,0.06); min-width: 20px; margin: 0 4px; margin-bottom: 16px; }
+	.wz-step-line-done { background: #10b981; }
+
+	/* Content */
+	.wz-content { background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06); border-radius: 16px; padding: 24px; margin-bottom: 16px; }
+	.wz-section {}
+	.wz-title { font-family: 'Syne', sans-serif; font-size: 20px; font-weight: 800; color: #fff; margin: 0 0 4px; }
+	.wz-hint { font-size: 12px; color: #64748b; font-family: 'Space Mono', monospace; margin: 0 0 16px; }
+
+	.wz-field { margin-bottom: 14px; }
+	.wz-label { display: block; font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; font-family: 'Space Mono', monospace; margin-bottom: 6px; }
+	.wz-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+	.wz-slider { width: 100%; -webkit-appearance: none; height: 6px; background: rgba(255,255,255,0.08); border-radius: 3px; outline: none; }
+	.wz-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px; border-radius: 50%; background: #00d2ff; cursor: pointer; border: 2px solid #0a0a12; }
+	.wz-radio-row { display: flex; gap: 6px; flex-wrap: wrap; }
+	.wz-radio { padding: 6px 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08); background: transparent; color: #64748b; font-family: 'Space Mono', monospace; font-size: 11px; cursor: pointer; transition: all 150ms; }
+	.wz-radio:hover { border-color: rgba(0,210,255,0.3); color: #e2e8f0; }
+	.wz-radio-active { border-color: rgba(0,210,255,0.4); color: #00d2ff; background: rgba(0,210,255,0.08); }
+
+	.wz-field-hint { display: block; font-size: 10px; color: #64748b; font-family: 'Space Mono', monospace; margin-top: 3px; }
+	.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
+
+	/* Toggle card */
+	.wz-toggle-card { border: 1px solid rgba(255,255,255,0.06); border-radius: 12px; padding: 0; margin-top: 14px; overflow: hidden; transition: border-color 200ms; }
+	.wz-toggle-on { border-color: rgba(245,158,11,0.25); }
+	.wz-toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; cursor: pointer; gap: 12px; }
+	.wz-toggle-title { display: block; font-size: 13px; font-weight: 700; color: #e2e8f0; font-family: 'Syne', sans-serif; }
+	.wz-toggle-desc { display: block; font-size: 10px; color: #64748b; font-family: 'Space Mono', monospace; margin-top: 1px; }
+	.wz-toggle-body { padding: 0 14px 14px; }
+	.wz-switch { width: 40px; height: 22px; border-radius: 11px; background: rgba(255,255,255,0.1); position: relative; flex-shrink: 0; transition: background 200ms; }
+	.wz-switch-on { background: #f59e0b; }
+	.wz-switch-thumb { width: 16px; height: 16px; border-radius: 50%; background: white; position: absolute; top: 3px; left: 3px; transition: transform 200ms; }
+	.wz-switch-on .wz-switch-thumb { transform: translateX(18px); }
+
+	/* Nav */
+	.wz-nav { display: flex; justify-content: space-between; }
+	.wz-btn { padding: 12px 28px; border-radius: 12px; border: none; cursor: pointer; font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700; transition: all 200ms; }
+	.wz-btn-back { background: rgba(255,255,255,0.05); color: #64748b; }
+	.wz-btn-back:hover { background: rgba(255,255,255,0.08); color: #e2e8f0; }
+	.wz-btn-next { background: linear-gradient(135deg, #00d2ff, #3a7bd5); color: white; }
+	.wz-btn-next:hover { transform: translateY(-1px); box-shadow: 0 6px 28px rgba(0,210,255,0.3); }
+
+	/* Curve picker button */
+	.curve-pick-btn {
+		display: flex; align-items: center; gap: 10px;
+		width: 100%; padding: 10px 14px; border-radius: 10px;
+		background: var(--bg-surface-hover, rgba(255,255,255,0.04));
+		border: 1px solid var(--border-input, rgba(255,255,255,0.08));
+		color: #e2e8f0; cursor: pointer; transition: all 150ms;
+	}
+	.curve-pick-btn:hover { border-color: rgba(0,210,255,0.3); background: rgba(0,210,255,0.04); }
+	.curve-pick-preview { width: 60px; height: 32px; flex-shrink: 0; }
+	.curve-pick-name { flex: 1; text-align: left; font-family: 'Syne', sans-serif; font-weight: 600; font-size: 14px; }
+	.curve-pick-btn svg { color: #64748b; flex-shrink: 0; }
+
+	/* Curve modal */
+	.curve-modal-overlay {
+		position: fixed; inset: 0; z-index: 80;
+		background: rgba(0,0,0,0.7); backdrop-filter: blur(4px);
+		display: flex; align-items: center; justify-content: center; padding: 16px;
+	}
+	.curve-modal {
+		width: 100%; max-width: 440px;
+		background: var(--bg, #07070d); border: 1px solid rgba(255,255,255,0.08);
+		border-radius: 20px; overflow: hidden;
+		animation: curveModalIn 200ms ease-out;
+		box-shadow: 0 24px 80px rgba(0,0,0,0.5);
+	}
+	@keyframes curveModalIn {
+		from { opacity: 0; transform: scale(0.95) translateY(8px); }
+		to { opacity: 1; transform: scale(1) translateY(0); }
+	}
+	.curve-modal-header {
+		display: flex; align-items: center; justify-content: space-between;
+		padding: 18px 20px 0;
+	}
+	.curve-modal-title { font-family: 'Syne', sans-serif; font-size: 16px; font-weight: 700; color: #fff; margin: 0; }
+	.curve-modal-close {
+		width: 32px; height: 32px; border-radius: 8px; border: none;
+		background: rgba(255,255,255,0.05); color: #64748b;
+		display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 150ms;
+	}
+	.curve-modal-close:hover { background: rgba(255,255,255,0.1); color: #fff; }
+
+	.curve-modal-body { padding: 16px 20px; }
+	.curve-modal-chart {
+		background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05);
+		border-radius: 12px; padding: 12px; margin-bottom: 14px;
 	}
 
-	/* Inline validation */
-	:global(.field-error) {
-		border-color: rgba(239, 68, 68, 0.5) !important;
-		box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.1) !important;
+	.curve-modal-options { display: flex; flex-direction: column; gap: 6px; }
+	.curve-option {
+		display: flex; align-items: center; gap: 10px;
+		padding: 10px 12px; border-radius: 10px;
+		background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05);
+		color: inherit; cursor: pointer; transition: all 150ms; width: 100%;
 	}
-	.field-error-text {
-		font-size: 11px;
-		color: #f87171;
-		font-family: 'Space Mono', monospace;
-	}
+	.curve-option:hover { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.1); }
+	.curve-option-active { background: rgba(0,210,255,0.06); border-color: rgba(0,210,255,0.25); }
+	.curve-option-mini { width: 48px; height: 28px; flex-shrink: 0; }
+	.curve-option-info { flex: 1; display: flex; flex-direction: column; gap: 1px; text-align: left; }
+	.curve-option-name { font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 600; color: #e2e8f0; }
+	.curve-option-active .curve-option-name { color: #00d2ff; }
+	.curve-option-desc { font-family: 'Space Mono', monospace; font-size: 10px; color: #475569; line-height: 1.3; }
+	.curve-option-check { flex-shrink: 0; }
 
-	/* Step indicator */
-	.step-indicator {
-		display: flex;
-		align-items: center;
-		gap: 0;
-		margin-bottom: 28px;
-		padding: 0 4px;
-	}
-	.step-dot {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: 4px;
-		cursor: default;
-		background: none;
-		border: none;
-		padding: 0;
-		min-width: 48px;
-	}
-	.step-dot.done { cursor: pointer; }
-	.step-num {
-		width: 28px;
-		height: 28px;
-		border-radius: 50%;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		font-size: 12px;
-		font-weight: 700;
-		font-family: 'Space Mono', monospace;
-		background: var(--bg-surface-hover);
-		color: var(--text-dim);
-		border: 2px solid var(--border);
-		transition: all 0.2s;
-	}
-	.step-dot.active .step-num {
-		background: rgba(0,210,255,0.15);
-		color: #00d2ff;
-		border-color: rgba(0,210,255,0.4);
-		box-shadow: 0 0 12px rgba(0,210,255,0.2);
-	}
-	.step-dot.done .step-num {
-		background: rgba(16,185,129,0.15);
-		color: #10b981;
-		border-color: rgba(16,185,129,0.4);
-	}
-	.step-label {
-		font-size: 10px;
-		font-family: 'Space Mono', monospace;
-		color: var(--text-dim);
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-	}
-	.step-dot.active .step-label { color: #00d2ff; }
-	.step-dot.done .step-label { color: #10b981; }
-
-	.step-line {
-		flex: 1;
-		height: 2px;
-		background: var(--bg-surface-hover);
-		margin: 0 4px;
-		margin-bottom: 18px;
-		transition: background 0.3s;
-	}
-	.step-line.done { background: rgba(16,185,129,0.4); }
-
-	/* Wizard step content */
-	.wizard-step {
-		background: var(--bg-surface);
-		border: 1px solid var(--border);
-		border-radius: 20px;
-		padding: 14px;
-	}
-	@media (min-width: 640px) {
-		.wizard-step { padding: 28px; }
-	}
-
-	.step-header { margin-bottom: 20px; }
-	.step-body { display: flex; flex-direction: column; gap: 16px; }
-
-	.subsection { display: flex; flex-direction: column; gap: 12px; }
-	.subsection-title {
-		font-size: 13px;
-		font-weight: 700;
-		color: var(--text);
-	}
-
-	.section-divider {
-		height: 1px;
-		background: var(--bg-surface-hover);
-		margin: 4px 0;
-	}
-
-	/* Fields */
-	.field-group { position: relative; display: flex; flex-direction: column; gap: 4px; }
-	.field-hint {
-		font-size: 11px;
-		color: var(--text-dim);
-		font-family: 'Space Mono', monospace;
-	}
-
-	/* Educational tips */
-	.tip {
-		font-size: 11px;
-		color: var(--text-muted);
-		font-family: 'Space Mono', monospace;
-		line-height: 1.5;
-		padding: 0 2px;
-	}
-
-	.edu-box {
-		padding: 12px 14px;
-		border-radius: 10px;
-		animation: fadeIn 0.2s ease-out;
-		display: flex;
-		flex-direction: column;
-		gap: 4px;
-	}
-	.edu-box.compact { padding: 10px 12px; }
-	.edu-box.cyan {
-		background: rgba(0,210,255,0.04);
-		border: 1px solid rgba(0,210,255,0.12);
-	}
-	.edu-box.amber {
-		background: rgba(245,158,11,0.04);
-		border: 1px solid rgba(245,158,11,0.12);
-	}
-	.edu-box.purple {
-		background: rgba(139,92,246,0.04);
-		border: 1px solid rgba(139,92,246,0.12);
-	}
-	.edu-box.subtle {
-		background: var(--bg-surface);
-		border: 1px solid var(--bg-surface-hover);
-	}
-	.edu-title {
-		font-family: 'Syne', sans-serif;
-		font-size: 12px;
-		font-weight: 700;
-		color: var(--text);
-	}
-	.edu-box.cyan .edu-title { color: #67e8f9; }
-	.edu-box.amber .edu-title { color: #fbbf24; }
-	.edu-box.purple .edu-title { color: #c4b5fd; }
-	.edu-text {
-		font-size: 11px;
-		color: #9ca3af;
-		font-family: 'Space Mono', monospace;
-		line-height: 1.6;
-	}
-	.edu-text strong { color: #d1d5db; }
-
-	/* Toggle cards */
-	.toggle-card {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		padding: 14px;
-		border-radius: 10px;
-		border: 1px solid var(--border);
-		cursor: pointer;
-		transition: all 0.2s;
-		background: var(--bg-surface);
-	}
-	.toggle-card:hover { border-color: rgba(0,210,255,0.25); background: rgba(0,210,255,0.03); }
-	.toggle-card.active {
-		border-color: rgba(0,210,255,0.3);
-		background: rgba(0,210,255,0.05);
-	}
-	.toggle-card.mini { padding: 10px 14px; }
-
-	.toggle-card.tax-active { border-color: rgba(245,158,11,0.3); background: rgba(245,158,11,0.05); }
-	.toggle-card.tax-active:hover { border-color: rgba(245,158,11,0.4); }
-	.tax-icon { background: rgba(245,158,11,0.12) !important; color: #f59e0b !important; }
-	.tax-switch-on { background: rgba(245,158,11,0.5) !important; }
-
-	.toggle-card.launch-active { border-color: rgba(0,210,255,0.3); background: rgba(0,210,255,0.05); }
-	.launch-icon { background: rgba(0,210,255,0.12) !important; color: #00d2ff !important; }
-	.launch-switch-on { background: rgba(0,210,255,0.5) !important; }
-
-	.toggle-card.protection-active { border-color: rgba(245,158,11,0.3); background: rgba(245,158,11,0.05); }
-	.toggle-card.protection-active:hover { border-color: rgba(245,158,11,0.4); }
-	.protection-switch-on { background: rgba(245,158,11,0.5) !important; }
-
-	.partner-recommend-badge {
-		display: inline-block;
-		font-family: 'Syne', sans-serif;
-		font-size: 10px;
-		font-weight: 700;
-		text-transform: uppercase;
-		letter-spacing: 0.08em;
-		color: #c084fc;
-		background: linear-gradient(135deg, rgba(139,92,246,0.15), rgba(168,85,247,0.1));
-		border: 1px solid rgba(139,92,246,0.3);
-		padding: 3px 10px;
-		border-radius: 999px;
-		margin-bottom: 6px;
-	}
-	.toggle-card.partner-card {
-		border: 1px solid rgba(139,92,246,0.2);
-		background: linear-gradient(135deg, rgba(139,92,246,0.04), rgba(168,85,247,0.02));
-	}
-	.toggle-card.partner-card:hover {
-		border-color: rgba(139,92,246,0.35);
-		background: linear-gradient(135deg, rgba(139,92,246,0.08), rgba(168,85,247,0.04));
-	}
-	.toggle-card.partner-card.active {
-		border-color: rgba(139,92,246,0.45);
-		background: linear-gradient(135deg, rgba(139,92,246,0.1), rgba(168,85,247,0.06));
-	}
-	.partner-icon { background: rgba(139,92,246,0.15) !important; color: #a78bfa !important; }
-	.partner-switch.on { background: rgba(139,92,246,0.5) !important; }
-
-	.toggle-info { display: flex; align-items: center; gap: 10px; }
-	.toggle-icon {
-		font-size: 16px;
-		font-weight: 800;
-		width: 32px;
-		height: 32px;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		border-radius: 8px;
-		background: var(--bg-surface-hover);
-		color: #94a3b8;
-	}
-
-	.toggle-switch {
-		width: 36px;
-		height: 20px;
-		border-radius: 999px;
-		background: var(--border-input);
-		position: relative;
-		transition: all 0.2s;
-		flex-shrink: 0;
-	}
-	.toggle-switch.on { background: rgba(0,210,255,0.5); }
-	.toggle-switch.small { width: 36px; min-width: 36px; height: 20px; }
-
-	.toggle-thumb {
-		width: 14px;
-		height: 14px;
-		border-radius: 50%;
-		background: white;
-		position: absolute;
-		top: 3px;
-		left: 3px;
-		transition: all 0.2s;
-	}
-	.toggle-switch.on .toggle-thumb { transform: translateX(16px); }
-	.toggle-switch.small .toggle-thumb { width: 14px; height: 14px; }
-
-	/* Tax-specific */
-	.tax-summary {
-		display: flex;
-		align-items: center;
-		gap: 6px;
-		padding: 8px 12px;
-		background: var(--bg-surface);
-		border: 1px solid var(--bg-surface-hover);
-		border-radius: 8px;
-		margin-top: 4px;
-	}
-
-	.wallet-row { display: flex; flex-direction: column; gap: 4px; }
-	.wallet-fields {
-		display: flex;
-		gap: 6px;
-		align-items: center;
-	}
-	.wallet-addr { flex: 1; font-size: 12px !important; }
-	.share-input-wrap {
-		position: relative;
-		width: 80px;
-		flex-shrink: 0;
-	}
-	.share-input {
-		width: 100%;
-		padding-right: 24px !important;
-		text-align: right;
-	}
-	.share-suffix {
-		position: absolute;
-		right: 8px;
-		top: 50%;
-		transform: translateY(-50%);
-		font-size: 11px;
-		color: var(--text-dim);
-		pointer-events: none;
-		font-family: 'Space Mono', monospace;
-	}
-	.remove-wallet-btn {
-		width: 28px;
-		height: 28px;
-		border-radius: 6px;
-		background: rgba(239,68,68,0.1);
-		border: 1px solid rgba(239,68,68,0.2);
-		color: #ef4444;
-		cursor: pointer;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		font-size: 12px;
-		flex-shrink: 0;
-		transition: all 0.15s;
-	}
-	.remove-wallet-btn:hover { background: rgba(239,68,68,0.2); }
-
-	.add-wallet-btn {
-		padding: 8px 14px;
-		border-radius: 8px;
-		background: var(--bg-surface);
-		border: 1px dashed var(--btn-secondary-border);
-		color: var(--text-muted);
-		font-family: 'Space Mono', monospace;
-		font-size: 12px;
-		cursor: pointer;
-		transition: all 0.15s;
-		margin-top: 4px;
-	}
-	.add-wallet-btn:hover { border-color: rgba(0,210,255,0.3); color: #00d2ff; }
-
-	/* Fee notice */
-	.fee-notice {
-		padding: 10px 14px;
-		background: rgba(245,158,11,0.06);
-		border: 1px solid rgba(245,158,11,0.15);
-		border-radius: 8px;
-	}
-
-	/* Navigation */
-	.wizard-nav {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		margin-top: 16px;
-		gap: 12px;
-	}
-	.nav-btn {
-		padding: 12px 24px;
-		border-radius: 10px;
-		font-size: 14px;
-		font-weight: 600;
-		cursor: pointer;
-		transition: all 0.2s;
-		border: none;
-	}
-	.nav-btn.back {
-		background: var(--bg-surface-hover);
-		color: #94a3b8;
-		font-family: 'Space Mono', monospace;
-	}
-	.nav-btn.back:hover { background: var(--border); color: var(--text-heading); }
-	.nav-btn.next {
-		background: linear-gradient(135deg, #00d2ff, #3a7bd5);
-		color: white;
-		flex: 1;
-		max-width: 300px;
-		text-align: center;
-	}
-	.nav-btn.next:hover {
-		transform: translateY(-1px);
-		box-shadow: 0 8px 32px rgba(0,210,255,0.3);
-	}
-
-	/* Range input */
-	.range-input {
-		width: 100%;
-		-webkit-appearance: none;
-		appearance: none;
-		height: 6px;
-		border-radius: 3px;
-		background: rgba(255,255,255,0.1);
-		outline: none;
-		margin: 8px 0;
-	}
-	.range-input::-webkit-slider-thumb {
-		-webkit-appearance: none;
-		appearance: none;
-		width: 18px;
-		height: 18px;
-		border-radius: 50%;
-		background: linear-gradient(135deg, #00d2ff, #3a7bd5);
-		cursor: pointer;
-		border: 2px solid rgba(0,0,0,0.3);
-	}
-	.range-input::-moz-range-thumb {
-		width: 18px;
-		height: 18px;
-		border-radius: 50%;
-		background: linear-gradient(135deg, #00d2ff, #3a7bd5);
-		cursor: pointer;
-		border: 2px solid rgba(0,0,0,0.3);
-	}
-
-	/* Utility */
-	.sr-only {
-		position: absolute;
-		width: 1px;
-		height: 1px;
-		padding: 0;
-		margin: -1px;
-		overflow: hidden;
-		clip: rect(0,0,0,0);
-		white-space: nowrap;
-		border-width: 0;
-	}
-
-	select option { background: var(--select-bg); color: var(--text); }
-	.syne { font-family: 'Syne', sans-serif; }
-
-	@keyframes fadeIn {
-		from { opacity: 0; transform: translateY(-4px); }
-		to   { opacity: 1; transform: translateY(0); }
-	}
-
-	.existing-token-info {
-		padding: 10px 14px;
-		background: rgba(16, 185, 129, 0.05);
-		border: 1px solid rgba(16, 185, 129, 0.15);
-		border-radius: 8px;
-	}
-
-	/* ── Listing step ── */
-	.input-with-suffix {
-		position: relative;
-	}
-	.input-with-suffix .input-field {
-		padding-right: 140px;
-	}
-	.input-suffix {
-		position: absolute;
-		right: 12px;
-		top: 50%;
-		transform: translateY(-50%);
-		font-size: 11px;
-		font-family: monospace;
-		color: #6b7280;
-		pointer-events: none;
-	}
-
-	.pair-card {
-		border: 1px solid rgba(99, 102, 241, 0.15);
-		border-radius: 10px;
-		background: rgba(99, 102, 241, 0.03);
-		margin-bottom: 10px;
-		overflow: hidden;
-		transition: border-color 0.2s;
-	}
-	.pair-card:hover {
-		border-color: rgba(99, 102, 241, 0.3);
-	}
-	.pair-card-header {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		padding: 8px 12px;
-		background: rgba(99, 102, 241, 0.06);
-		border-bottom: 1px solid rgba(99, 102, 241, 0.1);
-	}
-	.pair-index {
-		width: 20px;
-		height: 20px;
-		border-radius: 50%;
-		background: rgba(99, 102, 241, 0.15);
-		color: #818cf8;
-		font-size: 11px;
-		font-weight: 700;
-		font-family: monospace;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-	}
-	.pair-label {
-		font-size: 13px;
-		font-weight: 600;
-		color: #e5e7eb;
-		flex: 1;
-		font-family: 'Syne', sans-serif;
-	}
-	.pair-remove {
-		color: #6b7280;
-		padding: 2px;
-		border-radius: 4px;
-		transition: color 0.15s;
-		background: none;
-		border: none;
-		cursor: pointer;
-	}
-	.pair-remove:hover {
-		color: #ef4444;
-	}
-	.pair-card-body {
-		display: grid;
-		grid-template-columns: 1fr 1fr 1fr;
-		gap: 10px;
-		padding: 12px;
-	}
-	.pair-field {
-		display: flex;
-		flex-direction: column;
-		gap: 4px;
-	}
-	.pair-field-label {
-		font-size: 10px;
-		color: #6b7280;
-		font-family: monospace;
-		text-transform: uppercase;
-		letter-spacing: 0.5px;
-	}
-	.pair-token-amount {
-		font-size: 15px;
-		font-weight: 700;
-		font-family: monospace;
-		color: #22d3ee;
-		padding: 7px 0;
-		line-height: 1.4;
-	}
-	.pair-token-symbol {
-		font-size: 10px;
-		font-weight: 400;
-		color: #6b7280;
-		margin-left: 4px;
-	}
-
-	.add-pair-btn {
-		width: 100%;
-		padding: 10px;
-		border-radius: 8px;
-		border: 1px dashed rgba(99, 102, 241, 0.25);
-		background: transparent;
-		color: #6b7280;
-		font-size: 12px;
-		font-family: monospace;
-		cursor: pointer;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		gap: 6px;
-		transition: all 0.2s;
-	}
-	.add-pair-btn:hover {
-		border-color: rgba(34, 211, 238, 0.4);
-		color: #22d3ee;
-		background: rgba(34, 211, 238, 0.03);
-	}
-
-	.listing-summary {
-		border: 1px solid rgba(16, 185, 129, 0.15);
-		border-radius: 10px;
-		background: rgba(16, 185, 129, 0.03);
-		padding: 14px;
-		margin-top: 8px;
-	}
-	.listing-summary-row {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		padding: 5px 0;
-	}
-	.listing-summary-row + .listing-summary-row {
-		border-top: 1px solid rgba(255,255,255,0.04);
-	}
-	.listing-summary-pair {
-		padding-left: 12px;
-	}
-	.listing-summary-label {
-		font-size: 11px;
-		font-family: monospace;
-		color: #6b7280;
-	}
-	.listing-summary-value {
-		font-size: 12px;
-		font-family: monospace;
-		font-weight: 600;
-		color: #e5e7eb;
-	}
-	.listing-summary-pct {
-		font-size: 10px;
-		color: #6b7280;
-		font-weight: 400;
-	}
-
-	/* New listing UI */
-	.pair-header-left { flex: 1; }
-	.pair-base-select {
-		padding: 4px 8px; border-radius: 8px; border: 1px solid rgba(99,102,241,0.2);
-		background: rgba(99,102,241,0.08); color: #818cf8; font-family: 'Space Mono', monospace;
-		font-size: 12px; font-weight: 700; cursor: pointer;
-	}
-	.pair-amount-row {
-		display: flex; align-items: center; gap: 8px;
-	}
-	.pair-amount-input {
-		flex: 1; background: transparent; border: none; outline: none;
-		color: #fff; font-family: 'Syne', sans-serif; font-size: 24px; font-weight: 700; padding: 0;
-	}
-	.pair-amount-input::placeholder { color: rgba(255,255,255,0.15); }
-	.pair-amount-label {
-		font-size: 13px; font-weight: 700; color: #64748b; font-family: 'Space Mono', monospace;
-	}
-	.pair-usd {
-		font-size: 11px; color: #64748b; font-family: 'Space Mono', monospace; margin-top: 4px;
-	}
-	.pair-share { padding: 8px 12px 10px; border-top: 1px solid rgba(99,102,241,0.08); }
-	.pair-share-bar {
-		width: 100%; height: 6px; background: rgba(255,255,255,0.05);
-		border-radius: 3px; overflow: hidden;
-	}
-	.pair-share-fill {
-		height: 100%; border-radius: 3px; transition: width 200ms;
-		background: linear-gradient(90deg, #00d2ff, #3a7bd5);
-	}
-	.pair-share-info {
-		display: flex; justify-content: space-between; margin-top: 4px;
-		font-size: 10px; font-family: 'Space Mono', monospace; color: #64748b;
-	}
-	.pair-share-pct { color: #00d2ff; }
-
-	/* Pool slider */
-	.pool-slider-row { display: flex; align-items: center; gap: 12px; }
-	.pool-slider {
-		flex: 1; -webkit-appearance: none; appearance: none; height: 6px;
-		background: rgba(255,255,255,0.08); border-radius: 3px; outline: none;
-	}
-	.pool-slider::-webkit-slider-thumb {
-		-webkit-appearance: none; width: 18px; height: 18px; border-radius: 50%;
-		background: #00d2ff; cursor: pointer; border: 2px solid #0a0a12;
-	}
-	.pool-slider-value {
-		font-size: 16px; font-weight: 700; color: #00d2ff;
-		font-family: 'Syne', sans-serif; min-width: 40px; text-align: right;
-	}
-	.pool-slider-labels {
-		display: flex; justify-content: space-between; margin-top: 4px;
-		font-size: 10px; font-family: 'Space Mono', monospace; color: #64748b;
-	}
-
-	/* Preview */
-	.listing-preview {
-		border: 1px solid rgba(0,210,255,0.15); border-radius: 12px;
-		background: rgba(0,210,255,0.03); padding: 16px; margin-top: 8px;
-	}
-	.listing-preview-title {
-		font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700;
-		color: #00d2ff; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.05em;
-	}
-	.listing-preview-grid {
-		display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px;
-	}
-	.listing-preview-item {
-		background: rgba(0,0,0,0.2); border-radius: 8px; padding: 10px;
-	}
-	.listing-preview-label {
-		display: block; font-size: 10px; color: #64748b;
-		font-family: 'Space Mono', monospace; text-transform: uppercase; letter-spacing: 0.03em;
-	}
-	.listing-preview-value {
-		display: block; font-size: 14px; font-weight: 700; color: #fff;
-		font-family: 'Space Mono', monospace; margin-top: 2px;
-	}
-
-	/* Pool breakdown */
-	.listing-preview-pools { border-top: 1px solid rgba(0,210,255,0.1); padding-top: 10px; }
-	.listing-pool-row {
-		display: grid; grid-template-columns: 60px 1fr 2fr auto; gap: 8px;
-		align-items: center; padding: 4px 0;
-		font-size: 10px; font-family: 'Space Mono', monospace;
-	}
-	.listing-pool-bar-wrap {
-		height: 8px; background: rgba(255,255,255,0.05); border-radius: 4px; overflow: hidden;
-	}
-	.listing-pool-bar { height: 100%; border-radius: 4px; transition: width 200ms; }
-	.listing-pool-name { color: #e2e8f0; font-weight: 700; }
-	.listing-pool-detail { color: #64748b; }
-	.listing-pool-pct { color: #00d2ff; font-weight: 700; text-align: right; }
-
-	/* Advanced toggle */
-	.advanced-toggle {
-		display: block; margin-top: 12px; padding: 0; border: none; background: none;
-		color: #64748b; font-size: 11px; font-family: 'Space Mono', monospace;
-		cursor: pointer; transition: color 150ms;
-	}
-	.advanced-toggle:hover { color: #00d2ff; }
+	.curve-modal-done {
+		display: block; width: calc(100% - 40px); margin: 0 20px 18px;
+		padding: 12px; border-radius: 10px; border: none;
+		background: linear-gradient(135deg, #00d2ff, #3a7bd5); color: white;
+		font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700;
+		cursor: pointer; transition: all 200ms;
+	}
+	.curve-modal-done:hover { transform: translateY(-1px); box-shadow: 0 6px 28px rgba(0,210,255,0.3); }
 
 	@media (max-width: 500px) {
-		.pair-card-body {
-			grid-template-columns: 1fr;
-		}
-		.listing-preview-grid { grid-template-columns: 1fr; }
-		.listing-pool-row { grid-template-columns: 1fr; gap: 2px; }
+		.wz-content { padding: 16px; }
+		.wz-row { grid-template-columns: 1fr; }
+		.wz-step-label { font-size: 8px; }
+		.curve-modal { max-width: 100%; border-radius: 16px; }
 	}
 </style>

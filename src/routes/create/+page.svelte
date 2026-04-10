@@ -8,8 +8,8 @@
 	import { FACTORY_ABI, PLATFORM_ROUTER_ABI, ROUTER_ABI, ERC20_ABI, ZERO_ADDRESS } from '$lib/tokenCrafter';
 	import { LAUNCHPAD_FACTORY_ABI, LAUNCH_INSTANCE_ABI, CURVE_TYPES, type CurveType } from '$lib/launchpad';
 	import { apiFetch } from '$lib/apiFetch';
-	import TokenForm from './lib/TokenFormV2.svelte';
-	import type { ListingConfig, ListingPairConfig, TokenFormData, PreviewState } from './lib/TokenFormV2.svelte';
+	import TokenForm from './lib/TokenForm.svelte';
+	import type { ListingConfig, ListingPairConfig, TokenFormData, PreviewState } from './lib/TokenForm.svelte';
 
 	let resetSignal = $state(0);
 	import DisplayPreview from './lib/DisplayPreview.svelte';
@@ -884,23 +884,38 @@
 				const tokenAmounts: bigint[] = [];
 				let ethValue = 0n;
 
-				// Native pair first (if any)
+				// Native pair first (if any). tokenAmount is pre-computed in
+				// TokenForm.submit() using USD-normalized liquidity. Never re-derive
+				// from (baseAmount / price) — BNB/USD ≠ USDT/USD and mixing units
+				// produces mispriced pools that get drained by cross-pool arbitrage.
 				if (nativePair && Number(nativePair.amount) > 0) {
+					if (!nativePair.tokenAmount || Number(nativePair.tokenAmount) <= 0) {
+						addFeedback({ message: 'Missing token amount for native pair.', type: 'error' });
+						step = 'review';
+						isCreating = false;
+						return;
+					}
 					const ethAmt = Number(nativePair.amount);
 					bases.push(ethers.ZeroAddress);
 					baseAmounts.push(ethers.parseEther(String(ethAmt)));
-					tokenAmounts.push(ethers.parseUnits((ethAmt / price).toFixed(6), tokenInfo.decimals));
+					tokenAmounts.push(ethers.parseUnits(Number(nativePair.tokenAmount).toFixed(6), tokenInfo.decimals));
 					ethValue = ethers.parseEther(String(ethAmt));
 				}
 
 				// ERC20 pairs
 				for (const pair of erc20Pairs) {
+					if (!pair.tokenAmount || Number(pair.tokenAmount) <= 0) {
+						addFeedback({ message: `Missing token amount for ${pair.base} pair.`, type: 'error' });
+						step = 'review';
+						isCreating = false;
+						return;
+					}
 					const baseAddress = getBaseTokenAddress(network, pair.base);
 					const baseDecimals = getBaseDecimals(network, pair.base);
 					const baseAmt = Number(pair.amount);
 					bases.push(baseAddress);
 					baseAmounts.push(ethers.parseUnits(String(baseAmt), baseDecimals));
-					tokenAmounts.push(ethers.parseUnits((baseAmt / price).toFixed(6), tokenInfo.decimals));
+					tokenAmounts.push(ethers.parseUnits(Number(pair.tokenAmount).toFixed(6), tokenInfo.decimals));
 				}
 
 				const listParams = { bases, baseAmounts, tokenAmounts, burnLP: false };
@@ -1135,12 +1150,18 @@
 				}
 			}
 
-			// Step 2: Calculate total tokens needed and approve
+			// Step 2: Calculate total tokens needed and approve. Use pre-computed
+			// pair.tokenAmount (USD-normalized) — never re-derive from baseAmt/price,
+			// which mixes units across BNB/USDT/USDC and mispriced the pools.
 			let totalTokensNeeded = 0n;
 			for (const pair of pairs) {
 				const baseAmt = Number(pair.amount);
 				if (!baseAmt || baseAmt <= 0) continue;
-				const tokensForPair = baseAmt / price;
+				const tokensForPair = Number(pair.tokenAmount ?? 0);
+				if (tokensForPair <= 0) {
+					addFeedback({ message: `Missing token amount for ${pair.base} pair.`, type: 'error' });
+					return;
+				}
 				totalTokensNeeded += ethers.parseUnits(tokensForPair.toFixed(6), tokenInfo.decimals);
 			}
 
@@ -1157,7 +1178,8 @@
 				const baseAmt = Number(pair.amount);
 				if (!baseAmt || baseAmt <= 0) continue;
 
-				const tokensForPair = baseAmt / price;
+				const tokensForPair = Number(pair.tokenAmount ?? 0);
+				if (tokensForPair <= 0) continue;
 				const parsedTokenAmount = ethers.parseUnits(tokensForPair.toFixed(6), tokenInfo.decimals);
 				const baseSymbol = getBaseSymbol(network, pair.base);
 
