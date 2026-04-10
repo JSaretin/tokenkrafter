@@ -26,7 +26,7 @@ contract LaunchpadFactory is Ownable, ReentrancyGuard {
     error InvalidRange();
     error ZeroTokens();
     error MaxDaysExceeded();
-    error NotTokenOwner();
+    error NotLaunchCreator();
     error NotRegisteredLaunch();
     error NotGraduated();
     error NotRefunding();
@@ -243,7 +243,8 @@ contract LaunchpadFactory is Ownable, ReentrancyGuard {
         uint256 maxBuyBps_,
         uint256 creatorAllocationBps_,
         uint256 vestingDays_,
-        uint256 startTimestamp_
+        uint256 startTimestamp_,
+        uint256 lockDurationAfterListing_
     ) internal returns (address) {
         if (token_ == address(0)) revert InvalidToken();
         if (totalTokens_ == 0) revert ZeroTokens();
@@ -267,7 +268,8 @@ contract LaunchpadFactory is Ownable, ReentrancyGuard {
             vestingDays_,
             dexRouter,
             usdt,
-            startTimestamp_
+            startTimestamp_,
+            lockDurationAfterListing_
         );
 
         launches.push(launch);
@@ -305,10 +307,14 @@ contract LaunchpadFactory is Ownable, ReentrancyGuard {
         uint256 creatorAllocationBps_,
         uint256 vestingDays_,
         address paymentToken_,
-        uint256 startTimestamp_
+        uint256 startTimestamp_,
+        uint256 lockDurationAfterListing_
     ) external payable nonReentrant returns (address) {
-        if (IOwnable(token_).owner() != msg.sender) revert NotTokenOwner();
-
+        // Anyone can create a launch for any ERC20. The real gate is the launch
+        // instance's preflight check, which verifies the launch is exempt from
+        // the token's transfer restrictions before allowing activation. If the
+        // token owner never grants the exemptions, the launch stays Pending and
+        // the creator can recover their deposit via withdrawPendingTokens().
         _collectLaunchFee(msg.sender, paymentToken_);
 
         (uint256 p1, uint256 p2) = _getCurveParams(curveType_);
@@ -326,11 +332,13 @@ contract LaunchpadFactory is Ownable, ReentrancyGuard {
             maxBuyBps_,
             creatorAllocationBps_,
             vestingDays_,
-            startTimestamp_
+            startTimestamp_,
+            lockDurationAfterListing_
         );
     }
 
-    /// @notice Create a launch with custom curve params. Caller must be token owner.
+    /// @notice Create a launch with custom curve params. Anyone can call this
+    ///         for any ERC20 — same preflight gating as `createLaunch`.
     function createLaunchCustomCurve(
         address token_,
         uint256 totalTokens_,
@@ -344,10 +352,9 @@ contract LaunchpadFactory is Ownable, ReentrancyGuard {
         uint256 creatorAllocationBps_,
         uint256 vestingDays_,
         address paymentToken_,
-        uint256 startTimestamp_
+        uint256 startTimestamp_,
+        uint256 lockDurationAfterListing_
     ) external payable nonReentrant returns (address) {
-        if (IOwnable(token_).owner() != msg.sender) revert NotTokenOwner();
-
         _collectLaunchFee(msg.sender, paymentToken_);
 
         return _createLaunchInternal(
@@ -363,7 +370,8 @@ contract LaunchpadFactory is Ownable, ReentrancyGuard {
             maxBuyBps_,
             creatorAllocationBps_,
             vestingDays_,
-            startTimestamp_
+            startTimestamp_,
+            lockDurationAfterListing_
         );
     }
 
@@ -381,7 +389,8 @@ contract LaunchpadFactory is Ownable, ReentrancyGuard {
         uint256 creatorAllocationBps_,
         uint256 vestingDays_,
         address paymentToken_,
-        uint256 startTimestamp_
+        uint256 startTimestamp_,
+        uint256 lockDurationAfterListing_
     ) external payable nonReentrant returns (address) {
         if (authorizedRouter == address(0) || msg.sender != authorizedRouter) revert OnlyAuthorizedRouter();
 
@@ -402,7 +411,8 @@ contract LaunchpadFactory is Ownable, ReentrancyGuard {
             maxBuyBps_,
             creatorAllocationBps_,
             vestingDays_,
-            startTimestamp_
+            startTimestamp_,
+            lockDurationAfterListing_
         );
     }
 
@@ -559,8 +569,10 @@ contract LaunchpadFactory is Ownable, ReentrancyGuard {
         LaunchInstance launch = tokenToLaunch[token_];
         if (address(launch) == address(0)) revert InvalidToken();
         if (launch.state() != LaunchInstance.LaunchState.Pending) revert NotRegisteredLaunch();
-        // Only token owner or factory owner can cancel
-        if (msg.sender != IOwnable(token_).owner() && msg.sender != owner()) revert NotTokenOwner();
+        // The launch creator (who deposited tokens and paid the fee) or the
+        // platform owner can cancel a pending launch. Token ownership is no
+        // longer relevant — anyone can create launches for tokens they don't own.
+        if (msg.sender != launch.creator() && msg.sender != owner()) revert NotLaunchCreator();
         delete tokenToLaunch[token_];
     }
 

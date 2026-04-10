@@ -46,7 +46,8 @@ interface ILaunchpadFactory {
         uint256 creatorAllocationBps_,
         uint256 vestingDays_,
         address paymentToken_,
-        uint256 startTimestamp_
+        uint256 startTimestamp_,
+        uint256 lockDurationAfterListing_
     ) external payable returns (address);
 
     function notifyDeposit(address launch_, uint256 amount) external;
@@ -88,21 +89,18 @@ interface IUniswapV2Factory {
 }
 
 interface IProtectedToken {
-    function enableTrading() external;
+    function enableTrading(uint256 delay) external;
     function setMaxWalletAmount(uint256) external;
     function setMaxTransactionAmount(uint256) external;
     function setCooldownTime(uint256) external;
     function setExcludedFromLimits(address, bool) external;
+    function setAuthorizedLauncher(address, bool) external;
 }
 
 interface ITaxableToken {
     function setTaxes(uint256, uint256, uint256) external;
     function setTaxDistribution(address[] calldata, uint16[] calldata) external;
     function excludeFromTax(address, bool) external;
-}
-
-interface IPoolToken {
-    function addPool(address pool) external;
 }
 
 interface IOwnableToken {
@@ -166,6 +164,7 @@ contract PlatformRouter is Ownable, ReentrancyGuard, Pausable {
         uint256[] baseAmounts;     // amount of each base token for LP
         uint256[] tokenAmounts;    // amount of created token per pool
         bool burnLP;               // burn LP tokens to dead address
+        uint256 tradingDelay;      // seconds between enableTrading() and public trading (anti-snipe)
     }
 
     struct LaunchParams {
@@ -179,6 +178,7 @@ contract PlatformRouter is Ownable, ReentrancyGuard, Pausable {
         uint256 vestingDays;
         address launchPaymentToken;
         uint256 startTimestamp;
+        uint256 lockDurationAfterListing;  // anti-snipe window after graduation
     }
 
     // ----------------------------------------------------------------
@@ -257,7 +257,8 @@ contract PlatformRouter is Ownable, ReentrancyGuard, Pausable {
             launch.creatorAllocationBps,
             launch.vestingDays,
             launch.launchPaymentToken,
-            launch.startTimestamp
+            launch.startTimestamp,
+            launch.lockDurationAfterListing
         );
 
         // Configure protections (router is owner)
@@ -327,7 +328,7 @@ contract PlatformRouter is Ownable, ReentrancyGuard, Pausable {
         uint256 poolCount = _addLiquidity(tokenAddress, list, preBalance);
 
         // Configure protections + tax
-        _configureAndEnableTrading(tokenAddress, protection, tax, p.isTaxable || p.isPartner);
+        _configureAndEnableTrading(tokenAddress, protection, tax, p.isTaxable || p.isPartner, list.tradingDelay);
 
         // Transfer remaining tokens + ownership to creator
         uint256 remaining = IERC20(tokenAddress).balanceOf(address(this));
@@ -381,7 +382,8 @@ contract PlatformRouter is Ownable, ReentrancyGuard, Pausable {
             msg.sender, p, referral
         );
 
-        _configureAndEnableTrading(tokenAddress, protection, tax, p.isTaxable || p.isPartner);
+        // No DEX listing here, no pools registered → no anti-snipe window needed.
+        _configureAndEnableTrading(tokenAddress, protection, tax, p.isTaxable || p.isPartner, 0);
 
         uint256 balance = IERC20(tokenAddress).balanceOf(address(this));
         if (balance > 0) IERC20(tokenAddress).safeTransfer(msg.sender, balance);
@@ -504,20 +506,18 @@ contract PlatformRouter is Ownable, ReentrancyGuard, Pausable {
             }
         }
 
-        // Register pools on token
-        for (uint256 i = 0; i < pools.length; i++) {
-            if (pools[i] != address(0)) {
-                try IPoolToken(tokenAddress).addPool(pools[i]) {} catch {}
-            }
-        }
+        // Pools are already pre-registered in the token at initialize() time
+        // via bases[] → factory.createPair, so no post-creation addPool loop is needed.
     }
 
     /// @dev Configure protections, tax, and enable trading for a newly created token.
+    ///      `tradingDelay` is the anti-snipe window (0 = trading opens immediately).
     function _configureAndEnableTrading(
         address tokenAddress,
         ProtectionParams calldata protection,
         TaxParams calldata tax,
-        bool isTaxable
+        bool isTaxable,
+        uint256 tradingDelay
     ) internal {
         IProtectedToken token = IProtectedToken(tokenAddress);
         token.setExcludedFromLimits(msg.sender, true);
@@ -535,10 +535,13 @@ contract PlatformRouter is Ownable, ReentrancyGuard, Pausable {
             }
         }
 
-        token.enableTrading();
+        token.enableTrading(tradingDelay);
     }
 
-    /// @dev Configure protections for launch (excludes launch contract, enables trading).
+    /// @dev Configure protections for launch. Does NOT enable trading —
+    ///      LaunchInstance.graduate() calls enableTrading(delay) atomically
+    ///      when the curve graduates, so the anti-snipe window starts from
+    ///      the actual DEX seeding moment, not from token creation.
     function _configureLaunchProtections(
         address tokenAddress,
         address launchAddress,
@@ -549,6 +552,8 @@ contract PlatformRouter is Ownable, ReentrancyGuard, Pausable {
         IProtectedToken token = IProtectedToken(tokenAddress);
         token.setExcludedFromLimits(msg.sender, true);
         token.setExcludedFromLimits(launchAddress, true);
+        // Authorize the launch instance to call enableTrading on graduation.
+        token.setAuthorizedLauncher(launchAddress, true);
 
         if (isTaxable) {
             ITaxableToken(tokenAddress).excludeFromTax(launchAddress, true);
@@ -565,8 +570,6 @@ contract PlatformRouter is Ownable, ReentrancyGuard, Pausable {
                 taxToken.setTaxDistribution(tax.taxWallets, tax.taxSharesBps);
             }
         }
-
-        token.enableTrading();
     }
 
     /// @dev Refund any excess ETH back to the caller.

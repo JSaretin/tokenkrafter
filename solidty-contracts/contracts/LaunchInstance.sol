@@ -17,6 +17,13 @@ interface ILaunchpadFactory {
     function clearTokenLaunch(address token_) external;
 }
 
+interface ILaunchToken {
+    function enableTrading(uint256 delay) external;
+    function isAuthorizedLauncher(address) external view returns (bool);
+    function isExcludedFromLimits(address) external view returns (bool);
+    function isTaxFree(address) external view returns (bool);
+}
+
 // =============================================================
 // BONDING CURVE LIBRARY
 // =============================================================
@@ -248,6 +255,11 @@ contract LaunchInstance is ReentrancyGuard {
     uint256 public graduationTimestamp;
     uint256 public refundStartTimestamp;
 
+    /// @notice Anti-snipe window after graduation. `enableTrading(lockDurationAfterListing)`
+    ///         is called atomically with DEX seeding so public trading only opens
+    ///         `lockDurationAfterListing` seconds after graduation.
+    uint256 public lockDurationAfterListing;
+
     // ── Token distribution ─────────────────────────────────────
     uint256 public tokensForCurve;
     uint256 public tokensForLP;
@@ -324,7 +336,8 @@ contract LaunchInstance is ReentrancyGuard {
         uint256 vestingDays_,
         address dexRouter_,
         address usdt_,
-        uint256 startTimestamp_
+        uint256 startTimestamp_,
+        uint256 lockDurationAfterListing_
     ) external {
         if (_initialized) revert AlreadyInitialized();
         _initialized = true;
@@ -338,6 +351,8 @@ contract LaunchInstance is ReentrancyGuard {
         if (vestingDays_ != 0 && vestingDays_ != 30 && vestingDays_ != 60 && vestingDays_ != 90) revert InvalidVesting();
         if (creatorAllocationBps_ != 0 && vestingDays_ == 0) revert CreatorAllocRequiresVesting();
         if (startTimestamp_ != 0 && startTimestamp_ <= block.timestamp) revert InvalidStartTimestamp();
+        // Mirror the token's MAX_TRADING_DELAY cap (24 hours).
+        if (lockDurationAfterListing_ > 24 hours) revert InvalidDuration();
 
         factory = payable(msg.sender);
         creator = creator_;
@@ -367,14 +382,16 @@ contract LaunchInstance is ReentrancyGuard {
         maxBuyPerWallet = (hardCap_ * maxBuyBps_) / BPS;
         vestingDuration = vestingDays_ * 1 days;
         vestingCliff = vestingDays_ > 0 ? 7 days : 0;
+        lockDurationAfterListing = lockDurationAfterListing_;
 
         state = LaunchState.Pending;
     }
 
     // ── Deposit & Activate ─────────────────────────────────────
 
-    /// @notice Creator deposits tokens to fund the launch. Once the required amount
-    ///         is deposited, the launch activates automatically.
+    /// @notice Creator deposits tokens to fund the launch. Once every
+    ///         prerequisite is met the launch activates automatically;
+    ///         otherwise the creator calls `activate()` once they're set.
     ///         Creator must approve this contract before calling.
     function depositTokens(uint256 amount) external onlyCreator {
         if (state != LaunchState.Pending) revert NotPending();
@@ -388,13 +405,68 @@ contract LaunchInstance is ReentrancyGuard {
 
         emit TokensDeposited(msg.sender, toDeposit);
 
-        // Auto-activate when fully funded
-        if (totalTokensDeposited >= totalTokensRequired) {
-            state = LaunchState.Active;
-            uint256 start = startTimestamp > block.timestamp ? startTimestamp : block.timestamp;
-            deadline = start + durationSeconds;
-            emit LaunchActivated();
-        }
+        _tryActivate();
+    }
+
+    /// @notice Returns whether the launch is ready to activate and, if not,
+    ///         a short reason code. Frontend uses this to show a checklist
+    ///         and guide the creator through the remaining steps. Every view
+    ///         call is wrapped in try/catch so tokens that don't implement
+    ///         a particular interface (e.g. plain ERC20s) silently pass that
+    ///         check — the corresponding restriction doesn't exist for them.
+    ///
+    ///         Reason codes:
+    ///           ""                       — ready
+    ///           "NOT_PENDING"            — already active / graduated / refunding
+    ///           "NOT_FUNDED"             — tokens still being deposited
+    ///           "NOT_EXCLUDED_FROM_LIMITS" — token enforces trading/limits and launch is not exempt
+    ///           "NOT_TAX_EXEMPT"         — taxable token and launch is not tax-free
+    ///           "NOT_AUTHORIZED_LAUNCHER" — platform token and launch is not an authorized launcher
+    function preflight() public view returns (bool ready, string memory reason) {
+        if (state != LaunchState.Pending) return (false, "NOT_PENDING");
+        if (totalTokensDeposited < totalTokensRequired) return (false, "NOT_FUNDED");
+
+        // Exemption from trading-enabled gate, maxWallet, maxTx, cooldown,
+        // pool-lock. Required so the launch can move tokens during curve
+        // buys/refunds regardless of the token's global restrictions.
+        try ILaunchToken(address(token)).isExcludedFromLimits(address(this)) returns (bool excluded) {
+            if (!excluded) return (false, "NOT_EXCLUDED_FROM_LIMITS");
+        } catch {}
+
+        // Tax exemption so curve buys/refunds aren't taxed as DEX trades.
+        try ILaunchToken(address(token)).isTaxFree(address(this)) returns (bool taxFree) {
+            if (!taxFree) return (false, "NOT_TAX_EXEMPT");
+        } catch {}
+
+        // Authorized to call enableTrading(delay) on graduation. Only matters
+        // for platform tokens with the pool-lock anti-snipe gate.
+        try ILaunchToken(address(token)).isAuthorizedLauncher(address(this)) returns (bool authorized) {
+            if (!authorized) return (false, "NOT_AUTHORIZED_LAUNCHER");
+        } catch {}
+
+        return (true, "");
+    }
+
+    /// @notice Manually activate the launch once every prerequisite is met.
+    ///         Idempotent with the auto-activation path in `depositTokens`.
+    function activate() external onlyCreator {
+        if (state != LaunchState.Pending) revert NotPending();
+        (bool ready, ) = preflight();
+        require(ready, "Preflight failed");
+        _activate();
+    }
+
+    /// @dev Non-reverting activation used by auto-paths. No-op if preflight fails.
+    function _tryActivate() internal {
+        (bool ready, ) = preflight();
+        if (ready) _activate();
+    }
+
+    function _activate() internal {
+        state = LaunchState.Active;
+        uint256 start = startTimestamp > block.timestamp ? startTimestamp : block.timestamp;
+        deadline = start + durationSeconds;
+        emit LaunchActivated();
     }
 
     /// @notice Called by the factory after tokens have been transferred directly
@@ -412,13 +484,7 @@ contract LaunchInstance is ReentrancyGuard {
 
         emit TokensDeposited(creator, amount);
 
-        // Auto-activate when fully funded
-        if (totalTokensDeposited >= totalTokensRequired) {
-            state = LaunchState.Active;
-            uint256 start = startTimestamp > block.timestamp ? startTimestamp : block.timestamp;
-            deadline = start + durationSeconds;
-            emit LaunchActivated();
-        }
+        _tryActivate();
     }
 
     /// @notice Creator can withdraw deposited tokens if launch is still pending
@@ -638,6 +704,14 @@ contract LaunchInstance is ReentrancyGuard {
 
         // Mint LP tokens and burn them — permanent liquidity
         IUniswapV2Pair(pair).mint(address(0xdead));
+
+        // Open public trading after the anti-snipe window. Only platform tokens
+        // expose `enableTrading` and only when the creator authorized this launch
+        // instance via `setAuthorizedLauncher`. External Ownable ERC20s (already
+        // tradeable) don't implement this — silently skip in that case. Missing
+        // authorization on a platform token is non-fatal here: the creator can
+        // still call `token.enableTrading(0)` themselves after graduation.
+        try ILaunchToken(address(token)).enableTrading(lockDurationAfterListing) {} catch {}
 
         // Send remaining USDT to platform (graduation = no refunds)
         uint256 usdtBal = usdt.balanceOf(address(this));

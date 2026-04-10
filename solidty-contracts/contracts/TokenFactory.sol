@@ -39,11 +39,7 @@ interface IUniswapV2Router02 {
     ) external returns (uint256[] memory amounts);
 }
 
-/// @notice Minimal Uniswap V2 Factory interface for pair creation and lookup.
-interface IUniswapV2Factory {
-    function createPair(address tokenA, address tokenB) external returns (address pair);
-    function getPair(address tokenA, address tokenB) external view returns (address pair);
-}
+// Note: IUniswapV2Factory is imported via TokenImplementations.sol.
 
 // =============================================================
 // TOKEN FACTORY
@@ -355,37 +351,23 @@ contract TokenFactory is Ownable, ReentrancyGuard {
         }
     }
 
-    /// @dev Creates DEX pairs for the token against all supported quote tokens and
-    ///      registers them on the token via `setupPools`.
-    function _setupPools(address token) internal {
-        IUniswapV2Factory dexFactory = IUniswapV2Factory(dexRouter.factory());
+    /// @dev Builds the `bases[]` array passed to `IToken.initialize` so the
+    ///      token registers every supported base → pair mapping at init time.
+    ///      address(0) in _supportedTokens is mapped to WETH.
+    function _buildBases(address tokenToExclude) internal view returns (address[] memory bases) {
         address weth = dexRouter.WETH();
         uint256 len = _supportedTokens.length;
-        address[] memory pools = new address[](len);
+        address[] memory tmp = new address[](len);
         uint256 count;
-
         for (uint256 i; i < len;) {
-            address quoteToken = _supportedTokens[i] == address(0)
-                ? weth
-                : _supportedTokens[i];
-
-            if (quoteToken == token) {
-                unchecked { ++i; }
-                continue;
+            address base = _supportedTokens[i] == address(0) ? weth : _supportedTokens[i];
+            if (base != tokenToExclude && base != address(0)) {
+                tmp[count++] = base;
             }
-
-            address pair = dexFactory.getPair(token, quoteToken);
-            if (pair == address(0)) {
-                pair = dexFactory.createPair(token, quoteToken);
-            }
-            pools[count] = pair;
-            unchecked { ++count; ++i; }
+            unchecked { ++i; }
         }
-
-        // Trim array to actual count
-        assembly ("memory-safe") { mstore(pools, count) }
-
-        IPoolManagedToken(token).setupPools(pools);
+        bases = new address[](count);
+        for (uint256 i; i < count;) { bases[i] = tmp[i]; unchecked { ++i; } }
     }
 
     /// @dev Adds a token to the supported payment list if not already present.
@@ -475,16 +457,11 @@ contract TokenFactory is Ownable, ReentrancyGuard {
     ) internal {
         uint256 supply = p.totalSupply * 10 ** p.decimals;
 
-        if (p.isPartner || p.isTaxable) {
-            IPoolManagedToken(tokenAddress).initialize(
-                p.name, p.symbol, supply, p.decimals, mintTo, address(this)
-            );
-            _setupPools(tokenAddress);
-        } else {
-            IToken(tokenAddress).initialize(
-                p.name, p.symbol, supply, p.decimals, mintTo, address(this)
-            );
-        }
+        address[] memory bases = _buildBases(tokenAddress);
+        IToken(tokenAddress).initialize(
+            p.name, p.symbol, supply, p.decimals, mintTo, address(this),
+            dexRouter.factory(), bases
+        );
 
         createdTokens[creator].push(tokenAddress);
         _allTokens.push(tokenAddress);
