@@ -1761,15 +1761,17 @@
 						<div class="mb-3">
 							<label class="label-text">{$t('lpd.payWith')}</label>
 							<button class="pay-asset-btn" type="button" onclick={() => showPayPicker = true}>
-								{@const sym = buyPaymentMethod === 'native' ? nativeCoin : buyPaymentMethod.toUpperCase()}
-								{#if getKnownLogo(sym)}
-									<img src={getKnownLogo(sym)} alt="" class="pay-asset-logo" />
-								{:else}
-									<span class="pay-asset-letter">{sym.charAt(0)}</span>
-								{/if}
-								<span class="pay-asset-name">{sym}</span>
-								{#if buyPaymentMethod === 'native'}<span class="pay-asset-tag">auto-converted</span>{/if}
-								<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M6 9l6 6 6-6"/></svg>
+								<svelte:boundary>
+									{@const sym = buyPaymentMethod === 'native' ? nativeCoin : buyPaymentMethod.toUpperCase()}
+									{#if getKnownLogo(sym)}
+										<img src={getKnownLogo(sym)} alt="" class="pay-asset-logo" />
+									{:else}
+										<span class="pay-asset-letter">{sym.charAt(0)}</span>
+									{/if}
+									<span class="pay-asset-name">{sym}</span>
+									{#if buyPaymentMethod === 'native'}<span class="pay-asset-tag">auto-converted</span>{/if}
+									<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M6 9l6 6 6-6"/></svg>
+								</svelte:boundary>
 							</button>
 						</div>
 
