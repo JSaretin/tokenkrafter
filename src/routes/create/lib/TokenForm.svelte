@@ -40,7 +40,7 @@
 	import { BasicInfo, Features, TaxConfig as TaxStep, ListingConfig as ListingStep, Review } from './steps';
 	import BondingCurveChart from '$lib/BondingCurveChart.svelte';
 
-	type WizardStep = 'basics' | 'features' | 'tax' | 'launch' | 'listing' | 'review';
+	type WizardStep = 'mode' | 'basics' | 'features' | 'tax' | 'launch' | 'listing' | 'review';
 	let wizardStep = $state<WizardStep>('basics');
 
 	// ── Props ──────────────────────────────────────────────

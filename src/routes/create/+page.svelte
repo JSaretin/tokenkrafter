@@ -126,6 +126,10 @@
 	let launchStep = $state<'idle' | 'fee' | 'approving-fee' | 'creating' | 'approving-tokens' | 'depositing' | 'saving' | 'done'>('idle');
 	let launchDeployedAddress: string | null = $state(null);
 
+	// Hoisted above $derived users below — context binding has no other deps.
+	let _getNetworks: () => SupportedNetwork[] = getContext('supportedNetworks');
+	let supportedNetworks = $derived(_getNetworks());
+
 	let launchNetwork = $derived(supportedNetworks.find((n) => n.chain_id == launchChainId));
 	let launchNetworks = $derived(supportedNetworks.filter((n) => n.launchpad_address && n.launchpad_address !== '0x'));
 
@@ -304,8 +308,6 @@
 	let getUserAddress: () => string | null = getContext('userAddress');
 	let connectWallet: () => Promise<boolean> = getContext('connectWallet');
 	const addFeedback = getContext<(f: { message: string; type: string }) => void>('addFeedback');
-	let _getNetworks: () => SupportedNetwork[] = getContext('supportedNetworks');
-	let supportedNetworks = $derived(_getNetworks());
 	let getNetworkProviders: () => Map<number, ethers.JsonRpcProvider> = getContext('networkProviders');
 	let getProvidersReady: () => boolean = getContext('providersReady');
 	let getPaymentOptions: (network: SupportedNetwork) => PaymentOption[] = getContext('getPaymentOptions');
@@ -573,6 +575,15 @@
 		}
 		return total;
 	});
+
+	// Deposit modal: show the shortfall (need − balance), not the total needed.
+	let depositNeededWei = $derived.by(() => {
+		const dec = selectedPayment?.decimals ?? 18;
+		if (isNativePayment) return totalNativeNeeded;
+		try { return ethers.parseUnits(String(selectedFeeFormatted || '0'), dec); } catch { return 0n; }
+	});
+	let depositShortWei = $derived(depositNeededWei > userBalance ? depositNeededWei - userBalance : 0n);
+	let depositShortFmt = $derived(parseFloat(ethers.formatUnits(depositShortWei, selectedPayment?.decimals ?? 18)).toFixed(4));
 
 	async function checkBalance(): Promise<boolean> {
 		if (!userAddress || !tokenInfo || !selectedPayment) return false;
@@ -1368,8 +1379,8 @@
 					<div class="deposit-amount">
 						<span class="deposit-amount-label">Send at least</span>
 						<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-						<div class="deposit-amount-copy" onclick={() => { navigator.clipboard.writeText(isNativePayment ? parseFloat(ethers.formatUnits(totalNativeNeeded, 18)).toFixed(4) : selectedFeeFormatted || '0'); addFeedback({ message: 'Amount copied', type: 'success' }); }}>
-							<span class="deposit-amount-value">{isNativePayment ? parseFloat(ethers.formatUnits(totalNativeNeeded, 18)).toFixed(4) : selectedFeeFormatted} {selectedPayment?.symbol}</span>
+						<div class="deposit-amount-copy" onclick={() => { navigator.clipboard.writeText(depositShortFmt); addFeedback({ message: 'Amount copied', type: 'success' }); }}>
+							<span class="deposit-amount-value">{depositShortFmt} {selectedPayment?.symbol}</span>
 							<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
 						</div>
 						<span class="deposit-amount-bal">Balance: {parseFloat(ethers.formatUnits(userBalance, selectedPayment?.decimals ?? 18)).toFixed(4)} {selectedPayment?.symbol}</span>

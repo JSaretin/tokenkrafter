@@ -125,8 +125,14 @@
 		return list;
 	});
 
-	function fmtSupply(val: string, dec: number): string {
-		const n = parseFloat(ethers.formatUnits(val || '0', dec));
+	function fmtSupply(val: string | number, dec: number): string {
+		// total_supply may be raw wei-scale ("1000000000000000000000000000") or
+		// already human-formatted ("1000000000.0"). formatUnits only accepts integers.
+		const raw = String(val ?? '0');
+		const n = /^\d+$/.test(raw)
+			? parseFloat(ethers.formatUnits(raw, dec))
+			: parseFloat(raw);
+		if (!Number.isFinite(n)) return '0';
 		if (n >= 1e12) return `${(n / 1e12).toFixed(1)}T`;
 		if (n >= 1e9) return `${(n / 1e9).toFixed(1)}B`;
 		if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;

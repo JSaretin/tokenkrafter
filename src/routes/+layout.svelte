@@ -14,7 +14,7 @@
 	import { initApiFetch } from '$lib/apiFetch';
 	import WalletModal from '$lib/WalletModal.svelte';
 	import AccountPanel from '$lib/AccountPanel.svelte';
-	import { getSigner as getEmbeddedSigner, signOut, lockWallet, getWalletState, checkAuthReturn, hasVault, autoReconnect } from '$lib/embeddedWallet';
+	import { getSigner as getEmbeddedSigner, signOut, lockWallet, getWalletState, checkAuthReturn, hasVault, autoReconnect, onWalletStateChange } from '$lib/embeddedWallet';
 	import { startBalancePoller, stopBalancePoller, updatePollerAddress, balanceState, refreshBalancesNow } from '$lib/balancePoller';
 
 	let { children, data }: { children: any; data: any } = $props();
@@ -265,6 +265,27 @@
 
 	onMount(() => {
 		isLoading = false;
+
+		// Single source of truth: keep the layout's signer/userAddress runes in sync
+		// with the embedded-wallet module state. Every path that mutates _state
+		// (unlock, setActiveAccount, addAccount, lockWallet, signOut) goes through
+		// _notify(), so subscribing here guarantees the UI, signer context, and
+		// route guards all react consistently — fixing the "stale signer requires
+		// reload" and "manage-tokens doesn't react to account switch" bugs.
+		const unsubWalletState = onWalletStateChange((state) => {
+			if (state.activeAccount && state.isUnlocked) {
+				userAddress = state.activeAccount.address;
+				walletType = 'embedded';
+				const net = supportedNetworks[0];
+				if (net?.rpc) {
+					const rpcProvider = new ethers.JsonRpcProvider(net.rpc, net.chain_id, { staticNetwork: true });
+					signer = getEmbeddedSigner(rpcProvider);
+				}
+			} else if (!state.isUnlocked) {
+				signer = null;
+			}
+		});
+
 		// Restore theme from localStorage
 		const saved = localStorage.getItem('theme') as 'dark' | 'light' | null;
 		if (saved === 'light') applyTheme('light');
@@ -314,9 +335,8 @@
 						}
 					}
 				} else if (result === 'needs-pin') {
-					// Session exists but PIN not cached — show address, prompt PIN on action
-					const state = getWalletState();
-					// Fetch default address from vault
+					// Session exists but PIN not cached — show address, prompt PIN on action.
+					// Fetch default address from vault.
 					const { data: { session } } = await supabase.auth.getSession();
 					if (session) {
 						const res = await fetch('/api/wallet', {
@@ -335,26 +355,28 @@
 			walletLoading = false;
 		})();
 
-		// Load networks from DB, then init providers + AppKit
-		supabase
-			.from('platform_config')
-			.select('value')
-			.eq('key', 'networks')
-			.single()
-			.then(async ({ data }) => {
+		// Load networks from DB, then init providers + AppKit.
+		// Supabase's query builder returns a PromiseLike without .catch, so wrap
+		// in an async IIFE and use try/catch.
+		(async () => {
+			try {
+				const { data } = await supabase
+					.from('platform_config')
+					.select('value')
+					.eq('key', 'networks')
+					.single();
 				if (data?.value && Array.isArray(data.value) && data.value.length > 0) {
 					supportedNetworks = data.value;
 				}
 				initProviders();
-				// Init AppKit with DB networks
 				const kit = await initAppKit(supportedNetworks);
 				if (kit) setupWalletKit(kit);
-			})
-			.catch(async () => {
+			} catch {
 				initProviders();
 				const kit = await initAppKit();
 				if (kit) setupWalletKit(kit);
-			});
+			}
+		})();
 
 		// Subscribe to config changes (admin updates networks live)
 		const configChannel = supabase
@@ -435,6 +457,9 @@
 
 		return () => {
 			document.removeEventListener('click', handleClickOutside);
+			unsubWalletState();
+			unsubBalance();
+			supabase.removeChannel(configChannel);
 		};
 	});
 
