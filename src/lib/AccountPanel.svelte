@@ -1068,17 +1068,18 @@
 	.ap-net-dot { width: 5px; height: 5px; border-radius: 50%; background: #10b981; }
 
 	/* Balance */
-	.ap-bal { text-align: center; padding: 10px 16px 14px; }
+	.ap-bal { text-align: center; padding: 16px 16px 20px; }
 	.ap-bal-total {
-		display: block; font-family: 'Rajdhani', sans-serif; font-size: 34px;
-		font-weight: 700; color: #fff; line-height: 1; font-variant-numeric: tabular-nums;
+		display: block; font-family: 'Rajdhani', sans-serif; font-size: 44px;
+		font-weight: 700; color: #fff; line-height: 1.1; font-variant-numeric: tabular-nums;
+		letter-spacing: -0.02em;
 	}
-	.ap-bal-loading { font-size: 18px; color: #374151; animation: blink 1s infinite; }
-	.ap-bal-equiv { font-size: 12px; color: #374151; margin-left: 6px; }
+	.ap-bal-loading { font-size: 24px; color: #475569; animation: blink 1s infinite; }
+	.ap-bal-equiv { font-size: 14px; color: #475569; margin-left: 6px; }
 	@keyframes blink { 0%,100% { opacity: 0.3; } 50% { opacity: 1; } }
 	.ap-bal-native {
-		display: block; font-family: 'Rajdhani', sans-serif; font-size: 18px;
-		font-weight: 600; color: #64748b; margin-top: 3px; font-variant-numeric: tabular-nums;
+		display: block; font-family: 'Rajdhani', sans-serif; font-size: 16px;
+		font-weight: 500; color: #94a3b8; margin-top: 6px; font-variant-numeric: tabular-nums;
 	}
 
 	/* Action buttons */
@@ -1117,23 +1118,23 @@
 	.ap-scroll { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 6px 0; }
 
 	/* Token rows */
-	.ap-row { display: flex; align-items: center; gap: 10px; padding: 9px 16px; transition: background 0.1s; }
-	.ap-row:hover { background: rgba(255,255,255,0.015); }
+	.ap-row { display: flex; align-items: center; gap: 12px; padding: 12px 16px; transition: background 0.1s; }
+	.ap-row:hover { background: rgba(255,255,255,0.025); }
 	.ap-row-icon {
-		width: 30px; height: 30px; border-radius: 50%;
+		width: 40px; height: 40px; border-radius: 50%;
 		background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06);
 		display: flex; align-items: center; justify-content: center;
-		font-family: 'Syne', sans-serif; font-size: 11px; font-weight: 800; color: #475569; flex-shrink: 0;
+		font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 800; color: #94a3b8; flex-shrink: 0;
 	}
 	.ap-row-native { background: rgba(245,158,11,0.08); border-color: rgba(245,158,11,0.15); color: #f59e0b; }
-	.ap-row-logo { width: 30px; height: 30px; border-radius: 50%; object-fit: cover; flex-shrink: 0; border: 1px solid rgba(255,255,255,0.06); }
+	.ap-row-logo { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; flex-shrink: 0; border: 1px solid rgba(255,255,255,0.06); }
 	.ap-row-meta { flex: 1; min-width: 0; }
-	.ap-row-name { display: block; font-size: 12px; color: #e2e8f0; font-family: 'Syne', sans-serif; font-weight: 600; }
-	.ap-row-sub { display: block; font-size: 9px; color: #374151; font-family: 'Space Mono', monospace; }
+	.ap-row-name { display: block; font-size: 16px; color: #fff; font-family: 'Syne', sans-serif; font-weight: 700; line-height: 1.3; }
+	.ap-row-sub { display: block; font-size: 12px; color: #64748b; font-family: 'Space Mono', monospace; margin-top: 2px; }
 	.ap-row-right { text-align: right; flex-shrink: 0; }
-	.ap-row-amt { display: block; font-size: 12px; color: #e2e8f0; font-family: 'Rajdhani', sans-serif; font-weight: 600; font-variant-numeric: tabular-nums; }
-	.ap-row-usd { display: block; font-size: 10px; color: #374151; font-family: 'Rajdhani', sans-serif; font-weight: 500; font-variant-numeric: tabular-nums; }
-	.ap-empty { text-align: center; padding: 20px; font-size: 10px; color: #1e293b; font-family: 'Space Mono', monospace; }
+	.ap-row-amt { display: block; font-size: 16px; color: #fff; font-family: 'Rajdhani', sans-serif; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.3; }
+	.ap-row-usd { display: block; font-size: 13px; color: #64748b; font-family: 'Rajdhani', sans-serif; font-weight: 500; font-variant-numeric: tabular-nums; margin-top: 2px; }
+	.ap-empty { text-align: center; padding: 24px; font-size: 13px; color: #64748b; font-family: 'Space Mono', monospace; }
 
 	/* Import */
 	.ap-import-form { padding: 6px 16px; display: flex; flex-direction: column; gap: 6px; }
