@@ -1,5 +1,5 @@
 import { ethers } from 'ethers';
-import MultiCallLensArtifact from '../../solidty-contracts/artifacts/contracts/MultiCallLens.sol/MultiCallLens.json';
+import MultiCallLensArtifact from '../../solidty-contracts/artifacts/contracts/simulators/MultiCallLens.sol/MultiCallLens.json';
 
 // ── Types ──
 

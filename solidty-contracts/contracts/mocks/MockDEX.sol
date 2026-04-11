@@ -200,35 +200,3 @@ contract MockUniswapV2Router {
 
     receive() external payable {}
 }
-
-/// @dev Attacker contract that re-enters on native receive
-contract ReentrancyAttacker {
-    address public target;
-    bytes public attackData;
-    uint256 public attackCount;
-    uint256 public maxAttacks;
-
-    constructor(address _target) {
-        target = _target;
-    }
-
-    function setAttack(bytes calldata data, uint256 _maxAttacks) external {
-        attackData = data;
-        maxAttacks = _maxAttacks;
-        attackCount = 0;
-    }
-
-    function attack(bytes calldata data) external payable {
-        (bool ok, ) = target.call{value: msg.value}(data);
-        require(ok, "attack call failed");
-    }
-
-    receive() external payable {
-        if (attackCount < maxAttacks) {
-            attackCount++;
-            (bool ok, ) = target.call(attackData);
-            // Silently fail — we just want to test if reentrancy is possible
-            ok;
-        }
-    }
-}
