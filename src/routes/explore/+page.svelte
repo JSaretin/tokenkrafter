@@ -6,7 +6,7 @@
 	let { data }: { data: any } = $props();
 	let tokens: any[] = data.tokens;
 	let search = $state('');
-	let sortBy = $state<'newest' | 'supply' | 'name'>('newest');
+	let sortBy = $state<'newest' | 'name'>('newest');
 	let filterType = $state<'all' | 'basic' | 'taxable' | 'mintable' | 'partner'>('all');
 	let tradeableOnly = $state(false);
 
@@ -111,13 +111,7 @@
 		}
 
 		// Sort
-		if (sortBy === 'supply') {
-			list = [...list].sort((a, b) => {
-				const sa = parseFloat(ethers.formatUnits(a.total_supply || '0', a.decimals || 18));
-				const sb = parseFloat(ethers.formatUnits(b.total_supply || '0', b.decimals || 18));
-				return sb - sa;
-			});
-		} else if (sortBy === 'name') {
+		if (sortBy === 'name') {
 			list = [...list].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 		}
 		// 'newest' is default DB order
@@ -125,19 +119,17 @@
 		return list;
 	});
 
-	function fmtSupply(val: string | number, dec: number): string {
-		// total_supply may be raw wei-scale ("1000000000000000000000000000") or
-		// already human-formatted ("1000000000.0"). formatUnits only accepts integers.
-		const raw = String(val ?? '0');
-		const n = /^\d+$/.test(raw)
-			? parseFloat(ethers.formatUnits(raw, dec))
-			: parseFloat(raw);
-		if (!Number.isFinite(n)) return '0';
-		if (n >= 1e12) return `${(n / 1e12).toFixed(1)}T`;
-		if (n >= 1e9) return `${(n / 1e9).toFixed(1)}B`;
-		if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
-		if (n >= 1e3) return `${(n / 1e3).toFixed(0)}K`;
-		return n.toLocaleString();
+	function fmtSupply(raw: string | undefined, dec: number): string {
+		if (!raw || raw === '0') return '—';
+		try {
+			const n = parseFloat(ethers.formatUnits(raw, dec));
+			if (!Number.isFinite(n)) return '0';
+			if (n >= 1e12) return `${(n / 1e12).toFixed(1)}T`;
+			if (n >= 1e9) return `${(n / 1e9).toFixed(1)}B`;
+			if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
+			if (n >= 1e3) return `${(n / 1e3).toFixed(0)}K`;
+			return n.toLocaleString();
+		} catch { return '—'; }
 	}
 
 	function tokenType(t: any): string {
@@ -232,7 +224,6 @@
 			</button>
 			<select class="sort-select" bind:value={sortBy}>
 				<option value="newest">Newest</option>
-				<option value="supply">Highest Supply</option>
 				<option value="name">A → Z</option>
 			</select>
 		</div>
@@ -300,7 +291,7 @@
 					<div class="tc-stats">
 						<div class="tc-stat">
 							<span class="tc-stat-label">Supply</span>
-							<span class="tc-stat-value">{fmtSupply(tok.total_supply, tok.decimals)}</span>
+							<span class="tc-stat-value">{fmtSupply(tok.total_supply, tok.decimals || 18)}</span>
 						</div>
 						{#if gecko?.has_data}
 							{#if gecko.volume_24h > 0}

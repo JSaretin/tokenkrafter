@@ -20,7 +20,7 @@
 	let tokenName = $derived(dbData?.name || onChainData?.name || geckoData?.name || 'Unknown Token');
 	let tokenSymbol = $derived(dbData?.symbol || onChainData?.symbol || geckoData?.symbol || '???');
 	let tokenDecimals = $derived(dbData?.decimals || onChainData?.decimals || 18);
-	let totalSupply = $derived(onChainData?.totalSupply || dbData?.total_supply || '0');
+	let totalSupply = $derived(onChainData?.totalSupply || '0');
 	let logoUrl = $derived(dbData?.logo_url || geckoData?.image_url || '');
 	let description = $derived(dbData?.description || geckoData?.description || '');
 	let website = $derived(dbData?.website || geckoData?.websites?.[0] || '');

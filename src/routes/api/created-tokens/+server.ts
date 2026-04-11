@@ -45,12 +45,11 @@ export const POST: RequestHandler = async ({ request }) => {
 		creator: (body.creator || '').toLowerCase(),
 		name: body.name || 'Unknown',
 		symbol: body.symbol || '???',
-		total_supply: body.total_supply || '0',
 		decimals: body.decimals ?? 18,
+		total_supply: body.total_supply || '0',
 		is_taxable: body.is_taxable ?? false,
 		is_mintable: body.is_mintable ?? false,
 		is_partner: body.is_partner ?? false,
-		type_key: body.type_key ?? 0,
 	};
 	// Optional metadata (from activity bot or other sources)
 	if (body.description) row.description = body.description;

@@ -310,7 +310,6 @@ async function indexNewTokens(
 	let indexed = 0;
 	for (let i = 0; i < tokenDataBatch.length; i++) {
 		const t = tokenDataBatch[i];
-		const typeKey = (t.isTaxable ? 2 : 0) | (t.isMintable ? 1 : 0) | (t.isPartner ? 4 : 0);
 
 		const ok = await apiPost('/api/created-tokens', {
 			address: t.addr,
@@ -318,12 +317,11 @@ async function indexNewTokens(
 			creator: t.creator,
 			name: t.name,
 			symbol: t.symbol,
-			total_supply: t.totalSupply.toString(),
 			decimals: t.decimals,
+			total_supply: t.totalSupply.toString(),
 			is_mintable: t.isMintable,
 			is_taxable: t.isTaxable,
 			is_partner: t.isPartner,
-			type_key: typeKey,
 		});
 
 		if (ok) {
@@ -354,12 +352,10 @@ async function indexNewTokensFallback(
 				token.name(), token.symbol(), token.decimals(), token.totalSupply()
 			]);
 
-			const typeKey = (info.isTaxable ? 2 : 0) | (info.isMintable ? 1 : 0) | (info.isPartnership ? 4 : 0);
 			const ok = await apiPost('/api/created-tokens', {
 				address: tokenAddress, chain_id: chainId, creator: info.creator.toLowerCase(),
-				name, symbol, total_supply: totalSupply.toString(), decimals: Number(decimals),
+				name, symbol, decimals: Number(decimals), total_supply: totalSupply.toString(),
 				is_mintable: info.isMintable, is_taxable: info.isTaxable, is_partner: info.isPartnership,
-				type_key: typeKey,
 			});
 
 			if (ok) {

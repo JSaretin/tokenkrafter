@@ -11,7 +11,7 @@ export const GET: RequestHandler = async ({ url }) => {
 
 	const { data, error: dbErr } = await supabaseAdmin
 		.from('created_tokens')
-		.select('address, chain_id, name, symbol, decimals, creator, is_taxable, is_mintable, is_partner, type_key, logo_url, description, website, twitter, telegram, created_at')
+		.select('address, chain_id, name, symbol, decimals, creator, is_taxable, is_mintable, is_partner, total_supply, logo_url, description, website, twitter, telegram, created_at')
 		.eq('address', address)
 		.eq('chain_id', chainId)
 		.single();
@@ -33,7 +33,7 @@ export const PUT: RequestHandler = async ({ request, locals }) => {
 	if (!wallet) return error(401, 'Wallet session required');
 
 	const body = await request.json();
-	const { address, chain_id, logo_url, description, website, twitter, telegram, name: tokenName, symbol, total_supply, decimals, is_taxable, is_mintable, is_partner } = body;
+	const { address, chain_id, logo_url, description, website, twitter, telegram, name: tokenName, symbol, decimals, is_taxable, is_mintable, is_partner } = body;
 
 	if (!address || !chain_id) return error(400, 'address and chain_id required');
 
@@ -94,7 +94,6 @@ export const PUT: RequestHandler = async ({ request, locals }) => {
 				creator: wallet,
 				name: tokenName || 'Pending',
 				symbol: symbol || '???',
-				total_supply: total_supply || '0',
 				decimals: decimals ?? 18,
 				is_taxable: is_taxable ?? false,
 				is_mintable: is_mintable ?? false,

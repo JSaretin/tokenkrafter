@@ -7,6 +7,8 @@
 
 	let { data: serverData }: { data: any } = $props();
 	import { ERC20_ABI, ZERO_ADDRESS } from '$lib/tokenCrafter';
+	import { friendlyError } from '$lib/errorDecoder';
+	import { ERC20_DECIMALS_ABI } from '$lib/commonABIs';
 	import { TRADE_ROUTER_ABI, withdrawStatusLabel, withdrawStatusColor } from '$lib/tradeRouter';
 	import WithdrawalStatusModal from '$lib/WithdrawalStatusModal.svelte';
 	import { formatUsdt } from '$lib/launchpad';
@@ -106,7 +108,7 @@
 		if (!selectedNetwork?.usdt_address) return;
 		const provider = networkProviders.get(selectedNetwork.chain_id);
 		if (!provider) return;
-		const token = new ethers.Contract(selectedNetwork.usdt_address, ['function decimals() view returns (uint8)'], provider);
+		const token = new ethers.Contract(selectedNetwork.usdt_address, ERC20_DECIMALS_ABI, provider);
 		token.decimals().then((d: any) => { usdtDecimals = Number(d); }).catch(() => {});
 	});
 
@@ -1276,7 +1278,7 @@
 				}
 				} catch (swapErr: any) {
 					console.error('Swap error:', swapErr);
-					addFeedback({ message: swapErr.shortMessage || swapErr.reason || swapErr.message || 'Swap failed', type: 'error' });
+					addFeedback({ message: friendlyError(swapErr), type: 'error' });
 					swapStep = 0;
 				}
 			}
@@ -1287,7 +1289,7 @@
 			const meta = await fetchMeta(tokenInAddr, tokenInIsNative);
 			tokenInBalance = meta.balance;
 		} catch (e: any) {
-			addFeedback({ message: e.shortMessage || e.message || 'Transaction failed', type: 'error' });
+			addFeedback({ message: friendlyError(e), type: 'error' });
 		} finally {
 			isSwapping = false;
 			if (withdrawStep < 4) withdrawStep = 0; // don't reset if completed
@@ -1406,7 +1408,7 @@
 			addFeedback({ message: 'Cancelled. Funds returned.', type: 'success' });
 			loadHistory();
 		} catch (e: any) {
-			addFeedback({ message: e.shortMessage || e.message || 'Cancel failed', type: 'error' });
+			addFeedback({ message: friendlyError(e), type: 'error' });
 		}
 	}
 

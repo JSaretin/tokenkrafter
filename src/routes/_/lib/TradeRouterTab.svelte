@@ -3,6 +3,7 @@
 	import { ethers } from 'ethers';
 	import type { SupportedNetwork } from '$lib/structure';
 	import { TRADE_ROUTER_ABI } from '$lib/tradeRouter';
+	import { ERC20_DECIMALS_ABI } from '$lib/commonABIs';
 
 	let { selectedNetwork }: { selectedNetwork: SupportedNetwork } = $props();
 
@@ -78,7 +79,7 @@
 			// Get USDT earnings
 			if (selectedNetwork.usdt_address) {
 				try {
-					const usdtC = new ethers.Contract(selectedNetwork.usdt_address, ['function decimals() view returns (uint8)'], provider);
+					const usdtC = new ethers.Contract(selectedNetwork.usdt_address, ERC20_DECIMALS_ABI, provider);
 					usdtDecimals = Number(await usdtC.decimals());
 					usdtEarnings = await router.platformEarnings(selectedNetwork.usdt_address);
 				} catch {}

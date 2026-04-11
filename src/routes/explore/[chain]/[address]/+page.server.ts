@@ -30,7 +30,7 @@ export const load: PageServerLoad = async ({ params, setHeaders }) => {
 			try {
 				const { data } = await supabaseAdmin
 					.from('created_tokens')
-					.select('address, chain_id, name, symbol, decimals, creator, is_taxable, is_mintable, is_partner, type_key, logo_url, description, website, twitter, telegram, total_supply, created_at')
+					.select('address, chain_id, name, symbol, decimals, creator, is_taxable, is_mintable, is_partner, total_supply, logo_url, description, website, twitter, telegram, created_at')
 					.eq('address', tokenAddress)
 					.eq('chain_id', chain.id)
 					.single();

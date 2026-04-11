@@ -1,5 +1,14 @@
 <script lang="ts">
-	import { signInWithGoogle, createWallet, unlockWallet, recoverWithCode, setNewPin, getWalletState } from './embeddedWallet';
+	import {
+		signInWithGoogle,
+		createNewWallet,
+		importWallet,
+		unlockWallet,
+		recoverWithCode,
+		setNewPin,
+		getWalletState,
+	} from './embeddedWallet';
+	import { friendlyError } from './errorDecoder';
 
 	let {
 		open = $bindable(false),
@@ -67,12 +76,41 @@
 		error = '';
 		loading = true;
 		try {
-			const result = await createWallet(pin);
+			const result = await createNewWallet('Primary', pin);
 			recoveryCodes = result.recoveryCodes;
 			step = 'recovery-codes';
-			onConnected(result.address, 'embedded');
+			const addr = result.wallet.accounts[0]?.address || '';
+			onConnected(addr, 'embedded');
 		} catch (e: any) {
-			error = e.message || 'Failed to create wallet';
+			error = friendlyError(e);
+		} finally {
+			loading = false;
+		}
+	}
+
+	// ── Import-existing-wallet flow (first-time connect) ──
+	let isImporting = $state(false);
+	let importMnemonic = $state('');
+	let importAck = $state(false);
+
+	async function handleImportFirstWallet() {
+		if (pin.length < 4) { error = 'PIN must be at least 4 digits'; return; }
+		if (pin !== pinConfirm) { error = 'PINs do not match'; return; }
+		if (!importMnemonic.trim()) { error = 'Enter your recovery phrase'; return; }
+		if (!importAck) { error = 'Acknowledge the warning'; return; }
+
+		error = '';
+		loading = true;
+		try {
+			// First-time import: pass `pin` explicitly so embeddedWallet caches
+			// it as the shared PIN, skips the throwaway-primary step, and
+			// activates the imported wallet as the only wallet on record.
+			const imported = await importWallet('Imported', importMnemonic, pin);
+			const addr = imported.accounts[0]?.address || '';
+			onConnected(addr, 'embedded');
+			close();
+		} catch (e) {
+			error = friendlyError(e);
 		} finally {
 			loading = false;
 		}
@@ -197,17 +235,44 @@
 				</div>
 
 			{:else if step === 'pin-setup'}
-				<h2 class="wm-title">Create Wallet PIN</h2>
-				<p class="wm-hint">This PIN encrypts your wallet. Only you know it — we can't recover it.</p>
+				<h2 class="wm-title">{isImporting ? 'Import Wallet' : 'Create Wallet PIN'}</h2>
+				<p class="wm-hint">
+					{#if isImporting}
+						Paste your 12 or 24 word recovery phrase. We'll encrypt it with your PIN locally — your seed never leaves this browser.
+					{:else}
+						This PIN encrypts your wallet. Only you know it — we can't recover it.
+					{/if}
+				</p>
+
+				{#if isImporting}
+					<textarea class="wm-input wm-textarea" rows="3" placeholder="12 or 24 word recovery phrase" bind:value={importMnemonic} autocomplete="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true"></textarea>
+				{/if}
 
 				<input class="wm-input" type="tel" inputmode="numeric" autocomplete="one-time-code" data-lpignore="true" data-1p-ignore="true" style="-webkit-text-security: disc; text-security: disc;" placeholder="Enter PIN (4+ digits)" bind:value={pin} maxlength="8" />
 				<input class="wm-input" type="tel" inputmode="numeric" autocomplete="one-time-code" data-lpignore="true" data-1p-ignore="true" style="-webkit-text-security: disc; text-security: disc;" placeholder="Confirm PIN" bind:value={pinConfirm} maxlength="8"
-					onkeydown={(e) => { if (e.key === 'Enter') handleCreateWallet(); }} />
+					onkeydown={(e) => { if (e.key === 'Enter') { isImporting ? handleImportFirstWallet() : handleCreateWallet(); } }} />
+
+				{#if isImporting}
+					<label class="wm-checkbox">
+						<input type="checkbox" bind:checked={importAck} />
+						<span>Imported wallets have no platform recovery — I have my own backup.</span>
+					</label>
+				{/if}
 
 				{#if error}<p class="wm-error">{error}</p>{/if}
 
-				<button class="wm-btn wm-btn-primary" onclick={handleCreateWallet} disabled={loading}>
-					{loading ? 'Creating...' : 'Create Wallet'}
+				{#if isImporting}
+					<button class="wm-btn wm-btn-primary" onclick={handleImportFirstWallet} disabled={loading}>
+						{loading ? 'Importing...' : 'Import Wallet'}
+					</button>
+				{:else}
+					<button class="wm-btn wm-btn-primary" onclick={handleCreateWallet} disabled={loading}>
+						{loading ? 'Creating...' : 'Create Wallet'}
+					</button>
+				{/if}
+
+				<button class="wm-btn-link" onclick={() => { isImporting = !isImporting; error = ''; }}>
+					{isImporting ? 'Create new wallet instead' : 'Import existing wallet'}
 				</button>
 
 			{:else if step === 'pin-enter'}
@@ -359,6 +424,7 @@
 	}
 	.wm-input:focus { border-color: rgba(0,210,255,0.4); }
 	.wm-input::placeholder { color: #374151; }
+	.wm-textarea { font-family: 'Space Mono', monospace; resize: vertical; line-height: 1.5; }
 	.wm-btn {
 		padding: 12px; border-radius: 10px; border: none; cursor: pointer;
 		font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700;

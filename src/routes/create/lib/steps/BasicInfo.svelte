@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { ethers } from 'ethers';
+	import { TOKEN_READ_ABI } from '$lib/commonABIs';
 
 	let {
 		name = $bindable(''),
@@ -60,12 +61,7 @@
 			if (!provider) { presetError = 'No provider for network'; return; }
 
 			// Read basic token info
-			const token = new ethers.Contract(presetAddress, [
-				'function name() view returns (string)',
-				'function symbol() view returns (string)',
-				'function decimals() view returns (uint8)',
-				'function totalSupply() view returns (uint256)',
-			], provider);
+			const token = new ethers.Contract(presetAddress, TOKEN_READ_ABI, provider);
 			const [n, s, d, supply] = await Promise.all([
 				token.name().catch(() => ''),
 				token.symbol().catch(() => ''),
@@ -247,12 +243,7 @@
 			try {
 				const provider = getNetworkProviders().get(net.chain_id);
 				if (!provider) { fetchError = 'No provider for network'; return; }
-				const token = new ethers.Contract(addr, [
-					'function name() view returns (string)',
-					'function symbol() view returns (string)',
-					'function decimals() view returns (uint8)',
-					'function totalSupply() view returns (uint256)',
-				], provider);
+				const token = new ethers.Contract(addr, TOKEN_READ_ABI, provider);
 				const [n, s, d, supply] = await Promise.all([
 					token.name().catch(() => ''),
 					token.symbol().catch(() => ''),

@@ -5,12 +5,21 @@
 		enabled: boolean; baseCoin: 'native' | 'usdt' | 'usdc';
 		mode: 'manual' | 'price'; tokenAmount: string; baseAmount: string;
 		pricePerToken: string; listBaseAmount: string; pairs: ListingPairConfig[];
+		// Anti-snipe window in seconds between deploy and first public swap.
+		// Cap 24h. Default 60s closes the MEV front-run window on the seed tx.
+		tradingDelay: string;
 	};
 	export type LaunchConfig = {
 		enabled: boolean; tokensForLaunchPct: number; curveType: number;
 		softCap: string; hardCap: string; durationDays: string;
 		maxBuyBps: string; creatorAllocationBps: string; vestingDays: string;
 		launchPaymentToken: string;
+		// Anti-snipe window after curve graduation, in seconds. Cap 24h.
+		// Default 1 hour gives buyers time to react before DEX trading opens.
+		lockDurationAfterListing: string;
+		// Anti-dust floor per buy in whole-USDT units (e.g. "1" = 1 USDT).
+		// The frontend converts this to native USDT decimals at call time.
+		minBuyUsdt: string;
 	};
 	export type ProtectionConfig = { maxWalletPct: string; maxTransactionPct: string; cooldownSeconds: string };
 	export type TaxConfig = { buyTaxPct: string; sellTaxPct: string; transferTaxPct: string; wallets: { address: string; sharePct: string }[] };
@@ -36,6 +45,7 @@
 <script lang="ts">
 	import { getContext } from 'svelte';
 	import { ethers } from 'ethers';
+	import { ROUTER_ABI_LITE } from '$lib/commonABIs';
 	import type { SupportedNetwork } from '$lib/structure';
 	import { BasicInfo, Features, TaxConfig as TaxStep, ListingConfig as ListingStep, Review } from './steps';
 	import BondingCurveChart from '$lib/BondingCurveChart.svelte';
@@ -120,11 +130,19 @@
 	let launchMaxBuyPct = $state('2');
 	let launchCreatorAllocPct = $state('0');
 	let launchVestingDays = $state('0');
+	// Anti-snipe window after graduation — creator-configurable, default 1 hour.
+	// Contract caps at 24h. UI displays as minutes.
+	let launchLockDurationMinutes = $state('60');
+	// Anti-dust floor per buy in whole USDT. Default 1 USDT.
+	let launchMinBuyUsdt = $state('1');
 
 	let listingPoolPct = $state(80);
 	type ListingPair = { base: 'native' | 'usdt' | 'usdc'; amount: string };
 	let listingPairs = $state<ListingPair[]>([{ base: 'native', amount: '' }]);
 	let listingPricePerToken = $state('');
+	// Anti-snipe window for direct listings — creator-configurable, default 60s.
+	// Contract caps at 24h. UI displays as seconds.
+	let listingTradingDelaySeconds = $state('60');
 
 	// Handle preset loaded from BasicInfo's contract loader — resets all token features
 	function handlePresetLoaded(data: { isTaxable: boolean; buyTaxPct: string; sellTaxPct: string; transferTaxPct: string }) {
@@ -155,10 +173,7 @@
 		if (!selectedNetwork?.dex_router || !selectedNetwork?.usdt_address) return;
 		const provider = getNetworkProviders?.()?.get(selectedNetwork.chain_id);
 		if (!provider) return;
-		const router = new ethers.Contract(selectedNetwork.dex_router, [
-			'function getAmountsOut(uint256, address[]) view returns (uint256[])',
-			'function WETH() view returns (address)'
-		], provider);
+		const router = new ethers.Contract(selectedNetwork.dex_router, ROUTER_ABI_LITE, provider);
 		(async () => {
 			try {
 				const weth = await router.WETH();
@@ -199,6 +214,11 @@
 			if (initialData.launch.softCap) launchSoftCap = initialData.launch.softCap;
 			if (initialData.launch.hardCap) launchHardCap = initialData.launch.hardCap;
 			if (initialData.launch.durationDays) launchDurationDays = initialData.launch.durationDays;
+			// Convert seconds back to minutes for the UI.
+			if (initialData.launch.lockDurationAfterListing) {
+				launchLockDurationMinutes = String(Math.round(parseFloat(initialData.launch.lockDurationAfterListing) / 60));
+			}
+			if (initialData.launch.minBuyUsdt) launchMinBuyUsdt = initialData.launch.minBuyUsdt;
 		}
 		if (initialData.tax) {
 			if (initialData.tax.buyTaxPct) buyTaxPct = initialData.tax.buyTaxPct;
@@ -216,6 +236,7 @@
 			listingEnabled = initialData.listing.enabled;
 			if (initialData.listing.pricePerToken) listingPricePerToken = initialData.listing.pricePerToken;
 			if (initialData.listing.pairs?.length) listingPairs = initialData.listing.pairs.map(p => ({ base: p.base, amount: p.amount }));
+			if (initialData.listing.tradingDelay) listingTradingDelaySeconds = initialData.listing.tradingDelay;
 		}
 	}
 
@@ -379,6 +400,7 @@
 				baseAmount: listingPairs[0]?.amount ?? '', pricePerToken: listingPricePerToken,
 				listBaseAmount: listingPairs[0]?.amount ?? '',
 				pairs: pairsWithTokens,
+				tradingDelay: listingTradingDelaySeconds,
 			},
 			launch: {
 				enabled: launchEnabled, tokensForLaunchPct: launchTokensPct,
@@ -386,6 +408,9 @@
 				durationDays: launchDurationDays, maxBuyBps: String(Math.round(parseFloat(launchMaxBuyPct || '0') * 100)),
 				creatorAllocationBps: String(Math.round(parseFloat(launchCreatorAllocPct || '0') * 100)), vestingDays: launchVestingDays,
 				launchPaymentToken: '',
+				// Convert minutes to seconds for the contract (contract caps at 24h = 1440 min).
+				lockDurationAfterListing: String(Math.round(parseFloat(launchLockDurationMinutes || '0') * 60)),
+				minBuyUsdt: launchMinBuyUsdt,
 			},
 			protection: { maxWalletPct: protectionEnabled ? maxWalletPct : '0', maxTransactionPct: protectionEnabled ? maxTransactionPct : '0', cooldownSeconds: protectionEnabled ? cooldownSeconds : '0' },
 			tax: { buyTaxPct, sellTaxPct, transferTaxPct, wallets: validWallets },
@@ -536,6 +561,29 @@
 					</div>
 				</div>
 
+				<!-- Post-graduation safety floor -->
+				<div class="wz-row">
+					<div class="wz-field">
+						<label class="wz-label" for="launchLockDurationMinutes">Anti-snipe delay (minutes)</label>
+						<select id="launchLockDurationMinutes" class="input-field" bind:value={launchLockDurationMinutes}>
+							<option value="0">None (open immediately)</option>
+							<option value="5">5 min</option>
+							<option value="15">15 min</option>
+							<option value="30">30 min</option>
+							<option value="60">1 hour</option>
+							<option value="240">4 hours</option>
+							<option value="720">12 hours</option>
+							<option value="1440">24 hours (max)</option>
+						</select>
+						<span class="wz-field-hint">How long DEX trading stays locked after graduation — blocks snipers from front-running the listing block. Note: holders cannot trade or refund during this window. Pick the shortest window that still meaningfully discourages snipe bots.</span>
+					</div>
+					<div class="wz-field">
+						<label class="wz-label" for="launchMinBuyUsdt">Min buy (USDT)</label>
+						<input id="launchMinBuyUsdt" class="input-field" type="text" bind:value={launchMinBuyUsdt} placeholder="1" />
+						<span class="wz-field-hint">Anti-dust floor per buy. Prevents spam with sub-cent transactions. Must be &gt; 0 and ≤ soft cap.</span>
+					</div>
+				</div>
+
 				<!-- Anti-whale protection -->
 				<div class="wz-toggle-card" class:wz-toggle-on={protectionEnabled}>
 					<label class="wz-toggle-row">
@@ -567,6 +615,20 @@
 				<h2 class="wz-title">DEX Listing</h2>
 				<p class="wz-hint">Add liquidity and your token is instantly tradable.</p>
 				<ListingStep bind:symbol bind:totalSupply bind:poolPct={listingPoolPct} bind:pairs={listingPairs} bind:pricePerToken={listingPricePerToken} {nativeCoin} {bnbPriceUsd} />
+
+				<!-- Anti-snipe delay for direct listings -->
+				<div class="wz-field mt-6">
+					<label class="wz-label" for="listingTradingDelaySeconds">Anti-snipe delay (seconds)</label>
+					<select id="listingTradingDelaySeconds" class="input-field" bind:value={listingTradingDelaySeconds}>
+						<option value="0">None (open immediately)</option>
+						<option value="30">30 sec</option>
+						<option value="60">1 min</option>
+						<option value="300">5 min</option>
+						<option value="900">15 min</option>
+						<option value="3600">1 hour</option>
+					</select>
+					<span class="wz-field-hint">Blocks public swaps for this many seconds after your listing transaction confirms. Stops MEV bots from front-running your seed tx with a buy in the same block.</span>
+				</div>
 			</div>
 
 		{:else if wizardStep === 'review'}

@@ -7,6 +7,17 @@
 	import { LAUNCHPAD_FACTORY_ABI } from '$lib/launchpad';
 	import { t } from '$lib/i18n';
 	import { apiFetch } from '$lib/apiFetch';
+	import { friendlyError } from '$lib/errorDecoder';
+	import MintTab from './lib/MintTab.svelte';
+	import BurnTab from './lib/BurnTab.svelte';
+	import TaxTab from './lib/TaxTab.svelte';
+	import PoolsTab from './lib/PoolsTab.svelte';
+	import OverviewTab from './lib/OverviewTab.svelte';
+	import ProtectionTab from './lib/ProtectionTab.svelte';
+	import AboutTab from './lib/AboutTab.svelte';
+	import ExistingPoolsList from './lib/ExistingPoolsList.svelte';
+	import RegisterPoolForm from './lib/RegisterPoolForm.svelte';
+	import NewPoolForm from './lib/NewPoolForm.svelte';
 
 	let _getNetworks: () => SupportedNetworks = getContext('supportedNetworks');
 	let supportedNetworks = $derived(_getNetworks());
@@ -254,6 +265,14 @@
 	let newPoolListBaseAmount = $state('');
 	let showNewPool = $state(false);
 
+	// Pool registration (platform-token addPool / addPoolByAddress surface).
+	// Separate from the "add liquidity" flow above — this is about telling
+	// the token contract "this address is one of my pools" so tax routing
+	// + the pool-lock gate treat it correctly.
+	let registerPoolBase = $state('');              // V2 base token address for addPool(base)
+	let registerPoolByAddress = $state('');         // arbitrary pool address for addPoolByAddress
+	let registerPoolLoading = $state(false);
+
 	let newPoolCalculatedTokenAmount = $derived(() => {
 		if (!newPoolPricePerToken || !newPoolListBaseAmount || Number(newPoolPricePerToken) <= 0) return '';
 		return (Number(newPoolListBaseAmount) / Number(newPoolPricePerToken)).toFixed(6);
@@ -409,7 +428,10 @@
 				} catch {}
 			}
 
-			// Load protection features
+			// Load protection features. New contracts replaced the
+			// `tradingEnabled` boolean with a sentinel uint256 (`tradingStartTime`,
+			// max value = not yet scheduled). We surface that as a derived
+			// boolean here so the rest of the UI doesn't need to change.
 			let tradingEnabled_: boolean | undefined;
 			let maxWalletAmount_: string | undefined;
 			let maxTransactionAmount_: string | undefined;
@@ -418,7 +440,11 @@
 			let tradingEnabledAt_: number | undefined;
 			const dec = ethers.toNumber(decimals);
 
-			try { tradingEnabled_ = await contract.tradingEnabled(); } catch {}
+			try {
+				const startTime: bigint = await contract.tradingStartTime();
+				const SENTINEL = (1n << 256n) - 1n;
+				tradingEnabled_ = startTime !== SENTINEL;
+			} catch {}
 			try { maxWalletAmount_ = ethers.formatUnits(await contract.maxWalletAmount(), dec); } catch {}
 			try { maxTransactionAmount_ = ethers.formatUnits(await contract.maxTransactionAmount(), dec); } catch {}
 			try { cooldownTime_ = Number(await contract.cooldownTime()); } catch {}
@@ -542,7 +568,7 @@
 			mintAmount = '';
 			await loadToken();
 		} catch (e: any) {
-			addFeedback({ message: e.shortMessage || e.message || 'Mint failed', type: 'error' });
+			addFeedback({ message: friendlyError(e), type: 'error' });
 		} finally { actionLoading = false; }
 	}
 
@@ -560,7 +586,7 @@
 			burnAmount = '';
 			await loadToken();
 		} catch (e: any) {
-			addFeedback({ message: e.shortMessage || e.message || 'Burn failed', type: 'error' });
+			addFeedback({ message: friendlyError(e), type: 'error' });
 		} finally { actionLoading = false; }
 	}
 
@@ -580,7 +606,7 @@
 			addFeedback({ message: 'Tax rates updated!', type: 'success' });
 			await loadToken();
 		} catch (e: any) {
-			addFeedback({ message: e.shortMessage || e.message || 'Tax update failed', type: 'error' });
+			addFeedback({ message: friendlyError(e), type: 'error' });
 		} finally { actionLoading = false; }
 	}
 
@@ -597,7 +623,7 @@
 			await tx.wait();
 			addFeedback({ message: 'Tax distribution updated!', type: 'success' });
 		} catch (e: any) {
-			addFeedback({ message: e.shortMessage || e.message || 'Distribution update failed', type: 'error' });
+			addFeedback({ message: friendlyError(e), type: 'error' });
 		} finally { actionLoading = false; }
 	}
 
@@ -613,7 +639,7 @@
 			addFeedback({ message: `Address ${taxExemptValue ? 'exempted from' : 'included in'} tax!`, type: 'success' });
 			taxExemptAddr = '';
 		} catch (e: any) {
-			addFeedback({ message: e.shortMessage || e.message || 'Exemption update failed', type: 'error' });
+			addFeedback({ message: friendlyError(e), type: 'error' });
 		} finally { actionLoading = false; }
 	}
 
@@ -629,7 +655,7 @@
 			addFeedback({ message: 'Pool added!', type: 'success' });
 			poolAddressInput = '';
 		} catch (e: any) {
-			addFeedback({ message: e.shortMessage || e.message || 'Add pool failed', type: 'error' });
+			addFeedback({ message: friendlyError(e), type: 'error' });
 		} finally { actionLoading = false; }
 	}
 
@@ -645,7 +671,7 @@
 			addFeedback({ message: 'Pool removed!', type: 'success' });
 			poolAddressInput = '';
 		} catch (e: any) {
-			addFeedback({ message: e.shortMessage || e.message || 'Remove pool failed', type: 'error' });
+			addFeedback({ message: friendlyError(e), type: 'error' });
 		} finally { actionLoading = false; }
 	}
 
@@ -656,7 +682,7 @@
 			const contract = new ethers.Contract(contractAddress, TOKEN_ABI, provider);
 			poolCheckResult = await contract.isPool(poolCheckAddr);
 		} catch (e: any) {
-			addFeedback({ message: e.shortMessage || e.message || 'Pool check failed', type: 'error' });
+			addFeedback({ message: friendlyError(e), type: 'error' });
 		}
 	}
 
@@ -733,7 +759,7 @@
 				}
 			}
 		} catch (e: any) {
-			addFeedback({ message: 'Failed to lookup pools: ' + (e.shortMessage || e.message), type: 'error' });
+			addFeedback({ message: 'Failed to lookup pools: ' + (friendlyError(e)), type: 'error' });
 		} finally { poolsLoading = false; }
 	}
 
@@ -975,7 +1001,7 @@
 			state.baseAmount = '';
 			await lookupExistingPools(); // Refresh reserves
 		} catch (e: any) {
-			addFeedback({ message: e.shortMessage || e.message || 'Liquidity failed', type: 'error' });
+			addFeedback({ message: friendlyError(e), type: 'error' });
 		} finally { poolAddLoading[pool.pairAddress] = false; }
 	}
 
@@ -1042,7 +1068,7 @@
 			poolRemovePct[pool.pairAddress] = 100;
 			await lookupExistingPools();
 		} catch (e: any) {
-			addFeedback({ message: e.shortMessage || e.message || 'Remove liquidity failed', type: 'error' });
+			addFeedback({ message: friendlyError(e), type: 'error' });
 		} finally { poolRemoveLoading[pool.pairAddress] = false; }
 	}
 
@@ -1133,8 +1159,62 @@
 			showNewPool = false;
 			await lookupExistingPools(); // Refresh
 		} catch (e: any) {
-			addFeedback({ message: e.shortMessage || e.message || 'Liquidity failed', type: 'error' });
+			addFeedback({ message: friendlyError(e), type: 'error' });
 		} finally { actionLoading = false; }
+	}
+
+	// Register a V2-style pair as a pool via addPool(base). The token
+	// contract resolves the pair address through its dexFactory internally,
+	// so an owner can't mark an arbitrary wallet as a pool — it must be a
+	// real V2 pair. Late additions carry no anti-snipe lock.
+	async function doRegisterPoolByBase() {
+		const s = await ensureSigner();
+		if (!s) return;
+		if (!registerPoolBase || !ethers.isAddress(registerPoolBase)) {
+			addFeedback({ message: 'Enter a valid base token address', type: 'error' });
+			return;
+		}
+		registerPoolLoading = true;
+		try {
+			const contract = new ethers.Contract(contractAddress, TOKEN_ABI, s);
+			addFeedback({ message: 'Registering pool...', type: 'info' });
+			const tx = await contract.addPool(registerPoolBase);
+			await tx.wait();
+			addFeedback({ message: 'Pool registered.', type: 'success' });
+			registerPoolBase = '';
+			await lookupExistingPools();
+		} catch (e: any) {
+			addFeedback({ message: friendlyError(e), type: 'error' });
+		} finally {
+			registerPoolLoading = false;
+		}
+	}
+
+	// Register an arbitrary pool address (V3, Solidly fork, OTC settlement,
+	// etc) via addPoolByAddress. Contract-side guard: only callable after
+	// trading has already been opened, to prevent weaponizing the anti-snipe
+	// lock against arbitrary wallets during the initial window.
+	async function doAddPoolByAddress() {
+		const s = await ensureSigner();
+		if (!s) return;
+		if (!registerPoolByAddress || !ethers.isAddress(registerPoolByAddress)) {
+			addFeedback({ message: 'Enter a valid pool address', type: 'error' });
+			return;
+		}
+		registerPoolLoading = true;
+		try {
+			const contract = new ethers.Contract(contractAddress, TOKEN_ABI, s);
+			addFeedback({ message: 'Registering pool address...', type: 'info' });
+			const tx = await contract.addPoolByAddress(registerPoolByAddress);
+			await tx.wait();
+			addFeedback({ message: 'Pool registered.', type: 'success' });
+			registerPoolByAddress = '';
+			await lookupExistingPools();
+		} catch (e: any) {
+			addFeedback({ message: friendlyError(e), type: 'error' });
+		} finally {
+			registerPoolLoading = false;
+		}
 	}
 
 	// Protection action functions
@@ -1144,13 +1224,16 @@
 		actionLoading = true;
 		try {
 			const contract = new ethers.Contract(contractAddress, TOKEN_ABI, s);
-			const tx = await contract.enableTrading();
+			// Open trading immediately (0 delay). Anti-snipe windows are only
+			// useful at the moment of first listing — by the time someone
+			// reaches the manage-tokens page they're past that window.
+			const tx = await contract.enableTrading(0);
 			addFeedback({ message: 'Enabling trading...', type: 'info' });
 			await tx.wait();
 			addFeedback({ message: 'Trading enabled! Protections are now locked.', type: 'success' });
 			await loadToken();
 		} catch (e: any) {
-			addFeedback({ message: e.shortMessage || e.message || 'Enable trading failed', type: 'error' });
+			addFeedback({ message: friendlyError(e), type: 'error' });
 		} finally { actionLoading = false; }
 	}
 
@@ -1167,7 +1250,7 @@
 			addFeedback({ message: amount === 0n ? 'Max wallet disabled!' : 'Max wallet updated!', type: 'success' });
 			await loadToken();
 		} catch (e: any) {
-			addFeedback({ message: e.shortMessage || e.message || 'Max wallet update failed', type: 'error' });
+			addFeedback({ message: friendlyError(e), type: 'error' });
 		} finally { actionLoading = false; }
 	}
 
@@ -1184,7 +1267,7 @@
 			addFeedback({ message: amount === 0n ? 'Max transaction disabled!' : 'Max transaction updated!', type: 'success' });
 			await loadToken();
 		} catch (e: any) {
-			addFeedback({ message: e.shortMessage || e.message || 'Max tx update failed', type: 'error' });
+			addFeedback({ message: friendlyError(e), type: 'error' });
 		} finally { actionLoading = false; }
 	}
 
@@ -1201,7 +1284,7 @@
 			addFeedback({ message: seconds === 0 ? 'Cooldown disabled!' : 'Cooldown updated!', type: 'success' });
 			await loadToken();
 		} catch (e: any) {
-			addFeedback({ message: e.shortMessage || e.message || 'Cooldown update failed', type: 'error' });
+			addFeedback({ message: friendlyError(e), type: 'error' });
 		} finally { actionLoading = false; }
 	}
 
@@ -1218,7 +1301,7 @@
 			addFeedback({ message: seconds === 0 ? 'Blacklist disabled!' : 'Blacklist window set!', type: 'success' });
 			await loadToken();
 		} catch (e: any) {
-			addFeedback({ message: e.shortMessage || e.message || 'Blacklist window update failed', type: 'error' });
+			addFeedback({ message: friendlyError(e), type: 'error' });
 		} finally { actionLoading = false; }
 	}
 
@@ -1234,7 +1317,7 @@
 			addFeedback({ message: `Address ${blacklistAction ? 'blacklisted' : 'removed from blacklist'}!`, type: 'success' });
 			blacklistAddrInput = '';
 		} catch (e: any) {
-			addFeedback({ message: e.shortMessage || e.message || 'Blacklist update failed', type: 'error' });
+			addFeedback({ message: friendlyError(e), type: 'error' });
 		} finally { actionLoading = false; }
 	}
 
@@ -1250,7 +1333,7 @@
 			addFeedback({ message: `Address ${excludeLimitsAction ? 'excluded from' : 'included in'} limits!`, type: 'success' });
 			excludeLimitsAddrInput = '';
 		} catch (e: any) {
-			addFeedback({ message: e.shortMessage || e.message || 'Exclusion update failed', type: 'error' });
+			addFeedback({ message: friendlyError(e), type: 'error' });
 		} finally { actionLoading = false; }
 	}
 
@@ -1261,7 +1344,7 @@
 			const contract = new ethers.Contract(contractAddress, TOKEN_ABI, provider);
 			blacklistCheckResult = await contract.blacklisted(blacklistCheckAddr);
 		} catch (e: any) {
-			addFeedback({ message: e.shortMessage || e.message || 'Check failed', type: 'error' });
+			addFeedback({ message: friendlyError(e), type: 'error' });
 		}
 	}
 
@@ -1272,7 +1355,7 @@
 			const contract = new ethers.Contract(contractAddress, TOKEN_ABI, provider);
 			excludedCheckResult = await contract.isExcludedFromLimits(excludedCheckAddr);
 		} catch (e: any) {
-			addFeedback({ message: e.shortMessage || e.message || 'Check failed', type: 'error' });
+			addFeedback({ message: friendlyError(e), type: 'error' });
 		}
 	}
 
@@ -1432,1165 +1515,192 @@
 		<div class="tab-content">
 
 			<!-- OVERVIEW TAB -->
-			{#if activeTab === 'overview'}
-				<div class="panel">
-					<h3 class="syne text-lg font-bold text-white mb-4">{$t('mt.tokenInfo')}</h3>
-					<div class="info-table">
-						{#each [
-							[$t('mt.name'), tokenInfo.name],
-							[$t('mt.symbol'), tokenInfo.symbol],
-							[$t('mt.totalSupply'), fmtSupply(tokenInfo.totalSupply) + ' ' + tokenInfo.symbol],
-							[$t('mt.decimals'), String(tokenInfo.decimals)],
-							[$t('mt.network'), network?.name ?? 'Unknown'],
-							[$t('mt.mintable'), tokenInfo.isMintable !== undefined ? (tokenInfo.isMintable ? $t('mt.yes') : $t('mt.no')) : $t('mt.na')],
-							[$t('mt.taxable'), tokenInfo.isTaxable !== undefined ? (tokenInfo.isTaxable ? $t('mt.yes') : $t('mt.no')) : $t('mt.na')],
-							[$t('mt.partner'), tokenInfo.isPartner !== undefined ? (tokenInfo.isPartner ? $t('mt.yes') : $t('mt.no')) : $t('mt.na')],
-							...(tokenInfo.owner ? [[$t('mt.owner'), shortAddr(tokenInfo.owner)]] : [])
-						] as [label, value]}
-							<div class="info-row">
-								<span class="info-key">{label}</span>
-								<span class="info-val font-mono">{value}</span>
-							</div>
-						{/each}
-					</div>
-				</div>
-
-				<!-- Launchpad Section -->
-				{#if launchpadChecked}
-					<div class="panel mt-4">
-						<h3 class="syne text-lg font-bold text-white mb-3">{$t('mt.launchpad')}</h3>
-						{#if launchAddress}
-							<div class="launchpad-status launchpad-exists">
-								<div class="flex items-center gap-3">
-									<span class="w-2.5 h-2.5 rounded-full bg-emerald-400 shrink-0"></span>
-									<div>
-										<p class="text-sm text-white font-mono">{$t('mt.launchpadExists')}</p>
-										<p class="text-xs text-gray-500 font-mono mt-0.5">{launchAddress.slice(0, 10)}...{launchAddress.slice(-8)}</p>
-									</div>
-								</div>
-								<a href="/launchpad/{chainSlug(network?.chain_id ?? 56)}/{launchAddress}" class="btn-primary text-xs px-4 py-2 no-underline shrink-0">
-									{$t('mt.viewLaunchpad')} →
-								</a>
-							</div>
-						{:else if isOwner}
-							<div class="launchpad-status launchpad-create">
-								<div class="flex items-center gap-3">
-									<span class="w-2.5 h-2.5 rounded-full bg-gray-600 shrink-0"></span>
-									<div>
-										<p class="text-sm text-white font-mono">{$t('mt.noLaunchpad')}</p>
-										<p class="text-xs text-gray-500 font-mono mt-0.5">{$t('mt.noLaunchpadDesc')}</p>
-									</div>
-								</div>
-								<a href="/create?launch=true&token={contractAddress}&chain={network?.symbol}" class="nav-cta no-underline shrink-0 text-xs">
-									<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-									{$t('mt.createLaunchpad')}
-								</a>
-							</div>
-						{:else}
-							<div class="launchpad-status">
-								<div class="flex items-center gap-3">
-									<span class="w-2.5 h-2.5 rounded-full bg-gray-600 shrink-0"></span>
-									<p class="text-sm text-gray-500 font-mono">{$t('mt.noLaunchpad')}</p>
-								</div>
-							</div>
-						{/if}
-					</div>
-				{/if}
-
-				<!-- Token Alias -->
-				{#if tokenAliasLoaded && isOwner}
-					<div class="panel mt-4">
-						<h3 class="syne text-lg font-bold text-white mb-3">Token Alias</h3>
-						<p class="text-gray-400 text-xs font-mono mb-3">
-							Set a short alias for your token. Share trade links like <span class="text-cyan-400">/trade?token={tokenAliasInput || 'mytoken'}</span>
-						</p>
-						<div class="flex items-center gap-2">
-							<input
-								type="text"
-								class="input-field flex-1 text-sm"
-								placeholder="e.g. mytoken"
-								bind:value={tokenAliasInput}
-								maxlength="30"
-							/>
-							<button
-								class="btn-primary text-xs px-4 py-2.5 shrink-0"
-								onclick={saveTokenAlias}
-								disabled={tokenAliasSaving || !tokenAliasInput.trim() || tokenAliasInput.trim() === tokenAlias}
-							>
-								{#if tokenAliasSaving}
-									Saving...
-								{:else if tokenAlias}
-									Update Alias
-								{:else}
-									Set Alias
-								{/if}
-							</button>
-						</div>
-						{#if tokenAlias}
-							<p class="text-emerald-400 text-xs font-mono mt-2">
-								Current alias: <span class="text-white">{tokenAlias}</span>
-							</p>
-						{/if}
-					</div>
-				{:else if tokenAliasLoaded && tokenAlias}
-					<div class="panel mt-4">
-						<h3 class="syne text-lg font-bold text-white mb-3">Token Alias</h3>
-						<p class="text-gray-400 text-xs font-mono">
-							Alias: <span class="text-cyan-400">{tokenAlias}</span> — <a href="/trade?token={tokenAlias}" class="text-cyan-400 underline">Trade link</a>
-						</p>
-					</div>
-				{/if}
+			{#if activeTab === 'overview' && tokenInfo}
+				<OverviewTab
+					{tokenInfo}
+					{network}
+					{contractAddress}
+					{launchpadChecked}
+					{launchAddress}
+					{isOwner}
+					{tokenAliasLoaded}
+					{tokenAlias}
+					bind:tokenAliasInput
+					{tokenAliasSaving}
+					onSaveTokenAlias={saveTokenAlias}
+				/>
 			{/if}
 
 			<!-- MINT TAB -->
 			{#if activeTab === 'mint'}
-				<div class="panel">
-					<div class="panel-header">
-						<div>
-							<h3 class="syne text-lg font-bold text-white">{$t('mt.mintTokens')}</h3>
-							<p class="text-sm text-gray-500 font-mono mt-1">{$t('mt.mintDesc')}</p>
-						</div>
-						<span class="badge badge-cyan">{$t('mt.ownerOnly')}</span>
-					</div>
-
-					{#if !isOwner}
-						<div class="owner-warning">
-							<span class="text-amber-400">!</span>
-							<span class="text-amber-300 text-sm font-mono">{$t('mt.onlyOwnerCanMint')}</span>
-						</div>
-					{/if}
-
-					<div class="form-fields">
-						<div class="field-group">
-							<label class="label-text" for="mint-amount">{$t('mt.amountToMint')}</label>
-							<div class="input-with-badge">
-								<input
-									id="mint-amount"
-									class="input-field"
-									type="number"
-									min="0"
-									bind:value={mintAmount}
-									placeholder="1000000"
-									disabled={!isOwner}
-								/>
-								<span class="input-badge">{tokenInfo.symbol}</span>
-							</div>
-						</div>
-						<div class="field-group">
-							<label class="label-text" for="mint-to">{$t('mt.recipientAddress')}</label>
-							<input
-								id="mint-to"
-								class="input-field"
-								bind:value={mintTo}
-								placeholder="0x..."
-								disabled={!isOwner}
-							/>
-							{#if userAddress}
-								<button
-									onclick={() => (mintTo = userAddress!)}
-									class="field-hint-btn font-mono cursor-pointer"
-								>{$t('mt.useMyWallet')}</button>
-							{/if}
-						</div>
-						<button
-							onclick={doMint}
-							disabled={!isOwner || actionLoading || !mintAmount}
-							class="action-btn mint-btn syne cursor-pointer"
-						>
-							{actionLoading ? $t('mt.minting') : $t('mt.mintAction')}
-						</button>
-					</div>
-				</div>
+				<MintTab
+					bind:mintAmount
+					bind:mintTo
+					{isOwner}
+					{actionLoading}
+					tokenSymbol={tokenInfo.symbol}
+					{userAddress}
+					onMint={doMint}
+				/>
 			{/if}
 
 			<!-- BURN TAB -->
 			{#if activeTab === 'burn'}
-				<div class="panel">
-					<div class="panel-header">
-						<div>
-							<h3 class="syne text-lg font-bold text-white">{$t('mt.burnTokens')}</h3>
-							<p class="text-sm text-gray-500 font-mono mt-1">{$t('mt.burnDesc')}</p>
-						</div>
-						<span class="badge badge-amber">{$t('mt.irreversible')}</span>
-					</div>
-
-					<div class="form-fields">
-						<div class="field-group">
-							<label class="label-text" for="burn-amount">{$t('mt.amountToBurn')}</label>
-							<div class="input-with-badge">
-								<input
-									id="burn-amount"
-									class="input-field"
-									type="number"
-									min="0"
-									bind:value={burnAmount}
-									placeholder="0"
-								/>
-								<span class="input-badge">{tokenInfo.symbol}</span>
-							</div>
-							{#if tokenInfo.userBalance}
-								<span class="field-hint font-mono">{$t('mt.balance')}: {Number(tokenInfo.userBalance).toLocaleString()} {tokenInfo.symbol}</span>
-							{/if}
-						</div>
-
-						<div class="burn-warning">
-							<span class="text-red-400">!</span>
-							<span class="text-red-300 text-sm font-mono">{$t('mt.burnWarning')}</span>
-						</div>
-
-						<button
-							onclick={doBurn}
-							disabled={actionLoading || !burnAmount}
-							class="action-btn burn-btn syne cursor-pointer"
-						>
-							{actionLoading ? $t('mt.burning') : $t('mt.burnAction')}
-						</button>
-					</div>
-				</div>
+				<BurnTab
+					bind:burnAmount
+					{actionLoading}
+					tokenSymbol={tokenInfo.symbol}
+					userBalance={tokenInfo.userBalance}
+					onBurn={doBurn}
+				/>
 			{/if}
 
 			<!-- TAX TAB -->
-			{#if activeTab === 'tax'}
-				<div class="panel">
-					<div class="panel-header">
-						<div>
-							<h3 class="syne text-lg font-bold text-white">{$t('mt.taxSettings')}</h3>
-							<p class="text-sm text-gray-500 font-mono mt-1">{$t('mt.taxDesc')}</p>
-						</div>
-						<span class="badge badge-cyan">{$t('mt.ownerOnly')}</span>
-					</div>
-
-					{#if !isOwner}
-						<div class="owner-warning">
-							<span class="text-amber-400">!</span>
-							<span class="text-amber-300 text-sm font-mono">{$t('mt.onlyOwnerCanTax')}</span>
-						</div>
-					{/if}
-
-					<div class="form-fields">
-						<!-- Tax Rates -->
-						<div class="sub-panel">
-							<h4 class="syne text-sm font-bold text-white mb-3">{$t('mt.taxRates')}</h4>
-							<div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-								<div class="field-group">
-									<label class="label-text" for="buy-tax">{$t('mt.buyTax')}</label>
-									<div class="input-with-badge">
-										<input
-											id="buy-tax"
-											class="input-field"
-											type="number"
-											min="0"
-											max="10"
-											step="0.01"
-											bind:value={buyTaxPctInput}
-											placeholder="0"
-											disabled={!isOwner}
-										/>
-										<span class="input-badge">%</span>
-									</div>
-									{#if tokenInfo.buyTaxBps !== undefined}
-										<span class="field-hint font-mono">{$t('mt.current')}: {(tokenInfo.buyTaxBps / 100).toFixed(2)}%</span>
-									{/if}
-								</div>
-								<div class="field-group">
-									<label class="label-text" for="sell-tax">{$t('mt.sellTax')}</label>
-									<div class="input-with-badge">
-										<input
-											id="sell-tax"
-											class="input-field"
-											type="number"
-											min="0"
-											max="10"
-											step="0.01"
-											bind:value={sellTaxPctInput}
-											placeholder="0"
-											disabled={!isOwner}
-										/>
-										<span class="input-badge">%</span>
-									</div>
-									{#if tokenInfo.sellTaxBps !== undefined}
-										<span class="field-hint font-mono">{$t('mt.current')}: {(tokenInfo.sellTaxBps / 100).toFixed(2)}%</span>
-									{/if}
-								</div>
-								<div class="field-group">
-									<label class="label-text" for="transfer-tax">{$t('mt.transferTax')}</label>
-									<div class="input-with-badge">
-										<input
-											id="transfer-tax"
-											class="input-field"
-											type="number"
-											min="0"
-											max="5"
-											step="0.01"
-											bind:value={transferTaxPctInput}
-											placeholder="0"
-											disabled={!isOwner}
-										/>
-										<span class="input-badge">%</span>
-									</div>
-									{#if tokenInfo.transferTaxBps !== undefined}
-										<span class="field-hint font-mono">{$t('mt.current')}: {(tokenInfo.transferTaxBps / 100).toFixed(2)}%</span>
-									{/if}
-								</div>
-							</div>
-							<div class="text-xs text-gray-500 font-mono mt-2">{$t('mt.taxMaxHint')}</div>
-							<button
-								onclick={doSetTaxes}
-								disabled={!isOwner || actionLoading}
-								class="action-btn tax-btn syne cursor-pointer mt-3"
-							>
-								{actionLoading ? $t('mt.saving') : $t('mt.updateTaxRates')}
-							</button>
-						</div>
-
-						<!-- Tax Distribution -->
-						<div class="sub-panel">
-							<h4 class="syne text-sm font-bold text-white mb-3">{$t('mt.taxDistribution')}</h4>
-							<div class="flex flex-col gap-3">
-								{#each taxWallets as wallet, i}
-									<div class="flex gap-2 items-end">
-										<div class="field-group flex-1">
-											<label class="label-text" for="tw-addr-{i}">{$t('mt.walletAddress')}</label>
-											<input
-												id="tw-addr-{i}"
-												class="input-field"
-												bind:value={wallet.address}
-												placeholder="0x..."
-												disabled={!isOwner}
-											/>
-										</div>
-										<div class="field-group" style="width: 120px;">
-											<label class="label-text" for="tw-share-{i}">{$t('mt.shareBps')}</label>
-											<input
-												id="tw-share-{i}"
-												class="input-field"
-												type="number"
-												min="1"
-												max="10000"
-												bind:value={wallet.shareBps}
-												placeholder="5000"
-												disabled={!isOwner}
-											/>
-										</div>
-										<button
-											onclick={() => removeTaxWallet(i)}
-											class="btn-danger text-xs px-3 py-2.5 cursor-pointer"
-											disabled={!isOwner}
-										>x</button>
-									</div>
-								{/each}
-								{#if taxWallets.length < 10}
-									<button
-										onclick={addTaxWallet}
-										class="btn-secondary text-xs px-3 py-2 cursor-pointer self-start"
-										disabled={!isOwner}
-									>{$t('mt.addWallet')}</button>
-								{/if}
-							</div>
-							{#if taxWallets.length > 0}
-								<button
-									onclick={doSetTaxDistribution}
-									disabled={!isOwner || actionLoading || taxWallets.length === 0}
-									class="action-btn tax-btn syne cursor-pointer mt-3"
-								>
-									{actionLoading ? $t('mt.saving') : $t('mt.saveTaxDistribution')}
-								</button>
-							{/if}
-						</div>
-
-						<!-- Tax Exemption -->
-						<div class="sub-panel">
-							<h4 class="syne text-sm font-bold text-white mb-3">{$t('mt.taxExemption')}</h4>
-							<div class="flex gap-2 items-end flex-wrap">
-								<div class="field-group flex-1" style="min-width: 200px;">
-									<label class="label-text" for="exempt-addr">{$t('mt.address')}</label>
-									<input
-										id="exempt-addr"
-										class="input-field"
-										bind:value={taxExemptAddr}
-										placeholder="0x..."
-										disabled={!isOwner}
-									/>
-								</div>
-								<div class="field-group" style="width: 120px;">
-									<label class="label-text" for="exempt-val">{$t('mt.exempt')}</label>
-									<select id="exempt-val" class="input-field" bind:value={taxExemptValue} disabled={!isOwner}>
-										<option value={true}>{$t('mt.yes')}</option>
-										<option value={false}>{$t('mt.no')}</option>
-									</select>
-								</div>
-								<button
-									onclick={doExcludeFromTax}
-									disabled={!isOwner || actionLoading || !taxExemptAddr}
-									class="action-btn tax-btn syne cursor-pointer"
-									style="max-width: 180px;"
-								>
-									{actionLoading ? $t('mt.saving') : $t('mt.update')}
-								</button>
-							</div>
-						</div>
-					</div>
-				</div>
+			{#if activeTab === 'tax' && tokenInfo}
+				<TaxTab
+					bind:buyTaxPctInput
+					bind:sellTaxPctInput
+					bind:transferTaxPctInput
+					bind:taxExemptAddr
+					bind:taxExemptValue
+					bind:taxWallets
+					{isOwner}
+					{actionLoading}
+					{tokenInfo}
+					onSetTaxes={doSetTaxes}
+					onSetTaxDistribution={doSetTaxDistribution}
+					onExcludeFromTax={doExcludeFromTax}
+					onAddTaxWallet={addTaxWallet}
+					onRemoveTaxWallet={removeTaxWallet}
+				/>
 			{/if}
 
 			<!-- POOLS TAB -->
 			{#if activeTab === 'pools'}
-				<div class="panel">
-					<div class="panel-header">
-						<div>
-							<h3 class="syne text-lg font-bold text-white">{$t('mt.poolManagement')}</h3>
-							<p class="text-sm text-gray-500 font-mono mt-1">{$t('mt.poolDesc')}</p>
-						</div>
-						<span class="badge badge-cyan">{$t('mt.ownerOnly')}</span>
-					</div>
-
-					{#if !isOwner}
-						<div class="owner-warning">
-							<span class="text-amber-400">!</span>
-							<span class="text-amber-300 text-sm font-mono">{$t('mt.onlyOwnerCanPools')}</span>
-						</div>
-					{/if}
-
-					<div class="form-fields">
-						<!-- Add / Remove Pool -->
-						<div class="sub-panel">
-							<h4 class="syne text-sm font-bold text-white mb-3">{$t('mt.addRemovePool')}</h4>
-							<div class="field-group">
-								<label class="label-text" for="pool-addr">{$t('mt.poolAddress')}</label>
-								<input
-									id="pool-addr"
-									class="input-field"
-									bind:value={poolAddressInput}
-									placeholder="0x..."
-									disabled={!isOwner}
-								/>
-							</div>
-							<div class="flex gap-3 mt-3">
-								<button
-									onclick={doAddPool}
-									disabled={!isOwner || actionLoading || !poolAddressInput}
-									class="action-btn mint-btn syne cursor-pointer"
-									style="flex:1;"
-								>
-									{actionLoading ? $t('mt.processing') : $t('mt.addPool')}
-								</button>
-								<button
-									onclick={doRemovePool}
-									disabled={!isOwner || actionLoading || !poolAddressInput}
-									class="action-btn burn-btn syne cursor-pointer"
-									style="flex:1;"
-								>
-									{actionLoading ? $t('mt.processing') : $t('mt.removePool')}
-								</button>
-							</div>
-						</div>
-
-						<!-- Check Pool Status -->
-						<div class="sub-panel">
-							<h4 class="syne text-sm font-bold text-white mb-3">{$t('mt.checkPoolStatus')}</h4>
-							<div class="flex gap-2 items-end flex-wrap">
-								<div class="field-group flex-1" style="min-width: 200px;">
-									<label class="label-text" for="pool-check-addr">{$t('mt.addressToCheck')}</label>
-									<input
-										id="pool-check-addr"
-										class="input-field"
-										bind:value={poolCheckAddr}
-										placeholder="0x..."
-									/>
-								</div>
-								<button
-									onclick={doCheckPool}
-									disabled={!poolCheckAddr}
-									class="btn-secondary text-xs px-4 py-3 cursor-pointer font-mono"
-								>{$t('mt.check')}</button>
-							</div>
-							{#if poolCheckResult !== null}
-								<div class="mt-3 px-3 py-2 rounded-lg {poolCheckResult ? 'bg-emerald-500/10 border border-emerald-500/20' : 'bg-red-500/10 border border-red-500/20'}">
-									<span class="text-sm font-mono {poolCheckResult ? 'text-emerald-400' : 'text-red-400'}">
-										{poolCheckResult ? $t('mt.isRegisteredPool') : $t('mt.isNotRegisteredPool')}
-									</span>
-								</div>
-							{/if}
-						</div>
-					</div>
-				</div>
+				<PoolsTab
+					bind:poolAddressInput
+					bind:poolCheckAddr
+					{poolCheckResult}
+					{isOwner}
+					{actionLoading}
+					onAddPool={doAddPool}
+					onRemovePool={doRemovePool}
+					onCheckPool={doCheckPool}
+				/>
 			{/if}
 
 			<!-- LIQUIDITY TAB -->
-			{#if activeTab === 'protection'}
-				<div class="panel">
-					<div class="panel-header">
-						<div>
-							<h3 class="syne text-lg font-bold text-white">{$t('mt.tokenProtection')}</h3>
-							<p class="text-sm text-gray-500 font-mono mt-1">
-								{$t('mt.protectionDesc')}
-							</p>
-						</div>
-						{#if tokenInfo.tradingEnabled}
-							<span class="badge badge-emerald">{$t('mt.tradingLive')}</span>
-						{:else}
-							<span class="badge badge-amber">{$t('mt.preTrading')}</span>
-						{/if}
-					</div>
-
-					{#if !tokenInfo.tradingEnabled}
-						<div class="protection-notice mb-4">
-							<span class="text-cyan-400 text-xs font-mono font-bold">{$t('mt.preTradingMode')}</span>
-							<span class="text-gray-400 text-xs font-mono">
-								{$t('mt.preTradingDesc')}
-							</span>
-						</div>
-					{:else}
-						<div class="protection-notice relax-only mb-4">
-							<span class="text-emerald-400 text-xs font-mono font-bold">{$t('mt.tradingIsLive')}</span>
-							<span class="text-gray-400 text-xs font-mono">
-								{$t('mt.tradingIsLiveDesc')}
-							</span>
-						</div>
-					{/if}
-
-					<!-- Current Status -->
-					<div class="sub-panel mb-4">
-						<h4 class="syne text-sm font-bold text-white mb-3">{$t('mt.currentSettings')}</h4>
-						<div class="flex flex-col gap-2">
-							<div class="protection-stat-row">
-								<span class="text-gray-500 text-xs font-mono">{$t('mt.trading')}</span>
-								<span class="text-xs font-mono {tokenInfo.tradingEnabled ? 'text-emerald-400' : 'text-amber-400'}">
-									{tokenInfo.tradingEnabled ? $t('mt.enabled') : $t('mt.notEnabled')}
-								</span>
-							</div>
-							<div class="protection-stat-row">
-								<span class="text-gray-500 text-xs font-mono">{$t('mt.maxWallet')}</span>
-								<span class="text-xs font-mono {Number(tokenInfo.maxWalletAmount ?? 0) > 0 ? 'text-cyan-300' : 'text-gray-600'}">
-									{Number(tokenInfo.maxWalletAmount ?? 0) > 0 ? `${Number(tokenInfo.maxWalletAmount).toLocaleString()} ${tokenInfo.symbol}` : $t('mt.noLimit')}
-								</span>
-							</div>
-							<div class="protection-stat-row">
-								<span class="text-gray-500 text-xs font-mono">{$t('mt.maxTransaction')}</span>
-								<span class="text-xs font-mono {Number(tokenInfo.maxTransactionAmount ?? 0) > 0 ? 'text-cyan-300' : 'text-gray-600'}">
-									{Number(tokenInfo.maxTransactionAmount ?? 0) > 0 ? `${Number(tokenInfo.maxTransactionAmount).toLocaleString()} ${tokenInfo.symbol}` : $t('mt.noLimit')}
-								</span>
-							</div>
-							<div class="protection-stat-row">
-								<span class="text-gray-500 text-xs font-mono">{$t('mt.cooldown')}</span>
-								<span class="text-xs font-mono {(tokenInfo.cooldownTime ?? 0) > 0 ? 'text-cyan-300' : 'text-gray-600'}">
-									{(tokenInfo.cooldownTime ?? 0) > 0 ? `${tokenInfo.cooldownTime}s` : $t('mt.disabled')}
-								</span>
-							</div>
-							<div class="protection-stat-row">
-								<span class="text-gray-500 text-xs font-mono">{$t('mt.blacklist')}</span>
-								<span class="text-xs font-mono {(tokenInfo.blacklistWindow ?? 0) > 0 ? 'text-cyan-300' : 'text-gray-600'}">
-									{#if (tokenInfo.blacklistWindow ?? 0) === 0}
-										{$t('mt.disabled')}
-									{:else if tokenInfo.tradingEnabled && tokenInfo.tradingEnabledAt}
-										{@const expiresAt = tokenInfo.tradingEnabledAt + (tokenInfo.blacklistWindow ?? 0)}
-										{@const now = Math.floor(Date.now() / 1000)}
-										{now > expiresAt ? $t('mt.expired') : `${$t('mt.active')} (${$t('mt.expiresIn')} ${Math.round((expiresAt - now) / 3600)}h)`}
-									{:else}
-										Window: {Math.round((tokenInfo.blacklistWindow ?? 0) / 3600)}h {$t('mt.windowAfterTrading')}
-									{/if}
-								</span>
-							</div>
-						</div>
-					</div>
-
-					{#if isOwner}
-						<div class="form-fields">
-							<!-- Enable Trading -->
-							{#if !tokenInfo.tradingEnabled}
-								<div class="sub-panel trading-enable-box">
-									<h4 class="syne text-sm font-bold text-white mb-2">{$t('mt.enableTrading')}</h4>
-									<p class="text-gray-500 text-xs font-mono mb-3">
-										{$t('mt.enableTradingDesc')}
-									</p>
-									<button
-										onclick={doEnableTrading}
-										disabled={actionLoading}
-										class="action-btn syne cursor-pointer w-full"
-									>
-										{actionLoading ? $t('mt.enabling') : $t('mt.enableTrading')}
-									</button>
-								</div>
-							{/if}
-
-							<!-- Max Wallet -->
-							<div class="field-group">
-								<label class="label-text" for="max-wallet">{$t('mt.maxWalletAmount')}</label>
-								<div class="input-with-badge">
-									<input
-										id="max-wallet"
-										class="input-field"
-										type="number"
-										min="0"
-										bind:value={maxWalletInput}
-										placeholder={tokenInfo.tradingEnabled && Number(tokenInfo.maxWalletAmount ?? 0) > 0 ? `Current: ${Number(tokenInfo.maxWalletAmount).toLocaleString()} (can only increase)` : 'e.g. 10000'}
-									/>
-									<span class="input-badge">{tokenInfo.symbol}</span>
-								</div>
-								<span class="field-hint font-mono">{$t('mt.setTo0Disable')} {tokenInfo.tradingEnabled ? $t('mt.canOnlyIncrease') : ''}</span>
-								<button onclick={doSetMaxWallet} disabled={actionLoading} class="action-btn mt-2 syne cursor-pointer">
-									{actionLoading ? $t('mt.setting') : $t('mt.setMaxWallet')}
-								</button>
-							</div>
-
-							<!-- Max Transaction -->
-							<div class="field-group">
-								<label class="label-text" for="max-tx">{$t('mt.maxTxAmount')}</label>
-								<div class="input-with-badge">
-									<input
-										id="max-tx"
-										class="input-field"
-										type="number"
-										min="0"
-										bind:value={maxTxInput}
-										placeholder={tokenInfo.tradingEnabled && Number(tokenInfo.maxTransactionAmount ?? 0) > 0 ? `Current: ${Number(tokenInfo.maxTransactionAmount).toLocaleString()} (can only increase)` : 'e.g. 5000'}
-									/>
-									<span class="input-badge">{tokenInfo.symbol}</span>
-								</div>
-								<span class="field-hint font-mono">{$t('mt.setTo0Disable')} {tokenInfo.tradingEnabled ? $t('mt.canOnlyIncrease') : ''}</span>
-								<button onclick={doSetMaxTx} disabled={actionLoading} class="action-btn mt-2 syne cursor-pointer">
-									{actionLoading ? $t('mt.setting') : $t('mt.setMaxTx')}
-								</button>
-							</div>
-
-							<!-- Cooldown -->
-							<div class="field-group">
-								<label class="label-text" for="cooldown">{$t('mt.cooldownTime')}</label>
-								<div class="input-with-badge">
-									<input
-										id="cooldown"
-										class="input-field"
-										type="number"
-										min="0"
-										bind:value={cooldownInput}
-										placeholder={tokenInfo.tradingEnabled && (tokenInfo.cooldownTime ?? 0) > 0 ? `Current: ${tokenInfo.cooldownTime}s (can only decrease)` : 'e.g. 30'}
-									/>
-									<span class="input-badge">sec</span>
-								</div>
-								<span class="field-hint font-mono">{$t('mt.setTo0Disable')} {tokenInfo.tradingEnabled ? $t('mt.canOnlyDecrease') : ''} {$t('mt.cooldownHint')}</span>
-								<button onclick={doSetCooldown} disabled={actionLoading} class="action-btn mt-2 syne cursor-pointer">
-									{actionLoading ? $t('mt.setting') : $t('mt.setCooldown')}
-								</button>
-							</div>
-
-							<!-- Blacklist Window (only before trading) -->
-							{#if !tokenInfo.tradingEnabled}
-								<div class="field-group">
-									<label class="label-text" for="bl-window">{$t('mt.blacklistWindow')}</label>
-									<div class="input-with-badge">
-										<input
-											id="bl-window"
-											class="input-field"
-											type="number"
-											min="0"
-											max="259200"
-											bind:value={blacklistWindowInput}
-											placeholder="e.g. 86400 (24 hours)"
-										/>
-										<span class="input-badge">sec</span>
-									</div>
-									<span class="field-hint font-mono">{$t('mt.blacklistWindowHint')}</span>
-									<button onclick={doSetBlacklistWindow} disabled={actionLoading} class="action-btn mt-2 syne cursor-pointer">
-										{actionLoading ? $t('mt.setting') : $t('mt.setBlacklistWindow')}
-									</button>
-								</div>
-							{/if}
-
-							<!-- Blacklist Management -->
-							{#if (tokenInfo.blacklistWindow ?? 0) > 0}
-								<div class="sub-panel">
-									<h4 class="syne text-sm font-bold text-white mb-3">{$t('mt.blacklistManagement')}</h4>
-									<div class="field-group">
-										<label class="label-text" for="bl-addr">{$t('mt.address')}</label>
-										<input id="bl-addr" class="input-field" bind:value={blacklistAddrInput} placeholder="0x..." />
-									</div>
-									<div class="flex gap-2 mt-2">
-										<select class="input-field" style="max-width: 150px;" bind:value={blacklistAction}>
-											<option value={true}>{$t('mt.blacklist')}</option>
-											<option value={false}>{$t('mt.unblacklist')}</option>
-										</select>
-										<button onclick={doSetBlacklisted} disabled={actionLoading || !blacklistAddrInput} class="action-btn syne cursor-pointer flex-1">
-											{actionLoading ? $t('mt.updating') : blacklistAction ? $t('mt.blockAddress') : $t('mt.unblockAddress')}
-										</button>
-									</div>
-
-									<!-- Check if address is blacklisted -->
-									<div class="mt-3">
-										<div class="flex gap-2">
-											<input class="input-field flex-1" bind:value={blacklistCheckAddr} placeholder={$t('mt.checkAddress')} />
-											<button onclick={doCheckBlacklist} class="btn-secondary text-xs px-3 py-1.5 cursor-pointer">{$t('mt.check')}</button>
-										</div>
-										{#if blacklistCheckResult !== null}
-											<div class="text-xs font-mono mt-1 {blacklistCheckResult ? 'text-red-400' : 'text-emerald-400'}">
-												{blacklistCheckResult ? $t('mt.blacklisted') : $t('mt.notBlacklisted')}
-											</div>
-										{/if}
-									</div>
-								</div>
-							{/if}
-
-							<!-- Exclude from Limits -->
-							<div class="sub-panel">
-								<h4 class="syne text-sm font-bold text-white mb-3">{$t('mt.limitExclusions')}</h4>
-								<p class="text-gray-500 text-xs font-mono mb-3">{$t('mt.limitExclusionsDesc')}</p>
-								<div class="field-group">
-									<label class="label-text" for="exclude-addr">{$t('mt.address')}</label>
-									<input id="exclude-addr" class="input-field" bind:value={excludeLimitsAddrInput} placeholder="0x..." />
-								</div>
-								<div class="flex gap-2 mt-2">
-									<select class="input-field" style="max-width: 150px;" bind:value={excludeLimitsAction}>
-										<option value={true}>{$t('mt.exclude')}</option>
-										<option value={false}>{$t('mt.include')}</option>
-									</select>
-									<button onclick={doSetExcludedFromLimits} disabled={actionLoading || !excludeLimitsAddrInput} class="action-btn syne cursor-pointer flex-1">
-										{actionLoading ? $t('mt.updating') : excludeLimitsAction ? $t('mt.excludeFromLimits') : $t('mt.includeInLimits')}
-									</button>
-								</div>
-
-								<!-- Check if excluded -->
-								<div class="mt-3">
-									<div class="flex gap-2">
-										<input class="input-field flex-1" bind:value={excludedCheckAddr} placeholder={$t('mt.checkAddress')} />
-										<button onclick={doCheckExcluded} class="btn-secondary text-xs px-3 py-1.5 cursor-pointer">{$t('mt.check')}</button>
-									</div>
-									{#if excludedCheckResult !== null}
-										<div class="text-xs font-mono mt-1 {excludedCheckResult ? 'text-cyan-300' : 'text-gray-400'}">
-											{excludedCheckResult ? $t('mt.excludedFromLimits') : $t('mt.subjectToLimits')}
-										</div>
-									{/if}
-								</div>
-							</div>
-						</div>
-					{:else}
-						<div class="text-center py-6">
-							<p class="text-gray-500 font-mono text-sm">{$t('mt.onlyOwnerProtection')}</p>
-						</div>
-					{/if}
-				</div>
+			{#if activeTab === 'protection' && tokenInfo}
+				<ProtectionTab
+					{tokenInfo}
+					{isOwner}
+					{actionLoading}
+					bind:maxWalletInput
+					bind:maxTxInput
+					bind:cooldownInput
+					bind:blacklistWindowInput
+					bind:blacklistAddrInput
+					bind:blacklistAction
+					bind:blacklistCheckAddr
+					{blacklistCheckResult}
+					bind:excludeLimitsAddrInput
+					bind:excludeLimitsAction
+					bind:excludedCheckAddr
+					{excludedCheckResult}
+					onEnableTrading={doEnableTrading}
+					onSetMaxWallet={doSetMaxWallet}
+					onSetMaxTx={doSetMaxTx}
+					onSetCooldown={doSetCooldown}
+					onSetBlacklistWindow={doSetBlacklistWindow}
+					onSetBlacklisted={doSetBlacklisted}
+					onSetExcludedFromLimits={doSetExcludedFromLimits}
+					onCheckBlacklist={doCheckBlacklist}
+					onCheckExcluded={doCheckExcluded}
+				/>
 			{/if}
 
-			{#if activeTab === 'liquidity'}
+			{#if activeTab === 'liquidity' && tokenInfo}
 				<div class="panel">
 					<div class="panel-header">
 						<div>
 							<h3 class="syne text-lg font-bold text-white">{$t('mt.liquidity')}</h3>
-							<p class="text-sm text-gray-500 font-mono mt-1">
-								{$t('mt.liquidityDesc')}
-							</p>
+							<p class="text-sm text-gray-500 font-mono mt-1">{$t('mt.liquidityDesc')}</p>
 						</div>
 						<span class="badge badge-purple">{$t('mt.dex')}</span>
 					</div>
 
 					<div class="form-fields">
-						<!-- Router Selection -->
-						<div class="field-group">
-							<label class="label-text" for="dex-router">{$t('mt.dexRouter')}</label>
-							<select id="dex-router" class="input-field" bind:value={selectedRouter} onchange={() => { poolsLoaded = false; existingPools = []; }}>
-								{#each DEX_ROUTERS[network?.chain_id ?? 1] ?? [] as r}
-									<option value={r.address}>{r.name}</option>
-								{/each}
-							</select>
-						</div>
+						<ExistingPoolsList
+							bind:selectedRouter
+							dexRouters={DEX_ROUTERS[network?.chain_id ?? 1] ?? []}
+							{existingPools}
+							{poolsLoading}
+							bind:poolsLoaded
+							bind:poolAddAmounts
+							{poolAddLoading}
+							{poolLpBalances}
+							bind:poolRemovePct
+							{poolRemoveLoading}
+							tokenSymbol={tokenInfo.symbol}
+							tokenTotalSupply={tokenInfo.totalSupply}
+							{userAddress}
+							onLookupPools={lookupExistingPools}
+							onSelectedRouterChange={() => { poolsLoaded = false; existingPools = []; }}
+							{onPoolBaseInput}
+							{onPoolTokenInput}
+							onAddToExistingPool={doAddToExistingPool}
+							onRemoveLiquidity={doRemoveLiquidity}
+						/>
 
-						<!-- Existing Pools Section -->
-						<div class="sub-panel">
-							<div class="flex items-center justify-between mb-3">
-								<h4 class="syne text-sm font-bold text-white">{$t('mt.existingPools')}</h4>
-								<button
-									onclick={lookupExistingPools}
-									disabled={poolsLoading}
-									class="btn-secondary text-xs px-3 py-1.5 cursor-pointer"
-								>
-									{poolsLoading ? $t('mt.loadingPools') : poolsLoaded ? $t('mt.refreshPools') : $t('mt.loadPools')}
-								</button>
-							</div>
+						{#if isOwner}
+							<RegisterPoolForm
+								bind:registerPoolBase
+								bind:registerPoolByAddress
+								{registerPoolLoading}
+								onRegisterByBase={doRegisterPoolByBase}
+								onRegisterByAddress={doAddPoolByAddress}
+							/>
+						{/if}
 
-							{#if poolsLoading}
-								<div class="flex items-center gap-3 py-4 justify-center">
-									<div class="spinner w-5 h-5 rounded-full border-2 border-white/10 border-t-cyan-400"></div>
-									<span class="text-gray-500 text-xs font-mono">{$t('mt.scanningPools')}</span>
-								</div>
-							{:else if poolsLoaded && existingPools.length === 0}
-								<div class="liq-empty-state">
-									<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="text-gray-600"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-									<span class="text-gray-400 text-sm font-mono">No liquidity pools found</span>
-									<span class="text-gray-600 text-xs font-mono">Create a new pool below to list your token on the DEX</span>
-								</div>
-							{:else if !poolsLoaded}
-								<p class="text-gray-600 text-xs font-mono py-2">{$t('mt.clickLoadPools')}</p>
-							{/if}
-
-							{#if existingPools.length > 0}
-								<div class="flex flex-col gap-3">
-									{#each existingPools as pool}
-										<div class="pool-card">
-											<button
-												class="pool-card-header cursor-pointer"
-												onclick={() => {
-													if (!poolAddAmounts[pool.pairAddress]) poolAddAmounts[pool.pairAddress] = { baseAmount: '', tokenAmount: '', expanded: false };
-													poolAddAmounts[pool.pairAddress].expanded = !poolAddAmounts[pool.pairAddress].expanded;
-												}}
-											>
-												<div class="flex items-center gap-3">
-													<div class="pool-pair-badge syne">{tokenInfo.symbol}/{pool.baseSymbol}</div>
-													<div class="flex flex-col">
-														{#if isEmptyPool(pool)}
-															<span class="text-amber-400 text-sm font-mono">No liquidity yet</span>
-															<span class="text-gray-600 text-[10px] font-mono">Add tokens to set the initial price</span>
-														{:else}
-															<span class="text-white text-sm rajdhani" style="font-size:15px;">1 {tokenInfo.symbol} = {pool.pricePerToken < 0.000001 ? pool.pricePerToken.toExponential(4) : pool.pricePerToken.toFixed(6)} {pool.baseSymbol}</span>
-															<span class="text-gray-500 text-[10px] font-mono">{fmtSupply(pool.tokenReserve)} {tokenInfo.symbol} + {pool.baseReserve.toLocaleString(undefined, {maximumFractionDigits: 4})} {pool.baseSymbol}</span>
-														{/if}
-													</div>
-												</div>
-												<div class="flex items-center gap-3">
-													{#if isEmptyPool(pool)}
-														<span class="badge badge-amber" style="font-size:10px;">Empty</span>
-													{:else}
-														<span class="badge badge-emerald" style="font-size:10px;">Active</span>
-													{/if}
-													<span class="pool-expand-icon {poolAddAmounts[pool.pairAddress]?.expanded ? 'expanded' : ''}">v</span>
-												</div>
-											</button>
-
-											{#if poolAddAmounts[pool.pairAddress]?.expanded}
-												<div class="pool-card-body">
-													{#if isEmptyPool(pool)}
-														<div class="empty-pool-hint">
-															<span class="text-amber-400 text-xs font-mono font-bold">{$t('mt.emptyPool')}</span>
-															<span class="text-gray-400 text-xs font-mono">{$t('mt.emptyPoolDesc')}</span>
-														</div>
-													{/if}
-													<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-														<div class="field-group">
-															<label class="label-text" for="pool-base-{pool.pairAddress}">{pool.baseSymbol} {$t('mt.amount')}</label>
-															<div class="input-with-badge">
-																<input
-																	id="pool-base-{pool.pairAddress}"
-																	class="input-field"
-																	type="number"
-																	min="0"
-																	step="any"
-																	bind:value={poolAddAmounts[pool.pairAddress].baseAmount}
-																	oninput={() => onPoolBaseInput(pool)}
-																	placeholder="0.0"
-																/>
-																<span class="input-badge">{pool.baseSymbol}</span>
-															</div>
-														</div>
-														<div class="field-group">
-															<label class="label-text" for="pool-token-{pool.pairAddress}">{tokenInfo.symbol} {$t('mt.amount')}</label>
-															<div class="input-with-badge">
-																<input
-																	id="pool-token-{pool.pairAddress}"
-																	class="input-field"
-																	type="number"
-																	min="0"
-																	step="any"
-																	bind:value={poolAddAmounts[pool.pairAddress].tokenAmount}
-																	oninput={() => onPoolTokenInput(pool)}
-																	placeholder="0.0"
-																/>
-																<span class="input-badge">{tokenInfo.symbol}</span>
-															</div>
-														</div>
-													</div>
-
-													{#if poolTokenPct(pool, poolAddAmounts[pool.pairAddress]?.tokenAmount) > 0}
-														<div class="liq-pct-bar">
-															<div class="flex justify-between text-xs font-mono mb-1">
-																<span class="text-gray-500">{$t('mt.supplyAllocated')}</span>
-																<span class="text-cyan-400">{poolTokenPct(pool, poolAddAmounts[pool.pairAddress].tokenAmount).toFixed(1)}%</span>
-															</div>
-															<div class="pct-track">
-																<div class="pct-fill" style="width: {Math.min(poolTokenPct(pool, poolAddAmounts[pool.pairAddress].tokenAmount), 100)}%"></div>
-															</div>
-														</div>
-													{/if}
-
-													<div class="liq-info-box">
-														{#if !isEmptyPool(pool)}
-															<div class="liq-info-row">
-																<span class="text-gray-500 font-mono text-xs">{$t('mt.currentPrice')}</span>
-																<span class="text-cyan-300 font-mono text-xs">1 {tokenInfo.symbol} = {pool.pricePerToken < 0.000001 ? pool.pricePerToken.toExponential(4) : pool.pricePerToken.toFixed(6)} {pool.baseSymbol}</span>
-															</div>
-														{/if}
-														<div class="liq-info-row">
-															<span class="text-gray-500 font-mono text-xs">{$t('mt.slippageTolerance')}</span>
-															<span class="text-cyan-300 font-mono text-xs">5%</span>
-														</div>
-														<div class="liq-info-row">
-															<span class="text-gray-500 font-mono text-xs">{$t('mt.lpTokensGoTo')}</span>
-															<span class="text-cyan-300 font-mono text-xs">{userAddress ? shortAddr(userAddress) : $t('mt.yourWallet')}</span>
-														</div>
-													</div>
-
-													<button
-														onclick={() => doAddToExistingPool(pool)}
-														disabled={poolAddLoading[pool.pairAddress] || !poolAddAmounts[pool.pairAddress]?.tokenAmount || !poolAddAmounts[pool.pairAddress]?.baseAmount}
-														class="action-btn liq-btn syne cursor-pointer"
-													>
-														{poolAddLoading[pool.pairAddress] ? $t('mt.addingLiquidity') : `${$t('mt.addToPool')} ${tokenInfo.symbol}/${pool.baseSymbol} ${$t('mt.pool')}`}
-													</button>
-
-													<!-- Remove Liquidity -->
-													{#if (poolLpBalances[pool.pairAddress] || 0n) > 0n}
-														<div class="remove-liq-section">
-															<div class="remove-liq-header">
-																<span class="remove-liq-label">Remove Liquidity</span>
-																<span class="remove-liq-bal">LP: {parseFloat(ethers.formatEther(poolLpBalances[pool.pairAddress] || 0n)).toFixed(6)}</span>
-															</div>
-															<div class="remove-liq-pct-row">
-																{#each [25, 50, 75, 100] as pct}
-																	<button
-																		class="remove-liq-pct-btn {(poolRemovePct[pool.pairAddress] || 100) === pct ? 'active' : ''}"
-																		onclick={() => poolRemovePct[pool.pairAddress] = pct}
-																	>{pct}%</button>
-																{/each}
-															</div>
-															<button
-																onclick={() => doRemoveLiquidity(pool)}
-																disabled={poolRemoveLoading[pool.pairAddress]}
-																class="action-btn burn-btn syne cursor-pointer"
-															>
-																{poolRemoveLoading[pool.pairAddress] ? 'Removing...' : `Remove ${poolRemovePct[pool.pairAddress] || 100}% from ${tokenInfo.symbol}/${pool.baseSymbol}`}
-															</button>
-														</div>
-													{/if}
-												</div>
-											{/if}
-										</div>
-									{/each}
-								</div>
-							{/if}
-						</div>
-
-						<!-- Create New Pool -->
-						<div class="sub-panel">
-							<button
-								class="flex items-center justify-between w-full cursor-pointer"
-								style="background: none; border: none; padding: 0;"
-								onclick={() => (showNewPool = !showNewPool)}
-							>
-								<h4 class="syne text-sm font-bold text-white">{$t('mt.createNewPool')}</h4>
-								<span class="pool-expand-icon {showNewPool ? 'expanded' : ''}">v</span>
-							</button>
-
-							{#if showNewPool}
-								<div class="flex flex-col gap-4 mt-4">
-									<!-- Base Coin Selection -->
-									<div class="field-group">
-										<label class="label-text" for="new-pool-base">{$t('mt.baseCoin')}</label>
-										<select id="new-pool-base" class="input-field" bind:value={newPoolBaseCoin}>
-											{#each getBaseCoinOptions() as opt}
-												<option value={opt.key}>{opt.symbol}</option>
-											{/each}
-										</select>
-									</div>
-
-									<!-- Mode Toggle -->
-									<div class="mode-toggle">
-										<button
-											onclick={() => (newPoolMode = 'manual')}
-											class="mode-btn {newPoolMode === 'manual' ? 'active' : ''} cursor-pointer"
-										>{$t('mt.manualAmounts')}</button>
-										<button
-											onclick={() => (newPoolMode = 'price')}
-											class="mode-btn {newPoolMode === 'price' ? 'active' : ''} cursor-pointer"
-										>{$t('mt.priceBased')}</button>
-									</div>
-
-									{#if newPoolMode === 'manual'}
-										<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-											<div class="field-group">
-												<label class="label-text" for="new-liq-token">{$t('mt.tokenAmount')}</label>
-												<div class="input-with-badge">
-													<input
-														id="new-liq-token"
-														class="input-field"
-														type="number"
-														min="0"
-														bind:value={newPoolTokenAmount}
-														placeholder="100000"
-													/>
-													<span class="input-badge">{tokenInfo.symbol}</span>
-												</div>
-											</div>
-											<div class="field-group">
-												<label class="label-text" for="new-liq-base">{newPoolSelectedBase?.symbol ?? 'Base'} {$t('mt.amount')}</label>
-												<div class="input-with-badge">
-													<input
-														id="new-liq-base"
-														class="input-field"
-														type="number"
-														min="0"
-														bind:value={newPoolBaseAmount}
-														placeholder="0.5"
-													/>
-													<span class="input-badge">{newPoolSelectedBase?.symbol ?? ''}</span>
-												</div>
-											</div>
-										</div>
-									{:else}
-										<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-											<div class="field-group">
-												<label class="label-text" for="new-price-per-token">{$t('mt.pricePerToken')} ({newPoolSelectedBase?.symbol})</label>
-												<div class="input-with-badge">
-													<input
-														id="new-price-per-token"
-														class="input-field"
-														type="number"
-														min="0"
-														step="any"
-														bind:value={newPoolPricePerToken}
-														placeholder="1.00"
-													/>
-													<span class="input-badge">{newPoolSelectedBase?.symbol ?? ''}</span>
-												</div>
-												<span class="field-hint font-mono">{$t('mt.howMuchCosts')} {tokenInfo.symbol} {$t('mt.costs')}</span>
-											</div>
-											<div class="field-group">
-												<label class="label-text" for="new-list-base-amt">{$t('mt.amountToList')} {newPoolSelectedBase?.symbol} {$t('mt.toList')}</label>
-												<div class="input-with-badge">
-													<input
-														id="new-list-base-amt"
-														class="input-field"
-														type="number"
-														min="0"
-														step="any"
-														bind:value={newPoolListBaseAmount}
-														placeholder="100"
-													/>
-													<span class="input-badge">{newPoolSelectedBase?.symbol ?? ''}</span>
-												</div>
-											</div>
-										</div>
-
-										{#if newPoolCalculatedTokenAmount()}
-											<div class="calc-result">
-												<span class="text-gray-500 text-xs font-mono">{$t('mt.calculatedTokenAmount')}</span>
-												<span class="text-white text-sm font-mono font-bold">
-													{Number(newPoolCalculatedTokenAmount()).toLocaleString()} {tokenInfo.symbol}
-												</span>
-											</div>
-										{/if}
-									{/if}
-
-									{#if newPoolTokenPct() > 0}
-										<div class="liq-pct-bar">
-											<div class="flex justify-between text-xs font-mono mb-1">
-												<span class="text-gray-500">{$t('mt.supplyAllocated')}</span>
-												<span class="text-cyan-400">{newPoolTokenPct().toFixed(1)}%</span>
-											</div>
-											<div class="pct-track">
-												<div class="pct-fill" style="width: {Math.min(newPoolTokenPct(), 100)}%"></div>
-											</div>
-										</div>
-									{/if}
-
-									<div class="liq-info-box">
-										<div class="liq-info-row">
-											<span class="text-gray-500 font-mono text-xs">{$t('mt.slippageTolerance')}</span>
-											<span class="text-cyan-300 font-mono text-xs">5%</span>
-										</div>
-										<div class="liq-info-row">
-											<span class="text-gray-500 font-mono text-xs">{$t('mt.txDeadline')}</span>
-											<span class="text-cyan-300 font-mono text-xs">{$t('mt.twentyMinutes')}</span>
-										</div>
-										<div class="liq-info-row">
-											<span class="text-gray-500 font-mono text-xs">{$t('mt.lpTokensGoTo')}</span>
-											<span class="text-cyan-300 font-mono text-xs">{userAddress ? shortAddr(userAddress) : $t('mt.yourWallet')}</span>
-										</div>
-									</div>
-
-									<button
-										onclick={doCreateNewPool}
-										disabled={actionLoading || (newPoolMode === 'manual' ? (!newPoolTokenAmount || !newPoolBaseAmount) : (!newPoolPricePerToken || !newPoolListBaseAmount))}
-										class="action-btn liq-btn syne cursor-pointer"
-									>
-										{actionLoading ? $t('mt.creatingPool') : $t('mt.createPoolAddLiquidity')}
-									</button>
-								</div>
-							{/if}
-						</div>
+						<NewPoolForm
+							bind:showNewPool
+							bind:newPoolBaseCoin
+							bind:newPoolMode
+							bind:newPoolTokenAmount
+							bind:newPoolBaseAmount
+							bind:newPoolPricePerToken
+							bind:newPoolListBaseAmount
+							baseCoinOptions={getBaseCoinOptions()}
+							selectedBase={newPoolSelectedBase}
+							calculatedTokenAmount={newPoolCalculatedTokenAmount()}
+							tokenPct={newPoolTokenPct()}
+							tokenSymbol={tokenInfo.symbol}
+							{userAddress}
+							{actionLoading}
+							onCreateNewPool={doCreateNewPool}
+						/>
 					</div>
 				</div>
 			{/if}
 
 			<!-- ═══ About Tab ═══ -->
 			{#if activeTab === 'about'}
-				{#if !metaLoaded}
-					{(() => { loadMetadata(); return ''; })()}
-				{/if}
-				<div class="panel">
-					<h3 class="syne text-base font-bold text-white mb-3">Token Info</h3>
-					<p class="text-gray-500 text-xs font-mono mb-4">Add details about your token. This info appears on the explore page and token profile.</p>
-
-					{#if metaLoading}
-						<div class="flex justify-center py-8">
-							<div class="spinner w-8 h-8 rounded-full border-2 border-white/10 border-t-cyan-400" style="animation: spin 0.8s linear infinite;"></div>
-						</div>
-					{:else}
-						<div class="about-form">
-							<!-- Logo Upload -->
-							<div class="about-logo-section">
-								<label class="label-text">Token Logo</label>
-								<input type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" class="hidden-file" bind:this={metaLogoFileInput} onchange={handleMetaLogoUpload} />
-								<div class="about-logo-row">
-									{#if metaLogoPreview || metaLogoUrl}
-										<div class="about-logo-preview-wrap">
-											<img src={metaLogoPreview || metaLogoUrl} alt="Logo" class="about-logo-img" onerror={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-											<button class="about-logo-change" type="button" onclick={() => metaLogoFileInput?.click()}>
-												<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
-												Change
-											</button>
-										</div>
-									{:else}
-										<button class="about-logo-upload" type="button" onclick={() => metaLogoFileInput?.click()}>
-											<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
-											<span>Upload Logo</span>
-											<span class="about-logo-hint">PNG, JPEG, WebP, GIF — max 2 MB</span>
-										</button>
-									{/if}
-								</div>
-								{#if metaLogoFile}
-									<span class="about-logo-pending">New logo ready — will upload on save</span>
-								{/if}
-							</div>
-
-							<div>
-								<label class="label-text" for="meta-desc">Description</label>
-								<textarea id="meta-desc" class="input-field" rows="3" placeholder="What is this token about?" bind:value={metaDescription} style="resize: vertical;"></textarea>
-							</div>
-
-							<div>
-								<label class="label-text" for="meta-web">Website</label>
-								<input id="meta-web" class="input-field" type="url" placeholder="https://yourtoken.com" bind:value={metaWebsite} />
-							</div>
-
-							<div class="grid grid-cols-2 gap-3">
-								<div>
-									<label class="label-text" for="meta-tw">Twitter / X</label>
-									<input id="meta-tw" class="input-field" type="text" placeholder="@handle or URL" bind:value={metaTwitter} />
-								</div>
-								<div>
-									<label class="label-text" for="meta-tg">Telegram</label>
-									<input id="meta-tg" class="input-field" type="text" placeholder="@group or URL" bind:value={metaTelegram} />
-								</div>
-							</div>
-
-							<button class="action-btn syne cursor-pointer w-full mt-2" disabled={metaSaving || metaLogoUploading} onclick={saveMetadata}>
-								{#if metaLogoUploading}
-									Uploading logo...
-								{:else if metaSaving}
-									Saving...
-								{:else}
-									Save Token Info
-								{/if}
-							</button>
-						</div>
-					{/if}
-				</div>
+				<AboutTab
+					{metaLoaded}
+					{metaLoading}
+					{metaSaving}
+					{metaLogoUploading}
+					{metaLogoPreview}
+					{metaLogoUrl}
+					{metaLogoFile}
+					bind:metaDescription
+					bind:metaWebsite
+					bind:metaTwitter
+					bind:metaTelegram
+					onLoadMetadata={loadMetadata}
+					onLogoFileChosen={handleMetaLogoUpload}
+					onSaveMetadata={saveMetadata}
+				/>
 			{/if}
 		</div>
 	{/if}

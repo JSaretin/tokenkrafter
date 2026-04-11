@@ -1,10 +1,29 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { ethers } from 'ethers';
-	import { getWalletState, exportPrivateKey, exportSeedPhrase, setActiveAccount, addAccount, unlockWallet, onWalletStateChange, getSigner, pushPreferences, type WalletState } from './embeddedWallet';
+	import {
+		getWalletState,
+		exportPrivateKey,
+		exportSeedPhrase,
+		setActiveAccount,
+		addAccount,
+		unlockWallet,
+		onWalletStateChange,
+		getSigner,
+		pushPreferences,
+		createNewWallet,
+		importWallet,
+		switchWallet,
+		renameWallet,
+		deleteWallet,
+		setPrimaryWallet,
+		type WalletState,
+		type WalletContext,
+	} from './embeddedWallet';
 	import { getKnownLogo, resolveTokenLogo } from './tokenLogo';
 	import { balanceState } from './balancePoller';
 	import { queryTradeLens } from './tradeLens';
+	import { friendlyError } from './errorDecoder';
 
 	let {
 		open = $bindable(false),
@@ -96,6 +115,145 @@
 	let showAccountDropdown = $state(false);
 	let renamingIndex = $state<number | null>(null);
 	let renameValue = $state('');
+
+	// ── Multi-wallet UI state ──
+	let wallets = $derived<WalletContext[]>(walletState.wallets || []);
+	let activeWalletId = $derived(walletState.activeWalletId);
+	let activeWallet = $derived(wallets.find((w) => w.id === activeWalletId) || null);
+	let addWalletMode = $state<'create' | 'import' | null>(null);
+	let newWalletName = $state('');
+	let newWalletPin = $state('');
+	let importMnemonic = $state('');
+	let importAck = $state(false);
+	let addWalletError = $state('');
+	let addWalletLoading = $state(false);
+	let addWalletCodes = $state<string[]>([]);
+	let renamingWalletId = $state<string | null>(null);
+	let renamingWalletValue = $state('');
+	let switchingWalletId = $state<string | null>(null);
+
+	function resetAddWalletForm() {
+		addWalletMode = null;
+		newWalletName = '';
+		newWalletPin = '';
+		importMnemonic = '';
+		importAck = false;
+		addWalletError = '';
+		addWalletLoading = false;
+		addWalletCodes = [];
+	}
+
+	async function handleSwitchWallet(walletId: string) {
+		if (walletId === activeWalletId) { showAccountDropdown = false; return; }
+		switchingWalletId = walletId;
+		try {
+			const ok = await switchWallet(walletId);
+			if (!ok) {
+				onAddFeedback({ message: 'Wallet locked — PIN required', type: 'error' });
+				return;
+			}
+			// Update parent's userAddress to the newly-active wallet's default account
+			const next = getWalletState();
+			if (next.activeAccount?.address) {
+				userAddress = next.activeAccount.address;
+				onAccountSwitch(next.activeAccount.address);
+			}
+			showAccountDropdown = false;
+		} catch (e) {
+			onAddFeedback({ message: friendlyError(e), type: 'error' });
+		} finally {
+			switchingWalletId = null;
+		}
+	}
+
+	async function handleCreateWalletSubmit() {
+		addWalletError = '';
+		if (!newWalletName.trim()) { addWalletError = 'Name required'; return; }
+		// For the first wallet the user sets their PIN; for subsequent wallets
+		// we reuse the cached PIN so no PIN input needed. But we don't know
+		// which case we're in without hitting state — createNewWallet needs a
+		// pin either way, so on subsequent calls we pass an empty placeholder
+		// and let the flow error if unexpected.
+		const hasExistingWallet = wallets.length > 0;
+		let pinToUse = newWalletPin;
+		if (hasExistingWallet) {
+			// The shared PIN cache inside embeddedWallet handles this — but
+			// createNewWallet takes a PIN argument, so we need to ask.
+			if (!newWalletPin || newWalletPin.length < 4) {
+				addWalletError = 'Enter your existing PIN to encrypt the new wallet';
+				return;
+			}
+			pinToUse = newWalletPin;
+		} else if (!newWalletPin || newWalletPin.length < 4) {
+			addWalletError = 'PIN must be at least 4 digits';
+			return;
+		}
+
+		addWalletLoading = true;
+		try {
+			const result = await createNewWallet(newWalletName.trim(), pinToUse);
+			addWalletCodes = result.recoveryCodes;
+			onAddFeedback({ message: `Wallet "${result.wallet.name}" created`, type: 'success' });
+			// Switch to it
+			await handleSwitchWallet(result.wallet.id);
+		} catch (e) {
+			addWalletError = friendlyError(e);
+		} finally {
+			addWalletLoading = false;
+		}
+	}
+
+	async function handleImportWalletSubmit() {
+		addWalletError = '';
+		if (!newWalletName.trim()) { addWalletError = 'Name required'; return; }
+		if (!importMnemonic.trim()) { addWalletError = 'Recovery phrase required'; return; }
+		if (!importAck) { addWalletError = 'Acknowledge the warning'; return; }
+
+		addWalletLoading = true;
+		try {
+			const ctx = await importWallet(newWalletName.trim(), importMnemonic);
+			onAddFeedback({ message: `Wallet "${ctx.name}" imported`, type: 'success' });
+			resetAddWalletForm();
+			await handleSwitchWallet(ctx.id);
+		} catch (e) {
+			addWalletError = friendlyError(e);
+		} finally {
+			addWalletLoading = false;
+		}
+	}
+
+	async function handleRenameWallet(id: string) {
+		const name = renamingWalletValue.trim();
+		if (!name) { renamingWalletId = null; return; }
+		try {
+			await renameWallet(id, name);
+			onAddFeedback({ message: 'Renamed', type: 'success' });
+		} catch (e) {
+			onAddFeedback({ message: friendlyError(e), type: 'error' });
+		} finally {
+			renamingWalletId = null;
+			renamingWalletValue = '';
+		}
+	}
+
+	async function handleDeleteWallet(id: string, name: string) {
+		if (!confirm(`Delete wallet "${name}"? This removes the encrypted seed from the server. Make sure you have your own backup if it's an imported wallet.`)) return;
+		try {
+			await deleteWallet(id);
+			onAddFeedback({ message: `Wallet "${name}" deleted`, type: 'success' });
+		} catch (e) {
+			onAddFeedback({ message: friendlyError(e), type: 'error' });
+		}
+	}
+
+	async function handleSetPrimary(id: string) {
+		try {
+			await setPrimaryWallet(id);
+			onAddFeedback({ message: 'Primary wallet updated', type: 'success' });
+		} catch (e) {
+			onAddFeedback({ message: friendlyError(e), type: 'error' });
+		}
+	}
 
 	// Well-known token logos (native + major stables)
 	function getTokenLogo(tok: { symbol: string; logoUrl?: string; address?: string }): string {
@@ -549,6 +707,114 @@
 			{#if showAccountDropdown}
 				<!-- svelte-ignore a11y_no_static_element_interactions -->
 				<div class="ap-dd" onclick={(e) => e.stopPropagation()}>
+					<!-- ═══ WALLETS ═══ -->
+					{#if walletType === 'embedded' && wallets.length > 0}
+						<div class="ap-dd-section-label">Wallets</div>
+						{#each wallets as w (w.id)}
+							<div class="ap-dd-row ap-dd-wallet-row">
+								{#if renamingWalletId === w.id}
+									<input class="ap-dd-rename" bind:value={renamingWalletValue} placeholder={w.name}
+										onkeydown={(e) => { if (e.key === 'Enter') handleRenameWallet(w.id); if (e.key === 'Escape') { renamingWalletId = null; renamingWalletValue = ''; } }}
+										{...INPUT_ATTRS} />
+									<button class="ap-dd-gear" onclick={() => handleRenameWallet(w.id)} title="Save">
+										<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+									</button>
+								{:else}
+									<button class="ap-dd-item" class:ap-dd-active={w.id === activeWalletId} onclick={() => handleSwitchWallet(w.id)} disabled={switchingWalletId === w.id}>
+										<div class="ap-avatar ap-avatar-sm ap-avatar-wallet">{w.name.charAt(0).toUpperCase()}</div>
+										<span class="ap-dd-name">
+											{w.name}
+											{#if w.isPrimary}<span class="ap-dd-badge ap-dd-badge-primary">primary</span>{/if}
+											{#if w.isImported}<span class="ap-dd-badge ap-dd-badge-imported">imported</span>{/if}
+										</span>
+										<span class="ap-dd-addr">{w.accountCount} acc</span>
+										<span class="ap-dd-check">
+											{#if switchingWalletId === w.id}
+												<span class="ap-dd-spinner"></span>
+											{:else if w.id === activeWalletId}
+												&#10003;
+											{/if}
+										</span>
+									</button>
+									<button class="ap-dd-gear" title="Rename wallet" onclick={(e) => { e.stopPropagation(); renamingWalletId = w.id; renamingWalletValue = w.name; }}>
+										<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+									</button>
+									{#if !w.isPrimary}
+										<button class="ap-dd-gear" title="Set as primary" onclick={(e) => { e.stopPropagation(); handleSetPrimary(w.id); }}>
+											<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+										</button>
+									{/if}
+									{#if wallets.length > 1 && !w.isPrimary}
+										<button class="ap-dd-gear" title="Delete wallet" onclick={(e) => { e.stopPropagation(); handleDeleteWallet(w.id, w.name); }}>
+											<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+										</button>
+									{/if}
+								{/if}
+							</div>
+						{/each}
+
+						<!-- Add wallet form -->
+						{#if addWalletMode === null}
+							<div class="ap-dd-wallet-actions">
+								<button class="ap-dd-item ap-dd-add" onclick={() => { resetAddWalletForm(); addWalletMode = 'create'; newWalletName = `Wallet ${wallets.length + 1}`; }}>
+									<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+									New wallet
+								</button>
+								<button class="ap-dd-item ap-dd-add" onclick={() => { resetAddWalletForm(); addWalletMode = 'import'; newWalletName = `Imported ${wallets.length + 1}`; }}>
+									<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+									Import wallet
+								</button>
+							</div>
+						{:else if addWalletMode === 'create' && addWalletCodes.length === 0}
+							<div class="ap-dd-form">
+								<div class="ap-dd-form-title">Create new wallet</div>
+								<input class="ap-input" type="text" placeholder="Wallet name" bind:value={newWalletName} maxlength="40" {...INPUT_ATTRS} />
+								<input class="ap-input" type="password" placeholder="Your PIN" bind:value={newWalletPin} {...INPUT_ATTRS} />
+								{#if addWalletError}<p class="ap-dd-error">{addWalletError}</p>{/if}
+								<div class="ap-dd-form-btns">
+									<button class="ap-btn-s" onclick={() => resetAddWalletForm()}>Cancel</button>
+									<button class="ap-btn-s ap-btn-primary" disabled={addWalletLoading} onclick={handleCreateWalletSubmit}>
+										{addWalletLoading ? 'Creating...' : 'Create'}
+									</button>
+								</div>
+							</div>
+						{:else if addWalletMode === 'create' && addWalletCodes.length > 0}
+							<div class="ap-dd-form">
+								<div class="ap-dd-form-title">Recovery codes</div>
+								<p class="ap-dd-form-hint">Save these. Each can unlock this wallet if you forget your PIN. They won't be shown again.</p>
+								<div class="ap-dd-codes">
+									{#each addWalletCodes as code, i}
+										<div class="ap-dd-code">{i + 1}. {code}</div>
+									{/each}
+								</div>
+								<button class="ap-btn-s ap-btn-primary" onclick={() => resetAddWalletForm()}>Done</button>
+							</div>
+						{:else if addWalletMode === 'import'}
+							<div class="ap-dd-form">
+								<div class="ap-dd-form-title">Import existing wallet</div>
+								<input class="ap-input" type="text" placeholder="Wallet name" bind:value={newWalletName} maxlength="40" {...INPUT_ATTRS} />
+								<textarea class="ap-input ap-dd-textarea" rows="3" placeholder="12 or 24 word recovery phrase" bind:value={importMnemonic} {...INPUT_ATTRS}></textarea>
+								<label class="ap-dd-ack">
+									<input type="checkbox" bind:checked={importAck} />
+									<span>Imported wallets have no platform recovery — I have my own backup.</span>
+								</label>
+								{#if addWalletError}<p class="ap-dd-error">{addWalletError}</p>{/if}
+								<div class="ap-dd-form-btns">
+									<button class="ap-btn-s" onclick={() => resetAddWalletForm()}>Cancel</button>
+									<button class="ap-btn-s ap-btn-primary" disabled={addWalletLoading} onclick={handleImportWalletSubmit}>
+										{addWalletLoading ? 'Importing...' : 'Import'}
+									</button>
+								</div>
+							</div>
+						{/if}
+
+						<div class="ap-set-divider"></div>
+					{/if}
+
+					<!-- ═══ ACCOUNTS (in active wallet) ═══ -->
+					{#if walletType === 'embedded' && activeWallet}
+						<div class="ap-dd-section-label">Accounts in {activeWallet.name}</div>
+					{/if}
 					{#each accounts as acc, i}
 						<div class="ap-dd-row">
 							{#if renamingIndex === i}
@@ -905,7 +1171,7 @@
 					onRefreshBalance();
 					refreshTokenBalances();
 				} catch (e: any) {
-					const msg = e.shortMessage || e.message || 'Send failed';
+					const msg = friendlyError(e);
 					onAddFeedback({ message: msg.slice(0, 80), type: 'error' });
 				} finally {
 					sending = false;
@@ -1062,6 +1328,67 @@
 	.ap-dd-add { color: #00d2ff; border-top: 1px solid rgba(255,255,255,0.04); margin-top: 2px; }
 	.ap-dd-disconnect { color: #f87171; border-top: 1px solid rgba(255,255,255,0.04); margin-top: 2px; }
 	.ap-dd-disconnect:hover { background: rgba(248,113,113,0.06); color: #f87171; }
+
+	/* Multi-wallet: section labels, wallet badges, add-wallet form */
+	.ap-dd-section-label {
+		font-family: 'Space Mono', monospace; font-size: 8px; font-weight: 700;
+		color: #475569; text-transform: uppercase; letter-spacing: 0.08em;
+		padding: 6px 16px 2px;
+	}
+	.ap-dd-wallet-row .ap-dd-item { padding-right: 4px; }
+	.ap-avatar-wallet { background: rgba(0,210,255,0.12); color: #00d2ff; }
+	.ap-dd-badge {
+		display: inline-block; margin-left: 6px;
+		font-family: 'Space Mono', monospace; font-size: 7px; font-weight: 700;
+		padding: 1px 5px; border-radius: 3px; text-transform: uppercase;
+		letter-spacing: 0.05em; vertical-align: middle;
+	}
+	.ap-dd-badge-primary { background: rgba(16,185,129,0.12); color: #10b981; }
+	.ap-dd-badge-imported { background: rgba(251,191,36,0.12); color: #fbbf24; }
+	.ap-dd-spinner {
+		display: inline-block; width: 10px; height: 10px; border-radius: 50%;
+		border: 1.5px solid rgba(255,255,255,0.1); border-top-color: #00d2ff;
+		animation: spin 0.8s linear infinite;
+	}
+	@keyframes spin { to { transform: rotate(360deg); } }
+	.ap-dd-wallet-actions { display: flex; gap: 4px; padding: 0 8px; }
+	.ap-dd-wallet-actions .ap-dd-add { flex: 1; justify-content: center; text-align: center; padding: 8px; border-top: none; border: 1px solid rgba(0,210,255,0.15); border-radius: 6px; margin-top: 4px; }
+	.ap-dd-form {
+		padding: 10px 16px; display: flex; flex-direction: column; gap: 8px;
+		background: rgba(0,210,255,0.03); border-top: 1px solid rgba(0,210,255,0.08);
+		border-bottom: 1px solid rgba(0,210,255,0.08);
+	}
+	.ap-dd-form-title {
+		font-family: 'Syne', sans-serif; font-size: 11px; font-weight: 700; color: #fff;
+	}
+	.ap-dd-form-hint {
+		font-family: 'Space Mono', monospace; font-size: 9px; color: #64748b;
+		margin: 0; line-height: 1.5;
+	}
+	.ap-dd-form-btns { display: flex; gap: 8px; justify-content: flex-end; }
+	.ap-dd-textarea {
+		width: 100%; resize: vertical; font-family: 'Space Mono', monospace; font-size: 11px;
+		line-height: 1.5;
+	}
+	.ap-dd-ack {
+		display: flex; align-items: flex-start; gap: 6px;
+		font-family: 'Space Mono', monospace; font-size: 9px; color: #94a3b8;
+		line-height: 1.4; cursor: pointer;
+	}
+	.ap-dd-ack input { accent-color: #00d2ff; flex-shrink: 0; margin-top: 1px; }
+	.ap-dd-error {
+		font-family: 'Space Mono', monospace; font-size: 10px; color: #f87171;
+		margin: 0; padding: 4px 8px; background: rgba(248,113,113,0.06); border-radius: 4px;
+	}
+	.ap-dd-codes {
+		display: flex; flex-direction: column; gap: 4px;
+		padding: 8px; background: rgba(16,185,129,0.06);
+		border: 1px solid rgba(16,185,129,0.15); border-radius: 6px;
+	}
+	.ap-dd-code {
+		font-family: 'Space Mono', monospace; font-size: 11px; color: #10b981;
+		letter-spacing: 0.03em;
+	}
 
 	/* Network */
 	.ap-net { display: flex; align-items: center; gap: 5px; padding: 0 16px 4px; font-size: 9px; color: #475569; font-family: 'Space Mono', monospace; }

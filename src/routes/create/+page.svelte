@@ -8,6 +8,10 @@
 	import { FACTORY_ABI, PLATFORM_ROUTER_ABI, ROUTER_ABI, ERC20_ABI, ZERO_ADDRESS } from '$lib/tokenCrafter';
 	import { LAUNCHPAD_FACTORY_ABI, LAUNCH_INSTANCE_ABI, CURVE_TYPES, type CurveType } from '$lib/launchpad';
 	import { apiFetch } from '$lib/apiFetch';
+	import { friendlyError } from '$lib/errorDecoder';
+	import { TOKEN_READ_ABI, ERC20_DECIMALS_ABI } from '$lib/commonABIs';
+	import * as deployHelpers from './lib/deploy/helpers';
+	import { getBaseTokenAddress, getBaseDecimals, getBaseSymbol, feeCacheKey, matchFeesToPayments } from './lib/deploy/helpers';
 	import TokenForm from './lib/TokenForm.svelte';
 	import type { ListingConfig, ListingPairConfig, TokenFormData, PreviewState } from './lib/TokenForm.svelte';
 
@@ -144,13 +148,7 @@
 			launchTokenLoading = true;
 			try {
 				const pro = networkProviders.get(net.chain_id) ?? new ethers.JsonRpcProvider(net.rpc);
-				const token = new ethers.Contract(addr, [
-					'function name() view returns (string)',
-					'function symbol() view returns (string)',
-					'function decimals() view returns (uint8)',
-					'function balanceOf(address) view returns (uint256)',
-					'function totalSupply() view returns (uint256)'
-				], pro);
+				const token = new ethers.Contract(addr, TOKEN_READ_ABI, pro);
 				const ua = userAddress;
 				const [n, s, d, bal, supply] = await Promise.all([
 					token.name().catch(() => ''),
@@ -233,7 +231,7 @@
 			// Get USDT decimals
 			let usdtDec = 18;
 			try {
-				const usdtC = new ethers.Contract(launchNetwork.usdt_address, ['function decimals() view returns (uint8)'], signer);
+				const usdtC = new ethers.Contract(launchNetwork.usdt_address, ERC20_DECIMALS_ABI, signer);
 				usdtDec = Number(await usdtC.decimals());
 			} catch {}
 
@@ -295,7 +293,7 @@
 				addFeedback({ message: $t('ci.launchSuccess'), type: 'success' });
 			}
 		} catch (e: any) {
-			const msg = e.shortMessage || e.message || 'Transaction failed';
+			const msg = friendlyError(e);
 			addFeedback({ message: `Error: ${msg}`, type: 'error' });
 			launchStep = 'idle';
 		} finally {
@@ -343,28 +341,20 @@
 	let deployedTokenAddress: string | null = $state(null);
 	let deployTxHash: string | null = $state(null);
 
+	// Local wrapper using supportedNetworks from context.
 	function getExplorerUrl(chainId: number, type: 'tx' | 'address', hash: string) {
-		const net = supportedNetworks.find(n => n.chain_id === chainId); const base = net?.explorer_url || 'https://bscscan.com';
-		return `${base}/${type}/${hash}`;
+		return deployHelpers.getExplorerUrl(supportedNetworks, chainId, type, hash);
 	}
 
 	async function switchNetwork(chainId: number): Promise<boolean> {
-		const ethereum = (window as any).ethereum;
-		if (!ethereum) return false;
-		try {
-			await ethereum.request({
-				method: 'wallet_switchEthereumChain',
-				params: [{ chainId: '0x' + chainId.toString(16) }]
-			});
-			return true;
-		} catch (e: any) {
-			if (e.code === 4902) {
-				addFeedback({ message: 'Please add this network to your wallet first.', type: 'error' });
-			} else {
-				addFeedback({ message: 'Failed to switch network. Please switch manually.', type: 'error' });
-			}
-			return false;
+		const result = await deployHelpers.switchWalletNetwork(chainId);
+		if (result === 'ok') return true;
+		if (result === 'not-added') {
+			addFeedback({ message: 'Please add this network to your wallet first.', type: 'error' });
+		} else {
+			addFeedback({ message: 'Failed to switch network. Please switch manually.', type: 'error' });
 		}
+		return false;
 	}
 
 	// Fee data
@@ -374,28 +364,13 @@
 	let selectedPaymentIndex = $state(0);
 	let paymentOptions: PaymentOption[] = $state([]);
 
-	// Preloaded fee cache: keyed by "chainId-typeKey"
-	let feeCache = new Map<string, { tokens: string[]; fees: bigint[]; launchFees: bigint[] }>();
+	// Preloaded fee cache: keyed by "chainId-typeKey".
+	// USDT-only model: each entry holds the single USDT creation fee and
+	// the single USDT launch fee. Per-payment-token amounts are computed
+	// client-side in updateTokenInfo via dexRouter.getAmountsIn when the
+	// user picks a non-USDT payment option.
+	let feeCache = new Map<string, { creationFeeUsdt: bigint; launchFeeUsdt: bigint }>();
 	let feeCacheReady = $state(false);
-
-	function feeCacheKey(chainId: number, isTaxable: boolean, isMintable: boolean, isPartner: boolean) {
-		const typeKey = (isPartner ? 4 : 0) | (isTaxable ? 2 : 0) | (isMintable ? 1 : 0);
-		return `${chainId}-${typeKey}`;
-	}
-
-	function matchFeesToPayments(tokens: string[], fees: bigint[], options: PaymentOption[]) {
-		const matchedOptions: PaymentOption[] = [];
-		const matchedFees: bigint[] = [];
-		for (let i = 0; i < tokens.length; i++) {
-			const addr = tokens[i].toLowerCase();
-			const opt = options.find((p) => p.address.toLowerCase() === addr);
-			if (opt && fees[i] > 0n) {
-				matchedOptions.push(opt);
-				matchedFees.push(fees[i]);
-			}
-		}
-		return { matchedOptions, matchedFees };
-	}
 
 	async function preloadFees() {
 		const networks = supportedNetworks.filter((n) => n.platform_address && n.platform_address !== '0x');
@@ -414,8 +389,8 @@
 						const key = feeCacheKey(net.chain_id, taxable, mintable, partner);
 						promises.push(
 							factory.getCreationFees(taxable, mintable, partner, lpAddr)
-								.then(([tokens, fees, launchFees]: [string[], bigint[], bigint[]]) => {
-									feeCache.set(key, { tokens: [...tokens], fees: [...fees], launchFees: [...launchFees] });
+								.then(([creationFeeUsdt, launchFeeUsdt]: [bigint, bigint]) => {
+									feeCache.set(key, { creationFeeUsdt, launchFeeUsdt });
 								})
 								.catch((e: any) => console.warn(`Fee preload failed for ${key}:`, e))
 						);
@@ -643,7 +618,7 @@
 					addFeedback({ message: `${selectedPayment.symbol} approved!`, type: 'success' });
 				}
 			} catch (e: any) {
-				addFeedback({ message: e.shortMessage || e.message || 'Approval failed', type: 'error' });
+				addFeedback({ message: friendlyError(e), type: 'error' });
 				step = 'review';
 				isCreating = false;
 				return;
@@ -687,7 +662,7 @@
 
 				let usdtDec = 18;
 				try {
-					const usdtC = new ethers.Contract(tokenInfo.network.usdt_address, ['function decimals() view returns (uint8)'], signer);
+					const usdtC = new ethers.Contract(tokenInfo.network.usdt_address, ERC20_DECIMALS_ABI, signer);
 					usdtDec = Number(await usdtC.decimals());
 				} catch {}
 
@@ -768,7 +743,7 @@
 				// Fetch USDT decimals for cap parsing
 				let usdtDec = 18;
 				try {
-					const usdtC = new ethers.Contract(tokenInfo.network.usdt_address, ['function decimals() view returns (uint8)'], signer);
+					const usdtC = new ethers.Contract(tokenInfo.network.usdt_address, ERC20_DECIMALS_ABI, signer);
 					usdtDec = Number(await usdtC.decimals());
 				} catch {}
 
@@ -782,7 +757,13 @@
 					creatorAllocationBps: BigInt(tokenInfo.launch.creatorAllocationBps),
 					vestingDays: BigInt(tokenInfo.launch.vestingDays),
 					launchPaymentToken: selectedPayment.address,
-					startTimestamp: 0n
+					startTimestamp: 0n,
+					// Anti-snipe window after curve graduation — creator picks
+					// this in the wizard (already in seconds via lockDurationAfterListing).
+					// Default 3600 (1h) if wizard didn't set it.
+					lockDurationAfterListing: BigInt(tokenInfo.launch.lockDurationAfterListing || '3600'),
+					// Anti-dust floor per buy, whole USDT units in the wizard → native units here.
+					minBuyUsdt: ethers.parseUnits(String(tokenInfo.launch.minBuyUsdt || '1'), usdtDec)
 				};
 
 				const protectionParams = {
@@ -929,7 +910,15 @@
 					tokenAmounts.push(ethers.parseUnits(Number(pair.tokenAmount).toFixed(6), tokenInfo.decimals));
 				}
 
-				const listParams = { bases, baseAmounts, tokenAmounts, burnLP: false };
+				// tradingDelay picked by creator in the listing step (seconds).
+				// Default 60s if the field wasn't set. Capped at 24h by the contract.
+				const listParams = {
+					bases,
+					baseAmounts,
+					tokenAmounts,
+					burnLP: false,
+					tradingDelay: BigInt(tokenInfo.listing.tradingDelay || '60'),
+				};
 				const nativeValue = (isNativePayment ? selectedFee * 108n / 100n : 0n) + ethValue;
 
 				const tx = await router.createAndList(
@@ -1086,7 +1075,7 @@
 			step = 'done';
 				try { sessionStorage.removeItem('tk_create_form_draft'); } catch {}
 		} catch (e: any) {
-			const msg = e.shortMessage || e.message || 'Transaction failed';
+			const msg = friendlyError(e);
 			addFeedback({ message: `Error: ${msg}`, type: 'error' });
 			step = 'review';
 		} finally {
@@ -1094,21 +1083,7 @@
 		}
 	}
 
-	function getBaseTokenAddress(network: SupportedNetwork, baseCoin: string): string {
-		if (baseCoin === 'native') return ZERO_ADDRESS;
-		if (baseCoin === 'usdt') return network.usdt_address;
-		return network.usdc_address;
-	}
-
-	function getBaseDecimals(network: SupportedNetwork, baseCoin: string): number {
-		if (baseCoin === 'native') return 18;
-		return network.chain_id === 56 ? 18 : 6;
-	}
-
-	function getBaseSymbol(network: SupportedNetwork, baseCoin: string): string {
-		if (baseCoin === 'native') return network.native_coin;
-		return baseCoin.toUpperCase();
-	}
+	// Base coin helpers moved to ./lib/deploy/helpers.ts — import at top.
 
 	async function addListingLiquidity(tokenAddress: string) {
 		if (!tokenInfo || !signer || !userAddress) return;
@@ -1220,7 +1195,7 @@
 
 			addFeedback({ message: `All ${pairs.length} liquidity pair${pairs.length > 1 ? 's' : ''} added!`, type: 'success' });
 		} catch (e: any) {
-			addFeedback({ message: `Liquidity failed: ${e.shortMessage || e.message || 'Unknown error'}. You can add remaining pairs manually.`, type: 'error' });
+			addFeedback({ message: `Liquidity failed: ${friendlyError(e)}. You can add remaining pairs manually.`, type: 'error' });
 		}
 	}
 

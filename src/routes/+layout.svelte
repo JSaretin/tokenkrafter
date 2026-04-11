@@ -16,6 +16,7 @@
 	import AccountPanel from '$lib/AccountPanel.svelte';
 	import { getSigner as getEmbeddedSigner, signOut, lockWallet, getWalletState, checkAuthReturn, hasVault, autoReconnect, onWalletStateChange } from '$lib/embeddedWallet';
 	import { startBalancePoller, stopBalancePoller, updatePollerAddress, balanceState, refreshBalancesNow } from '$lib/balancePoller';
+	import { ROUTER_ABI_LITE } from '$lib/commonABIs';
 
 	let { children, data }: { children: any; data: any } = $props();
 	let isAdmin = $derived(data?.isAdmin || false);
@@ -148,10 +149,7 @@
 
 		// Fetch native price via DEX router
 		if (net.dex_router && net.usdt_address) {
-			const router = new ethers.Contract(net.dex_router, [
-				'function WETH() view returns (address)',
-				'function getAmountsOut(uint256, address[]) view returns (uint256[])'
-			], prov);
+			const router = new ethers.Contract(net.dex_router, ROUTER_ABI_LITE, prov);
 			(async () => {
 				try {
 					const weth = await router.WETH();
@@ -206,20 +204,19 @@
 		if (!isAdmin) return;
 		adminChannel = supabase
 			.channel('admin-activity')
-			// Token confirmed by daemon (UPDATE with total_supply changing from '0' to actual)
+			// Token confirmed by daemon (pre-saves use name='Pending'; daemon upserts real name)
 			.on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'created_tokens' }, (payload: any) => {
 				const prev = payload.old;
 				const curr = payload.new;
-				// Daemon just indexed this token (supply was 0 or missing, now populated)
-				if ((!prev.total_supply || prev.total_supply === '0') && curr.total_supply && curr.total_supply !== '0') {
+				if (prev.name === 'Pending' && curr.name && curr.name !== 'Pending') {
 					const fee = curr.is_partner ? 'Partner' : curr.is_taxable ? 'Taxable' : curr.is_mintable ? 'Mintable' : 'Basic';
 					addFeedback({ message: `Token confirmed: ${curr.name} (${curr.symbol}) — ${fee}`, type: 'success' });
 				}
 			})
-			// New token created (INSERT from daemon or frontend pre-save)
+			// New token created (INSERT from daemon only — skip frontend pre-saves with name='Pending')
 			.on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'created_tokens' }, (payload: any) => {
 				const t = payload.new;
-				if (t.total_supply && t.total_supply !== '0') {
+				if (t.name && t.name !== 'Pending') {
 					const fee = t.is_partner ? 'Partner' : t.is_taxable ? 'Taxable' : t.is_mintable ? 'Mintable' : 'Basic';
 					addFeedback({ message: `New token: ${t.name} (${t.symbol}) — ${fee}`, type: 'success' });
 				}

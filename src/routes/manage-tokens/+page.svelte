@@ -35,6 +35,19 @@
 	let isLoading = $state(true);
 	let search = $state('');
 
+	function fmtSupply(raw: string | undefined, dec: number): string {
+		if (!raw || raw === '0') return '—';
+		try {
+			const n = parseFloat(ethers.formatUnits(raw, dec));
+			if (!Number.isFinite(n)) return '0';
+			if (n >= 1e12) return `${(n / 1e12).toFixed(1)}T`;
+			if (n >= 1e9) return `${(n / 1e9).toFixed(1)}B`;
+			if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
+			if (n >= 1e3) return `${(n / 1e3).toFixed(0)}K`;
+			return n.toLocaleString();
+		} catch { return '—'; }
+	}
+
 	let filtered = $derived.by(() => {
 		if (!search.trim()) return tokens;
 		const q = search.toLowerCase();
@@ -44,22 +57,6 @@
 			t.address?.toLowerCase().includes(q)
 		);
 	});
-
-	function fmtSupply(val: string | number, dec: number): string {
-		// total_supply may arrive as a raw wei-scale integer ("1000000000000000000000000000")
-		// OR as a human-formatted decimal ("1000000000.0") depending on the data source.
-		// Only run formatUnits when the value is a pure integer string.
-		const raw = String(val ?? '0');
-		const n = /^\d+$/.test(raw)
-			? parseFloat(ethers.formatUnits(raw, dec))
-			: parseFloat(raw);
-		if (!Number.isFinite(n)) return '0';
-		if (n >= 1e12) return `${(n / 1e12).toFixed(1)}T`;
-		if (n >= 1e9) return `${(n / 1e9).toFixed(1)}B`;
-		if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
-		if (n >= 1e3) return `${(n / 1e3).toFixed(0)}K`;
-		return n.toLocaleString();
-	}
 
 	function tokenType(t: TokenItem): string {
 		if (t.is_partner && t.is_taxable) return 'Partner+Tax';
@@ -139,7 +136,8 @@
 							chain_symbol: net.symbol.toLowerCase(),
 							network_name: net.name,
 							name: 'Pending...', symbol: '???', decimals: 18,
-							total_supply: '0', creator: userAddress!,
+							total_supply: '0',
+							creator: userAddress!,
 							is_mintable: false, is_taxable: false, is_partner: false,
 						}];
 					}

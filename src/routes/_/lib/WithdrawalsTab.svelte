@@ -4,6 +4,7 @@
 	import { ethers } from 'ethers';
 	import type { SupportedNetwork } from '$lib/structure';
 	import { TRADE_ROUTER_ABI } from '$lib/tradeRouter';
+	import { ERC20_DECIMALS_ABI } from '$lib/commonABIs';
 
 	const addFeedback = getContext<(f: { message: string; type: string }) => void>('addFeedback');
 	let getSigner: () => ethers.Signer | null = getContext('signer');
@@ -25,7 +26,7 @@
 		try {
 			const provider = networkProviders.get(chainId);
 			if (!provider) return 18;
-			const token = new ethers.Contract(net.usdt_address, ['function decimals() view returns (uint8)'], provider);
+			const token = new ethers.Contract(net.usdt_address, ERC20_DECIMALS_ABI, provider);
 			const d = Number(await token.decimals());
 			usdtDecimalsMap = { ...usdtDecimalsMap, [chainId]: d };
 			return d;

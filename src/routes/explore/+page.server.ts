@@ -1,30 +1,52 @@
 import type { PageServerLoad } from './$types';
 import { supabaseAdmin } from '$lib/supabaseServer';
+import { getNetworks } from '$lib/platformConfig';
+import { ethers } from 'ethers';
 
 const GECKO_NETWORKS: Record<number, string> = { 56: 'bsc', 1: 'eth', 8453: 'base', 42161: 'arbitrum', 137: 'polygon_pos' };
 
+const SUPPLY_ABI = ['function totalSupply() view returns (uint256)'];
+
 export const load: PageServerLoad = async ({ setHeaders }) => {
 	setHeaders({ 'cache-control': 'public, max-age=30, s-maxage=60' });
-	const { data } = await supabaseAdmin
-		.from('created_tokens')
-		.select('address, chain_id, name, symbol, decimals, creator, is_taxable, is_mintable, is_partner, type_key, logo_url, description, total_supply, created_at')
-		.order('created_at', { ascending: false })
-		.limit(200);
 
-	const tokens = data || [];
+	// Load DB rows and network config in parallel.
+	const [tokensResult, networks] = await Promise.all([
+		supabaseAdmin
+			.from('created_tokens')
+			.select('address, chain_id, name, symbol, decimals, creator, is_taxable, is_mintable, is_partner, logo_url, description, created_at')
+			.order('created_at', { ascending: false })
+			.limit(200),
+		getNetworks(),
+	]);
 
-	// Fetch GeckoTerminal prices for the first 30 tokens (server-side for instant render)
+	const tokens = tokensResult.data || [];
+	const rpcByChain: Record<number, string> = {};
+	for (const n of networks) {
+		if (n.rpc) rpcByChain[n.chain_id] = n.rpc;
+	}
+
+	// Fetch GeckoTerminal prices + live on-chain supply for the first 30 tokens
+	// in parallel so the above-the-fold cards render instantly on SSR.
 	const geckoData: Record<string, { price_usd: number; volume_24h: number; price_change_24h: number; has_data: boolean }> = {};
+	const supplyData: Record<string, string> = {};
+
 	if (tokens.length > 0) {
-		// Group by chain
-		const byChain: Record<string, string[]> = {};
-		for (const t of tokens.slice(0, 30)) {
+		const topTokens = tokens.slice(0, 30);
+
+		// Group by gecko network slug for the price fetch
+		const geckoByNet: Record<string, string[]> = {};
+		// Group by chain_id for the supply fetch
+		const supplyByChain: Record<number, string[]> = {};
+		for (const t of topTokens) {
 			const net = GECKO_NETWORKS[t.chain_id] || 'bsc';
-			if (!byChain[net]) byChain[net] = [];
-			byChain[net].push(t.address);
+			if (!geckoByNet[net]) geckoByNet[net] = [];
+			geckoByNet[net].push(t.address);
+			if (!supplyByChain[t.chain_id]) supplyByChain[t.chain_id] = [];
+			supplyByChain[t.chain_id].push(t.address);
 		}
 
-		await Promise.all(Object.entries(byChain).map(async ([net, addrs]) => {
+		const geckoFetches = Object.entries(geckoByNet).map(async ([net, addrs]) => {
 			try {
 				const res = await fetch(`https://api.geckoterminal.com/api/v2/networks/${net}/tokens/multi/${addrs.join(',')}`);
 				if (!res.ok) return;
@@ -34,7 +56,6 @@ export const load: PageServerLoad = async ({ setHeaders }) => {
 					if (!a) continue;
 					const addr = (item.id || '').split('_').pop()?.toLowerCase();
 					if (!addr) continue;
-					// Only mark as has_data if there's an actual price (not just pool existence)
 					geckoData[addr] = {
 						price_usd: parseFloat(a.price_usd || '0'),
 						volume_24h: parseFloat(a.volume_usd?.h24 || '0'),
@@ -43,8 +64,26 @@ export const load: PageServerLoad = async ({ setHeaders }) => {
 					};
 				}
 			} catch {}
-		}));
+		});
+
+		const supplyFetches = Object.entries(supplyByChain).map(async ([cidStr, addrs]) => {
+			const cid = Number(cidStr);
+			const rpc = rpcByChain[cid];
+			if (!rpc) return;
+			try {
+				const provider = new ethers.JsonRpcProvider(rpc, cid, { staticNetwork: true });
+				await Promise.all(addrs.map(async (addr) => {
+					try {
+						const c = new ethers.Contract(addr, SUPPLY_ABI, provider);
+						const s: bigint = await c.totalSupply();
+						supplyData[`${cid}:${addr.toLowerCase()}`] = s.toString();
+					} catch {}
+				}));
+			} catch {}
+		});
+
+		await Promise.all([...geckoFetches, ...supplyFetches]);
 	}
 
-	return { tokens, geckoData };
+	return { tokens, geckoData, supplyData };
 };

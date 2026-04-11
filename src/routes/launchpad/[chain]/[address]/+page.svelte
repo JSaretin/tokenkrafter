@@ -4,6 +4,7 @@
 	import { page } from '$app/state';
 	import { t } from '$lib/i18n';
 	import { apiFetch } from '$lib/apiFetch';
+	import { friendlyError } from '$lib/errorDecoder';
 	import { getKnownLogo } from '$lib/tokenLogo';
 	import { supabase } from '$lib/supabaseClient';
 	import { favorites, toggleFavorite } from '$lib/favorites';
@@ -72,6 +73,20 @@
 	let isDepositing = $state(false);
 	let tradingEnabled = $state(true); // assume true unless we detect otherwise
 	let isEnablingTrading = $state(false);
+	// Creator reclaim (refunding-state) + platform sweep of stranded USDT.
+	let isReclaiming = $state(false);
+	let isSweeping = $state(false);
+	let reclaimableBalance = $state(0n);     // contract's current token balance during Refunding
+	let strandedUsdtBalance = $state(0n);    // contract's current USDT balance during Refunding
+	let refundStartTimestamp = $state(0n);   // timestamp when enableRefunds was called
+	let lockDurationAfterListing = $state(0n);
+
+	// Preflight status for Pending launches. preflightReason is one of:
+	//   "" (ready), "NOT_PENDING", "NOT_FUNDED", "NOT_EXCLUDED_FROM_LIMITS",
+	//   "NOT_TAX_EXEMPT", "NOT_AUTHORIZED_LAUNCHER".
+	let preflightReady = $state(false);
+	let preflightReason = $state('');
+	let isActivating = $state(false);
 	let graduationDismissed = $state(false);
 	let linkCopiedFeedback = $state(false);
 
@@ -339,12 +354,58 @@
 			usdtDecimals = usdtMeta.decimals;
 			launch = { ...info, tokenName: meta.name, tokenSymbol: meta.symbol, tokenDecimals: meta.decimals, usdtDecimals: usdtMeta.decimals };
 
-			// Check if trading is enabled
+			// Check if trading is enabled. New contracts replaced the boolean
+			// flag with a sentinel uint256: secondsUntilTradingOpens() returns
+			// type(uint256).max if not yet scheduled, 0 if already open, or
+			// the remaining countdown otherwise. Treat anything other than
+			// "not yet scheduled" as enabled (countdown is fine for the UI —
+			// the contract gates trading on the actual timestamp anyway).
 			try {
 				const tokenC = new ethers.Contract(info.token, PROTECTED_TOKEN_ABI, prov);
-				tradingEnabled = await tokenC.tradingEnabled();
+				const seconds: bigint = await tokenC.secondsUntilTradingOpens();
+				const SENTINEL = (1n << 256n) - 1n;
+				tradingEnabled = seconds !== SENTINEL;
 			} catch {
 				tradingEnabled = true;
+			}
+
+			// For Pending launches, load the preflight status so we can
+			// show the creator a checklist of what's missing before the
+			// launch can go live.
+			if (info.state === 0) {
+				try {
+					const instance = new ethers.Contract(launchAddress, LAUNCH_INSTANCE_ABI, prov);
+					const [ready, reason] = await instance.preflight();
+					preflightReady = Boolean(ready);
+					preflightReason = String(reason || '');
+				} catch {
+					preflightReady = false;
+					preflightReason = '';
+				}
+			}
+
+			// Load reclaim / sweep state if we're in Refunding. We need:
+			//   - the launch's current token balance (available for creator reclaim)
+			//   - the launch's current USDT balance (available for platform sweep after 90 days)
+			//   - refundStartTimestamp (gates the sweep window)
+			//   - lockDurationAfterListing (informational for the UI)
+			if (info.state === 3) {
+				try {
+					const tokenC = new ethers.Contract(info.token, ERC20_ABI, prov);
+					reclaimableBalance = await tokenC.balanceOf(launchAddress);
+				} catch { reclaimableBalance = 0n; }
+				try {
+					const usdtC = new ethers.Contract(info.usdtAddress, ERC20_ABI, prov);
+					strandedUsdtBalance = await usdtC.balanceOf(launchAddress);
+				} catch { strandedUsdtBalance = 0n; }
+				try {
+					const instance = new ethers.Contract(launchAddress, LAUNCH_INSTANCE_ABI, prov);
+					refundStartTimestamp = await instance.refundStartTimestamp();
+					lockDurationAfterListing = await instance.lockDurationAfterListing();
+				} catch {
+					refundStartTimestamp = 0n;
+					lockDurationAfterListing = 0n;
+				}
 			}
 
 			if (userAddress) {
@@ -629,8 +690,11 @@
 			// Slippage: accept 2% less tokens than preview estimates
 			const minTokensOut = preview ? preview.tokensOut * 98n / 100n : 0n;
 
+			// New unified buy(path, amountIn, minUsdtOut, minTokensOut) payable.
+			// path[0] = address(0) signals native payment (msg.value must == amountIn).
+			// For ERC20 payments msg.value must be 0.
 			if (buyPaymentMethod === 'native') {
-				// Get DEX quote for how much BNB is needed
+				// Get DEX quote for how much BNB is needed to produce buyAmount USDT
 				const routerAbi = [
 					'function getAmountsIn(uint256 amountOut, address[] calldata path) view returns (uint256[] memory amounts)',
 					'function WETH() view returns (address)'
@@ -640,13 +704,20 @@
 				const usdtNeeded = ethers.parseUnits(String(buyAmount), usdtDecimals);
 				const amounts = await router.getAmountsIn(usdtNeeded, [weth, network.usdt_address]);
 				const bnbNeeded = amounts[0];
-				// Add 3% buffer for slippage
+				// 3% buffer for swap slippage
 				const bnbToSend = bnbNeeded * 103n / 100n;
-				// minUsdtOut: accept 2% slippage on the DEX swap
 				const minUsdtOut = usdtNeeded * 98n / 100n;
 
+				// Path: [native, USDT]. The contract rewrites address(0) → WETH
+				// for the actual swap call.
 				addFeedback({ message: `Swapping ${network.native_coin} → USDT and buying...`, type: 'info' });
-				const tx = await instance.buy(minUsdtOut, minTokensOut, { value: bnbToSend });
+				const tx = await instance.buy(
+					[ethers.ZeroAddress, network.usdt_address],
+					bnbToSend,
+					minUsdtOut,
+					minTokensOut,
+					{ value: bnbToSend }
+				);
 				await tx.wait();
 			} else {
 				const paymentAddress = getPaymentAddress();
@@ -663,8 +734,14 @@
 					await approveTx.wait();
 				}
 
+				// Path: [paymentToken, USDT]. If paymentToken == USDT, the contract
+				// short-circuits the swap (path can still be [USDT, USDT]).
+				const path = paymentAddress.toLowerCase() === network.usdt_address.toLowerCase()
+					? [network.usdt_address, network.usdt_address]
+					: [paymentAddress, network.usdt_address];
+
 				addFeedback({ message: 'Buying tokens...', type: 'info' });
-				const tx = await instance.buyWithToken(paymentAddress, amountWei, minUsdtOut, minTokensOut);
+				const tx = await instance.buy(path, amountWei, minUsdtOut, minTokensOut);
 				await tx.wait();
 			}
 
@@ -684,7 +761,7 @@
 			if (errStr.includes('0x11') || errStr.includes('OVERFLOW') || errStr.includes('overflow')) {
 				addFeedback({ message: 'Transaction failed: arithmetic overflow in bonding curve. This launch may need to be recreated with a smaller token supply.', type: 'error' });
 			} else {
-				addFeedback({ message: e.shortMessage || e.message || 'Buy failed', type: 'error' });
+				addFeedback({ message: friendlyError(e), type: 'error' });
 			}
 		} finally {
 			isBuying = false;
@@ -697,7 +774,10 @@
 		try {
 			const tokenContract = new ethers.Contract(launch.token, PROTECTED_TOKEN_ABI, signer);
 			addFeedback({ message: 'Enabling trading...', type: 'info' });
-			const tx = await tokenContract.enableTrading();
+			// Open trading immediately (0 delay). The launchpad path doesn't
+			// need an anti-snipe window here — graduation will handle the
+			// per-pool lock when the curve fills.
+			const tx = await tokenContract.enableTrading(0);
 			await tx.wait();
 			tradingEnabled = true;
 
@@ -719,7 +799,7 @@
 
 			addFeedback({ message: 'Trading enabled! Buyers can now purchase.', type: 'success' });
 		} catch (e: any) {
-			addFeedback({ message: e.shortMessage || e.message || 'Failed to enable trading', type: 'error' });
+			addFeedback({ message: friendlyError(e), type: 'error' });
 		} finally {
 			isEnablingTrading = false;
 		}
@@ -728,10 +808,13 @@
 	const PROTECTED_TOKEN_ABI = [
 		'function setExcludedFromLimits(address account, bool excluded) external',
 		'function excludeFromTax(address account, bool exempt) external',
+		'function setAuthorizedLauncher(address launcher, bool authorized) external',
 		'function isExcludedFromLimits(address) view returns (bool)',
 		'function isTaxFree(address) view returns (bool)',
-		'function tradingEnabled() view returns (bool)',
-		'function enableTrading() external'
+		'function isAuthorizedLauncher(address) view returns (bool)',
+		'function secondsUntilTradingOpens() view returns (uint256)',
+		'function tradingStartTime() view returns (uint256)',
+		'function enableTrading(uint256 delay) external'
 	];
 
 	async function handleDeposit() {
@@ -751,23 +834,19 @@
 				return;
 			}
 
-			// Configure token for launchpad: enable trading, exclude from limits + tax
+			// Configure token for launchpad. The new contracts use a preflight
+			// check inside LaunchInstance.depositTokens — if the launch isn't
+			// excluded from limits, tax-exempt, AND authorized as a launcher,
+			// the deposit succeeds but the launch stays Pending. So we set up
+			// all three before depositing.
+			//
+			// Trading on the underlying token does NOT need to be enabled
+			// here. Graduation will atomically call enableTrading(lockDuration)
+			// once the curve fills, since the launch is now an authorized
+			// launcher. Curve buys/refunds work because the launch instance
+			// is in isExcludedFromLimits.
 			const tokenContract = new ethers.Contract(launch.token, [...ERC20_ABI, ...PROTECTED_TOKEN_ABI], signer);
 
-			// Enable trading — required so buyers can receive and transfer tokens
-			try {
-				const tradingOn: boolean = await tokenContract.tradingEnabled();
-				if (!tradingOn) {
-					addFeedback({ message: 'Enabling trading on token...', type: 'info' });
-					const tx = await tokenContract.enableTrading();
-					await tx.wait();
-					addFeedback({ message: 'Trading enabled.', type: 'success' });
-				}
-			} catch {
-				// Token may not have trading gate — skip
-			}
-
-			// Exclude launch contract from limits (max tx, max wallet, cooldown)
 			try {
 				const isExcluded: boolean = await tokenContract.isExcludedFromLimits(launchAddress);
 				if (!isExcluded) {
@@ -776,10 +855,9 @@
 					await tx.wait();
 				}
 			} catch {
-				// Token may not have protection features — skip
+				// Token may not implement the protection surface (external ERC20)
 			}
 
-			// Exclude launch contract from tax
 			try {
 				const isTaxFree: boolean = await tokenContract.isTaxFree(launchAddress);
 				if (!isTaxFree) {
@@ -789,6 +867,17 @@
 				}
 			} catch {
 				// Token may not be taxable — skip
+			}
+
+			try {
+				const isAuth: boolean = await tokenContract.isAuthorizedLauncher(launchAddress);
+				if (!isAuth) {
+					addFeedback({ message: 'Authorizing launch instance...', type: 'info' });
+					const tx = await tokenContract.setAuthorizedLauncher(launchAddress, true);
+					await tx.wait();
+				}
+			} catch {
+				// External token without isAuthorizedLauncher — preflight will skip this check
 			}
 
 			// Approve token transfer
@@ -806,7 +895,7 @@
 			addFeedback({ message: 'Tokens deposited! Launch is now active.', type: 'success' });
 			await refreshData();
 		} catch (e: any) {
-			addFeedback({ message: e.shortMessage || e.message || 'Deposit failed', type: 'error' });
+			addFeedback({ message: friendlyError(e), type: 'error' });
 		} finally {
 			isDepositing = false;
 		}
@@ -828,12 +917,14 @@
 
 			addFeedback({ message: 'Processing refund...', type: 'info' });
 			const instance = new ethers.Contract(launchAddress, LAUNCH_INSTANCE_ABI, signer);
-			const tx = await instance.refund();
+			// New refund(uint256 tokensToReturn) supports partial refunds.
+			// Pass the user's full position to keep the existing all-or-nothing UX.
+			const tx = await instance.refund(userTokensBought);
 			await tx.wait();
 			addFeedback({ message: 'Refund successful!', type: 'success' });
 			await refreshData();
 		} catch (e: any) {
-			addFeedback({ message: e.shortMessage || e.message || 'Refund failed', type: 'error' });
+			addFeedback({ message: friendlyError(e), type: 'error' });
 		} finally {
 			isRefunding = false;
 		}
@@ -850,7 +941,7 @@
 			addFeedback({ message: 'Graduated! Liquidity added to DEX.', type: 'success' });
 			await refreshData();
 		} catch (e: any) {
-			addFeedback({ message: e.shortMessage || e.message || 'Graduation failed', type: 'error' });
+			addFeedback({ message: friendlyError(e), type: 'error' });
 		} finally {
 			isGraduating = false;
 		}
@@ -866,9 +957,79 @@
 			addFeedback({ message: 'Refunds enabled!', type: 'success' });
 			await refreshData();
 		} catch (e: any) {
-			addFeedback({ message: e.shortMessage || e.message || 'Failed', type: 'error' });
+			addFeedback({ message: friendlyError(e), type: 'error' });
 		}
 	}
+
+	// Creator reclaim during Refunding — drains the contract's current
+	// token balance to the creator. Refunds are USDT-out / tokens-in, so
+	// any token in the contract at any moment during Refunding is free
+	// to take. Subsequent calls pick up tokens returned by later refunds.
+	async function handleReclaim() {
+		if (!signer || !launch || launch.state !== 3) return;
+		isReclaiming = true;
+		try {
+			const instance = new ethers.Contract(launchAddress, LAUNCH_INSTANCE_ABI, signer);
+			addFeedback({ message: 'Reclaiming tokens...', type: 'info' });
+			const tx = await instance.creatorWithdrawAvailable();
+			await tx.wait();
+			addFeedback({ message: 'Tokens reclaimed.', type: 'success' });
+			await refreshData();
+		} catch (e: any) {
+			addFeedback({ message: friendlyError(e), type: 'error' });
+		} finally {
+			isReclaiming = false;
+		}
+	}
+
+	// Manual activation for Pending launches. Only needed when the
+	// preflight check wasn't satisfied at the moment of depositTokens —
+	// e.g. the creator deposited first and authorized the launch later.
+	// Idempotent with the auto-activation inside depositTokens.
+	async function handleActivate() {
+		if (!signer || !launch || launch.state !== 0) return;
+		isActivating = true;
+		try {
+			const instance = new ethers.Contract(launchAddress, LAUNCH_INSTANCE_ABI, signer);
+			addFeedback({ message: 'Activating launch...', type: 'info' });
+			const tx = await instance.activate();
+			await tx.wait();
+			addFeedback({ message: 'Launch is now active.', type: 'success' });
+			await refreshData();
+		} catch (e: any) {
+			addFeedback({ message: friendlyError(e), type: 'error' });
+		} finally {
+			isActivating = false;
+		}
+	}
+
+	// Platform / creator sweep of stranded USDT after 90 days of Refunding.
+	// For buyers who abandoned their refund — the USDT goes to the platform
+	// wallet, never to the caller.
+	async function handleSweepStranded() {
+		if (!signer || !launch || launch.state !== 3) return;
+		isSweeping = true;
+		try {
+			const instance = new ethers.Contract(launchAddress, LAUNCH_INSTANCE_ABI, signer);
+			addFeedback({ message: 'Sweeping stranded USDT...', type: 'info' });
+			const tx = await instance.sweepStrandedUsdt();
+			await tx.wait();
+			addFeedback({ message: 'Stranded USDT swept to platform wallet.', type: 'success' });
+			await refreshData();
+		} catch (e: any) {
+			addFeedback({ message: friendlyError(e), type: 'error' });
+		} finally {
+			isSweeping = false;
+		}
+	}
+
+	// Derived state for the reclaim/sweep UI.
+	// Available 90 days after refundStartTimestamp, per the contract gate.
+	const SWEEP_WINDOW_SECONDS = 90 * 24 * 60 * 60;
+	let sweepAvailable = $derived.by(() => {
+		if (!launch || launch.state !== 3 || refundStartTimestamp === 0n) return false;
+		return BigInt(Math.floor(Date.now() / 1000)) >= refundStartTimestamp + BigInt(SWEEP_WINDOW_SECONDS);
+	});
 
 	function shortAddr(addr: string) {
 		return addr.slice(0, 6) + '...' + addr.slice(-4);
@@ -1679,6 +1840,69 @@
 						{:else}
 							<p class="text-emerald-400 text-xs font-mono text-center">{$t('lpd.allDeposited')}</p>
 						{/if}
+
+						<!-- Preflight checklist — shown when deposit is complete but
+						     the launch didn't auto-activate (e.g. the launch instance
+						     wasn't authorized as a launcher at deposit time). -->
+						{#if remaining === 0n && !preflightReady && preflightReason}
+							<div class="mt-4 pt-4 border-t border-white/5">
+								<p class="text-amber-300 text-xs font-mono mb-3">
+									Waiting on one more step before this launch can activate:
+								</p>
+								<div class="detail-grid mb-3">
+									<div class="detail-row">
+										<span class="detail-label">Tokens deposited</span>
+										<span class="detail-value text-emerald-400">✓</span>
+									</div>
+									<div class="detail-row">
+										<span class="detail-label">Exempt from limits</span>
+										<span class="detail-value {preflightReason === 'NOT_EXCLUDED_FROM_LIMITS' ? 'text-red-400' : 'text-emerald-400'}">
+											{preflightReason === 'NOT_EXCLUDED_FROM_LIMITS' ? '✗' : '✓'}
+										</span>
+									</div>
+									<div class="detail-row">
+										<span class="detail-label">Tax-free (if taxable)</span>
+										<span class="detail-value {preflightReason === 'NOT_TAX_EXEMPT' ? 'text-red-400' : 'text-emerald-400'}">
+											{preflightReason === 'NOT_TAX_EXEMPT' ? '✗' : '✓'}
+										</span>
+									</div>
+									<div class="detail-row">
+										<span class="detail-label">Authorized launcher</span>
+										<span class="detail-value {preflightReason === 'NOT_AUTHORIZED_LAUNCHER' ? 'text-red-400' : 'text-emerald-400'}">
+											{preflightReason === 'NOT_AUTHORIZED_LAUNCHER' ? '✗' : '✓'}
+										</span>
+									</div>
+								</div>
+								<p class="text-gray-500 text-[10px] font-mono mb-3">
+									Click "Fix &amp; activate" to grant the missing permission on your token and activate the launch in one flow.
+								</p>
+								<button
+									onclick={handleDeposit}
+									disabled={isDepositing || isActivating}
+									class="btn-primary w-full py-2.5 text-sm cursor-pointer"
+								>
+									{isDepositing || isActivating ? 'Working…' : 'Fix & activate'}
+								</button>
+							</div>
+						{/if}
+
+						<!-- Ready to activate manually — deposit was complete but
+						     the auto-activation didn't fire (edge case; UI exposes
+						     the `activate()` escape hatch). -->
+						{#if remaining === 0n && preflightReady && launch.state === 0}
+							<div class="mt-4 pt-4 border-t border-white/5">
+								<p class="text-emerald-300 text-xs font-mono mb-3">
+									Everything is in place. Activate the launch to start the curve.
+								</p>
+								<button
+									onclick={handleActivate}
+									disabled={isActivating}
+									class="btn-primary w-full py-2.5 text-sm cursor-pointer"
+								>
+									{isActivating ? 'Activating…' : 'Activate launch'}
+								</button>
+							</div>
+						{/if}
 					</div>
 				{:else if launch.state === 0}
 					<div class="card p-6 mb-4 border border-amber-500/20">
@@ -2031,6 +2255,62 @@
 							<p class="text-gray-600 text-[10px] font-mono mt-2">
 								{$t('lpd.refundNotice')}
 							</p>
+						{/if}
+					</div>
+				{/if}
+
+				<!-- Creator Reclaim + Stranded USDT Sweep (Refunding state only) -->
+				{#if launch.state === 3 && userAddress && launch.creator.toLowerCase() === userAddress.toLowerCase()}
+					<div class="card p-6 mb-4 border-amber-500/20">
+						<h3 class="syne font-bold text-amber-300 mb-1">Creator tools</h3>
+						<p class="text-gray-500 text-xs font-mono mb-4">
+							This launch is refunding. You can reclaim the tokens that weren't sold (or that buyers have returned so far) at any time. After 90 days the platform can sweep any USDT that abandoned buyers never came back to claim.
+						</p>
+
+						{#if reclaimableBalance > 0n}
+							<div class="detail-row mb-3">
+								<span class="detail-label">Reclaimable now</span>
+								<span class="detail-value">{formatTokens(reclaimableBalance, tokenMeta.decimals)} {launch.tokenSymbol}</span>
+							</div>
+							<button
+								onclick={handleReclaim}
+								disabled={isReclaiming}
+								class="btn-primary w-full py-2.5 text-sm cursor-pointer"
+							>
+								{isReclaiming ? 'Reclaiming…' : 'Reclaim available tokens'}
+							</button>
+							<p class="text-gray-600 text-[10px] font-mono mt-2">
+								Each call drains the launch's current token balance. As more buyers refund, their returned tokens become reclaimable — call again to pick them up.
+							</p>
+						{:else}
+							<p class="text-gray-600 text-xs font-mono">No tokens currently available to reclaim.</p>
+						{/if}
+
+						{#if strandedUsdtBalance > 0n}
+							<div class="mt-4 pt-4 border-t border-white/5">
+								<div class="detail-row mb-3">
+									<span class="detail-label">Stranded USDT</span>
+									<span class="detail-value">{formatUsdt(strandedUsdtBalance, ud)}</span>
+								</div>
+								{#if sweepAvailable}
+									<button
+										onclick={handleSweepStranded}
+										disabled={isSweeping}
+										class="btn-secondary w-full py-2.5 text-sm cursor-pointer"
+									>
+										{isSweeping ? 'Sweeping…' : 'Sweep stranded USDT to platform'}
+									</button>
+									<p class="text-gray-600 text-[10px] font-mono mt-2">
+										90-day refund window has passed. Remaining USDT goes to the platform wallet — abandoned refunds can no longer be claimed.
+									</p>
+								{:else if refundStartTimestamp > 0n}
+									{@const unlockTs = Number(refundStartTimestamp) + 90 * 24 * 60 * 60}
+									{@const daysLeft = Math.max(0, Math.ceil((unlockTs * 1000 - Date.now()) / (24 * 60 * 60 * 1000)))}
+									<p class="text-gray-600 text-xs font-mono">
+										Stranded USDT sweep unlocks in {daysLeft} day{daysLeft === 1 ? '' : 's'}.
+									</p>
+								{/if}
+							</div>
 						{/if}
 					</div>
 				{/if}

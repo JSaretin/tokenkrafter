@@ -190,17 +190,25 @@ create table if not exists created_tokens (
   creator text not null,
   name text not null,
   symbol text not null,
-  total_supply text not null,
   decimals integer not null default 18,
   is_taxable boolean not null default false,
   is_mintable boolean not null default false,
   is_partner boolean not null default false,
-  type_key smallint not null default 0,
-  creation_fee_usdt numeric(20,6) not null default 0,
-  tx_hash text,
+  -- Snapshot of totalSupply at daemon index time. Not kept live — for
+  -- burn-on-trade or mintable tokens this drifts. Detail page fetches
+  -- live from chain, list views use this snapshot for fast rendering.
+  total_supply text not null default '0',
   created_at timestamptz not null default now(),
   unique (address, chain_id)
 );
+
+-- Re-add total_supply for databases where a previous migration dropped it.
+alter table created_tokens add column if not exists total_supply text not null default '0';
+
+-- Drop legacy columns from older deployments (idempotent).
+alter table created_tokens drop column if exists type_key;
+alter table created_tokens drop column if exists creation_fee_usdt;
+alter table created_tokens drop column if exists tx_hash;
 
 create index if not exists idx_created_tokens_chain on created_tokens (chain_id);
 create index if not exists idx_created_tokens_creator on created_tokens (creator);
@@ -423,29 +431,94 @@ select cron.schedule(
 );
 
 -- ============================================================
--- Wallet vaults (embedded wallet — encrypted seed storage)
+-- Wallets (embedded wallet — encrypted seed storage, multi-wallet)
 -- ============================================================
-create table if not exists wallet_vaults (
-  user_id uuid primary key references auth.users(id) on delete cascade,
+-- One user can have multiple wallets. Each wallet has its own encrypted
+-- seed, account count, and label. Imported wallets (user brought their
+-- own mnemonic) skip the platform-generated recovery blobs and rely on
+-- the user's external backup — `is_imported = true` marks those.
+--
+-- `is_primary` picks the default wallet on unlock; partial unique index
+-- below enforces "at most one primary per user".
+create table if not exists wallets (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  name text not null,                  -- user label e.g. "Personal", "Trading"
   primary_blob text not null,          -- AES(seed, PBKDF2(pin, salt))
-  recovery_blob_1 text not null,       -- AES(seed, PBKDF2(code1, salt))
-  recovery_blob_2 text not null,       -- AES(seed, PBKDF2(code2, salt))
-  recovery_blob_3 text not null,       -- AES(seed, PBKDF2(code3, salt))
+  recovery_blob_1 text,                -- null for imported wallets
+  recovery_blob_2 text,
+  recovery_blob_3 text,
   account_count integer not null default 1,
   default_address text,
+  is_imported boolean not null default false,
+  is_primary boolean not null default false,
+  preferences jsonb not null default '{}',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
-alter table wallet_vaults add column if not exists preferences jsonb not null default '{}';
+create index if not exists idx_wallets_user on wallets(user_id);
+create unique index if not exists idx_wallets_one_primary_per_user
+  on wallets(user_id) where is_primary = true;
 
-alter table wallet_vaults enable row level security;
--- No anon read — vault data only accessible via service role (server API)
+alter table wallets enable row level security;
+-- No anon read — wallet data only accessible via service role (server API)
 
-drop trigger if exists wallet_vaults_updated_at on wallet_vaults;
-create trigger wallet_vaults_updated_at
-  before update on wallet_vaults
+drop trigger if exists wallets_updated_at on wallets;
+create trigger wallets_updated_at
+  before update on wallets
   for each row execute function update_updated_at();
+
+-- ============================================================
+-- Migrate legacy wallet_vaults rows → wallets, then drop the old table.
+--
+-- Idempotent + defensive:
+--   - `to_regclass` returns NULL if `wallet_vaults` was already dropped,
+--     so the whole block is a no-op on subsequent runs.
+--   - The INSERT is guarded by `NOT EXISTS` on user_id so re-running
+--     the schema after a partial migration won't create duplicates.
+--   - Every row from the old table becomes the user's `is_primary` wallet
+--     with `name = 'Primary'` — users can rename afterwards.
+--   - `EXCEPTION WHEN OTHERS` swallows any unexpected errors as a notice
+--     so a broken migration can't crash the rest of the schema run.
+-- ============================================================
+do $$
+begin
+  if to_regclass('public.wallet_vaults') is not null then
+    -- Copy vault rows into the new wallets table. Skip users who
+    -- already have at least one wallets row (re-run safety).
+    insert into wallets (
+      user_id, name, primary_blob,
+      recovery_blob_1, recovery_blob_2, recovery_blob_3,
+      account_count, default_address,
+      is_imported, is_primary, preferences,
+      created_at, updated_at
+    )
+    select
+      v.user_id,
+      'Primary',
+      v.primary_blob,
+      v.recovery_blob_1,
+      v.recovery_blob_2,
+      v.recovery_blob_3,
+      coalesce(v.account_count, 1),
+      v.default_address,
+      false,
+      true,
+      coalesce(v.preferences, '{}'::jsonb),
+      v.created_at,
+      v.updated_at
+    from wallet_vaults v
+    where not exists (
+      select 1 from wallets w where w.user_id = v.user_id
+    );
+
+    raise notice 'wallet_vaults migration complete, dropping legacy table';
+    drop table wallet_vaults cascade;
+  end if;
+exception when others then
+  raise notice 'wallet_vaults migration skipped: %', sqlerrm;
+end $$;
 
 -- ============================================================
 -- Token metadata (logo, description, socials)

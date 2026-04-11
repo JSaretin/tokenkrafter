@@ -157,6 +157,19 @@ export async function unlockWithPin(
 }
 
 /**
+ * Encrypt a plaintext mnemonic with a PIN. Used by the import flow for
+ * wallets that don't need platform-generated recovery codes (the user is
+ * expected to keep their own backup).
+ */
+export async function encryptWithPin(
+	plaintext: string,
+	pin: string,
+	salt: string
+): Promise<string> {
+	return encryptData(plaintext, pin, salt);
+}
+
+/**
  * Try to decrypt wallet with a recovery code.
  * Tries all 3 recovery blobs — returns mnemonic if any matches.
  */

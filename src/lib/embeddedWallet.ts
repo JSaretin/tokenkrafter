@@ -1,19 +1,36 @@
 /**
- * Embedded Wallet Manager
+ * Embedded Wallet Manager — multi-wallet edition.
  *
- * Manages the full lifecycle: create, unlock, derive accounts, sign transactions.
- * Seed is encrypted client-side with PIN + server salt. Server never sees the seed.
+ * Architecture:
+ *   - A user can own many wallets (one seed each). Each wallet has N HD-derived
+ *     accounts from its seed.
+ *   - Exactly one wallet is "active" at any moment — its mnemonic is the only
+ *     seed held in memory. Switching wallets clears the previous seed.
+ *   - Shared PIN: the user uses the same PIN for every wallet, cached in
+ *     localStorage + memory so switching is silent.
+ *   - Recovery codes are per-wallet; platform-generated wallets have them,
+ *     imported wallets do not (the user keeps their own backup).
+ *   - Server stores ciphertext only. All crypto runs in the browser.
  *
  * Flow:
- *   1. Google login via Supabase Auth → get JWT
- *   2. Fetch salt + vault from /api/wallet
- *   3. New user: generate mnemonic → encrypt with PIN → save vault → show recovery codes
- *   4. Returning user: decrypt vault with PIN → derive accounts → ready to sign
+ *   1. Google login via Supabase Auth
+ *   2. GET /api/wallets → list of encrypted wallets + salt
+ *   3. New user: create wallet → generate mnemonic → encrypt → POST /api/wallets
+ *   4. Returning user: pick primary → decrypt with PIN → derive accounts
+ *   5. Add/import more wallets anytime, each POST'd as a new row
  */
 
 import { ethers } from 'ethers';
-import { createWalletVault, unlockWithPin, unlockWithRecoveryCode, resetPin, type WalletVault } from './walletCrypto';
+import {
+	createWalletVault,
+	unlockWithPin,
+	unlockWithRecoveryCode,
+	resetPin,
+	type WalletVault,
+} from './walletCrypto';
 import { supabase } from './supabaseClient';
+
+// ── Types ──────────────────────────────────────────────────────────────
 
 export interface EmbeddedAccount {
 	index: number;
@@ -21,39 +38,78 @@ export interface EmbeddedAccount {
 	wallet: ethers.Wallet;
 }
 
-export interface WalletState {
-	isLoggedIn: boolean;
-	isUnlocked: boolean;
+export interface WalletContext {
+	id: string;
+	name: string;
+	isPrimary: boolean;
+	isImported: boolean;
+	accountCount: number;
+	defaultAddress: string | null;
+	/** Derived accounts — empty when this wallet is locked. */
 	accounts: EmbeddedAccount[];
-	activeAccount: EmbeddedAccount | null;
+	/** Seed phrase, only non-null when this wallet is the active unlocked one. */
+	mnemonic: string | null;
+	activeAccountIndex: number;
+	/** Raw encrypted blob — kept so we can re-decrypt on switch without refetching. */
+	primaryBlob: string;
+	recoveryBlobs: [string | null, string | null, string | null];
+}
+
+export interface EmbeddedState {
+	isLoggedIn: boolean;
 	userId: string | null;
 	email: string | null;
+	/** True when the active wallet has its mnemonic in memory. */
+	isUnlocked: boolean;
+	wallets: WalletContext[];
+	activeWalletId: string | null;
+	/** Convenience pointer into the active wallet's accounts. */
+	activeAccount: EmbeddedAccount | null;
+	/** Convenience alias for the active wallet's accounts (back-compat for
+	 *  callers that read `state.accounts` directly). Populated on each snapshot. */
+	accounts: EmbeddedAccount[];
 }
 
-let _state: WalletState = {
+/** @deprecated use EmbeddedState */
+export type WalletState = EmbeddedState;
+
+// ── Module state ───────────────────────────────────────────────────────
+
+let _state: EmbeddedState = {
 	isLoggedIn: false,
-	isUnlocked: false,
-	accounts: [],
-	activeAccount: null,
 	userId: null,
 	email: null,
+	isUnlocked: false,
+	wallets: [],
+	activeWalletId: null,
+	activeAccount: null,
+	accounts: [],
 };
 
-let _mnemonic: string | null = null;
 let _salt: string | null = null;
 let _jwt: string | null = null;
-let _accountCount = 1;
-let _listeners: Array<(state: WalletState) => void> = [];
+let _cachedPin: string | null = null;
+let _listeners: Array<(state: EmbeddedState) => void> = [];
 
-// ── State Management ──
+// ── State notifications ────────────────────────────────────────────────
 
-export function getWalletState(): WalletState {
-	return { ..._state };
+/** Shallow snapshot for subscribers. Wallets + accounts are copied by reference;
+ *  the store is replaced on every change so Svelte derives pick it up.
+ *  `accounts` is populated from the active wallet as a back-compat convenience. */
+export function getWalletState(): EmbeddedState {
+	const active = _state.wallets.find((w) => w.id === _state.activeWalletId);
+	return {
+		..._state,
+		wallets: _state.wallets.map((w) => ({ ...w })),
+		accounts: active?.accounts || [],
+	};
 }
 
-export function onWalletStateChange(listener: (state: WalletState) => void): () => void {
+export function onWalletStateChange(listener: (state: EmbeddedState) => void): () => void {
 	_listeners.push(listener);
-	return () => { _listeners = _listeners.filter(l => l !== listener); };
+	return () => {
+		_listeners = _listeners.filter((l) => l !== listener);
+	};
 }
 
 function _notify() {
@@ -62,31 +118,30 @@ function _notify() {
 }
 
 function _reset() {
-	_mnemonic = null;
 	_salt = null;
 	_jwt = null;
-	_accountCount = 1;
+	_cachedPin = null;
 	_state = {
 		isLoggedIn: false,
-		isUnlocked: false,
-		accounts: [],
-		activeAccount: null,
 		userId: null,
 		email: null,
+		isUnlocked: false,
+		wallets: [],
+		activeWalletId: null,
+		activeAccount: null,
+		accounts: [],
 	};
 	_notify();
 }
 
-// ── Auth ──
+// ── Auth ───────────────────────────────────────────────────────────────
 
-/** Sign in with Google via Supabase Auth (same-page redirect) */
 export async function signInWithGoogle(forceAccountPicker = false): Promise<void> {
-	// Sign out first if switching accounts
 	if (forceAccountPicker) {
 		await supabase.auth.signOut();
 		_reset();
-		localStorage.removeItem('_wp');
-		localStorage.removeItem('_active_acct');
+		clearCachedPin();
+		localStorage.removeItem('_active_wallet');
 	}
 
 	sessionStorage.setItem('wallet_return_to', window.location.pathname + window.location.search);
@@ -95,31 +150,28 @@ export async function signInWithGoogle(forceAccountPicker = false): Promise<void
 	const opts: any = {
 		redirectTo: window.location.origin + window.location.pathname + window.location.search,
 	};
-	// Force Google to show account picker
 	if (forceAccountPicker) {
 		opts.queryParams = { prompt: 'select_account' };
 	}
 
-	const { error } = await supabase.auth.signInWithOAuth({
+	const { error: authErr } = await supabase.auth.signInWithOAuth({
 		provider: 'google',
 		options: opts,
 	});
-	if (error) throw new Error(error.message);
+	if (authErr) throw new Error(authErr.message);
 }
 
-/** Call on page load to check if returning from Google OAuth */
 export async function checkAuthReturn(): Promise<boolean> {
 	if (sessionStorage.getItem('wallet_pending') !== 'true') return false;
 	sessionStorage.removeItem('wallet_pending');
 
-	// Wait for Supabase to process the hash token — it fires an event when ready
 	let session = (await supabase.auth.getSession()).data.session;
-
-	// If not ready yet, listen for the auth state change
 	if (!session) {
 		session = await new Promise((resolve) => {
-			const timeout = setTimeout(() => resolve(null), 5000); // 5s max wait
-			const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
+			const timeout = setTimeout(() => resolve(null), 5000);
+			const {
+				data: { subscription },
+			} = supabase.auth.onAuthStateChange((_event, s) => {
 				if (s) {
 					clearTimeout(timeout);
 					subscription.unsubscribe();
@@ -130,8 +182,6 @@ export async function checkAuthReturn(): Promise<boolean> {
 	}
 
 	if (!session) return false;
-	if (!session) return false;
-
 	_jwt = session.access_token;
 	_state.isLoggedIn = true;
 	_state.userId = session.user.id;
@@ -140,15 +190,15 @@ export async function checkAuthReturn(): Promise<boolean> {
 	return true;
 }
 
-/** Check if user has an active Supabase session */
 export async function checkSession(): Promise<boolean> {
-	const { data: { session } } = await supabase.auth.getSession();
+	const {
+		data: { session },
+	} = await supabase.auth.getSession();
 	if (!session) {
 		_state.isLoggedIn = false;
 		_notify();
 		return false;
 	}
-
 	_jwt = session.access_token;
 	_state.isLoggedIn = true;
 	_state.userId = session.user.id;
@@ -157,94 +207,56 @@ export async function checkSession(): Promise<boolean> {
 	return true;
 }
 
-/** Cache PIN in localStorage with expiry (shared across tabs) */
+// ── PIN cache (shared across wallets) ──────────────────────────────────
+
 const PIN_CACHE_KEY = '_wp';
-const PIN_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
+const PIN_CACHE_TTL = 24 * 60 * 60 * 1000;
 
 function cachePin(pin: string) {
-	localStorage.setItem(PIN_CACHE_KEY, JSON.stringify({
-		v: btoa(pin),
-		exp: Date.now() + PIN_CACHE_TTL,
-	}));
+	_cachedPin = pin;
+	localStorage.setItem(
+		PIN_CACHE_KEY,
+		JSON.stringify({ v: btoa(pin), exp: Date.now() + PIN_CACHE_TTL }),
+	);
 }
 
 function getCachedPin(): string | null {
+	if (_cachedPin) return _cachedPin;
 	try {
 		const raw = localStorage.getItem(PIN_CACHE_KEY);
 		if (!raw) return null;
 		const { v, exp } = JSON.parse(raw);
-		if (Date.now() > exp) { clearCachedPin(); return null; }
-		return atob(v);
-	} catch { return null; }
+		if (Date.now() > exp) {
+			clearCachedPin();
+			return null;
+		}
+		_cachedPin = atob(v);
+		return _cachedPin;
+	} catch {
+		return null;
+	}
 }
 
 function clearCachedPin() {
+	_cachedPin = null;
 	localStorage.removeItem(PIN_CACHE_KEY);
 }
 
-/** Sign out */
+// ── Sign out ───────────────────────────────────────────────────────────
+
 export async function signOut(): Promise<void> {
 	clearCachedPin();
 	await supabase.auth.signOut();
 	_reset();
 }
 
-/**
- * Auto-reconnect on page load. Tries in order:
- * 1. Check Supabase session
- * 2. If session exists + vault exists + cached PIN → unlock silently
- * 3. If session exists + vault exists + no cached PIN → return 'needs-pin'
- * 4. If no session → return 'disconnected'
- */
-export async function autoReconnect(): Promise<'connected' | 'needs-pin' | 'disconnected'> {
-	const { data: { session } } = await supabase.auth.getSession();
-	if (!session) return 'disconnected';
+// ── API helpers ────────────────────────────────────────────────────────
 
-	_jwt = session.access_token;
-	_state.isLoggedIn = true;
-	_state.userId = session.user.id;
-	_state.email = session.user.email || null;
-
-	// Try to fetch vault
-	try {
-		const { salt, vault } = await fetchVault();
-		if (!vault) return 'disconnected'; // logged in but no wallet
-		_salt = salt;
-		_accountCount = vault.account_count || 1;
-
-		// Try cached PIN
-		const cachedPin = getCachedPin();
-		if (cachedPin) {
-			const mnemonic = await (await import('./walletCrypto')).unlockWithPin(vault.primary_blob, cachedPin, salt);
-			if (mnemonic) {
-				_mnemonic = mnemonic;
-				_deriveAccounts();
-				_state.isUnlocked = true;
-				_notify();
-				return 'connected';
-			}
-			// Cached PIN is wrong (user changed it) — clear it
-			clearCachedPin();
-		}
-
-		// Session + vault exist but no cached PIN
-		_state.isUnlocked = false;
-		_notify();
-		return 'needs-pin';
-	} catch {
-		return 'disconnected';
-	}
-}
-
-// ── API Helpers ──
-
-async function apiFetch(method: string, body?: any): Promise<any> {
+async function apiFetch(path: string, method: string, body?: any): Promise<any> {
 	if (!_jwt) throw new Error('Not authenticated');
-	const headers: Record<string, string> = {
-		'Authorization': `Bearer ${_jwt}`,
-	};
+	const headers: Record<string, string> = { Authorization: `Bearer ${_jwt}` };
 	if (body) headers['Content-Type'] = 'application/json';
-	const res = await fetch('/api/wallet', {
+	const res = await fetch(path, {
 		method,
 		headers,
 		body: body ? JSON.stringify(body) : undefined,
@@ -256,43 +268,535 @@ async function apiFetch(method: string, body?: any): Promise<any> {
 	return res.json();
 }
 
-/** Fetch vault + salt from server */
-async function fetchVault(): Promise<{ salt: string; vault: any | null }> {
-	return apiFetch('GET');
+/** Fetch all wallets for this user + shared salt. */
+async function fetchWallets(): Promise<{ salt: string; wallets: any[] }> {
+	return apiFetch('/api/wallets', 'GET');
 }
 
-/** Save vault to server */
-async function saveVault(vault: WalletVault, accountCount: number, defaultAddress: string): Promise<string> {
-	const res = await apiFetch('POST', {
+/** Create a new wallet row on the server. */
+async function postWallet(payload: any): Promise<any> {
+	return apiFetch('/api/wallets', 'POST', payload);
+}
+
+/** Update a wallet row. */
+async function patchWallet(id: string, payload: any): Promise<any> {
+	return apiFetch(`/api/wallets/${id}`, 'PATCH', payload);
+}
+
+// ── Wallet loading / unlock ────────────────────────────────────────────
+
+/**
+ * Auto-reconnect: loads the wallet list, picks the primary, tries cached PIN.
+ * Returns:
+ *   'connected'    — fully unlocked, ready to sign
+ *   'needs-pin'    — wallets exist but no cached PIN
+ *   'no-wallets'   — logged in but no wallet rows yet (user needs to create one)
+ *   'disconnected' — not logged in
+ */
+export async function autoReconnect(): Promise<
+	'connected' | 'needs-pin' | 'no-wallets' | 'disconnected'
+> {
+	const {
+		data: { session },
+	} = await supabase.auth.getSession();
+	if (!session) return 'disconnected';
+
+	_jwt = session.access_token;
+	_state.isLoggedIn = true;
+	_state.userId = session.user.id;
+	_state.email = session.user.email || null;
+
+	try {
+		const { salt, wallets } = await fetchWallets();
+		_salt = salt;
+
+		if (!wallets || wallets.length === 0) {
+			_notify();
+			return 'no-wallets';
+		}
+
+		_state.wallets = wallets.map(_walletRowToContext);
+
+		// Pick the wallet to activate: previously-active (localStorage) or primary
+		const savedActiveId = localStorage.getItem('_active_wallet');
+		const preferred =
+			_state.wallets.find((w) => w.id === savedActiveId) ||
+			_state.wallets.find((w) => w.isPrimary) ||
+			_state.wallets[0];
+		_state.activeWalletId = preferred.id;
+
+		// Try cached PIN
+		const cached = getCachedPin();
+		if (cached) {
+			const ok = await _unlockWalletInPlace(preferred, cached);
+			if (ok) {
+				_state.isUnlocked = true;
+				_state.activeAccount = preferred.accounts[preferred.activeAccountIndex] || null;
+				_notify();
+				return 'connected';
+			}
+			clearCachedPin();
+		}
+
+		_state.isUnlocked = false;
+		_notify();
+		return 'needs-pin';
+	} catch {
+		return 'disconnected';
+	}
+}
+
+/** Translate a raw DB row into a WalletContext (locked, no accounts derived). */
+function _walletRowToContext(row: any): WalletContext {
+	return {
+		id: row.id,
+		name: row.name || 'Wallet',
+		isPrimary: !!row.is_primary,
+		isImported: !!row.is_imported,
+		accountCount: row.account_count || 1,
+		defaultAddress: row.default_address || null,
+		accounts: [],
+		mnemonic: null,
+		activeAccountIndex: 0,
+		primaryBlob: row.primary_blob,
+		recoveryBlobs: [row.recovery_blob_1, row.recovery_blob_2, row.recovery_blob_3],
+	};
+}
+
+/** Decrypt a wallet's blob with the given PIN and populate its accounts in-place. */
+async function _unlockWalletInPlace(wallet: WalletContext, pin: string): Promise<boolean> {
+	if (!_salt) return false;
+	const mnemonic = await unlockWithPin(wallet.primaryBlob, pin, _salt);
+	if (!mnemonic) return false;
+	wallet.mnemonic = mnemonic;
+	_deriveAccounts(wallet);
+	return true;
+}
+
+/** Derive HD accounts for a wallet given its mnemonic. */
+function _deriveAccounts(wallet: WalletContext): void {
+	if (!wallet.mnemonic) return;
+	const hdNode = ethers.HDNodeWallet.fromMnemonic(
+		ethers.Mnemonic.fromPhrase(wallet.mnemonic),
+		"m/44'/60'/0'/0",
+	);
+	wallet.accounts = [];
+	for (let i = 0; i < wallet.accountCount; i++) {
+		const child = hdNode.deriveChild(i);
+		wallet.accounts.push({
+			index: i,
+			address: child.address,
+			wallet: new ethers.Wallet(child.privateKey),
+		});
+	}
+	// Restore active account index (per-wallet, stored in localStorage)
+	const savedIdx = _getSavedActiveAccount(wallet.id);
+	wallet.activeAccountIndex =
+		wallet.accounts.find((a) => a.index === savedIdx) !== undefined ? savedIdx : 0;
+}
+
+function _getSavedActiveAccount(walletId: string): number {
+	try {
+		const raw = localStorage.getItem('_active_acct_by_wallet');
+		if (!raw) return 0;
+		const map = JSON.parse(raw);
+		return Number(map[walletId] ?? 0);
+	} catch {
+		return 0;
+	}
+}
+
+function _setSavedActiveAccount(walletId: string, index: number): void {
+	try {
+		const raw = localStorage.getItem('_active_acct_by_wallet');
+		const map = raw ? JSON.parse(raw) : {};
+		map[walletId] = index;
+		localStorage.setItem('_active_acct_by_wallet', JSON.stringify(map));
+	} catch {}
+}
+
+// ── Public: Unlock + state queries ─────────────────────────────────────
+
+/** Unlock the active wallet with a PIN. Caches the PIN on success. */
+export async function unlockWallet(pin: string): Promise<boolean> {
+	const active = _getActiveWalletInternal();
+	if (!active) throw new Error('No active wallet');
+
+	const ok = await _unlockWalletInPlace(active, pin);
+	if (!ok) return false;
+
+	cachePin(pin);
+	_state.isUnlocked = true;
+	_state.activeAccount = active.accounts[active.activeAccountIndex] || null;
+	_notify();
+	return true;
+}
+
+/** Whether we have at least one wallet row on the server. */
+export async function hasVault(): Promise<boolean> {
+	if (_state.wallets.length > 0) return true;
+	try {
+		const { wallets } = await fetchWallets();
+		return Array.isArray(wallets) && wallets.length > 0;
+	} catch {
+		return false;
+	}
+}
+
+// ── Create / Import ────────────────────────────────────────────────────
+
+/**
+ * Create a brand-new wallet: generate a BIP-39 mnemonic client-side, encrypt
+ * with the PIN, persist. If this is the user's first wallet it becomes the
+ * primary automatically. Returns the new wallet + its recovery codes.
+ */
+export async function createNewWallet(
+	name: string,
+	pin: string,
+): Promise<{ wallet: WalletContext; recoveryCodes: string[] }> {
+	if (!_jwt) throw new Error('Not authenticated');
+	if (!_salt) {
+		// Refresh salt if we don't have it yet (first-time user path)
+		const { salt } = await fetchWallets();
+		_salt = salt;
+	}
+
+	const mnemonic = ethers.Wallet.createRandom().mnemonic!.phrase;
+	const vault = await createWalletVault(mnemonic, pin, _salt!);
+
+	const hdNode = ethers.HDNodeWallet.fromMnemonic(
+		ethers.Mnemonic.fromPhrase(mnemonic),
+		"m/44'/60'/0'/0",
+	);
+	const firstAccount = hdNode.deriveChild(0);
+
+	const { wallet: row } = await postWallet({
+		name,
 		primaryBlob: vault.primaryBlob,
 		recoveryBlob1: vault.recoveryBlob1,
 		recoveryBlob2: vault.recoveryBlob2,
 		recoveryBlob3: vault.recoveryBlob3,
-		accountCount,
-		defaultAddress,
+		accountCount: 1,
+		defaultAddress: firstAccount.address,
+		isImported: false,
 	});
-	return res.salt;
+
+	const ctx = _walletRowToContext(row);
+	ctx.mnemonic = mnemonic;
+	_deriveAccounts(ctx);
+	_state.wallets = [..._state.wallets, ctx];
+
+	// First wallet? cache the PIN + activate it.
+	if (_state.wallets.length === 1) {
+		cachePin(pin);
+		_state.activeWalletId = ctx.id;
+		_state.isUnlocked = true;
+		_state.activeAccount = ctx.accounts[0] || null;
+		localStorage.setItem('_active_wallet', ctx.id);
+	}
+
+	_notify();
+	return { wallet: ctx, recoveryCodes: vault.recoveryCodes };
 }
 
-// ── Preferences Sync ──
+/**
+ * Import an existing BIP-39 mnemonic as a new wallet. Imported wallets skip
+ * platform recovery codes — the user keeps their own backup.
+ *
+ * Uses the cached PIN by default. For the first-time import flow (user has
+ * no existing wallet yet), pass `explicitPin` — it will be cached on success.
+ */
+export async function importWallet(
+	name: string,
+	mnemonicPhrase: string,
+	explicitPin?: string,
+): Promise<WalletContext> {
+	if (!_jwt) throw new Error('Not authenticated');
 
-/** Debounce timer for preferences sync */
+	// Validate the mnemonic via ethers' BIP-39 wordlist check
+	let normalizedMnemonic: string;
+	try {
+		const parsed = ethers.Mnemonic.fromPhrase(mnemonicPhrase.trim());
+		normalizedMnemonic = parsed.phrase;
+	} catch {
+		throw new Error('Invalid recovery phrase');
+	}
+
+	const pin = explicitPin || getCachedPin();
+	if (!pin) throw new Error('Unlock your primary wallet first');
+	if (!_salt) {
+		const { salt } = await fetchWallets();
+		_salt = salt;
+	}
+
+	// Encrypt with shared PIN — no recovery blobs for imported wallets.
+	const { encryptWithPin } = await import('./walletCrypto');
+	const primaryBlob = await encryptWithPin(normalizedMnemonic, pin, _salt!);
+
+	const hdNode = ethers.HDNodeWallet.fromMnemonic(
+		ethers.Mnemonic.fromPhrase(normalizedMnemonic),
+		"m/44'/60'/0'/0",
+	);
+	const firstAccount = hdNode.deriveChild(0);
+
+	const { wallet: row } = await postWallet({
+		name,
+		primaryBlob,
+		recoveryBlob1: null,
+		recoveryBlob2: null,
+		recoveryBlob3: null,
+		accountCount: 1,
+		defaultAddress: firstAccount.address,
+		isImported: true,
+	});
+
+	const ctx = _walletRowToContext(row);
+	ctx.mnemonic = normalizedMnemonic;
+	_deriveAccounts(ctx);
+	_state.wallets = [..._state.wallets, ctx];
+
+	// First-time import path: cache the PIN and activate the new wallet
+	// immediately so the caller gets a unlocked state back.
+	if (explicitPin && _state.wallets.length === 1) {
+		cachePin(explicitPin);
+		_state.activeWalletId = ctx.id;
+		_state.isUnlocked = true;
+		_state.activeAccount = ctx.accounts[0] || null;
+		localStorage.setItem('_active_wallet', ctx.id);
+	}
+
+	_notify();
+	return ctx;
+}
+
+// ── Switching ──────────────────────────────────────────────────────────
+
+/** Switch the active wallet. Uses the cached PIN silently when possible. */
+export async function switchWallet(walletId: string): Promise<boolean> {
+	const target = _state.wallets.find((w) => w.id === walletId);
+	if (!target) throw new Error('Wallet not found');
+
+	// Already active and unlocked — no-op
+	if (_state.activeWalletId === walletId && target.mnemonic) {
+		return true;
+	}
+
+	// Clear the previous active wallet's hot secret material
+	const prev = _getActiveWalletInternal();
+	if (prev && prev.id !== walletId) {
+		prev.mnemonic = null;
+		prev.accounts = [];
+	}
+
+	_state.activeWalletId = walletId;
+	localStorage.setItem('_active_wallet', walletId);
+
+	// Try cached PIN first
+	const pin = getCachedPin();
+	if (pin) {
+		const ok = await _unlockWalletInPlace(target, pin);
+		if (ok) {
+			_state.isUnlocked = true;
+			_state.activeAccount = target.accounts[target.activeAccountIndex] || null;
+			_notify();
+			return true;
+		}
+	}
+
+	// No cached PIN (or it failed) — surface locked state to caller
+	_state.isUnlocked = false;
+	_state.activeAccount = null;
+	_notify();
+	return false;
+}
+
+// ── Account management (scoped to active wallet) ───────────────────────
+
+/** Derive another HD account on the active wallet. */
+export async function addAccount(): Promise<EmbeddedAccount> {
+	const active = _getActiveWalletInternal();
+	if (!active || !active.mnemonic) throw new Error('Active wallet not unlocked');
+
+	const newIndex = active.accountCount;
+	active.accountCount += 1;
+
+	const hdNode = ethers.HDNodeWallet.fromMnemonic(
+		ethers.Mnemonic.fromPhrase(active.mnemonic),
+		"m/44'/60'/0'/0",
+	);
+	const child = hdNode.deriveChild(newIndex);
+	const account: EmbeddedAccount = {
+		index: newIndex,
+		address: child.address,
+		wallet: new ethers.Wallet(child.privateKey),
+	};
+	active.accounts.push(account);
+
+	// Persist new account count to server
+	try {
+		await patchWallet(active.id, {
+			accountCount: active.accountCount,
+			defaultAddress: active.defaultAddress || account.address,
+		});
+	} catch {
+		// Non-fatal — account is usable locally until next sync
+	}
+
+	_notify();
+	return account;
+}
+
+/** Switch the active account within the active wallet. */
+export function setActiveAccount(index: number): void {
+	const active = _getActiveWalletInternal();
+	if (!active) return;
+	const account = active.accounts.find((a) => a.index === index);
+	if (!account) return;
+	active.activeAccountIndex = index;
+	_state.activeAccount = account;
+	_setSavedActiveAccount(active.id, index);
+	_notify();
+}
+
+// ── Signing helpers ────────────────────────────────────────────────────
+
+/** Get an ethers Wallet connected to a provider for the active account. */
+export function getSigner(provider: ethers.JsonRpcProvider): ethers.Wallet | null {
+	if (!_state.activeAccount) return null;
+	return _state.activeAccount.wallet.connect(provider);
+}
+
+/** Return the raw ethers Wallet for the active account (unconnected). */
+export function getActiveSigner(): ethers.Wallet | null {
+	return _state.activeAccount?.wallet || null;
+}
+
+// ── Mnemonic + private key export ──────────────────────────────────────
+
+/** Export the active wallet's seed phrase. Caller should PIN-confirm first. */
+export function exportSeedPhrase(): string | null {
+	const active = _getActiveWalletInternal();
+	return active?.mnemonic || null;
+}
+
+/** Export a single account's private key from the active wallet. */
+export function exportPrivateKey(index: number): string | null {
+	const active = _getActiveWalletInternal();
+	const account = active?.accounts.find((a) => a.index === index);
+	return account?.wallet.privateKey || null;
+}
+
+// ── Rename / delete / primary ──────────────────────────────────────────
+
+export async function renameWallet(walletId: string, newName: string): Promise<void> {
+	await patchWallet(walletId, { name: newName });
+	const w = _state.wallets.find((w) => w.id === walletId);
+	if (w) {
+		w.name = newName.trim().slice(0, 40);
+		_notify();
+	}
+}
+
+export async function deleteWallet(walletId: string): Promise<void> {
+	// Guard in UI, but server also enforces — don't delete last wallet, don't delete primary
+	await apiFetch(`/api/wallets/${walletId}`, 'DELETE');
+	_state.wallets = _state.wallets.filter((w) => w.id !== walletId);
+	if (_state.activeWalletId === walletId) {
+		const fallback = _state.wallets.find((w) => w.isPrimary) || _state.wallets[0];
+		if (fallback) {
+			await switchWallet(fallback.id);
+		} else {
+			_state.activeWalletId = null;
+			_state.activeAccount = null;
+			_state.isUnlocked = false;
+		}
+	}
+	_notify();
+}
+
+export async function setPrimaryWallet(walletId: string): Promise<void> {
+	await patchWallet(walletId, { setPrimary: true });
+	for (const w of _state.wallets) {
+		w.isPrimary = w.id === walletId;
+	}
+	_notify();
+}
+
+// ── Lock / recovery ────────────────────────────────────────────────────
+
+/** Lock everything: clear every in-memory seed + the cached PIN. */
+export function lockWallet(): void {
+	for (const w of _state.wallets) {
+		w.mnemonic = null;
+		w.accounts = [];
+	}
+	clearCachedPin();
+	_state.isUnlocked = false;
+	_state.activeAccount = null;
+	_notify();
+}
+
+/** Recover the active wallet with a recovery code. Sets a NEW PIN on success.
+ *  Note: other wallets remain encrypted with the old PIN — the user will
+ *  need to re-enter the old PIN for them or recover each separately. */
+export async function recoverWithCode(code: string): Promise<boolean> {
+	const active = _getActiveWalletInternal();
+	if (!active) throw new Error('No active wallet');
+	if (!_salt) throw new Error('Salt not loaded');
+
+	const blobs = active.recoveryBlobs.filter((b): b is string => !!b);
+	if (blobs.length === 0) throw new Error('Imported wallets have no recovery codes');
+
+	const mnemonic = await unlockWithRecoveryCode(blobs, code, _salt);
+	if (!mnemonic) return false;
+
+	active.mnemonic = mnemonic;
+	_deriveAccounts(active);
+	return true;
+}
+
+/** After a successful recovery, set a new PIN for the (recovered) active wallet. */
+export async function setNewPin(newPin: string): Promise<string[]> {
+	const active = _getActiveWalletInternal();
+	if (!active || !active.mnemonic) throw new Error('Wallet not recovered');
+	if (!_salt) throw new Error('Salt not loaded');
+
+	const vault = await resetPin(active.mnemonic, newPin, _salt);
+
+	await patchWallet(active.id, {
+		primaryBlob: vault.primaryBlob,
+		recoveryBlob1: vault.recoveryBlob1,
+		recoveryBlob2: vault.recoveryBlob2,
+		recoveryBlob3: vault.recoveryBlob3,
+	});
+
+	active.primaryBlob = vault.primaryBlob;
+	active.recoveryBlobs = [vault.recoveryBlob1, vault.recoveryBlob2, vault.recoveryBlob3];
+
+	cachePin(newPin);
+	_state.isUnlocked = true;
+	_state.activeAccount = active.accounts[active.activeAccountIndex] || null;
+	_notify();
+	return vault.recoveryCodes;
+}
+
+// ── Preferences sync (per active wallet) ───────────────────────────────
+
 let _prefSyncTimer: ReturnType<typeof setTimeout> | null = null;
 
-/** Sync preferences to server (debounced — batches rapid changes) */
 export async function syncPreferences(prefs: Record<string, any>): Promise<void> {
-	if (!_jwt) return; // not logged in
+	const active = _getActiveWalletInternal();
+	if (!active || !_jwt) return;
 	if (_prefSyncTimer) clearTimeout(_prefSyncTimer);
 	_prefSyncTimer = setTimeout(async () => {
 		try {
-			await apiFetch('PATCH', { preferences: prefs });
+			await patchWallet(active.id, { preferences: prefs });
 		} catch (e) {
 			console.warn('Preferences sync failed:', (e as Error).message);
 		}
-	}, 1000); // 1s debounce
+	}, 1000);
 }
 
-/** Collect all localStorage preferences into one object */
 export function collectPreferences(): Record<string, any> {
 	const prefs: Record<string, any> = {};
 	try {
@@ -307,12 +811,9 @@ export function collectPreferences(): Record<string, any> {
 		const tradeTokens = localStorage.getItem('importedTokens');
 		if (tradeTokens) prefs.trade_imported_tokens = JSON.parse(tradeTokens);
 	} catch {}
-	const activeAcct = localStorage.getItem('_active_acct');
-	if (activeAcct) prefs.active_account = parseInt(activeAcct, 10);
 	return prefs;
 }
 
-/** Restore preferences from server data to localStorage */
 export function restorePreferences(prefs: Record<string, any>): void {
 	if (!prefs || typeof prefs !== 'object') return;
 	if (prefs.account_names) {
@@ -324,12 +825,8 @@ export function restorePreferences(prefs: Record<string, any>): void {
 	if (prefs.trade_imported_tokens) {
 		localStorage.setItem('importedTokens', JSON.stringify(prefs.trade_imported_tokens));
 	}
-	if (prefs.active_account != null) {
-		localStorage.setItem('_active_acct', String(prefs.active_account));
-	}
 }
 
-/** Sync all current localStorage preferences to server */
 export async function pushPreferences(): Promise<void> {
 	const prefs = collectPreferences();
 	if (Object.keys(prefs).length > 0) {
@@ -337,229 +834,18 @@ export async function pushPreferences(): Promise<void> {
 	}
 }
 
-// ── Wallet Operations ──
+// ── Internal lookup ────────────────────────────────────────────────────
 
-/** Check if user has an existing vault */
-export async function hasVault(): Promise<boolean> {
-	const { vault } = await fetchVault();
-	return vault !== null;
+function _getActiveWalletInternal(): WalletContext | null {
+	return _state.wallets.find((w) => w.id === _state.activeWalletId) || null;
 }
 
-/**
- * Create a new wallet. Returns recovery codes (show once to user).
- * Mnemonic generated client-side, encrypted with PIN, saved to server.
- */
-export async function createWallet(pin: string): Promise<{ recoveryCodes: string[]; address: string }> {
-	if (!_jwt) throw new Error('Not authenticated');
+// ── Back-compat shims (kept so existing callers don't break) ───────────
 
-	const { salt } = await fetchVault();
-	_salt = salt;
-
-	// Generate mnemonic client-side — never leaves the browser
-	const mnemonic = ethers.Wallet.createRandom().mnemonic!.phrase;
-
-	// Encrypt with PIN + salt
-	const vault = await createWalletVault(mnemonic, pin, salt);
-
-	// Derive first account
-	const hdNode = ethers.HDNodeWallet.fromMnemonic(
-		ethers.Mnemonic.fromPhrase(mnemonic),
-		"m/44'/60'/0'/0"
-	);
-	const firstAccount = hdNode.deriveChild(0);
-
-	// Save encrypted vault to server
-	await saveVault(vault, 1, firstAccount.address);
-
-	// Cache PIN for session (survives reload, cleared on tab close)
-	cachePin(pin);
-
-	// Unlock locally
-	_mnemonic = mnemonic;
-	_accountCount = 1;
-	_state.accounts = [{
-		index: 0,
-		address: firstAccount.address,
-		wallet: new ethers.Wallet(firstAccount.privateKey),
-	}];
-	_state.activeAccount = _state.accounts[0];
-	_state.isUnlocked = true;
-	_notify();
-
-	return {
-		recoveryCodes: vault.recoveryCodes,
-		address: firstAccount.address,
-	};
-}
-
-/**
- * Unlock existing wallet with PIN.
- * Fetches encrypted vault from server, decrypts client-side.
- */
-export async function unlockWallet(pin: string): Promise<boolean> {
-	if (!_jwt) throw new Error('Not authenticated');
-
-	const { salt, vault } = await fetchVault();
-	if (!vault) throw new Error('No wallet found. Create one first.');
-	_salt = salt;
-
-	const mnemonic = await unlockWithPin(vault.primary_blob, pin, salt);
-	if (!mnemonic) return false; // wrong PIN
-
-	// Cache PIN for session (survives reload, cleared on tab close)
-	cachePin(pin);
-
-	_mnemonic = mnemonic;
-	_accountCount = vault.account_count || 1;
-
-	// Restore synced preferences from server → localStorage
-	if (vault.preferences && typeof vault.preferences === 'object') {
-		restorePreferences(vault.preferences);
-	}
-
-	// Derive all accounts
-	_deriveAccounts();
-	_state.isUnlocked = true;
-	_notify();
-	return true;
-}
-
-/**
- * Recover wallet with a recovery code. Returns true if successful.
- * After recovery, user must set a new PIN.
- */
-export async function recoverWithCode(code: string): Promise<boolean> {
-	if (!_jwt) throw new Error('Not authenticated');
-
-	const { salt, vault } = await fetchVault();
-	if (!vault) throw new Error('No wallet found.');
-	_salt = salt;
-
-	const blobs = [vault.recovery_blob_1, vault.recovery_blob_2, vault.recovery_blob_3];
-	const mnemonic = await unlockWithRecoveryCode(blobs, code, salt);
-	if (!mnemonic) return false; // wrong code
-
-	_mnemonic = mnemonic;
-	_accountCount = vault.account_count || 1;
-	return true;
-}
-
-/**
- * Set new PIN after recovery. Re-encrypts vault and generates new recovery codes.
- */
-export async function setNewPin(newPin: string): Promise<string[]> {
-	if (!_mnemonic || !_salt) throw new Error('Wallet not recovered');
-
-	const vault = await resetPin(_mnemonic, newPin, _salt);
-	const hdNode = ethers.HDNodeWallet.fromMnemonic(
-		ethers.Mnemonic.fromPhrase(_mnemonic),
-		"m/44'/60'/0'/0"
-	);
-	const firstAccount = hdNode.deriveChild(0);
-
-	await saveVault(vault, _accountCount, firstAccount.address);
-	cachePin(newPin);
-
-	// Derive accounts and unlock
-	_deriveAccounts();
-	_state.isUnlocked = true;
-	_notify();
-
-	return vault.recoveryCodes;
-}
-
-/** Derive a new account (next index) */
-export async function addAccount(): Promise<EmbeddedAccount> {
-	if (!_mnemonic || !_salt) throw new Error('Wallet not unlocked');
-
-	const newIndex = _accountCount;
-	_accountCount++;
-
-	const hdNode = ethers.HDNodeWallet.fromMnemonic(
-		ethers.Mnemonic.fromPhrase(_mnemonic),
-		"m/44'/60'/0'/0"
-	);
-	const child = hdNode.deriveChild(newIndex);
-	const account: EmbeddedAccount = {
-		index: newIndex,
-		address: child.address,
-		wallet: new ethers.Wallet(child.privateKey),
-	};
-
-	_state.accounts.push(account);
-
-	// Update server with new account count
-	const { vault } = await fetchVault();
-	if (vault) {
-		await apiFetch('POST', {
-			primaryBlob: vault.primary_blob,
-			recoveryBlob1: vault.recovery_blob_1,
-			recoveryBlob2: vault.recovery_blob_2,
-			recoveryBlob3: vault.recovery_blob_3,
-			accountCount: _accountCount,
-			defaultAddress: _state.activeAccount?.address || account.address,
-		});
-	}
-
-	_notify();
-	return account;
-}
-
-/** Switch active account */
-export function setActiveAccount(index: number): void {
-	const account = _state.accounts.find(a => a.index === index);
-	if (account) {
-		_state.activeAccount = account;
-		localStorage.setItem('_active_acct', String(index));
-		_notify();
-	}
-}
-
-/** Get an ethers Signer connected to a provider */
-export function getSigner(provider: ethers.JsonRpcProvider): ethers.Wallet | null {
-	if (!_state.activeAccount) return null;
-	return _state.activeAccount.wallet.connect(provider);
-}
-
-/** Export the seed phrase (user explicitly requests it) */
-export function exportSeedPhrase(): string | null {
-	return _mnemonic;
-}
-
-/** Export a single account's private key */
-export function exportPrivateKey(index: number): string | null {
-	const account = _state.accounts.find(a => a.index === index);
-	return account?.wallet.privateKey || null;
-}
-
-/** Lock wallet (clear mnemonic from memory, keep session) */
-export function lockWallet(): void {
-	_mnemonic = null;
-	_state.isUnlocked = false;
-	_state.accounts = [];
-	_state.activeAccount = null;
-	_notify();
-}
-
-// ── Internal ──
-
-function _deriveAccounts(): void {
-	if (!_mnemonic) return;
-	const hdNode = ethers.HDNodeWallet.fromMnemonic(
-		ethers.Mnemonic.fromPhrase(_mnemonic),
-		"m/44'/60'/0'/0"
-	);
-
-	_state.accounts = [];
-	for (let i = 0; i < _accountCount; i++) {
-		const child = hdNode.deriveChild(i);
-		_state.accounts.push({
-			index: i,
-			address: child.address,
-			wallet: new ethers.Wallet(child.privateKey),
-		});
-	}
-	// Restore saved active account index
-	const savedIdx = parseInt(localStorage.getItem('_active_acct') || '0', 10);
-	_state.activeAccount = _state.accounts.find(a => a.index === savedIdx) || _state.accounts[0] || null;
+/** @deprecated use createNewWallet(name, pin) */
+export async function createWallet(
+	pin: string,
+): Promise<{ recoveryCodes: string[]; address: string }> {
+	const { wallet, recoveryCodes } = await createNewWallet('Primary', pin);
+	return { recoveryCodes, address: wallet.accounts[0]?.address || '' };
 }

@@ -3,6 +3,7 @@
 	import type { SupportedNetworks, TokenInfo } from '$lib/structure';
 	import { ethers } from 'ethers';
 	import { getContext, onMount } from 'svelte';
+	import { friendlyError } from '$lib/errorDecoder';
 
 	const IERC20_EXT = [
 		'function name() view returns (string)',
@@ -170,7 +171,7 @@
 			mintAmount = '';
 			await loadToken();
 		} catch (e: any) {
-			addFeedback({ message: e.shortMessage || e.message || 'Mint failed', type: 'error' });
+			addFeedback({ message: friendlyError(e), type: 'error' });
 		} finally { actionLoading = false; }
 	}
 
@@ -188,7 +189,7 @@
 			burnAmount = '';
 			await loadToken();
 		} catch (e: any) {
-			addFeedback({ message: e.shortMessage || e.message || 'Burn failed', type: 'error' });
+			addFeedback({ message: friendlyError(e), type: 'error' });
 		} finally { actionLoading = false; }
 	}
 
@@ -213,7 +214,7 @@
 			addFeedback({ message: 'Tax settings updated!', type: 'success' });
 			await loadToken();
 		} catch (e: any) {
-			addFeedback({ message: e.shortMessage || e.message || 'Tax update failed', type: 'error' });
+			addFeedback({ message: friendlyError(e), type: 'error' });
 		} finally { actionLoading = false; }
 	}
 
@@ -252,7 +253,7 @@
 			liqTokenAmount = '';
 			liqEthAmount = '';
 		} catch (e: any) {
-			addFeedback({ message: e.shortMessage || e.message || 'Liquidity failed', type: 'error' });
+			addFeedback({ message: friendlyError(e), type: 'error' });
 		} finally { actionLoading = false; }
 	}
 
