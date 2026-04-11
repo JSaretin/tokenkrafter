@@ -9,6 +9,7 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/proxy/Clones.sol";
 
 import "./TokenImplementations.sol";
+import "./shared/DexInterfaces.sol";
 
 // =============================================================
 // LAUNCHPAD INTERFACE (minimal, for fee queries)
@@ -22,24 +23,7 @@ interface ILaunchpadFee {
 // DEX INTERFACES
 // =============================================================
 
-/// @notice Minimal Uniswap V2 Router interface for fee conversion and price queries.
-interface IUniswapV2Router02 {
-    function factory() external pure returns (address);
-    function WETH() external pure returns (address);
-    function getAmountsIn(uint256 amountOut, address[] calldata path)
-        external view returns (uint256[] memory amounts);
-    function getAmountsOut(uint256 amountIn, address[] calldata path)
-        external view returns (uint256[] memory amounts);
-    function swapExactTokensForTokens(
-        uint256 amountIn,
-        uint256 amountOutMin,
-        address[] calldata path,
-        address to,
-        uint256 deadline
-    ) external returns (uint256[] memory amounts);
-}
-
-// Note: IUniswapV2Factory is imported via TokenImplementations.sol.
+// Note: IUniswapV2Router02 + IUniswapV2Factory come from shared/DexInterfaces.sol
 
 // =============================================================
 // TOKEN FACTORY

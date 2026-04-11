@@ -7,6 +7,7 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "./shared/DexInterfaces.sol";
 
 // =============================================================
 // TOKEN INTERFACES
@@ -51,11 +52,6 @@ interface ITaxableToken {
     function setTaxes(uint256 buyTaxBps, uint256 sellTaxBps, uint256 transferTaxBps) external;
     function setTaxDistribution(address[] calldata wallets, uint16[] calldata sharesBps) external;
     function excludeFromTax(address account, bool exempt) external;
-}
-
-interface IUniswapV2Factory {
-    function createPair(address tokenA, address tokenB) external returns (address pair);
-    function getPair(address tokenA, address tokenB) external view returns (address pair);
 }
 
 // =============================================================

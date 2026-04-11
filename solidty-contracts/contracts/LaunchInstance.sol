@@ -6,6 +6,7 @@ import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/math/Math.sol";
+import "./shared/DexInterfaces.sol";
 
 // =============================================================
 // LAUNCHPAD FACTORY INTERFACE (minimal — avoids circular import)
@@ -114,59 +115,8 @@ library BondingCurve {
 // DEX INTERFACES
 // =============================================================
 
-interface IUniswapV2Router02 {
-    function factory() external pure returns (address);
-    function WETH() external pure returns (address);
-    function addLiquidityETH(
-        address token,
-        uint256 amountTokenDesired,
-        uint256 amountTokenMin,
-        uint256 amountETHMin,
-        address to,
-        uint256 deadline
-    ) external payable returns (uint256 amountToken, uint256 amountETH, uint256 liquidity);
-    function addLiquidity(
-        address tokenA,
-        address tokenB,
-        uint256 amountADesired,
-        uint256 amountBDesired,
-        uint256 amountAMin,
-        uint256 amountBMin,
-        address to,
-        uint256 deadline
-    ) external returns (uint256 amountA, uint256 amountB, uint256 liquidity);
-    function getAmountsOut(uint256 amountIn, address[] calldata path)
-        external view returns (uint256[] memory amounts);
-    function swapExactETHForTokens(
-        uint256 amountOutMin,
-        address[] calldata path,
-        address to,
-        uint256 deadline
-    ) external payable returns (uint256[] memory amounts);
-    function swapExactTokensForTokens(
-        uint256 amountIn,
-        uint256 amountOutMin,
-        address[] calldata path,
-        address to,
-        uint256 deadline
-    ) external returns (uint256[] memory amounts);
-    function getAmountsIn(uint256 amountOut, address[] calldata path)
-        external view returns (uint256[] memory amounts);
-}
-
-interface IUniswapV2Factory {
-    function getPair(address tokenA, address tokenB) external view returns (address pair);
-}
-
-interface IUniswapV2Pair {
-    function token0() external view returns (address);
-    function getReserves() external view returns (uint112 reserve0, uint112 reserve1, uint32 blockTimestampLast);
-    function mint(address to) external returns (uint256 liquidity);
-}
-
-interface IUniswapV2FactoryCreate {
-    function createPair(address tokenA, address tokenB) external returns (address pair);
-}
+// DEX interfaces (IUniswapV2Router02, IUniswapV2Factory, IUniswapV2Pair,
+// IWETH) come from shared/DexInterfaces.sol.
 
 interface IOwnable {
     function owner() external view returns (address);
@@ -725,7 +675,7 @@ contract LaunchInstance is ReentrancyGuard {
         address dexFactory = dexRouter.factory();
         address pair = IUniswapV2Factory(dexFactory).getPair(address(token), address(usdt));
         if (pair == address(0)) {
-            pair = IUniswapV2FactoryCreate(dexFactory).createPair(address(token), address(usdt));
+            pair = IUniswapV2Factory(dexFactory).createPair(address(token), address(usdt));
         }
 
         // Transfer LP amounts directly to the pair

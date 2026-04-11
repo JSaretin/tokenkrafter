@@ -6,14 +6,7 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
-
-interface IDexPair {
-    function mint(address to) external returns (uint256 liquidity);
-}
-
-interface IWETH {
-    function deposit() external payable;
-}
+import "./shared/DexInterfaces.sol";
 
 interface ITokenFactory {
     struct CreateTokenParams {
@@ -69,33 +62,8 @@ interface ILaunchpadFactory {
     function launchFee() external view returns (uint256);
 }
 
-interface IUniswapV2Router02 {
-    function WETH() external pure returns (address);
-    function factory() external pure returns (address);
-    function addLiquidity(
-        address tokenA,
-        address tokenB,
-        uint256 amountADesired,
-        uint256 amountBDesired,
-        uint256 amountAMin,
-        uint256 amountBMin,
-        address to,
-        uint256 deadline
-    ) external returns (uint256 amountA, uint256 amountB, uint256 liquidity);
-    function addLiquidityETH(
-        address token,
-        uint256 amountTokenDesired,
-        uint256 amountTokenMin,
-        uint256 amountETHMin,
-        address to,
-        uint256 deadline
-    ) external payable returns (uint256 amountToken, uint256 amountETH, uint256 liquidity);
-}
-
-interface IUniswapV2Factory {
-    function createPair(address tokenA, address tokenB) external returns (address pair);
-    function getPair(address tokenA, address tokenB) external view returns (address pair);
-}
+// DEX interfaces (IUniswapV2Router02, IUniswapV2Factory, IUniswapV2Pair,
+// IWETH) come from shared/DexInterfaces.sol.
 
 interface IProtectedToken {
     function enableTrading(uint256 delay) external;
@@ -530,7 +498,7 @@ contract PlatformRouter is Ownable, ReentrancyGuard, Pausable {
             // Direct-transfer both sides and mint in one shot.
             IERC20(tokenAddress).safeTransfer(pair, list.tokenAmounts[i]);
             IERC20(base).safeTransfer(pair, baseAmount);
-            uint256 lp = IDexPair(pair).mint(lpRecipient);
+            uint256 lp = IUniswapV2Pair(pair).mint(lpRecipient);
             if (list.burnLP && lp > 0) emit LiquidityBurned(tokenAddress, pair, lp);
         }
 
