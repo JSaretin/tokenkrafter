@@ -47,7 +47,8 @@ interface ILaunchpadFactory {
         uint256 vestingDays_,
         address paymentToken_,
         uint256 startTimestamp_,
-        uint256 lockDurationAfterListing_
+        uint256 lockDurationAfterListing_,
+        uint256 minBuyUsdt_
     ) external payable returns (address);
 
     function notifyDeposit(address launch_, uint256 amount) external;
@@ -179,6 +180,7 @@ contract PlatformRouter is Ownable, ReentrancyGuard, Pausable {
         address launchPaymentToken;
         uint256 startTimestamp;
         uint256 lockDurationAfterListing;  // anti-snipe window after graduation
+        uint256 minBuyUsdt;                // anti-dust floor, in USDT native units
     }
 
     // ----------------------------------------------------------------
@@ -258,7 +260,8 @@ contract PlatformRouter is Ownable, ReentrancyGuard, Pausable {
             launch.vestingDays,
             launch.launchPaymentToken,
             launch.startTimestamp,
-            launch.lockDurationAfterListing
+            launch.lockDurationAfterListing,
+            launch.minBuyUsdt
         );
 
         // Configure protections (router is owner)

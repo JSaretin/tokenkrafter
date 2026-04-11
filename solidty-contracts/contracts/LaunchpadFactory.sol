@@ -244,7 +244,8 @@ contract LaunchpadFactory is Ownable, ReentrancyGuard {
         uint256 creatorAllocationBps_,
         uint256 vestingDays_,
         uint256 startTimestamp_,
-        uint256 lockDurationAfterListing_
+        uint256 lockDurationAfterListing_,
+        uint256 minBuyUsdt_
     ) internal returns (address) {
         if (token_ == address(0)) revert InvalidToken();
         if (totalTokens_ == 0) revert ZeroTokens();
@@ -269,7 +270,8 @@ contract LaunchpadFactory is Ownable, ReentrancyGuard {
             dexRouter,
             usdt,
             startTimestamp_,
-            lockDurationAfterListing_
+            lockDurationAfterListing_,
+            minBuyUsdt_
         );
 
         launches.push(launch);
@@ -308,7 +310,8 @@ contract LaunchpadFactory is Ownable, ReentrancyGuard {
         uint256 vestingDays_,
         address paymentToken_,
         uint256 startTimestamp_,
-        uint256 lockDurationAfterListing_
+        uint256 lockDurationAfterListing_,
+        uint256 minBuyUsdt_
     ) external payable nonReentrant returns (address) {
         // Anyone can create a launch for any ERC20. The real gate is the launch
         // instance's preflight check, which verifies the launch is exempt from
@@ -333,7 +336,8 @@ contract LaunchpadFactory is Ownable, ReentrancyGuard {
             creatorAllocationBps_,
             vestingDays_,
             startTimestamp_,
-            lockDurationAfterListing_
+            lockDurationAfterListing_,
+            minBuyUsdt_
         );
     }
 
@@ -353,7 +357,8 @@ contract LaunchpadFactory is Ownable, ReentrancyGuard {
         uint256 vestingDays_,
         address paymentToken_,
         uint256 startTimestamp_,
-        uint256 lockDurationAfterListing_
+        uint256 lockDurationAfterListing_,
+        uint256 minBuyUsdt_
     ) external payable nonReentrant returns (address) {
         _collectLaunchFee(msg.sender, paymentToken_);
 
@@ -371,7 +376,8 @@ contract LaunchpadFactory is Ownable, ReentrancyGuard {
             creatorAllocationBps_,
             vestingDays_,
             startTimestamp_,
-            lockDurationAfterListing_
+            lockDurationAfterListing_,
+            minBuyUsdt_
         );
     }
 
@@ -390,7 +396,8 @@ contract LaunchpadFactory is Ownable, ReentrancyGuard {
         uint256 vestingDays_,
         address paymentToken_,
         uint256 startTimestamp_,
-        uint256 lockDurationAfterListing_
+        uint256 lockDurationAfterListing_,
+        uint256 minBuyUsdt_
     ) external payable nonReentrant returns (address) {
         if (authorizedRouter == address(0) || msg.sender != authorizedRouter) revert OnlyAuthorizedRouter();
 
@@ -412,7 +419,8 @@ contract LaunchpadFactory is Ownable, ReentrancyGuard {
             creatorAllocationBps_,
             vestingDays_,
             startTimestamp_,
-            lockDurationAfterListing_
+            lockDurationAfterListing_,
+            minBuyUsdt_
         );
     }
 

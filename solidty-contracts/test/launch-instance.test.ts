@@ -52,7 +52,8 @@ describe("LaunchInstance", () => {
         VESTING,
         ethers.ZeroAddress, // paymentToken = native
         0, // startTimestamp = now
-        opts.lockDuration ?? 0
+        opts.lockDuration ?? 0,
+        PARSE_USDT(1) // minBuyUsdt = 1 USDT
       );
     const receipt = await tx.wait();
     const log = receipt!.logs.find(
@@ -334,53 +335,53 @@ describe("LaunchInstance", () => {
       ).to.be.revertedWithCustomError(s.launch, "ZeroAmount");
     });
 
-    it("creatorWithdrawAvailable: balance - tokensSold goes to creator", async () => {
+    it("creatorWithdrawAvailable drains the full contract balance", async () => {
       const s = await refundingLaunch();
 
-      const bobTokens = await s.token.balanceOf(s.bob.address);
-      // At this point: tokensSold = bobTokens (Bob bought them), launch holds
-      // (totalRequired - bobTokens). Available = balance - tokensSold
+      // Refunds are USDT-out / tokens-in, so the contract never holds a
+      // "reserve" for un-refunded buyers. Every token in the balance is
+      // free to withdraw.
       const launchBal = await s.token.balanceOf(await s.launch.getAddress());
-      const sold = await s.launch.tokensSold();
-      expect(sold).to.equal(bobTokens);
-      const expectedAvailable = launchBal - sold;
+      expect(launchBal).to.be.gt(0n);
 
       const creatorBefore = await s.token.balanceOf(s.alice.address);
       await s.launch.connect(s.alice).creatorWithdrawAvailable();
       const creatorAfter = await s.token.balanceOf(s.alice.address);
 
-      expect(creatorAfter - creatorBefore).to.equal(expectedAvailable);
+      expect(creatorAfter - creatorBefore).to.equal(launchBal);
 
-      // Contract now holds exactly what's still owed to Bob
+      // Contract fully drained
       expect(
         await s.token.balanceOf(await s.launch.getAddress())
-      ).to.equal(sold);
+      ).to.equal(0n);
     });
 
     it("creatorWithdrawAvailable after buyer refunds: picks up returned tokens", async () => {
       const s = await refundingLaunch();
 
-      // Snapshot creator's starting balance and the total deposited into the launch
       const creatorStart = await s.token.balanceOf(s.alice.address);
       const deposited = await s.launch.totalTokensRequired();
-
-      // First reclaim: everything except what's still reserved for Bob
-      await s.launch.connect(s.alice).creatorWithdrawAvailable();
-
-      // Bob refunds fully — his tokens come back into the contract AND the
-      // reservation is released (tokensSold → 0). The second reclaim should
-      // pick up both: the returned tokens + the formerly-reserved bucket.
       const bought = await s.launch.tokensBought(s.bob.address);
+
+      // First reclaim: drains everything the curve didn't sell (= deposited - bought)
+      await s.launch.connect(s.alice).creatorWithdrawAvailable();
+      expect(
+        await s.token.balanceOf(s.alice.address) - creatorStart
+      ).to.equal(deposited - bought);
+
+      // Bob refunds fully — his tokens land back in the contract
       await s.token
         .connect(s.bob)
         .approve(await s.launch.getAddress(), bought);
       await s.launch.connect(s.bob).refund(bought);
 
+      // Second reclaim picks up Bob's returned tokens
       await s.launch.connect(s.alice).creatorWithdrawAvailable();
 
-      // Across the two reclaims, the creator has recovered the entire deposit.
-      const creatorEnd = await s.token.balanceOf(s.alice.address);
-      expect(creatorEnd - creatorStart).to.equal(deposited);
+      // Across both calls, creator recovered the entire deposit
+      expect(
+        await s.token.balanceOf(s.alice.address) - creatorStart
+      ).to.equal(deposited);
 
       // Contract drained
       expect(
@@ -538,6 +539,25 @@ describe("LaunchInstance", () => {
       ).to.be.revertedWithCustomError(s.launch, "SendNativeCoin");
     });
 
+    it("reverts with BelowMinBuy when buy is under the configured floor", async () => {
+      const s = await activeLaunchSimple();
+      // minBuyUsdt is PARSE_USDT(1). A buy of 0.5 USDT should revert.
+      await s.usdt.mint(s.bob.address, PARSE_USDT(1));
+      await s.usdt
+        .connect(s.bob)
+        .approve(await s.launch.getAddress(), PARSE_USDT(1));
+      await expect(
+        s.launch
+          .connect(s.bob)
+          .buy(
+            [await s.usdt.getAddress(), await s.usdt.getAddress()],
+            PARSE_USDT(1) / 2n,
+            0,
+            0
+          )
+      ).to.be.revertedWithCustomError(s.launch, "BelowMinBuy");
+    });
+
     it("ERC20 buy reverts if msg.value != 0", async () => {
       const s = await activeLaunchSimple();
       await s.usdt.mint(s.bob.address, PARSE_USDT(10));
@@ -582,7 +602,8 @@ describe("LaunchInstance", () => {
         VESTING,
         ethers.ZeroAddress,
         0,
-        300 // 5-minute anti-snipe window
+        300, // 5-minute anti-snipe window
+        PARSE_USDT(1) // minBuyUsdt
       );
       const receipt = await tx.wait();
       const log = receipt!.logs.find(

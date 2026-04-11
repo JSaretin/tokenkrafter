@@ -37,7 +37,8 @@ describe("LaunchpadFactory", () => {
         0,
         ethers.ZeroAddress,
         0,
-        0
+        0,
+        PARSE_USDT(1) // minBuyUsdt
       );
   }
 
@@ -158,7 +159,8 @@ describe("LaunchpadFactory", () => {
             0,
             ethers.ZeroAddress,
             0,
-            0
+            0,
+            PARSE_USDT(1)
           )
       ).to.be.revertedWithCustomError(s.launchpadFactory, "ZeroTokens");
     });
@@ -184,7 +186,60 @@ describe("LaunchpadFactory", () => {
             0,
             ethers.ZeroAddress,
             0,
-            25 * 3600
+            25 * 3600,
+            PARSE_USDT(1)
+          )
+      ).to.be.reverted;
+    });
+
+    it("rejects minBuyUsdt == 0", async () => {
+      const s = await setup();
+      const { tokenAddress } = await createToken(s, s.alice, {
+        supply: 10_000_000n,
+      });
+      await expect(
+        s.launchpadFactory
+          .connect(s.alice)
+          .createLaunch(
+            tokenAddress,
+            ethers.parseUnits("1000000", 18),
+            LINEAR,
+            SOFT_CAP,
+            HARD_CAP,
+            7,
+            500,
+            0,
+            0,
+            ethers.ZeroAddress,
+            0,
+            0,
+            0
+          )
+      ).to.be.reverted;
+    });
+
+    it("rejects minBuyUsdt > softCap", async () => {
+      const s = await setup();
+      const { tokenAddress } = await createToken(s, s.alice, {
+        supply: 10_000_000n,
+      });
+      await expect(
+        s.launchpadFactory
+          .connect(s.alice)
+          .createLaunch(
+            tokenAddress,
+            ethers.parseUnits("1000000", 18),
+            LINEAR,
+            SOFT_CAP,
+            HARD_CAP,
+            7,
+            500,
+            0,
+            0,
+            ethers.ZeroAddress,
+            0,
+            0,
+            SOFT_CAP + 1n
           )
       ).to.be.reverted;
     });

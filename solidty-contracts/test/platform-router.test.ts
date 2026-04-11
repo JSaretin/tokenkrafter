@@ -204,6 +204,7 @@ describe("PlatformRouter", () => {
         launchPaymentToken: ethers.ZeroAddress,
         startTimestamp: 0n,
         lockDurationAfterListing: 300n,
+        minBuyUsdt: PARSE_USDT(1),
       };
 
       const tx = await s.router

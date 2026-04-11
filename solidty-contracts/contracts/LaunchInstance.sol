@@ -239,6 +239,14 @@ contract LaunchInstance is ReentrancyGuard {
     IERC20 public usdt;
     uint256 public baseScale;
 
+    /// @notice Minimum USDT value (in USDT's native units) per buy. Set by
+    ///         the creator at launch creation time. Anti-dust floor that
+    ///         prevents flooding `_purchases` history with near-zero buys.
+    ///         Denominated in the chain's USDT native units (6 on Ethereum,
+    ///         18 on BSC-peg, etc.) — the frontend wizard converts the
+    ///         creator's "$ minimum" input to the right unit count.
+    uint256 public minBuyUsdt;
+
     uint256 public curveParam1;
     uint256 public curveParam2;
 
@@ -321,6 +329,8 @@ contract LaunchInstance is ReentrancyGuard {
 
     // ── Errors ──────────────────────────────────────────────────
     error AlreadyInitialized();
+    error BelowMinBuy();
+    error InvalidMinBuy();
 
     // ── Initialize (replaces constructor for clone pattern) ────
     /// @notice Called once by the factory immediately after cloning.
@@ -341,7 +351,8 @@ contract LaunchInstance is ReentrancyGuard {
         address dexRouter_,
         address usdt_,
         uint256 startTimestamp_,
-        uint256 lockDurationAfterListing_
+        uint256 lockDurationAfterListing_,
+        uint256 minBuyUsdt_
     ) external {
         if (_initialized) revert AlreadyInitialized();
         _initialized = true;
@@ -357,6 +368,10 @@ contract LaunchInstance is ReentrancyGuard {
         if (startTimestamp_ != 0 && startTimestamp_ <= block.timestamp) revert InvalidStartTimestamp();
         // Mirror the token's MAX_TRADING_DELAY cap (24 hours).
         if (lockDurationAfterListing_ > 24 hours) revert InvalidDuration();
+        // minBuyUsdt must be > 0 (otherwise no anti-dust floor) and <= softCap
+        // (otherwise a single buy could skip past the soft cap with one tx,
+        // and no realistic creator wants a minimum higher than their softCap).
+        if (minBuyUsdt_ == 0 || minBuyUsdt_ > softCap_) revert InvalidMinBuy();
 
         factory = payable(msg.sender);
         creator = creator_;
@@ -387,6 +402,7 @@ contract LaunchInstance is ReentrancyGuard {
         vestingDuration = vestingDays_ * 1 days;
         vestingCliff = vestingDays_ > 0 ? 7 days : 0;
         lockDurationAfterListing = lockDurationAfterListing_;
+        minBuyUsdt = minBuyUsdt_;
 
         state = LaunchState.Pending;
     }
@@ -584,6 +600,10 @@ contract LaunchInstance is ReentrancyGuard {
     /// @dev Internal buy logic. All amounts are in USDT after conversion.
     ///      1% buy fee taken before curve math. Refunds return basePaid (net after fee).
     function _processBuy(address buyer, uint256 usdtAmount, uint256 minTokensOut) internal {
+        // Anti-dust floor: reject buys below the creator-set minimum so an
+        // attacker can't flood `_purchases` with near-zero entries.
+        if (usdtAmount < minBuyUsdt) revert BelowMinBuy();
+
         // Take buy fee upfront — send immediately to platform
         uint256 buyFee = (usdtAmount * BUY_FEE_BPS) / BPS;
         uint256 baseForTokens = usdtAmount - buyFee;
@@ -800,32 +820,33 @@ contract LaunchInstance is ReentrancyGuard {
         emit Refunded(msg.sender, refundBase);
     }
 
-    /// @notice Creator reclaims launch tokens that aren't owed to any
-    ///         un-refunded buyer. Callable any time during Refunding.
+    /// @notice Creator reclaims launch tokens currently held by the contract.
+    ///         Callable any time during Refunding.
     ///
-    ///         Formula: `available = balance - tokensSold`. `tokensSold`
-    ///         is the exact count of launch tokens still owed to buyers
-    ///         who haven't refunded yet (each refund decrements it), so
-    ///         anything in the contract balance beyond that is free to
-    ///         take. As buyers refund, their returned tokens lift
-    ///         `balance` while leaving `tokensSold` at the new lower
-    ///         level — subsequent calls pick up the difference.
+    ///         Simple because refunds are USDT-out / tokens-in: the contract
+    ///         never needs a token reserve to honor refund obligations. When
+    ///         a buyer refunds, they transfer tokens INTO the contract; they
+    ///         don't withdraw any. So every token sitting in the contract at
+    ///         any moment during Refunding is safe for the creator to take.
+    ///
+    ///         Incremental behavior: initial call drains whatever wasn't
+    ///         sold from the curve. As buyers refund, their returned tokens
+    ///         accumulate in the balance and a subsequent call picks them up.
     ///
     ///         This replaces the old "wait 90 days or until all refunds"
-    ///         pattern which permanently locked tokens when even one
-    ///         buyer abandoned their refund.
+    ///         pattern which permanently locked tokens when even one buyer
+    ///         abandoned their refund.
     function creatorWithdrawAvailable() external onlyCreator nonReentrant {
         if (state != LaunchState.Refunding) revert NotRefunding();
-        uint256 balance = token.balanceOf(address(this));
-        uint256 stillOwed = tokensSold;
-        uint256 available = balance > stillOwed ? balance - stillOwed : 0;
+        uint256 available = token.balanceOf(address(this));
         if (available == 0) revert NoTokens();
 
         token.safeTransfer(creator, available);
 
-        // Clear the factory's tokenToLaunch slot the first time the full
-        // creator stake has been reclaimed — allows re-launching this token.
-        // Safe to call repeatedly (idempotent on the factory side).
+        // Clear the factory's tokenToLaunch slot so the creator (or anyone)
+        // can re-launch this token. Safe to call repeatedly — the factory
+        // side is idempotent, and the try/catch protects against external
+        // factories that may not implement clearTokenLaunch.
         try ILaunchpadFactory(factory).clearTokenLaunch(address(token)) {} catch {}
 
         emit CreatorReclaim(creator, available);
