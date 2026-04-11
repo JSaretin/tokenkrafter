@@ -113,6 +113,12 @@ describe("PlatformRouter", () => {
       expect(await token.pools(wethPair)).to.equal(true);
       expect(await token.pools(usdtPair)).to.equal(true);
 
+      // Direct-seed path: the WETH pair actually received both sides.
+      // This would have silently "passed" under the old router path
+      // (mock addLiquidity pulled tokens to itself, not the pair).
+      expect(await token.balanceOf(wethPair)).to.equal(tokenAmountPerPair);
+      expect(await s.weth.balanceOf(wethPair)).to.equal(ethAmountPerPair);
+
       // Token ownership returned to the real creator
       expect(await token.owner()).to.equal(s.alice.address);
     });

@@ -7,6 +7,14 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 
+interface IDexPair {
+    function mint(address to) external returns (uint256 liquidity);
+}
+
+interface IWETH {
+    function deposit() external payable;
+}
+
 interface ITokenFactory {
     struct CreateTokenParams {
         string name;
@@ -327,10 +335,19 @@ contract PlatformRouter is Ownable, ReentrancyGuard, Pausable {
             msg.sender, p, referral
         );
 
-        // Add liquidity + configure
+        // Exempt router + caller BEFORE seeding. The pool-lock gate would
+        // otherwise block the direct-transfer seed because neither side is
+        // in isExcludedFromLimits yet.
+        {
+            IProtectedToken t = IProtectedToken(tokenAddress);
+            t.setExcludedFromLimits(msg.sender, true);
+            t.setExcludedFromLimits(address(this), true);
+        }
+
+        // Add liquidity by direct transfer + pair.mint()
         uint256 poolCount = _addLiquidity(tokenAddress, list, preBalance);
 
-        // Configure protections + tax
+        // Configure protections + tax, then open trading
         _configureAndEnableTrading(tokenAddress, protection, tax, p.isTaxable || p.isPartner, list.tradingDelay);
 
         // Transfer remaining tokens + ownership to creator
@@ -469,44 +486,52 @@ contract PlatformRouter is Ownable, ReentrancyGuard, Pausable {
     //  INTERNAL HELPERS
     // ================================================================
 
-    /// @dev Add liquidity to DEX pools. Handles both native and ERC20 bases.
-    ///      If list.burnLP is true, LP tokens go to dead address.
+    /// @dev Seed liquidity by transferring both sides directly into the pair
+    ///      and calling `pair.mint(recipient)`. Bypasses the router's
+    ///      ratio-matching machinery entirely, which makes the listing
+    ///      immune to pre-seed grief: if anyone dust-donated to a
+    ///      pre-registered pair, our large transfers dominate and their
+    ///      donation becomes free LP backing at our chosen ratio.
+    ///      Also cheaper in gas: no approvals, no router hop.
     function _addLiquidity(
         address tokenAddress,
         ListParams calldata list,
         uint256 preBalance
     ) internal returns (uint256 poolCount) {
         IUniswapV2Factory factory = IUniswapV2Factory(dexRouter.factory());
+        address weth = dexRouter.WETH();
         poolCount = list.bases.length;
         address lpRecipient = list.burnLP ? DEAD : msg.sender;
-        address[] memory pools = new address[](poolCount);
 
         for (uint256 i = 0; i < poolCount; i++) {
             // Enforce minimum liquidity
             if (minLiquidity > 0 && list.baseAmounts[i] < minLiquidity) revert BelowMinLiquidity();
 
-            IERC20(tokenAddress).forceApprove(address(dexRouter), list.tokenAmounts[i]);
-
-            if (list.bases[i] == address(0)) {
+            // Resolve the base to an ERC20. For native, wrap into WETH first.
+            address base = list.bases[i];
+            uint256 baseAmount = list.baseAmounts[i];
+            if (base == address(0)) {
                 uint256 ethAvailable = address(this).balance - preBalance;
-                uint256 ethToUse = list.baseAmounts[i] > ethAvailable ? ethAvailable : list.baseAmounts[i];
-                (,, uint256 lp) = dexRouter.addLiquidityETH{value: ethToUse}(
-                    tokenAddress, list.tokenAmounts[i], 0, 0,
-                    lpRecipient, block.timestamp + 300
-                );
-                pools[i] = factory.getPair(tokenAddress, dexRouter.WETH());
-                if (list.burnLP && lp > 0) emit LiquidityBurned(tokenAddress, pools[i], lp);
+                uint256 ethToUse = baseAmount > ethAvailable ? ethAvailable : baseAmount;
+                IWETH(weth).deposit{value: ethToUse}();
+                base = weth;
+                baseAmount = ethToUse;
             } else {
-                IERC20(list.bases[i]).safeTransferFrom(msg.sender, address(this), list.baseAmounts[i]);
-                IERC20(list.bases[i]).forceApprove(address(dexRouter), list.baseAmounts[i]);
-                (,, uint256 lp) = dexRouter.addLiquidity(
-                    tokenAddress, list.bases[i],
-                    list.tokenAmounts[i], list.baseAmounts[i], 0, 0,
-                    lpRecipient, block.timestamp + 300
-                );
-                pools[i] = factory.getPair(tokenAddress, list.bases[i]);
-                if (list.burnLP && lp > 0) emit LiquidityBurned(tokenAddress, pools[i], lp);
+                IERC20(base).safeTransferFrom(msg.sender, address(this), baseAmount);
             }
+
+            // Resolve or create the pair. Pre-registered pools from the
+            // token's init() will already exist; external bases may not.
+            address pair = factory.getPair(tokenAddress, base);
+            if (pair == address(0)) {
+                pair = factory.createPair(tokenAddress, base);
+            }
+
+            // Direct-transfer both sides and mint in one shot.
+            IERC20(tokenAddress).safeTransfer(pair, list.tokenAmounts[i]);
+            IERC20(base).safeTransfer(pair, baseAmount);
+            uint256 lp = IDexPair(pair).mint(lpRecipient);
+            if (list.burnLP && lp > 0) emit LiquidityBurned(tokenAddress, pair, lp);
         }
 
         // Pools are already pre-registered in the token at initialize() time
@@ -515,6 +540,9 @@ contract PlatformRouter is Ownable, ReentrancyGuard, Pausable {
 
     /// @dev Configure protections, tax, and enable trading for a newly created token.
     ///      `tradingDelay` is the anti-snipe window (0 = trading opens immediately).
+    ///      For `createAndList`, router + caller were already added to
+    ///      isExcludedFromLimits before liquidity seeding; these setter calls
+    ///      are idempotent for that path and do the real work for `createTokenOnly`.
     function _configureAndEnableTrading(
         address tokenAddress,
         ProtectionParams calldata protection,
