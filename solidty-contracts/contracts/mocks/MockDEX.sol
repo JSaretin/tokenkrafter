@@ -33,7 +33,48 @@ contract MockWETH is ERC20 {
     receive() external payable { _mint(msg.sender, msg.value); }
 }
 
-/// @dev Minimal mock Uniswap V2 Factory
+/// @dev Minimal mock Uniswap V2 Pair. Implements just enough to let
+///      `LaunchInstance._graduate` complete in tests:
+///        - tokens are transferred into the pair by the caller
+///        - `mint(to)` snapshots balances, issues 1 LP unit to `to`, and
+///          records reserves so `getReserves` returns sensible values
+contract MockUniswapV2Pair {
+    address public token0;
+    address public token1;
+    uint112 private _reserve0;
+    uint112 private _reserve1;
+    uint256 public totalSupply;
+    mapping(address => uint256) public balanceOf;
+
+    constructor(address _token0, address _token1) {
+        // sort addresses to match V2 canonical order
+        if (_token0 < _token1) { token0 = _token0; token1 = _token1; }
+        else { token0 = _token1; token1 = _token0; }
+    }
+
+    function getReserves() external view returns (uint112, uint112, uint32) {
+        return (_reserve0, _reserve1, uint32(block.timestamp));
+    }
+
+    function mint(address to) external returns (uint256 liquidity) {
+        uint256 b0 = IERC20(token0).balanceOf(address(this));
+        uint256 b1 = IERC20(token1).balanceOf(address(this));
+        liquidity = 1e18;
+        totalSupply += liquidity;
+        balanceOf[to] += liquidity;
+        _reserve0 = uint112(b0);
+        _reserve1 = uint112(b1);
+    }
+
+    function sync() external {
+        _reserve0 = uint112(IERC20(token0).balanceOf(address(this)));
+        _reserve1 = uint112(IERC20(token1).balanceOf(address(this)));
+    }
+}
+
+/// @dev Minimal mock Uniswap V2 Factory. `createPair` deploys a real
+///      `MockUniswapV2Pair` contract (not just a pseudo-address) so it can
+///      be called by `mint()` during graduation tests.
 contract MockUniswapV2Factory {
     mapping(address => mapping(address => address)) public pairs;
 
@@ -42,8 +83,10 @@ contract MockUniswapV2Factory {
     }
 
     function createPair(address tokenA, address tokenB) external returns (address pair) {
-        // Create a deterministic "pair" address (just a placeholder)
-        pair = address(uint160(uint256(keccak256(abi.encodePacked(tokenA, tokenB, block.timestamp)))));
+        require(tokenA != tokenB, "identical");
+        require(pairs[tokenA][tokenB] == address(0), "exists");
+        MockUniswapV2Pair p = new MockUniswapV2Pair(tokenA, tokenB);
+        pair = address(p);
         pairs[tokenA][tokenB] = pair;
         pairs[tokenB][tokenA] = pair;
         return pair;
