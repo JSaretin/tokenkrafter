@@ -213,8 +213,8 @@ describe("LaunchInstance", () => {
         .approve(await s.launch.getAddress(), PARSE_USDT(50));
 
       await expect(
-        s.launch.connect(s.bob).buyWithToken(
-          await s.usdt.getAddress(),
+        s.launch.connect(s.bob).buy(
+          [await s.usdt.getAddress(), await s.usdt.getAddress()],
           PARSE_USDT(50),
           0,
           0
@@ -233,7 +233,12 @@ describe("LaunchInstance", () => {
         .approve(await s.launch.getAddress(), PARSE_USDT(50));
       await s.launch
         .connect(s.bob)
-        .buyWithToken(await s.usdt.getAddress(), PARSE_USDT(50), 0, 0);
+        .buy(
+          [await s.usdt.getAddress(), await s.usdt.getAddress()],
+          PARSE_USDT(50),
+          0,
+          0
+        );
 
       const tokensOwned = await s.token.balanceOf(s.bob.address);
       expect(tokensOwned).to.be.gt(0n);
@@ -245,17 +250,311 @@ describe("LaunchInstance", () => {
 
       // Bob approves and refunds — this transfers his tokens BACK to the
       // launch (to address is launch, which is excludedFromLimits, so the
-      // pool-lock gate passes).
+      // pool-lock gate passes). Full refund = returning the entire
+      // tokensBought amount.
       await s.token
         .connect(s.bob)
         .approve(await s.launch.getAddress(), tokensOwned);
       const usdtBefore = await s.usdt.balanceOf(s.bob.address);
       const basePaid = await s.launch.basePaid(s.bob.address); // net after 1% buy fee
-      await s.launch.connect(s.bob).refund();
+      await s.launch.connect(s.bob).refund(tokensOwned);
 
       // Got back exactly what he paid net of the buy fee
       expect(await s.usdt.balanceOf(s.bob.address)).to.equal(usdtBefore + basePaid);
       expect(await s.token.balanceOf(s.bob.address)).to.equal(0n);
+    });
+  });
+
+  describe("partial refund + creatorWithdrawAvailable", () => {
+    async function refundingLaunch() {
+      const s = await setup();
+      const { token, launch, launchAddress } = await createTokenWithLaunch(s);
+      const requiredTokens = await launch.totalTokensRequired();
+      await token.connect(s.alice).setExcludedFromLimits(launchAddress, true);
+      await token.connect(s.alice).setAuthorizedLauncher(launchAddress, true);
+      await token.connect(s.alice).approve(launchAddress, requiredTokens);
+      await launch.connect(s.alice).depositTokens(requiredTokens);
+
+      // Bob buys a small amount, then deadline passes → Refunding
+      await s.usdt.mint(s.bob.address, PARSE_USDT(50));
+      await s.usdt.connect(s.bob).approve(launchAddress, PARSE_USDT(50));
+      await launch
+        .connect(s.bob)
+        .buy(
+          [await s.usdt.getAddress(), await s.usdt.getAddress()],
+          PARSE_USDT(50),
+          0,
+          0
+        );
+
+      await time.increase(DURATION_DAYS * 24 * 3600 + 1);
+      await launch.enableRefunds();
+      return { ...s, token, launch, launchAddress };
+    }
+
+    it("partial refund returns pro-rata USDT and leaves residual entitlement", async () => {
+      const s = await refundingLaunch();
+      const owned = await s.token.balanceOf(s.bob.address);
+      const half = owned / 2n;
+
+      const paidBefore = await s.launch.basePaid(s.bob.address);
+      await s.token
+        .connect(s.bob)
+        .approve(await s.launch.getAddress(), half);
+      const usdtBefore = await s.usdt.balanceOf(s.bob.address);
+
+      await s.launch.connect(s.bob).refund(half);
+
+      // Half the tokens returned → half the USDT entitlement (± rounding)
+      const usdtAfter = await s.usdt.balanceOf(s.bob.address);
+      const received = usdtAfter - usdtBefore;
+      const expected = (paidBefore * half) / owned;
+      expect(received).to.equal(expected);
+
+      // Bob still has entitlement to the other half
+      expect(await s.launch.basePaid(s.bob.address)).to.equal(paidBefore - expected);
+      expect(await s.launch.tokensBought(s.bob.address)).to.equal(owned - half);
+    });
+
+    it("refund with tokensToReturn > bought reverts", async () => {
+      const s = await refundingLaunch();
+      const bought = await s.launch.tokensBought(s.bob.address);
+      await s.token
+        .connect(s.bob)
+        .approve(await s.launch.getAddress(), bought + 1n);
+      await expect(
+        s.launch.connect(s.bob).refund(bought + 1n)
+      ).to.be.revertedWithCustomError(s.launch, "ZeroAmount");
+    });
+
+    it("refund(0) reverts", async () => {
+      const s = await refundingLaunch();
+      await expect(
+        s.launch.connect(s.bob).refund(0n)
+      ).to.be.revertedWithCustomError(s.launch, "ZeroAmount");
+    });
+
+    it("creatorWithdrawAvailable: balance - tokensSold goes to creator", async () => {
+      const s = await refundingLaunch();
+
+      const bobTokens = await s.token.balanceOf(s.bob.address);
+      // At this point: tokensSold = bobTokens (Bob bought them), launch holds
+      // (totalRequired - bobTokens). Available = balance - tokensSold
+      const launchBal = await s.token.balanceOf(await s.launch.getAddress());
+      const sold = await s.launch.tokensSold();
+      expect(sold).to.equal(bobTokens);
+      const expectedAvailable = launchBal - sold;
+
+      const creatorBefore = await s.token.balanceOf(s.alice.address);
+      await s.launch.connect(s.alice).creatorWithdrawAvailable();
+      const creatorAfter = await s.token.balanceOf(s.alice.address);
+
+      expect(creatorAfter - creatorBefore).to.equal(expectedAvailable);
+
+      // Contract now holds exactly what's still owed to Bob
+      expect(
+        await s.token.balanceOf(await s.launch.getAddress())
+      ).to.equal(sold);
+    });
+
+    it("creatorWithdrawAvailable after buyer refunds: picks up returned tokens", async () => {
+      const s = await refundingLaunch();
+
+      // Snapshot creator's starting balance and the total deposited into the launch
+      const creatorStart = await s.token.balanceOf(s.alice.address);
+      const deposited = await s.launch.totalTokensRequired();
+
+      // First reclaim: everything except what's still reserved for Bob
+      await s.launch.connect(s.alice).creatorWithdrawAvailable();
+
+      // Bob refunds fully — his tokens come back into the contract AND the
+      // reservation is released (tokensSold → 0). The second reclaim should
+      // pick up both: the returned tokens + the formerly-reserved bucket.
+      const bought = await s.launch.tokensBought(s.bob.address);
+      await s.token
+        .connect(s.bob)
+        .approve(await s.launch.getAddress(), bought);
+      await s.launch.connect(s.bob).refund(bought);
+
+      await s.launch.connect(s.alice).creatorWithdrawAvailable();
+
+      // Across the two reclaims, the creator has recovered the entire deposit.
+      const creatorEnd = await s.token.balanceOf(s.alice.address);
+      expect(creatorEnd - creatorStart).to.equal(deposited);
+
+      // Contract drained
+      expect(
+        await s.token.balanceOf(await s.launch.getAddress())
+      ).to.equal(0n);
+    });
+
+    it("creatorWithdrawAvailable reverts when nothing available", async () => {
+      const s = await refundingLaunch();
+      // First drain all the free tokens
+      await s.launch.connect(s.alice).creatorWithdrawAvailable();
+      // Second call: balance - tokensSold = 0 → revert
+      await expect(
+        s.launch.connect(s.alice).creatorWithdrawAvailable()
+      ).to.be.revertedWithCustomError(s.launch, "NoTokens");
+    });
+
+    it("creatorWithdrawAvailable reverts outside Refunding state", async () => {
+      const s = await setup();
+      const { token, launch, launchAddress } = await createTokenWithLaunch(s);
+      const req = await launch.totalTokensRequired();
+      await token.connect(s.alice).setExcludedFromLimits(launchAddress, true);
+      await token.connect(s.alice).setAuthorizedLauncher(launchAddress, true);
+      await token.connect(s.alice).approve(launchAddress, req);
+      await launch.connect(s.alice).depositTokens(req);
+      // state is Active, not Refunding
+      await expect(
+        launch.connect(s.alice).creatorWithdrawAvailable()
+      ).to.be.revertedWithCustomError(launch, "NotRefunding");
+    });
+
+    it("only creator can call creatorWithdrawAvailable", async () => {
+      const s = await refundingLaunch();
+      await expect(
+        s.launch.connect(s.bob).creatorWithdrawAvailable()
+      ).to.be.revertedWithCustomError(s.launch, "NotCreator");
+    });
+  });
+
+  describe("sweepStrandedUsdt", () => {
+    it("reverts before 90 days have passed", async () => {
+      const s = await setup();
+      const { token, launch, launchAddress } = await createTokenWithLaunch(s);
+      const req = await launch.totalTokensRequired();
+      await token.connect(s.alice).setExcludedFromLimits(launchAddress, true);
+      await token.connect(s.alice).setAuthorizedLauncher(launchAddress, true);
+      await token.connect(s.alice).approve(launchAddress, req);
+      await launch.connect(s.alice).depositTokens(req);
+
+      await time.increase(DURATION_DAYS * 24 * 3600 + 1);
+      await launch.enableRefunds();
+
+      await expect(
+        launch.connect(s.alice).sweepStrandedUsdt()
+      ).to.be.revertedWithCustomError(launch, "StrandedSweepTooEarly");
+    });
+
+    it("after 90 days, stranded USDT can be swept to platform wallet", async () => {
+      const s = await setup();
+      const { token, launch, launchAddress } = await createTokenWithLaunch(s);
+      const req = await launch.totalTokensRequired();
+      await token.connect(s.alice).setExcludedFromLimits(launchAddress, true);
+      await token.connect(s.alice).setAuthorizedLauncher(launchAddress, true);
+      await token.connect(s.alice).approve(launchAddress, req);
+      await launch.connect(s.alice).depositTokens(req);
+
+      // Bob buys some, deadline passes, refunds enabled
+      await s.usdt.mint(s.bob.address, PARSE_USDT(30));
+      await s.usdt.connect(s.bob).approve(launchAddress, PARSE_USDT(30));
+      await launch
+        .connect(s.bob)
+        .buy(
+          [await s.usdt.getAddress(), await s.usdt.getAddress()],
+          PARSE_USDT(30),
+          0,
+          0
+        );
+      await time.increase(DURATION_DAYS * 24 * 3600 + 1);
+      await launch.enableRefunds();
+
+      // Bob never refunds — 90 days pass
+      await time.increase(90 * 24 * 3600 + 1);
+
+      const platformBefore = await s.usdt.balanceOf(s.platform.address);
+      await launch.connect(s.alice).sweepStrandedUsdt();
+      const platformAfter = await s.usdt.balanceOf(s.platform.address);
+      expect(platformAfter).to.be.gt(platformBefore);
+    });
+  });
+
+  describe("buy path validation", () => {
+    async function activeLaunchSimple() {
+      const s = await setup();
+      const { token, launch, launchAddress } = await createTokenWithLaunch(s);
+      const req = await launch.totalTokensRequired();
+      await token.connect(s.alice).setExcludedFromLimits(launchAddress, true);
+      await token.connect(s.alice).setAuthorizedLauncher(launchAddress, true);
+      await token.connect(s.alice).approve(launchAddress, req);
+      await launch.connect(s.alice).depositTokens(req);
+      return { ...s, token, launch, launchAddress };
+    }
+
+    it("reverts if path length < 2", async () => {
+      const s = await activeLaunchSimple();
+      await expect(
+        s.launch
+          .connect(s.bob)
+          .buy([await s.usdt.getAddress()], PARSE_USDT(10), 0, 0)
+      ).to.be.revertedWithCustomError(s.launch, "InvalidPath");
+    });
+
+    it("reverts if path doesn't end at USDT", async () => {
+      const s = await activeLaunchSimple();
+      await expect(
+        s.launch
+          .connect(s.bob)
+          .buy(
+            [await s.usdt.getAddress(), await s.weth.getAddress()],
+            PARSE_USDT(10),
+            0,
+            0
+          )
+      ).to.be.revertedWithCustomError(s.launch, "PathMustEndAtUsdt");
+    });
+
+    it("native buy: path[0]=address(0) + msg.value matches amountIn", async () => {
+      const s = await activeLaunchSimple();
+      const ethIn = ethers.parseEther("0.1");
+      await expect(
+        s.launch
+          .connect(s.bob)
+          .buy(
+            [ethers.ZeroAddress, await s.usdt.getAddress()],
+            ethIn,
+            0,
+            0,
+            { value: ethIn }
+          )
+      ).to.not.be.reverted;
+      expect(await s.token.balanceOf(s.bob.address)).to.be.gt(0n);
+    });
+
+    it("native buy reverts if msg.value != amountIn", async () => {
+      const s = await activeLaunchSimple();
+      await expect(
+        s.launch
+          .connect(s.bob)
+          .buy(
+            [ethers.ZeroAddress, await s.usdt.getAddress()],
+            ethers.parseEther("0.1"),
+            0,
+            0,
+            { value: ethers.parseEther("0.05") }
+          )
+      ).to.be.revertedWithCustomError(s.launch, "SendNativeCoin");
+    });
+
+    it("ERC20 buy reverts if msg.value != 0", async () => {
+      const s = await activeLaunchSimple();
+      await s.usdt.mint(s.bob.address, PARSE_USDT(10));
+      await s.usdt
+        .connect(s.bob)
+        .approve(await s.launch.getAddress(), PARSE_USDT(10));
+      await expect(
+        s.launch
+          .connect(s.bob)
+          .buy(
+            [await s.usdt.getAddress(), await s.usdt.getAddress()],
+            PARSE_USDT(10),
+            0,
+            0,
+            { value: ethers.parseEther("0.01") }
+          )
+      ).to.be.revertedWithCustomError(s.launch, "SendNativeCoin");
     });
   });
 
@@ -315,7 +614,7 @@ describe("LaunchInstance", () => {
         try {
           await s.launch
             .connect(buyer)
-            .buyWithToken(usdtAddr, PARSE_USDT(10), 0, 0);
+            .buy([usdtAddr, usdtAddr], PARSE_USDT(10), 0, 0);
         } catch {
           // Graduation happened mid-loop; stop buying
           break;

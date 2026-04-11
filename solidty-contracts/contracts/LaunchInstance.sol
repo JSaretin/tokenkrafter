@@ -221,6 +221,9 @@ contract LaunchInstance is ReentrancyGuard {
     error InsufficientTokensOut();
     error LaunchNotStarted();
     error InvalidStartTimestamp();
+    error InvalidPath();
+    error PathMustEndAtUsdt();
+    error StrandedSweepTooEarly();
 
     // ── Enums ──────────────────────────────────────────────────
     enum CurveType { Linear, SquareRoot, Quadratic, Exponential }
@@ -303,6 +306,7 @@ contract LaunchInstance is ReentrancyGuard {
     event CreatorClaimed(address indexed creator, uint256 amount);
     event RefundingEnabled();
     event CreatorWithdraw(address indexed creator, uint256 tokenAmount);
+    event CreatorReclaim(address indexed creator, uint256 tokenAmount);
 
     // ── Modifiers ──────────────────────────────────────────────
     modifier onlyActive() {
@@ -502,67 +506,73 @@ contract LaunchInstance is ReentrancyGuard {
 
     // ── Buy ────────────────────────────────────────────────────
 
-    /// @notice Buy tokens with native coin (ETH/BNB). Auto-converts to USDT via DEX.
-    /// @param minUsdtOut Minimum USDT to receive from the DEX swap (slippage protection)
-    /// @param minTokensOut Minimum tokens to receive from bonding curve (slippage protection)
-    function buy(uint256 minUsdtOut, uint256 minTokensOut) external payable nonReentrant onlyActive {
-        if (msg.value == 0) revert SendNativeCoin();
+    /// @notice Unified buy entrypoint. One function handles every payment mode:
+    ///           - Native coin:   path = [address(0), ..., USDT],  msg.value = amountIn
+    ///           - USDT direct:   path = [USDT, USDT],             msg.value = 0
+    ///           - Any ERC20:     path = [token, ..., USDT],       msg.value = 0
+    ///
+    ///         The frontend computes the best path off-chain using cached pool
+    ///         reserves (see findBestRoute in tradeLens.ts) and passes it in.
+    ///         This lets us pick multi-hop routes like [WBNB, USDC, USDT] when
+    ///         they yield more than the hardcoded two-hop alternative, and
+    ///         avoids routing through dust-liquidity pools.
+    ///
+    /// @param path         [paymentToken, ..., USDT] — last hop MUST be USDT.
+    ///                     First element address(0) signals native payment.
+    /// @param amountIn     Amount of path[0] to spend (must equal msg.value for native)
+    /// @param minUsdtOut   Minimum USDT to receive from the swap (slippage protection)
+    /// @param minTokensOut Minimum launch tokens to receive from the curve
+    function buy(
+        address[] calldata path,
+        uint256 amountIn,
+        uint256 minUsdtOut,
+        uint256 minTokensOut
+    ) external payable nonReentrant onlyActive {
+        if (amountIn == 0) revert ZeroAmount();
+        if (path.length < 2) revert InvalidPath();
+        if (path[path.length - 1] != address(usdt)) revert PathMustEndAtUsdt();
         if (startTimestamp > 0 && block.timestamp < startTimestamp) revert LaunchNotStarted();
         if (block.timestamp >= deadline) revert LaunchExpired();
 
-        // Swap native coin → USDT via DEX
-        address weth = dexRouter.WETH();
-        address[] memory path = new address[](2);
-        path[0] = weth;
-        path[1] = address(usdt);
-
-        uint256[] memory amounts = dexRouter.swapExactETHForTokens{value: msg.value}(
-            minUsdtOut,
-            path,
-            address(this),
-            block.timestamp + 300
-        );
-
-        uint256 usdtReceived = amounts[amounts.length - 1];
-        _processBuy(msg.sender, usdtReceived, minTokensOut);
-    }
-
-    /// @notice Buy tokens with an ERC20 token (USDT, USDC, etc.). Non-USDT tokens are auto-converted.
-    /// @param paymentToken The ERC20 token address to pay with
-    /// @param amount Amount of paymentToken to spend
-    /// @param minUsdtOut Minimum USDT to receive from the DEX swap (slippage protection, ignored if paying in USDT)
-    /// @param minTokensOut Minimum tokens to receive from bonding curve (slippage protection)
-    function buyWithToken(address paymentToken, uint256 amount, uint256 minUsdtOut, uint256 minTokensOut) external nonReentrant onlyActive {
-        if (amount == 0) revert ZeroAmount();
-        if (startTimestamp > 0 && block.timestamp < startTimestamp) revert LaunchNotStarted();
-        if (block.timestamp >= deadline) revert LaunchExpired();
-
-        IERC20(paymentToken).safeTransferFrom(msg.sender, address(this), amount);
-
+        address paymentToken = path[0];
         uint256 usdtAmount;
-        if (paymentToken == address(usdt)) {
-            usdtAmount = amount;
+
+        if (paymentToken == address(0)) {
+            // Native coin: msg.value must match amountIn exactly (no under/over pay).
+            if (msg.value != amountIn) revert SendNativeCoin();
+
+            // Rewrite the path's first entry to WETH for the swap call.
+            address weth = dexRouter.WETH();
+            address[] memory fullPath = new address[](path.length);
+            fullPath[0] = weth;
+            for (uint256 i = 1; i < path.length;) {
+                fullPath[i] = path[i];
+                unchecked { ++i; }
+            }
+            uint256[] memory amounts = dexRouter.swapExactETHForTokens{value: amountIn}(
+                minUsdtOut,
+                fullPath,
+                address(this),
+                block.timestamp + 300
+            );
+            usdtAmount = amounts[amounts.length - 1];
         } else {
-            // Swap paymentToken → USDT via DEX
-            IERC20(paymentToken).forceApprove(address(dexRouter), amount);
+            // ERC20 payment: no native expected.
+            if (msg.value != 0) revert SendNativeCoin();
 
-            // Try direct path first
-            address[] memory directPath = new address[](2);
-            directPath[0] = paymentToken;
-            directPath[1] = address(usdt);
+            IERC20(paymentToken).safeTransferFrom(msg.sender, address(this), amountIn);
 
-            try dexRouter.swapExactTokensForTokens(
-                amount, minUsdtOut, directPath, address(this), block.timestamp + 300
-            ) returns (uint256[] memory amounts) {
-                usdtAmount = amounts[amounts.length - 1];
-            } catch {
-                // Try via WETH
-                address[] memory wethPath = new address[](3);
-                wethPath[0] = paymentToken;
-                wethPath[1] = dexRouter.WETH();
-                wethPath[2] = address(usdt);
+            if (paymentToken == address(usdt)) {
+                // Caller paid in USDT — no swap needed, extra hops are ignored.
+                usdtAmount = amountIn;
+            } else {
+                IERC20(paymentToken).forceApprove(address(dexRouter), amountIn);
                 uint256[] memory amounts = dexRouter.swapExactTokensForTokens(
-                    amount, minUsdtOut, wethPath, address(this), block.timestamp + 300
+                    amountIn,
+                    minUsdtOut,
+                    path,
+                    address(this),
+                    block.timestamp + 300
                 );
                 usdtAmount = amounts[amounts.length - 1];
             }
@@ -748,53 +758,92 @@ contract LaunchInstance is ReentrancyGuard {
         emit RefundingEnabled();
     }
 
-    /// @notice Claim refund. Returns base coin to buyer. Buyer must return all tokens
-    ///         (approve this contract first). This prevents gaming the refund mechanism.
-    function refund() external nonReentrant {
+    /// @notice Claim a (possibly partial) refund during Refunding. The buyer
+    ///         returns `tokensToReturn` of the launch token and receives a
+    ///         proportional share of their original USDT payment. Full refund
+    ///         is just the all-at-once case of this.
+    ///
+    ///         Partial refunds let buyers who split tokens across wallets
+    ///         recover value incrementally without needing to consolidate.
+    ///         Entitlement stays keyed to msg.sender — there's no cross-wallet
+    ///         grief vector because we never let a different address claim
+    ///         someone else's entitlement.
+    function refund(uint256 tokensToReturn) external nonReentrant {
         if (state != LaunchState.Refunding) revert NotRefunding();
         uint256 paid = basePaid[msg.sender];
         if (paid == 0) revert NothingToRefund();
 
         uint256 buyerTokens = tokensBought[msg.sender];
+        if (tokensToReturn == 0 || tokensToReturn > buyerTokens) revert ZeroAmount();
 
-        // Update global state — correct curve accounting
-        tokensSold -= buyerTokens;
-        totalBaseRaised -= paid;
+        // Pro-rata refund amount — rounds down so dust stays in buyer's
+        // entitlement (safer than rounding up which could drain the pool).
+        uint256 refundBase = (paid * tokensToReturn) / buyerTokens;
 
-        basePaid[msg.sender] = 0;
-        tokensBought[msg.sender] = 0;
+        // Update global state
+        tokensSold -= tokensToReturn;
+        totalBaseRaised -= refundBase;
 
-        // Require full token return to get refund
-        if (buyerTokens > 0) {
-            uint256 balance = token.balanceOf(msg.sender);
-            uint256 allowance = token.allowance(msg.sender, address(this));
-            if (balance < buyerTokens || allowance < buyerTokens) revert ReturnTokensToRefund();
-            token.safeTransferFrom(msg.sender, address(this), buyerTokens);
-        }
+        // Update buyer entitlement (might leave small residuals for the
+        // caller to claim on a second call)
+        basePaid[msg.sender] = paid - refundBase;
+        tokensBought[msg.sender] = buyerTokens - tokensToReturn;
 
-        // Refund full USDT amount (no buy fee was taken)
-        usdt.safeTransfer(msg.sender, paid);
+        // Buyer must hold + have approved the tokens they're returning
+        uint256 balance = token.balanceOf(msg.sender);
+        uint256 allowance = token.allowance(msg.sender, address(this));
+        if (balance < tokensToReturn || allowance < tokensToReturn) revert ReturnTokensToRefund();
+        token.safeTransferFrom(msg.sender, address(this), tokensToReturn);
 
-        emit Refunded(msg.sender, paid);
+        usdt.safeTransfer(msg.sender, refundBase);
+
+        emit Refunded(msg.sender, refundBase);
     }
 
-    /// @notice After refunding completes, creator can withdraw remaining tokens.
-    ///         Only allowed once all buyers have been refunded (totalBaseRaised == 0).
-    ///         Clears tokenToLaunch in factory to allow relaunching.
-    function creatorWithdrawAfterRefund() external onlyCreator {
+    /// @notice Creator reclaims launch tokens that aren't owed to any
+    ///         un-refunded buyer. Callable any time during Refunding.
+    ///
+    ///         Formula: `available = balance - tokensSold`. `tokensSold`
+    ///         is the exact count of launch tokens still owed to buyers
+    ///         who haven't refunded yet (each refund decrements it), so
+    ///         anything in the contract balance beyond that is free to
+    ///         take. As buyers refund, their returned tokens lift
+    ///         `balance` while leaving `tokensSold` at the new lower
+    ///         level — subsequent calls pick up the difference.
+    ///
+    ///         This replaces the old "wait 90 days or until all refunds"
+    ///         pattern which permanently locked tokens when even one
+    ///         buyer abandoned their refund.
+    function creatorWithdrawAvailable() external onlyCreator nonReentrant {
         if (state != LaunchState.Refunding) revert NotRefunding();
-        // Allow immediate withdraw if all refunds claimed, or after 90 days regardless
-        bool allRefunded = totalBaseRaised == 0;
-        bool timeoutPassed = block.timestamp >= refundStartTimestamp + 90 days;
-        if (!allRefunded && !timeoutPassed) revert OutstandingRefundsRemain();
         uint256 balance = token.balanceOf(address(this));
-        if (balance == 0) revert NoTokens();
-        token.safeTransfer(creator, balance);
+        uint256 stillOwed = tokensSold;
+        uint256 available = balance > stillOwed ? balance - stillOwed : 0;
+        if (available == 0) revert NoTokens();
 
-        // Clear tokenToLaunch in factory to allow relaunching this token
+        token.safeTransfer(creator, available);
+
+        // Clear the factory's tokenToLaunch slot the first time the full
+        // creator stake has been reclaimed — allows re-launching this token.
+        // Safe to call repeatedly (idempotent on the factory side).
         try ILaunchpadFactory(factory).clearTokenLaunch(address(token)) {} catch {}
 
-        emit CreatorWithdraw(creator, balance);
+        emit CreatorReclaim(creator, available);
+    }
+
+    /// @notice Platform rescue: after 90 days in Refunding, sweep any USDT
+    ///         still stranded from buyers who abandoned their refund. This
+    ///         never touches USDT owed to live entitlements — by the time
+    ///         the sweep window opens, the expectation is that active
+    ///         buyers have long since refunded.
+    function sweepStrandedUsdt() external {
+        if (state != LaunchState.Refunding) revert NotRefunding();
+        if (block.timestamp < refundStartTimestamp + 90 days) revert StrandedSweepTooEarly();
+        address _platformWallet = ILaunchpadFactory(factory).platformWallet();
+        if (msg.sender != _platformWallet && msg.sender != creator) revert NotCreator();
+        uint256 bal = usdt.balanceOf(address(this));
+        if (bal == 0) revert NoTokens();
+        usdt.safeTransfer(_platformWallet, bal);
     }
 
     // ── Creator Vesting ────────────────────────────────────────
