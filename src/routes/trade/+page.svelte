@@ -1338,34 +1338,15 @@
 					const provider = networkProviders.get(net.chain_id);
 					if (provider) {
 						const router = new ethers.Contract(net.trade_router_address, TRADE_ROUTER_ABI, provider);
-						// Try new ABI (3 returns: result, withdrawIds, total) first,
-						// fall back to old ABI (2 returns: result, total) for pre-redeploy contracts.
-						let result: any[], withdrawIds: any[] | null = null;
-						try {
-							const res = await router.getUserWithdrawals(userAddress, 0, 50);
-							if (res.length === 3 && Array.isArray(res[1]) && typeof res[1][0] !== 'object') {
-								// New contract: [result[], withdrawIds[], total]
-								result = res[0];
-								withdrawIds = res[1];
-							} else {
-								// Old contract: [result[], total]
-								result = res[0];
-							}
-						} catch {
-							// Fallback: try old ABI shape directly
-							const OLD_ABI = ['function getUserWithdrawals(address user, uint256 offset, uint256 limit) view returns (tuple(address user, address token, uint256 grossAmount, uint256 fee, uint256 netAmount, uint256 createdAt, uint8 status, bytes32 bankRef, address referrer)[] result, uint256 total)'];
-							const oldRouter = new ethers.Contract(net.trade_router_address, OLD_ABI, provider);
-							const res = await oldRouter.getUserWithdrawals(userAddress, 0, 50);
-							result = res[0];
-						}
+						const [result, withdrawIds, total] = await router.getUserWithdrawals(userAddress, 0, 50);
 						chainRecords = result.map((r: any, i: number) => ({
-							withdraw_id: withdrawIds ? Number(withdrawIds[i]) : i,
+							withdraw_id: Number(withdrawIds[i]),
 							user: r.user?.toLowerCase(),
 							grossAmount: r.grossAmount,
 							fee: r.fee,
 							netAmount: r.netAmount,
 							createdAt: Number(r.createdAt),
-							expiresAt: r.expiresAt ? Number(r.expiresAt) : 0,
+							expiresAt: Number(r.expiresAt || 0),
 							status: Number(r.status),
 							bankRef: r.bankRef,
 							referrer: r.referrer?.toLowerCase() || ethers.ZeroAddress,
@@ -1389,15 +1370,16 @@
 
 				merged.push({
 					id: db?.id || chain.withdraw_id,
+					withdraw_id: chain.withdraw_id,
 					user: chain.user,
 					token: db?.token_in || '',
 					grossAmount: chain.grossAmount,
 					fee: chain.fee,
 					netAmount: chain.netAmount,
 					createdAt: chain.createdAt,
-					status: chain.status, // on-chain status is truth
+					expiresAt: chain.expiresAt,
+					status: chain.status,
 					bankRef: chain.bankRef,
-					withdraw_id: chain.withdraw_id,
 					payment_method: db?.payment_method || 'bank',
 					payment_details: db?.payment_details || {},
 					chain_id: db?.chain_id || net?.chain_id,
