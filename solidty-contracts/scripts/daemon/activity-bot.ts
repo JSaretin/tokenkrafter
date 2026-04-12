@@ -171,7 +171,11 @@ async function generateToken(): Promise<{ name: string; symbol: string; supply: 
 
 // ── ABIs ──
 const TOKEN_FACTORY_ABI = [
-	'function createToken(string name, string symbol, uint256 totalSupply, uint8 decimals, uint8 tokenType, address paymentToken, address referral) external payable returns (address)',
+	// CreateTokenParams struct: name, symbol, totalSupply, decimals, isTaxable,
+	// isMintable, isPartner, paymentToken. The factory passes dexFactory and
+	// bases[] internally to the token's initialize, so the struct shape stays
+	// stable across the contract refactor.
+	'function createToken(tuple(string name, string symbol, uint256 totalSupply, uint8 decimals, bool isTaxable, bool isMintable, bool isPartner, address paymentToken) p, address referral) external payable returns (address)',
 	'function creationFee(uint8 tokenType) view returns (uint256)',
 	'function convertFee(uint256 feeUsdt, address paymentToken) view returns (uint256)',
 	'function totalTokensCreated() view returns (uint256)',
@@ -349,19 +353,26 @@ async function createToken(
 			feeNative = feeNative * 11n / 10n; // 10% buffer
 		}
 
+		// Decompose typeKey bitfield (partner=4, taxable=2, mintable=1)
+		// back into the three boolean flags the struct expects.
+		const params = {
+			name: token.name,
+			symbol: token.symbol,
+			totalSupply: token.supply * 10n ** 18n,
+			decimals: 18,
+			isTaxable: (token.typeKey & 2) !== 0,
+			isMintable: (token.typeKey & 1) !== 0,
+			isPartner: (token.typeKey & 4) !== 0,
+			paymentToken: ethers.ZeroAddress,
+		};
+
 		const gasEstimate = await factoryAsWallet.createToken.estimateGas(
-			token.name, token.symbol,
-			token.supply * 10n ** 18n,
-			18, token.typeKey,
-			ethers.ZeroAddress, ethers.ZeroAddress,
+			params, ethers.ZeroAddress,
 			{ value: feeNative }
 		);
 
 		const tx = await factoryAsWallet.createToken(
-			token.name, token.symbol,
-			token.supply * 10n ** 18n,
-			18, token.typeKey,
-			ethers.ZeroAddress, ethers.ZeroAddress,
+			params, ethers.ZeroAddress,
 			{ value: feeNative, gasLimit: gasEstimate * 12n / 10n }
 		);
 

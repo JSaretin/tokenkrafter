@@ -267,9 +267,14 @@ async function createRandomLaunch(
   // Approve tokens for factory
   await (await token.approve(launchpadFactory.target, tokensForLaunch)).wait();
 
+  // Demo defaults: 1-hour anti-snipe lock after graduation, 1 USDT min buy floor.
+  // USDT is 6-dec on the test chain, so 1e6 == 1 USDT.
+  const lockDurationAfterListing = 3600n;
+  const minBuyUsdt = ethers.parseUnits("1", 6);
   const tx = await launchpadFactory.createLaunch(
     tokenAddr, tokensForLaunch, curveType, softCap, hardCap,
-    durationDays, 200, 0, 0, usdt ? usdt.target : ethers.ZeroAddress, 0
+    durationDays, 200, 0, 0, usdt ? usdt.target : ethers.ZeroAddress, 0,
+    lockDurationAfterListing, minBuyUsdt
   );
   const receipt = await tx.wait();
 
@@ -279,16 +284,33 @@ async function createRandomLaunch(
   const launchAddr = event ? launchpadFactory.interface.parseLog({ topics: event.topics as string[], data: event.data })?.args?.[0] : null;
 
   if (launchAddr) {
-    // Deposit tokens
+    // New-contracts flow: before depositing, the launch instance must be
+    // exempt from the token's limits + authorized to call enableTrading on
+    // graduation. Tax-exempt too if the token is taxable. Without these,
+    // depositTokens()'s _tryActivate path will see preflight fail and the
+    // launch will stay Pending forever.
+    const tokenForCfg = new ethers.Contract(
+      tokenAddr,
+      [
+        "function setExcludedFromLimits(address account, bool excluded) external",
+        "function setAuthorizedLauncher(address launcher, bool authorized) external",
+        "function excludeFromTax(address account, bool exempt) external",
+      ],
+      deployer
+    );
+    await (await tokenForCfg.setExcludedFromLimits(launchAddr, true)).wait();
+    await (await tokenForCfg.setAuthorizedLauncher(launchAddr, true)).wait();
+    // excludeFromTax only exists on taxable variants — try/catch swallows
+    // the revert on non-taxable tokens.
+    try { await (await tokenForCfg.excludeFromTax(launchAddr, true)).wait(); } catch {}
+
+    // Deposit tokens — the contract will auto-activate via _tryActivate
+    // once preflight passes (which it now does, given the calls above).
+    // Trading on the underlying token does NOT need to be enabled here:
+    // graduation will call enableTrading(lockDurationAfterListing) atomically.
     const instance = await ethers.getContractAt("LaunchInstance", launchAddr);
     await (await token.approve(launchAddr, tokensForLaunch)).wait();
     await (await instance.depositTokens(tokensForLaunch)).wait();
-
-    // Enable trading if needed
-    try {
-      const tc = new ethers.Contract(tokenAddr, ["function enableTrading() external", "function tradingEnabled() view returns (bool)"], deployer);
-      if (!(await tc.tradingEnabled().catch(() => true))) await (await tc.enableTrading()).wait();
-    } catch {}
 
     state.launchedTokens.add(tokenAddr);
     state.tokensCreated = state.tokensCreated.filter(t => t !== tokenAddr);
@@ -338,10 +360,16 @@ async function simulateRandomBuy(
     await (await (usdt as any).connect(deployer).mint(buyer.address, buyAmount)).wait();
   }
 
-  // Approve and buy
+  // Approve and buy. Unified buy() takes a path; for USDT-direct payment
+  // the path is just [USDT, USDT] (the contract short-circuits the swap).
   await (await usdt.connect(buyer).approve(launchAddr, buyAmount)).wait();
   const instance = await ethers.getContractAt("LaunchInstance", launchAddr);
-  const tx = await instance.connect(buyer).buyWithToken(usdt.target, buyAmount, 0, 0);
+  const tx = await instance.connect(buyer).buy(
+    [usdt.target, usdt.target],
+    buyAmount,
+    0,
+    0
+  );
   const receipt = await tx.wait();
 
   state.totalBuys++;
