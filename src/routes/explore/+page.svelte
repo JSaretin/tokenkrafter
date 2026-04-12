@@ -225,17 +225,18 @@
 			list = [...list].sort((a, b) => {
 				const sa = safuMap[safuKey(a)];
 				const sb = safuMap[safuKey(b)];
-				// Client-side override takes precedence over DB if available
-				const safuA = sa?.isSafu ?? a.is_safu ?? false;
-				const safuB = sb?.isSafu ?? b.is_safu ?? false;
-				const liqA = sa?.hasLiquidity ?? a.has_liquidity ?? false;
-				const liqB = sb?.hasLiquidity ?? b.has_liquidity ?? false;
+				const renA = sa?.ownerIsZero ?? a.owner_renounced ?? false;
+				const renB = sb?.ownerIsZero ?? b.owner_renounced ?? false;
 				const tradeA = sa?.tradingEnabled ?? a.trading_enabled ?? false;
 				const tradeB = sb?.tradingEnabled ?? b.trading_enabled ?? false;
-				const scoreA = (safuA ? 4 : 0) + (liqA ? 2 : 0) + (tradeA ? 1 : 0);
-				const scoreB = (safuB ? 4 : 0) + (liqB ? 2 : 0) + (tradeB ? 1 : 0);
+				const safuA = renA || tradeA;
+				const safuB = renB || tradeB;
+				const liqA = sa?.hasLiquidity ?? a.has_liquidity ?? false;
+				const liqB = sb?.hasLiquidity ?? b.has_liquidity ?? false;
+				const scoreA = (safuA ? 4 : 0) + (liqA ? 2 : 0) + (renA ? 1 : 0);
+				const scoreB = (safuB ? 4 : 0) + (liqB ? 2 : 0) + (renB ? 1 : 0);
 				if (scoreA !== scoreB) return scoreB - scoreA;
-				return 0; // preserve DB order within same tier
+				return 0;
 			});
 		} else if (sortBy === 'name') {
 			list = [...list].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
@@ -256,15 +257,6 @@
 			if (n >= 1e3) return `${(n / 1e3).toFixed(0)}K`;
 			return n.toLocaleString();
 		} catch { return '—'; }
-	}
-
-	function tokenType(t: any): string {
-		if (t.is_partner && t.is_taxable) return 'Partner+Tax';
-		if (t.is_partner) return 'Partner';
-		if (t.is_taxable && t.is_mintable) return 'Tax+Mint';
-		if (t.is_taxable) return 'Taxable';
-		if (t.is_mintable) return 'Mintable';
-		return 'Basic';
 	}
 
 	function typeColor(t: any): string {
@@ -372,12 +364,11 @@
 				{@const slug = chainSlug(tok.chain_id)}
 				{@const gecko = geckoLookup[tok.address?.toLowerCase()]}
 				{@const safu = safuMap[safuKey(tok)]}
-			{@const isSafu = safu?.isSafu ?? tok.is_safu}
-			{@const isLpBurned = safu ? safu.lpBurned && safu.lpBurnedPct >= 9900 : tok.lp_burned && (tok.lp_burned_pct ?? 0) >= 9900}
 			{@const isRenounced = safu?.ownerIsZero ?? tok.owner_renounced}
-			{@const isTaxLocked = safu?.taxCeilingLocked ?? tok.tax_ceiling_locked}
-			{@const sellTax = safu?.sellTaxBps ?? tok.sell_tax_bps ?? 0}
-			{@const isMintableRisk = (safu ? safu.isMintable && !safu.ownerIsZero : tok.is_mintable && !tok.owner_renounced)}
+			{@const tradingOn = safu?.tradingEnabled ?? tok.trading_enabled}
+			{@const isSafu = isRenounced || tradingOn}
+			{@const hasOwner = !isRenounced}
+			{@const liq = gecko?.has_data ? gecko.volume_24h : 0}
 				<div class="token-card" data-token-addr={tok.address} data-chain-id={tok.chain_id}>
 					<!-- Header: clickable to detail page -->
 					<a href="/explore/{slug}/{tok.address}" class="tc-header">
@@ -403,26 +394,31 @@
 								{#if isSafu}
 									<span class="tc-badge tc-badge-safu">SAFU</span>
 								{/if}
-								{#if isLpBurned}
-									<span class="tc-badge tc-badge-lp">LP Burned</span>
+								{#if tok.is_taxable}
+									<span class="tc-badge tc-badge-tax">Taxable</span>
 								{/if}
-								{#if isRenounced}
-									<span class="tc-badge tc-badge-renounced">Renounced</span>
-								{/if}
-								{#if isTaxLocked}
-									<span class="tc-badge tc-badge-locked">Tax Locked</span>
-								{/if}
-								{#if sellTax > 0}
-									<span class="tc-badge tc-badge-tax">{(sellTax / 100).toFixed(0)}% tax</span>
-								{/if}
-								{#if isMintableRisk}
+								{#if tok.is_mintable}
 									<span class="tc-badge tc-badge-mintable">Mintable</span>
+								{/if}
+								{#if tok.is_partner}
+									<span class="tc-badge tc-badge-partner">Partner</span>
+								{/if}
+								{#if hasOwner}
+									<span class="tc-badge tc-badge-ownable">Ownable</span>
 								{/if}
 								{#if tok.created_at && isNew(tok.created_at)}
 									<span class="tc-badge tc-badge-new">New</span>
 								{/if}
-								<span class="tc-badge tc-badge-{color}">{tokenType(tok)}</span>
 							</div>
+							{#if gecko?.has_data && gecko.price_usd > 0}
+								<div class="tc-liq-row">
+									{#if liq < 1000 && liq > 0}
+										<span class="tc-liq-warn">Low liq</span>
+									{:else if liq >= 1000}
+										<span class="tc-liq">{fmtVolume(liq)} vol</span>
+									{/if}
+								</div>
+							{/if}
 							{#if gecko?.has_data}
 								<span class="tc-price">{fmtPrice(gecko.price_usd)}</span>
 								{#if gecko.price_change_24h !== 0}
@@ -571,6 +567,11 @@
 	.tc-badge-locked { background: rgba(139,92,246,0.12); color: #a78bfa; }
 	.tc-badge-tax { background: rgba(245,158,11,0.12); color: #f59e0b; }
 	.tc-badge-mintable { background: rgba(239,68,68,0.12); color: #f87171; }
+	.tc-badge-partner { background: rgba(139,92,246,0.12); color: #a78bfa; }
+	.tc-badge-ownable { background: rgba(100,116,139,0.12); color: #94a3b8; }
+	.tc-liq-row { display: flex; gap: 4px; margin-top: 2px; }
+	.tc-liq { font-family: 'Space Mono', monospace; font-size: 9px; color: #64748b; }
+	.tc-liq-warn { font-family: 'Space Mono', monospace; font-size: 9px; color: #f59e0b; }
 
 	/* Header */
 	.tc-header { display: flex; align-items: center; gap: 10px; text-decoration: none; color: inherit; }
