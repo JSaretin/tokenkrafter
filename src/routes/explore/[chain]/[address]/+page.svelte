@@ -264,8 +264,16 @@
 								<span class="pool-stat-value">{fmtSupply(pool.reserve_base, 18)}</span>
 							</div>
 							<div class="pool-stat">
-								<span class="pool-stat-label">Status</span>
-								<span class="pool-stat-value" class:pool-low={!pool.has_liquidity}>{pool.has_liquidity ? 'Active' : 'Empty'}</span>
+								<span class="pool-stat-label">LP</span>
+								<span class="pool-stat-value" class:pool-safu={pool.lp_burned && pool.lp_burned_pct >= 9900} class:pool-low={!pool.has_liquidity}>
+									{#if pool.lp_burned}
+										{pool.lp_burned_pct >= 9900 ? 'Burned' : `${(pool.lp_burned_pct / 100).toFixed(0)}% burned`}
+									{:else if pool.has_liquidity}
+										Held by owner
+									{:else}
+										Empty
+									{/if}
+								</span>
 							</div>
 						</div>
 					</a>
@@ -427,6 +435,7 @@
 	.pool-stat-label { display: block; font-family: 'Space Mono', monospace; font-size: 9px; color: #475569; margin-bottom: 2px; }
 	.pool-stat-value { display: block; font-family: 'Rajdhani', sans-serif; font-size: 14px; font-weight: 600; color: #e2e8f0; }
 	.pool-low { color: #f59e0b; }
+	.pool-safu { color: #10b981; }
 	.pool-price { margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.04); display: flex; justify-content: space-between; }
 	.pool-price-label { font-family: 'Space Mono', monospace; font-size: 9px; color: #475569; }
 	.pool-price-value { font-family: 'Space Mono', monospace; font-size: 11px; color: #00d2ff; font-weight: 700; }

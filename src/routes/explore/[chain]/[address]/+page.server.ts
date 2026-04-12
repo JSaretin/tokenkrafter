@@ -78,21 +78,43 @@ export const load: PageServerLoad = async ({ params, setHeaders }) => {
 				}
 
 				const tokenInfo = result.tokens?.[0] || null;
-				const pools = (tokenInfo?.pools || [])
-					.filter((p: any) => p.pairAddress && p.pairAddress !== ethers.ZeroAddress)
-					.map((p: any) => {
-						const baseSym = baseSymbols[p.base?.toLowerCase()] || p.base?.slice(0, 6) || '???';
-						const sym = tokenInfo?.symbol || '???';
-						return {
-							address: p.pairAddress,
-							name: `${sym} / ${baseSym}`,
-							base: p.base,
-							base_symbol: baseSym,
-							reserve_token: p.reserveToken?.toString() || '0',
-							reserve_base: p.reserveBase?.toString() || '0',
-							has_liquidity: p.hasLiquidity,
-						};
-					});
+				const DEAD = '0x000000000000000000000000000000000000dEaD';
+				const LP_ABI = [
+					'function balanceOf(address) view returns (uint256)',
+					'function totalSupply() view returns (uint256)',
+				];
+				const rawPools = (tokenInfo?.pools || [])
+					.filter((p: any) => p.pairAddress && p.pairAddress !== ethers.ZeroAddress);
+
+				// Batch LP burn checks in parallel
+				const pools = await Promise.all(rawPools.map(async (p: any) => {
+					const baseSym = baseSymbols[p.base?.toLowerCase()] || p.base?.slice(0, 6) || '???';
+					const sym = tokenInfo?.symbol || '???';
+					let lp_burned = false;
+					let lp_burned_pct = 0;
+					try {
+						const pair = new ethers.Contract(p.pairAddress, LP_ABI, provider);
+						const [deadBal, totalLp] = await Promise.all([
+							pair.balanceOf(DEAD),
+							pair.totalSupply(),
+						]);
+						if (deadBal > 0n && totalLp > 0n) {
+							lp_burned = true;
+							lp_burned_pct = Number((deadBal * 10000n) / totalLp);
+						}
+					} catch {}
+					return {
+						address: p.pairAddress,
+						name: `${sym} / ${baseSym}`,
+						base: p.base,
+						base_symbol: baseSym,
+						reserve_token: p.reserveToken?.toString() || '0',
+						reserve_base: p.reserveBase?.toString() || '0',
+						has_liquidity: p.hasLiquidity,
+						lp_burned,
+						lp_burned_pct,
+					};
+				}));
 
 				return {
 					tokenInfo: tokenInfo ? {
