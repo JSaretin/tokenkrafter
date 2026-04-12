@@ -2,31 +2,40 @@
 	import { ethers } from 'ethers';
 	import { getContext, onMount, onDestroy } from 'svelte';
 	import { chainSlug, type SupportedNetwork } from '$lib/structure';
-	import { queryTradeLens } from '$lib/tradeLens';
+	import { querySafuLens, type TokenSafu } from '$lib/safuLens';
 
 	let { data }: { data: any } = $props();
 	let tokens: any[] = data.tokens;
 	let search = $state('');
-	let sortBy = $state<'newest' | 'name'>('newest');
+	let sortBy = $state<'newest' | 'safu' | 'name'>('safu');
 	let filterType = $state<'all' | 'basic' | 'taxable' | 'mintable' | 'partner'>('all');
 	let tradeableOnly = $state(false);
 
 	const NOW = Date.now();
 
-	// ── Honeypot / tax badge detection (client-side, lazy) ──
+	// ── SAFU badge detection (client-side, lazy, batched via SafuLens) ──
 	let _getNetworks: () => SupportedNetwork[] = getContext('supportedNetworks');
 	let getNetworkProviders: () => Map<number, ethers.JsonRpcProvider> = getContext('networkProviders');
 
-	type TaxBadge = { honeypot: boolean; sellTaxBps: number };
-	let taxBadgeMap: Record<string, TaxBadge> = $state({});
-	const _taxSimulated = new Set<string>();
-	let _taxObserver: IntersectionObserver | null = null;
+	let safuMap: Record<string, TokenSafu> = $state({});
+	const _safuQueried = new Set<string>();
+	let _safuObserver: IntersectionObserver | null = null;
+	let _safuPending: any[] = [];
+	let _safuTimer: ReturnType<typeof setTimeout> | null = null;
 
-	function taxBadgeKey(tok: any): string {
+	function safuKey(tok: any): string {
 		return `${tok.chain_id}:${tok.address?.toLowerCase()}`;
 	}
 
-	async function simulateTaxBatch(batch: any[]) {
+	/** Debounced batch: collect visible tokens, then fire one SafuLens eth_call per chain. */
+	function scheduleSafuBatch() {
+		if (_safuTimer) clearTimeout(_safuTimer);
+		_safuTimer = setTimeout(() => flushSafuBatch(), 200);
+	}
+
+	async function flushSafuBatch() {
+		const batch = _safuPending.splice(0);
+		if (batch.length === 0) return;
 		const networks = _getNetworks();
 		const providers = getNetworkProviders();
 
@@ -41,34 +50,36 @@
 			const cid = Number(cidStr);
 			const net = networks.find(n => n.chain_id === cid);
 			const provider = providers.get(cid);
-			if (!net || !provider) continue;
+			if (!net || !provider || !net.platform_address || !net.dex_router) continue;
 
-			// Simulate one token at a time (each is a separate eth_call)
-			for (const tok of toks) {
-				const key = taxBadgeKey(tok);
-				if (_taxSimulated.has(key)) continue;
-				_taxSimulated.add(key);
-				try {
-					const result = await queryTradeLens(
-						provider, net.dex_router,
-						[tok.address], tok.address,
-						ethers.parseEther('0.001'),
-						ethers.ZeroAddress, cid
-					);
-					taxBadgeMap[key] = {
-						honeypot: !result.taxInfo.success || !result.taxInfo.canSell,
-						sellTaxBps: result.taxInfo.sellTaxBps,
-					};
-					taxBadgeMap = { ...taxBadgeMap };
-				} catch {
-					// Simulation failed — skip silently
+			// Resolve dexFactory from the dex router
+			let dexFactory = '';
+			try {
+				const r = new ethers.Contract(net.dex_router, ['function factory() view returns (address)'], provider);
+				dexFactory = await r.factory();
+			} catch { continue; }
+
+			// Resolve WETH
+			let weth = '';
+			try {
+				const r = new ethers.Contract(net.dex_router, ['function WETH() view returns (address)'], provider);
+				weth = await r.WETH();
+			} catch { continue; }
+
+			const addrs = toks.map(t => t.address);
+			try {
+				const results = await querySafuLens(provider, net.platform_address, dexFactory, weth, net.usdt_address, addrs);
+				for (const s of results) {
+					safuMap[`${cid}:${s.token}`] = s;
 				}
+				safuMap = { ...safuMap }; // trigger reactivity
+			} catch (e) {
+				console.warn('SafuLens query failed:', (e as any)?.message?.slice(0, 80));
 			}
 		}
 	}
 
 	function onCardVisible(entries: IntersectionObserverEntry[]) {
-		const pending: any[] = [];
 		for (const entry of entries) {
 			if (!entry.isIntersecting) continue;
 			const el = entry.target as HTMLElement;
@@ -76,10 +87,11 @@
 			const cid = Number(el.dataset.chainId);
 			if (!addr) continue;
 			const key = `${cid}:${addr.toLowerCase()}`;
-			if (_taxSimulated.has(key)) continue;
-			pending.push({ address: addr, chain_id: cid });
+			if (_safuQueried.has(key)) continue;
+			_safuQueried.add(key);
+			_safuPending.push({ address: addr, chain_id: cid });
 		}
-		if (pending.length > 0) simulateTaxBatch(pending);
+		if (_safuPending.length > 0) scheduleSafuBatch();
 	}
 
 	// GeckoTerminal market data — first 30 from SSR, rest filled client-side
@@ -133,12 +145,11 @@
 	}
 
 	onMount(async () => {
-		// Set up IntersectionObserver for lazy honeypot/tax detection
+		// Set up IntersectionObserver for lazy SafuLens badge detection
 		if (typeof IntersectionObserver !== 'undefined') {
-			_taxObserver = new IntersectionObserver(onCardVisible, { rootMargin: '200px' });
-			// Observe after a tick so DOM is rendered
+			_safuObserver = new IntersectionObserver(onCardVisible, { rootMargin: '200px' });
 			setTimeout(() => {
-				document.querySelectorAll('[data-token-addr]').forEach(el => _taxObserver?.observe(el));
+				document.querySelectorAll('[data-token-addr]').forEach(el => _safuObserver?.observe(el));
 			}, 100);
 		}
 
@@ -162,26 +173,28 @@
 	});
 
 	onDestroy(() => {
-		_taxObserver?.disconnect();
+		_safuObserver?.disconnect();
+		if (_safuTimer) clearTimeout(_safuTimer);
 	});
 
 	// Re-observe cards when the filtered list changes
 	$effect(() => {
-		// Read filtered to track reactivity
 		void filtered;
-		if (!_taxObserver) return;
-		// Wait a tick for DOM update
+		if (!_safuObserver) return;
 		setTimeout(() => {
-			document.querySelectorAll('[data-token-addr]').forEach(el => _taxObserver?.observe(el));
+			document.querySelectorAll('[data-token-addr]').forEach(el => _safuObserver?.observe(el));
 		}, 50);
 	});
 
 	let filtered = $derived.by(() => {
 		let list = tokens;
 
-		// Tradeable filter
+		// Tradeable filter — tokens with liquidity (from SafuLens or Gecko data)
 		if (tradeableOnly) {
-			list = list.filter(t => geckoLookup[t.address?.toLowerCase()]?.has_data);
+			list = list.filter(t => {
+				const s = safuMap[safuKey(t)];
+				return s?.hasLiquidity || geckoLookup[t.address?.toLowerCase()]?.has_data;
+			});
 		}
 
 		// Type filter
@@ -205,10 +218,20 @@
 		}
 
 		// Sort
-		if (sortBy === 'name') {
+		if (sortBy === 'safu') {
+			// SAFU first, then tokens with liquidity, then the rest. Within each tier: newest first.
+			list = [...list].sort((a, b) => {
+				const sa = safuMap[safuKey(a)];
+				const sb = safuMap[safuKey(b)];
+				const scoreA = (sa?.isSafu ? 4 : 0) + (sa?.hasLiquidity ? 2 : 0) + (sa?.tradingEnabled ? 1 : 0);
+				const scoreB = (sb?.isSafu ? 4 : 0) + (sb?.hasLiquidity ? 2 : 0) + (sb?.tradingEnabled ? 1 : 0);
+				if (scoreA !== scoreB) return scoreB - scoreA;
+				return 0; // preserve DB order (newest) within same tier
+			});
+		} else if (sortBy === 'name') {
 			list = [...list].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 		}
-		// 'newest' is default DB order
+		// 'newest' preserves default DB order
 
 		return list;
 	});
@@ -317,6 +340,7 @@
 				Tradeable
 			</button>
 			<select class="sort-select" bind:value={sortBy}>
+				<option value="safu">SAFU first</option>
 				<option value="newest">Newest</option>
 				<option value="name">A → Z</option>
 			</select>
@@ -338,7 +362,7 @@
 				{@const color = typeColor(tok)}
 				{@const slug = chainSlug(tok.chain_id)}
 				{@const gecko = geckoLookup[tok.address?.toLowerCase()]}
-				{@const taxBadge = taxBadgeMap[taxBadgeKey(tok)]}
+				{@const safu = safuMap[safuKey(tok)]}
 				<div class="token-card" data-token-addr={tok.address} data-chain-id={tok.chain_id}>
 					<!-- Header: clickable to detail page -->
 					<a href="/explore/{slug}/{tok.address}" class="tc-header">
@@ -361,10 +385,23 @@
 						</div>
 						<div class="tc-header-right">
 							<div class="tc-badges-row">
-								{#if taxBadge?.honeypot}
-									<span class="tc-badge tc-badge-honeypot">Honeypot</span>
-								{:else if taxBadge && taxBadge.sellTaxBps > 0}
-									<span class="tc-badge tc-badge-tax">{(taxBadge.sellTaxBps / 100).toFixed(0)}% tax</span>
+								{#if safu?.isSafu}
+									<span class="tc-badge tc-badge-safu">SAFU</span>
+								{/if}
+								{#if safu?.lpBurned && safu.lpBurnedPct >= 9900}
+									<span class="tc-badge tc-badge-lp">LP Burned</span>
+								{/if}
+								{#if safu?.ownerIsZero}
+									<span class="tc-badge tc-badge-renounced">Renounced</span>
+								{/if}
+								{#if safu?.taxCeilingLocked}
+									<span class="tc-badge tc-badge-locked">Tax Locked</span>
+								{/if}
+								{#if safu && safu.sellTaxBps > 0}
+									<span class="tc-badge tc-badge-tax">{(safu.sellTaxBps / 100).toFixed(0)}% tax</span>
+								{/if}
+								{#if safu?.isMintable && !safu.ownerIsZero}
+									<span class="tc-badge tc-badge-mintable">Mintable</span>
 								{/if}
 								{#if tok.created_at && isNew(tok.created_at)}
 									<span class="tc-badge tc-badge-new">New</span>
@@ -513,8 +550,12 @@
 	/* Badges row */
 	.tc-badges-row { display: flex; gap: 4px; align-items: center; justify-content: flex-end; }
 	.tc-badge-new { background: rgba(16,185,129,0.15); color: #10b981; }
-	.tc-badge-honeypot { background: rgba(239,68,68,0.15); color: #ef4444; }
+	.tc-badge-safu { background: rgba(16,185,129,0.2); color: #10b981; font-weight: 800; border: 1px solid rgba(16,185,129,0.3); }
+	.tc-badge-lp { background: rgba(59,130,246,0.12); color: #60a5fa; }
+	.tc-badge-renounced { background: rgba(16,185,129,0.12); color: #34d399; }
+	.tc-badge-locked { background: rgba(139,92,246,0.12); color: #a78bfa; }
 	.tc-badge-tax { background: rgba(245,158,11,0.12); color: #f59e0b; }
+	.tc-badge-mintable { background: rgba(239,68,68,0.12); color: #f87171; }
 
 	/* Header */
 	.tc-header { display: flex; align-items: center; gap: 10px; text-decoration: none; color: inherit; }
