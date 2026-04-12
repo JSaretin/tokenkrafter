@@ -224,7 +224,7 @@
 	}
 	.qr-placeholder {
 		width: 140px; height: 140px; margin: 0 auto 12px; border-radius: 12px;
-		background: #1a1a2e; border: 1px solid var(--border);
+		background: var(--bg-surface); border: 1px solid var(--border);
 	}
 	.deposit-actions { margin-bottom: 8px; }
 	.copy-btn {

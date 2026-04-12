@@ -283,24 +283,24 @@
 	.manage { max-width: 1100px; margin: 0 auto; padding: 24px 16px 60px; }
 
 	.manage-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; }
-	.manage-title { font-family: 'Syne', sans-serif; font-size: 28px; font-weight: 800; color: #fff; margin: 0; }
-	.manage-sub { font-size: 13px; color: #475569; font-family: 'Space Mono', monospace; margin: 4px 0 0; }
+	.manage-title { font-family: 'Syne', sans-serif; font-size: 28px; font-weight: 800; color: var(--text-heading); margin: 0; }
+	.manage-sub { font-size: 13px; color: var(--text-dim); font-family: 'Space Mono', monospace; margin: 4px 0 0; }
 	.manage-addr { color: #00d2ff; }
 	.manage-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 
 	.manage-search {
 		display: flex; align-items: center; gap: 8px;
 		padding: 8px 14px; border-radius: 10px;
-		background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
+		background: var(--bg-surface); border: 1px solid var(--border);
 		min-width: 180px; transition: border-color 0.15s;
 	}
 	.manage-search:focus-within { border-color: rgba(0,210,255,0.3); }
-	.search-icon { color: #374151; flex-shrink: 0; }
+	.search-icon { color: var(--text-dim); flex-shrink: 0; }
 	.search-input {
 		background: transparent; border: none; outline: none; flex: 1;
-		color: #e2e8f0; font-family: 'Space Mono', monospace; font-size: 12px; width: 100%;
+		color: var(--text); font-family: 'Space Mono', monospace; font-size: 12px; width: 100%;
 	}
-	.search-input::placeholder { color: #1e293b; }
+	.search-input::placeholder { color: var(--text-dim); }
 
 	.manage-create {
 		display: inline-flex; align-items: center; gap: 4px;
@@ -313,8 +313,8 @@
 
 	/* Empty states */
 	.manage-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 60px 20px; text-align: center; }
-	.manage-empty-title { font-family: 'Syne', sans-serif; font-size: 18px; font-weight: 700; color: #fff; margin: 0; }
-	.manage-empty-sub { font-family: 'Space Mono', monospace; font-size: 12px; color: #374151; margin: 0; }
+	.manage-empty-title { font-family: 'Syne', sans-serif; font-size: 18px; font-weight: 700; color: var(--text-heading); margin: 0; }
+	.manage-empty-sub { font-family: 'Space Mono', monospace; font-size: 12px; color: var(--text-dim); margin: 0; }
 	.manage-connect {
 		display: inline-block; margin-top: 8px;
 		padding: 11px 24px; border-radius: 10px; border: none;
@@ -329,7 +329,7 @@
 
 	.skeleton-card {
 		height: 160px; border-radius: 12px;
-		background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05);
+		background: var(--bg-surface); border: 1px solid var(--border-subtle);
 		animation: pulse 1.5s ease-in-out infinite;
 	}
 	@keyframes pulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 0.7; } }
@@ -337,14 +337,14 @@
 	.token-card {
 		display: flex; flex-direction: column; gap: 10px;
 		padding: 16px; border-radius: 12px;
-		background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05);
+		background: var(--bg-surface); border: 1px solid var(--border-subtle);
 		text-decoration: none; color: inherit; transition: all 0.15s;
 	}
 	.token-card:hover { border-color: rgba(0,210,255,0.2); transform: translateY(-2px); box-shadow: 0 4px 20px rgba(0,0,0,0.2); }
 
 	/* Card header */
 	.tc-header { display: flex; align-items: center; gap: 10px; }
-	.tc-logo { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; border: 1px solid rgba(255,255,255,0.06); flex-shrink: 0; }
+	.tc-logo { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; border: 1px solid var(--border); flex-shrink: 0; }
 	.tc-logo-fallback {
 		width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
 		display: flex; align-items: center; justify-content: center;
@@ -356,8 +356,8 @@
 	.tc-color-emerald { background: rgba(16,185,129,0.1); color: #10b981; border: 1px solid rgba(16,185,129,0.15); }
 
 	.tc-identity { flex: 1; min-width: 0; }
-	.tc-name { display: block; font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-	.tc-symbol { display: block; font-family: 'Space Mono', monospace; font-size: 10px; color: #475569; }
+	.tc-name { display: block; font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700; color: var(--text-heading); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+	.tc-symbol { display: block; font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text-dim); }
 
 	.tc-badge {
 		font-size: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
@@ -369,19 +369,19 @@
 	.tc-badge-emerald { background: rgba(16,185,129,0.1); color: #10b981; }
 
 	/* Card stats */
-	.tc-stats { display: flex; gap: 0; border-radius: 8px; overflow: hidden; border: 1px solid rgba(255,255,255,0.04); }
+	.tc-stats { display: flex; gap: 0; border-radius: 8px; overflow: hidden; border: 1px solid var(--border-subtle); }
 	.tc-stat { flex: 1; padding: 8px 10px; }
 	.tc-stat + .tc-stat { border-left: 1px solid rgba(255,255,255,0.04); }
-	.tc-stat-label { display: block; font-size: 8px; color: #374151; font-family: 'Space Mono', monospace; text-transform: uppercase; letter-spacing: 0.04em; }
-	.tc-stat-value { display: block; font-family: 'Rajdhani', sans-serif; font-size: 14px; font-weight: 600; color: #e2e8f0; font-variant-numeric: tabular-nums; margin-top: 1px; }
+	.tc-stat-label { display: block; font-size: 8px; color: var(--text-dim); font-family: 'Space Mono', monospace; text-transform: uppercase; letter-spacing: 0.04em; }
+	.tc-stat-value { display: block; font-family: 'Rajdhani', sans-serif; font-size: 14px; font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; margin-top: 1px; }
 
 	/* Description */
-	.tc-desc { font-family: 'Space Mono', monospace; font-size: 10px; color: #374151; line-height: 1.4; }
+	.tc-desc { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text-dim); line-height: 1.4; }
 
 	/* Manage link */
 	.tc-manage {
 		display: flex; align-items: center; justify-content: flex-end; gap: 4px;
-		font-family: 'Space Mono', monospace; font-size: 10px; color: #1e293b;
+		font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text-dim);
 		transition: color 0.15s;
 	}
 	.token-card:hover .tc-manage { color: #00d2ff; }
@@ -390,8 +390,8 @@
 	.manage-footer { display: flex; justify-content: center; margin-top: 16px; }
 	.manage-refresh {
 		display: inline-flex; align-items: center; gap: 6px;
-		padding: 8px 16px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.06);
-		background: rgba(255,255,255,0.03); color: #64748b;
+		padding: 8px 16px; border-radius: 8px; border: 1px solid var(--border);
+		background: var(--bg-surface); color: var(--text-dim);
 		font-family: 'Space Mono', monospace; font-size: 11px;
 		cursor: pointer; transition: all 0.15s;
 	}

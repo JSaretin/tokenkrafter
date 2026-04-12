@@ -8,12 +8,11 @@
 	import Chart from '$lib/Chart.svelte';
 	import ChartTypeToggle from '$lib/ChartTypeToggle.svelte';
 	import {
-		loadAllChains as fetchAllChains,
-		loadDashboardStats,
+		loadAdminLens,
 		loadRecentTokens as fetchRecentTokens,
-		type DashboardData,
 		type ChainData,
-		type DateRange,
+		type AdminLensResult,
+		type LaunchInfo,
 	} from './dashboardData';
 
 	let _getNetworks: () => SupportedNetworks = getContext('supportedNetworks');
@@ -25,78 +24,48 @@
 	let userAddress = $derived(getUserAddress());
 	let providersReady = $derived(getProvidersReady());
 
-	let dashData: DashboardData | null = $state(null);
-	let dashLoading = $state(false);
-	let recentLaunches: any[] = $state([]);
 	let recentTokens: any[] = $state([]);
 	let allChainData: ChainData[] = $state([]);
+	let lensResults = $state<Map<number, AdminLensResult>>(new Map());
 	let chainsLoading = $state(false);
 
-	// ── Date range filter ────────────────────────────────────────────────
-	// `preset` selects one of the quick-pick windows, or 'custom' for
-	// explicit from/to inputs. Changing any of these triggers a reload.
-	type Preset = '7d' | '30d' | '90d' | '365d' | 'custom';
-	let preset: Preset = $state('90d');
-	const todayIso = new Date().toISOString().split('T')[0];
-	const ninetyDaysAgoIso = (() => {
-		const d = new Date();
-		d.setDate(d.getDate() - 90);
-		return d.toISOString().split('T')[0];
-	})();
-	let customFrom = $state(ninetyDaysAgoIso);
-	let customTo = $state(todayIso);
+	// ── All data is on-chain via AdminLens (single eth_call per chain) ──
 
-	function currentRange(): DateRange {
-		if (preset === 'custom') return { kind: 'absolute', from: customFrom, to: customTo };
-		const daysByPreset: Record<Exclude<Preset, 'custom'>, number> = {
-			'7d': 7,
-			'30d': 30,
-			'90d': 90,
-			'365d': 365,
-		};
-		return { kind: 'days', days: daysByPreset[preset] };
-	}
-
-	// Fallback totals from on-chain data
 	let onChainTokens = $derived(allChainData.reduce((s, c) => s + Number(c.totalTokens), 0));
 	let onChainLaunches = $derived(allChainData.reduce((s, c) => s + Number(c.totalLaunches), 0));
+
+	// Merge recent launches from all chains (on-chain via AdminLens)
+	let recentLaunches = $derived.by<(LaunchInfo & { chain_id: number })[]>(() => {
+		const all: (LaunchInfo & { chain_id: number })[] = [];
+		for (const [chainId, result] of lensResults) {
+			for (const l of result.recentLaunches) {
+				all.push({ ...l, chain_id: chainId });
+			}
+		}
+		return all.sort((a, b) => b.startTimestamp - a.startTimestamp);
+	});
 
 	async function loadAllChains() {
 		chainsLoading = true;
 		try {
-			allChainData = await fetchAllChains(supportedNetworks, getNetworkProviders(), userAddress);
-		} catch {}
+			const { chains, lensResults: lr } = await loadAdminLens(
+				supportedNetworks, getNetworkProviders(), userAddress, 10, 10
+			);
+			allChainData = chains;
+			lensResults = lr;
+		} catch (e) {
+			console.warn('AdminLens load failed:', e);
+		}
 		chainsLoading = false;
 	}
 
-	async function loadDashboard() {
-		dashLoading = true;
-		try {
-			const { data, recentLaunches: rl } = await loadDashboardStats(supportedNetworks, currentRange());
-			dashData = data;
-			recentLaunches = rl;
-		} catch {}
-		dashLoading = false;
-	}
-
-	function applyDateRange() {
-		loadDashboard();
-	}
-
-	// On-chain fee totals as fallback
+	// On-chain fee totals (source of truth)
 	let onChainTokenFees = $derived(allChainData.reduce((s, c) => s + parseFloat(ethers.formatUnits(c.tokenFeeUsdt, c.usdtDecimals)), 0));
 	let onChainLaunchFees = $derived(allChainData.reduce((s, c) => s + parseFloat(ethers.formatUnits(c.launchFeeUsdt, c.usdtDecimals)), 0));
 	let onChainTotalRevenue = $derived(onChainTokenFees + onChainLaunchFees);
 
-	let dashTotalRevenue = $derived.by(() => {
-		const dbRev = dashData ? (dashData.totals.creation_fees_usdt || 0) + (dashData.totals.launch_fees_usdt || 0) + (dashData.totals.tax_revenue_usdt || 0) : 0;
-		return dbRev || onChainTotalRevenue;
-	});
-
-	let dashCreationFees = $derived.by(() => (dashData ? dashData.totals.creation_fees_usdt : 0) || onChainTokenFees);
-	let dashLaunchFees = $derived.by(() => (dashData ? dashData.totals.launch_fees_usdt : 0) || onChainLaunchFees);
-	let dashTaxRevenue = $derived.by(() => dashData ? dashData.totals.tax_revenue_usdt : 0);
-
+	// Token type distribution — from on-chain countPerType[8]
+	// Type keys: 0=basic, 1=mintable, 2=taxable, 3=tax+mint, 4=partner, 5=partner+mint, 6=partner+tax, 7=partner+tax+mint
 	let dashTokenTypeDistribution = $derived.by(() => {
 		const types = [
 			{ label: 'Basic', count: 0, color: '#00d2ff' },
@@ -104,30 +73,19 @@
 			{ label: 'Taxable', count: 0, color: '#ef4444' },
 			{ label: 'Partner', count: 0, color: '#a78bfa' }
 		];
-		// Use real data from DB if available
-		if (recentTokens.length > 0) {
-			for (const t of recentTokens) {
-				if (t.is_partner) types[3].count++;
-				else if (t.is_taxable) types[2].count++;
-				else if (t.is_mintable) types[1].count++;
-				else types[0].count++;
-			}
-		} else if (dashData) {
-			const t = dashData.totals;
-			const partner = t.partner_tokens_created || 0;
-			const regular = (t.tokens_created || 0) - partner;
-			types[0].count = Math.max(0, Math.round(regular * 0.5));
-			types[1].count = Math.max(0, Math.round(regular * 0.2));
-			types[2].count = Math.max(0, Math.round(regular * 0.3));
-			types[3].count = partner;
+		for (const c of allChainData) {
+			const cpt = c.countPerType || [];
+			types[0].count += (cpt[0] || 0);                         // basic
+			types[1].count += (cpt[1] || 0);                         // mintable
+			types[2].count += (cpt[2] || 0) + (cpt[3] || 0);        // taxable + tax+mint
+			types[3].count += (cpt[4] || 0) + (cpt[5] || 0) + (cpt[6] || 0) + (cpt[7] || 0); // all partner variants
 		}
 		return types;
 	});
 
 	async function loadRecentTokens() {
 		try {
-			const res = await fetch('/api/created-tokens?limit=20');
-			if (res.ok) recentTokens = await res.json();
+			recentTokens = await fetchRecentTokens();
 		} catch {}
 	}
 
@@ -137,32 +95,20 @@
 	$effect(() => {
 		if (providersReady && !hasLoaded) {
 			hasLoaded = true;
-			loadDashboard();
 			loadAllChains();
 			loadRecentTokens();
 
 			const launchesChannel = supabase
 				.channel('admin-dashboard-launches')
 				.on('postgres_changes', { event: '*', schema: 'public', table: 'launches' }, () => {
-					loadDashboard();
 					loadAllChains();
 				})
 				.subscribe();
 			channels.push(launchesChannel);
 
-			const statsChannel = supabase
-				.channel('admin-dashboard-stats')
-				.on('postgres_changes', { event: '*', schema: 'public', table: 'platform_stats' }, () => {
-					loadDashboard();
-					loadAllChains();
-				})
-				.subscribe();
-			channels.push(statsChannel);
-
 			const tokensChannel = supabase
 				.channel('admin-dashboard-tokens')
 				.on('postgres_changes', { event: '*', schema: 'public', table: 'created_tokens' }, () => {
-					loadDashboard();
 					loadAllChains();
 					loadRecentTokens();
 				})
@@ -176,77 +122,37 @@
 	});
 </script>
 
-<!-- Date range filter — always rendered, even while loading, so the user
-     can adjust without losing their place. -->
-<div class="date-range-bar">
-	<div class="date-range-presets">
-		{#each [
-			['7d', 'Last 7 days'],
-			['30d', 'Last 30 days'],
-			['90d', 'Last 90 days'],
-			['365d', 'Last year'],
-			['custom', 'Custom'],
-		] as [key, label]}
-			<button
-				class="date-range-btn"
-				class:date-range-btn-active={preset === key}
-				onclick={() => { preset = key as Preset; if (key !== 'custom') applyDateRange(); }}
-			>{label}</button>
-		{/each}
-	</div>
-	{#if preset === 'custom'}
-		<div class="date-range-custom">
-			<label>
-				<span>From</span>
-				<input type="date" bind:value={customFrom} max={customTo} />
-			</label>
-			<label>
-				<span>To</span>
-				<input type="date" bind:value={customTo} min={customFrom} max={todayIso} />
-			</label>
-			<button class="date-range-apply" onclick={applyDateRange} disabled={dashLoading}>
-				{dashLoading ? 'Loading…' : 'Apply'}
-			</button>
-		</div>
-	{/if}
-</div>
-
-{#if dashLoading}
+{#if chainsLoading}
 	<div class="flex items-center justify-center py-20">
 		<div class="spinner w-10 h-10 rounded-full border-2 border-white/10 border-t-cyan-400"></div>
 	</div>
 {:else}
-	{@const d = dashData}
-	{@const t = d?.totals}
-	{@const daily = d?.daily || []}
-	{@const v = d?.visitors}
-
-	<!-- KPI Strip -->
+	<!-- KPI Strip — all data from on-chain getState() -->
 	<div class="kpi-grid mb-6">
 		<div class="kpi-card">
 			<div class="kpi-label">Total Revenue</div>
-			<div class="kpi-value text-emerald-400">${dashTotalRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+			<div class="kpi-value text-emerald-400">${onChainTotalRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
 			<div class="kpi-bar bg-emerald-400/20"><div class="kpi-bar-fill bg-emerald-400" style="width: 100%"></div></div>
 		</div>
 		<div class="kpi-card">
-			<div class="kpi-label">Total Raised</div>
-			<div class="kpi-value text-amber-400">${(t?.total_raised_usdt ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-			<div class="kpi-bar bg-amber-400/20"><div class="kpi-bar-fill bg-amber-400" style="width: {Math.min(100, (t?.total_raised_usdt ?? 0) / 100)}%"></div></div>
+			<div class="kpi-label">Creation Fees</div>
+			<div class="kpi-value text-amber-400">${onChainTokenFees.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+			<div class="kpi-bar bg-amber-400/20"><div class="kpi-bar-fill bg-amber-400" style="width: {onChainTotalRevenue > 0 ? (onChainTokenFees / onChainTotalRevenue * 100) : 0}%"></div></div>
 		</div>
 		<div class="kpi-card">
 			<div class="kpi-label">Tokens Created</div>
-			<div class="kpi-value text-cyan-400">{(t?.total_tokens || onChainTokens)}</div>
-			<div class="kpi-bar bg-cyan-400/20"><div class="kpi-bar-fill bg-cyan-400" style="width: {Math.min(100, (t?.total_tokens || onChainTokens) * 2)}%"></div></div>
+			<div class="kpi-value text-cyan-400">{onChainTokens}</div>
+			<div class="kpi-bar bg-cyan-400/20"><div class="kpi-bar-fill bg-cyan-400" style="width: {Math.min(100, onChainTokens * 2)}%"></div></div>
 		</div>
 		<div class="kpi-card">
 			<div class="kpi-label">Launches</div>
-			<div class="kpi-value text-blue-400">{(t?.launches_created || onChainLaunches)}</div>
-			<div class="kpi-bar bg-blue-400/20"><div class="kpi-bar-fill bg-blue-400" style="width: {Math.min(100, (t?.launches_created || onChainLaunches) * 5)}%"></div></div>
+			<div class="kpi-value text-blue-400">{onChainLaunches}</div>
+			<div class="kpi-bar bg-blue-400/20"><div class="kpi-bar-fill bg-blue-400" style="width: {Math.min(100, onChainLaunches * 5)}%"></div></div>
 		</div>
 		<div class="kpi-card">
-			<div class="kpi-label">Graduated</div>
-			<div class="kpi-value text-purple-400">{t?.launches_graduated ?? 0}</div>
-			<div class="kpi-bar bg-purple-400/20"><div class="kpi-bar-fill bg-purple-400" style="width: {Math.min(100, (t?.launches_graduated ?? 0) * 10)}%"></div></div>
+			<div class="kpi-label">Launch Fees</div>
+			<div class="kpi-value text-purple-400">${onChainLaunchFees.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+			<div class="kpi-bar bg-purple-400/20"><div class="kpi-bar-fill bg-purple-400" style="width: {onChainTotalRevenue > 0 ? (onChainLaunchFees / onChainTotalRevenue * 100) : 0}%"></div></div>
 		</div>
 	</div>
 
@@ -297,140 +203,89 @@
 		</div>
 	{/if}
 
-	<!-- Revenue Chart -->
+	<!-- Charts — all data from on-chain getState() -->
 	<div class="flex items-center justify-between mb-3">
 		<span class="chart-title" style="margin: 0;">Charts</span>
 		<ChartTypeToggle />
 	</div>
 	<div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+		<!-- Revenue Breakdown (bar) -->
 		<div class="chart-card">
 			<div class="chart-header">
-				<h3 class="chart-title">Revenue (90d)</h3>
+				<h3 class="chart-title">Revenue Breakdown</h3>
 			</div>
-			{#if daily.length === 0}
-				<div class="chart-empty">No data yet</div>
-			{:else}
-				{@const dates = daily.map(dd => dd.stat_date?.slice(5) || '')}
+			{#if onChainTotalRevenue > 0}
 				<Chart option={{
-					tooltip: { trigger: 'axis' },
-					legend: { data: ['Creation', 'Launch', 'Tax'], top: 4, right: 12 },
-					xAxis: { type: 'category', data: dates, axisLabel: { interval: Math.floor(dates.length / 6) } },
-					yAxis: { type: 'value', axisLabel: { formatter: '${value}' } },
+					tooltip: { trigger: 'axis', formatter: (p: any) => p.map((s: any) => `${s.marker} ${s.seriesName}: $${s.value.toFixed(2)}`).join('<br/>') },
+					xAxis: { type: 'category', data: allChainData.map(c => c.network.symbol), axisLabel: { color: '#64748b' } },
+					yAxis: { type: 'value', axisLabel: { formatter: '${value}', color: '#64748b' } },
 					series: [
-						{ name: 'Creation', type: 'line', data: daily.map(dd => parseFloat(String(dd.creation_fees_usdt)) || 0), smooth: true, lineStyle: { width: 2 }, itemStyle: { color: '#10b981' }, areaStyle: { color: 'rgba(16,185,129,0.08)' } },
-						{ name: 'Launch', type: 'line', data: daily.map(dd => parseFloat(String(dd.launch_fees_usdt)) || 0), smooth: true, lineStyle: { width: 2 }, itemStyle: { color: '#00d2ff' }, areaStyle: { color: 'rgba(0,210,255,0.06)' } },
-						{ name: 'Tax', type: 'line', data: daily.map(dd => parseFloat(String(dd.tax_revenue_usdt)) || 0), smooth: true, lineStyle: { width: 1.5, type: 'dashed' }, itemStyle: { color: '#a78bfa' }, areaStyle: { color: 'rgba(167,139,250,0.06)' } }
-					]
+						{ name: 'Creation', type: 'bar', stack: 'rev', data: allChainData.map(c => parseFloat(ethers.formatUnits(c.tokenFeeUsdt, c.usdtDecimals))), itemStyle: { color: '#10b981', borderRadius: [0, 0, 0, 0] }, barMaxWidth: 40 },
+						{ name: 'Launch', type: 'bar', stack: 'rev', data: allChainData.map(c => parseFloat(ethers.formatUnits(c.launchFeeUsdt, c.usdtDecimals))), itemStyle: { color: '#00d2ff', borderRadius: [2, 2, 0, 0] }, barMaxWidth: 40 }
+					],
+					legend: { data: ['Creation', 'Launch'], top: 4, right: 12, textStyle: { color: '#64748b', fontSize: 10 } }
 				}} />
+			{:else}
+				<div class="chart-empty">No revenue yet</div>
 			{/if}
 		</div>
 
-		<!-- Token Creation Bar Chart -->
-		<div class="chart-card">
-			<div class="chart-header">
-				<h3 class="chart-title">Token Creation (90d)</h3>
-			</div>
-			{#if daily.length === 0}
-				<div class="chart-empty">No data yet</div>
-			{:else}
-				{@const dates = daily.map(dd => dd.stat_date?.slice(5) || '')}
-				<Chart option={{
-					tooltip: { trigger: 'axis' },
-					legend: { data: ['Regular', 'Partner'], top: 4, right: 12 },
-					xAxis: { type: 'category', data: dates, axisLabel: { interval: Math.floor(dates.length / 6) } },
-					yAxis: { type: 'value' },
-					series: [
-						{ name: 'Regular', type: 'bar', stack: 'tokens', data: daily.map(dd => (dd.tokens_created || 0) - (dd.partner_tokens_created || 0)), itemStyle: { color: '#00d2ff', borderRadius: [0, 0, 0, 0] }, barMaxWidth: 12 },
-						{ name: 'Partner', type: 'bar', stack: 'tokens', data: daily.map(dd => dd.partner_tokens_created || 0), itemStyle: { color: '#a78bfa', borderRadius: [2, 2, 0, 0] }, barMaxWidth: 12 }
-					]
-				}} />
-			{/if}
-		</div>
-	</div>
-
-	<div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
-		<!-- Launch Activity -->
-		<div class="chart-card lg:col-span-2">
-			<div class="chart-header">
-				<h3 class="chart-title">Launch Activity (90d)</h3>
-			</div>
-			{#if daily.length === 0}
-				<div class="chart-empty">No data yet</div>
-			{:else}
-				{@const dates = daily.map(dd => dd.stat_date?.slice(5) || '')}
-				<Chart option={{
-					tooltip: { trigger: 'axis' },
-					legend: { data: ['Created', 'Graduated'], top: 4, right: 12 },
-					xAxis: { type: 'category', data: dates, axisLabel: { interval: Math.floor(dates.length / 6) } },
-					yAxis: { type: 'value' },
-					series: [
-						{ name: 'Created', type: 'bar', data: daily.map(dd => dd.launches_created || 0), itemStyle: { color: '#00d2ff', borderRadius: [2, 2, 0, 0] }, barMaxWidth: 10 },
-						{ name: 'Graduated', type: 'bar', data: daily.map(dd => dd.launches_graduated || 0), itemStyle: { color: '#10b981', borderRadius: [2, 2, 0, 0] }, barMaxWidth: 10 }
-					]
-				}} />
-			{/if}
-		</div>
-
-		<!-- Token Type Pie -->
+		<!-- Token Types (donut) — from on-chain countPerType[8] -->
 		<div class="chart-card">
 			<div class="chart-header">
 				<h3 class="chart-title">Token Types</h3>
 			</div>
 			{#each [dashTokenTypeDistribution.filter(tp => tp.count > 0)] as pieData}
-			<Chart height="240px" option={{
-				tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
-				series: [{
-					type: 'pie',
-					radius: ['40%', '70%'],
-					center: ['50%', '55%'],
-					label: { show: true, color: '#94a3b8', fontSize: 10, formatter: '{b}\n{c}' },
-					labelLine: { lineStyle: { color: 'rgba(255,255,255,0.15)' } },
-					data: pieData.map(tp => ({ name: tp.label, value: tp.count, itemStyle: { color: tp.color } })),
-					emphasis: { itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0,0,0,0.3)' } }
-				}]
-			}} />
+				{#if pieData.length > 0}
+					<Chart height="240px" option={{
+						tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+						series: [{
+							type: 'pie',
+							radius: ['40%', '70%'],
+							center: ['50%', '55%'],
+							label: { show: true, color: '#94a3b8', fontSize: 10, formatter: '{b}\n{c}' },
+							labelLine: { lineStyle: { color: 'rgba(255,255,255,0.15)' } },
+							data: pieData.map(tp => ({ name: tp.label, value: tp.count, itemStyle: { color: tp.color } })),
+							emphasis: { itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0,0,0,0.3)' } }
+						}]
+					}} />
+				{:else}
+					<div class="chart-empty">No tokens created yet</div>
+				{/if}
 			{/each}
 		</div>
 	</div>
 
-	<!-- Revenue Breakdown + Recent Activity -->
-	<div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-		<!-- Revenue Breakdown -->
+	<!-- Revenue Summary + Per-chain Breakdown -->
+	<div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+		<!-- Revenue summary card -->
 		<div class="chart-card">
 			<div class="chart-header">
-				<h3 class="chart-title">Revenue Breakdown</h3>
+				<h3 class="chart-title">Revenue Summary</h3>
 			</div>
 			<div class="p-4">
-				{#each [dashCreationFees + dashLaunchFees + dashTaxRevenue || 1] as revTotal}
+				{#each [onChainTotalRevenue || 1] as revTotal}
 				<div class="rev-row">
 					<div class="rev-label">
 						<span class="legend-dot bg-emerald-400"></span>
 						<span>Creation Fees</span>
 					</div>
-					<span class="rev-amount text-emerald-400">${dashCreationFees.toFixed(2)}</span>
-					<div class="rev-bar"><div class="rev-bar-fill bg-emerald-400" style="width: {(dashCreationFees / revTotal) * 100}%"></div></div>
+					<span class="rev-amount text-emerald-400">${onChainTokenFees.toFixed(2)}</span>
+					<div class="rev-bar"><div class="rev-bar-fill bg-emerald-400" style="width: {(onChainTokenFees / revTotal) * 100}%"></div></div>
 				</div>
 				<div class="rev-row">
 					<div class="rev-label">
 						<span class="legend-dot bg-cyan-400"></span>
 						<span>Launch Fees</span>
 					</div>
-					<span class="rev-amount text-cyan-400">${dashLaunchFees.toFixed(2)}</span>
-					<div class="rev-bar"><div class="rev-bar-fill bg-cyan-400" style="width: {(dashLaunchFees / revTotal) * 100}%"></div></div>
+					<span class="rev-amount text-cyan-400">${onChainLaunchFees.toFixed(2)}</span>
+					<div class="rev-bar"><div class="rev-bar-fill bg-cyan-400" style="width: {(onChainLaunchFees / revTotal) * 100}%"></div></div>
 				</div>
-				<div class="rev-row">
-					<div class="rev-label">
-						<span class="legend-dot bg-purple-400"></span>
-						<span>Tax Revenue</span>
-					</div>
-					<span class="rev-amount text-purple-400">${dashTaxRevenue.toFixed(2)}</span>
-					<div class="rev-bar"><div class="rev-bar-fill bg-purple-400" style="width: {(dashTaxRevenue / revTotal) * 100}%"></div></div>
-				</div>
-				<div class="rev-row mt-3 pt-3" style="border-top: 1px solid rgba(255,255,255,0.06);">
+				<div class="rev-row mt-3 pt-3" style="border-top: 1px solid var(--border);">
 					<div class="rev-label font-bold">
 						<span>Total</span>
 					</div>
-					<span class="rev-amount text-white font-bold">${dashTotalRevenue.toFixed(2)}</span>
+					<span class="rev-amount text-white font-bold">${onChainTotalRevenue.toFixed(2)}</span>
 				</div>
 				{/each}
 			</div>
@@ -447,12 +302,16 @@
 					<p class="text-gray-600 text-xs font-mono text-center py-6">No tokens created yet</p>
 				{:else}
 					{#each recentTokens.slice(0, 10) as token}
-						<div class="activity-row">
-							<div class="activity-icon" style="background: {token.is_partner ? 'rgba(167,139,250,0.15)' : token.is_taxable ? 'rgba(239,68,68,0.15)' : 'rgba(0,210,255,0.15)'}">
-								{(token.symbol || '?').charAt(0)}
-							</div>
+						<a href="/manage-tokens/{chainSlug(token.chain_id ?? 56)}/{token.address}" class="activity-row">
+							{#if token.logo_url}
+								<img src={token.logo_url} alt="" class="activity-logo" />
+							{:else}
+								<div class="activity-icon" style="background: {token.is_partner ? 'rgba(167,139,250,0.15)' : token.is_taxable ? 'rgba(239,68,68,0.15)' : 'rgba(0,210,255,0.15)'}">
+									{(token.symbol || '?').charAt(0)}
+								</div>
+							{/if}
 							<div class="flex-1 min-w-0">
-								<div class="text-white text-xs font-mono truncate">{token.name} <span class="text-gray-600">${token.symbol}</span></div>
+								<div class="text-white text-xs font-mono truncate">{token.name} <span class="text-gray-600">{token.symbol}</span></div>
 								<div class="text-gray-600 text-[10px] font-mono">
 									{token.is_partner ? 'Partner' : token.is_taxable ? 'Taxable' : token.is_mintable ? 'Mintable' : 'Basic'}
 									<span class="text-gray-700 ml-1">{token.creator?.slice(0, 6)}...{token.creator?.slice(-4)}</span>
@@ -461,35 +320,46 @@
 							<div class="text-right">
 								<div class="text-[10px] text-gray-600 font-mono">{new Date(token.created_at).toLocaleDateString()}</div>
 							</div>
-						</div>
+						</a>
 					{/each}
 				{/if}
 			</div>
 		</div>
 	</div>
 
-	<!-- Recent Launches -->
+	<!-- Recent Launches (on-chain via AdminLens) -->
 	{#if recentLaunches.length > 0}
+		{@const usdtDec = allChainData[0]?.usdtDecimals || 18}
 		<div class="chart-card mt-4">
 			<div class="chart-header">
 				<h3 class="chart-title">Recent Launches</h3>
+				<span class="text-[10px] text-gray-600 font-mono">{recentLaunches.length} launch{recentLaunches.length !== 1 ? 'es' : ''}</span>
 			</div>
-			<div class="p-4 max-h-[280px] overflow-y-auto" style="scrollbar-width: thin;">
-				{#each recentLaunches.slice(0, 8) as launch}
-					<a href="/launchpad/{chainSlug(launch.chain_id ?? 56)}/{launch.address}" class="activity-row">
+			<div class="p-4 max-h-70 overflow-y-auto" style="scrollbar-width: thin;">
+				{#each recentLaunches.slice(0, 10) as launch}
+					{@const raised = parseFloat(ethers.formatUnits(launch.totalBaseRaised, usdtDec))}
+					{@const sc = parseFloat(ethers.formatUnits(launch.softCap, usdtDec))}
+					{@const hc = parseFloat(ethers.formatUnits(launch.hardCap, usdtDec))}
+					{@const pct = hc > 0 ? Math.min(100, (raised / hc) * 100) : 0}
+					<a href="/launchpad/{chainSlug(launch.chain_id)}/{launch.launch}" class="activity-row">
 						<div class="activity-icon" style="background: {launch.state === 2 ? 'rgba(16,185,129,0.15)' : launch.state === 1 ? 'rgba(0,210,255,0.15)' : 'rgba(245,158,11,0.15)'}">
-							{(launch.token_symbol || '?').charAt(0)}
+							{(launch.tokenSymbol || '?').charAt(0)}
 						</div>
 						<div class="flex-1 min-w-0">
-							<div class="text-white text-xs font-mono truncate">{launch.token_name || 'Unknown'} <span class="text-gray-600">{launch.token_symbol}</span></div>
+							<div class="text-white text-xs font-mono truncate">{launch.tokenName || 'Unknown'} <span class="text-gray-600">{launch.tokenSymbol}</span></div>
 							<div class="text-gray-600 text-[10px] font-mono">
 								{launch.state === 2 ? 'Graduated' : launch.state === 1 ? 'Active' : 'Pending'}
-								{#if launch.is_partner}<span class="text-purple-400 ml-1">Partner</span>{/if}
+								· SC ${sc.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+								· HC ${hc.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+								· {launch.totalBuyers} buyer{launch.totalBuyers !== 1 ? 's' : ''}
+							</div>
+							<div class="launch-progress-bar">
+								<div class="launch-progress-fill" style="width: {pct}%; background: {launch.state === 2 ? '#10b981' : '#00d2ff'};"></div>
 							</div>
 						</div>
 						<div class="text-right">
-							<div class="text-xs font-mono text-white">${(parseInt(launch.total_base_raised || '0') / 1e6).toFixed(0)}</div>
-							<div class="text-[10px] text-gray-600 font-mono">raised</div>
+							<div class="text-xs font-mono text-emerald-400">${raised.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+							<div class="text-[10px] text-gray-600 font-mono">/ ${hc.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
 						</div>
 					</a>
 				{/each}
@@ -499,79 +369,6 @@
 {/if}
 
 <style>
-	.date-range-bar {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 12px;
-		align-items: center;
-		padding: 10px 12px;
-		margin-bottom: 14px;
-		background: rgba(255, 255, 255, 0.02);
-		border: 1px solid rgba(255, 255, 255, 0.05);
-		border-radius: 10px;
-	}
-	.date-range-presets {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 6px;
-	}
-	.date-range-btn {
-		padding: 6px 12px;
-		border-radius: 8px;
-		border: 1px solid rgba(255, 255, 255, 0.06);
-		background: rgba(255, 255, 255, 0.02);
-		color: #94a3b8;
-		font-family: 'Space Mono', monospace;
-		font-size: 11px;
-		cursor: pointer;
-		transition: all 0.15s;
-	}
-	.date-range-btn:hover { border-color: rgba(0, 210, 255, 0.2); color: #e2e8f0; }
-	.date-range-btn-active {
-		background: rgba(0, 210, 255, 0.08);
-		border-color: rgba(0, 210, 255, 0.35);
-		color: #00d2ff;
-	}
-	.date-range-custom {
-		display: flex;
-		gap: 10px;
-		align-items: end;
-		margin-left: auto;
-	}
-	.date-range-custom label {
-		display: flex;
-		flex-direction: column;
-		gap: 3px;
-	}
-	.date-range-custom span {
-		font-family: 'Space Mono', monospace;
-		font-size: 9px;
-		color: #64748b;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-	}
-	.date-range-custom input[type='date'] {
-		padding: 6px 10px;
-		border-radius: 6px;
-		border: 1px solid rgba(255, 255, 255, 0.08);
-		background: rgba(255, 255, 255, 0.03);
-		color: #e2e8f0;
-		font-family: 'Space Mono', monospace;
-		font-size: 11px;
-	}
-	.date-range-apply {
-		padding: 7px 14px;
-		border-radius: 6px;
-		border: 1px solid rgba(0, 210, 255, 0.4);
-		background: rgba(0, 210, 255, 0.08);
-		color: #00d2ff;
-		font-family: 'Space Mono', monospace;
-		font-size: 11px;
-		font-weight: 700;
-		cursor: pointer;
-	}
-	.date-range-apply:disabled { opacity: 0.5; cursor: not-allowed; }
-
 	.kpi-grid {
 		display: grid;
 		grid-template-columns: 1fr 1fr;
@@ -595,7 +392,7 @@
 		transition: border-color 0.2s;
 		min-width: 0;
 	}
-	.kpi-card:hover { border-color: rgba(255,255,255,0.12); }
+	.kpi-card:hover { border-color: var(--placeholder); }
 	.kpi-value {
 		font-family: 'Rajdhani', sans-serif;
 		font-size: 28px;
@@ -606,7 +403,7 @@
 	}
 	.kpi-label {
 		font-size: 12px;
-		color: #64748b;
+		color: var(--text-dim);
 		font-family: 'Rajdhani', sans-serif;
 		font-weight: 500;
 		text-transform: uppercase;
@@ -622,15 +419,6 @@
 		height: 100%;
 		border-radius: 2px;
 		transition: width 0.6s ease;
-	}
-	.kpi-sub {
-		font-size: 9px;
-		color: #64748b;
-		font-family: 'Space Mono', monospace;
-		margin-top: 8px;
-		line-height: 1.6;
-		overflow: hidden;
-		text-overflow: ellipsis;
 	}
 
 	.chart-card {
@@ -659,7 +447,7 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		color: #374151;
+		color: var(--text-dim);
 		font-size: 11px;
 		font-family: 'Space Mono', monospace;
 	}
@@ -684,7 +472,7 @@
 		align-items: center;
 		gap: 8px;
 		font-size: 11px;
-		color: #94a3b8;
+		color: var(--text-muted);
 		font-family: 'Space Mono', monospace;
 	}
 	.rev-amount {
@@ -696,7 +484,7 @@
 	.rev-bar {
 		grid-column: 1 / -1;
 		height: 3px;
-		background: rgba(255,255,255,0.04);
+		background: var(--bg-surface-input);
 		border-radius: 2px;
 		overflow: hidden;
 	}
@@ -716,7 +504,7 @@
 		transition: background 0.15s;
 	}
 	.activity-row:last-child { border-bottom: none; }
-	.activity-row:hover { background: rgba(255,255,255,0.02); }
+	.activity-row:hover { background: var(--bg-surface); }
 	.activity-icon {
 		width: 28px;
 		height: 28px;
@@ -729,6 +517,26 @@
 		color: white;
 		font-family: 'Syne', sans-serif;
 		flex-shrink: 0;
+	}
+	.activity-logo {
+		width: 28px;
+		height: 28px;
+		border-radius: 50%;
+		object-fit: cover;
+		flex-shrink: 0;
+		border: 1px solid var(--border);
+	}
+	.launch-progress-bar {
+		height: 3px;
+		background: var(--bg-surface-hover);
+		border-radius: 999px;
+		overflow: hidden;
+		margin-top: 4px;
+	}
+	.launch-progress-fill {
+		height: 100%;
+		border-radius: 999px;
+		transition: width 0.3s;
 	}
 
 	.spinner {

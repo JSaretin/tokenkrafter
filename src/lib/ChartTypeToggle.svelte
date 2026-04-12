@@ -25,7 +25,7 @@
 	.chart-type-toggle {
 		display: flex;
 		gap: 2px;
-		background: rgba(255,255,255,0.03);
+		background: var(--bg-surface);
 		border-radius: 6px;
 		padding: 2px;
 	}
@@ -33,7 +33,7 @@
 		padding: 3px 8px;
 		font-size: 12px;
 		font-weight: 600;
-		color: #64748b;
+		color: var(--text-dim);
 		background: transparent;
 		border: none;
 		border-radius: 4px;
@@ -42,8 +42,8 @@
 		line-height: 1;
 	}
 	.toggle-btn:hover {
-		color: #94a3b8;
-		background: rgba(255,255,255,0.05);
+		color: var(--text-muted);
+		background: var(--bg-surface-hover);
 	}
 	.toggle-btn.active {
 		color: #00d2ff;

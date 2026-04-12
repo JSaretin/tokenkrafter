@@ -485,7 +485,7 @@
 	@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
 	.preset-modal {
-		background: #0d1117; border: 1px solid rgba(0,210,255,0.12);
+		background: var(--bg); border: 1px solid rgba(0,210,255,0.12);
 		border-radius: 16px; padding: 28px 24px; width: 100%; max-width: 380px;
 		box-shadow: 0 0 60px rgba(0,210,255,0.06), 0 24px 48px rgba(0,0,0,0.5);
 		text-align: center; position: relative;
@@ -495,10 +495,10 @@
 
 	.preset-close {
 		position: absolute; top: 14px; right: 14px;
-		background: none; border: none; color: rgba(255,255,255,0.3); cursor: pointer;
+		background: none; border: none; color: var(--text-dim); cursor: pointer;
 		padding: 4px; border-radius: 6px; transition: all 0.15s;
 	}
-	.preset-close:hover { color: white; background: rgba(255,255,255,0.06); }
+	.preset-close:hover { color: white; background: var(--bg-surface-hover); }
 
 	.preset-icon {
 		width: 48px; height: 48px; border-radius: 12px;
@@ -510,17 +510,17 @@
 	.preset-title { font-size: 1.05rem; font-weight: 700; color: white; margin: 0 0 6px; }
 	.preset-desc {
 		font-family: 'Space Mono', monospace; font-size: 0.7rem;
-		color: rgba(255,255,255,0.35); margin: 0 0 18px; line-height: 1.6;
+		color: var(--text-dim); margin: 0 0 18px; line-height: 1.6;
 	}
 
 	.preset-input-wrap { margin-bottom: 6px; }
 	.preset-input {
 		width: 100%; box-sizing: border-box;
 		font-family: 'Space Mono', monospace; font-size: 0.82rem; color: white;
-		background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
+		background: var(--bg-surface-input); border: 1px solid var(--border);
 		border-radius: 10px; padding: 12px 14px; outline: none; transition: border-color 0.2s;
 	}
-	.preset-input::placeholder { color: rgba(255,255,255,0.2); }
+	.preset-input::placeholder { color: var(--placeholder); }
 	.preset-input:focus { border-color: rgba(0,210,255,0.4); }
 
 	.preset-error {
@@ -545,9 +545,9 @@
 	}
 	@keyframes spin { to { transform: rotate(360deg); } }
 	.field-group { display: flex; flex-direction: column; gap: 0.3rem; }
-	.label { font-family: 'Space Mono', monospace; font-size: 0.82rem; color: #e2e8f0; letter-spacing: 0.02em; }
-	.label.small { font-size: 0.72rem; color: rgba(226,232,240,0.5); }
-	.hint { font-family: 'Space Mono', monospace; font-size: 0.72rem; color: rgba(226,232,240,0.45); }
+	.label { font-family: 'Space Mono', monospace; font-size: 0.82rem; color: var(--text); letter-spacing: 0.02em; }
+	.label.small { font-size: 0.72rem; color: var(--text-muted); }
+	.hint { font-family: 'Space Mono', monospace; font-size: 0.72rem; color: var(--text-muted); }
 	.hint.accent { color: #00d2ff; }
 	.hint.error { color: #ff5e5e; }
 	.clone-hint { color: #10b981; }
@@ -571,10 +571,10 @@
 		display: flex; align-items: center; gap: 0.6rem;
 		background: none; border: none; cursor: pointer; padding: 0.2rem 0;
 	}
-	.toggle-label { font-family: 'Space Mono', monospace; font-size: 0.78rem; color: rgba(226,232,240,0.6); }
+	.toggle-label { font-family: 'Space Mono', monospace; font-size: 0.78rem; color: var(--text-muted); }
 	.toggle-track {
 		width: 2.2rem; height: 1.2rem; border-radius: 0.6rem;
-		background: rgba(255,255,255,0.08); position: relative; transition: background 0.2s;
+		background: var(--bg-surface-hover); position: relative; transition: background 0.2s;
 		flex-shrink: 0;
 	}
 	.toggle-track.active { background: #00d2ff; }
@@ -589,14 +589,14 @@
 	.meta-toggle {
 		display: flex; align-items: center; gap: 8px; width: 100%;
 		padding: 10px 14px; border-radius: 10px;
-		background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05);
+		background: var(--bg-surface); border: 1px solid var(--border-subtle);
 		cursor: pointer; font-family: inherit; color: inherit; text-align: left;
 		transition: border-color 0.15s;
 	}
 	.meta-toggle:hover { border-color: rgba(0,210,255,0.15); }
-	.meta-toggle-label { font-family: 'Syne', sans-serif; font-size: 0.8rem; font-weight: 600; color: rgba(255,255,255,0.8); }
-	.meta-toggle-hint { font-size: 0.65rem; color: rgba(255,255,255,0.25); font-family: 'Space Mono', monospace; flex: 1; }
-	.meta-toggle-chev { color: rgba(255,255,255,0.2); transition: transform 0.15s; flex-shrink: 0; }
+	.meta-toggle-label { font-family: 'Syne', sans-serif; font-size: 0.8rem; font-weight: 600; color: var(--text); }
+	.meta-toggle-hint { font-size: 0.65rem; color: var(--text-dim); font-family: 'Space Mono', monospace; flex: 1; }
+	.meta-toggle-chev { color: var(--placeholder); transition: transform 0.15s; flex-shrink: 0; }
 	.meta-toggle-chev.meta-open { transform: rotate(180deg); }
 	.meta-fields { display: flex; flex-direction: column; gap: 0.75rem; padding-top: 0.25rem; }
 	.meta-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
@@ -606,36 +606,36 @@
 	.supply-pill {
 		font-family: 'Space Mono', monospace; font-size: 0.68rem;
 		padding: 3px 10px; border-radius: 99px;
-		border: 1px solid rgba(255,255,255,0.06); background: rgba(255,255,255,0.02);
-		color: rgba(255,255,255,0.35); cursor: pointer; transition: all 0.12s;
+		border: 1px solid var(--border); background: var(--bg-surface);
+		color: var(--text-dim); cursor: pointer; transition: all 0.12s;
 	}
-	.supply-pill:hover { border-color: rgba(0,210,255,0.2); color: rgba(255,255,255,0.6); }
+	.supply-pill:hover { border-color: rgba(0,210,255,0.2); color: var(--text-muted); }
 	.supply-pill.active { border-color: rgba(0,210,255,0.3); color: #00d2ff; background: rgba(0,210,255,0.06); }
 
 	.hidden-file { display: none; }
 	.logo-upload-btn {
 		display: flex; align-items: center; gap: 12px; width: 100%;
 		padding: 12px 14px; border-radius: 10px;
-		background: rgba(255,255,255,0.02); border: 1px dashed rgba(255,255,255,0.08);
-		color: rgba(255,255,255,0.35); cursor: pointer; transition: all 0.15s;
+		background: var(--bg-surface); border: 1px dashed rgba(255,255,255,0.08);
+		color: var(--text-dim); cursor: pointer; transition: all 0.15s;
 		font-family: 'Space Mono', monospace; font-size: 0.75rem;
 	}
 	.logo-upload-btn:hover { border-color: rgba(0,210,255,0.2); background: rgba(0,210,255,0.02); }
 	.logo-preview-row {
 		display: flex; align-items: center; gap: 10px;
 		padding: 12px 14px; border-radius: 10px;
-		background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06);
+		background: var(--bg-surface); border: 1px solid var(--border);
 	}
 	.logo-sizes { display: flex; align-items: flex-end; gap: 12px; flex: 1; }
 	.logo-size { display: flex; flex-direction: column; align-items: center; gap: 3px; }
-	.logo-sz { border-radius: 50%; object-fit: cover; border: 1px solid rgba(255,255,255,0.08); }
+	.logo-sz { border-radius: 50%; object-fit: cover; border: 1px solid var(--border); }
 	.logo-sz-lg { width: 48px; height: 48px; }
 	.logo-sz-md { width: 32px; height: 32px; }
 	.logo-sz-sm { width: 20px; height: 20px; }
-	.logo-sz-label { font-size: 8px; color: rgba(255,255,255,0.2); font-family: 'Space Mono', monospace; }
+	.logo-sz-label { font-size: 8px; color: var(--placeholder); font-family: 'Space Mono', monospace; }
 	.logo-change-btn {
 		display: flex; align-items: center; gap: 4px; padding: 5px 10px; border-radius: 6px;
-		border: 1px solid rgba(255,255,255,0.06); background: transparent;
+		border: 1px solid var(--border); background: transparent;
 		color: #00d2ff; font-family: 'Space Mono', monospace; font-size: 10px;
 		cursor: pointer; transition: all 0.12s; flex-shrink: 0;
 	}
@@ -649,11 +649,11 @@
 	.logo-remove-btn:hover { background: rgba(248,113,113,0.15); }
 	.logo-upload-placeholder {
 		width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0;
-		background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
-		display: flex; align-items: center; justify-content: center; color: rgba(255,255,255,0.15);
+		background: var(--bg-surface); border: 1px solid var(--border);
+		display: flex; align-items: center; justify-content: center; color: var(--text-dim);
 	}
 	.logo-upload-text { display: flex; flex-direction: column; gap: 2px; }
 	.logo-upload-change { color: #00d2ff; font-size: 0.72rem; }
-	.logo-upload-sub { font-size: 0.6rem; color: rgba(255,255,255,0.15); }
+	.logo-upload-sub { font-size: 0.6rem; color: var(--text-dim); }
 	@media (max-width: 500px) { .meta-row { grid-template-columns: 1fr; } }
 </style>

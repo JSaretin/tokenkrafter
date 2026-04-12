@@ -8,6 +8,8 @@
 		// Anti-snipe window in seconds between deploy and first public swap.
 		// Cap 24h. Default 60s closes the MEV front-run window on the seed tx.
 		tradingDelay: string;
+		// Burn LP tokens to 0xdead — makes liquidity permanent (cannot rug).
+		burnLp: boolean;
 	};
 	export type LaunchConfig = {
 		enabled: boolean; tokensForLaunchPct: number; curveType: number;
@@ -148,6 +150,9 @@
 	// Anti-snipe window for direct listings — creator-configurable, default 60s.
 	// Contract caps at 24h. UI displays as seconds.
 	let listingTradingDelaySeconds = $state('60');
+	// Burn LP tokens — sends LP to 0xdead, making liquidity permanent.
+	// Strongly recommended. Without this, creator can remove liquidity (rug).
+	let burnLp = $state(true);
 
 	// Base tokens pre-registered as pools on the new token. The wizard seeds
 	// these from `network.default_bases` (DB-driven, per-chain). Each entry is
@@ -425,7 +430,7 @@
 			protectionEnabled, maxWalletPct, maxTransactionPct, cooldownSeconds,
 			launchTokensPct, launchCurveType, launchSoftCap, launchHardCap,
 			launchDurationDays, launchMaxBuyPct, launchCreatorAllocPct, launchVestingDays,
-			listingPoolPct, listingPairs, listingPricePerToken, wizardStep,
+			listingPoolPct, listingPairs, listingPricePerToken, burnLp, wizardStep,
 			// Pool-base picker — both the toggle map AND the user-added customs
 			// (which carry resolved name/symbol so we don't re-hit gecko on reload)
 			customBases, baseSelection,
@@ -470,6 +475,7 @@
 		if (s.listingPoolPct != null) listingPoolPct = s.listingPoolPct;
 		if (s.listingPairs?.length) listingPairs = s.listingPairs;
 		if (s.listingPricePerToken) listingPricePerToken = s.listingPricePerToken;
+		if (s.burnLp != null) burnLp = s.burnLp;
 		if (s.wizardStep) wizardStep = s.wizardStep;
 		// Pool-base picker — restore customs first so the chain-change effect
 		// can preserve their selection state. baseSelection holds the toggle
@@ -519,10 +525,10 @@
 	}
 
 	// ── Step navigation ────────────────────────────────────
-	// Clone mode: user toggled "clone" on BasicInfo step. They're creating a NEW token
-	// with pre-filled data. Even if they later enable launch/list, it's still a new token.
-	// Real existing token: only when entering via Launch flow with a pre-set token address.
-	let isRealExistingToken = $derived(useExistingToken && !!initialData?.existingTokenAddress);
+	// Real existing token: user wants to launch/list an already-deployed token.
+	// Set via URL param (?token=0x...) OR via the "Launch existing token" toggle
+	// in the basics step when deployMode is 'launch' or 'both'.
+	let isRealExistingToken = $derived(useExistingToken && !!existingTokenAddress);
 
 	let steps = $derived.by(() => {
 		const s: { id: WizardStep; label: string }[] = [{ id: 'basics', label: 'Basics' }];
@@ -582,6 +588,7 @@
 				listBaseAmount: listingPairs[0]?.amount ?? '',
 				pairs: pairsWithTokens,
 				tradingDelay: listingTradingDelaySeconds,
+				burnLp,
 			},
 			launch: {
 				enabled: launchEnabled, tokensForLaunchPct: launchTokensPct,
@@ -664,7 +671,55 @@
 	<!-- Step content -->
 	<div class="wz-content">
 		{#if wizardStep === 'basics'}
-			<BasicInfo bind:name bind:symbol bind:totalSupply bind:decimals bind:chainId bind:useExistingToken bind:existingTokenAddress bind:tokenLogoUrl bind:tokenDescription bind:tokenWebsite bind:tokenTwitter bind:tokenTelegram {supportedNetworks} {getNetworkProviders} isCreateOnly={!launchEnabled && !listingEnabled} onPresetLoaded={handlePresetLoaded} />
+			<!-- "Launch existing token" toggle — only shown in launch/both mode -->
+			{#if launchEnabled}
+				<div class="wz-existing-toggle mb-4">
+					<label class="toggle-card {useExistingToken ? 'active' : ''}">
+						<div class="toggle-info">
+							<div class="toggle-icon">🎯</div>
+							<div>
+								<div class="text-sm font-semibold text-white syne">Launch existing token</div>
+								<div class="text-xs text-gray-500 font-mono mt-0.5">Already deployed a token? Enter its address to create a bonding curve launch.</div>
+							</div>
+						</div>
+						<div class="toggle-switch {useExistingToken ? 'on' : ''}">
+							<div class="toggle-thumb"></div>
+						</div>
+						<input type="checkbox" bind:checked={useExistingToken} class="sr-only" />
+					</label>
+					{#if useExistingToken}
+						<div class="mt-3">
+							<label class="wz-label" for="existing-token-addr">Token contract address</label>
+							<input
+								id="existing-token-addr"
+								class="input-field"
+								bind:value={existingTokenAddress}
+								placeholder="0x... paste your token's contract address"
+							/>
+							{#if existingTokenAddress && !/^0x[a-fA-F0-9]{40}$/.test(existingTokenAddress)}
+								<p class="text-red-400 text-xs font-mono mt-1">Invalid address</p>
+							{/if}
+						</div>
+					{/if}
+				</div>
+			{/if}
+
+			{#if !isRealExistingToken}
+				<BasicInfo bind:name bind:symbol bind:totalSupply bind:decimals bind:chainId bind:useExistingToken bind:existingTokenAddress bind:tokenLogoUrl bind:tokenDescription bind:tokenWebsite bind:tokenTwitter bind:tokenTelegram {supportedNetworks} {getNetworkProviders} isCreateOnly={!launchEnabled && !listingEnabled} onPresetLoaded={handlePresetLoaded} />
+			{:else}
+				<!-- Existing token mode: only need network selection -->
+				<div class="wz-section">
+					<div class="field-group">
+						<label class="wz-label" for="existing-token-network">Network</label>
+						<select id="existing-token-network" class="input-field" bind:value={chainId}>
+							<option value="">Select network</option>
+							{#each supportedNetworks.filter((n) => n.platform_address && n.platform_address.length > 2) as n (n.chain_id)}
+								<option value={n.chain_id}>{n.name} ({n.native_coin})</option>
+							{/each}
+						</select>
+					</div>
+				</div>
+			{/if}
 
 		{:else if wizardStep === 'features'}
 			<Features bind:isMintable bind:isTaxable bind:isPartner />
@@ -851,6 +906,23 @@
 				<p class="wz-hint">Add liquidity and your token is instantly tradable.</p>
 				<ListingStep bind:symbol bind:totalSupply bind:poolPct={listingPoolPct} bind:pairs={listingPairs} bind:pricePerToken={listingPricePerToken} {nativeCoin} {bnbPriceUsd} />
 
+				<!-- Burn LP toggle -->
+				<div class="burn-lp-card mt-6" class:burn-on={burnLp} class:burn-off={!burnLp}>
+					<label class="burn-lp-toggle">
+						<div class="burn-lp-left">
+							<span class="burn-lp-icon">{burnLp ? '🔥' : '⚠️'}</span>
+							<div>
+								<span class="burn-lp-title syne">{burnLp ? 'LP Burned (Permanent)' : 'LP NOT Burned (Removable)'}</span>
+								<span class="burn-lp-desc">{burnLp ? 'Liquidity is permanent. Investors see this as safe.' : 'You can remove liquidity anytime. No SAFU badge.'}</span>
+							</div>
+						</div>
+						<div class="wz-switch" class:wz-switch-on={burnLp}>
+							<div class="wz-switch-thumb"></div>
+						</div>
+						<input type="checkbox" bind:checked={burnLp} class="sr-only" />
+					</label>
+				</div>
+
 				<!-- Anti-snipe delay for direct listings -->
 				<div class="wz-field mt-6">
 					<label class="wz-label" for="listingTradingDelaySeconds">Anti-snipe delay (seconds)</label>
@@ -942,36 +1014,54 @@
 <style>
 	.wz { max-width: 640px; margin: 0 auto; }
 
+	/* Burn LP toggle card */
+	.burn-lp-card {
+		padding: 14px 16px; border-radius: 12px; transition: all 0.2s;
+	}
+	.burn-on {
+		background: rgba(16,185,129,0.04); border: 1.5px solid rgba(16,185,129,0.2);
+	}
+	.burn-off {
+		background: rgba(245,158,11,0.04); border: 1.5px solid rgba(245,158,11,0.2);
+	}
+	.burn-lp-toggle {
+		display: flex; align-items: center; justify-content: space-between; gap: 12px; cursor: pointer;
+	}
+	.burn-lp-left { display: flex; align-items: center; gap: 10px; }
+	.burn-lp-icon { font-size: 20px; flex-shrink: 0; }
+	.burn-lp-title { display: block; font-size: 13px; font-weight: 700; color: #fff; }
+	.burn-lp-desc { display: block; font-size: 10px; color: #64748b; font-family: 'Space Mono', monospace; margin-top: 2px; }
+
 	/* Steps indicator */
 	.wz-steps { display: flex; align-items: center; gap: 0; margin-bottom: 24px; padding: 0 8px; }
 	.wz-step { display: flex; flex-direction: column; align-items: center; gap: 4px; background: none; border: none; cursor: pointer; padding: 0; }
-	.wz-step-num { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; font-family: 'Space Mono', monospace; border: 2px solid rgba(255,255,255,0.1); color: #64748b; background: transparent; transition: all 200ms; }
+	.wz-step-num { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; font-family: 'Space Mono', monospace; border: 2px solid rgba(255,255,255,0.1); color: var(--text-dim); background: transparent; transition: all 200ms; }
 	.wz-step-active .wz-step-num { border-color: #00d2ff; color: #00d2ff; background: rgba(0,210,255,0.1); }
 	.wz-step-done .wz-step-num { border-color: #10b981; color: #10b981; background: rgba(16,185,129,0.1); }
-	.wz-step-label { font-size: 9px; color: #64748b; font-family: 'Space Mono', monospace; text-transform: uppercase; letter-spacing: 0.05em; white-space: nowrap; }
+	.wz-step-label { font-size: 9px; color: var(--text-dim); font-family: 'Space Mono', monospace; text-transform: uppercase; letter-spacing: 0.05em; white-space: nowrap; }
 	.wz-step-active .wz-step-label { color: #00d2ff; }
 	.wz-step-done .wz-step-label { color: #10b981; }
-	.wz-step-line { flex: 1; height: 2px; background: rgba(255,255,255,0.06); min-width: 20px; margin: 0 4px; margin-bottom: 16px; }
+	.wz-step-line { flex: 1; height: 2px; background: var(--bg-surface-hover); min-width: 20px; margin: 0 4px; margin-bottom: 16px; }
 	.wz-step-line-done { background: #10b981; }
 
 	/* Content */
-	.wz-content { background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06); border-radius: 16px; padding: 24px; margin-bottom: 16px; }
+	.wz-content { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 16px; padding: 24px; margin-bottom: 16px; }
 	.wz-section {}
-	.wz-title { font-family: 'Syne', sans-serif; font-size: 20px; font-weight: 800; color: #fff; margin: 0 0 4px; }
-	.wz-hint { font-size: 12px; color: #64748b; font-family: 'Space Mono', monospace; margin: 0 0 16px; }
+	.wz-title { font-family: 'Syne', sans-serif; font-size: 20px; font-weight: 800; color: var(--text-heading); margin: 0 0 4px; }
+	.wz-hint { font-size: 12px; color: var(--text-dim); font-family: 'Space Mono', monospace; margin: 0 0 16px; }
 
 	.wz-field { margin-bottom: 14px; }
-	.wz-label { display: block; font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; font-family: 'Space Mono', monospace; margin-bottom: 6px; }
+	.wz-label { display: block; font-size: 11px; font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; font-family: 'Space Mono', monospace; margin-bottom: 6px; }
 	.wz-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-	.wz-slider { width: 100%; -webkit-appearance: none; height: 6px; background: rgba(255,255,255,0.08); border-radius: 3px; outline: none; }
-	.wz-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px; border-radius: 50%; background: #00d2ff; cursor: pointer; border: 2px solid #0a0a12; }
+	.wz-slider { width: 100%; -webkit-appearance: none; height: 6px; background: var(--bg-surface-hover); border-radius: 3px; outline: none; }
+	.wz-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px; border-radius: 50%; background: #00d2ff; cursor: pointer; border: 2px solid var(--bg); }
 	.wz-radio-row { display: flex; gap: 6px; flex-wrap: wrap; }
-	.wz-radio { padding: 6px 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08); background: transparent; color: #64748b; font-family: 'Space Mono', monospace; font-size: 11px; cursor: pointer; transition: all 150ms; }
-	.wz-radio:hover { border-color: rgba(0,210,255,0.3); color: #e2e8f0; }
+	.wz-radio { padding: 6px 14px; border-radius: 8px; border: 1px solid var(--border); background: transparent; color: var(--text-dim); font-family: 'Space Mono', monospace; font-size: 11px; cursor: pointer; transition: all 150ms; }
+	.wz-radio:hover { border-color: rgba(0,210,255,0.3); color: var(--text); }
 	.wz-radio-active { border-color: rgba(0,210,255,0.4); color: #00d2ff; background: rgba(0,210,255,0.08); }
 
-	.wz-field-hint { display: block; font-size: 10px; color: #64748b; font-family: 'Space Mono', monospace; margin-top: 3px; }
-	.wz-subtitle { font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700; color: #e2e8f0; margin: 0 0 6px; }
+	.wz-field-hint { display: block; font-size: 10px; color: var(--text-dim); font-family: 'Space Mono', monospace; margin-top: 3px; }
+	.wz-subtitle { font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700; color: var(--text); margin: 0 0 6px; }
 	.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
 
 	/* Base-token multi-select */
@@ -979,13 +1069,13 @@
 	.base-pill {
 		display: inline-flex; align-items: center; gap: 6px;
 		padding: 7px 12px; border-radius: 10px;
-		border: 1px solid rgba(255,255,255,0.1);
-		background: transparent; color: #64748b;
+		border: 1px solid var(--border-input);
+		background: transparent; color: var(--text-dim);
 		font-family: 'Space Mono', monospace; font-size: 11px;
 		cursor: pointer; transition: all 150ms;
 	}
 	.base-pill input { position: absolute; opacity: 0; pointer-events: none; }
-	.base-pill:hover { border-color: rgba(0,210,255,0.3); color: #e2e8f0; }
+	.base-pill:hover { border-color: rgba(0,210,255,0.3); color: var(--text); }
 	.base-pill-on { border-color: rgba(0,210,255,0.4); color: #00d2ff; background: rgba(0,210,255,0.08); }
 	.base-sym { font-weight: 700; }
 	.base-remove {
@@ -1007,11 +1097,11 @@
 	.base-add-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 	/* Toggle card */
-	.wz-toggle-card { border: 1px solid rgba(255,255,255,0.06); border-radius: 12px; padding: 0; margin-top: 14px; overflow: hidden; transition: border-color 200ms; }
+	.wz-toggle-card { border: 1px solid var(--border); border-radius: 12px; padding: 0; margin-top: 14px; overflow: hidden; transition: border-color 200ms; }
 	.wz-toggle-on { border-color: rgba(245,158,11,0.25); }
 	.wz-toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; cursor: pointer; gap: 12px; }
-	.wz-toggle-title { display: block; font-size: 13px; font-weight: 700; color: #e2e8f0; font-family: 'Syne', sans-serif; }
-	.wz-toggle-desc { display: block; font-size: 10px; color: #64748b; font-family: 'Space Mono', monospace; margin-top: 1px; }
+	.wz-toggle-title { display: block; font-size: 13px; font-weight: 700; color: var(--text); font-family: 'Syne', sans-serif; }
+	.wz-toggle-desc { display: block; font-size: 10px; color: var(--text-dim); font-family: 'Space Mono', monospace; margin-top: 1px; }
 	.wz-toggle-body { padding: 0 14px 14px; }
 	.wz-switch { width: 40px; height: 22px; border-radius: 11px; background: rgba(255,255,255,0.1); position: relative; flex-shrink: 0; transition: background 200ms; }
 	.wz-switch-on { background: #f59e0b; }
@@ -1021,8 +1111,8 @@
 	/* Nav */
 	.wz-nav { display: flex; justify-content: space-between; }
 	.wz-btn { padding: 12px 28px; border-radius: 12px; border: none; cursor: pointer; font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700; transition: all 200ms; }
-	.wz-btn-back { background: rgba(255,255,255,0.05); color: #64748b; }
-	.wz-btn-back:hover { background: rgba(255,255,255,0.08); color: #e2e8f0; }
+	.wz-btn-back { background: var(--bg-surface-hover); color: var(--text-dim); }
+	.wz-btn-back:hover { background: var(--bg-surface-hover); color: var(--text); }
 	.wz-btn-next { background: linear-gradient(135deg, #00d2ff, #3a7bd5); color: white; }
 	.wz-btn-next:hover { transform: translateY(-1px); box-shadow: 0 6px 28px rgba(0,210,255,0.3); }
 
@@ -1032,12 +1122,12 @@
 		width: 100%; padding: 10px 14px; border-radius: 10px;
 		background: var(--bg-surface-hover, rgba(255,255,255,0.04));
 		border: 1px solid var(--border-input, rgba(255,255,255,0.08));
-		color: #e2e8f0; cursor: pointer; transition: all 150ms;
+		color: var(--text); cursor: pointer; transition: all 150ms;
 	}
 	.curve-pick-btn:hover { border-color: rgba(0,210,255,0.3); background: rgba(0,210,255,0.04); }
 	.curve-pick-preview { width: 60px; height: 32px; flex-shrink: 0; }
 	.curve-pick-name { flex: 1; text-align: left; font-family: 'Syne', sans-serif; font-weight: 600; font-size: 14px; }
-	.curve-pick-btn svg { color: #64748b; flex-shrink: 0; }
+	.curve-pick-btn svg { color: var(--text-dim); flex-shrink: 0; }
 
 	/* Curve modal */
 	.curve-modal-overlay {
@@ -1047,7 +1137,7 @@
 	}
 	.curve-modal {
 		width: 100%; max-width: 440px;
-		background: var(--bg, #07070d); border: 1px solid rgba(255,255,255,0.08);
+		background: var(--bg, #07070d); border: 1px solid var(--border);
 		border-radius: 20px; overflow: hidden;
 		animation: curveModalIn 200ms ease-out;
 		box-shadow: 0 24px 80px rgba(0,0,0,0.5);
@@ -1060,17 +1150,17 @@
 		display: flex; align-items: center; justify-content: space-between;
 		padding: 18px 20px 0;
 	}
-	.curve-modal-title { font-family: 'Syne', sans-serif; font-size: 16px; font-weight: 700; color: #fff; margin: 0; }
+	.curve-modal-title { font-family: 'Syne', sans-serif; font-size: 16px; font-weight: 700; color: var(--text-heading); margin: 0; }
 	.curve-modal-close {
 		width: 32px; height: 32px; border-radius: 8px; border: none;
-		background: rgba(255,255,255,0.05); color: #64748b;
+		background: var(--bg-surface-hover); color: var(--text-dim);
 		display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 150ms;
 	}
-	.curve-modal-close:hover { background: rgba(255,255,255,0.1); color: #fff; }
+	.curve-modal-close:hover { background: rgba(255,255,255,0.1); color: var(--text-heading); }
 
 	.curve-modal-body { padding: 16px 20px; }
 	.curve-modal-chart {
-		background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05);
+		background: var(--bg-surface); border: 1px solid var(--border-subtle);
 		border-radius: 12px; padding: 12px; margin-bottom: 14px;
 	}
 
@@ -1078,16 +1168,16 @@
 	.curve-option {
 		display: flex; align-items: center; gap: 10px;
 		padding: 10px 12px; border-radius: 10px;
-		background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05);
+		background: var(--bg-surface); border: 1px solid var(--border-subtle);
 		color: inherit; cursor: pointer; transition: all 150ms; width: 100%;
 	}
-	.curve-option:hover { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.1); }
+	.curve-option:hover { background: var(--bg-surface-hover); border-color: var(--border-input); }
 	.curve-option-active { background: rgba(0,210,255,0.06); border-color: rgba(0,210,255,0.25); }
 	.curve-option-mini { width: 48px; height: 28px; flex-shrink: 0; }
 	.curve-option-info { flex: 1; display: flex; flex-direction: column; gap: 1px; text-align: left; }
-	.curve-option-name { font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 600; color: #e2e8f0; }
+	.curve-option-name { font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 600; color: var(--text); }
 	.curve-option-active .curve-option-name { color: #00d2ff; }
-	.curve-option-desc { font-family: 'Space Mono', monospace; font-size: 10px; color: #475569; line-height: 1.3; }
+	.curve-option-desc { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text-dim); line-height: 1.3; }
 	.curve-option-check { flex-shrink: 0; }
 
 	.curve-modal-done {

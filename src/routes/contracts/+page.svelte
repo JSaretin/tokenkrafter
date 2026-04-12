@@ -143,7 +143,7 @@
 	}
 	.contract-addr-full {
 		font-family: 'Space Mono', monospace; font-size: 11px; color: #00d2ff;
-		background: rgba(255,255,255,0.02); border-radius: 8px; padding: 8px 10px;
+		background: var(--bg-surface); border-radius: 8px; padding: 8px 10px;
 		word-break: break-all; line-height: 1.6; margin-bottom: 10px;
 		border: 1px solid rgba(0,210,255,0.08);
 	}

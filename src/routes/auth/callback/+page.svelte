@@ -46,7 +46,7 @@
 		justify-content: center;
 		min-height: 60vh;
 		gap: 16px;
-		color: rgba(255,255,255,0.6);
+		color: var(--text-muted);
 		font-family: 'Space Mono', monospace;
 		font-size: 14px;
 	}

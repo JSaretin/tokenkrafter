@@ -186,6 +186,20 @@ export async function checkAuthReturn(): Promise<boolean> {
 	_state.isLoggedIn = true;
 	_state.userId = session.user.id;
 	_state.email = session.user.email || null;
+
+	// Pre-fetch wallets while we have a confirmed session so that the
+	// subsequent hasVault() call finds them in _state.wallets instead of
+	// racing with supabase.auth.getSession() which may not have settled yet.
+	try {
+		const { salt, wallets } = await fetchWallets();
+		if (salt) _salt = salt;
+		_state.wallets = wallets.map(_walletRowToContext);
+		if (_state.wallets.length > 0) {
+			const primary = _state.wallets.find((w) => w.isPrimary) || _state.wallets[0];
+			_state.activeWalletId = primary.id;
+		}
+	} catch {}
+
 	_notify();
 	return true;
 }

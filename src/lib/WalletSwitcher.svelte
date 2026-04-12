@@ -911,7 +911,7 @@
 	.ws-sheet {
 		position: absolute; top: 0; left: 0; right: 0;
 		width: 100%;
-		background: #0a0b10; border-bottom: 1px solid rgba(255,255,255,0.08);
+		background: var(--bg); border-bottom: 1px solid var(--border);
 		box-shadow: 0 12px 32px rgba(0,0,0,0.6);
 		display: flex; flex-direction: column;
 		max-height: 100%;
@@ -923,42 +923,42 @@
 	}
 
 	.ws-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px 8px; }
-	.ws-head-title { font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 800; color: #fff; }
+	.ws-head-title { font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 800; color: var(--text-heading); }
 	.ws-x {
 		width: 28px; height: 28px; border-radius: 8px; border: none;
-		background: rgba(255,255,255,0.04); color: #64748b; cursor: pointer;
+		background: var(--bg-surface-input); color: var(--text-dim); cursor: pointer;
 		display: flex; align-items: center; justify-content: center; transition: all 0.12s;
 	}
-	.ws-x:hover { background: rgba(255,255,255,0.08); color: #fff; }
+	.ws-x:hover { background: var(--bg-surface-hover); color: var(--text-heading); }
 
 	.ws-search-wrap {
 		position: relative; padding: 0 16px 10px;
 	}
-	.ws-search-icon { position: absolute; left: 26px; top: 50%; transform: translateY(-60%); color: #475569; pointer-events: none; }
+	.ws-search-icon { position: absolute; left: 26px; top: 50%; transform: translateY(-60%); color: var(--text-dim); pointer-events: none; }
 	.ws-search {
 		width: 100%; padding: 9px 28px 9px 32px; border-radius: 9px;
-		background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06);
-		color: #fff; font-family: 'Space Mono', monospace; font-size: 12px;
+		background: var(--bg-surface-input); border: 1px solid var(--border);
+		color: var(--text-heading); font-family: 'Space Mono', monospace; font-size: 12px;
 		outline: none; transition: border-color 0.12s;
 	}
 	.ws-search:focus { border-color: rgba(0,210,255,0.3); }
-	.ws-search::placeholder { color: #374151; }
+	.ws-search::placeholder { color: var(--text-dim); }
 	.ws-search-clear {
 		position: absolute; right: 22px; top: 50%; transform: translateY(-60%);
 		width: 20px; height: 20px; border-radius: 50%; border: none;
-		background: rgba(255,255,255,0.06); color: #94a3b8; cursor: pointer;
+		background: var(--bg-surface-hover); color: var(--text-muted); cursor: pointer;
 		display: flex; align-items: center; justify-content: center;
 	}
 
 	.ws-list {
 		flex: 1; overflow-y: auto; padding: 0 4px;
 	}
-	.ws-empty { text-align: center; padding: 30px; color: #475569; font-family: 'Space Mono', monospace; font-size: 11px; }
+	.ws-empty { text-align: center; padding: 30px; color: var(--text-dim); font-family: 'Space Mono', monospace; font-size: 11px; }
 
 	.ws-wallet {
 		margin: 4px 0; border-radius: 10px;
 		border: 1px solid transparent;
-		background: rgba(255,255,255,0.015);
+		background: var(--bg-surface);
 	}
 	.ws-wallet-active { border-color: rgba(0,210,255,0.18); background: rgba(0,210,255,0.04); }
 
@@ -967,10 +967,10 @@
 	}
 	.ws-wallet-toggle {
 		width: 22px; height: 22px; border: none; border-radius: 6px;
-		background: transparent; color: #475569; cursor: pointer;
+		background: transparent; color: var(--text-dim); cursor: pointer;
 		display: flex; align-items: center; justify-content: center;
 	}
-	.ws-wallet-toggle:hover { background: rgba(255,255,255,0.04); color: #fff; }
+	.ws-wallet-toggle:hover { background: var(--bg-surface-input); color: var(--text-heading); }
 	.ws-chev { transition: transform 0.15s; }
 	.ws-chev-open { transform: rotate(90deg); }
 
@@ -988,10 +988,10 @@
 	}
 	.ws-wallet-meta:disabled { cursor: progress; }
 	.ws-wallet-name {
-		font-family: 'Syne', sans-serif; font-size: 12px; font-weight: 700; color: #e2e8f0;
+		font-family: 'Syne', sans-serif; font-size: 12px; font-weight: 700; color: var(--text);
 		display: flex; align-items: center; gap: 6px;
 	}
-	.ws-wallet-sub { font-family: 'Space Mono', monospace; font-size: 9px; color: #475569; }
+	.ws-wallet-sub { font-family: 'Space Mono', monospace; font-size: 9px; color: var(--text-dim); }
 
 	.ws-badge {
 		font-family: 'Space Mono', monospace; font-size: 7px; font-weight: 700;
@@ -1005,16 +1005,16 @@
 
 	.ws-icon-btn {
 		width: 32px; height: 32px; border-radius: 6px; border: none;
-		background: transparent; color: #475569; cursor: pointer;
+		background: transparent; color: var(--text-dim); cursor: pointer;
 		display: flex; align-items: center; justify-content: center;
 		transition: all 0.12s; flex-shrink: 0; position: relative; overflow: hidden;
 	}
-	.ws-icon-btn:hover { background: rgba(255,255,255,0.05); color: #94a3b8; }
+	.ws-icon-btn:hover { background: var(--bg-surface-hover); color: var(--text-muted); }
 
 	.ws-rename {
 		flex: 1; padding: 6px 10px; border-radius: 6px;
-		background: rgba(255,255,255,0.05); border: 1px solid rgba(0,210,255,0.3);
-		color: #fff; font-family: 'Syne', sans-serif; font-size: 12px; font-weight: 600;
+		background: var(--bg-surface-hover); border: 1px solid rgba(0,210,255,0.3);
+		color: var(--text-heading); font-family: 'Syne', sans-serif; font-size: 12px; font-weight: 600;
 		outline: none;
 	}
 	.ws-rename-acct { font-size: 11px; }
@@ -1039,10 +1039,10 @@
 		flex: 1; min-width: 0;
 		display: flex; align-items: center; gap: 8px;
 		padding: 6px 8px; border-radius: 7px; border: none;
-		background: transparent; color: #94a3b8; cursor: pointer;
+		background: transparent; color: var(--text-muted); cursor: pointer;
 		font-family: inherit; transition: background 0.1s;
 	}
-	.ws-acct-btn:hover { background: rgba(255,255,255,0.03); }
+	.ws-acct-btn:hover { background: var(--bg-surface); }
 	.ws-acct-active { background: rgba(0,210,255,0.06) !important; color: #00d2ff; }
 	.ws-acct-avatar {
 		width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0;
@@ -1054,14 +1054,14 @@
 	.ws-acct-emoji { font-size: 14px; line-height: 1; }
 	.ws-acct-num { font-family: 'Syne', sans-serif; font-size: 10px; font-weight: 800; color: #00d2ff; }
 	.ws-acct-meta { flex: 1; min-width: 0; text-align: left; display: flex; flex-direction: column; gap: 1px; }
-	.ws-acct-name { font-family: 'Syne', sans-serif; font-size: 11px; font-weight: 600; color: #e2e8f0; }
-	.ws-acct-addr { font-family: 'Space Mono', monospace; font-size: 8px; color: #64748b; }
+	.ws-acct-name { font-family: 'Syne', sans-serif; font-size: 11px; font-weight: 600; color: var(--text); }
+	.ws-acct-addr { font-family: 'Space Mono', monospace; font-size: 8px; color: var(--text-dim); }
 	.ws-acct-right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
-	.ws-acct-usd { font-family: 'Rajdhani', sans-serif; font-size: 11px; color: #64748b; font-variant-numeric: tabular-nums; }
+	.ws-acct-usd { font-family: 'Rajdhani', sans-serif; font-size: 11px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
 	.ws-acct-check { font-size: 10px; color: #10b981; }
 	.ws-acct-actions { display: flex; flex-shrink: 0; }
 
-	.ws-acct-locked { font-family: 'Space Mono', monospace; font-size: 9px; color: #475569; padding: 4px 8px; margin: 0; }
+	.ws-acct-locked { font-family: 'Space Mono', monospace; font-size: 9px; color: var(--text-dim); padding: 4px 8px; margin: 0; }
 
 	.ws-add-acct {
 		display: flex; align-items: center; justify-content: center; gap: 4px;
@@ -1075,23 +1075,23 @@
 	/* Footer — single terminal action. */
 	.ws-footer {
 		padding: 10px 14px 14px;
-		border-top: 1px solid rgba(255,255,255,0.04);
+		border-top: 1px solid var(--border-subtle);
 	}
 	/* Footer: two side-by-side buttons — Lock (neutral) + Disconnect (red) */
 	.ws-footer { display: flex; gap: 8px; }
 	.ws-foot-lock-link {
 		display: flex; align-items: center; justify-content: center; gap: 6px;
 		flex: 1; padding: 11px 10px; border-radius: 9px;
-		background: rgba(255,255,255,0.03);
-		border: 1px solid rgba(255,255,255,0.08);
-		color: #94a3b8; cursor: pointer;
+		background: var(--bg-surface);
+		border: 1px solid var(--border);
+		color: var(--text-muted); cursor: pointer;
 		font-family: 'Syne', sans-serif; font-size: 12px; font-weight: 700;
 		transition: all 0.12s;
 	}
 	.ws-foot-lock-link:hover {
-		background: rgba(255,255,255,0.06);
-		border-color: rgba(255,255,255,0.15);
-		color: #e2e8f0;
+		background: var(--bg-surface-hover);
+		border-color: var(--text-dim);
+		color: var(--text);
 	}
 	.ws-foot-lock-link svg { width: 14px; height: 14px; }
 	.ws-foot-disconnect-link {
@@ -1114,12 +1114,12 @@
 		display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;
 	}
 	.ws-autolock-btn {
-		padding: 10px 6px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.06);
-		background: rgba(255,255,255,0.02); color: #94a3b8; cursor: pointer;
+		padding: 10px 6px; border-radius: 8px; border: 1px solid var(--border);
+		background: var(--bg-surface); color: var(--text-muted); cursor: pointer;
 		font-family: 'Space Mono', monospace; font-size: 11px; font-weight: 600;
 		transition: all 0.12s;
 	}
-	.ws-autolock-btn:hover { border-color: rgba(0,210,255,0.2); color: #e2e8f0; }
+	.ws-autolock-btn:hover { border-color: rgba(0,210,255,0.2); color: var(--text); }
 	.ws-autolock-active {
 		border-color: rgba(0,210,255,0.4); background: rgba(0,210,255,0.1); color: #00d2ff;
 	}
@@ -1136,20 +1136,20 @@
 	}
 	.ws-sheet-menu {
 		width: 100%; max-width: 280px;
-		background: #11141c; border: 1px solid rgba(255,255,255,0.08);
+		background: #11141c; border: 1px solid var(--border);
 		border-radius: 12px; padding: 6px;
 		box-shadow: 0 12px 32px rgba(0,0,0,0.6);
 		display: flex; flex-direction: column; gap: 1px;
 	}
 	.ws-sheet-menu-title {
 		font-family: 'Syne', sans-serif; font-size: 11px; font-weight: 800;
-		color: #64748b; text-transform: uppercase; letter-spacing: 0.08em;
+		color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.08em;
 		padding: 8px 12px 4px;
 	}
 	.ws-menu-item {
 		display: flex; align-items: center; gap: 10px;
 		width: 100%; padding: 9px 10px; border: none; border-radius: 7px;
-		background: transparent; color: #94a3b8; cursor: pointer;
+		background: transparent; color: var(--text-muted); cursor: pointer;
 		font-family: 'Space Mono', monospace; font-size: 11px; text-align: left;
 		transition: all 0.12s;
 	}
@@ -1157,10 +1157,10 @@
 	.ws-menu-item-danger { color: #f87171; }
 	.ws-menu-item-danger:hover { background: rgba(248,113,113,0.08); color: #f87171; }
 	.ws-menu-sub {
-		margin-left: auto; font-size: 9px; color: #475569;
+		margin-left: auto; font-size: 9px; color: var(--text-dim);
 	}
 	.ws-menu-divider {
-		height: 1px; background: rgba(255,255,255,0.05); margin: 3px 4px;
+		height: 1px; background: var(--bg-surface-hover); margin: 3px 4px;
 	}
 
 	/* Form (create / import / codes) */
@@ -1169,20 +1169,20 @@
 		display: flex; flex-direction: column; gap: 8px;
 		background: rgba(0,210,255,0.03); border-top: 1px solid rgba(0,210,255,0.08);
 	}
-	.ws-form-title { font-family: 'Syne', sans-serif; font-size: 12px; font-weight: 700; color: #fff; }
-	.ws-form-hint { font-family: 'Space Mono', monospace; font-size: 9px; color: #64748b; margin: 0; line-height: 1.5; }
+	.ws-form-title { font-family: 'Syne', sans-serif; font-size: 12px; font-weight: 700; color: var(--text-heading); }
+	.ws-form-hint { font-family: 'Space Mono', monospace; font-size: 9px; color: var(--text-dim); margin: 0; line-height: 1.5; }
 	.ws-input {
 		width: 100%; padding: 9px 12px; border-radius: 8px;
-		background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06);
-		color: #fff; font-family: 'Space Mono', monospace; font-size: 12px;
+		background: var(--bg-surface-input); border: 1px solid var(--border);
+		color: var(--text-heading); font-family: 'Space Mono', monospace; font-size: 12px;
 		outline: none; transition: border-color 0.12s;
 	}
 	.ws-input:focus { border-color: rgba(0,210,255,0.3); }
-	.ws-input::placeholder { color: #374151; }
+	.ws-input::placeholder { color: var(--text-dim); }
 	.ws-textarea { resize: vertical; line-height: 1.5; }
 	.ws-ack {
 		display: flex; gap: 6px; align-items: flex-start;
-		font-family: 'Space Mono', monospace; font-size: 9px; color: #94a3b8;
+		font-family: 'Space Mono', monospace; font-size: 9px; color: var(--text-muted);
 		line-height: 1.4; cursor: pointer;
 	}
 	.ws-ack input { accent-color: #00d2ff; flex-shrink: 0; margin-top: 1px; }
@@ -1199,10 +1199,10 @@
 	.ws-form-btns { display: flex; gap: 8px; justify-content: flex-end; }
 	.ws-btn-s {
 		padding: 7px 14px; font-size: 11px; border-radius: 7px;
-		border: 1px solid rgba(255,255,255,0.06); background: rgba(255,255,255,0.03);
-		color: #94a3b8; cursor: pointer; font-family: 'Space Mono', monospace; transition: all 0.12s;
+		border: 1px solid var(--border); background: var(--bg-surface);
+		color: var(--text-muted); cursor: pointer; font-family: 'Space Mono', monospace; transition: all 0.12s;
 	}
-	.ws-btn-s:hover { background: rgba(255,255,255,0.06); color: #fff; }
+	.ws-btn-s:hover { background: var(--bg-surface-hover); color: var(--text-heading); }
 	.ws-btn-primary {
 		background: linear-gradient(135deg, #00d2ff, #3a7bd5); border: none; color: white;
 		font-family: 'Syne', sans-serif; font-weight: 700;
@@ -1223,22 +1223,22 @@
 		border-radius: inherit;
 	}
 	.ws-avatar-modal {
-		background: #0f1118; border: 1px solid rgba(255,255,255,0.08);
+		background: var(--bg); border: 1px solid var(--border);
 		border-radius: 12px; padding: 14px; min-width: 240px;
 		display: flex; flex-direction: column; gap: 10px;
 	}
-	.ws-avatar-title { font-family: 'Syne', sans-serif; font-size: 12px; font-weight: 700; color: #fff; }
+	.ws-avatar-title { font-family: 'Syne', sans-serif; font-size: 12px; font-weight: 700; color: var(--text-heading); }
 	.ws-avatar-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
 	.ws-avatar-btn {
 		width: 32px; height: 32px; border-radius: 8px;
-		background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06);
+		background: var(--bg-surface-input); border: 1px solid var(--border);
 		font-size: 18px; cursor: pointer; transition: all 0.12s;
 		display: flex; align-items: center; justify-content: center;
 	}
 	.ws-avatar-btn:hover { background: rgba(0,210,255,0.1); border-color: rgba(0,210,255,0.3); }
 	.ws-avatar-clear {
-		padding: 6px; border: none; background: rgba(255,255,255,0.04); border-radius: 6px;
-		color: #64748b; cursor: pointer; font-family: 'Space Mono', monospace; font-size: 10px;
+		padding: 6px; border: none; background: var(--bg-surface-input); border-radius: 6px;
+		color: var(--text-dim); cursor: pointer; font-family: 'Space Mono', monospace; font-size: 10px;
 	}
-	.ws-avatar-clear:hover { background: rgba(255,255,255,0.08); color: #fff; }
+	.ws-avatar-clear:hover { background: var(--bg-surface-hover); color: var(--text-heading); }
 </style>

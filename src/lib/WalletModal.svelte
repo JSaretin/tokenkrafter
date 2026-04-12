@@ -441,13 +441,13 @@
 		width: 22px; height: 22px; border-radius: 50%;
 		display: flex; align-items: center; justify-content: center;
 		font-family: 'Syne', sans-serif; font-size: 11px; font-weight: 800;
-		background: rgba(255,255,255,0.04); color: #475569;
-		border: 1px solid rgba(255,255,255,0.06);
+		background: var(--bg-surface-input); color: var(--text-dim);
+		border: 1px solid var(--border);
 		transition: all 0.2s;
 	}
 	.wm-step-label {
 		font-family: 'Space Mono', monospace; font-size: 10px;
-		color: #475569; transition: color 0.2s;
+		color: var(--text-dim); transition: color 0.2s;
 	}
 	.wm-step-active .wm-step-dot {
 		background: rgba(0,210,255,0.12); color: #00d2ff;
@@ -462,23 +462,23 @@
 	.wm-step-done .wm-step-label { color: #10b981; }
 	.wm-step-line {
 		flex: 1; height: 2px; border-radius: 1px;
-		background: rgba(255,255,255,0.05); transition: background 0.2s;
+		background: var(--bg-surface-hover); transition: background 0.2s;
 	}
 	.wm-step-line-done { background: rgba(16,185,129,0.3); }
 
 	/* Create / Import mode tabs (replaces inline link toggle) */
 	.wm-mode-tabs {
 		display: flex; gap: 4px; padding: 3px;
-		background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06);
+		background: var(--bg-surface-input); border: 1px solid var(--border);
 		border-radius: 10px;
 	}
 	.wm-mode-tab {
 		flex: 1; padding: 9px; border: none; background: transparent;
-		color: #64748b; cursor: pointer; border-radius: 7px;
+		color: var(--text-dim); cursor: pointer; border-radius: 7px;
 		font-family: 'Syne', sans-serif; font-size: 12px; font-weight: 700;
 		transition: all 0.12s;
 	}
-	.wm-mode-tab:hover { color: #94a3b8; }
+	.wm-mode-tab:hover { color: var(--text-muted); }
 	.wm-mode-tab.active {
 		background: rgba(0,210,255,0.1); color: #00d2ff;
 		box-shadow: 0 0 0 1px rgba(0,210,255,0.2);
@@ -491,22 +491,22 @@
 		padding: 16px;
 	}
 	.wm-modal {
-		background: #0f1118; border: 1px solid rgba(255,255,255,0.08);
+		background: var(--bg); border: 1px solid var(--border);
 		border-radius: 16px; padding: 24px; width: 100%; max-width: 380px;
 		display: flex; flex-direction: column; gap: 12px;
 	}
 	.wm-title {
 		font-family: 'Syne', sans-serif; font-size: 18px; font-weight: 800;
-		color: #fff; margin: 0;
+		color: var(--text-heading); margin: 0;
 	}
 	.wm-hint {
-		font-size: 12px; color: #64748b; font-family: 'Space Mono', monospace;
+		font-size: 12px; color: var(--text-dim); font-family: 'Space Mono', monospace;
 		margin: 0; line-height: 1.5;
 	}
 	.wm-option {
 		position: relative;
 		display: flex; align-items: center; gap: 12px; padding: 14px;
-		background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
+		background: var(--bg-surface); border: 1px solid var(--border);
 		border-radius: 12px; cursor: pointer; transition: all 0.15s;
 		text-align: left; font-family: inherit; color: inherit;
 	}
@@ -515,23 +515,23 @@
 	.wm-option-primary:hover { border-color: rgba(0,210,255,0.5); }
 	.wm-option-icon {
 		width: 40px; height: 40px; border-radius: 10px;
-		background: rgba(255,255,255,0.05); display: flex;
+		background: var(--bg-surface-hover); display: flex;
 		align-items: center; justify-content: center; flex-shrink: 0;
 	}
 	.wm-option-info { flex: 1; display: flex; flex-direction: column; gap: 2px; }
-	.wm-option-title { font-size: 14px; font-weight: 600; color: #fff; font-family: 'Syne', sans-serif; }
-	.wm-option-desc { font-size: 10px; color: #64748b; font-family: 'Space Mono', monospace; }
+	.wm-option-title { font-size: 14px; font-weight: 600; color: var(--text-heading); font-family: 'Syne', sans-serif; }
+	.wm-option-desc { font-size: 10px; color: var(--text-dim); font-family: 'Space Mono', monospace; }
 	.wm-option-icon-wc { background: rgba(59,153,252,0.08); }
 
 	/* Header with close button */
 	.wm-header { display: flex; align-items: center; justify-content: space-between; }
 	.wm-close {
 		width: 32px; height: 32px; border-radius: 8px; border: none;
-		background: rgba(255,255,255,0.05); color: #64748b;
+		background: var(--bg-surface-hover); color: var(--text-dim);
 		display: flex; align-items: center; justify-content: center;
 		cursor: pointer; transition: all 0.15s; flex-shrink: 0;
 	}
-	.wm-close:hover { background: rgba(255,255,255,0.1); color: #fff; }
+	.wm-close:hover { background: rgba(255,255,255,0.1); color: var(--text-heading); }
 
 	/* Recommended badge — absolute top-right of option */
 	.wm-rec-badge {
@@ -544,12 +544,12 @@
 	}
 	.wm-input {
 		width: 100%; padding: 12px 14px; border-radius: 10px;
-		background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
-		color: #fff; font-family: 'Space Mono', monospace; font-size: 16px;
+		background: var(--bg-surface-input); border: 1px solid var(--border);
+		color: var(--text-heading); font-family: 'Space Mono', monospace; font-size: 16px;
 		outline: none; transition: border-color 0.15s;
 	}
 	.wm-input:focus { border-color: rgba(0,210,255,0.4); }
-	.wm-input::placeholder { color: #374151; }
+	.wm-input::placeholder { color: var(--text-dim); }
 	.wm-textarea { font-family: 'Space Mono', monospace; resize: vertical; line-height: 1.5; }
 	.wm-btn {
 		padding: 12px; border-radius: 10px; border: none; cursor: pointer;
@@ -563,7 +563,7 @@
 	.wm-btn-primary:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 4px 20px rgba(0,210,255,0.3); }
 	.wm-links { display: flex; justify-content: space-between; }
 	.wm-btn-link {
-		background: none; border: none; color: #64748b; cursor: pointer;
+		background: none; border: none; color: var(--text-dim); cursor: pointer;
 		font-family: 'Space Mono', monospace; font-size: 11px;
 		text-decoration: underline; padding: 4px;
 	}
@@ -594,7 +594,7 @@
 	.wm-btn-download:hover { background: rgba(16,185,129,0.12); border-color: rgba(16,185,129,0.3); }
 	.wm-checkbox {
 		display: flex; align-items: center; gap: 8px;
-		font-size: 11px; color: #94a3b8; font-family: 'Space Mono', monospace;
+		font-size: 11px; color: var(--text-muted); font-family: 'Space Mono', monospace;
 		cursor: pointer;
 	}
 	.wm-checkbox input { accent-color: #00d2ff; }

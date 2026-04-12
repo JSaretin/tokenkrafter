@@ -80,6 +80,8 @@ export const FACTORY_ABI = [
 	'function setDexRouter(address _dexRouter) external',
 	'function dexRouter() view returns (address)',
 	'function usdt() view returns (address)',
+	'function authorizedRouter() view returns (address)',
+	'function platformWallet() view returns (address)',
 	'function withdrawFees(address token) external',
 
 	// Admin - Protection overrides

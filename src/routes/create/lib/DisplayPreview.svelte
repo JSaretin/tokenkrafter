@@ -369,7 +369,7 @@
 	.meta-links { display: flex; gap: 6px; flex-wrap: wrap; }
 	.meta-link {
 		font-size: 9px; padding: 2px 6px; border-radius: 4px;
-		background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
+		background: var(--bg-surface); border: 1px solid var(--border);
 		color: var(--text-dim); font-family: 'Space Mono', monospace;
 	}
 

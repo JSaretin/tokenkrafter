@@ -140,21 +140,21 @@
 
 <style>
 	.rv { display: flex; flex-direction: column; gap: 12px; }
-	.rv-section { background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06); border-radius: 12px; padding: 14px; }
+	.rv-section { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px; }
 	.rv-section-title { font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700; color: #00d2ff; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
 	.rv-row { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; font-size: 12px; font-family: 'Space Mono', monospace; }
-	.rv-row span:first-child { color: #64748b; }
-	.rv-row span:last-child { color: #e2e8f0; font-weight: 600; }
+	.rv-row span:first-child { color: var(--text-dim); }
+	.rv-row span:last-child { color: var(--text); font-weight: 600; }
 	.rv-sub { padding-left: 12px; }
-	.rv-sub span:first-child { color: #94a3b8; font-size: 10px; }
+	.rv-sub span:first-child { color: var(--text-muted); font-size: 10px; }
 	.rv-mono { font-size: 11px; }
 	.rv-highlight span:last-child { color: #10b981; font-size: 14px; }
 	.rv-badges { display: flex; gap: 4px; flex-wrap: wrap; }
 	.rv-badge { font-size: 10px; padding: 2px 8px; border-radius: 4px; background: rgba(0,210,255,0.08); color: #00d2ff; border: 1px solid rgba(0,210,255,0.15); }
 	.rv-pool { gap: 8px; }
 	.rv-pool-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-	.rv-pool span:nth-child(2) { flex: 0; white-space: nowrap; color: #e2e8f0; font-weight: 700; }
-	.rv-pool span:nth-child(3) { color: #64748b; font-size: 10px; text-align: right; flex: 1; }
+	.rv-pool span:nth-child(2) { flex: 0; white-space: nowrap; color: var(--text); font-weight: 700; }
+	.rv-pool span:nth-child(3) { color: var(--text-dim); font-size: 10px; text-align: right; flex: 1; }
 	.rv-warn { margin-top: 8px; padding: 8px 10px; border-radius: 8px; background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.2); color: #fbbf24; font-size: 11px; font-family: 'Space Mono', monospace; line-height: 1.5; }
 	.rv-warn strong { color: #f59e0b; }
 </style>

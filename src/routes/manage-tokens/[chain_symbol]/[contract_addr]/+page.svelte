@@ -1793,7 +1793,7 @@
 	.back-link {
 		display: inline-block; margin-bottom: 1.5rem;
 		font-family: 'Space Mono', monospace; font-size: 12px;
-		color: #64748b; text-decoration: none; transition: color 0.15s;
+		color: var(--text-dim); text-decoration: none; transition: color 0.15s;
 	}
 	.back-link:hover { color: #00d2ff; }
 
@@ -1827,7 +1827,7 @@
 		border: 1px solid var(--border);
 		border-radius: 12px;
 	}
-	.stat-label { font-size: 11px; color: #6b7280; font-family: 'Space Mono', monospace; text-transform: uppercase; letter-spacing: 0.05em; }
+	.stat-label { font-size: 11px; color: var(--text-dim); font-family: 'Space Mono', monospace; text-transform: uppercase; letter-spacing: 0.05em; }
 	.stat-value { font-size: 22px; font-weight: 700; color: var(--text-heading); margin: 4px 0 2px; font-family: 'Rajdhani', sans-serif; font-variant-numeric: tabular-nums; }
 	.stat-unit { font-size: 11px; color: var(--text-dim); font-family: 'Space Mono', monospace; }
 
@@ -1836,8 +1836,8 @@
 	.tax-rates-row { display: flex; align-items: center; gap: 4px; margin: 4px 0 2px; flex-wrap: wrap; }
 	.tax-rate-item { display: flex; flex-direction: column; align-items: center; gap: 0; min-width: 0; }
 	.tax-rate-val { font-size: 14px; font-weight: 700; color: var(--text-heading); line-height: 1.2; font-family: 'Rajdhani', sans-serif; font-variant-numeric: tabular-nums; }
-	.tax-rate-type { font-size: 8px; color: #6b7280; font-family: 'Space Mono', monospace; text-transform: uppercase; letter-spacing: 0.04em; }
-	.tax-rate-sep { color: #374151; font-size: 12px; margin-top: -4px; }
+	.tax-rate-type { font-size: 8px; color: var(--text-dim); font-family: 'Space Mono', monospace; text-transform: uppercase; letter-spacing: 0.04em; }
+	.tax-rate-sep { color: var(--text-dim); font-size: 12px; margin-top: -4px; }
 	@media (min-width: 640px) {
 		.tax-rate-val { font-size: 20px; }
 		.tax-rate-type { font-size: 9px; }
@@ -1872,13 +1872,13 @@
 	:global(.about-logo-upload) {
 		display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
 		width: 140px; height: 100px;
-		border: 2px dashed rgba(255,255,255,0.1); border-radius: 14px;
-		background: rgba(255,255,255,0.02); color: #64748b;
+		border: 2px dashed var(--border-input); border-radius: 14px;
+		background: var(--bg-surface); color: var(--text-dim);
 		cursor: pointer; transition: all 0.2s;
 		font-family: 'Space Mono', monospace; font-size: 11px;
 	}
 	:global(.about-logo-upload:hover) { border-color: rgba(0,210,255,0.3); color: #00d2ff; background: rgba(0,210,255,0.04); }
-	:global(.about-logo-hint) { font-size: 9px; color: #374151; }
+	:global(.about-logo-hint) { font-size: 9px; color: var(--text-dim); }
 	:global(.about-logo-pending) { font-size: 10px; color: #10b981; font-family: 'Space Mono', monospace; }
 	:global(.hidden-file) { display: none; }
 
@@ -1898,7 +1898,7 @@
 		padding: 8px 16px;
 		border-radius: 8px 8px 0 0;
 		font-size: 13px;
-		color: #6b7280;
+		color: var(--text-dim);
 		background: transparent;
 		border: none;
 		border-bottom: 2px solid transparent;
@@ -1952,7 +1952,7 @@
 		transform: translateY(-50%);
 		font-size: 11px;
 		font-family: 'Space Mono', monospace;
-		color: #6b7280;
+		color: var(--text-dim);
 		background: var(--bg-surface-hover);
 		padding: 2px 8px;
 		border-radius: 4px;
@@ -1982,7 +1982,7 @@
 		gap: 12px;
 	}
 	:global(.info-row:last-child) { border-bottom: none; }
-	:global(.info-key) { font-size: 12px; color: #6b7280; font-family: 'Space Mono', monospace; flex-shrink: 0; }
+	:global(.info-key) { font-size: 12px; color: var(--text-dim); font-family: 'Space Mono', monospace; flex-shrink: 0; }
 	:global(.info-val) { font-size: 13px; color: var(--text); text-align: right; word-break: break-all; }
 
 	:global(.owner-warning) {
@@ -2015,7 +2015,7 @@
 		padding: 10px 16px;
 		font-size: 13px;
 		font-family: 'Space Mono', monospace;
-		color: #6b7280;
+		color: var(--text-dim);
 		background: transparent;
 		border: none;
 		transition: all 0.15s;
@@ -2079,7 +2079,7 @@
 	}
 
 	:global(.pool-expand-icon) {
-		color: #6b7280;
+		color: var(--text-dim);
 		font-size: 14px;
 		transition: transform 0.2s;
 	}
@@ -2179,12 +2179,12 @@
 	}
 	:global(.remove-liq-header) { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 	:global(.remove-liq-label) { font-size: 12px; font-weight: 600; color: #f87171; font-family: 'Space Mono', monospace; }
-	:global(.remove-liq-bal) { font-size: 10px; color: #6b7280; font-family: 'Space Mono', monospace; }
+	:global(.remove-liq-bal) { font-size: 10px; color: var(--text-dim); font-family: 'Space Mono', monospace; }
 	:global(.remove-liq-pct-row) { display: flex; gap: 6px; margin-bottom: 10px; }
 	:global(.remove-liq-pct-btn) {
 		flex: 1; padding: 6px; border-radius: 6px;
-		border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.03);
-		color: #94a3b8; font-family: 'Space Mono', monospace; font-size: 11px;
+		border: 1px solid var(--border); background: var(--bg-surface);
+		color: var(--text-muted); font-family: 'Space Mono', monospace; font-size: 11px;
 		cursor: pointer; transition: all 0.15s;
 	}
 	:global(.remove-liq-pct-btn:hover) { border-color: rgba(248,113,113,0.3); color: #f87171; }
@@ -2205,7 +2205,7 @@
 	:global(.badge-emerald) { background: rgba(16,185,129,0.1); color: #10b981; border: 1px solid rgba(16,185,129,0.2); }
 	:global(.badge-purple) { background: rgba(139,92,246,0.1); color: #8b5cf6; border: 1px solid rgba(139,92,246,0.2); }
 
-	:global(.label-text) { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #94a3b8; display: block; margin-bottom: 6px; font-family: 'Space Mono', monospace; }
+	:global(.label-text) { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); display: block; margin-bottom: 6px; font-family: 'Space Mono', monospace; }
 
 	.no-underline { text-decoration: none; }
 	a.no-underline { text-decoration: none; }
@@ -2294,7 +2294,7 @@
 		border-radius: 8px;
 		border: none;
 		background: var(--bg-surface-hover);
-		color: #6b7280;
+		color: var(--text-dim);
 		display: flex;
 		align-items: center;
 		justify-content: center;

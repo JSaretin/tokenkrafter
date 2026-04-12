@@ -2488,7 +2488,7 @@
 		color: var(--text-dim); margin-top: 4px;
 	}
 	.bank-payout-breakdown {
-		margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.04);
+		margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border-subtle);
 		display: flex; flex-direction: column; gap: 4px;
 	}
 	.bank-payout-row {
@@ -2614,11 +2614,11 @@
 	}
 	.history-filters { display: flex; gap: 4px; margin-bottom: 10px; }
 	.history-filter {
-		padding: 4px 10px; border-radius: 99px; border: 1px solid rgba(255,255,255,0.06);
-		background: transparent; color: #475569; font-family: 'Space Mono', monospace;
+		padding: 4px 10px; border-radius: 99px; border: 1px solid var(--border);
+		background: transparent; color: var(--text-dim); font-family: 'Space Mono', monospace;
 		font-size: 10px; cursor: pointer; transition: all 0.12s; text-transform: capitalize;
 	}
-	.history-filter:hover { color: #94a3b8; border-color: rgba(255,255,255,0.1); }
+	.history-filter:hover { color: var(--text-muted); border-color: var(--border-input); }
 	.history-filter.active { color: #00d2ff; border-color: rgba(0,210,255,0.25); background: rgba(0,210,255,0.06); }
 	.history-loading { display: flex; justify-content: center; padding: 20px; }
 	.history-empty { text-align: center; color: var(--text-muted); font-family: 'Space Mono', monospace; font-size: 12px; padding: 20px; }
@@ -2740,7 +2740,7 @@
 	.token-action-btn {
 		display: flex; align-items: center; justify-content: center;
 		width: 22px; height: 22px; border-radius: 5px; border: none;
-		background: rgba(255,255,255,0.04); color: var(--text-dim);
+		background: var(--bg-surface-input); color: var(--text-dim);
 		cursor: pointer; transition: all 0.15s; text-decoration: none;
 	}
 	.token-action-btn:hover { background: rgba(0,210,255,0.1); color: #00d2ff; }

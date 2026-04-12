@@ -668,8 +668,9 @@
 				{:else if userAddress}
 					<button class="wallet-btn" onclick={() => {
 						if (walletType === 'external') { const kit = getAppKit(); if (kit) kit.open(); }
-						else if (!signer && walletModalRef) { walletModalRef.openAt('pin-enter'); }
-						else { showAccountPanel = true; }
+						else if (walletType === 'embedded' && !signer && walletModalRef) { walletModalRef.openAt('pin-enter'); }
+						else if (walletType === 'embedded') { showAccountPanel = true; }
+						else { showWalletModal = true; }
 					}}>
 						<span class="wallet-dot" class:wallet-dot-locked={walletType === 'embedded' && !signer}></span>
 						{userAddress.slice(0, 6)}...{userAddress.slice(-4)}
@@ -759,8 +760,9 @@
 					<button class="wallet-btn wallet-btn-sm" onclick={() => {
 						mobileMenuOpen = false;
 						if (walletType === 'external') { const kit = getAppKit(); if (kit) kit.open(); }
-						else if (!signer && walletModalRef) { walletModalRef.openAt('pin-enter'); }
-						else { showAccountPanel = true; }
+						else if (walletType === 'embedded' && !signer && walletModalRef) { walletModalRef.openAt('pin-enter'); }
+						else if (walletType === 'embedded') { showAccountPanel = true; }
+						else { showWalletModal = true; }
 					}}>
 						<span class="wallet-dot" class:wallet-dot-locked={walletType === 'embedded' && !signer}></span>
 						{userAddress.slice(0, 6)}...{userAddress.slice(-4)}
@@ -1055,7 +1057,7 @@
 		position: fixed; bottom: 0; left: 0; right: 0; z-index: 90;
 		display: flex; align-items: center; justify-content: space-between; gap: 12px;
 		padding: 12px 16px;
-		background: #111318; border-top: 1px solid rgba(0,210,255,0.15);
+		background: var(--bg-surface); border-top: 1px solid rgba(0,210,255,0.15);
 		box-shadow: 0 -4px 24px rgba(0,0,0,0.4);
 		animation: slideUpBanner 0.3s ease-out;
 	}
@@ -1068,7 +1070,7 @@
 	}
 	.install-banner-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 	.install-banner-title { font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700; color: white; }
-	.install-banner-desc { font-size: 11px; color: rgba(255,255,255,0.4); }
+	.install-banner-desc { font-size: 11px; color: var(--text-dim); }
 	.install-banner-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 	.install-banner-install {
 		font-family: 'Syne', sans-serif; font-size: 12px; font-weight: 700; color: white;
@@ -1077,10 +1079,10 @@
 	}
 	.install-banner-install:hover { box-shadow: 0 4px 16px rgba(0,210,255,0.3); }
 	.install-banner-dismiss {
-		background: none; border: none; color: rgba(255,255,255,0.3); cursor: pointer;
+		background: none; border: none; color: var(--text-dim); cursor: pointer;
 		padding: 4px; border-radius: 6px; transition: all 0.15s;
 	}
-	.install-banner-dismiss:hover { color: white; background: rgba(255,255,255,0.06); }
+	.install-banner-dismiss:hover { color: white; background: var(--bg-surface-hover); }
 
 	/* Toast notifications */
 	.toast-container {
@@ -1093,7 +1095,7 @@
 		pointer-events: auto; position: relative; overflow: hidden;
 		display: flex; align-items: flex-start; gap: 10px;
 		padding: 12px 14px; border-radius: 12px;
-		background: #111318; border: 1px solid rgba(255,255,255,0.06);
+		background: var(--bg-surface); border: 1px solid var(--border);
 		box-shadow: 0 8px 32px rgba(0,0,0,0.4), 0 0 0 1px rgba(0,0,0,0.2);
 		animation: toastIn 0.3s ease-out;
 	}
@@ -1110,14 +1112,14 @@
 	.toast-info .toast-icon { background: rgba(0,210,255,0.12); color: #00d2ff; }
 	.toast-msg {
 		flex: 1; font-family: 'Space Mono', monospace; font-size: 12px;
-		color: rgba(255,255,255,0.85); line-height: 1.5; padding-top: 4px;
+		color: var(--text); line-height: 1.5; padding-top: 4px;
 	}
 	.toast-close {
 		flex-shrink: 0; background: none; border: none; cursor: pointer;
-		color: rgba(255,255,255,0.25); padding: 2px; border-radius: 4px;
+		color: var(--text-dim); padding: 2px; border-radius: 4px;
 		transition: all 0.15s;
 	}
-	.toast-close:hover { color: rgba(255,255,255,0.6); background: rgba(255,255,255,0.05); }
+	.toast-close:hover { color: var(--text-muted); background: var(--bg-surface-hover); }
 	.toast-progress {
 		position: absolute; bottom: 0; left: 0; height: 2px;
 		animation: toastProgress 5s linear forwards;

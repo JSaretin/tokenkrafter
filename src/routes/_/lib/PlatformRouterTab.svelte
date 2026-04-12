@@ -248,7 +248,7 @@
 <style>
 	.stat-box {
 		background: rgba(255, 255, 255, 0.02);
-		border: 1px solid rgba(255, 255, 255, 0.06);
+		border: 1px solid var(--border);
 		border-radius: 8px;
 		padding: 10px 12px;
 	}
@@ -256,7 +256,7 @@
 		display: block;
 		font-size: 10px;
 		font-family: 'Space Mono', monospace;
-		color: #64748b;
+		color: var(--text-dim);
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
 	}

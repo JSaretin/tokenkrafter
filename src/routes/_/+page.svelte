@@ -294,10 +294,10 @@
 	.tab-btn-new {
 		display: flex; align-items: center; gap: 8px; padding: 10px 18px;
 		background: var(--bg-surface); border: 1px solid var(--border); border-radius: 10px;
-		color: #64748b; font-family: 'Rajdhani', sans-serif; font-size: 14px;
+		color: var(--text-dim); font-family: 'Rajdhani', sans-serif; font-size: 14px;
 		font-weight: 500; letter-spacing: 0.03em;
 	}
-	.tab-btn-new:hover { background: var(--bg-surface-hover); color: var(--text); border-color: rgba(255,255,255,0.1); }
+	.tab-btn-new:hover { background: var(--bg-surface-hover); color: var(--text); border-color: var(--border-input); }
 	.tab-btn-new.active {
 		background: rgba(0,210,255,0.06); border-color: rgba(0,210,255,0.25);
 		color: #00d2ff; font-weight: 600;

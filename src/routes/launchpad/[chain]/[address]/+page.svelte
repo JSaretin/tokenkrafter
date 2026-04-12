@@ -2429,8 +2429,8 @@
 	.pay-asset-btn {
 		display: flex; align-items: center; gap: 8px; width: 100%;
 		padding: 10px 12px; border-radius: 10px; cursor: pointer;
-		background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);
-		color: #e2e8f0; font-family: 'Space Mono', monospace; font-size: 13px;
+		background: var(--bg-surface); border: 1px solid var(--border);
+		color: var(--text); font-family: 'Space Mono', monospace; font-size: 13px;
 		transition: border-color 0.15s;
 	}
 	.pay-asset-btn:hover { border-color: rgba(0,210,255,0.3); }
@@ -2442,7 +2442,7 @@
 	}
 	.pay-asset-name { flex: 1; text-align: left; font-weight: 600; }
 	.pay-asset-tag {
-		font-size: 9px; color: rgba(255,255,255,0.3); background: rgba(255,255,255,0.05);
+		font-size: 9px; color: var(--text-dim); background: var(--bg-surface-hover);
 		padding: 2px 6px; border-radius: 4px;
 	}
 	.pay-picker-overlay {
@@ -2453,7 +2453,7 @@
 	}
 	@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 	.pay-picker {
-		background: #0d1117; border: 1px solid rgba(255,255,255,0.08);
+		background: var(--bg); border: 1px solid var(--border);
 		border-radius: 16px; width: 100%; max-width: 360px;
 		box-shadow: 0 20px 60px rgba(0,0,0,0.5);
 		animation: scaleIn 0.2s ease-out;
@@ -2461,18 +2461,18 @@
 	@keyframes scaleIn { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }
 	.pay-picker-header {
 		display: flex; justify-content: space-between; align-items: center;
-		padding: 16px 16px 12px; border-bottom: 1px solid rgba(255,255,255,0.06);
+		padding: 16px 16px 12px; border-bottom: 1px solid var(--border);
 	}
 	.pay-picker-title { font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700; color: white; }
-	.pay-picker-close { background: none; border: none; color: rgba(255,255,255,0.4); cursor: pointer; padding: 4px; border-radius: 6px; }
-	.pay-picker-close:hover { color: white; background: rgba(255,255,255,0.06); }
+	.pay-picker-close { background: none; border: none; color: var(--text-dim); cursor: pointer; padding: 4px; border-radius: 6px; }
+	.pay-picker-close:hover { color: white; background: var(--bg-surface-hover); }
 	.pay-picker-list { padding: 8px; }
 	.pay-picker-item {
 		display: flex; align-items: center; gap: 10px; width: 100%;
 		padding: 10px; border-radius: 10px; cursor: pointer;
-		background: none; border: none; color: #e2e8f0; transition: background 0.1s;
+		background: none; border: none; color: var(--text); transition: background 0.1s;
 	}
-	.pay-picker-item:hover { background: rgba(255,255,255,0.04); }
+	.pay-picker-item:hover { background: var(--bg-surface-input); }
 	.pay-picker-item.active { background: rgba(0,210,255,0.08); }
 	.pay-picker-logo { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
 	.pay-picker-letter {
@@ -2482,7 +2482,7 @@
 	}
 	.pay-picker-info { flex: 1; text-align: left; display: flex; flex-direction: column; gap: 1px; }
 	.pay-picker-symbol { font-size: 13px; font-weight: 600; color: white; }
-	.pay-picker-name { font-size: 10px; color: rgba(255,255,255,0.3); }
+	.pay-picker-name { font-size: 10px; color: var(--text-dim); }
 
 	.page-grid {
 		display: grid;
@@ -2626,7 +2626,7 @@
 	.token-symbol-badge {
 		font-size: 13px;
 		font-family: 'Space Mono', monospace;
-		color: #6b7280;
+		color: var(--text-dim);
 		background: var(--bg-surface);
 		border: 1px solid var(--bg-surface-hover);
 		padding: 2px 10px;
@@ -2635,9 +2635,9 @@
 	.header-tag {
 		font-size: 11px;
 		font-family: 'Space Mono', monospace;
-		color: #4b5563;
+		color: var(--text-dim);
 		background: rgba(255, 255, 255, 0.03);
-		border: 1px solid rgba(255, 255, 255, 0.06);
+		border: 1px solid var(--border);
 		padding: 2px 8px;
 		border-radius: 4px;
 	}
@@ -2705,7 +2705,7 @@
 		flex-shrink: 0;
 	}
 	.legend-label {
-		color: #6b7280;
+		color: var(--text-dim);
 	}
 	.legend-value {
 		color: var(--text);
@@ -2835,7 +2835,7 @@
 		opacity: 0;
 		transition: opacity 0.15s ease;
 		cursor: pointer;
-		color: #fff;
+		color: var(--text-heading);
 		font-family: 'Space Mono', monospace;
 	}
 	.logo-upload-wrap:hover .logo-upload-overlay {
@@ -2923,7 +2923,7 @@
 	.countdown-num {
 		font-size: 22px;
 		font-weight: 700;
-		color: #fff;
+		color: var(--text-heading);
 		font-family: 'Space Mono', monospace;
 		line-height: 1;
 	}
@@ -2934,7 +2934,7 @@
 		font-size: 9px;
 		text-transform: uppercase;
 		letter-spacing: 0.06em;
-		color: #6b7280;
+		color: var(--text-dim);
 		font-family: 'Space Mono', monospace;
 	}
 
@@ -3001,7 +3001,7 @@
 		height: 34px;
 		cursor: pointer;
 		transition: all var(--transition-fast);
-		color: #6b7280;
+		color: var(--text-dim);
 		flex-shrink: 0;
 	}
 	.detail-fav-btn:hover {
@@ -3021,7 +3021,7 @@
 		align-items: center;
 		gap: 10px;
 		padding: 10px 0;
-		border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+		border-bottom: 1px solid var(--border-subtle);
 		position: relative;
 	}
 	.activity-item:last-child {
@@ -3071,7 +3071,7 @@
 	}
 	.comment-item {
 		padding: 12px 0;
-		border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+		border-bottom: 1px solid var(--border-subtle);
 	}
 	.comment-item:last-child {
 		border-bottom: none;
@@ -3209,7 +3209,7 @@
 	.remaining-buy-track {
 		height: 6px;
 		border-radius: 3px;
-		background: rgba(255, 255, 255, 0.06);
+		background: var(--bg-surface-hover);
 		overflow: hidden;
 	}
 	.remaining-buy-fill {

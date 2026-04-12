@@ -116,8 +116,8 @@
 
 	.tooltip-bubble {
 		position: fixed;
-		background: #1a1a2e;
-		color: #d1d5db;
+		background: var(--bg-surface);
+		color: var(--text);
 		font-size: 12px;
 		font-family: 'Space Mono', monospace;
 		font-weight: 400;

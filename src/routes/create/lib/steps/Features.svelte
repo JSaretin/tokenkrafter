@@ -48,11 +48,11 @@
 
 <style>
 	.features { display: flex; flex-direction: column; gap: 1rem; }
-	.heading { font-family: 'Syne', sans-serif; font-size: 0.85rem; color: rgba(255,255,255,0.5); text-transform: uppercase; letter-spacing: 0.08em; margin: 0; }
+	.heading { font-family: 'Syne', sans-serif; font-size: 0.85rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; margin: 0; }
 	.cards { display: flex; flex-direction: column; gap: 0.5rem; }
 	.card {
 		display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem 1rem;
-		background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
+		background: var(--bg-surface); border: 1px solid var(--border);
 		border-radius: 10px; cursor: pointer; transition: border-color 0.2s; text-align: left;
 		font-family: inherit; color: inherit;
 	}
@@ -60,8 +60,8 @@
 	.card.on { border-color: rgba(0,210,255,0.35); }
 	.icon { font-size: 1.25rem; flex-shrink: 0; width: 2rem; text-align: center; }
 	.info { flex: 1; display: flex; flex-direction: column; gap: 0.15rem; }
-	.title { font-family: 'Space Mono', monospace; font-size: 0.82rem; color: rgba(255,255,255,0.9); display: flex; align-items: center; gap: 0.5rem; }
-	.desc { font-size: 0.72rem; color: rgba(255,255,255,0.35); }
+	.title { font-family: 'Space Mono', monospace; font-size: 0.82rem; color: var(--text-heading); display: flex; align-items: center; gap: 0.5rem; }
+	.desc { font-size: 0.72rem; color: var(--text-dim); }
 	.badge { font-size: 0.6rem; background: rgba(0,210,255,0.15); color: #00d2ff; padding: 0.1rem 0.4rem; border-radius: 4px; font-family: 'Space Mono', monospace; }
 	.note { font-size: 0.65rem; color: rgba(0,210,255,0.6); margin-top: 0.1rem; }
 	.toggle {

@@ -776,8 +776,8 @@
 		letter-spacing: 0.03em;
 		transition: all 0.15s;
 	}
-	.collapse-header:hover { border-color: rgba(255,255,255,0.12); background: var(--bg-surface-hover); }
-	.collapse-arrow { color: #64748b; transition: transform 0.2s; font-size: 12px; }
+	.collapse-header:hover { border-color: var(--placeholder); background: var(--bg-surface-hover); }
+	.collapse-arrow { color: var(--text-dim); transition: transform 0.2s; font-size: 12px; }
 	.collapse-arrow.open { transform: rotate(90deg); }
 	.collapse-body { padding: 12px 0 16px; }
 

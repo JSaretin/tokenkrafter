@@ -1168,7 +1168,7 @@
 					bases,
 					baseAmounts,
 					tokenAmounts,
-					burnLP: false,
+					burnLP: tokenInfo.listing?.burnLp ?? false,
 					tradingDelay: BigInt(tokenInfo.listing.tradingDelay || '60'),
 				};
 				// Native value budget: fee BNB (exact-output swap, only consumes
@@ -2078,15 +2078,15 @@
 	.review-id {
 		display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px;
 	}
-	.review-token-name { font-family: 'Syne', sans-serif; font-size: 15px; font-weight: 700; color: #fff; }
+	.review-token-name { font-family: 'Syne', sans-serif; font-size: 15px; font-weight: 700; color: var(--text-heading); }
 	.review-token-chain { font-size: 10px; color: #00d2ff; font-family: 'Space Mono', monospace; }
 	.review-badges { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 12px; }
 
 	/* Deploy progress stepper */
 	.deploy-progress { padding: 8px 0; }
 	.dp-header { text-align: center; margin-bottom: 20px; }
-	.dp-title { font-family: 'Syne', sans-serif; font-size: 18px; font-weight: 800; color: #fff; margin: 0; }
-	.dp-sub { font-size: 11px; color: #475569; font-family: 'Space Mono', monospace; margin: 4px 0 0; }
+	.dp-title { font-family: 'Syne', sans-serif; font-size: 18px; font-weight: 800; color: var(--text-heading); margin: 0; }
+	.dp-sub { font-size: 11px; color: var(--text-dim); font-family: 'Space Mono', monospace; margin: 4px 0 0; }
 	.dp-steps { display: flex; flex-direction: column; gap: 0; padding: 0 8px; }
 	.dp-step {
 		display: flex; align-items: center; gap: 12px; padding: 10px 0;
@@ -2099,20 +2099,20 @@
 	}
 	.dp-done .dp-step-icon { border-color: #10b981; color: #10b981; background: rgba(16,185,129,0.1); }
 	.dp-active .dp-step-icon { border-color: #00d2ff; background: rgba(0,210,255,0.1); }
-	.dp-pending .dp-step-icon { border-color: rgba(255,255,255,0.06); }
-	.dp-num { font-family: 'Space Mono', monospace; font-size: 10px; color: #374151; }
+	.dp-pending .dp-step-icon { border-color: var(--border); }
+	.dp-num { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text-dim); }
 	.dp-spinner {
 		width: 14px; height: 14px; border: 2px solid rgba(0,210,255,0.2);
 		border-top-color: #00d2ff; border-radius: 50%; animation: spin 0.8s linear infinite;
 	}
 	@keyframes spin { to { transform: rotate(360deg); } }
 	.dp-step-info { flex: 1; }
-	.dp-step-label { font-family: 'Space Mono', monospace; font-size: 12px; color: #e2e8f0; }
+	.dp-step-label { font-family: 'Space Mono', monospace; font-size: 12px; color: var(--text); }
 	.dp-done .dp-step-label { color: #10b981; }
 	.dp-active .dp-step-label { color: #00d2ff; }
-	.dp-pending .dp-step-label { color: #374151; }
-	.dp-skipped { font-size: 9px; color: #374151; font-family: 'Space Mono', monospace; margin-left: 6px; }
-	.dp-line { width: 2px; height: 16px; background: rgba(255,255,255,0.04); margin-left: 13px; transition: background 0.3s; }
+	.dp-pending .dp-step-label { color: var(--text-dim); }
+	.dp-skipped { font-size: 9px; color: var(--text-dim); font-family: 'Space Mono', monospace; margin-left: 6px; }
+	.dp-line { width: 2px; height: 16px; background: var(--bg-surface-input); margin-left: 13px; transition: background 0.3s; }
 	.dp-line-done { background: #10b981; }
 	.dp-tx-link {
 		display: block; text-align: center; margin-top: 16px; padding: 8px;
@@ -2123,11 +2123,11 @@
 
 	/* Payment method card + modal */
 	.pay-method-section { display: flex; flex-direction: column; gap: 6px; }
-	.pay-method-label { font-size: 9px; color: #475569; font-family: 'Space Mono', monospace; text-transform: uppercase; letter-spacing: 0.04em; }
+	.pay-method-label { font-size: 9px; color: var(--text-dim); font-family: 'Space Mono', monospace; text-transform: uppercase; letter-spacing: 0.04em; }
 	.pay-method-card {
 		display: flex; align-items: center; gap: 10px; width: 100%;
 		padding: 10px 12px; border-radius: 10px;
-		background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
+		background: var(--bg-surface); border: 1px solid var(--border);
 		cursor: pointer; transition: border-color 0.12s; font-family: inherit; color: inherit; text-align: left;
 	}
 	.pay-method-card:hover { border-color: rgba(0,210,255,0.2); }
@@ -2139,9 +2139,9 @@
 	}
 	.pay-method-logo { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
 	.pay-method-info { flex: 1; }
-	.pay-method-name { display: block; font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700; color: #fff; }
-	.pay-method-amount { display: block; font-family: 'Rajdhani', sans-serif; font-size: 12px; color: #64748b; font-variant-numeric: tabular-nums; }
-	.pay-method-chev { color: #374151; flex-shrink: 0; }
+	.pay-method-name { display: block; font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700; color: var(--text-heading); }
+	.pay-method-amount { display: block; font-family: 'Rajdhani', sans-serif; font-size: 12px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+	.pay-method-chev { color: var(--text-dim); flex-shrink: 0; }
 
 	/* ═══ PAYMENT MODAL (trade-page style) ═══ */
 	.pm-backdrop {
@@ -2223,11 +2223,11 @@
 		display: flex; justify-content: space-between; align-items: center;
 		padding: 6px 0; font-family: 'Space Mono', monospace; font-size: 11px;
 	}
-	.receipt-label { color: #64748b; }
-	.receipt-value { color: #e2e8f0; font-weight: 600; font-family: 'Rajdhani', sans-serif; font-size: 13px; font-variant-numeric: tabular-nums; text-align: right; }
-	.receipt-note { color: #64748b; font-weight: 400; font-size: 10px; font-family: 'Space Mono', monospace; }
-	.receipt-divider { height: 1px; background: rgba(255,255,255,0.06); margin: 6px 0; }
-	.receipt-total .receipt-label { color: #fff; font-weight: 700; }
+	.receipt-label { color: var(--text-dim); }
+	.receipt-value { color: var(--text); font-weight: 600; font-family: 'Rajdhani', sans-serif; font-size: 13px; font-variant-numeric: tabular-nums; text-align: right; }
+	.receipt-note { color: var(--text-dim); font-weight: 400; font-size: 10px; font-family: 'Space Mono', monospace; }
+	.receipt-divider { height: 1px; background: var(--bg-surface-hover); margin: 6px 0; }
+	.receipt-total .receipt-label { color: var(--text-heading); font-weight: 700; }
 	.receipt-total .receipt-value { color: #00d2ff; font-size: 15px; font-weight: 700; }
 
 	.payment-summary {
@@ -2266,24 +2266,24 @@
 	/* Deposit screen */
 	.deposit-screen { display: flex; flex-direction: column; gap: 12px; }
 	.deposit-amount { text-align: center; padding: 10px; background: rgba(0,210,255,0.04); border: 1px solid rgba(0,210,255,0.1); border-radius: 10px; }
-	.deposit-amount-label { display: block; font-size: 10px; color: #64748b; font-family: 'Space Mono', monospace; }
+	.deposit-amount-label { display: block; font-size: 10px; color: var(--text-dim); font-family: 'Space Mono', monospace; }
 	.deposit-amount-value { display: block; font-family: 'Rajdhani', sans-serif; font-size: 26px; font-weight: 700; color: #00d2ff; font-variant-numeric: tabular-nums; }
 	.deposit-amount-bal { display: block; font-size: 9px; color: #f59e0b; font-family: 'Space Mono', monospace; }
-	.deposit-qr-row { display: flex; align-items: center; gap: 14px; padding: 12px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 10px; }
+	.deposit-qr-row { display: flex; align-items: center; gap: 14px; padding: 12px; background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 10px; }
 	.deposit-amount-copy {
 		display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
 		transition: opacity 0.12s; justify-content: center;
 	}
 	.deposit-amount-copy:hover { opacity: 0.8; }
-	.deposit-amount-copy svg { color: #475569; }
+	.deposit-amount-copy svg { color: var(--text-dim); }
 	.deposit-addr-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; cursor: pointer; transition: opacity 0.12s; }
 	.deposit-addr-info:hover { opacity: 0.8; }
-	.deposit-addr-label { font-size: 9px; color: #475569; font-family: 'Space Mono', monospace; text-transform: uppercase; letter-spacing: 0.04em; }
-	.deposit-addr { font-size: 10px; color: #e2e8f0; font-family: 'Space Mono', monospace; word-break: break-all; line-height: 1.5; }
+	.deposit-addr-label { font-size: 9px; color: var(--text-dim); font-family: 'Space Mono', monospace; text-transform: uppercase; letter-spacing: 0.04em; }
+	.deposit-addr { font-size: 10px; color: var(--text); font-family: 'Space Mono', monospace; word-break: break-all; line-height: 1.5; }
 	.deposit-addr-actions { display: flex; align-items: center; gap: 8px; }
 	.deposit-copy-btn { display: inline-flex; align-items: center; gap: 3px; font-size: 9px; color: #00d2ff; font-family: 'Space Mono', monospace; }
 	.deposit-network { font-size: 9px; color: #f59e0b; font-family: 'Space Mono', monospace; }
-	.deposit-status { display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 10px; color: #475569; font-family: 'Space Mono', monospace; }
+	.deposit-status { display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 10px; color: var(--text-dim); font-family: 'Space Mono', monospace; }
 
 	.qr-section { display: flex; flex-direction: column; align-items: center; }
 	.qr-placeholder {
@@ -2331,15 +2331,15 @@
 	/* ─── Intent Selection Grid ─── */
 	/* ── Selection screen ── */
 	.sel-header { text-align: center; margin-bottom: 28px; }
-	.sel-title { font-family: 'Syne', sans-serif; font-size: 28px; font-weight: 800; color: #fff; margin: 0; }
-	.sel-sub { font-size: 13px; color: #475569; font-family: 'Space Mono', monospace; margin: 6px 0 0; }
+	.sel-title { font-family: 'Syne', sans-serif; font-size: 28px; font-weight: 800; color: var(--text-heading); margin: 0; }
+	.sel-sub { font-size: 13px; color: var(--text-dim); font-family: 'Space Mono', monospace; margin: 6px 0 0; }
 
 	.sel-grid { display: grid; grid-template-columns: 1fr; gap: 10px; max-width: 640px; margin: 0 auto; }
 	@media (min-width: 640px) { .sel-grid { grid-template-columns: 1fr 1fr; } }
 
 	.sel-card {
 		position: relative; border-radius: 14px; overflow: hidden;
-		background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05);
+		background: var(--bg-surface); border: 1px solid var(--border-subtle);
 		cursor: pointer; transition: all 0.2s; text-align: left;
 		font-family: inherit; color: inherit;
 	}
@@ -2371,15 +2371,15 @@
 	.sel-icon-cyan { background: rgba(0,210,255,0.1); color: #00d2ff; border: 1px solid rgba(0,210,255,0.15); }
 	.sel-icon-amber { background: rgba(245,158,11,0.1); color: #f59e0b; border: 1px solid rgba(245,158,11,0.15); }
 	.sel-icon-emerald { background: rgba(16,185,129,0.1); color: #10b981; border: 1px solid rgba(16,185,129,0.15); }
-	.sel-icon-default { background: rgba(255,255,255,0.04); color: #64748b; border: 1px solid rgba(255,255,255,0.06); }
+	.sel-icon-default { background: var(--bg-surface-input); color: var(--text-dim); border: 1px solid var(--border); }
 
-	.sel-name { font-family: 'Syne', sans-serif; font-size: 15px; font-weight: 700; color: #fff; margin: 0; }
-	.sel-desc { font-size: 11px; color: #475569; font-family: 'Space Mono', monospace; line-height: 1.5; margin: 0; }
+	.sel-name { font-family: 'Syne', sans-serif; font-size: 15px; font-weight: 700; color: var(--text-heading); margin: 0; }
+	.sel-desc { font-size: 11px; color: var(--text-dim); font-family: 'Space Mono', monospace; line-height: 1.5; margin: 0; }
 	.sel-features { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 2px; }
 	.sel-features span {
 		font-size: 9px; padding: 2px 8px; border-radius: 99px;
-		background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05);
-		color: #64748b; font-family: 'Space Mono', monospace;
+		background: var(--bg-surface); border: 1px solid var(--border-subtle);
+		color: var(--text-dim); font-family: 'Space Mono', monospace;
 	}
 
 	/* Legacy — keep for backward compat */

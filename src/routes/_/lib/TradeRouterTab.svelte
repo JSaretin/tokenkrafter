@@ -395,10 +395,10 @@
 
 <style>
 	.stat-box {
-		background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05);
+		background: var(--bg-surface); border: 1px solid var(--border-subtle);
 		border-radius: 10px; padding: 10px 12px;
 	}
-	.stat-label { display: block; font-size: 10px; font-family: 'Space Mono', monospace; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; }
+	.stat-label { display: block; font-size: 10px; font-family: 'Space Mono', monospace; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; }
 	.stat-value { display: block; font-size: 14px; font-weight: 700; font-family: 'Space Mono', monospace; margin-top: 2px; }
 	.btn-action {
 		padding: 6px 14px; border-radius: 8px; border: none; cursor: pointer;

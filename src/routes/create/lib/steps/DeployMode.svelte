@@ -67,8 +67,8 @@
 		padding: 20px 14px;
 		cursor: pointer;
 		transition: all 0.25s;
-		border: 1px solid rgba(255,255,255,0.06);
-		background: rgba(255,255,255,0.02);
+		border: 1px solid var(--border);
+		background: var(--bg-surface);
 		border-radius: 14px;
 		position: relative;
 	}

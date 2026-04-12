@@ -234,19 +234,19 @@
 	}
 	.axis-label {
 		font-size: 8px;
-		fill: #6b7280;
+		fill: var(--text-dim);
 		font-family: 'Space Mono', monospace;
 	}
 	.axis-title {
 		font-size: 9px;
-		fill: #4b5563;
+		fill: var(--text-dim);
 		font-family: 'Space Mono', monospace;
 		text-transform: uppercase;
 		letter-spacing: 0.08em;
 	}
 	.curve-label {
 		font-size: 10px;
-		fill: #94a3b8;
+		fill: var(--text-muted);
 		font-family: 'Syne', sans-serif;
 		font-weight: 600;
 	}

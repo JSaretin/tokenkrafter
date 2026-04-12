@@ -1366,8 +1366,8 @@
 
 	.ap {
 		position: fixed; top: 0; right: 0; bottom: 0; z-index: 9999;
-		width: 360px; background: #0a0b10;
-		border-left: 1px solid rgba(255,255,255,0.05);
+		width: 360px; background: var(--bg);
+		border-left: 1px solid var(--border-subtle);
 		display: flex; flex-direction: column;
 		animation: apSlide 0.2s ease-out;
 	}
@@ -1381,26 +1381,26 @@
 	}
 	.ap-back {
 		width: 30px; height: 30px; border-radius: 8px; border: none;
-		background: rgba(255,255,255,0.04); color: #94a3b8; cursor: pointer;
+		background: var(--bg-surface-input); color: var(--text-muted); cursor: pointer;
 		display: flex; align-items: center; justify-content: center;
 		transition: all 0.12s; flex-shrink: 0;
 	}
-	.ap-back:hover { background: rgba(255,255,255,0.08); color: #fff; }
+	.ap-back:hover { background: var(--bg-surface-hover); color: var(--text-heading); }
 	.ap-head-title {
-		font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700; color: #e2e8f0; flex: 1;
+		font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700; color: var(--text); flex: 1;
 	}
 	.ap-x {
 		width: 28px; height: 28px; border-radius: 8px; border: none;
-		background: rgba(255,255,255,0.04); color: #64748b; cursor: pointer;
+		background: var(--bg-surface-input); color: var(--text-dim); cursor: pointer;
 		display: flex; align-items: center; justify-content: center;
 		transition: all 0.12s; flex-shrink: 0; margin-left: auto;
 	}
-	.ap-x:hover { background: rgba(255,255,255,0.08); color: #fff; }
+	.ap-x:hover { background: var(--bg-surface-hover); color: var(--text-heading); }
 
 	/* Wallet/account chip — single button, opens WalletSwitcher sheet */
 	.ap-chip {
 		display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0;
-		background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
+		background: var(--bg-surface); border: 1px solid var(--border);
 		border-radius: 10px; padding: 7px 12px; cursor: pointer;
 		color: inherit; font-family: inherit; transition: border-color 0.15s;
 	}
@@ -1416,14 +1416,14 @@
 	.ap-chip-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; overflow: hidden; }
 	.ap-chip-line1 {
 		display: flex; align-items: center; gap: 5px; min-width: 0;
-		font-family: 'Syne', sans-serif; font-size: 11px; font-weight: 700; color: #e2e8f0;
+		font-family: 'Syne', sans-serif; font-size: 11px; font-weight: 700; color: var(--text);
 		white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 	}
-	.ap-chip-wallet { color: #e2e8f0; }
-	.ap-chip-acct { color: #94a3b8; font-weight: 600; }
-	.ap-chip-sep { color: #374151; }
-	.ap-chip-line2 { font-family: 'Space Mono', monospace; font-size: 8px; color: #64748b; }
-	.ap-chip-chev { color: #64748b; flex-shrink: 0; }
+	.ap-chip-wallet { color: var(--text); }
+	.ap-chip-acct { color: var(--text-muted); font-weight: 600; }
+	.ap-chip-sep { color: var(--text-dim); }
+	.ap-chip-line2 { font-family: 'Space Mono', monospace; font-size: 8px; color: var(--text-dim); }
+	.ap-chip-chev { color: var(--text-dim); flex-shrink: 0; }
 
 	/* Empty-state CTA card (shown when wallet is empty) */
 	.ap-empty-cta {
@@ -1440,11 +1440,11 @@
 	}
 	.ap-empty-cta-text strong {
 		display: block; font-family: 'Syne', sans-serif; font-size: 13px;
-		color: #fff; margin-bottom: 3px;
+		color: var(--text-heading); margin-bottom: 3px;
 	}
 	.ap-empty-cta-text p {
 		margin: 0; font-family: 'Space Mono', monospace; font-size: 10px;
-		color: #94a3b8; line-height: 1.5;
+		color: var(--text-muted); line-height: 1.5;
 	}
 	.ap-empty-cta-btns { display: flex; gap: 8px; }
 	.ap-empty-cta-btns .ap-btn { flex: 1; padding: 8px 10px; font-size: 10px; }
@@ -1454,7 +1454,7 @@
 	   visible; icon is a plain button inside the same border. */
 	.ap-recipient-row {
 		display: flex; align-items: center;
-		background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
+		background: var(--bg-surface); border: 1px solid var(--border);
 		border-radius: 8px; transition: border-color 0.12s;
 	}
 	.ap-recipient-row:focus-within { border-color: rgba(0,210,255,0.3); }
@@ -1490,23 +1490,23 @@
 	.ap-book-search {
 		display: flex; align-items: center; gap: 8px;
 		padding: 8px 12px; margin: 12px 12px 0;
-		background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 8px;
-		color: #64748b;
+		background: var(--bg-surface); border: 1px solid var(--border); border-radius: 8px;
+		color: var(--text-dim);
 	}
-	.ap-book-search:focus-within { border-color: rgba(0,210,255,0.3); color: #94a3b8; }
+	.ap-book-search:focus-within { border-color: rgba(0,210,255,0.3); color: var(--text-muted); }
 	.ap-book-search-input {
 		flex: 1; background: transparent; border: none; outline: none;
-		color: #e2e8f0; font-family: 'Space Mono', monospace; font-size: 11px;
+		color: var(--text); font-family: 'Space Mono', monospace; font-size: 11px;
 	}
-	.ap-book-search-input::placeholder { color: #334155; }
+	.ap-book-search-input::placeholder { color: var(--text-dim); }
 	.ap-book-search-clear {
 		width: 18px; height: 18px; padding: 0; border: none; border-radius: 50%;
-		background: rgba(255,255,255,0.06); color: #94a3b8;
+		background: var(--bg-surface-hover); color: var(--text-muted);
 		font-size: 14px; line-height: 1; cursor: pointer; flex-shrink: 0;
 	}
-	.ap-book-search-clear:hover { background: rgba(255,255,255,0.12); color: #fff; }
+	.ap-book-search-clear:hover { background: rgba(255,255,255,0.12); color: var(--text-heading); }
 	.ap-book-empty {
-		text-align: center; padding: 24px; font-size: 10px; color: #64748b;
+		text-align: center; padding: 24px; font-size: 10px; color: var(--text-dim);
 		font-family: 'Space Mono', monospace; margin: 0;
 	}
 
@@ -1515,13 +1515,13 @@
 		flex: 1; overflow-y: auto; padding: 4px 12px 12px;
 	}
 	.ap-book-header {
-		font-family: 'Space Mono', monospace; font-size: 9px; color: #64748b;
+		font-family: 'Space Mono', monospace; font-size: 9px; color: var(--text-dim);
 		text-transform: uppercase; letter-spacing: 0.5px; padding: 6px 4px 2px;
 	}
 	.ap-book-item {
 		display: flex; align-items: center; gap: 10px; width: 100%;
 		padding: 9px 10px; border-radius: 9px;
-		background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05);
+		background: var(--bg-surface); border: 1px solid var(--border-subtle);
 		cursor: pointer; transition: all 0.12s; color: inherit; text-align: left;
 	}
 	.ap-book-item:hover { background: rgba(0,210,255,0.04); border-color: rgba(0,210,255,0.18); }
@@ -1537,10 +1537,10 @@
 		font-family: 'Syne', sans-serif; font-size: 11px; font-weight: 800; color: #00d2ff;
 	}
 	.ap-book-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-	.ap-book-name { font-family: 'Syne', sans-serif; font-size: 12px; font-weight: 700; color: #e2e8f0; }
-	.ap-book-sub { font-family: 'Space Mono', monospace; font-size: 9px; color: #64748b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+	.ap-book-name { font-family: 'Syne', sans-serif; font-size: 12px; font-weight: 700; color: var(--text); }
+	.ap-book-sub { font-family: 'Space Mono', monospace; font-size: 9px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 	.ap-book-bal {
-		font-family: 'Rajdhani', sans-serif; font-size: 11px; color: #64748b;
+		font-family: 'Rajdhani', sans-serif; font-size: 11px; color: var(--text-dim);
 		font-variant-numeric: tabular-nums; flex-shrink: 0;
 	}
 
@@ -1551,7 +1551,7 @@
 		display: flex; flex-direction: column; gap: 12px;
 	}
 	.ap-send-footer {
-		padding: 12px 16px 16px; border-top: 1px solid rgba(255,255,255,0.06);
+		padding: 12px 16px 16px; border-top: 1px solid var(--border);
 		flex-shrink: 0;
 	}
 
@@ -1573,32 +1573,32 @@
 		border-radius: 8px;
 		transition: background 0.15s;
 	}
-	.ap-preview-amount:hover { background: rgba(255,255,255,0.03); }
-	.ap-preview-amount:active { background: rgba(255,255,255,0.06); }
+	.ap-preview-amount:hover { background: var(--bg-surface); }
+	.ap-preview-amount:active { background: var(--bg-surface-hover); }
 	.ap-preview-num {
 		font-family: 'Rajdhani', sans-serif; font-weight: 700;
-		color: #f1f5f9; font-variant-numeric: tabular-nums;
+		color: var(--text); font-variant-numeric: tabular-nums;
 		font-size: clamp(14px, calc(92cqw / max(var(--char-count, 10), 5) / 0.56), 32px);
 		white-space: nowrap;
 	}
 	.ap-preview-sym {
-		font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700; color: #94a3b8;
+		font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700; color: var(--text-muted);
 		flex-shrink: 0;
 	}
 	.ap-preview-usd {
-		text-align: center; font-family: 'Space Mono', monospace; font-size: 11px; color: #64748b;
+		text-align: center; font-family: 'Space Mono', monospace; font-size: 11px; color: var(--text-dim);
 		margin-top: -8px;
 	}
 	.ap-preview-rows {
 		display: flex; flex-direction: column; gap: 8px;
-		padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.05);
+		padding-top: 10px; border-top: 1px solid var(--border-subtle);
 	}
 	.ap-preview-row {
 		display: flex; justify-content: space-between; align-items: center; gap: 8px;
 	}
-	.ap-preview-k { font-family: 'Space Mono', monospace; font-size: 10px; color: #64748b; }
+	.ap-preview-k { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text-dim); }
 	.ap-preview-v {
-		font-family: 'Space Mono', monospace; font-size: 11px; color: #e2e8f0;
+		font-family: 'Space Mono', monospace; font-size: 11px; color: var(--text);
 		text-align: right; min-width: 0;
 	}
 	.ap-preview-tag {
@@ -1608,12 +1608,12 @@
 	}
 	.ap-preview-btns {
 		display: flex; gap: 8px; padding: 12px 16px 16px;
-		border-top: 1px solid rgba(255,255,255,0.06); flex-shrink: 0;
+		border-top: 1px solid var(--border); flex-shrink: 0;
 	}
 	.ap-preview-btns .ap-btn { flex: 1; }
 
 	/* Network */
-	.ap-net { display: flex; align-items: center; gap: 5px; padding: 0 16px 4px; font-size: 9px; color: #64748b; font-family: 'Space Mono', monospace; }
+	.ap-net { display: flex; align-items: center; gap: 5px; padding: 0 16px 4px; font-size: 9px; color: var(--text-dim); font-family: 'Space Mono', monospace; }
 	.ap-net-dot { width: 5px; height: 5px; border-radius: 50%; background: #10b981; }
 
 	/* Balance */
@@ -1626,15 +1626,15 @@
 		/* Fluid: clamp against the container's inline size so meme portfolios
 		   (e.g. $73B of shitcoin) shrink to fit instead of overflowing. */
 		font-size: clamp(28px, 11cqw, 44px);
-		font-weight: 700; color: #fff; line-height: 1.1; font-variant-numeric: tabular-nums;
+		font-weight: 700; color: var(--text-heading); line-height: 1.1; font-variant-numeric: tabular-nums;
 		letter-spacing: -0.02em;
 		max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 	}
-	.ap-bal-loading { font-size: 24px; color: #64748b; animation: blink 1s infinite; }
+	.ap-bal-loading { font-size: 24px; color: var(--text-dim); animation: blink 1s infinite; }
 	@keyframes blink { 0%,100% { opacity: 0.3; } 50% { opacity: 1; } }
 	.ap-bal-native {
 		display: block; font-family: 'Rajdhani', sans-serif; font-size: 16px;
-		font-weight: 500; color: #94a3b8; margin-top: 6px; font-variant-numeric: tabular-nums;
+		font-weight: 500; color: var(--text-muted); margin-top: 6px; font-variant-numeric: tabular-nums;
 		max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 		padding: 0 8px;
 	}
@@ -1643,7 +1643,7 @@
 	.ap-acts { display: flex; justify-content: center; gap: 18px; padding: 0 16px 14px; }
 	.ap-act {
 		display: flex; flex-direction: column; align-items: center; gap: 5px;
-		background: none; border: none; cursor: pointer; color: #94a3b8;
+		background: none; border: none; cursor: pointer; color: var(--text-muted);
 		font-family: 'Space Mono', monospace; font-size: 9px; transition: color 0.12s;
 	}
 	.ap-act:hover { color: #00d2ff; }
@@ -1657,7 +1657,7 @@
 	/* Section head */
 	.ap-section-head {
 		padding: 8px 16px 4px; font-family: 'Syne', sans-serif; font-size: 12px;
-		font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.04em;
+		font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.04em;
 	}
 
 	/* Scrollable content area */
@@ -1668,15 +1668,15 @@
 	.ap-row:hover { background: rgba(255,255,255,0.025); }
 	.ap-row-icon {
 		width: 40px; height: 40px; border-radius: 50%;
-		background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06);
+		background: var(--bg-surface-input); border: 1px solid var(--border);
 		display: flex; align-items: center; justify-content: center;
-		font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 800; color: #94a3b8; flex-shrink: 0;
+		font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 800; color: var(--text-muted); flex-shrink: 0;
 	}
 	.ap-row-native { background: rgba(245,158,11,0.08); border-color: rgba(245,158,11,0.15); color: #f59e0b; }
-	.ap-row-logo { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; flex-shrink: 0; border: 1px solid rgba(255,255,255,0.06); }
+	.ap-row-logo { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; flex-shrink: 0; border: 1px solid var(--border); }
 	.ap-row-meta { flex: 1; min-width: 0; }
-	.ap-row-name { display: block; font-size: 16px; color: #fff; font-family: 'Syne', sans-serif; font-weight: 700; line-height: 1.3; }
-	.ap-row-sub { display: block; font-size: 12px; color: #64748b; font-family: 'Space Mono', monospace; margin-top: 2px; }
+	.ap-row-name { display: block; font-size: 16px; color: var(--text-heading); font-family: 'Syne', sans-serif; font-weight: 700; line-height: 1.3; }
+	.ap-row-sub { display: block; font-size: 12px; color: var(--text-dim); font-family: 'Space Mono', monospace; margin-top: 2px; }
 	/* Right-hand column of a token row is a tap target that toggles
 	   full ↔ compact. Reset button-default styling; cap max-width so long
 	   numbers don't push the row into overflow; right-align the inner lines. */
@@ -1688,27 +1688,27 @@
 		max-width: 55%; min-width: 0; border-radius: 6px;
 		transition: background 0.12s;
 	}
-	.ap-row-right:hover { background: rgba(255,255,255,0.04); }
-	.ap-row-right:active { background: rgba(255,255,255,0.08); }
+	.ap-row-right:hover { background: var(--bg-surface-input); }
+	.ap-row-right:active { background: var(--bg-surface-hover); }
 	.ap-row-amt {
-		display: block; font-size: 16px; color: #fff; font-family: 'Rajdhani', sans-serif;
+		display: block; font-size: 16px; color: var(--text-heading); font-family: 'Rajdhani', sans-serif;
 		font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.3;
 		max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 	}
 	.ap-row-usd {
-		display: block; font-size: 13px; color: #64748b; font-family: 'Rajdhani', sans-serif;
+		display: block; font-size: 13px; color: var(--text-dim); font-family: 'Rajdhani', sans-serif;
 		font-weight: 500; font-variant-numeric: tabular-nums; margin-top: 2px;
 		max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 	}
-	.ap-empty { text-align: center; padding: 24px; font-size: 13px; color: #64748b; font-family: 'Space Mono', monospace; }
+	.ap-empty { text-align: center; padding: 24px; font-size: 13px; color: var(--text-dim); font-family: 'Space Mono', monospace; }
 
 	/* Import */
 	.ap-import-form { padding: 6px 16px; display: flex; flex-direction: column; gap: 6px; }
 	.ap-import-btns { display: flex; gap: 6px; justify-content: flex-end; }
 	.ap-import-btn {
 		display: flex; align-items: center; justify-content: center; gap: 5px;
-		margin: 4px 16px; padding: 9px; border: 1px dashed rgba(255,255,255,0.06);
-		border-radius: 8px; background: transparent; color: #374151; cursor: pointer;
+		margin: 4px 16px; padding: 9px; border: 1px dashed var(--border);
+		border-radius: 8px; background: transparent; color: var(--text-dim); cursor: pointer;
 		font-family: 'Space Mono', monospace; font-size: 10px; transition: all 0.15s;
 	}
 	.ap-import-btn:hover { border-color: rgba(0,210,255,0.15); color: #00d2ff; }
@@ -1717,21 +1717,21 @@
 	.ap-set-item {
 		display: flex; align-items: center; gap: 10px; width: 100%;
 		padding: 12px 16px; border: none; background: transparent;
-		color: #94a3b8; cursor: pointer; font-family: 'Space Mono', monospace;
+		color: var(--text-muted); cursor: pointer; font-family: 'Space Mono', monospace;
 		font-size: 11px; transition: all 0.1s; text-align: left;
 	}
-	.ap-set-item:hover { background: rgba(255,255,255,0.02); color: #e2e8f0; }
-	.ap-set-arrow { margin-left: auto; color: #64748b; }
+	.ap-set-item:hover { background: var(--bg-surface); color: var(--text); }
+	.ap-set-arrow { margin-left: auto; color: var(--text-dim); }
 	.ap-set-danger { color: #f87171; }
 	.ap-set-danger:hover { background: rgba(248,113,113,0.04); }
-	.ap-set-divider { height: 1px; background: rgba(255,255,255,0.03); margin: 4px 16px; }
+	.ap-set-divider { height: 1px; background: var(--bg-surface); margin: 4px 16px; }
 
 	/* Disconnect footer — subtle, always visible at bottom */
 	.ap-disconnect {
 		display: flex; align-items: center; justify-content: center; gap: 6px;
 		padding: 10px 16px; margin: 4px 16px 12px; border-radius: 8px;
-		border: 1px solid rgba(255,255,255,0.04); background: transparent;
-		color: #374151; cursor: pointer; font-family: 'Space Mono', monospace;
+		border: 1px solid var(--border-subtle); background: transparent;
+		color: var(--text-dim); cursor: pointer; font-family: 'Space Mono', monospace;
 		font-size: 10px; transition: all 0.12s; flex-shrink: 0;
 	}
 	.ap-disconnect:hover { color: #f87171; border-color: rgba(248,113,113,0.15); background: rgba(248,113,113,0.04); }
@@ -1742,21 +1742,21 @@
 	/* Receive */
 	.ap-receive { align-items: center; }
 	.ap-qr {
-		padding: 16px; background: rgba(255,255,255,0.02);
-		border: 1px solid rgba(255,255,255,0.06); border-radius: 12px;
+		padding: 16px; background: var(--bg-surface);
+		border: 1px solid var(--border); border-radius: 12px;
 	}
 	.ap-qr-img { display: block; border-radius: 4px; image-rendering: pixelated; }
 	.ap-addr-box {
-		padding: 16px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06);
+		padding: 16px; background: var(--bg-surface); border: 1px solid var(--border);
 		border-radius: 10px; text-align: center; cursor: pointer; transition: border-color 0.15s;
 	}
 	.ap-addr-box:hover { border-color: rgba(0,210,255,0.2); }
-	.ap-addr-full { display: block; font-family: 'Space Mono', monospace; font-size: 10px; color: #94a3b8; word-break: break-all; line-height: 1.6; }
+	.ap-addr-full { display: block; font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text-muted); word-break: break-all; line-height: 1.6; }
 	.ap-addr-tap { display: block; font-size: 9px; color: #00d2ff; margin-top: 6px; font-family: 'Space Mono', monospace; }
 
 	/* Send */
-	.ap-send-info { display: flex; justify-content: space-between; font-size: 10px; color: #374151; font-family: 'Space Mono', monospace; }
-	.ap-label { font-size: 9px; color: #64748b; font-family: 'Space Mono', monospace; text-transform: uppercase; letter-spacing: 0.05em; }
+	.ap-send-info { display: flex; justify-content: space-between; font-size: 10px; color: var(--text-dim); font-family: 'Space Mono', monospace; }
+	.ap-label { font-size: 9px; color: var(--text-dim); font-family: 'Space Mono', monospace; text-transform: uppercase; letter-spacing: 0.05em; }
 
 	/* Security */
 	.ap-sec-warn {
@@ -1773,32 +1773,32 @@
 	}
 	.ap-danger-box svg { flex-shrink: 0; margin-top: 2px; }
 	.ap-danger-box strong { display: block; font-family: 'Syne', sans-serif; font-size: 12px; color: #f87171; margin-bottom: 4px; }
-	.ap-danger-box p { margin: 0; font-size: 10px; color: #94a3b8; font-family: 'Space Mono', monospace; line-height: 1.5; }
+	.ap-danger-box p { margin: 0; font-size: 10px; color: var(--text-muted); font-family: 'Space Mono', monospace; line-height: 1.5; }
 	.ap-revealed {
 		padding: 14px; background: rgba(248,113,113,0.04); border: 1px solid rgba(248,113,113,0.12);
 		border-radius: 10px; font-family: 'Space Mono', monospace; font-size: 10px;
 		color: #f87171; word-break: break-all; line-height: 1.7; cursor: pointer; transition: background 0.12s;
 	}
 	.ap-revealed:hover { background: rgba(248,113,113,0.08); }
-	.ap-revealed-hint { text-align: center; font-size: 9px; color: #64748b; font-family: 'Space Mono', monospace; margin: 0; }
+	.ap-revealed-hint { text-align: center; font-size: 9px; color: var(--text-dim); font-family: 'Space Mono', monospace; margin: 0; }
 	.ap-error { font-size: 10px; color: #f87171; font-family: 'Space Mono', monospace; margin: 0; padding: 4px 8px; background: rgba(248,113,113,0.04); border-radius: 4px; }
-	.ap-hint { font-size: 10px; color: #64748b; font-family: 'Space Mono', monospace; margin: 0; line-height: 1.5; }
+	.ap-hint { font-size: 10px; color: var(--text-dim); font-family: 'Space Mono', monospace; margin: 0; line-height: 1.5; }
 
 	/* Shared inputs/buttons */
 	.ap-input {
 		width: 100%; padding: 10px 12px; border-radius: 8px;
-		background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
-		color: #fff; font-family: 'Space Mono', monospace; font-size: 13px;
+		background: var(--bg-surface); border: 1px solid var(--border);
+		color: var(--text-heading); font-family: 'Space Mono', monospace; font-size: 13px;
 		outline: none; transition: border-color 0.12s;
 	}
 	.ap-input:focus { border-color: rgba(0,210,255,0.3); }
-	.ap-input::placeholder { color: #64748b; }
+	.ap-input::placeholder { color: var(--text-dim); }
 	/* Asset picker button */
 	.ap-asset-btn {
 		display: flex; align-items: center; gap: 10px; width: 100%;
 		padding: 10px 12px; border-radius: 10px; cursor: pointer;
-		background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);
-		color: #e2e8f0; font-family: 'Space Mono', monospace; font-size: 13px;
+		background: var(--bg-surface); border: 1px solid var(--border);
+		color: var(--text); font-family: 'Space Mono', monospace; font-size: 13px;
 		transition: border-color 0.15s;
 	}
 	.ap-asset-btn:hover { border-color: rgba(0,210,255,0.3); }
@@ -1810,8 +1810,8 @@
 		font-size: 11px; font-weight: 700;
 	}
 	.ap-asset-name { flex: 1; text-align: left; font-weight: 600; }
-	.ap-asset-bal { color: rgba(255,255,255,0.35); font-size: 11px; }
-	.ap-asset-chevron { flex-shrink: 0; color: rgba(255,255,255,0.3); }
+	.ap-asset-bal { color: var(--text-dim); font-size: 11px; }
+	.ap-asset-chevron { flex-shrink: 0; color: var(--text-dim); }
 
 	/* Asset picker modal — contained within wallet panel */
 	.ap-picker-overlay {
@@ -1821,25 +1821,25 @@
 		border-radius: inherit;
 	}
 	.ap-picker {
-		background: #0d1117; border-top: 1px solid rgba(255,255,255,0.08);
+		background: var(--bg); border-top: 1px solid var(--border);
 		border-radius: 16px 16px 0 0; width: 100%;
 		height: 80vh; max-height: 80%; display: flex; flex-direction: column;
 	}
 	.ap-picker-header {
 		display: flex; justify-content: space-between; align-items: center;
-		padding: 16px 16px 12px; border-bottom: 1px solid rgba(255,255,255,0.06);
+		padding: 16px 16px 12px; border-bottom: 1px solid var(--border);
 	}
 	.ap-picker-title { font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700; color: white; }
-	.ap-picker-close { background: none; border: none; color: rgba(255,255,255,0.4); cursor: pointer; padding: 4px; border-radius: 6px; }
-	.ap-picker-close:hover { color: white; background: rgba(255,255,255,0.06); }
+	.ap-picker-close { background: none; border: none; color: var(--text-dim); cursor: pointer; padding: 4px; border-radius: 6px; }
+	.ap-picker-close:hover { color: white; background: var(--bg-surface-hover); }
 	.ap-picker-list { overflow-y: auto; padding: 8px; flex: 1; }
 	.ap-picker-item {
 		display: flex; align-items: center; gap: 10px; width: 100%;
 		padding: 10px 8px; border-radius: 10px; cursor: pointer;
-		background: none; border: none; color: #e2e8f0;
+		background: none; border: none; color: var(--text);
 		font-family: 'Space Mono', monospace; transition: background 0.1s;
 	}
-	.ap-picker-item:hover { background: rgba(255,255,255,0.04); }
+	.ap-picker-item:hover { background: var(--bg-surface-input); }
 	.ap-picker-item.active { background: rgba(0,210,255,0.08); }
 	.ap-picker-logo { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
 	.ap-picker-letter {
@@ -1850,20 +1850,20 @@
 	}
 	.ap-picker-info { flex: 1; text-align: left; display: flex; flex-direction: column; gap: 1px; }
 	.ap-picker-symbol { font-size: 13px; font-weight: 600; color: white; }
-	.ap-picker-name { font-size: 10px; color: rgba(255,255,255,0.3); }
+	.ap-picker-name { font-size: 10px; color: var(--text-dim); }
 	.ap-picker-right { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
-	.ap-picker-bal { font-size: 12px; color: rgba(255,255,255,0.4); font-family: 'Space Mono', monospace; }
-	.ap-picker-usd { font-size: 10px; color: #374151; font-family: 'Rajdhani', sans-serif; font-variant-numeric: tabular-nums; }
-	.ap-send-estimate { font-family: 'Rajdhani', sans-serif; font-size: 13px; color: #64748b; margin: -4px 0 4px; font-variant-numeric: tabular-nums; }
+	.ap-picker-bal { font-size: 12px; color: var(--text-dim); font-family: 'Space Mono', monospace; }
+	.ap-picker-usd { font-size: 10px; color: var(--text-dim); font-family: 'Rajdhani', sans-serif; font-variant-numeric: tabular-nums; }
+	.ap-send-estimate { font-family: 'Rajdhani', sans-serif; font-size: 13px; color: var(--text-dim); margin: -4px 0 4px; font-variant-numeric: tabular-nums; }
 
 	.ap-btn {
-		padding: 10px 16px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.06);
-		background: rgba(255,255,255,0.03); color: #94a3b8; cursor: pointer;
+		padding: 10px 16px; border-radius: 8px; border: 1px solid var(--border);
+		background: var(--bg-surface); color: var(--text-muted); cursor: pointer;
 		font-family: 'Space Mono', monospace; font-size: 11px; transition: all 0.12s;
 	}
-	.ap-btn:hover { background: rgba(255,255,255,0.06); color: #fff; }
-	.ap-btn-s { padding: 6px 10px; font-size: 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.06); background: rgba(255,255,255,0.03); color: #94a3b8; cursor: pointer; font-family: 'Space Mono', monospace; transition: all 0.12s; }
-	.ap-btn-s:hover { background: rgba(255,255,255,0.06); color: #fff; }
+	.ap-btn:hover { background: var(--bg-surface-hover); color: var(--text-heading); }
+	.ap-btn-s { padding: 6px 10px; font-size: 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-surface); color: var(--text-muted); cursor: pointer; font-family: 'Space Mono', monospace; transition: all 0.12s; }
+	.ap-btn-s:hover { background: var(--bg-surface-hover); color: var(--text-heading); }
 	.ap-btn-primary { background: linear-gradient(135deg, #00d2ff, #3a7bd5); border: none; color: white; font-family: 'Syne', sans-serif; font-weight: 700; }
 	.ap-btn-primary:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(0,210,255,0.2); }
 	.ap-btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }

@@ -78,5 +78,5 @@
 		color: var(--text-muted); font-family: 'Space Mono', monospace; font-size: 13px;
 		cursor: pointer; transition: all 0.2s;
 	}
-	.error-btn-secondary:hover { color: var(--text); border-color: rgba(255,255,255,0.15); }
+	.error-btn-secondary:hover { color: var(--text); border-color: var(--text-dim); }
 </style>

@@ -131,7 +131,7 @@
 		flex: 1;
 		overflow-y: auto;
 		scrollbar-width: thin;
-		scrollbar-color: rgba(255,255,255,0.05) transparent;
+		scrollbar-color: var(--bg-surface-hover) transparent;
 	}
 
 	.mf-item {
@@ -144,7 +144,7 @@
 		transition: background 0.15s;
 	}
 	.mf-item:hover {
-		background: rgba(255,255,255,0.02);
+		background: var(--bg-surface);
 	}
 
 	.mf-item-icon {
@@ -177,11 +177,11 @@
 	.mf-buyer {
 		font-size: 11px;
 		font-family: 'Space Mono', monospace;
-		color: #94a3b8;
+		color: var(--text-muted);
 	}
 	.mf-time {
 		font-size: 10px;
-		color: #475569;
+		color: var(--text-dim);
 		font-family: 'Space Mono', monospace;
 	}
 	.mf-item-detail {
@@ -192,7 +192,7 @@
 	.mf-empty {
 		padding: 40px 16px;
 		text-align: center;
-		color: #475569;
+		color: var(--text-dim);
 		font-size: 12px;
 		font-family: 'Space Mono', monospace;
 	}

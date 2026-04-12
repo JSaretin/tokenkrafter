@@ -732,7 +732,7 @@
 		border: 1px solid var(--border);
 		border-radius: 12px;
 	}
-	.stat-label { font-size: 11px; color: #6b7280; font-family: 'Space Mono', monospace; text-transform: uppercase; letter-spacing: 0.05em; }
+	.stat-label { font-size: 11px; color: var(--text-dim); font-family: 'Space Mono', monospace; text-transform: uppercase; letter-spacing: 0.05em; }
 	.stat-value { font-size: 20px; font-weight: 800; color: var(--text-heading); margin: 4px 0 2px; }
 	.stat-unit { font-size: 11px; color: var(--text-dim); font-family: 'Space Mono', monospace; }
 
@@ -746,7 +746,7 @@
 		padding: 8px 16px;
 		border-radius: 8px 8px 0 0;
 		font-size: 13px;
-		color: #6b7280;
+		color: var(--text-dim);
 		background: transparent;
 		border: none;
 		border-bottom: 2px solid transparent;
@@ -790,7 +790,7 @@
 		transform: translateY(-50%);
 		font-size: 11px;
 		font-family: 'Space Mono', monospace;
-		color: #6b7280;
+		color: var(--text-dim);
 		background: var(--bg-surface-hover);
 		padding: 2px 8px;
 		border-radius: 4px;
@@ -820,7 +820,7 @@
 		gap: 12px;
 	}
 	.info-row:last-child { border-bottom: none; }
-	.info-key { font-size: 12px; color: #6b7280; font-family: 'Space Mono', monospace; flex-shrink: 0; }
+	.info-key { font-size: 12px; color: var(--text-dim); font-family: 'Space Mono', monospace; flex-shrink: 0; }
 	.info-val { font-size: 13px; color: var(--text); text-align: right; word-break: break-all; }
 
 	.owner-warning {
@@ -911,7 +911,7 @@
 	.badge-emerald { background: rgba(16,185,129,0.1); color: #10b981; border: 1px solid rgba(16,185,129,0.2); }
 	.badge-purple { background: rgba(139,92,246,0.1); color: #8b5cf6; border: 1px solid rgba(139,92,246,0.2); }
 
-	.label-text { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #94a3b8; display: block; margin-bottom: 6px; }
+	.label-text { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); display: block; margin-bottom: 6px; }
 
 	.no-underline { text-decoration: none; }
 	a.no-underline { text-decoration: none; }
