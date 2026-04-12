@@ -268,7 +268,7 @@ function cachePin(pin: string) {
 	const policy = getSessionPolicy();
 	const now = Date.now();
 	_cachedPin = pin;
-	sessionStorage.setItem(
+	localStorage.setItem(
 		SESSION_KEY,
 		JSON.stringify({
 			v: btoa(pin),
@@ -280,7 +280,7 @@ function cachePin(pin: string) {
 
 function getCachedPin(): string | null {
 	try {
-		const raw = sessionStorage.getItem(SESSION_KEY);
+		const raw = localStorage.getItem(SESSION_KEY);
 		if (!raw) {
 			_cachedPin = null;
 			return null;
@@ -300,7 +300,7 @@ function getCachedPin(): string | null {
 
 function clearCachedPin() {
 	_cachedPin = null;
-	sessionStorage.removeItem(SESSION_KEY);
+	localStorage.removeItem(SESSION_KEY);
 }
 
 /** Bump the idle expiry. Call from user-driven activity (clicks, key
@@ -308,7 +308,7 @@ function clearCachedPin() {
  *  absolute expiry is a hard ceiling and can't be pushed past. */
 export function extendSession(): void {
 	try {
-		const raw = sessionStorage.getItem(SESSION_KEY);
+		const raw = localStorage.getItem(SESSION_KEY);
 		if (!raw) return;
 		const data = JSON.parse(raw);
 		const now = Date.now();
@@ -319,7 +319,7 @@ export function extendSession(): void {
 		}
 		const policy = getSessionPolicy();
 		data.idleExp = Math.min(now + policy.idleMs, data.absExp);
-		sessionStorage.setItem(SESSION_KEY, JSON.stringify(data));
+		localStorage.setItem(SESSION_KEY, JSON.stringify(data));
 	} catch {}
 }
 
@@ -334,7 +334,7 @@ export function getSessionInfo(): SessionInfo {
 		return { unlocked: false, idleRemainingMs: 0, absoluteRemainingMs: 0 };
 	}
 	try {
-		const raw = sessionStorage.getItem(SESSION_KEY);
+		const raw = localStorage.getItem(SESSION_KEY);
 		if (!raw) return { unlocked: true, idleRemainingMs: 0, absoluteRemainingMs: 0 };
 		const { absExp, idleExp } = JSON.parse(raw);
 		const now = Date.now();

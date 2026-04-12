@@ -54,7 +54,14 @@
 			allChainData = chains;
 			lensResults = lr;
 		} catch (e) {
-			console.warn('AdminLens load failed:', e);
+			console.warn('AdminLens load failed, falling back to individual calls:', e);
+			// Fallback: use the old per-chain getState() approach
+			try {
+				const { loadAllChains: fallback } = await import('./dashboardData');
+				allChainData = await fallback(supportedNetworks, getNetworkProviders(), userAddress);
+			} catch (e2) {
+				console.warn('Fallback also failed:', e2);
+			}
 		}
 		chainsLoading = false;
 	}
