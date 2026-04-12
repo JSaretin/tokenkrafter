@@ -671,44 +671,35 @@
 	<!-- Step content -->
 	<div class="wz-content">
 		{#if wizardStep === 'basics'}
-			<!-- "Launch existing token" toggle — only shown in launch/both mode -->
 			{#if launchEnabled}
-				<div class="wz-existing-toggle mb-4">
-					<label class="toggle-card {useExistingToken ? 'active' : ''}">
-						<div class="toggle-info">
-							<div class="toggle-icon">🎯</div>
-							<div>
-								<div class="text-sm font-semibold text-white syne">Launch existing token</div>
-								<div class="text-xs text-gray-500 font-mono mt-0.5">Already deployed a token? Enter its address to create a bonding curve launch.</div>
-							</div>
-						</div>
-						<div class="toggle-switch {useExistingToken ? 'on' : ''}">
-							<div class="toggle-thumb"></div>
-						</div>
-						<input type="checkbox" bind:checked={useExistingToken} class="sr-only" />
-					</label>
-					{#if useExistingToken}
-						<div class="mt-3">
-							<label class="wz-label" for="existing-token-addr">Token contract address</label>
-							<input
-								id="existing-token-addr"
-								class="input-field"
-								bind:value={existingTokenAddress}
-								placeholder="0x... paste your token's contract address"
-							/>
-							{#if existingTokenAddress && !/^0x[a-fA-F0-9]{40}$/.test(existingTokenAddress)}
-								<p class="text-red-400 text-xs font-mono mt-1">Invalid address</p>
-							{/if}
-						</div>
-					{/if}
+				<!-- New / Existing tab switcher -->
+				<div class="token-src-tabs">
+					<button class="token-src-tab" class:token-src-active={!useExistingToken} onclick={() => { useExistingToken = false; existingTokenAddress = ''; }}>
+						Create new token
+					</button>
+					<button class="token-src-tab" class:token-src-active={useExistingToken} onclick={() => useExistingToken = true}>
+						Use existing token
+					</button>
 				</div>
 			{/if}
 
 			{#if !isRealExistingToken}
 				<BasicInfo bind:name bind:symbol bind:totalSupply bind:decimals bind:chainId bind:useExistingToken bind:existingTokenAddress bind:tokenLogoUrl bind:tokenDescription bind:tokenWebsite bind:tokenTwitter bind:tokenTelegram {supportedNetworks} {getNetworkProviders} isCreateOnly={!launchEnabled && !listingEnabled} onPresetLoaded={handlePresetLoaded} />
 			{:else}
-				<!-- Existing token mode: only need network selection -->
-				<div class="wz-section">
+				<!-- Existing token: address + network -->
+				<div class="existing-token-form">
+					<div class="field-group mb-4">
+						<label class="wz-label" for="existing-token-addr">Token contract address</label>
+						<input
+							id="existing-token-addr"
+							class="input-field"
+							bind:value={existingTokenAddress}
+							placeholder="0x..."
+						/>
+						{#if existingTokenAddress && !/^0x[a-fA-F0-9]{40}$/.test(existingTokenAddress)}
+							<p class="text-red-400 text-xs font-mono mt-1">Invalid address</p>
+						{/if}
+					</div>
 					<div class="field-group">
 						<label class="wz-label" for="existing-token-network">Network</label>
 						<select id="existing-token-network" class="input-field" bind:value={chainId}>
@@ -718,6 +709,9 @@
 							{/each}
 						</select>
 					</div>
+					<p class="text-gray-600 text-[10px] font-mono mt-3">
+						Your token must be owned by your connected wallet. The router will temporarily take ownership to configure the launch, then return it.
+					</p>
 				</div>
 			{/if}
 
@@ -1013,6 +1007,29 @@
 
 <style>
 	.wz { max-width: 640px; margin: 0 auto; }
+
+	/* Token source tabs (new vs existing) */
+	.token-src-tabs {
+		display: flex; gap: 0; margin-bottom: 20px;
+		background: rgba(255,255,255,0.02); border-radius: 10px;
+		border: 1px solid rgba(255,255,255,0.04); overflow: hidden;
+	}
+	.token-src-tab {
+		flex: 1; padding: 10px 16px; border: none; background: transparent;
+		font-family: 'Syne', sans-serif; font-size: 12px; font-weight: 600;
+		color: #475569; cursor: pointer; transition: all 0.15s;
+		border-right: 1px solid rgba(255,255,255,0.04);
+	}
+	.token-src-tab:last-child { border-right: none; }
+	.token-src-tab:hover { color: #94a3b8; background: rgba(255,255,255,0.02); }
+	.token-src-active {
+		color: #00d2ff; background: rgba(0,210,255,0.06);
+		box-shadow: inset 0 -2px 0 #00d2ff;
+	}
+	.existing-token-form {
+		padding: 20px; border-radius: 12px;
+		background: rgba(255,255,255,0.015); border: 1px solid rgba(255,255,255,0.04);
+	}
 
 	/* Burn LP toggle card */
 	.burn-lp-card {
