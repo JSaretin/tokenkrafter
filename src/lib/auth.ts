@@ -4,6 +4,7 @@
  */
 import { ethers } from 'ethers';
 import { env } from '$env/dynamic/private';
+import { timingSafeEqual } from 'crypto';
 
 const SIGNATURE_MAX_AGE_MS = 5 * 60 * 1000; // 5 minutes
 
@@ -135,10 +136,12 @@ export async function verifySession(token: string): Promise<{ wallet: string; ro
 		if (!admins.includes(wallet.toLowerCase())) return null;
 	}
 
-	// Verify HMAC
+	// Verify HMAC (timing-safe)
 	const payload = `${role}:${wallet}:${expiryStr}`;
 	const expected = await hmacSign(payload);
-	if (hmac !== expected) return null;
+	const hmacBuf = Buffer.from(hmac);
+	const expectedBuf = Buffer.from(expected);
+	if (hmacBuf.length !== expectedBuf.length || !timingSafeEqual(hmacBuf, expectedBuf)) return null;
 
 	return { wallet: wallet.toLowerCase(), role: role as 'user' | 'admin' };
 }

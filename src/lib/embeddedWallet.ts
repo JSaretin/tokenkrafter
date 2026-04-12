@@ -229,13 +229,15 @@ export interface SessionPolicy {
 }
 
 export function getSessionPolicy(): SessionPolicy {
+	const clampIdle = (v: number) => Math.max(60_000, Math.min(v, 28_800_000));
+	const clampAbsolute = (v: number) => Math.max(300_000, Math.min(v, 86_400_000));
 	try {
 		const raw = localStorage.getItem(SESSION_POLICY_KEY);
 		if (!raw) return { idleMs: DEFAULT_IDLE_MS, absoluteMs: DEFAULT_ABSOLUTE_MS };
 		const p = JSON.parse(raw);
 		return {
-			idleMs: Number(p.idleMs) || DEFAULT_IDLE_MS,
-			absoluteMs: Number(p.absoluteMs) || DEFAULT_ABSOLUTE_MS,
+			idleMs: clampIdle(Number(p.idleMs) || DEFAULT_IDLE_MS),
+			absoluteMs: clampAbsolute(Number(p.absoluteMs) || DEFAULT_ABSOLUTE_MS),
 		};
 	} catch {
 		return { idleMs: DEFAULT_IDLE_MS, absoluteMs: DEFAULT_ABSOLUTE_MS };
@@ -252,7 +254,7 @@ function cachePin(pin: string) {
 	const policy = getSessionPolicy();
 	const now = Date.now();
 	_cachedPin = pin;
-	localStorage.setItem(
+	sessionStorage.setItem(
 		SESSION_KEY,
 		JSON.stringify({
 			v: btoa(pin),
@@ -264,7 +266,7 @@ function cachePin(pin: string) {
 
 function getCachedPin(): string | null {
 	try {
-		const raw = localStorage.getItem(SESSION_KEY);
+		const raw = sessionStorage.getItem(SESSION_KEY);
 		if (!raw) {
 			_cachedPin = null;
 			return null;
@@ -284,7 +286,7 @@ function getCachedPin(): string | null {
 
 function clearCachedPin() {
 	_cachedPin = null;
-	localStorage.removeItem(SESSION_KEY);
+	sessionStorage.removeItem(SESSION_KEY);
 }
 
 /** Bump the idle expiry. Call from user-driven activity (clicks, key
@@ -292,7 +294,7 @@ function clearCachedPin() {
  *  absolute expiry is a hard ceiling and can't be pushed past. */
 export function extendSession(): void {
 	try {
-		const raw = localStorage.getItem(SESSION_KEY);
+		const raw = sessionStorage.getItem(SESSION_KEY);
 		if (!raw) return;
 		const data = JSON.parse(raw);
 		const now = Date.now();
@@ -303,7 +305,7 @@ export function extendSession(): void {
 		}
 		const policy = getSessionPolicy();
 		data.idleExp = Math.min(now + policy.idleMs, data.absExp);
-		localStorage.setItem(SESSION_KEY, JSON.stringify(data));
+		sessionStorage.setItem(SESSION_KEY, JSON.stringify(data));
 	} catch {}
 }
 
@@ -318,7 +320,7 @@ export function getSessionInfo(): SessionInfo {
 		return { unlocked: false, idleRemainingMs: 0, absoluteRemainingMs: 0 };
 	}
 	try {
-		const raw = localStorage.getItem(SESSION_KEY);
+		const raw = sessionStorage.getItem(SESSION_KEY);
 		if (!raw) return { unlocked: true, idleRemainingMs: 0, absoluteRemainingMs: 0 };
 		const { absExp, idleExp } = JSON.parse(raw);
 		const now = Date.now();
@@ -829,7 +831,19 @@ export function exportPrivateKey(index: number): string | null {
  * Recovery blobs are NOT touched (they're encrypted with separate
  * recovery codes, not the PIN). Only the primary_blob changes.
  */
+let _pinChanging = false;
+
 export async function changePin(currentPin: string, newPin: string): Promise<void> {
+	if (_pinChanging) throw new Error('PIN change already in progress');
+	_pinChanging = true;
+	try {
+		return await _changePinInner(currentPin, newPin);
+	} finally {
+		_pinChanging = false;
+	}
+}
+
+async function _changePinInner(currentPin: string, newPin: string): Promise<void> {
 	if (!_salt) throw new Error('Salt not loaded');
 	if (_state.wallets.length === 0) throw new Error('No wallets to update');
 	if (!newPin || newPin.length < 6) throw new Error('New PIN must be at least 6 digits');

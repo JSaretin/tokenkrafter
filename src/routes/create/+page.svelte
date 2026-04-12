@@ -9,6 +9,7 @@
 	import { LAUNCHPAD_FACTORY_ABI, LAUNCH_INSTANCE_ABI, CURVE_TYPES, type CurveType } from '$lib/launchpad';
 	import { apiFetch } from '$lib/apiFetch';
 	import { friendlyError } from '$lib/errorDecoder';
+	import QrCode from '$lib/QrCode.svelte';
 	import { TOKEN_READ_ABI, ERC20_DECIMALS_ABI, ROUTER_ABI_LITE } from '$lib/commonABIs';
 	import * as deployHelpers from './lib/deploy/helpers';
 	import { getBaseTokenAddress, getBaseDecimals, getBaseSymbol, feeCacheKey } from './lib/deploy/helpers';
@@ -347,6 +348,7 @@
 	let provider = $derived(getProvider());
 	let signer = $derived(getSigner());
 	let userAddress = $derived(getUserAddress());
+
 	let networkProviders = $derived(getNetworkProviders());
 	let providersReady = $derived(getProvidersReady());
 
@@ -1620,10 +1622,7 @@
 
 					<div class="deposit-qr-row">
 						<div class="qr-placeholder">
-							<img
-								src="https://api.qrserver.com/v1/create-qr-code/?size=120x120&data={userAddress}&bgcolor=ffffff&color=000000&margin=6"
-								alt="QR" class="qr-img" width="120" height="120"
-							/>
+							<QrCode data={userAddress || ''} width={120} colorDark="#000000" colorLight="#ffffff" margin={6} />
 						</div>
 						<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
 						<div class="deposit-addr-info" onclick={() => { navigator.clipboard.writeText(userAddress || ''); addFeedback({ message: 'Address copied', type: 'success' }); }}>

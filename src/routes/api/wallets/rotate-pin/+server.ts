@@ -4,13 +4,10 @@
  *   POST /api/wallets/rotate-pin
  *   Body: { updates: Array<{ id: string; primaryBlob: string }> }
  *
- * Delegates to the `rotate_wallet_pins` SQL function, which runs a single
- * UPDATE statement over a jsonb-unrolled row set. That's atomic: Postgres
- * either writes every new ciphertext or none. We can't use `upsert` here
- * because the wallets table has other NOT NULL columns (name, account
- * count) and Postgres enforces NOT NULL before ON CONFLICT fires — so an
- * upsert that only carries id + primary_blob fails at the insert path
- * even when every row would actually have updated.
+ * Iterates over the updates array and issues individual `.update()` calls
+ * scoped by both `id` and `user_id`. Using update (not upsert) ensures a
+ * wallet that was deleted between the ownership check and the write is
+ * silently skipped rather than resurrected as a new row.
  *
  * Security:
  *   - JWT required. The SQL function scopes its UPDATE by the caller's
@@ -72,23 +69,21 @@ export const POST: RequestHandler = async ({ request }) => {
 		if (!ownedSet.has(id)) return error(403, 'wallet not owned by caller');
 	}
 
-	// Single upsert call — Supabase sends one SQL statement, Postgres
-	// applies it atomically. All rows get the new ciphertext or none do.
-	// The schema default on `name` makes the insert path valid even though
-	// we only carry id + primary_blob here; ON CONFLICT then routes every
-	// row to the UPDATE branch.
+	// Update each wallet individually — we use .update() instead of
+	// .upsert() to guarantee we never accidentally INSERT a row for a
+	// wallet that was deleted between the ownership check and the write.
 	const nowIso = new Date().toISOString();
-	const rows = updates.map((u) => ({
-		id: u.id,
-		user_id: userId,
-		primary_blob: u.primaryBlob,
-		updated_at: nowIso,
-	}));
+	let rotated = 0;
+	for (const u of updates) {
+		const { error: updErr, count } = await supabaseAdmin
+			.from('wallets')
+			.update({ primary_blob: u.primaryBlob, updated_at: nowIso })
+			.eq('id', u.id)
+			.eq('user_id', userId);
 
-	const { error: upsertErr } = await supabaseAdmin
-		.from('wallets')
-		.upsert(rows, { onConflict: 'id' });
+		if (updErr) return error(500, updErr.message);
+		rotated++;
+	}
 
-	if (upsertErr) return error(500, upsertErr.message);
-	return json({ ok: true, rotated: rows.length });
+	return json({ ok: true, rotated });
 };

@@ -141,6 +141,9 @@ export class SwapRouter {
 		// Quote effect — fires on amount / token changes
 		$effect(() => {
 			this._computeQuote();
+			return () => {
+				if (this._quoteTimeout) clearTimeout(this._quoteTimeout);
+			};
 		});
 
 		// Tax simulation effect — fires only when tokens change (not amount)

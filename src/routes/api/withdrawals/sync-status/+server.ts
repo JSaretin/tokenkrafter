@@ -32,7 +32,10 @@ export const PATCH: RequestHandler = async ({ request }) => {
 		.select()
 		.single();
 
-	if (dbErr) return error(500, dbErr.message);
+	if (dbErr) {
+		console.error('[withdrawals sync-status] DB error:', dbErr.message);
+		return error(500, 'Failed to sync withdrawal status');
+	}
 
 	return json(data);
 };

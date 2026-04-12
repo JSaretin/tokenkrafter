@@ -20,12 +20,18 @@ export const GET: RequestHandler = async ({ url }) => {
 	if (chainId) query = query.eq('chain_id', parseInt(chainId));
 	if (creator) query = query.ilike('creator', creator);
 	if (search) {
-		// Search by name, symbol, or address
-		query = query.or(`name.ilike.%${search}%,symbol.ilike.%${search}%,address.ilike.%${search}%`);
+		// Sanitize: strip PostgREST operators to prevent filter injection
+		const sanitized = search.replace(/[,().]/g, '');
+		if (sanitized) {
+			query = query.or(`name.ilike.%${sanitized}%,symbol.ilike.%${sanitized}%,address.ilike.%${sanitized}%`);
+		}
 	}
 
 	const { data, error: dbErr } = await query;
-	if (dbErr) return error(500, dbErr.message);
+	if (dbErr) {
+		console.error('[created-tokens GET] DB error:', dbErr.message);
+		return error(500, 'Failed to fetch tokens');
+	}
 
 	return json(data || []);
 };
@@ -61,7 +67,10 @@ export const POST: RequestHandler = async ({ request }) => {
 		.select()
 		.single();
 
-	if (dbErr) return error(500, dbErr.message);
+	if (dbErr) {
+		console.error('[created-tokens POST] DB error:', dbErr.message);
+		return error(500, 'Failed to save token');
+	}
 
 	return json(data, { status: 201 });
 };

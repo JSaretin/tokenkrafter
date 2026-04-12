@@ -2,14 +2,27 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { env } from '$env/dynamic/private';
 import { supabaseAdmin } from '$lib/supabaseServer';
+import { timingSafeEqual } from 'crypto';
+
+function timingSafeCompare(a: string, b: string): boolean {
+	const bufA = Buffer.from(a);
+	const bufB = Buffer.from(b);
+	if (bufA.length !== bufB.length) return false;
+	return timingSafeEqual(bufA, bufB);
+}
 
 // POST /api/webhooks/flutterwave — handle transfer status updates
 export const POST: RequestHandler = async ({ request }) => {
-	// Verify webhook signature using encryption key
+	// Verify webhook signature using encryption key — fail closed
 	const signature = request.headers.get('verif-hash');
 	const webhookSecret = env.FLUTTERWAVE_WEBHOOK_SECRET || env.FLUTTERWAVE_ENCRYPTION_KEY;
 
-	if (webhookSecret && signature !== webhookSecret) {
+	if (!webhookSecret) {
+		console.error('[Flutterwave Webhook] No webhook secret configured — rejecting request');
+		return json({ status: 'error', message: 'Webhook not configured' }, { status: 500 });
+	}
+
+	if (!signature || !timingSafeCompare(signature, webhookSecret)) {
 		return json({ status: 'error', message: 'Invalid signature' }, { status: 401 });
 	}
 

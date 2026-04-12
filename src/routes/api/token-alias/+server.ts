@@ -120,7 +120,10 @@ export const POST: RequestHandler = async ({ request }) => {
 			.select()
 			.single();
 
-		if (dbErr) return error(500, dbErr.message);
+		if (dbErr) {
+			console.error('[token-alias POST] DB error:', dbErr.message);
+			return error(500, 'Failed to update alias');
+		}
 		return json(data);
 	}
 
@@ -136,6 +139,9 @@ export const POST: RequestHandler = async ({ request }) => {
 		.select()
 		.single();
 
-	if (dbErr) return error(500, dbErr.message);
+	if (dbErr) {
+		console.error('[token-alias POST] DB error:', dbErr.message);
+		return error(500, 'Failed to create alias');
+	}
 	return json(data);
 };

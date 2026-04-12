@@ -96,14 +96,13 @@ export const PATCH: RequestHandler = async ({ request, params }) => {
 		updates.recovery_blob_3 = body.recoveryBlob3;
 	}
 
-	// setPrimary is a cross-row operation — handled separately.
+	// setPrimary is a cross-row operation — use RPC for atomicity.
 	if (body.setPrimary === true) {
-		await supabaseAdmin
-			.from('wallets')
-			.update({ is_primary: false })
-			.eq('user_id', userId)
-			.eq('is_primary', true);
-		updates.is_primary = true;
+		await supabaseAdmin.rpc('set_primary_wallet', {
+			_user_id: userId,
+			_wallet_id: params.id!
+		});
+		// RPC already set is_primary on this wallet, no need to include in updates
 	}
 
 	if (Object.keys(updates).length === 0) {
@@ -118,7 +117,10 @@ export const PATCH: RequestHandler = async ({ request, params }) => {
 		.select()
 		.single();
 
-	if (dbErr) return error(500, dbErr.message);
+	if (dbErr) {
+		console.error('[wallets PATCH] DB error:', dbErr.message);
+		return error(500, 'Failed to update wallet');
+	}
 	return json({ wallet: data });
 };
 
@@ -155,6 +157,9 @@ export const DELETE: RequestHandler = async ({ request, params }) => {
 		.eq('id', params.id!)
 		.eq('user_id', userId);
 
-	if (dbErr) return error(500, dbErr.message);
+	if (dbErr) {
+		console.error('[wallets DELETE] DB error:', dbErr.message);
+		return error(500, 'Failed to delete wallet');
+	}
 	return json({ ok: true });
 };

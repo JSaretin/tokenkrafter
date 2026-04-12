@@ -27,9 +27,13 @@
 		getAllAccountMeta,
 		getWalletState,
 		onWalletStateChange,
+		lockWallet,
+		getSessionPolicy,
+		setSessionPolicy,
 		type WalletState,
 	} from './embeddedWallet';
 	import { friendlyError } from './errorDecoder';
+	import { t } from '$lib/i18n';
 
 	let {
 		open = $bindable(false),
@@ -39,6 +43,7 @@
 		onExportSeed = () => {},
 		onExportKey = () => {},
 		onDisconnect = () => {},
+		onLock = () => {},
 		onAccountMetaChanged = () => {},
 	}: {
 		open: boolean;
@@ -54,6 +59,9 @@
 		 *  Operates on the active account in the active wallet. */
 		onExportKey: () => void;
 		onDisconnect: () => void;
+		/** Called when the user taps Lock — clears PIN cache + seeds but keeps
+		 *  the session so the user can re-enter PIN without re-authenticating. */
+		onLock: () => void;
 		/** Called after local account metadata (name, avatar, hidden) changes
 		 *  so the parent can invalidate its own derived reads that depend on
 		 *  localStorage (e.g. the account chip in the panel header). */
@@ -88,14 +96,19 @@
 	let switchingId = $state<string | null>(null);
 	let creatingAccount = $state(false);
 
-	// Hold-to-delete progress (0..1)
-	let holdProgress = $state(0);
-	let holdTargetId = $state<string | null>(null);
-	let holdTimer: ReturnType<typeof setInterval> | null = null;
-	const HOLD_MS = 1500;
-
 	// Add-wallet form state
-	let addMode = $state<'create' | 'import' | 'change-pin' | null>(null);
+	let addMode = $state<'create' | 'import' | 'change-pin' | 'settings' | null>(null);
+
+	// Auto-lock settings — preloaded from localStorage
+	const AUTO_LOCK_OPTIONS = [
+		{ label: '5 min', idleMs: 5 * 60_000 },
+		{ label: '15 min', idleMs: 15 * 60_000 },
+		{ label: '30 min', idleMs: 30 * 60_000 },
+		{ label: '1 hour', idleMs: 60 * 60_000 },
+		{ label: '4 hours', idleMs: 4 * 60 * 60_000 },
+		{ label: '8 hours', idleMs: 8 * 60 * 60_000 },
+	];
+	let selectedIdleMs = $state(getSessionPolicy().idleMs);
 	let newName = $state('');
 	let newPin = $state('');
 	let importMnemonic = $state('');
@@ -156,7 +169,6 @@
 		renamingAcct = null;
 		avatarPickerFor = null;
 		resetAddForm();
-		cancelHold();
 	}
 
 	function resetAddForm() {
@@ -272,30 +284,6 @@
 		} catch (e) {
 			onFeedback({ message: friendlyError(e), type: 'error' });
 		}
-	}
-
-	// Hold-to-delete: start a timer, animate progress, fire delete on completion.
-	function startHold(id: string) {
-		holdTargetId = id;
-		holdProgress = 0;
-		const start = Date.now();
-		holdTimer = setInterval(() => {
-			const elapsed = Date.now() - start;
-			holdProgress = Math.min(1, elapsed / HOLD_MS);
-			if (holdProgress >= 1) {
-				cancelHold();
-				confirmDelete(id);
-			}
-		}, 16);
-	}
-
-	function cancelHold() {
-		if (holdTimer) {
-			clearInterval(holdTimer);
-			holdTimer = null;
-		}
-		holdProgress = 0;
-		holdTargetId = null;
 	}
 
 	async function confirmDelete(id: string) {
@@ -495,7 +483,7 @@
 		<div class="ws-sheet" onclick={(e) => e.stopPropagation()} role="dialog" aria-label="Wallet switcher" tabindex="-1">
 			<!-- ── Header ───────────────────────────────────────── -->
 			<div class="ws-head">
-				<div class="ws-head-title">Wallets</div>
+				<div class="ws-head-title">{$t('switcher.wallets')}</div>
 				<button class="ws-x" onclick={close} aria-label="Close">
 					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
 				</button>
@@ -506,7 +494,7 @@
 				<svg class="ws-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
 				<input
 					class="ws-search"
-					placeholder="Search wallets & accounts"
+					placeholder={$t('switcher.searchPlaceholder')}
 					bind:value={search}
 					{...INPUT_ATTRS}
 				/>
@@ -559,8 +547,8 @@
 								>
 									<span class="ws-wallet-name">
 										{w.name}
-										{#if w.isPrimary}<span class="ws-badge ws-badge-primary">primary</span>{/if}
-										{#if w.isImported}<span class="ws-badge ws-badge-imported">imported</span>{/if}
+										{#if w.isPrimary}<span class="ws-badge ws-badge-primary">{$t('switcher.primary')}</span>{/if}
+										{#if w.isImported}<span class="ws-badge ws-badge-imported">{$t('switcher.imported')}</span>{/if}
 									</span>
 									<span class="ws-wallet-sub">{w.accountCount} account{w.accountCount === 1 ? '' : 's'}</span>
 								</button>
@@ -665,7 +653,7 @@
 
 								<button class="ws-add-acct" onclick={handleAddAccount} disabled={creatingAccount}>
 									<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-									{creatingAccount ? 'Creating…' : 'Add account'}
+									{creatingAccount ? $t('switcher.creatingAccount') : $t('switcher.addAccount')}
 								</button>
 							</div>
 						{:else if isExpanded && !isActive}
@@ -677,7 +665,7 @@
 				{/each}
 
 				{#if filteredWallets.length === 0}
-					<p class="ws-empty">No matches</p>
+					<p class="ws-empty">{$t('switcher.noMatches')}</p>
 				{/if}
 			</div>
 
@@ -686,15 +674,19 @@
 			     the footer has exactly one action: terminal disconnect. -->
 			{#if addMode === null && createdCodes.length === 0}
 				<div class="ws-footer">
+					<button class="ws-foot-lock-link" onclick={() => { lockWallet(); onLock(); close(); }}>
+						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+						{$t('switcher.lock')}
+					</button>
 					<button class="ws-foot-disconnect-link" onclick={() => { onDisconnect(); close(); }}>
 						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-						Disconnect wallet
+						{$t('switcher.disconnect')}
 					</button>
 				</div>
 			{:else if addMode === 'create' && createdCodes.length === 0}
 				<div class="ws-form">
-					<div class="ws-form-title">Create new wallet</div>
-					<input class="ws-input" placeholder="Wallet name" bind:value={newName} maxlength="40" {...INPUT_ATTRS} />
+					<div class="ws-form-title">{$t('switcher.createNewWallet')}</div>
+					<input class="ws-input" placeholder={$t('switcher.walletName')} bind:value={newName} maxlength="40" {...INPUT_ATTRS} />
 					<!-- type="text" with CSS masking avoids triggering password
 					     manager autofill on this unrelated PIN field. -->
 					<input
@@ -703,59 +695,59 @@
 						inputmode="numeric"
 						pattern="[0-9]*"
 						style="-webkit-text-security: disc; text-security: disc;"
-						placeholder="Your PIN"
+						placeholder={$t('switcher.yourPin')}
 						bind:value={newPin}
 						{...INPUT_ATTRS}
 					/>
 					{#if addError}<p class="ws-error">{addError}</p>{/if}
 					<div class="ws-form-btns">
-						<button class="ws-btn-s" onclick={() => { addMode = null; resetAddForm(); }}>Cancel</button>
+						<button class="ws-btn-s" onclick={() => { addMode = null; resetAddForm(); }}>{$t('switcher.cancel')}</button>
 						<button class="ws-btn-s ws-btn-primary" disabled={addLoading} onclick={submitCreate}>
-							{addLoading ? 'Creating…' : 'Create'}
+							{addLoading ? $t('switcher.creating') : $t('switcher.create')}
 						</button>
 					</div>
 				</div>
 			{:else if createdCodes.length > 0}
 				<div class="ws-form">
-					<div class="ws-form-title">Recovery codes</div>
-					<p class="ws-form-hint">Save these. Each can unlock this wallet if you forget your PIN. They won't be shown again.</p>
+					<div class="ws-form-title">{$t('switcher.recoveryCodes')}</div>
+					<p class="ws-form-hint">{$t('switcher.recoveryCodesHint')}</p>
 					<div class="ws-codes">
 						{#each createdCodes as code, i}
 							<div class="ws-code">{i + 1}. {code}</div>
 						{/each}
 					</div>
 					<div class="ws-form-btns">
-						<button class="ws-btn-s ws-btn-primary" onclick={() => { addMode = null; resetAddForm(); }}>Done</button>
+						<button class="ws-btn-s ws-btn-primary" onclick={() => { addMode = null; resetAddForm(); }}>{$t('switcher.done')}</button>
 					</div>
 				</div>
 			{:else if addMode === 'import'}
 				<div class="ws-form">
-					<div class="ws-form-title">Import existing wallet</div>
-					<input class="ws-input" placeholder="Wallet name" bind:value={newName} maxlength="40" {...INPUT_ATTRS} />
-					<textarea class="ws-input ws-textarea" rows="3" placeholder="12 or 24 word recovery phrase" bind:value={importMnemonic} {...INPUT_ATTRS}></textarea>
+					<div class="ws-form-title">{$t('switcher.importWallet')}</div>
+					<input class="ws-input" placeholder={$t('switcher.walletName')} bind:value={newName} maxlength="40" {...INPUT_ATTRS} />
+					<textarea class="ws-input ws-textarea" rows="3" placeholder={$t('wallet.recoveryPhrasePlaceholder')} bind:value={importMnemonic} {...INPUT_ATTRS}></textarea>
 					<label class="ws-ack">
 						<input type="checkbox" bind:checked={importAck} />
-						<span>Imported wallets have no platform recovery — I have my own backup.</span>
+						<span>{$t('switcher.importAck')}</span>
 					</label>
 					{#if addError}<p class="ws-error">{addError}</p>{/if}
 					<div class="ws-form-btns">
-						<button class="ws-btn-s" onclick={() => { addMode = null; resetAddForm(); }}>Cancel</button>
+						<button class="ws-btn-s" onclick={() => { addMode = null; resetAddForm(); }}>{$t('switcher.cancel')}</button>
 						<button class="ws-btn-s ws-btn-primary" disabled={addLoading} onclick={submitImport}>
-							{addLoading ? 'Importing…' : 'Import'}
+							{addLoading ? $t('switcher.importing') : $t('switcher.import')}
 						</button>
 					</div>
 				</div>
 			{:else if addMode === 'change-pin'}
 				<div class="ws-form">
-					<div class="ws-form-title">Change PIN</div>
-					<p class="ws-form-hint">Re-encrypts every wallet with the new PIN. Your recovery codes still work with the same codes — they're independent of the PIN.</p>
+					<div class="ws-form-title">{$t('switcher.changePin')}</div>
+					<p class="ws-form-hint">{$t('switcher.changePinHint')}</p>
 					<input
 						class="ws-input"
 						type="text"
 						inputmode="numeric"
 						pattern="[0-9]*"
 						style="-webkit-text-security: disc; text-security: disc;"
-						placeholder="Current PIN"
+						placeholder={$t('switcher.currentPin')}
 						bind:value={currentPinInput}
 						{...INPUT_ATTRS}
 					/>
@@ -765,7 +757,7 @@
 						inputmode="numeric"
 						pattern="[0-9]*"
 						style="-webkit-text-security: disc; text-security: disc;"
-						placeholder="New PIN (6+ digits)"
+						placeholder={$t('switcher.newPin')}
 						bind:value={newPinInput}
 						{...INPUT_ATTRS}
 					/>
@@ -775,7 +767,7 @@
 						inputmode="numeric"
 						pattern="[0-9]*"
 						style="-webkit-text-security: disc; text-security: disc;"
-						placeholder="Confirm new PIN"
+						placeholder={$t('switcher.confirmNewPin')}
 						bind:value={newPinConfirm}
 						onkeydown={(e) => { if (e.key === 'Enter') submitChangePin(); }}
 						{...INPUT_ATTRS}
@@ -787,10 +779,32 @@
 					{/if}
 					{#if addError}<p class="ws-error">{addError}</p>{/if}
 					<div class="ws-form-btns">
-						<button class="ws-btn-s" onclick={() => { addMode = null; resetAddForm(); }}>Cancel</button>
+						<button class="ws-btn-s" onclick={() => { addMode = null; resetAddForm(); }}>{$t('switcher.cancel')}</button>
 						<button class="ws-btn-s ws-btn-primary" disabled={addLoading} onclick={submitChangePin}>
-							{addLoading ? 'Updating…' : pinChangeConfirm ? 'Yes, update all' : 'Update PIN'}
+							{addLoading ? $t('switcher.updating') : pinChangeConfirm ? $t('switcher.yesUpdateAll') : $t('switcher.updatePin')}
 						</button>
+					</div>
+				</div>
+			{:else if addMode === 'settings'}
+				<div class="ws-form">
+					<div class="ws-form-title">{$t('switcher.autoLock')}</div>
+					<p class="ws-form-hint">{$t('switcher.autoLockHint')}</p>
+					<div class="ws-autolock-grid">
+						{#each AUTO_LOCK_OPTIONS as opt}
+							<button
+								class="ws-autolock-btn"
+								class:ws-autolock-active={selectedIdleMs === opt.idleMs}
+								onclick={() => {
+									selectedIdleMs = opt.idleMs;
+									const policy = getSessionPolicy();
+									setSessionPolicy(opt.idleMs, policy.absoluteMs);
+									onFeedback({ message: `Auto-lock set to ${opt.label}`, type: 'success' });
+								}}
+							>{opt.label}</button>
+						{/each}
+					</div>
+					<div class="ws-form-btns">
+						<button class="ws-btn-s" onclick={() => { addMode = null; }}>{$t('switcher.done')}</button>
 					</div>
 				</div>
 			{/if}
@@ -810,19 +824,28 @@
 							{#if menuIsActive}
 								<button class="ws-menu-item" onclick={() => { menuForWallet = null; onExportSeed(); close(); }}>
 									<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h16M4 4h16M6 8h12v8H6z"/></svg>
-									Export recovery phrase
+									{$t('switcher.exportRecoveryPhrase')}
 								</button>
 								<button class="ws-menu-item" onclick={() => { menuForWallet = null; resetAddForm(); addMode = 'change-pin'; collapseAllWallets(); }}>
 									<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-									Change PIN
-									<span class="ws-menu-sub">re-encrypts all wallets</span>
+									{$t('switcher.changePin')}
+									<span class="ws-menu-sub">{$t('switcher.reEncryptsAll')}</span>
+								</button>
+								<button class="ws-menu-item" onclick={() => { menuForWallet = null; resetAddForm(); addMode = 'settings'; collapseAllWallets(); }}>
+									<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+									{$t('switcher.autoLock')}
+									<span class="ws-menu-sub">{AUTO_LOCK_OPTIONS.find(o => o.idleMs === selectedIdleMs)?.label ?? '30 min'}</span>
+								</button>
+								<button class="ws-menu-item" onclick={() => { menuForWallet = null; lockWallet(); onLock(); close(); }}>
+									<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+									{$t('switcher.lockNow')}
 								</button>
 							{/if}
 							{#if !menuWallet.isPrimary}
 								{#if menuIsActive}<div class="ws-menu-divider"></div>{/if}
 								<button class="ws-menu-item" onclick={() => { const id = menuWallet.id; menuForWallet = null; handleSetPrimary(id); }}>
 									<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-									Set as primary
+									{$t('switcher.setPrimary')}
 								</button>
 							{/if}
 							{#if menuIsActive}
@@ -833,18 +856,18 @@
 								     lands on the input. -->
 								<button class="ws-menu-item" onclick={() => { menuForWallet = null; resetAddForm(); addMode = 'create'; newName = `Wallet ${wallets.length + 1}`; collapseAllWallets(); }}>
 									<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-									New wallet
+									{$t('switcher.newWallet')}
 								</button>
 								<button class="ws-menu-item" onclick={() => { menuForWallet = null; resetAddForm(); addMode = 'import'; newName = `Imported ${wallets.length + 1}`; collapseAllWallets(); }}>
 									<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-									Import wallet
+									{$t('switcher.importWalletMenu')}
 								</button>
 							{/if}
 							{#if wallets.length > 1 && !menuWallet.isPrimary}
 								<div class="ws-menu-divider"></div>
 								<button class="ws-menu-item ws-menu-item-danger" onclick={() => { const id = menuWallet.id; menuForWallet = null; confirmDelete(id); }}>
 									<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-								Delete wallet
+								{$t('switcher.deleteWallet')}
 							</button>
 							{/if}
 						</div>
@@ -858,13 +881,13 @@
 				<!-- svelte-ignore a11y_no_static_element_interactions -->
 				<div class="ws-avatar-overlay" onclick={() => (avatarPickerFor = null)}>
 					<div class="ws-avatar-modal" onclick={(e) => e.stopPropagation()}>
-						<div class="ws-avatar-title">Choose avatar</div>
+						<div class="ws-avatar-title">{$t('switcher.chooseAvatar')}</div>
 						<div class="ws-avatar-grid">
 							{#each AVATAR_OPTIONS as emoji}
 								<button class="ws-avatar-btn" onclick={() => pickAvatar(emoji)}>{emoji}</button>
 							{/each}
 						</div>
-						<button class="ws-avatar-clear" onclick={clearAvatar}>Reset to number</button>
+						<button class="ws-avatar-clear" onclick={clearAvatar}>{$t('switcher.resetToNumber')}</button>
 					</div>
 				</div>
 			{/if}
@@ -981,19 +1004,12 @@
 	.ws-active-dot { width: 6px; height: 6px; border-radius: 50%; background: #10b981; box-shadow: 0 0 6px rgba(16,185,129,0.6); margin: 0 4px; }
 
 	.ws-icon-btn {
-		width: 26px; height: 26px; border-radius: 6px; border: none;
+		width: 32px; height: 32px; border-radius: 6px; border: none;
 		background: transparent; color: #475569; cursor: pointer;
 		display: flex; align-items: center; justify-content: center;
 		transition: all 0.12s; flex-shrink: 0; position: relative; overflow: hidden;
 	}
 	.ws-icon-btn:hover { background: rgba(255,255,255,0.05); color: #94a3b8; }
-
-	.ws-hold-btn { position: relative; }
-	.ws-hold-active { background: rgba(248,113,113,0.08); }
-	.ws-hold-fill {
-		position: absolute; inset: 0; background: rgba(248,113,113,0.25);
-		transform-origin: bottom; pointer-events: none; transition: transform 16ms linear;
-	}
 
 	.ws-rename {
 		flex: 1; padding: 6px 10px; border-radius: 6px;
@@ -1039,7 +1055,7 @@
 	.ws-acct-num { font-family: 'Syne', sans-serif; font-size: 10px; font-weight: 800; color: #00d2ff; }
 	.ws-acct-meta { flex: 1; min-width: 0; text-align: left; display: flex; flex-direction: column; gap: 1px; }
 	.ws-acct-name { font-family: 'Syne', sans-serif; font-size: 11px; font-weight: 600; color: #e2e8f0; }
-	.ws-acct-addr { font-family: 'Space Mono', monospace; font-size: 8px; color: #475569; }
+	.ws-acct-addr { font-family: 'Space Mono', monospace; font-size: 8px; color: #64748b; }
 	.ws-acct-right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 	.ws-acct-usd { font-family: 'Rajdhani', sans-serif; font-size: 11px; color: #64748b; font-variant-numeric: tabular-nums; }
 	.ws-acct-check { font-size: 10px; color: #10b981; }
@@ -1061,12 +1077,26 @@
 		padding: 10px 14px 14px;
 		border-top: 1px solid rgba(255,255,255,0.04);
 	}
-	/* Disconnect: full-width, comfortably tap-sized. Colored subtly
-	   (red border + red icon) so it reads as terminal without competing
-	   with the primary New/Import row visually. */
+	/* Footer: two side-by-side buttons — Lock (neutral) + Disconnect (red) */
+	.ws-footer { display: flex; gap: 8px; }
+	.ws-foot-lock-link {
+		display: flex; align-items: center; justify-content: center; gap: 6px;
+		flex: 1; padding: 11px 10px; border-radius: 9px;
+		background: rgba(255,255,255,0.03);
+		border: 1px solid rgba(255,255,255,0.08);
+		color: #94a3b8; cursor: pointer;
+		font-family: 'Syne', sans-serif; font-size: 12px; font-weight: 700;
+		transition: all 0.12s;
+	}
+	.ws-foot-lock-link:hover {
+		background: rgba(255,255,255,0.06);
+		border-color: rgba(255,255,255,0.15);
+		color: #e2e8f0;
+	}
+	.ws-foot-lock-link svg { width: 14px; height: 14px; }
 	.ws-foot-disconnect-link {
-		display: flex; align-items: center; justify-content: center; gap: 8px;
-		width: 100%; padding: 11px 14px; border-radius: 9px;
+		display: flex; align-items: center; justify-content: center; gap: 6px;
+		flex: 1; padding: 11px 10px; border-radius: 9px;
 		background: rgba(248,113,113,0.04);
 		border: 1px solid rgba(248,113,113,0.18);
 		color: #f87171; cursor: pointer;
@@ -1078,6 +1108,21 @@
 		border-color: rgba(248,113,113,0.35);
 	}
 	.ws-foot-disconnect-link svg { width: 14px; height: 14px; }
+
+	/* Auto-lock settings grid */
+	.ws-autolock-grid {
+		display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;
+	}
+	.ws-autolock-btn {
+		padding: 10px 6px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.06);
+		background: rgba(255,255,255,0.02); color: #94a3b8; cursor: pointer;
+		font-family: 'Space Mono', monospace; font-size: 11px; font-weight: 600;
+		transition: all 0.12s;
+	}
+	.ws-autolock-btn:hover { border-color: rgba(0,210,255,0.2); color: #e2e8f0; }
+	.ws-autolock-active {
+		border-color: rgba(0,210,255,0.4); background: rgba(0,210,255,0.1); color: #00d2ff;
+	}
 
 	/* Wallet settings action sheet — centered overlay, rendered outside
 	   the scrollable list so it never gets clipped. Mirrors the pattern

@@ -28,16 +28,14 @@
 		"svelte-check": "^4.3.2",
 		"tailwindcss": "^4.1.13",
 		"typescript": "^5.9.2",
-		"vite": "^7.1.7"
+		"vite": "^7.1.7",
+		"supabase": "^2.78.1"
 	},
 	"dependencies": {
 		"@reown/appkit": "^1.8.19",
 		"@reown/appkit-adapter-ethers": "^1.8.19",
 		"@supabase/supabase-js": "^2.99.1",
-		"@tanstack/svelte-query": "^6.1.0",
 		"echarts": "^6.0.0",
-		"ethers": "^6.16.0",
-		"supabase": "^2.78.1",
-		"viem": "^2.47.0"
+		"ethers": "^6.16.0"
 	}
 }

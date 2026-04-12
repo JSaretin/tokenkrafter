@@ -666,8 +666,12 @@
 				{#if walletLoading}
 					<div class="wallet-btn wallet-skeleton"><span class="skeleton-bar"></span></div>
 				{:else if userAddress}
-					<button class="wallet-btn" onclick={() => { if (walletType === 'external') { const kit = getAppKit(); if (kit) kit.open(); } else { showAccountPanel = true; } }}>
-						<span class="wallet-dot"></span>
+					<button class="wallet-btn" onclick={() => {
+						if (walletType === 'external') { const kit = getAppKit(); if (kit) kit.open(); }
+						else if (!signer && walletModalRef) { walletModalRef.openAt('pin-enter'); }
+						else { showAccountPanel = true; }
+					}}>
+						<span class="wallet-dot" class:wallet-dot-locked={walletType === 'embedded' && !signer}></span>
 						{userAddress.slice(0, 6)}...{userAddress.slice(-4)}
 					</button>
 				{:else}
@@ -752,8 +756,13 @@
 				{#if walletLoading}
 					<div class="wallet-btn wallet-skeleton"><span class="skeleton-bar"></span></div>
 				{:else if userAddress}
-					<button class="wallet-btn wallet-btn-sm" onclick={() => { if (walletType === 'external') { const kit = getAppKit(); if (kit) kit.open(); } else { showAccountPanel = true; } mobileMenuOpen = false; }}>
-						<span class="wallet-dot"></span>
+					<button class="wallet-btn wallet-btn-sm" onclick={() => {
+						mobileMenuOpen = false;
+						if (walletType === 'external') { const kit = getAppKit(); if (kit) kit.open(); }
+						else if (!signer && walletModalRef) { walletModalRef.openAt('pin-enter'); }
+						else { showAccountPanel = true; }
+					}}>
+						<span class="wallet-dot" class:wallet-dot-locked={walletType === 'embedded' && !signer}></span>
 						{userAddress.slice(0, 6)}...{userAddress.slice(-4)}
 					</button>
 				{:else}
@@ -897,6 +906,7 @@
 	bind:this={walletModalRef}
 	onConnected={handleWalletConnected}
 	onWalletConnect={openWalletConnect}
+	onDisconnect={disconnectWallet}
 />
 
 <AccountPanel
@@ -1009,6 +1019,7 @@
 	.wallet-dot {
 		width: 7px; height: 7px; border-radius: 50%; background: #10b981; flex-shrink: 0;
 	}
+	.wallet-dot-locked { background: #fbbf24; }
 	.nav-cta {
 		display: inline-flex;
 		align-items: center;

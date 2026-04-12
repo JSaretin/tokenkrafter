@@ -9,15 +9,20 @@
 		getWalletState,
 	} from './embeddedWallet';
 	import { friendlyError } from './errorDecoder';
+	import { t } from '$lib/i18n';
 
 	let {
 		open = $bindable(false),
 		onConnected,
 		onWalletConnect,
+		onDisconnect = () => {},
 	}: {
 		open: boolean;
 		onConnected: (address: string, type: 'embedded' | 'external') => void;
 		onWalletConnect: () => void; // opens WalletConnect/AppKit
+		/** Called when user chooses to disconnect from the PIN entry screen
+		 *  (locked state — can't get to AccountPanel to disconnect normally). */
+		onDisconnect: () => void;
 	} = $props();
 
 	type Step = 'choose' | 'google-loading' | 'pin-setup' | 'pin-enter' | 'recovery-codes' | 'forgot-pin' | 'new-pin';
@@ -90,8 +95,8 @@
 	}
 
 	async function handleCreateWallet() {
-		if (pin.length < 6) { error = 'PIN must be at least 6 digits'; return; }
-		if (pin !== pinConfirm) { error = 'PINs do not match'; return; }
+		if (pin.length < 6) { error = $t('wallet.pinMinDigits'); return; }
+		if (pin !== pinConfirm) { error = $t('wallet.pinsMismatch'); return; }
 
 		error = '';
 		loading = true;
@@ -114,10 +119,10 @@
 	let importAck = $state(false);
 
 	async function handleImportFirstWallet() {
-		if (pin.length < 6) { error = 'PIN must be at least 6 digits'; return; }
-		if (pin !== pinConfirm) { error = 'PINs do not match'; return; }
-		if (!importMnemonic.trim()) { error = 'Enter your recovery phrase'; return; }
-		if (!importAck) { error = 'Acknowledge the warning'; return; }
+		if (pin.length < 6) { error = $t('wallet.pinMinDigits'); return; }
+		if (pin !== pinConfirm) { error = $t('wallet.pinsMismatch'); return; }
+		if (!importMnemonic.trim()) { error = $t('wallet.enterRecoveryPhrase'); return; }
+		if (!importAck) { error = $t('wallet.ackWarning'); return; }
 
 		error = '';
 		loading = true;
@@ -137,14 +142,14 @@
 	}
 
 	async function handleUnlock() {
-		if (!pin) { error = 'Enter your PIN'; return; }
+		if (!pin) { error = $t('wallet.enterYourPin'); return; }
 
 		error = '';
 		loading = true;
 		try {
 			const ok = await unlockWallet(pin);
 			if (!ok) {
-				error = 'Wrong PIN';
+				error = $t('wallet.wrongPin');
 				loading = false;
 				return;
 			}
@@ -168,7 +173,7 @@
 		try {
 			const ok = await recoverWithCode(recoveryCode.toUpperCase().trim());
 			if (!ok) {
-				error = 'Invalid recovery code';
+				error = $t('wallet.invalidRecoveryCode');
 				loading = false;
 				return;
 			}
@@ -183,8 +188,8 @@
 	}
 
 	async function handleSetNewPin() {
-		if (pin.length < 6) { error = 'PIN must be at least 6 digits'; return; }
-		if (pin !== pinConfirm) { error = 'PINs do not match'; return; }
+		if (pin.length < 6) { error = $t('wallet.pinMinDigits'); return; }
+		if (pin !== pinConfirm) { error = $t('wallet.pinsMismatch'); return; }
 
 		error = '';
 		loading = true;
@@ -210,19 +215,35 @@
 	function handleKeydown(e: KeyboardEvent) {
 		if (e.key === 'Escape') close();
 	}
+
+	function handleModalKeydown(e: KeyboardEvent) {
+		if (e.key !== 'Tab') return;
+		const modal = e.currentTarget as HTMLElement;
+		const focusable = modal.querySelectorAll<HTMLElement>(
+			'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+		);
+		if (focusable.length === 0) return;
+		const first = focusable[0];
+		const last = focusable[focusable.length - 1];
+		if (e.shiftKey) {
+			if (document.activeElement === first) { e.preventDefault(); last.focus(); }
+		} else {
+			if (document.activeElement === last) { e.preventDefault(); first.focus(); }
+		}
+	}
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
 
 {#if open}
 	<div class="wm-overlay" onclick={close} role="presentation">
-		<div class="wm-modal" onclick={(e) => e.stopPropagation()} role="dialog" tabindex="-1">
+		<div class="wm-modal" onclick={(e) => e.stopPropagation()} role="dialog" aria-label="Connect wallet" tabindex="-1" onkeydown={handleModalKeydown}>
 
 			<!-- 3-step progress indicator: Method → Secure → Backup. Hidden on
 			     paths that don't fit the funnel (returning unlock, recovery). -->
 			{#if stepperPos > 0}
 				<div class="wm-stepper">
-					{#each ['Method', 'Secure', 'Backup'] as label, i}
+					{#each [$t('wallet.stepMethod'), $t('wallet.stepSecure'), $t('wallet.stepBackup')] as label, i}
 						{@const idx = i + 1}
 						{@const state = idx < stepperPos ? 'done' : idx === stepperPos ? 'active' : 'todo'}
 						<div class="wm-step wm-step-{state}">
@@ -244,20 +265,20 @@
 
 			{#if step === 'choose'}
 				<div class="wm-header">
-					<h2 class="wm-title">Connect Wallet</h2>
+					<h2 class="wm-title">{$t('wallet.connectWallet')}</h2>
 					<button class="wm-close" aria-label="Close" onclick={close}>
 						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
 					</button>
 				</div>
 
 				<button class="wm-option wm-option-primary" onclick={handleGoogleLogin}>
-					<span class="wm-rec-badge">Recommended</span>
+					<span class="wm-rec-badge">{$t('wallet.recommended')}</span>
 					<div class="wm-option-icon">
 						<svg width="20" height="20" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
 					</div>
 					<div class="wm-option-info">
-						<span class="wm-option-title">Quick Wallet</span>
-						<span class="wm-option-desc">Sign in with Google · Instant · No app needed</span>
+						<span class="wm-option-title">{$t('wallet.quickWallet')}</span>
+						<span class="wm-option-desc">{$t('wallet.quickWalletDesc')}</span>
 					</div>
 				</button>
 
@@ -266,51 +287,51 @@
 						<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M6.09 8.95a8.5 8.5 0 0 1 11.82 0l.39.38a.4.4 0 0 1 0 .58l-1.34 1.31a.21.21 0 0 1-.3 0l-.54-.53a5.93 5.93 0 0 0-8.24 0l-.58.56a.21.21 0 0 1-.3 0L5.67 9.94a.4.4 0 0 1 0-.58l.42-.41zm14.6 2.72 1.2 1.17a.4.4 0 0 1 0 .58l-5.38 5.27a.42.42 0 0 1-.59 0l-3.82-3.74a.1.1 0 0 0-.15 0l-3.82 3.74a.42.42 0 0 1-.59 0L2.16 13.42a.4.4 0 0 1 0-.58l1.2-1.17a.42.42 0 0 1 .59 0l3.82 3.74a.1.1 0 0 0 .15 0l3.82-3.74a.42.42 0 0 1 .59 0l3.82 3.74a.1.1 0 0 0 .15 0l3.82-3.74a.42.42 0 0 1 .59 0z" fill="#3B99FC"/></svg>
 					</div>
 					<div class="wm-option-info">
-						<span class="wm-option-title">WalletConnect</span>
-						<span class="wm-option-desc">MetaMask, Trust Wallet, etc.</span>
+						<span class="wm-option-title">{$t('wallet.walletConnect')}</span>
+						<span class="wm-option-desc">{$t('wallet.walletConnectDesc')}</span>
 					</div>
 				</button>
 
 			{:else if step === 'google-loading'}
-				<div class="wm-header"><h2 class="wm-title">Signing in...</h2></div>
+				<div class="wm-header"><h2 class="wm-title">{$t('wallet.signingIn')}</h2></div>
 				<div class="wm-center">
 					<div class="wm-spinner"></div>
-					<p class="wm-hint">Redirecting to Google...</p>
+					<p class="wm-hint">{$t('wallet.redirectingGoogle')}</p>
 				</div>
 
 			{:else if step === 'pin-setup'}
-				<h2 class="wm-title">Secure your wallet</h2>
+				<h2 class="wm-title">{$t('wallet.secureWallet')}</h2>
 
 				<!-- Explicit tabs replace the easy-to-miss inline toggle. -->
 				<div class="wm-mode-tabs">
 					<button class="wm-mode-tab" class:active={!isImporting} onclick={() => { isImporting = false; error = ''; }}>
-						Create new
+						{$t('wallet.createNew')}
 					</button>
 					<button class="wm-mode-tab" class:active={isImporting} onclick={() => { isImporting = true; error = ''; }}>
-						Import existing
+						{$t('wallet.importExisting')}
 					</button>
 				</div>
 
 				<p class="wm-hint">
 					{#if isImporting}
-						Paste your 12 or 24 word recovery phrase. We'll encrypt it with your PIN locally — your seed never leaves this browser.
+						{$t('wallet.importHint')}
 					{:else}
-						This PIN encrypts your new wallet. Only you know it — we can't recover it.
+						{$t('wallet.createHint')}
 					{/if}
 				</p>
 
 				{#if isImporting}
-					<textarea class="wm-input wm-textarea" rows="3" placeholder="12 or 24 word recovery phrase" bind:value={importMnemonic} autocomplete="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true"></textarea>
+					<textarea class="wm-input wm-textarea" rows="3" placeholder={$t('wallet.recoveryPhrasePlaceholder')} bind:value={importMnemonic} autocomplete="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true"></textarea>
 				{/if}
 
-				<input class="wm-input" type="tel" inputmode="numeric" autocomplete="one-time-code" data-lpignore="true" data-1p-ignore="true" style="-webkit-text-security: disc; text-security: disc;" placeholder="Enter PIN (6+ digits)" bind:value={pin} maxlength="8" />
-				<input class="wm-input" type="tel" inputmode="numeric" autocomplete="one-time-code" data-lpignore="true" data-1p-ignore="true" style="-webkit-text-security: disc; text-security: disc;" placeholder="Confirm PIN" bind:value={pinConfirm} maxlength="8"
+				<input class="wm-input" type="tel" inputmode="numeric" autocomplete="one-time-code" data-lpignore="true" data-1p-ignore="true" style="-webkit-text-security: disc; text-security: disc;" placeholder={$t('wallet.enterPin')} bind:value={pin} maxlength="8" />
+				<input class="wm-input" type="tel" inputmode="numeric" autocomplete="one-time-code" data-lpignore="true" data-1p-ignore="true" style="-webkit-text-security: disc; text-security: disc;" placeholder={$t('wallet.confirmPin')} bind:value={pinConfirm} maxlength="8"
 					onkeydown={(e) => { if (e.key === 'Enter') { isImporting ? handleImportFirstWallet() : handleCreateWallet(); } }} />
 
 				{#if isImporting}
 					<label class="wm-checkbox">
 						<input type="checkbox" bind:checked={importAck} />
-						<span>Imported wallets have no platform recovery — I have my own backup.</span>
+						<span>{$t('wallet.importAck')}</span>
 					</label>
 				{/if}
 
@@ -318,34 +339,35 @@
 
 				{#if isImporting}
 					<button class="wm-btn wm-btn-primary" onclick={handleImportFirstWallet} disabled={loading}>
-						{loading ? 'Importing...' : 'Import Wallet'}
+						{loading ? $t('wallet.importing') : $t('wallet.importWallet')}
 					</button>
 				{:else}
 					<button class="wm-btn wm-btn-primary" onclick={handleCreateWallet} disabled={loading}>
-						{loading ? 'Creating...' : 'Create Wallet'}
+						{loading ? $t('wallet.creating') : $t('wallet.createWallet')}
 					</button>
 				{/if}
 
 			{:else if step === 'pin-enter'}
-				<h2 class="wm-title">Unlock Wallet</h2>
-				<p class="wm-hint">Enter your PIN to unlock</p>
+				<h2 class="wm-title">{$t('wallet.unlockWallet')}</h2>
+				<p class="wm-hint">{$t('wallet.enterPinToUnlock')}</p>
 
-				<input class="wm-input" type="tel" inputmode="numeric" autocomplete="one-time-code" data-lpignore="true" data-1p-ignore="true" style="-webkit-text-security: disc; text-security: disc;" placeholder="PIN" bind:value={pin} maxlength="8" autofocus
+				<input class="wm-input" type="tel" inputmode="numeric" autocomplete="one-time-code" data-lpignore="true" data-1p-ignore="true" style="-webkit-text-security: disc; text-security: disc;" placeholder={$t('wallet.pinPlaceholder')} bind:value={pin} maxlength="8" autofocus
 					onkeydown={(e) => { if (e.key === 'Enter') handleUnlock(); }} />
 
 				{#if error}<p class="wm-error">{error}</p>{/if}
 
 				<button class="wm-btn wm-btn-primary" onclick={handleUnlock} disabled={loading}>
-					{loading ? 'Unlocking...' : 'Unlock'}
+					{loading ? $t('wallet.unlocking') : $t('wallet.unlock')}
 				</button>
 				<div class="wm-links">
-					<button class="wm-btn-link" onclick={() => { error = ''; step = 'forgot-pin'; }}>Forgot PIN?</button>
-					<button class="wm-btn-link" onclick={async () => { error = ''; step = 'google-loading'; await signInWithGoogle(true); }}>Switch Google account</button>
+					<button class="wm-btn-link" onclick={() => { error = ''; step = 'forgot-pin'; }}>{$t('wallet.forgotPin')}</button>
+					<button class="wm-btn-link" onclick={async () => { error = ''; step = 'google-loading'; await signInWithGoogle(true); }}>{$t('wallet.switchGoogle')}</button>
+					<button class="wm-btn-link wm-btn-link-danger" onclick={() => { onDisconnect(); open = false; }}>{$t('wallet.disconnect')}</button>
 				</div>
 
 			{:else if step === 'recovery-codes'}
-				<h2 class="wm-title">Recovery Codes</h2>
-				<p class="wm-hint">Save these codes somewhere safe. Each can unlock your wallet if you forget your PIN. They won't be shown again.</p>
+				<h2 class="wm-title">{$t('wallet.recoveryCodes')}</h2>
+				<p class="wm-hint">{$t('wallet.recoveryCodesHint')}</p>
 
 				<div class="wm-codes">
 					{#each recoveryCodes as code, i}
@@ -363,21 +385,21 @@
 					codesConfirmed = true;
 				}}>
 					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-					Save to Device
+					{$t('wallet.saveToDevice')}
 				</button>
 
 				<label class="wm-checkbox">
 					<input type="checkbox" bind:checked={codesConfirmed} />
-					<span>I've saved my recovery codes</span>
+					<span>{$t('wallet.savedCodes')}</span>
 				</label>
 
 				<button class="wm-btn wm-btn-primary" onclick={handleCodesConfirmed} disabled={!codesConfirmed}>
-					Done
+					{$t('wallet.done')}
 				</button>
 
 			{:else if step === 'forgot-pin'}
-				<h2 class="wm-title">Recover Wallet</h2>
-				<p class="wm-hint">Enter one of your recovery codes</p>
+				<h2 class="wm-title">{$t('wallet.recoverWallet')}</h2>
+				<p class="wm-hint">{$t('wallet.enterRecoveryCode')}</p>
 
 				<input class="wm-input" type="text" placeholder="XXXX-XXXX-XXXX-XXXX" bind:value={recoveryCode}
 					onkeydown={(e) => { if (e.key === 'Enter') handleRecover(); }} />
@@ -385,22 +407,22 @@
 				{#if error}<p class="wm-error">{error}</p>{/if}
 
 				<button class="wm-btn wm-btn-primary" onclick={handleRecover} disabled={loading}>
-					{loading ? 'Verifying...' : 'Recover'}
+					{loading ? $t('wallet.verifying') : $t('wallet.recover')}
 				</button>
-				<button class="wm-btn-link" onclick={() => { error = ''; step = 'pin-enter'; }}>Back to PIN</button>
+				<button class="wm-btn-link" onclick={() => { error = ''; step = 'pin-enter'; }}>{$t('wallet.backToPin')}</button>
 
 			{:else if step === 'new-pin'}
-				<h2 class="wm-title">Set New PIN</h2>
-				<p class="wm-hint">Recovery successful. Set a new PIN for your wallet.</p>
+				<h2 class="wm-title">{$t('wallet.setNewPin')}</h2>
+				<p class="wm-hint">{$t('wallet.recoverySuccess')}</p>
 
-				<input class="wm-input" type="tel" inputmode="numeric" autocomplete="one-time-code" data-lpignore="true" data-1p-ignore="true" style="-webkit-text-security: disc; text-security: disc;" placeholder="New PIN (6+ digits)" bind:value={pin} maxlength="8" />
-				<input class="wm-input" type="tel" inputmode="numeric" autocomplete="one-time-code" data-lpignore="true" data-1p-ignore="true" style="-webkit-text-security: disc; text-security: disc;" placeholder="Confirm PIN" bind:value={pinConfirm} maxlength="8"
+				<input class="wm-input" type="tel" inputmode="numeric" autocomplete="one-time-code" data-lpignore="true" data-1p-ignore="true" style="-webkit-text-security: disc; text-security: disc;" placeholder={$t('wallet.newPin')} bind:value={pin} maxlength="8" />
+				<input class="wm-input" type="tel" inputmode="numeric" autocomplete="one-time-code" data-lpignore="true" data-1p-ignore="true" style="-webkit-text-security: disc; text-security: disc;" placeholder={$t('wallet.confirmPin')} bind:value={pinConfirm} maxlength="8"
 					onkeydown={(e) => { if (e.key === 'Enter') handleSetNewPin(); }} />
 
 				{#if error}<p class="wm-error">{error}</p>{/if}
 
 				<button class="wm-btn wm-btn-primary" onclick={handleSetNewPin} disabled={loading}>
-					{loading ? 'Saving...' : 'Set PIN & Continue'}
+					{loading ? $t('wallet.saving') : $t('wallet.setPinContinue')}
 				</button>
 			{/if}
 
@@ -546,6 +568,8 @@
 		text-decoration: underline; padding: 4px;
 	}
 	.wm-btn-link:hover { color: #00d2ff; }
+	.wm-btn-link-danger { color: #f87171; }
+	.wm-btn-link-danger:hover { color: #ef4444; }
 	.wm-error {
 		font-size: 11px; color: #f87171; font-family: 'Space Mono', monospace;
 		margin: 0; padding: 6px 10px; background: rgba(248,113,113,0.08);
@@ -584,4 +608,9 @@
 		animation: spin 0.8s linear infinite;
 	}
 	@keyframes spin { to { transform: rotate(360deg); } }
+
+	@media (max-width: 480px) {
+		.wm-overlay { align-items: flex-end; padding: 0; }
+		.wm-modal { border-radius: 16px 16px 0 0; max-height: 85vh; width: 100%; max-width: 100%; }
+	}
 </style>

@@ -66,7 +66,10 @@ export const GET: RequestHandler = async ({ request }) => {
 		.order('is_primary', { ascending: false })
 		.order('created_at', { ascending: true });
 
-	if (dbErr) return error(500, dbErr.message);
+	if (dbErr) {
+		console.error('[wallets GET] DB error:', dbErr.message);
+		return error(500, 'Failed to fetch wallets');
+	}
 
 	return json({
 		salt,
@@ -149,7 +152,10 @@ export const POST: RequestHandler = async ({ request }) => {
 		.select()
 		.single();
 
-	if (dbErr) return error(500, dbErr.message);
+	if (dbErr) {
+		console.error('[wallets POST] DB error:', dbErr.message);
+		return error(500, 'Failed to create wallet');
+	}
 
 	return json({ wallet: data }, { status: 201 });
 };

@@ -57,18 +57,8 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		return error(400, 'This alias is reserved');
 	}
 
-	// Check if alias is taken
-	const { data: existing } = await supabaseAdmin
-		.from('referral_aliases')
-		.select('id')
-		.eq('alias', cleanAlias)
-		.single();
-
-	if (existing) {
-		return error(409, 'Alias already taken');
-	}
-
-	// Check if wallet already has an alias
+	// Check if wallet already has an alias — update it, otherwise insert.
+	// Use DB unique constraint on `alias` to catch races atomically.
 	const { data: walletAlias } = await supabaseAdmin
 		.from('referral_aliases')
 		.select('alias')
@@ -84,11 +74,16 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			.select()
 			.single();
 
-		if (dbErr) return error(500, dbErr.message);
+		if (dbErr) {
+			// Unique constraint violation = alias taken by another wallet
+			if (dbErr.code === '23505') return error(409, 'Alias already taken');
+			console.error('[referral POST] DB error:', dbErr.message);
+			return error(500, 'Failed to update alias');
+		}
 		return json(data);
 	}
 
-	// Create new
+	// Create new — rely on unique constraint to prevent race conditions
 	const { data, error: dbErr } = await supabaseAdmin
 		.from('referral_aliases')
 		.insert({
@@ -98,6 +93,11 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		.select()
 		.single();
 
-	if (dbErr) return error(500, dbErr.message);
+	if (dbErr) {
+		// Unique constraint violation = alias taken by concurrent request
+		if (dbErr.code === '23505') return error(409, 'Alias already taken');
+		console.error('[referral POST] DB error:', dbErr.message);
+		return error(500, 'Failed to create alias');
+	}
 	return json(data);
 };

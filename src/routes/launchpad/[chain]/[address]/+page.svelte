@@ -5,6 +5,7 @@
 	import { t } from '$lib/i18n';
 	import { apiFetch } from '$lib/apiFetch';
 	import { friendlyError } from '$lib/errorDecoder';
+	import QrCode from '$lib/QrCode.svelte';
 	import { getKnownLogo } from '$lib/tokenLogo';
 	import { supabase } from '$lib/supabaseClient';
 	import { favorites, toggleFavorite } from '$lib/favorites';
@@ -42,6 +43,7 @@
 
 	let signer = $derived(getSigner());
 	let userAddress = $derived(getUserAddress());
+
 	let networkProviders = $derived(getNetworkProviders());
 	let providersReady = $derived(getProvidersReady());
 
@@ -1319,11 +1321,7 @@
 
 				<div class="qr-section mb-4">
 					<div class="qr-box">
-						<img
-							src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data={userAddress}&bgcolor=0d0d14&color=00d2ff"
-							alt="Deposit address QR"
-							class="qr-img"
-						/>
+						<QrCode data={userAddress || ''} width={180} colorDark="#00d2ff" colorLight="#0d0d14" alt="Deposit address QR" />
 					</div>
 					<div class="address-box mt-3">
 						<span class="text-cyan-400 text-xs font-mono break-all">{userAddress}</span>

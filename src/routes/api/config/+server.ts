@@ -11,7 +11,10 @@ export const GET: RequestHandler = async ({ url }) => {
 		.select('key, value, updated_at')
 		.in('key', keys);
 
-	if (dbErr) return error(500, dbErr.message);
+	if (dbErr) {
+		console.error('[config GET] DB error:', dbErr.message);
+		return error(500, 'Failed to fetch config');
+	}
 
 	const result: Record<string, any> = {};
 	for (const row of data || []) {
@@ -39,7 +42,10 @@ export const PATCH: RequestHandler = async ({ request, locals }) => {
 		.select()
 		.single();
 
-	if (dbErr) return error(500, dbErr.message);
+	if (dbErr) {
+		console.error('[config PATCH] DB error:', dbErr.message);
+		return error(500, 'Failed to update config');
+	}
 
 	return json(data);
 };

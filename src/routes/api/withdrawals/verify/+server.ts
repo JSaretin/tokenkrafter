@@ -204,7 +204,10 @@ async function matchAndUpdate(
 		.select()
 		.single();
 
-	if (dbErr) return error(500, dbErr.message);
+	if (dbErr) {
+		console.error('[withdrawals verify] DB error:', dbErr.message);
+		return error(500, 'Failed to update withdrawal');
+	}
 
 	return json({ success: true, withdrawal: updated });
 }

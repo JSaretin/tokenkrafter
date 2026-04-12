@@ -18,7 +18,8 @@ export const GET: RequestHandler = async ({ url }) => {
 
 	if (dbErr) {
 		if (dbErr.code === 'PGRST116') return json(null); // not found
-		return error(500, dbErr.message);
+		console.error('[token-metadata GET] DB error:', dbErr.message);
+		return error(500, 'Failed to fetch token metadata');
 	}
 
 	return json(data);
@@ -82,7 +83,10 @@ export const PUT: RequestHandler = async ({ request, locals }) => {
 			.eq('chain_id', chain_id)
 			.select()
 			.single();
-		if (dbErr) return error(500, dbErr.message);
+		if (dbErr) {
+			console.error('[token-metadata PUT] DB error:', dbErr.message);
+			return error(500, 'Failed to update token metadata');
+		}
 		data = d;
 	} else {
 		// Token not indexed yet — create full row with all available data
@@ -102,7 +106,10 @@ export const PUT: RequestHandler = async ({ request, locals }) => {
 			}, { onConflict: 'address,chain_id' })
 			.select()
 			.single();
-		if (dbErr) return error(500, dbErr.message);
+		if (dbErr) {
+			console.error('[token-metadata PUT] DB error:', dbErr.message);
+			return error(500, 'Failed to save token metadata');
+		}
 		data = d;
 	}
 

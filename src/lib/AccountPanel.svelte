@@ -24,6 +24,8 @@
 	import { balanceState } from './balancePoller';
 	import { queryTradeLens } from './tradeLens';
 	import { friendlyError } from './errorDecoder';
+	import QrCode from './QrCode.svelte';
+	import { t } from '$lib/i18n';
 
 	let {
 		open = $bindable(false),
@@ -172,6 +174,7 @@
 	}
 
 	let copiedAddr = $state(false);
+
 
 	// Export
 	let exportPin = $state('');
@@ -830,7 +833,7 @@
 {#if open}
 <div class="ap-backdrop" onclick={close} role="presentation"></div>
 
-<div class="ap" class:ap-closing={!open}>
+<div class="ap" class:ap-closing={!open} role="dialog" aria-label="Account panel">
 	<!-- ═══ HEADER ═══ -->
 	<div class="ap-head">
 		{#if view !== 'main'}
@@ -838,7 +841,7 @@
 				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
 			</button>
 			<span class="ap-head-title">
-				{view === 'receive' ? 'Receive' : view === 'security' ? 'Security' : view === 'export-key' ? 'Private Key' : 'Recovery Phrase'}
+				{view === 'receive' ? $t('account.receive') : view === 'security' ? $t('account.security') : view === 'export-key' ? $t('account.privateKey') : $t('account.recoveryPhrase')}
 			</span>
 		{:else}
 			<!-- Unified wallet+account chip — opens WalletSwitcher sheet -->
@@ -861,7 +864,7 @@
 							<span class="ap-chip-sep">•</span>
 							<span class="ap-chip-acct">{acctName(activeIndex)}</span>
 						{:else}
-							External Wallet
+							{$t('account.externalWallet')}
 						{/if}
 					</span>
 					<span class="ap-chip-line2">{shortAddr(userAddress)}</span>
@@ -886,6 +889,7 @@
 			onExportSeed={() => { resetExport(); view = 'export-seed'; }}
 			onExportKey={() => { resetExport(); view = 'export-key'; }}
 			onDisconnect={onDisconnect}
+			onLock={() => { close(); }}
 			onAccountMetaChanged={bumpMeta}
 		/>
 	{/if}
@@ -911,19 +915,19 @@
 		<div class="ap-acts">
 			<button class="ap-act" onclick={() => { close(); goto('/trade'); }}>
 				<div class="ap-act-circle"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg></div>
-				<span>Buy</span>
+				<span>{$t('account.buy')}</span>
 			</button>
 			<button class="ap-act" onclick={() => showSend = true}>
 				<div class="ap-act-circle"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg></div>
-				<span>Send</span>
+				<span>{$t('account.send')}</span>
 			</button>
 			<button class="ap-act" onclick={() => view = 'receive'}>
 				<div class="ap-act-circle"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg></div>
-				<span>Receive</span>
+				<span>{$t('account.receive')}</span>
 			</button>
 			<button class="ap-act" onclick={() => { close(); goto('/trade'); }}>
 				<div class="ap-act-circle"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg></div>
-				<span>Swap</span>
+				<span>{$t('account.swap')}</span>
 			</button>
 		</div>
 
@@ -936,18 +940,18 @@
 					<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>
 				</div>
 				<div class="ap-empty-cta-text">
-					<strong>Fund your wallet to get started</strong>
+					<strong>{$t('account.fundWallet')}</strong>
 					<p>Receive {nativeCoin}, USDT or any token on {networkName} at your address.</p>
 				</div>
 				<div class="ap-empty-cta-btns">
-					<button class="ap-btn ap-btn-primary" onclick={() => view = 'receive'}>Show address</button>
-					<button class="ap-btn" onclick={() => { close(); goto('/trade'); }}>Buy with card</button>
+					<button class="ap-btn ap-btn-primary" onclick={() => view = 'receive'}>{$t('account.showAddress')}</button>
+					<button class="ap-btn" onclick={() => { close(); goto('/trade'); }}>{$t('account.buyWithCard')}</button>
 				</div>
 			</div>
 		{/if}
 
 		<!-- Assets header -->
-		<div class="ap-section-head">Assets</div>
+		<div class="ap-section-head">{$t('account.assets')}</div>
 
 
 		{#if true}
@@ -962,7 +966,7 @@
 					{/if}
 					<div class="ap-row-meta">
 						<span class="ap-row-name">{nativeCoin}</span>
-						<span class="ap-row-sub">Native</span>
+						<span class="ap-row-sub">{$t('account.native')}</span>
 					</div>
 					<button class="ap-row-right" type="button" onclick={() => toggleRowCompact('native')} title={nativeCompact ? 'Tap to expand' : 'Tap to shrink'}>
 						<span class="ap-row-amt">{fmtBal(nativeBalance, nativeDecimals)}</span>
@@ -994,7 +998,7 @@
 				{/each}
 
 				{#if tokens.length === 0 && importedTokens.length === 0}
-					<p class="ap-empty">No imported tokens</p>
+					<p class="ap-empty">{$t('account.noImportedTokens')}</p>
 				{/if}
 
 				{#if showImport}
@@ -1010,7 +1014,7 @@
 				{:else}
 					<button class="ap-import-btn" onclick={() => showImport = true}>
 						<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-						Import Token
+						{$t('account.importToken')}
 					</button>
 				{/if}
 			</div>
@@ -1020,7 +1024,7 @@
 		<!-- Disconnect footer -->
 		<button class="ap-disconnect" onclick={() => { onDisconnect(); close(); }}>
 			<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-			Disconnect
+			{$t('account.disconnect')}
 		</button>
 
 	<!-- ═══ RECEIVE VIEW ═══ -->
@@ -1028,18 +1032,12 @@
 		<div class="ap-view-content ap-receive">
 			<p class="ap-hint">Send only {nativeCoin} and tokens on {networkName} to this address.</p>
 			<div class="ap-qr">
-				<img
-					src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&bgcolor=0a0b10&color=ffffff&data={encodeURIComponent(userAddress)}"
-					alt="QR Code"
-					width="180"
-					height="180"
-					class="ap-qr-img"
-				/>
+				<QrCode data={userAddress} width={180} />
 			</div>
 			<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-			<div class="ap-addr-box" onclick={() => { copyText(userAddress); onAddFeedback({ message: 'Address copied', type: 'success' }); }}>
+			<div class="ap-addr-box" onclick={() => { copyText(userAddress); onAddFeedback({ message: $t('account.addressCopied'), type: 'success' }); }}>
 				<span class="ap-addr-full">{userAddress}</span>
-				<span class="ap-addr-tap">{copiedAddr ? 'Copied!' : 'Tap to copy'}</span>
+				<span class="ap-addr-tap">{copiedAddr ? $t('account.copied') : $t('account.tapToCopy')}</span>
 			</div>
 		</div>
 
@@ -1048,16 +1046,16 @@
 		<div class="ap-view-content">
 			<div class="ap-sec-warn">
 				<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-				<p>These options expose sensitive data. Never share your private key or recovery phrase with anyone.</p>
+				<p>{$t('account.securityWarn')}</p>
 			</div>
 			<button class="ap-set-item" onclick={() => { resetExport(); view = 'export-key'; }}>
 				<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-				<span>Export Private Key</span>
+				<span>{$t('account.exportPrivateKey')}</span>
 				<svg class="ap-set-arrow" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
 			</button>
 			<button class="ap-set-item" onclick={() => { resetExport(); view = 'export-seed'; }}>
 				<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-				<span>Export Recovery Phrase</span>
+				<span>{$t('account.exportRecoveryPhrase')}</span>
 				<svg class="ap-set-arrow" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
 			</button>
 		</div>
@@ -1070,11 +1068,11 @@
 					<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
 					<div>
 						<strong>Warning</strong>
-						<p>{view === 'export-key' ? 'Your private key gives full control of this account. Anyone with it can steal all your funds.' : 'Your recovery phrase controls ALL accounts in this wallet. Guard it with your life.'}</p>
+						<p>{view === 'export-key' ? $t('account.warningKey') : $t('account.warningPhrase')}</p>
 					</div>
 				</div>
 
-				<label class="ap-label">Enter PIN to continue</label>
+				<label class="ap-label">{$t('account.enterPinContinue')}</label>
 				<input class="ap-input" type="tel" inputmode="numeric" style="-webkit-text-security: disc; text-security: disc;" placeholder="PIN" bind:value={exportPin}
 					{...INPUT_ATTRS}
 					onkeydown={(e) => { if (e.key === 'Enter') handleExport(view === 'export-key' ? 'key' : 'seed'); }} />
@@ -1082,13 +1080,13 @@
 				{#if exportError}<p class="ap-error">{exportError}</p>{/if}
 
 				<button class="ap-btn ap-btn-danger ap-btn-full" onclick={() => handleExport(view === 'export-key' ? 'key' : 'seed')}>
-					Reveal {view === 'export-key' ? 'Private Key' : 'Recovery Phrase'}
+					{view === 'export-key' ? $t('account.revealKey') : $t('account.revealPhrase')}
 				</button>
 			{:else}
-				<div class="ap-revealed" onclick={() => { navigator.clipboard.writeText(exportedValue); onAddFeedback({ message: 'Copied to clipboard', type: 'info' }); }}>
+				<div class="ap-revealed" onclick={() => { navigator.clipboard.writeText(exportedValue); setTimeout(() => { try { navigator.clipboard.writeText(''); } catch {} }, 30000); onAddFeedback({ message: $t('account.copiedClipboard'), type: 'info' }); }}>
 					{exportedValue}
 				</div>
-				<p class="ap-revealed-hint">Tap to copy. Do not share this with anyone.</p>
+				<p class="ap-revealed-hint">{$t('account.doNotShare')}</p>
 				<button class="ap-btn ap-btn-full" onclick={() => { view = 'security'; resetExport(); }}>Done</button>
 			{/if}
 		</div>
@@ -1101,13 +1099,13 @@
 		<div class="ap-picker-overlay" transition:fade={{ duration: 150 }} onclick={(e) => { if (e.target === e.currentTarget && !sending) resetSend(); }}>
 			<div class="ap-picker ap-send-sheet" transition:fly={{ y: 400, duration: 220 }}>
 				<div class="ap-picker-header">
-					<span class="ap-picker-title">Send</span>
+					<span class="ap-picker-title">{$t('account.send')}</span>
 					<button class="ap-picker-close" type="button" disabled={sending} onclick={resetSend}>
 						<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
 					</button>
 				</div>
 				<div class="ap-send-body">
-					<label class="ap-label">Asset</label>
+					<label class="ap-label">{$t('account.asset')}</label>
 					<button class="ap-asset-btn" type="button" onclick={() => showAssetPicker = true}>
 						{#if sendAsset === 'native'}
 							{#if getKnownLogo(nativeCoin)}
@@ -1129,7 +1127,7 @@
 						<svg class="ap-asset-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
 					</button>
 
-					<label class="ap-label">Recipient</label>
+					<label class="ap-label">{$t('account.recipient')}</label>
 					<div class="ap-recipient-row">
 						<input class="ap-input ap-recipient-input" type="text" placeholder="0x…" bind:value={sendTo} {...INPUT_ATTRS} />
 						{#if walletType === 'embedded' && addressBookEntries.length > 0}
@@ -1142,7 +1140,7 @@
 						{/if}
 					</div>
 
-					<label class="ap-label">Amount</label>
+					<label class="ap-label">{$t('account.amount')}</label>
 					<!-- Amount input with inset MAX pill — mirrors the recipient
 					     row's address-book icon for structural consistency. -->
 					<div class="ap-recipient-row">
@@ -1172,12 +1170,12 @@
 						{/if}
 					{/if}
 					<div class="ap-send-info">
-						<span>Balance: {fmtBal(sendAssetInfo.balance, sendAssetInfo.decimals)} {sendAssetInfo.symbol}</span>
+						<span>{$t('account.balance')}: {fmtBal(sendAssetInfo.balance, sendAssetInfo.decimals)} {sendAssetInfo.symbol}</span>
 					</div>
 				</div>
 				<div class="ap-send-footer">
 					<button class="ap-btn ap-btn-primary ap-btn-full" disabled={!sendTo || !sendAmount} onclick={reviewSend}>
-						Review
+						{$t('account.review')}
 					</button>
 				</div>
 			</div>
@@ -1190,29 +1188,27 @@
 			<div class="ap-picker-overlay" transition:fade={{ duration: 150 }} onclick={(e) => { if (e.target === e.currentTarget) showAssetPicker = false; }}>
 				<div class="ap-picker" transition:fly={{ y: 400, duration: 220 }}>
 					<div class="ap-picker-header">
-						<span class="ap-picker-title">Select Asset</span>
+						<span class="ap-picker-title">{$t('account.selectAsset')}</span>
 						<button class="ap-picker-close" type="button" onclick={() => showAssetPicker = false}>
 							<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
 						</button>
 					</div>
 					<div class="ap-picker-list">
-						{#if nativeBalance > 0n}
-							<button class="ap-picker-item" class:active={sendAsset === 'native'} onclick={() => { sendAsset = 'native'; showAssetPicker = false; }}>
-								{#if getKnownLogo(nativeCoin)}
-									<img src={getKnownLogo(nativeCoin)} alt="" class="ap-picker-logo" />
-								{:else}
-									<span class="ap-picker-letter">{nativeCoin.charAt(0)}</span>
-								{/if}
-								<div class="ap-picker-info">
-									<span class="ap-picker-symbol">{nativeCoin}</span>
-									<span class="ap-picker-name">Native</span>
-								</div>
-								<div class="ap-picker-right">
-									<span class="ap-picker-bal">{fmtBal(nativeBalance, nativeDecimals)}</span>
-									{#if nativeUsd > 0}<span class="ap-picker-usd">{fmtUsd(nativeUsd)}</span>{/if}
-								</div>
-							</button>
-						{/if}
+						<button class="ap-picker-item" class:active={sendAsset === 'native'} onclick={() => { sendAsset = 'native'; showAssetPicker = false; }}>
+							{#if getKnownLogo(nativeCoin)}
+								<img src={getKnownLogo(nativeCoin)} alt="" class="ap-picker-logo" />
+							{:else}
+								<span class="ap-picker-letter">{nativeCoin.charAt(0)}</span>
+							{/if}
+							<div class="ap-picker-info">
+								<span class="ap-picker-symbol">{nativeCoin}</span>
+								<span class="ap-picker-name">Native</span>
+							</div>
+							<div class="ap-picker-right">
+								<span class="ap-picker-bal">{fmtBal(nativeBalance, nativeDecimals)}</span>
+								{#if nativeUsd > 0}<span class="ap-picker-usd">{fmtUsd(nativeUsd)}</span>{/if}
+							</div>
+						</button>
 						{#each sortedTokens as tok}
 							{@const logo = getTokenLogo(tok)}
 							<button class="ap-picker-item" class:active={sendAsset.toLowerCase() === tok.address?.toLowerCase()} onclick={() => { sendAsset = tok.address; showAssetPicker = false; }}>
@@ -1243,7 +1239,7 @@
 			<div class="ap-picker-overlay" transition:fade={{ duration: 150 }} onclick={(e) => { if (e.target === e.currentTarget) { showAddressBook = false; addressBookQuery = ''; } }}>
 				<div class="ap-picker" transition:fly={{ y: 400, duration: 220 }}>
 					<div class="ap-picker-header">
-						<span class="ap-picker-title">My Addresses</span>
+						<span class="ap-picker-title">{$t('account.myAddresses')}</span>
 						<button class="ap-picker-close" type="button" onclick={() => { showAddressBook = false; addressBookQuery = ''; }}>
 							<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
 						</button>
@@ -1255,7 +1251,7 @@
 						<input
 							class="ap-book-search-input"
 							type="text"
-							placeholder="Search wallet, account, or address"
+							placeholder={$t('account.searchAddresses')}
 							bind:value={addressBookQuery}
 							{...INPUT_ATTRS}
 						/>
@@ -1267,7 +1263,7 @@
 						{#each filteredBookEntries as entry, i (entry.address)}
 							{#if i === 0 || filteredBookEntries[i - 1].group !== entry.group}
 								<div class="ap-book-header">
-									{entry.group === 'current' ? 'This wallet' : 'Other wallets'}
+									{entry.group === 'current' ? $t('account.thisWallet') : $t('account.otherWallets')}
 								</div>
 							{/if}
 							{@const bal = cachedNativeBalance(entry.address)}
@@ -1290,7 +1286,7 @@
 							</button>
 						{/each}
 						{#if filteredBookEntries.length === 0}
-							<p class="ap-book-empty">No matches</p>
+							<p class="ap-book-empty">{$t('account.noMatches')}</p>
 						{/if}
 					</div>
 				</div>
@@ -1304,7 +1300,7 @@
 			<div class="ap-picker-overlay" transition:fade={{ duration: 150 }} onclick={(e) => { if (e.target === e.currentTarget && !sending) { sendStep = 'form'; sendFeeEst = ''; } }}>
 				<div class="ap-picker" transition:fly={{ y: 400, duration: 220 }}>
 					<div class="ap-picker-header">
-						<span class="ap-picker-title">Confirm transaction</span>
+						<span class="ap-picker-title">{$t('account.confirmTransaction')}</span>
 						<button class="ap-picker-close" type="button" disabled={sending} onclick={() => { sendStep = 'form'; sendFeeEst = ''; }}>
 							<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
 						</button>
@@ -1329,24 +1325,24 @@
 
 						<div class="ap-preview-rows">
 							<div class="ap-preview-row">
-								<span class="ap-preview-k">From</span>
+								<span class="ap-preview-k">{$t('account.from')}</span>
 								<span class="ap-preview-v">{userAddress.slice(0, 8)}…{userAddress.slice(-6)}</span>
 							</div>
 							<div class="ap-preview-row">
-								<span class="ap-preview-k">To</span>
+								<span class="ap-preview-k">{$t('account.to')}</span>
 								<span class="ap-preview-v">
 									{#if previewBookLabel}<span class="ap-preview-tag">{previewBookLabel}</span>{/if}
 									{sendTo.slice(0, 8)}…{sendTo.slice(-6)}
 								</span>
 							</div>
 							<div class="ap-preview-row">
-								<span class="ap-preview-k">Asset</span>
+								<span class="ap-preview-k">{$t('account.asset')}</span>
 								<span class="ap-preview-v">{sendAssetInfo.symbol}</span>
 							</div>
 							<div class="ap-preview-row">
-								<span class="ap-preview-k">Network fee</span>
+								<span class="ap-preview-k">{$t('account.networkFee')}</span>
 								<span class="ap-preview-v">
-									{#if sendFeeLoading}estimating…
+									{#if sendFeeLoading}{$t('account.estimating')}
 									{:else if sendFeeEst}~{sendFeeEst} {nativeCoin}
 									{:else}—{/if}
 								</span>
@@ -1355,7 +1351,7 @@
 					</div>
 					<div class="ap-preview-btns">
 						<button class="ap-btn ap-btn-primary ap-btn-full" disabled={sending} onclick={executeSend}>
-							{sending ? 'Sending…' : 'Confirm & send'}
+							{sending ? $t('account.sending') : $t('account.confirmSend')}
 						</button>
 					</div>
 				</div>
@@ -1426,8 +1422,8 @@
 	.ap-chip-wallet { color: #e2e8f0; }
 	.ap-chip-acct { color: #94a3b8; font-weight: 600; }
 	.ap-chip-sep { color: #374151; }
-	.ap-chip-line2 { font-family: 'Space Mono', monospace; font-size: 8px; color: #475569; }
-	.ap-chip-chev { color: #475569; flex-shrink: 0; }
+	.ap-chip-line2 { font-family: 'Space Mono', monospace; font-size: 8px; color: #64748b; }
+	.ap-chip-chev { color: #64748b; flex-shrink: 0; }
 
 	/* Empty-state CTA card (shown when wallet is empty) */
 	.ap-empty-cta {
@@ -1510,7 +1506,7 @@
 	}
 	.ap-book-search-clear:hover { background: rgba(255,255,255,0.12); color: #fff; }
 	.ap-book-empty {
-		text-align: center; padding: 24px; font-size: 10px; color: #475569;
+		text-align: center; padding: 24px; font-size: 10px; color: #64748b;
 		font-family: 'Space Mono', monospace; margin: 0;
 	}
 
@@ -1519,7 +1515,7 @@
 		flex: 1; overflow-y: auto; padding: 4px 12px 12px;
 	}
 	.ap-book-header {
-		font-family: 'Space Mono', monospace; font-size: 9px; color: #475569;
+		font-family: 'Space Mono', monospace; font-size: 9px; color: #64748b;
 		text-transform: uppercase; letter-spacing: 0.5px; padding: 6px 4px 2px;
 	}
 	.ap-book-item {
@@ -1542,7 +1538,7 @@
 	}
 	.ap-book-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 	.ap-book-name { font-family: 'Syne', sans-serif; font-size: 12px; font-weight: 700; color: #e2e8f0; }
-	.ap-book-sub { font-family: 'Space Mono', monospace; font-size: 9px; color: #475569; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+	.ap-book-sub { font-family: 'Space Mono', monospace; font-size: 9px; color: #64748b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 	.ap-book-bal {
 		font-family: 'Rajdhani', sans-serif; font-size: 11px; color: #64748b;
 		font-variant-numeric: tabular-nums; flex-shrink: 0;
@@ -1617,7 +1613,7 @@
 	.ap-preview-btns .ap-btn { flex: 1; }
 
 	/* Network */
-	.ap-net { display: flex; align-items: center; gap: 5px; padding: 0 16px 4px; font-size: 9px; color: #475569; font-family: 'Space Mono', monospace; }
+	.ap-net { display: flex; align-items: center; gap: 5px; padding: 0 16px 4px; font-size: 9px; color: #64748b; font-family: 'Space Mono', monospace; }
 	.ap-net-dot { width: 5px; height: 5px; border-radius: 50%; background: #10b981; }
 
 	/* Balance */
@@ -1634,8 +1630,7 @@
 		letter-spacing: -0.02em;
 		max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 	}
-	.ap-bal-loading { font-size: 24px; color: #475569; animation: blink 1s infinite; }
-	.ap-bal-equiv { font-size: 14px; color: #475569; margin-left: 6px; }
+	.ap-bal-loading { font-size: 24px; color: #64748b; animation: blink 1s infinite; }
 	@keyframes blink { 0%,100% { opacity: 0.3; } 50% { opacity: 1; } }
 	.ap-bal-native {
 		display: block; font-family: 'Rajdhani', sans-serif; font-size: 16px;
@@ -1659,21 +1654,10 @@
 	}
 	.ap-act:hover .ap-act-circle { background: rgba(0,210,255,0.1); border-color: rgba(0,210,255,0.25); transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,210,255,0.1); }
 
-	/* Tabs */
-	.ap-tabs { display: flex; border-bottom: 1px solid rgba(255,255,255,0.04); padding: 0 16px; }
-	.ap-tab {
-		flex: 1; padding: 9px; text-align: center; border: none; background: none;
-		cursor: pointer; font-family: 'Space Mono', monospace; font-size: 10px;
-		color: #475569; position: relative; transition: color 0.12s;
-	}
-	.ap-tab:hover { color: #94a3b8; }
-	.ap-tab.active { color: #00d2ff; }
-	.ap-tab.active::after { content: ''; position: absolute; bottom: -1px; left: 20%; right: 20%; height: 2px; background: #00d2ff; border-radius: 1px; }
-
 	/* Section head */
 	.ap-section-head {
 		padding: 8px 16px 4px; font-family: 'Syne', sans-serif; font-size: 12px;
-		font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 0.04em;
+		font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.04em;
 	}
 
 	/* Scrollable content area */
@@ -1737,7 +1721,7 @@
 		font-size: 11px; transition: all 0.1s; text-align: left;
 	}
 	.ap-set-item:hover { background: rgba(255,255,255,0.02); color: #e2e8f0; }
-	.ap-set-arrow { margin-left: auto; color: #1e293b; }
+	.ap-set-arrow { margin-left: auto; color: #64748b; }
 	.ap-set-danger { color: #f87171; }
 	.ap-set-danger:hover { background: rgba(248,113,113,0.04); }
 	.ap-set-divider { height: 1px; background: rgba(255,255,255,0.03); margin: 4px 16px; }
@@ -1772,7 +1756,7 @@
 
 	/* Send */
 	.ap-send-info { display: flex; justify-content: space-between; font-size: 10px; color: #374151; font-family: 'Space Mono', monospace; }
-	.ap-label { font-size: 9px; color: #475569; font-family: 'Space Mono', monospace; text-transform: uppercase; letter-spacing: 0.05em; }
+	.ap-label { font-size: 9px; color: #64748b; font-family: 'Space Mono', monospace; text-transform: uppercase; letter-spacing: 0.05em; }
 
 	/* Security */
 	.ap-sec-warn {
@@ -1796,9 +1780,9 @@
 		color: #f87171; word-break: break-all; line-height: 1.7; cursor: pointer; transition: background 0.12s;
 	}
 	.ap-revealed:hover { background: rgba(248,113,113,0.08); }
-	.ap-revealed-hint { text-align: center; font-size: 9px; color: #475569; font-family: 'Space Mono', monospace; margin: 0; }
+	.ap-revealed-hint { text-align: center; font-size: 9px; color: #64748b; font-family: 'Space Mono', monospace; margin: 0; }
 	.ap-error { font-size: 10px; color: #f87171; font-family: 'Space Mono', monospace; margin: 0; padding: 4px 8px; background: rgba(248,113,113,0.04); border-radius: 4px; }
-	.ap-hint { font-size: 10px; color: #475569; font-family: 'Space Mono', monospace; margin: 0; line-height: 1.5; }
+	.ap-hint { font-size: 10px; color: #64748b; font-family: 'Space Mono', monospace; margin: 0; line-height: 1.5; }
 
 	/* Shared inputs/buttons */
 	.ap-input {
@@ -1808,7 +1792,7 @@
 		outline: none; transition: border-color 0.12s;
 	}
 	.ap-input:focus { border-color: rgba(0,210,255,0.3); }
-	.ap-input::placeholder { color: #1e293b; }
+	.ap-input::placeholder { color: #64748b; }
 	/* Asset picker button */
 	.ap-asset-btn {
 		display: flex; align-items: center; gap: 10px; width: 100%;
@@ -1870,48 +1854,8 @@
 	.ap-picker-right { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
 	.ap-picker-bal { font-size: 12px; color: rgba(255,255,255,0.4); font-family: 'Space Mono', monospace; }
 	.ap-picker-usd { font-size: 10px; color: #374151; font-family: 'Rajdhani', sans-serif; font-variant-numeric: tabular-nums; }
-	.ap-send-estimate { font-family: 'Rajdhani', sans-serif; font-size: 13px; color: #475569; margin: -4px 0 4px; font-variant-numeric: tabular-nums; }
+	.ap-send-estimate { font-family: 'Rajdhani', sans-serif; font-size: 13px; color: #64748b; margin: -4px 0 4px; font-variant-numeric: tabular-nums; }
 
-
-	/* Contact book modal */
-	.ap-book-overlay {
-		position: absolute; inset: 0; z-index: 20;
-		background: rgba(0,0,0,0.5); backdrop-filter: blur(2px);
-		display: flex; align-items: center; justify-content: center; padding: 20px;
-	}
-	.ap-book-modal {
-		width: 100%; max-width: 320px; border-radius: 14px;
-		background: var(--bg, #07070d); border: 1px solid rgba(255,255,255,0.08);
-		box-shadow: 0 16px 48px rgba(0,0,0,0.4); overflow: hidden;
-	}
-	.ap-book-header {
-		display: flex; align-items: center; justify-content: space-between;
-		padding: 14px 16px; border-bottom: 1px solid rgba(255,255,255,0.06);
-	}
-	.ap-book-title { font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700; color: #fff; }
-	.ap-book-close {
-		width: 28px; height: 28px; border-radius: 6px; border: none;
-		background: rgba(255,255,255,0.05); color: #64748b;
-		display: flex; align-items: center; justify-content: center; cursor: pointer;
-	}
-	.ap-book-close:hover { background: rgba(255,255,255,0.1); color: #fff; }
-	.ap-book-item {
-		display: flex; align-items: center; gap: 10px; width: 100%;
-		padding: 12px 16px; border: none; background: transparent;
-		cursor: pointer; transition: background 0.12s; color: inherit;
-	}
-	.ap-book-item:hover { background: rgba(0,210,255,0.05); }
-	.ap-book-avatar {
-		width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0;
-		background: linear-gradient(135deg, rgba(0,210,255,0.15), rgba(139,92,246,0.15));
-		border: 1px solid rgba(0,210,255,0.2);
-		display: flex; align-items: center; justify-content: center;
-		font-family: 'Syne', sans-serif; font-size: 12px; font-weight: 800; color: #00d2ff;
-	}
-	.ap-book-info { flex: 1; min-width: 0; text-align: left; }
-	.ap-book-name { display: block; font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 600; color: #e2e8f0; }
-	.ap-book-addr { display: block; font-family: 'Space Mono', monospace; font-size: 9px; color: #475569; }
-	.ap-book-bal { font-family: 'Rajdhani', sans-serif; font-size: 12px; color: #374151; font-variant-numeric: tabular-nums; flex-shrink: 0; }
 	.ap-btn {
 		padding: 10px 16px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.06);
 		background: rgba(255,255,255,0.03); color: #94a3b8; cursor: pointer;

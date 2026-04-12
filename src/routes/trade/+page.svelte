@@ -16,6 +16,7 @@
 	import { queryTradeLens, getInstantQuote, getWeth, isCacheLoaded, getUsdValue, getCachedToken, findBestRoute, type TaxInfo, type SwapRoute } from '$lib/tradeLens';
 	import { pushPreferences } from '$lib/embeddedWallet';
 	import { resolveTokenLogo } from '$lib/tokenLogo';
+	import { t } from '$lib/i18n';
 
 	let getSigner: () => ethers.Signer | null = getContext('signer');
 	let getUserAddress: () => string | null = getContext('userAddress');
@@ -88,7 +89,6 @@
 	let paymentMethod = $state<'bank' | 'paypal' | 'wise'>('bank');
 	let previewFee = $state(0n);
 	let previewNet = $state(0n);
-	let isWithdrawing = $state(false);
 	let payoutTimeoutMins = $state(10); // default, updated from contract
 
 	// Withdrawal step tracking (bank off-ramp)
@@ -1482,25 +1482,25 @@
 	let noGas = $derived(!!userAddress && !tokenInIsNative && !hasGas && !!tokenInAddr && !!amountIn);
 
 	let buttonLabel = $derived.by(() => {
-		if (isSwapping || isWithdrawing) return 'Processing...';
-		if (!tokenInAddr) return 'Select a token';
-		if (!amountIn || parseFloat(amountIn) <= 0) return 'Enter an amount';
-		if (insufficientBalance) return `Insufficient ${tokenInSymbol} balance`;
-		if (noGas) return `Insufficient ${selectedNetwork?.native_coin || 'gas'} for gas`;
-		if (noLiquidity && outputMode === 'token') return 'Insufficient liquidity';
+		if (isSwapping) return $t('trade.processing');
+		if (!tokenInAddr) return $t('trade.selectToken');
+		if (!amountIn || parseFloat(amountIn) <= 0) return $t('trade.enterAmount');
+		if (insufficientBalance) return $t('trade.insufficientBalance').replace('{symbol}', tokenInSymbol);
+		if (noGas) return $t('trade.insufficientGas').replace('{symbol}', selectedNetwork?.native_coin || 'gas');
+		if (noLiquidity && outputMode === 'token') return $t('trade.insufficientLiquidity');
 		if (outputMode === 'bank') {
-			if (paymentMethod === 'bank' && (!bankResolved || !bankAccount || !bankCode)) return 'Verify bank account';
+			if (paymentMethod === 'bank' && (!bankResolved || !bankAccount || !bankCode)) return $t('trade.verifyBank');
 			if (paymentMethod === 'paypal' && !paypalEmail) return 'Enter PayPal email';
 			if (paymentMethod === 'wise' && !wiseEmail) return 'Enter Wise email';
 			const methodLabel = paymentMethod === 'bank' ? 'Bank' : paymentMethod === 'paypal' ? 'PayPal' : 'Wise';
-			return `Sell ${tokenInSymbol} → ${methodLabel}`;
+			return `${$t('common.sell')} ${tokenInSymbol} → ${methodLabel}`;
 		}
-		if (!tokenOutAddr) return 'Select output token';
-		return `Swap ${tokenInSymbol} → ${tokenOutSymbol}`;
+		if (!tokenOutAddr) return $t('trade.selectOutputToken');
+		return `${$t('trade.swap')} ${tokenInSymbol} → ${tokenOutSymbol}`;
 	});
 
 	let buttonDisabled = $derived(
-		isSwapping || isWithdrawing ||
+		isSwapping ||
 		!tokenInAddr || !amountIn || parseFloat(amountIn) <= 0 ||
 		insufficientBalance || noGas ||
 		(outputMode === 'token' && (!tokenOutAddr || noLiquidity)) ||
@@ -1522,8 +1522,8 @@
 		<!-- Header -->
 		<div class="trade-header">
 			<div>
-				<h1 class="trade-title">Trade</h1>
-				<p class="trade-sub">Swap tokens or sell to your bank account</p>
+				<h1 class="trade-title">{$t('trade.title')}</h1>
+				<p class="trade-sub">{$t('trade.subtitle')}</p>
 			</div>
 			<div class="header-actions">
 				{#if userAddress}
@@ -1540,7 +1540,7 @@
 		<!-- Settings panel -->
 		{#if showSettings}
 			<div class="settings-panel">
-				<span class="settings-label">Slippage Tolerance</span>
+				<span class="settings-label">{$t('trade.slippageTolerance')}</span>
 				<div class="slippage-row">
 					{#each [50, 100, 200, 500] as bps}
 						<button
@@ -1553,7 +1553,7 @@
 							class="slippage-custom-input"
 							type="text"
 							inputmode="decimal"
-							placeholder="Custom"
+							placeholder={$t('trade.custom')}
 							bind:value={customSlippage}
 							oninput={() => {
 								const v = parseFloat(customSlippage);
@@ -1568,9 +1568,9 @@
 				{#if customSlippage}
 					{@const v = parseFloat(customSlippage)}
 					{#if v > 5}
-						<p class="slippage-warn">High slippage — you may receive significantly fewer tokens.</p>
+						<p class="slippage-warn">{$t('trade.slippageHigh')}</p>
 					{:else if v < 0.1}
-						<p class="slippage-warn">Very low slippage — your transaction may fail.</p>
+						<p class="slippage-warn">{$t('trade.slippageLow')}</p>
 					{/if}
 				{/if}
 			</div>
@@ -1602,11 +1602,11 @@
 		<div class="mode-toggle">
 			<button class="mode-btn" class:mode-active={outputMode === 'token'} onclick={() => (outputMode = 'token')}>
 				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4"/></svg>
-				Swap
+				{$t('trade.swap')}
 			</button>
 			<button class="mode-btn" class:mode-active={outputMode === 'bank'} onclick={() => (outputMode = 'bank')}>
 				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M3 10h18M5 6l7-3 7 3M4 10v11M20 10v11M8 14v3M12 14v3M16 14v3"/></svg>
-				Sell to Bank
+				{$t('trade.sellToBank')}
 			</button>
 		</div>
 
@@ -1616,13 +1616,13 @@
 			<!-- FROM section -->
 			<div class="token-section">
 				<div class="token-section-header">
-					<span class="section-label">You pay</span>
+					<span class="section-label">{$t('trade.youPay')}</span>
 					<button class="token-selector" onclick={() => { tokenModalTarget = 'in'; showTokenModal = true; }}>
 						{#if tokenInSymbol}
 							{#if tokenInLogo}<img src={tokenInLogo} alt="" class="token-selector-logo" />{/if}
 							<span class="token-selector-symbol">{tokenInSymbol}</span>
 						{:else}
-							<span class="token-selector-placeholder">Select token</span>
+							<span class="token-selector-placeholder">{$t('trade.selectToken')}</span>
 						{/if}
 						<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M6 9l6 6 6-6"/></svg>
 					</button>
@@ -1649,7 +1649,7 @@
 							const dot = raw.indexOf('.');
 							amountIn = dot === -1 ? raw : raw.slice(0, dot + 9);
 						}}>
-							MAX
+							{$t('trade.max')}
 						</button>
 					{/if}
 				</div>
@@ -1664,7 +1664,7 @@
 				{#if tokenInTax && !tokenInTax.canSell && !tokenInIsNative}
 					<div class="honeypot-badge">
 						<span class="tax-dot" style="background: #f87171;"></span>
-						Honeypot: cannot sell this token
+						{$t('trade.honeypot')}
 					</div>
 				{:else if tokenInHasTax || (tokenInTax && tokenInTax.transferTaxBps > 0)}
 					<div class="tax-badge">
@@ -1689,13 +1689,13 @@
 			{#if outputMode === 'token'}
 				<div class="token-section token-section-out">
 					<div class="token-section-header">
-						<span class="section-label">You receive</span>
+						<span class="section-label">{$t('trade.youReceive')}</span>
 						<button class="token-selector" onclick={() => { tokenModalTarget = 'out'; showTokenModal = true; }}>
 							{#if tokenOutSymbol}
 								{#if tokenOutLogo}<img src={tokenOutLogo} alt="" class="token-selector-logo" />{/if}
 								<span class="token-selector-symbol">{tokenOutSymbol}</span>
 							{:else}
-								<span class="token-selector-placeholder">Select token</span>
+								<span class="token-selector-placeholder">{$t('trade.selectToken')}</span>
 							{/if}
 							<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M6 9l6 6 6-6"/></svg>
 						</button>
@@ -1724,7 +1724,7 @@
 					{#if tokenOutTax && !tokenOutTax.canSell && !tokenOutIsNative}
 						<div class="honeypot-badge">
 							<span class="tax-dot" style="background: #f87171;"></span>
-							Honeypot: cannot sell this token
+							{$t('trade.honeypot')}
 						</div>
 					{:else if tokenOutHasTax || (tokenOutTax && tokenOutTax.transferTaxBps > 0)}
 						<div class="tax-badge">
@@ -1753,7 +1753,7 @@
 									<span>${parseFloat(ethers.formatUnits(previewFee, usdtDecimals)).toFixed(2)}</span>
 								</div>
 								<div class="bank-payout-row bank-payout-net">
-									<span>You receive</span>
+									<span>{$t('trade.youReceive')}</span>
 									<span>${parseFloat(ethers.formatUnits(previewNet, usdtDecimals)).toFixed(2)}</span>
 								</div>
 							</div>
@@ -1764,7 +1764,7 @@
 				<!-- Bank fields -->
 				<div class="bank-section-compact">
 					<div class="field-group">
-						<label class="field-label">Account Number</label>
+						<label class="field-label">{$t('trade.accountNumber')}</label>
 						<input
 							class="input-field"
 							placeholder="10-digit account number"
@@ -1774,12 +1774,12 @@
 						/>
 					</div>
 					<div class="field-group">
-						<label class="field-label">Bank</label>
+						<label class="field-label">{$t('trade.bank')}</label>
 						<button class="bank-selector-btn" onclick={() => { showBankModal = true; bankSearchQuery = ''; }}>
 							{#if bankBankName}
 								<span class="bank-selector-name">{bankBankName}</span>
 							{:else}
-								<span class="bank-selector-placeholder">Select your bank</span>
+								<span class="bank-selector-placeholder">{$t('trade.selectBank')}</span>
 							{/if}
 							<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M6 9l6 6 6-6"/></svg>
 						</button>
@@ -1787,7 +1787,7 @@
 					{#if bankResolving}
 						<div class="resolve-status resolve-loading">
 							<div class="resolve-spinner"></div>
-							Verifying...
+							{$t('trade.verifying')}
 						</div>
 					{:else if bankResolved}
 						<div class="resolve-status resolve-success">
@@ -1814,7 +1814,7 @@
 			{#if rate && outputMode === 'token'}
 				<div class="trade-details">
 					<div class="detail-line">
-						<span>Rate</span>
+						<span>{$t('trade.rate')}</span>
 						<span>1 {tokenInSymbol} = {rate} {tokenOutSymbol}</span>
 					</div>
 					{#if minReceived}
@@ -1822,23 +1822,23 @@
 							? (parseFloat(usdValueOut.replace(/[^0-9.]/g, '')) * parseFloat(minReceived) / parseFloat(displayAmountOut)).toFixed(2)
 							: ''}
 						<div class="detail-line">
-							<span>Min. received</span>
+							<span>{$t('trade.minReceived')}</span>
 							<span>{minReceived} {tokenOutSymbol}{#if minUsd} <span class="usd-value">(≈${minUsd})</span>{/if}</span>
 						</div>
 					{/if}
 					<div class="detail-line">
-						<span>Slippage</span>
+						<span>{$t('trade.slippage')}</span>
 						<span>{(slippageBps / 100).toFixed(slippageBps % 100 === 0 ? 0 : slippageBps % 10 === 0 ? 1 : 2)}%</span>
 					</div>
 					{#if tokenInTaxSell > 0}
 						<div class="detail-line detail-line-warn">
-							<span>Sell tax ({tokenInSymbol})</span>
+							<span>{$t('trade.sellTax')} ({tokenInSymbol})</span>
 							<span>{(tokenInTaxSell / 100).toFixed(1)}%</span>
 						</div>
 					{/if}
 					{#if tokenOutTaxBuy > 0}
 						<div class="detail-line detail-line-warn">
-							<span>Buy tax ({tokenOutSymbol})</span>
+							<span>{$t('trade.buyTax')} ({tokenOutSymbol})</span>
 							<span>{(tokenOutTaxBuy / 100).toFixed(1)}%</span>
 						</div>
 					{/if}
@@ -1848,7 +1848,7 @@
 			{#if noLiquidity && outputMode === 'token'}
 				<div class="no-liquidity">
 					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-					No liquidity for this pair
+					{$t('trade.noLiquidity')}
 				</div>
 			{/if}
 
@@ -1868,27 +1868,27 @@
 		<!-- Buy crypto banner -->
 		<div class="buy-crypto-strip">
 			<svg width="14" height="14" viewBox="0 0 512 512" fill="#00d2ff"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM169.8 165.3c7.9-22.3 29.1-37.3 52.8-37.3h58.3c34.9 0 63.1 28.3 63.1 63.1c0 22.6-12.1 43.5-31.7 54.8L280 264.4c-.2 13-10.9 23.6-24 23.6c-13.3 0-24-10.7-24-24V250.5c0-8.6 4.6-16.5 12.1-20.8l44.3-25.4c4.7-2.7 7.6-7.7 7.6-13.1c0-8.4-6.8-15.1-15.1-15.1H222.6c-3.4 0-6.4 2.1-7.5 5.3l-.4 1.2c-4.4 12.5-18.2 19-30.6 14.6s-19-18.2-14.6-30.6l.4-1.2zM224 352a32 32 0 1 1 64 0 32 32 0 1 1-64 0z"/></svg>
-			<span>Need Crypto? Buy with the best price!</span>
-			<button class="buy-crypto-btn" onclick={() => addFeedback({ message: 'Coming soon!', type: 'info' })}>
-				Get it Now
+			<span>{$t('trade.buyCrypto')}</span>
+			<button class="buy-crypto-btn" onclick={() => addFeedback({ message: $t('trade.comingSoon'), type: 'info' })}>
+				{$t('trade.getItNow')}
 			</button>
 		</div>
 
 		<!-- History panel -->
 		{#if showHistory}
 			<div class="history-panel">
-				<h3 class="history-title">Withdrawal History</h3>
+				<h3 class="history-title">{$t('trade.withdrawalHistory')}</h3>
 				<div class="history-filters">
 					{#each ['all', 'pending', 'completed', 'timeout', 'cancelled'] as f}
 						<button class="history-filter" class:active={historyFilter === f} onclick={() => historyFilter = f}>
-							{f === 'all' ? 'All' : f === 'pending' ? 'Pending' : f === 'completed' ? 'Completed' : f === 'timeout' ? 'Timeout' : 'Cancelled'}
+							{f === 'all' ? $t('trade.all') : f === 'pending' ? $t('trade.pending') : f === 'completed' ? $t('trade.completed') : f === 'timeout' ? $t('trade.timeout') : $t('trade.cancelled')}
 						</button>
 					{/each}
 				</div>
 				{#if historyLoading}
 					<div class="history-loading"><div class="spinner"></div></div>
 				{:else if withdrawals.length === 0}
-					<p class="history-empty">No withdrawals yet</p>
+					<p class="history-empty">{$t('trade.noWithdrawals')}</p>
 				{:else}
 					{#each [...withdrawals].sort((a, b) => Number(b.createdAt) - Number(a.createdAt)).filter(w => {
 						if (historyFilter === 'all') return true;
@@ -1921,12 +1921,12 @@
 						}}>
 							<div class="history-row-top">
 								<span class="history-amount">${parseFloat(ethers.formatUnits(w.grossAmount, usdtDecimals)).toFixed(2)}</span>
-								<span class="history-status status-{sc}">{timedOut ? 'Timed Out' : withdrawStatusLabel(w.status)}</span>
+								<span class="history-status status-{sc}">{timedOut ? $t('trade.timedOut') : withdrawStatusLabel(w.status)}</span>
 							</div>
 							<div class="history-row-bottom">
 								<span class="history-date">{new Date(Number(w.createdAt) * 1000).toLocaleString()}</span>
 								{#if canCancel}
-									<span class="cancel-hint">Tap to cancel</span>
+									<span class="cancel-hint">{$t('trade.tapToCancel')}</span>
 								{/if}
 							</div>
 							{#if w.status === 0}
@@ -1953,7 +1953,7 @@
 	>
 		<div class="token-modal" onclick={(e) => e.stopPropagation()}>
 			<div class="modal-header">
-				<h3>Select a token</h3>
+				<h3>{$t('trade.selectAToken')}</h3>
 				<button class="modal-close" onclick={() => { showTokenModal = false; tokenSearch = ''; }}>
 					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
 				</button>
@@ -1961,7 +1961,7 @@
 
 			<input
 				class="input-field modal-search"
-				placeholder="Search name, symbol, or paste address"
+				placeholder={$t('trade.searchTokens')}
 				bind:value={tokenSearch}
 				autofocus
 			/>
@@ -1984,7 +1984,7 @@
 								<div class="token-list-spinner"></div>
 							</div>
 							<div class="token-list-info">
-								<span class="token-list-symbol">Loading...</span>
+								<span class="token-list-symbol">{$t('trade.loading')}</span>
 								<span class="token-list-addr">{tokenSearch.trim().slice(0, 6)}...{tokenSearch.trim().slice(-4)}</span>
 							</div>
 						</div>
@@ -1999,13 +1999,13 @@
 								<span class="token-list-symbol">{pastedTokenMeta.symbol}</span>
 								<span class="token-list-name">{pastedTokenMeta.name}</span>
 							</div>
-							<span class="token-list-import">Import</span>
+							<span class="token-list-import">{$t('trade.import')}</span>
 						</button>
 					{:else}
 						<button class="token-list-item" onclick={handleCustomAddress}>
 							<div class="token-list-icon token-list-icon-custom">?</div>
 							<div class="token-list-info">
-								<span class="token-list-symbol">Import Token</span>
+								<span class="token-list-symbol">{$t('trade.importToken')}</span>
 								<span class="token-list-addr">{tokenSearch.trim().slice(0, 6)}...{tokenSearch.trim().slice(-4)}</span>
 							</div>
 					</button>
@@ -2043,10 +2043,10 @@
 
 				{#if dbSearchLoading}
 					<div class="token-list-item" style="cursor: default; opacity: 0.5; justify-content: center;">
-						<span class="token-list-name">Searching...</span>
+						<span class="token-list-name">{$t('trade.searching')}</span>
 					</div>
 				{:else if filteredTokens.length === 0 && !ethers.isAddress(tokenSearch.trim())}
-					<p class="token-list-empty">No tokens found</p>
+					<p class="token-list-empty">{$t('trade.noTokensFound')}</p>
 				{/if}
 			</div>
 		</div>
@@ -2060,7 +2060,7 @@
 	>
 		<div class="token-modal" onclick={(e) => e.stopPropagation()}>
 			<div class="modal-header">
-				<h3>Select your bank</h3>
+				<h3>{$t('trade.selectBank')}</h3>
 				<button class="modal-close" onclick={() => { showBankModal = false; bankSearchQuery = ''; }}>
 					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
 				</button>
@@ -2068,7 +2068,7 @@
 
 			<input
 				class="input-field modal-search"
-				placeholder="Search bank name..."
+				placeholder={$t('trade.searchBank')}
 				bind:value={bankSearchQuery}
 				autofocus
 			/>
@@ -2082,7 +2082,7 @@
 				{/each}
 
 				{#if filteredBanks.length === 0}
-					<p class="token-list-empty">No banks found</p>
+					<p class="token-list-empty">{$t('trade.noBanksFound')}</p>
 				{/if}
 			</div>
 		</div>
@@ -2096,7 +2096,7 @@
 	>
 		<div class="confirm-modal" onclick={(e) => e.stopPropagation()}>
 			<div class="modal-header">
-				<h3>{outputMode === 'bank' ? 'Confirm Withdrawal' : 'Confirm Swap'}</h3>
+				<h3>{outputMode === 'bank' ? $t('trade.confirmWithdrawal') : $t('trade.confirmSwap')}</h3>
 				{#if !isSwapping}
 					<button class="modal-close" onclick={() => (showConfirmModal = false)}>
 						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -2113,10 +2113,10 @@
 								<div class="ws-complete-icon">
 									<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
 								</div>
-								<span class="ws-complete-text">Withdrawal submitted!</span>
-								<span class="ws-complete-sub">Your funds are secured in the smart contract. You'll receive payment shortly.</span>
+								<span class="ws-complete-text">{$t('trade.withdrawalSubmitted')}</span>
+								<span class="ws-complete-sub">{$t('trade.withdrawalSubmittedDesc')}</span>
 								<button class="swap-btn swap-btn-bank" style="margin: 12px 0 0; width: 100%;" onclick={() => { showConfirmModal = false; }}>
-									View Status
+									{$t('trade.viewStatus')}
 								</button>
 							</div>
 						{:else}
@@ -2128,9 +2128,9 @@
 							</div>
 							<div class="withdraw-steps">
 								{#each [
-									{ n: 1, title: 'Save Details', desc: 'Saving payment info', activeDesc: 'Saving...' },
-									{ n: 2, title: 'Approve Token', desc: tokenInIsNative ? 'Skipped for native' : `Allow ${tokenInSymbol}`, activeDesc: tokenInIsNative ? 'Skipping...' : 'Confirm in wallet...' },
-									{ n: 3, title: 'Execute Trade', desc: 'Deposit to contract', activeDesc: 'Confirm in wallet...' }
+									{ n: 1, title: $t('trade.saveDetails'), desc: $t('trade.savingPaymentInfo'), activeDesc: $t('trade.savingDetails') },
+									{ n: 2, title: $t('trade.approveToken'), desc: tokenInIsNative ? $t('trade.skippedForNative') : `Allow ${tokenInSymbol}`, activeDesc: tokenInIsNative ? 'Skipping...' : $t('trade.confirmInWallet') },
+									{ n: 3, title: $t('trade.executeTrade'), desc: $t('trade.depositToContract'), activeDesc: $t('trade.confirmInWallet') }
 								] as step}
 									{@const isDone = withdrawStep > step.n}
 									{@const isActive = withdrawStep === step.n}
@@ -2150,7 +2150,7 @@
 											<span class="ws-desc">{isActive ? step.activeDesc : step.desc}</span>
 										</div>
 										{#if isDone}
-											<span class="ws-check-label">Done</span>
+											<span class="ws-check-label">{$t('trade.done')}</span>
 										{/if}
 									</div>
 								{/each}
@@ -2162,7 +2162,7 @@
 								<div class="ws-complete-icon">
 									<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
 								</div>
-								<span class="ws-complete-text">Swap complete!</span>
+								<span class="ws-complete-text">{$t('trade.swapComplete')}</span>
 								<span class="ws-complete-sub">{tokenInSymbol} → {tokenOutSymbol}</span>
 								<button class="swap-btn" style="margin: 12px 0 0; width: 100%;" onclick={() => { showConfirmModal = false; swapStep = 0; amountIn = ''; amountOut = ''; }}>
 									Done
@@ -2171,8 +2171,8 @@
 						{:else}
 							<div class="withdraw-steps">
 								{#each [
-									{ n: 1, title: 'Approve Token', desc: tokenInIsNative ? 'Skipped for native' : `Allow ${tokenInSymbol}`, activeDesc: tokenInIsNative ? 'Skipping...' : 'Confirm in wallet...' },
-									{ n: 2, title: 'Execute Swap', desc: `${tokenInSymbol} → ${tokenOutSymbol}`, activeDesc: 'Confirm in wallet...' }
+									{ n: 1, title: $t('trade.approveToken'), desc: tokenInIsNative ? $t('trade.skippedForNative') : `Allow ${tokenInSymbol}`, activeDesc: tokenInIsNative ? 'Skipping...' : $t('trade.confirmInWallet') },
+									{ n: 2, title: $t('trade.executeSwap'), desc: `${tokenInSymbol} → ${tokenOutSymbol}`, activeDesc: $t('trade.confirmInWallet') }
 								] as step}
 									{@const isDone = swapStep > step.n}
 									{@const isActive = swapStep === step.n}
@@ -2192,7 +2192,7 @@
 											<span class="ws-desc">{isActive ? step.activeDesc : step.desc}</span>
 										</div>
 										{#if isDone}
-											<span class="ws-check-label">Done</span>
+											<span class="ws-check-label">{$t('trade.done')}</span>
 										{/if}
 									</div>
 								{/each}
@@ -2203,7 +2203,7 @@
 				<!-- ═══ REVIEW (before clicking confirm) ═══ -->
 				<div class="cr-swap-row">
 					<div class="cr-side">
-						<span class="cr-label">Pay</span>
+						<span class="cr-label">{$t('trade.pay')}</span>
 						<span class="cr-amount">{amountIn} <span class="cr-sym">{tokenInSymbol}</span></span>
 						{#if tokenInHasTax}<span class="cr-tax">-{tokenInTaxSell / 100}% tax</span>{/if}
 					</div>
@@ -2212,11 +2212,11 @@
 					</div>
 					<div class="cr-side cr-side-right">
 						{#if outputMode === 'token'}
-							<span class="cr-label">Receive</span>
+							<span class="cr-label">{$t('trade.receive')}</span>
 							<span class="cr-amount">{displayAmountOut || '0'} <span class="cr-sym">{tokenOutSymbol}</span></span>
 							{#if tokenOutHasTax}<span class="cr-tax">-{tokenOutTaxBuy / 100}% tax</span>{/if}
 						{:else}
-							<span class="cr-label">To</span>
+							<span class="cr-label">{$t('trade.to')}</span>
 							<span class="cr-bank-name">{paymentMethod === 'bank' ? bankBankName : paymentMethod === 'paypal' ? 'PayPal' : 'Wise'}</span>
 							{#if paymentMethod === 'bank' && bankResolved}
 								<span class="cr-bank-holder">{bankName}</span>
@@ -2234,18 +2234,18 @@
 						{@const confirmMinUsd = usdValueOut && displayAmountOut && parseFloat(displayAmountOut) > 0
 							? (parseFloat(usdValueOut.replace(/[^0-9.]/g, '')) * parseFloat(minReceived) / parseFloat(displayAmountOut)).toFixed(2)
 							: ''}
-						<div class="cr-row"><span>Rate</span><span>1 {tokenInSymbol} = {rate}</span></div>
-						<div class="cr-row"><span>Min. received</span><span>{minReceived} {tokenOutSymbol}{#if confirmMinUsd} <span class="usd-value">(≈${confirmMinUsd})</span>{/if}</span></div>
-						<div class="cr-row"><span>Slippage</span><span>{(slippageBps / 100).toFixed(slippageBps % 100 === 0 ? 0 : slippageBps % 10 === 0 ? 1 : 2)}%</span></div>
-						{#if tokenInTaxSell > 0}<div class="cr-row cr-row-warn"><span>Sell tax ({tokenInSymbol})</span><span>{(tokenInTaxSell / 100).toFixed(1)}%</span></div>{/if}
-						{#if tokenOutTaxBuy > 0}<div class="cr-row cr-row-warn"><span>Buy tax ({tokenOutSymbol})</span><span>{(tokenOutTaxBuy / 100).toFixed(1)}%</span></div>{/if}
+						<div class="cr-row"><span>{$t('trade.rate')}</span><span>1 {tokenInSymbol} = {rate}</span></div>
+						<div class="cr-row"><span>{$t('trade.minReceived')}</span><span>{minReceived} {tokenOutSymbol}{#if confirmMinUsd} <span class="usd-value">(≈${confirmMinUsd})</span>{/if}</span></div>
+						<div class="cr-row"><span>{$t('trade.slippage')}</span><span>{(slippageBps / 100).toFixed(slippageBps % 100 === 0 ? 0 : slippageBps % 10 === 0 ? 1 : 2)}%</span></div>
+						{#if tokenInTaxSell > 0}<div class="cr-row cr-row-warn"><span>{$t('trade.sellTax')} ({tokenInSymbol})</span><span>{(tokenInTaxSell / 100).toFixed(1)}%</span></div>{/if}
+						{#if tokenOutTaxBuy > 0}<div class="cr-row cr-row-warn"><span>{$t('trade.buyTax')} ({tokenOutSymbol})</span><span>{(tokenOutTaxBuy / 100).toFixed(1)}%</span></div>{/if}
 					{:else if outputMode === 'bank'}
 						{#if fiatEquivalent}
-							<div class="cr-row cr-row-highlight"><span>You receive</span><span class="cr-ngn">{fiatEquivalent}</span></div>
-							{#if ngnRate > 0}<div class="cr-row"><span>Rate</span><span>1 USD = ₦{ngnRate.toFixed(2)}</span></div>{/if}
+							<div class="cr-row cr-row-highlight"><span>{$t('trade.youReceive')}</span><span class="cr-ngn">{fiatEquivalent}</span></div>
+							{#if ngnRate > 0}<div class="cr-row"><span>{$t('trade.rate')}</span><span>1 USD = ₦{ngnRate.toFixed(2)}</span></div>{/if}
 						{/if}
-						<div class="cr-row"><span>Processing</span><span>Under {payoutTimeoutMins} min</span></div>
-						<div class="cr-row"><span>Safety</span><span>Cancel anytime</span></div>
+						<div class="cr-row"><span>{$t('trade.processing2')}</span><span>Under {payoutTimeoutMins} min</span></div>
+						<div class="cr-row"><span>{$t('trade.safety')}</span><span>{$t('trade.cancelAnytime')}</span></div>
 					{/if}
 				</div>
 
@@ -2254,7 +2254,7 @@
 					style="margin: 0; width: 100%;"
 					onclick={async () => { await handleSwap(); }}
 				>
-					{outputMode === 'bank' ? 'Confirm Withdrawal' : 'Confirm Swap'}
+					{outputMode === 'bank' ? $t('trade.confirmWithdrawal') : $t('trade.confirmSwap')}
 				</button>
 				{/if}
 			</div>
@@ -2464,7 +2464,6 @@
 	.flip-btn:hover { color: #00d2ff; background: rgba(0,210,255,0.1); transform: rotate(180deg); }
 
 	/* Bank section */
-	.bank-section { padding: 8px 14px 0; }
 	.bank-safety-pill {
 		display: flex; align-items: center; justify-content: center; gap: 5px;
 		padding: 6px 10px; border-radius: 20px;
@@ -2506,42 +2505,10 @@
 		margin-bottom: 4px;
 	}
 
-	/* Payment method tabs */
-	.pay-method-tabs {
-		display: flex; gap: 4px; margin-bottom: 12px;
-	}
-	.pay-method-tab {
-		flex: 1; display: flex; align-items: center; justify-content: center; gap: 5px;
-		padding: 8px 6px; border-radius: 8px; border: 1px solid var(--border);
-		background: transparent; color: var(--text-muted); cursor: pointer;
-		font-family: 'Space Mono', monospace; font-size: 10px; font-weight: 600;
-		transition: all 150ms; white-space: nowrap;
-	}
-	.pay-method-tab:hover { color: var(--text); border-color: rgba(255,255,255,0.15); }
-	.pay-method-active {
-		color: #10b981; border-color: rgba(16,185,129,0.3);
-		background: rgba(16,185,129,0.08);
-	}
 	.pay-method-note {
 		font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text-dim);
 		line-height: 1.5; padding: 0 2px;
 	}
-
-	/* Bank dropdown */
-	.bank-dropdown {
-		position: absolute; top: 100%; left: 0; right: 0; z-index: 20;
-		background: var(--bg); border: 1px solid var(--border); border-radius: 10px;
-		max-height: 180px; overflow-y: auto; margin-top: 4px;
-		box-shadow: 0 8px 24px rgba(0,0,0,0.4);
-		scrollbar-width: thin; scrollbar-color: var(--bg-surface-hover) transparent;
-	}
-	.bank-dropdown-item {
-		width: 100%; text-align: left; padding: 10px 14px; border: none;
-		background: transparent; color: var(--text); cursor: pointer;
-		font-family: 'Space Mono', monospace; font-size: 12px;
-		transition: background 100ms;
-	}
-	.bank-dropdown-item:hover { background: var(--bg-surface-hover); }
 
 	/* Resolve status */
 	.resolve-status {
@@ -2670,13 +2637,6 @@
 	.status-red { color: #f87171; }
 	.history-row-bottom { display: flex; justify-content: space-between; align-items: center; margin-top: 4px; }
 	.history-date { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text-dim); }
-	.cancel-btn {
-		background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.2);
-		color: #f87171; font-family: 'Space Mono', monospace; font-size: 10px;
-		font-weight: 600; padding: 3px 8px; border-radius: 6px; cursor: pointer;
-		transition: all 150ms;
-	}
-	.cancel-btn:hover { background: rgba(239,68,68,0.2); }
 	.history-progress { margin-top: 6px; }
 	.history-timer { font-family: 'Space Mono', monospace; font-size: 9px; color: rgba(245,158,11,0.7); }
 
