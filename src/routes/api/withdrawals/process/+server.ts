@@ -25,156 +25,182 @@ async function getNetworkConfig(chainId: number): Promise<{
 	return { rpc: net.rpc, trade_router_address: net.trade_router_address };
 }
 
-/** Confirm withdrawal on-chain using the admin signer. */
-async function confirmOnChain(
-	chainId: number,
-	withdrawId: number,
-	routerAddress: string,
-	rpcUrl: string,
-): Promise<{ success: boolean; txHash?: string; error?: string }> {
-	const adminKey = env.ADMIN_KEY;
-	if (!adminKey) return { success: false, error: 'ADMIN_KEY not configured' };
-
-	try {
-		const provider = new ethers.JsonRpcProvider(rpcUrl, chainId, { staticNetwork: true });
-		const signer = new ethers.Wallet(adminKey, provider);
-		const router = new ethers.Contract(routerAddress, TRADE_ROUTER_ABI, signer);
-
-		const est = await router['confirm(uint256)'].estimateGas(withdrawId);
-		const tx = await router['confirm(uint256)'](withdrawId, {
-			gasLimit: (est * 130n) / 100n,
-		});
-		const receipt = await tx.wait();
-		return { success: true, txHash: receipt.hash };
-	} catch (e: any) {
-		return { success: false, error: e.message?.slice(0, 300) || 'On-chain confirm failed' };
-	}
-}
-
-// POST /api/withdrawals/process — confirm on-chain + initiate Flutterwave transfer
-// Flow: check balance → confirm on-chain → send fiat
-// Auth: admin session (set by hooks.server.ts)
+/**
+ * POST /api/withdrawals/process
+ *
+ * Reads the withdrawal from the blockchain, matches it to a DB record
+ * via bankRef + user, checks Flutterwave balance, confirms on-chain
+ * (releases USDT from escrow), then initiates the fiat transfer.
+ *
+ * Auth: admin session cookie OR TX_CONFIRM_SECRET bearer token (daemon).
+ *
+ * Body: { withdraw_id: number, chain_id: number, naira_rate?: number }
+ */
 export const POST: RequestHandler = async ({ request, locals }) => {
-	if (!locals.isAdmin) return error(401, 'Admin access required');
+	// ── Auth: admin cookie OR TX_CONFIRM_SECRET ──
+	const authHeader = request.headers.get('authorization');
+	const isDaemon = env.TX_CONFIRM_SECRET && authHeader === `Bearer ${env.TX_CONFIRM_SECRET}`;
+	if (!locals.isAdmin && !isDaemon) {
+		return error(401, 'Admin or daemon access required');
+	}
 
 	const body = await request.json();
-	const { withdrawal_id, naira_rate } = body;
+	const { withdraw_id, chain_id, naira_rate } = body;
 
-	if (!withdrawal_id) return error(400, 'withdrawal_id required');
+	if (withdraw_id == null || !chain_id) {
+		return error(400, 'withdraw_id and chain_id required');
+	}
 
-	// ── 1. Fetch withdrawal from DB ──
-	const { data: withdrawal, error: dbErr } = await supabaseAdmin
+	// ── 1. Get network config ──
+	const netConfig = await getNetworkConfig(chain_id);
+	if (!netConfig) return error(500, `No network config for chain ${chain_id}`);
+
+	const provider = new ethers.JsonRpcProvider(netConfig.rpc, chain_id, { staticNetwork: true });
+	const router = new ethers.Contract(netConfig.trade_router_address, TRADE_ROUTER_ABI, provider);
+
+	// ── 2. Read withdrawal from blockchain ──
+	let onChain: any;
+	try {
+		onChain = await router.getWithdrawal(withdraw_id);
+	} catch (e: any) {
+		return error(502, `Failed to read on-chain withdrawal: ${e.message?.slice(0, 200)}`);
+	}
+
+	const onChainStatus = Number(onChain.status);
+	const onChainUser = (onChain.user as string).toLowerCase();
+	const bankRef = onChain.bankRef as string; // bytes32 hex
+	const netAmount = onChain.netAmount as bigint;
+	const grossAmount = onChain.grossAmount as bigint;
+	const fee = onChain.fee as bigint;
+
+	// Must be pending (status 0) to process
+	if (onChainStatus !== 0) {
+		const label = onChainStatus === 1 ? 'Confirmed' : onChainStatus === 2 ? 'Cancelled' : `Unknown(${onChainStatus})`;
+		return error(409, `On-chain withdrawal is ${label}, not Pending`);
+	}
+
+	// ── 3. Match DB record by bankRef + wallet_address ──
+	// The bankRef is a keccak256 hash of the user's bank details, set
+	// when the user initiated the withdrawal. We find the matching DB
+	// record to get the decrypted payment details for the fiat transfer.
+	const { data: candidates, error: dbErr } = await supabaseAdmin
 		.from('withdrawal_requests')
 		.select('*')
-		.eq('id', withdrawal_id)
-		.single();
+		.eq('wallet_address', onChainUser)
+		.in('status', ['pending', 'awaiting_trade']);
 
-	if (dbErr || !withdrawal) return error(404, 'Withdrawal not found');
-	if (withdrawal.status !== 'pending') return error(400, `Withdrawal is ${withdrawal.status}, not pending`);
-	if (withdrawal.payment_method !== 'bank') return error(400, 'Only bank transfers are auto-processed');
+	if (dbErr) {
+		console.error('[process] DB query failed:', dbErr.message);
+		return error(500, 'Database error');
+	}
 
-	// ── 2. Get network config ──
-	const netConfig = await getNetworkConfig(withdrawal.chain_id);
-	if (!netConfig) return error(500, `No network config for chain ${withdrawal.chain_id}`);
+	if (!candidates || candidates.length === 0) {
+		return error(404, `No pending withdrawal found for wallet ${onChainUser}`);
+	}
 
-	// ── 3. Verify on-chain withdrawal is still pending ──
-	if (withdrawal.withdraw_id != null) {
-		try {
-			const provider = new ethers.JsonRpcProvider(netConfig.rpc, withdrawal.chain_id, { staticNetwork: true });
-			const router = new ethers.Contract(netConfig.trade_router_address, TRADE_ROUTER_ABI, provider);
-			const onChain = await router.getWithdrawal(withdrawal.withdraw_id);
-			const onChainStatus = Number(onChain.status);
+	// Match by bankRef — decrypt each candidate's payment details and
+	// compare the computed hash to the on-chain bankRef.
+	let matched: (typeof candidates)[0] | null = null;
+	for (const row of candidates) {
+		let details = row.payment_details;
+		if (typeof details === 'string') {
+			try { details = await decrypt(details); } catch { continue; }
+		}
+		if (!details?.bank_code || !details?.account) continue;
 
-			if (onChainStatus !== 0) {
-				const label = onChainStatus === 1 ? 'Confirmed' : onChainStatus === 2 ? 'Cancelled' : `Unknown(${onChainStatus})`;
-				const dbStatus = onChainStatus === 2 ? 'cancelled' : 'confirmed';
-				await supabaseAdmin
-					.from('withdrawal_requests')
-					.update({
-						status: dbStatus,
-						admin_note: `On-chain status is ${label} — aborting.`,
-						updated_at: new Date().toISOString(),
-					})
-					.eq('id', withdrawal_id);
-				return error(409, `Withdrawal already ${label} on-chain`);
-			}
-		} catch (e: any) {
-			console.error('[process] On-chain status check failed:', e.message);
-			return error(502, 'Failed to verify on-chain status');
+		const computed = ethers.keccak256(
+			ethers.toUtf8Bytes(`${details.bank_code}:${details.account}`)
+		);
+
+		if (computed === bankRef) {
+			matched = { ...row, _details: details };
+			break;
 		}
 	}
 
-	// ── 4. Decrypt payment details ──
-	let details = withdrawal.payment_details;
-	if (typeof details === 'string') {
-		try {
-			details = await decrypt(details);
-		} catch {
-			return error(500, 'Failed to decrypt payment details');
-		}
-	}
-	if (!details?.bank_code || !details?.account) {
-		return error(400, 'Missing bank details');
+	if (!matched) {
+		return error(404, 'No matching bank details found for on-chain bankRef');
 	}
 
-	// ── 5. Calculate NGN amount ──
-	const netUsdt = parseFloat(withdrawal.net_amount) / 1e6;
+	const details = matched._details;
+
+	// ── 4. Calculate NGN amount ──
+	// netAmount is in USDT smallest units (6 decimals)
+	const netUsdt = parseFloat(ethers.formatUnits(netAmount, 6));
 	const rate = naira_rate || 1600;
 	const ngnAmount = Math.floor(netUsdt * rate);
+
 	if (ngnAmount <= 0) return error(400, 'Amount too small');
 
-	// ── 6. Check Flutterwave balance ──
+	// ── 5. Check Flutterwave balance ──
 	const { available } = await getBalance('NGN');
 	if (available < ngnAmount + 50) {
-		// +50 buffer for Flutterwave transfer fee
 		return json(
-			{ success: false, error: `Insufficient Flutterwave balance: ₦${available.toLocaleString()} available, ₦${ngnAmount.toLocaleString()} needed` },
+			{
+				success: false,
+				error: `Insufficient Flutterwave balance: ₦${available.toLocaleString()} available, ₦${ngnAmount.toLocaleString()} needed`,
+			},
 			{ status: 400 },
 		);
 	}
 
-	// ── 7. Confirm on-chain (release USDT from escrow) ──
-	if (withdrawal.withdraw_id != null) {
-		const confirmResult = await confirmOnChain(
-			withdrawal.chain_id,
-			withdrawal.withdraw_id,
-			netConfig.trade_router_address,
-			netConfig.rpc,
+	// ── 6. Confirm on-chain (release USDT from escrow) ──
+	const adminKey = env.ADMIN_KEY;
+	if (!adminKey) return error(500, 'ADMIN_KEY not configured');
+
+	let confirmTxHash: string | undefined;
+	try {
+		const signer = new ethers.Wallet(adminKey, provider);
+		const routerSigner = new ethers.Contract(netConfig.trade_router_address, TRADE_ROUTER_ABI, signer);
+		const est = await routerSigner['confirm(uint256)'].estimateGas(withdraw_id);
+		const tx = await routerSigner['confirm(uint256)'](withdraw_id, {
+			gasLimit: (est * 130n) / 100n,
+		});
+		const receipt = await tx.wait();
+		confirmTxHash = receipt.hash;
+	} catch (e: any) {
+		return json(
+			{ success: false, error: `On-chain confirm failed: ${e.message?.slice(0, 300)}` },
+			{ status: 500 },
 		);
-
-		if (!confirmResult.success) {
-			return json(
-				{ success: false, error: `On-chain confirm failed: ${confirmResult.error}` },
-				{ status: 500 },
-			);
-		}
-
-		// Update DB with tx hash
-		await supabaseAdmin
-			.from('withdrawal_requests')
-			.update({
-				status: 'confirmed',
-				admin_note: `On-chain confirmed: ${confirmResult.txHash}`,
-				updated_at: new Date().toISOString(),
-			})
-			.eq('id', withdrawal_id);
 	}
 
-	// ── 8. Initiate Flutterwave transfer ──
+	// Update DB — mark confirmed
+	await supabaseAdmin
+		.from('withdrawal_requests')
+		.update({
+			status: 'confirmed',
+			withdraw_id: withdraw_id,
+			admin_note: `On-chain confirmed: ${confirmTxHash}`,
+			updated_at: new Date().toISOString(),
+		})
+		.eq('id', matched.id);
+
+	// ── 7. Initiate Flutterwave transfer ──
 	try {
-		const reference = `TKR-${withdrawal.chain_id}-${withdrawal.withdraw_id}`;
+		const reference = `TKR-${chain_id}-${withdraw_id}`;
 
 		const result = await initiateTransfer({
 			accountNumber: details.account,
 			bankCode: details.bank_code,
 			amount: ngnAmount,
-			narration: `TokenKrafter withdrawal #${withdrawal.withdraw_id}`,
+			narration: `TokenKrafter withdrawal #${withdraw_id}`,
 			reference,
 			accountName: details.holder,
 		});
 
 		if (!result.success) {
-			return json({ success: false, error: result.error }, { status: 500 });
+			// On-chain already confirmed but fiat failed — flag for manual resolution
+			await supabaseAdmin
+				.from('withdrawal_requests')
+				.update({
+					status: 'confirmed',
+					admin_note: `On-chain confirmed (${confirmTxHash}) but fiat transfer FAILED: ${result.error}. Needs manual resolution.`,
+					updated_at: new Date().toISOString(),
+				})
+				.eq('id', matched.id);
+
+			return json({ success: false, error: `Fiat transfer failed: ${result.error}. On-chain already confirmed.` }, { status: 500 });
 		}
 
 		// Update DB with transfer info
@@ -182,17 +208,19 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			.from('withdrawal_requests')
 			.update({
 				status: 'processing',
-				admin_note: `Flutterwave transfer initiated. ID: ${result.transferId}, NGN ${ngnAmount} @ rate ${rate}. On-chain confirmed.`,
+				admin_note: `Confirmed on-chain (${confirmTxHash}). Flutterwave transfer ID: ${result.transferId}, ₦${ngnAmount.toLocaleString()} @ rate ${rate}.`,
 				updated_at: new Date().toISOString(),
 			})
-			.eq('id', withdrawal_id);
+			.eq('id', matched.id);
 
 		return json({
 			success: true,
 			transfer_id: result.transferId,
+			confirm_tx: confirmTxHash,
 			ngn_amount: ngnAmount,
 			rate,
 			reference,
+			matched_withdrawal_id: matched.id,
 		});
 	} catch (e: any) {
 		return json({ success: false, error: e.message || 'Transfer failed' }, { status: 500 });
