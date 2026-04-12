@@ -5,10 +5,18 @@
 
 	let { data }: { data: any } = $props();
 
-	const { tokenAddress, chain: chainInfo, dbData, onChainData } = data;
+	const { tokenAddress, chain: chainInfo, dbData, onChainData, geckoData: ssrGecko } = data;
 
-	// ── GeckoTerminal data (client-side) ──
-	let geckoData = $state<any>(null);
+	// ── GeckoTerminal data (SSR + client-side enrichment) ──
+	let geckoData = $state<any>(ssrGecko ? {
+		name: null, symbol: null, image_url: ssrGecko.image_url,
+		price_usd: String(ssrGecko.price_usd || '0'),
+		price_change_24h: 0,
+		market_cap_usd: String(ssrGecko.fdv_usd || '0'),
+		volume_24h_usd: String(ssrGecko.volume_24h || '0'),
+		websites: [],
+	} : null);
+	let pools: any[] = $state(ssrGecko?.pools || []);
 	let copied = $state(false);
 	let copiedUrl = $state(false);
 	let priceLoading = $state(true);
@@ -44,6 +52,14 @@
 	let priceChange24h = $derived(geckoData?.price_change_24h || 0);
 	let marketCap = $derived(geckoData?.market_cap_usd ? parseFloat(geckoData.market_cap_usd) : 0);
 	let volume24h = $derived(geckoData?.volume_24h_usd ? parseFloat(geckoData.volume_24h_usd) : 0);
+	let totalReserveUsd = $derived(ssrGecko?.total_reserve_usd || pools.reduce((s: number, p: any) => s + (p.reserve_usd || 0), 0));
+
+	function fmtReserve(val: number): string {
+		if (val >= 1e6) return `$${(val / 1e6).toFixed(2)}M`;
+		if (val >= 1e3) return `$${(val / 1e3).toFixed(1)}K`;
+		if (val > 0) return `$${val.toFixed(2)}`;
+		return '$0';
+	}
 
 	function fmtPrice(val: number): string {
 		if (val === 0) return '$0.00';
@@ -298,6 +314,50 @@
 		</button>
 	</div>
 
+	<!-- Liquidity Pools -->
+	{#if pools.length > 0}
+		<div class="td-section">
+			<div class="td-section-header">
+				<h2 class="td-section-title">Liquidity Pools</h2>
+				<span class="td-section-sub">{pools.length} pool{pools.length > 1 ? 's' : ''} · {fmtReserve(totalReserveUsd)} total</span>
+			</div>
+			<div class="pool-grid">
+				{#each pools as pool}
+					<a
+						href="{chainInfo.explorer}/address/{pool.address}"
+						target="_blank" rel="noopener"
+						class="pool-card"
+					>
+						<div class="pool-header">
+							<span class="pool-name">{pool.name}</span>
+							<span class="pool-dex">{pool.dex?.replace('_', ' ')}</span>
+						</div>
+						<div class="pool-stats">
+							<div class="pool-stat">
+								<span class="pool-stat-label">Reserve</span>
+								<span class="pool-stat-value" class:pool-low={pool.reserve_usd < 1000}>{fmtReserve(pool.reserve_usd)}</span>
+							</div>
+							<div class="pool-stat">
+								<span class="pool-stat-label">24h Vol</span>
+								<span class="pool-stat-value">{pool.volume_24h > 0 ? fmtReserve(pool.volume_24h) : '—'}</span>
+							</div>
+							<div class="pool-stat">
+								<span class="pool-stat-label">Txns</span>
+								<span class="pool-stat-value">{pool.txns_24h > 0 ? `${pool.buys_24h}B / ${pool.sells_24h}S` : '—'}</span>
+							</div>
+						</div>
+						{#if pool.price_usd && parseFloat(pool.price_usd) > 0}
+							<div class="pool-price">
+								<span class="pool-price-label">Price</span>
+								<span class="pool-price-value">{fmtPrice(parseFloat(pool.price_usd))}</span>
+							</div>
+						{/if}
+					</a>
+				{/each}
+			</div>
+		</div>
+	{/if}
+
 	<!-- About -->
 	{#if description || website || twitter || telegram}
 		<div class="td-section">
@@ -428,10 +488,32 @@
 
 	/* Sections */
 	.td-section { margin-bottom: 20px; }
+	.td-section-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px; }
+	.td-section-sub { font-family: 'Space Mono', monospace; font-size: 10px; color: #475569; }
 	.td-section-title {
 		font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700;
-		color: #475569; text-transform: uppercase; letter-spacing: 0.04em; margin: 0 0 10px;
+		color: #475569; text-transform: uppercase; letter-spacing: 0.04em; margin: 0;
 	}
+
+	/* Pool cards */
+	.pool-grid { display: flex; flex-direction: column; gap: 8px; }
+	.pool-card {
+		display: block; padding: 12px 14px; border-radius: 10px;
+		border: 1px solid rgba(255,255,255,0.04); background: rgba(255,255,255,0.015);
+		text-decoration: none; color: inherit; transition: all 0.15s;
+	}
+	.pool-card:hover { border-color: rgba(0,210,255,0.2); background: rgba(0,210,255,0.03); }
+	.pool-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+	.pool-name { font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700; color: #e2e8f0; }
+	.pool-dex { font-family: 'Space Mono', monospace; font-size: 9px; color: #475569; text-transform: capitalize; }
+	.pool-stats { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+	.pool-stat { }
+	.pool-stat-label { display: block; font-family: 'Space Mono', monospace; font-size: 9px; color: #475569; margin-bottom: 2px; }
+	.pool-stat-value { display: block; font-family: 'Rajdhani', sans-serif; font-size: 14px; font-weight: 600; color: #e2e8f0; }
+	.pool-low { color: #f59e0b; }
+	.pool-price { margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.04); display: flex; justify-content: space-between; }
+	.pool-price-label { font-family: 'Space Mono', monospace; font-size: 9px; color: #475569; }
+	.pool-price-value { font-family: 'Space Mono', monospace; font-size: 11px; color: #00d2ff; font-weight: 700; }
 	.td-desc { font-size: 13px; color: #94a3b8; line-height: 1.7; margin: 0 0 10px; font-family: 'Space Mono', monospace; }
 	.td-links { display: flex; gap: 8px; flex-wrap: wrap; }
 	.td-link {
