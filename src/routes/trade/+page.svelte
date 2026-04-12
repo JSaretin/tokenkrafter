@@ -1389,6 +1389,9 @@
 
 				merged.push({
 					id: db?.id || chain.withdraw_id,
+					// Use DB's withdraw_id (set correctly at deposit time) over
+					// chain's array index (which is wrong on old contracts)
+					withdraw_id: db?.withdraw_id ?? chain.withdraw_id,
 					user: chain.user,
 					token: db?.token_in || '',
 					grossAmount: chain.grossAmount,
@@ -1397,7 +1400,6 @@
 					createdAt: chain.createdAt,
 					status: chain.status, // on-chain status is truth
 					bankRef: chain.bankRef,
-					withdraw_id: chain.withdraw_id,
 					payment_method: db?.payment_method || 'bank',
 					payment_details: db?.payment_details || {},
 					chain_id: db?.chain_id || net?.chain_id,
