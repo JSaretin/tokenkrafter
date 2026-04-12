@@ -1,6 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { ethers } from 'ethers';
+import { supabaseAdmin } from '$lib/supabaseServer';
 
 const FACTORY_ABI = [
 	'function totalTokensCreated() view returns (uint256)',
@@ -19,14 +20,17 @@ const TOKEN_ABI = [
 let cache: { data: any[]; timestamp: number } = { data: [], timestamp: 0 };
 const CACHE_TTL = 5 * 60 * 1000;
 
-const NETWORKS = [
-	{
-		chain_id: 31337,
-		name: 'Localhost',
-		factory: '0x0B306BF915C4d645ff596e518fAf3F9669b97016', // Updated by deploy script
-		rpc: 'http://127.0.0.1:8545'
-	}
-];
+/** Read networks from platform_config DB table */
+async function getNetworks(): Promise<Array<{ chain_id: number; name: string; rpc: string; factory_address: string }>> {
+	const { data } = await supabaseAdmin
+		.from('platform_config')
+		.select('value')
+		.eq('key', 'networks')
+		.single();
+
+	if (!data?.value) return [];
+	return (data.value as any[]).filter((n: any) => n.rpc && n.factory_address);
+}
 
 export const GET: RequestHandler = async ({ url }) => {
 	const limit = Number(url.searchParams.get('limit') ?? 12);
@@ -36,12 +40,13 @@ export const GET: RequestHandler = async ({ url }) => {
 		return json(cache.data.slice(0, limit));
 	}
 
+	const networks = await getNetworks();
 	const partners: any[] = [];
 
-	for (const net of NETWORKS) {
+	for (const net of networks) {
 		try {
-			const provider = new ethers.JsonRpcProvider(net.rpc);
-			const factory = new ethers.Contract(net.factory, FACTORY_ABI, provider);
+			const provider = new ethers.JsonRpcProvider(net.rpc, net.chain_id, { staticNetwork: true });
+			const factory = new ethers.Contract(net.factory_address, FACTORY_ABI, provider);
 
 			// Query TokenCreated events for partner types (typeKey 4-7)
 			const filter = factory.filters.TokenCreated();

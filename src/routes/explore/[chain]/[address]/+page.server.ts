@@ -41,7 +41,7 @@ export const load: PageServerLoad = async ({ params, setHeaders }) => {
 		// 2. On-chain ERC20 basics
 		(async () => {
 			try {
-				const provider = new ethers.JsonRpcProvider(chain.rpc);
+				const provider = new ethers.JsonRpcProvider(chain.rpc, chain.id, { staticNetwork: true });
 				const contract = new ethers.Contract(tokenAddress, ERC20_ABI, provider);
 				const [name, symbol, decimals, supply] = await Promise.all([
 					contract.name().catch(() => ''),

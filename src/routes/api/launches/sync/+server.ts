@@ -5,17 +5,21 @@ import { env } from '$env/dynamic/private';
 import { supabaseAdmin } from '$lib/supabaseServer';
 import { LAUNCHPAD_FACTORY_ABI, LAUNCH_INSTANCE_ABI, fetchLaunchInfo, fetchTokenMeta } from '$lib/launchpad';
 
-// Networks with active launchpads (server-side config)
-const LAUNCHPAD_NETWORKS = [
-	{
-		chain_id: 31337,
-		name: 'Localhost',
-		launchpad_address: '0x959922bE3CAee4b8Cd9a407cc3ac1C251C2007B1',
-		platform_address: '0x0B306BF915C4d645ff596e518fAf3F9669b97016',
-		rpc: 'http://127.0.0.1:8545',
-		usdt_decimals: 6
-	}
-];
+/** Read networks from platform_config DB table */
+async function getNetworks(): Promise<Array<{
+	chain_id: number; name: string; rpc: string;
+	launchpad_factory_address: string; factory_address: string;
+	usdt_decimals: number;
+}>> {
+	const { data } = await supabaseAdmin
+		.from('platform_config')
+		.select('value')
+		.eq('key', 'networks')
+		.single();
+
+	if (!data?.value) return [];
+	return (data.value as any[]).filter((n: any) => n.rpc && n.launchpad_factory_address);
+}
 
 const TOKEN_INFO_ABI = ['function tokenInfo(address) view returns (address creator, bool isMintable, bool isTaxable, bool isPartnership)'];
 const OWNER_ABI = ['function owner() view returns (address)'];
@@ -29,13 +33,14 @@ export const POST: RequestHandler = async ({ request }) => {
 	}
 
 	const results = { synced: 0, errors: 0 };
+	const networks = await getNetworks();
 
-	for (const net of LAUNCHPAD_NETWORKS) {
-		const provider = new ethers.JsonRpcProvider(net.rpc);
+	for (const net of networks) {
+		const provider = new ethers.JsonRpcProvider(net.rpc, net.chain_id, { staticNetwork: true });
 
 		try {
 			const factory = new ethers.Contract(
-				net.launchpad_address,
+				net.launchpad_factory_address,
 				LAUNCHPAD_FACTORY_ABI,
 				provider
 			);
@@ -67,9 +72,9 @@ export const POST: RequestHandler = async ({ request }) => {
 					let isTaxable = false;
 					let isRenounced = false;
 
-					if (net.platform_address) {
+					if (net.factory_address) {
 						try {
-							const factory = new ethers.Contract(net.platform_address, TOKEN_INFO_ABI, provider);
+							const factory = new ethers.Contract(net.factory_address, TOKEN_INFO_ABI, provider);
 							const tInfo = await factory.tokenInfo(info.token);
 							isMintable = tInfo[1];
 							isTaxable = tInfo[2];

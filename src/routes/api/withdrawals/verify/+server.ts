@@ -60,7 +60,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	// 1. Fetch transaction receipt from chain
 	let receipt;
 	try {
-		const provider = new ethers.JsonRpcProvider(netConfig.rpc);
+		const provider = new ethers.JsonRpcProvider(netConfig.rpc, chain_id, { staticNetwork: true });
 		receipt = await provider.getTransactionReceipt(tx_hash);
 		if (!receipt) return error(404, 'Transaction not found');
 		if (receipt.status !== 1) return error(400, 'Transaction failed on-chain');
