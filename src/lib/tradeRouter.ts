@@ -17,7 +17,8 @@ export const TRADE_ROUTER_ABI = [
 	'function confirm(uint256 id, address to) external',
 	'function confirmBatch(uint256[] ids) external returns (uint256 confirmed)',
 	'function cancel(uint256 id) external',
-	'function getWithdrawal(uint256 id) view returns (tuple(address user, address token, uint256 grossAmount, uint256 fee, uint256 netAmount, uint256 createdAt, uint8 status, bytes32 bankRef, address referrer))',
+	'function refund(uint256 id) external',
+	'function getWithdrawal(uint256 id) view returns (tuple(address user, address token, uint256 grossAmount, uint256 fee, uint256 netAmount, uint256 createdAt, uint256 expiresAt, uint8 status, bytes32 bankRef, address referrer))',
 	'function previewDeposit(uint256 amount) view returns (uint256 fee, uint256 netAmount)',
 
 	// Views
@@ -25,7 +26,7 @@ export const TRADE_ROUTER_ABI = [
 	'function weth() view returns (address)',
 	'function feeBps() view returns (uint256)',
 	'function payoutTimeout() view returns (uint256)',
-	'function getUserWithdrawals(address user, uint256 offset, uint256 limit) view returns (tuple(address user, address token, uint256 grossAmount, uint256 fee, uint256 netAmount, uint256 createdAt, uint8 status, bytes32 bankRef, address referrer)[] result, uint256 total)',
+	'function getUserWithdrawals(address user, uint256 offset, uint256 limit) view returns (tuple(address user, address token, uint256 grossAmount, uint256 fee, uint256 netAmount, uint256 createdAt, uint256 expiresAt, uint8 status, bytes32 bankRef, address referrer)[] result, uint256[] withdrawIds, uint256 total)',
 
 	// Admin
 	'function owner() view returns (address)',

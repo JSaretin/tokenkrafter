@@ -65,6 +65,7 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
         uint256 fee;            // platform fee
         uint256 netAmount;      // amount user receives (gross - fee)
         uint256 createdAt;
+        uint256 expiresAt;      // snapshot of createdAt + payoutTimeout at creation time
         WithdrawStatus status;
         bytes32 bankRef;        // hashed bank reference (off-chain lookup)
         address referrer;       // affiliate who referred this trade (address(0) if none)
@@ -449,7 +450,7 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
         if (to == address(0)) revert ZeroAddress();
         WithdrawRequest storage req = withdrawals[id];
         if (req.status != WithdrawStatus.Pending) revert NotPending();
-        if (block.timestamp >= req.createdAt + payoutTimeout) revert TimeoutReached();
+        if (block.timestamp >= req.expiresAt) revert TimeoutReached();
 
         req.status = WithdrawStatus.Confirmed;
         totalEscrow -= req.grossAmount;
@@ -491,13 +492,12 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
         WithdrawRequest storage req = withdrawals[id];
         if (req.user != msg.sender) revert NotRequestOwner();
         if (req.status != WithdrawStatus.Pending) revert NotPending();
-        if (block.timestamp < req.createdAt + payoutTimeout) revert TimeoutNotReached();
+        if (block.timestamp < req.expiresAt) revert TimeoutNotReached();
 
         req.status = WithdrawStatus.Cancelled;
         totalEscrow -= req.grossAmount;
         _removePendingId(id);
 
-        // Return full amount (no fee since not processed)
         IERC20(req.token).safeTransfer(msg.sender, req.grossAmount);
 
         emit WithdrawCancelled(id, msg.sender, req.grossAmount);
@@ -536,17 +536,38 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
 
     /// @notice Get user's withdrawal history (paginated, O(1) per item)
     function getUserWithdrawals(address user, uint256 offset, uint256 limit)
-        external view returns (WithdrawRequest[] memory result, uint256 total)
+        external view returns (WithdrawRequest[] memory result, uint256[] memory withdrawIds, uint256 total)
     {
         uint256[] storage ids = userWithdrawIds[user];
         total = ids.length;
-        if (offset >= total) return (new WithdrawRequest[](0), total);
+        if (offset >= total) return (new WithdrawRequest[](0), new uint256[](0), total);
 
         uint256 end = offset + limit > total ? total : offset + limit;
-        result = new WithdrawRequest[](end - offset);
-        for (uint256 i = 0; i < result.length; i++) {
+        uint256 count = end - offset;
+        result = new WithdrawRequest[](count);
+        withdrawIds = new uint256[](count);
+        for (uint256 i = 0; i < count; i++) {
+            withdrawIds[i] = ids[offset + i];
             result[i] = withdrawals[ids[offset + i]];
         }
+    }
+
+    /// @notice Admin refund: return escrowed USDT to the user for a timed-out
+    ///         withdrawal the user hasn't cancelled themselves. Only callable
+    ///         by admins, only for Pending withdrawals past the timeout.
+    function refund(uint256 id) external onlyAdmin nonReentrant {
+        if (id >= withdrawals.length) revert InvalidRequest();
+        WithdrawRequest storage req = withdrawals[id];
+        if (req.status != WithdrawStatus.Pending) revert NotPending();
+        if (block.timestamp < req.expiresAt) revert TimeoutNotReached();
+
+        req.status = WithdrawStatus.Cancelled;
+        totalEscrow -= req.grossAmount;
+        _removePendingId(id);
+
+        IERC20(req.token).safeTransfer(req.user, req.grossAmount);
+
+        emit WithdrawCancelled(id, req.user, req.grossAmount);
     }
 
     /// @notice Preview fee and net amount for a deposit
@@ -753,6 +774,7 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
             fee: fee,
             netAmount: netAmount,
             createdAt: block.timestamp,
+            expiresAt: block.timestamp + payoutTimeout,
             status: WithdrawStatus.Pending,
             bankRef: bankRef,
             referrer: referrer

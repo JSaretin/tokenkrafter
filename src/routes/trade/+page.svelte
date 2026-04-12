@@ -1338,14 +1338,15 @@
 					const provider = networkProviders.get(net.chain_id);
 					if (provider) {
 						const router = new ethers.Contract(net.trade_router_address, TRADE_ROUTER_ABI, provider);
-						const [result, total] = await router.getUserWithdrawals(userAddress, 0, 50);
+						const [result, withdrawIds, total] = await router.getUserWithdrawals(userAddress, 0, 50);
 						chainRecords = result.map((r: any, i: number) => ({
-							withdraw_id: i,
+							withdraw_id: Number(withdrawIds[i]),
 							user: r.user?.toLowerCase(),
 							grossAmount: r.grossAmount,
 							fee: r.fee,
 							netAmount: r.netAmount,
 							createdAt: Number(r.createdAt),
+							expiresAt: Number(r.expiresAt),
 							status: Number(r.status),
 							bankRef: r.bankRef,
 							referrer: r.referrer?.toLowerCase() || ethers.ZeroAddress,
