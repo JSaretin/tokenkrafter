@@ -152,7 +152,7 @@
 	let listingTradingDelaySeconds = $state('60');
 	// Burn LP tokens — sends LP to 0xdead, making liquidity permanent.
 	// Strongly recommended. Without this, creator can remove liquidity (rug).
-	let burnLp = $state(true);
+	let burnLp = $state(false);
 
 	// Base tokens pre-registered as pools on the new token. The wizard seeds
 	// these from `network.default_bases` (DB-driven, per-chain). Each entry is
