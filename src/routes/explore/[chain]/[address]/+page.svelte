@@ -139,26 +139,9 @@
 		setTimeout(() => addedToWallet = false, 3000);
 	}
 
-	// Fetch GeckoTerminal + tax simulation
+	// GeckoTerminal data is now loaded SSR-side — no client-side fetch needed.
+	// Only tax simulation runs client-side (requires eth_call).
 	onMount(async () => {
-		// GeckoTerminal price
-		try {
-			const res = await fetch(`https://api.geckoterminal.com/api/v2/networks/${chainInfo.gecko}/tokens/${tokenAddress}`);
-			if (res.ok) {
-				const d = await res.json();
-				if (d?.data?.attributes) {
-					const a = d.data.attributes;
-					geckoData = {
-						name: a.name, symbol: a.symbol, image_url: a.image_url, description: a.description,
-						price_usd: a.price_usd,
-						price_change_24h: parseFloat(a.price_change_percentage?.h24 || '0'),
-						market_cap_usd: a.market_cap_usd || a.fdv_usd,
-						volume_24h_usd: a.volume_usd?.h24,
-						websites: a.websites,
-					};
-				}
-			}
-		} catch {}
 		priceLoading = false;
 
 		// Tax simulation (if taxable)
