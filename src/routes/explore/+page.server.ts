@@ -14,7 +14,9 @@ export const load: PageServerLoad = async ({ setHeaders }) => {
 	const [tokensResult, networks] = await Promise.all([
 		supabaseAdmin
 			.from('created_tokens')
-			.select('address, chain_id, name, symbol, decimals, creator, is_taxable, is_mintable, is_partner, logo_url, description, created_at')
+			.select('address, chain_id, name, symbol, decimals, creator, is_taxable, is_mintable, is_partner, logo_url, description, created_at, is_safu, has_liquidity, lp_burned, lp_burned_pct, tax_ceiling_locked, owner_renounced, trading_enabled, buy_tax_bps, sell_tax_bps')
+			.order('is_safu', { ascending: false })
+			.order('has_liquidity', { ascending: false })
 			.order('created_at', { ascending: false })
 			.limit(200),
 		getNetworks(),

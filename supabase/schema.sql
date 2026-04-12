@@ -273,7 +273,13 @@ create unique index if not exists idx_withdrawals_unique_onchain
   on withdrawal_requests (withdraw_id, chain_id)
   where withdraw_id is not null and withdraw_id > 0;
 alter table withdrawal_requests enable row level security;
-select create_policy_if_not_exists('withdrawal_requests', 'Anon read', 'select');
+-- No anon read — withdrawal data only accessible via service role (server API)
+-- Drop the old permissive policy if it exists.
+do $$ begin
+  if exists (select 1 from pg_policies where tablename = 'withdrawal_requests' and policyname = 'Anon read') then
+    drop policy "Anon read" on withdrawal_requests;
+  end if;
+end $$;
 
 create or replace trigger withdrawal_requests_updated_at
   before update on withdrawal_requests
@@ -498,6 +504,17 @@ create trigger wallets_updated_at
   before update on wallets
   for each row execute function update_updated_at();
 
+-- Atomically switch the primary wallet for a user (prevents race conditions).
+create or replace function set_primary_wallet(_user_id uuid, _wallet_id uuid)
+returns void as $$
+begin
+  update wallets set is_primary = false
+    where user_id = _user_id and is_primary = true;
+  update wallets set is_primary = true
+    where id = _wallet_id and user_id = _user_id;
+end;
+$$ language plpgsql;
+
 -- ============================================================
 -- Migrate legacy wallet_vaults rows → wallets, then drop the old table.
 --
@@ -563,6 +580,23 @@ alter table created_tokens add column if not exists description text;
 alter table created_tokens add column if not exists website text;
 alter table created_tokens add column if not exists twitter text;
 alter table created_tokens add column if not exists telegram text;
+
+-- SAFU badge data — populated by the chain indexer daemon via SafuLens
+-- eth_call sweeps. The explore page uses these for instant SQL filtering
+-- and sorting (is_safu DESC, has_liquidity DESC). Client-side SafuLens
+-- still runs lazily on visible cards for real-time freshness.
+alter table created_tokens add column if not exists is_safu boolean not null default false;
+alter table created_tokens add column if not exists has_liquidity boolean not null default false;
+alter table created_tokens add column if not exists lp_burned boolean not null default false;
+alter table created_tokens add column if not exists lp_burned_pct integer not null default 0;
+alter table created_tokens add column if not exists tax_ceiling_locked boolean not null default false;
+alter table created_tokens add column if not exists owner_renounced boolean not null default false;
+alter table created_tokens add column if not exists trading_enabled boolean not null default false;
+alter table created_tokens add column if not exists buy_tax_bps integer not null default 0;
+alter table created_tokens add column if not exists sell_tax_bps integer not null default 0;
+alter table created_tokens add column if not exists safu_checked_at timestamptz;
+
+create index if not exists idx_created_tokens_safu on created_tokens (is_safu, has_liquidity);
 
 -- ============================================================
 -- Creator profiles (badges, reputation)

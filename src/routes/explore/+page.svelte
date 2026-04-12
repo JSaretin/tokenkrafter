@@ -189,11 +189,12 @@
 	let filtered = $derived.by(() => {
 		let list = tokens;
 
-		// Tradeable filter — tokens with liquidity (from SafuLens or Gecko data)
+		// Tradeable filter — DB columns first (indexed by SAFU daemon),
+		// client-side SafuLens overlay for freshness, Gecko as fallback.
 		if (tradeableOnly) {
 			list = list.filter(t => {
 				const s = safuMap[safuKey(t)];
-				return s?.hasLiquidity || geckoLookup[t.address?.toLowerCase()]?.has_data;
+				return s?.hasLiquidity || t.has_liquidity || geckoLookup[t.address?.toLowerCase()]?.has_data;
 			});
 		}
 
@@ -219,14 +220,22 @@
 
 		// Sort
 		if (sortBy === 'safu') {
-			// SAFU first, then tokens with liquidity, then the rest. Within each tier: newest first.
+			// SAFU first, then liquidity, then rest. Uses DB columns (pre-indexed
+			// by the SAFU daemon) with client-side SafuLens as a live override.
 			list = [...list].sort((a, b) => {
 				const sa = safuMap[safuKey(a)];
 				const sb = safuMap[safuKey(b)];
-				const scoreA = (sa?.isSafu ? 4 : 0) + (sa?.hasLiquidity ? 2 : 0) + (sa?.tradingEnabled ? 1 : 0);
-				const scoreB = (sb?.isSafu ? 4 : 0) + (sb?.hasLiquidity ? 2 : 0) + (sb?.tradingEnabled ? 1 : 0);
+				// Client-side override takes precedence over DB if available
+				const safuA = sa?.isSafu ?? a.is_safu ?? false;
+				const safuB = sb?.isSafu ?? b.is_safu ?? false;
+				const liqA = sa?.hasLiquidity ?? a.has_liquidity ?? false;
+				const liqB = sb?.hasLiquidity ?? b.has_liquidity ?? false;
+				const tradeA = sa?.tradingEnabled ?? a.trading_enabled ?? false;
+				const tradeB = sb?.tradingEnabled ?? b.trading_enabled ?? false;
+				const scoreA = (safuA ? 4 : 0) + (liqA ? 2 : 0) + (tradeA ? 1 : 0);
+				const scoreB = (safuB ? 4 : 0) + (liqB ? 2 : 0) + (tradeB ? 1 : 0);
 				if (scoreA !== scoreB) return scoreB - scoreA;
-				return 0; // preserve DB order (newest) within same tier
+				return 0; // preserve DB order within same tier
 			});
 		} else if (sortBy === 'name') {
 			list = [...list].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
@@ -363,6 +372,12 @@
 				{@const slug = chainSlug(tok.chain_id)}
 				{@const gecko = geckoLookup[tok.address?.toLowerCase()]}
 				{@const safu = safuMap[safuKey(tok)]}
+			{@const isSafu = safu?.isSafu ?? tok.is_safu}
+			{@const isLpBurned = safu ? safu.lpBurned && safu.lpBurnedPct >= 9900 : tok.lp_burned && (tok.lp_burned_pct ?? 0) >= 9900}
+			{@const isRenounced = safu?.ownerIsZero ?? tok.owner_renounced}
+			{@const isTaxLocked = safu?.taxCeilingLocked ?? tok.tax_ceiling_locked}
+			{@const sellTax = safu?.sellTaxBps ?? tok.sell_tax_bps ?? 0}
+			{@const isMintableRisk = (safu ? safu.isMintable && !safu.ownerIsZero : tok.is_mintable && !tok.owner_renounced)}
 				<div class="token-card" data-token-addr={tok.address} data-chain-id={tok.chain_id}>
 					<!-- Header: clickable to detail page -->
 					<a href="/explore/{slug}/{tok.address}" class="tc-header">
@@ -385,22 +400,22 @@
 						</div>
 						<div class="tc-header-right">
 							<div class="tc-badges-row">
-								{#if safu?.isSafu}
+								{#if isSafu}
 									<span class="tc-badge tc-badge-safu">SAFU</span>
 								{/if}
-								{#if safu?.lpBurned && safu.lpBurnedPct >= 9900}
+								{#if isLpBurned}
 									<span class="tc-badge tc-badge-lp">LP Burned</span>
 								{/if}
-								{#if safu?.ownerIsZero}
+								{#if isRenounced}
 									<span class="tc-badge tc-badge-renounced">Renounced</span>
 								{/if}
-								{#if safu?.taxCeilingLocked}
+								{#if isTaxLocked}
 									<span class="tc-badge tc-badge-locked">Tax Locked</span>
 								{/if}
-								{#if safu && safu.sellTaxBps > 0}
-									<span class="tc-badge tc-badge-tax">{(safu.sellTaxBps / 100).toFixed(0)}% tax</span>
+								{#if sellTax > 0}
+									<span class="tc-badge tc-badge-tax">{(sellTax / 100).toFixed(0)}% tax</span>
 								{/if}
-								{#if safu?.isMintable && !safu.ownerIsZero}
+								{#if isMintableRisk}
 									<span class="tc-badge tc-badge-mintable">Mintable</span>
 								{/if}
 								{#if tok.created_at && isNew(tok.created_at)}
