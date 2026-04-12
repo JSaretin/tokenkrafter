@@ -71,29 +71,67 @@
 		})();
 	});
 
+	/** Enrich DB records with on-chain expiresAt for pending withdrawals. */
+	async function enrichWithOnChain(records: any[]): Promise<any[]> {
+		const withOnChain = records.filter((w: any) => w.withdraw_id != null && w.chain_id);
+		if (withOnChain.length === 0) return records;
+
+		// Group by chain to minimize provider lookups
+		const byChain = new Map<number, any[]>();
+		for (const w of withOnChain) {
+			const arr = byChain.get(w.chain_id) || [];
+			arr.push(w);
+			byChain.set(w.chain_id, arr);
+		}
+
+		for (const [chainId, ws] of byChain) {
+			const network = supportedNetworks.find((n: any) => n.chain_id === chainId && n.trade_router_address);
+			if (!network) continue;
+			const provider = networkProviders.get(chainId);
+			if (!provider) continue;
+
+			const router = new ethers.Contract(network.trade_router_address, TRADE_ROUTER_ABI, provider);
+			await Promise.all(ws.map(async (w: any) => {
+				try {
+					const onChain = await router.getWithdrawal(w.withdraw_id);
+					w._expiresAt = Number(onChain.expiresAt);
+					w._createdAt = Number(onChain.createdAt);
+					w._onChainStatus = Number(onChain.status);
+				} catch {}
+			}));
+		}
+
+		return records;
+	}
+
 	async function loadWithdrawals() {
 		withdrawalsLoading = true;
 		try {
 			if (withdrawFilter === 'pending' || withdrawFilter === 'timeout') {
 				const res = await fetch('/api/withdrawals?status=pending');
 				if (res.ok) {
-					const data = await res.json();
+					let data = await res.json();
+					data = await enrichWithOnChain(data);
+
 					const now = Math.floor(Date.now() / 1000);
-					// Split: active pending (within timeout) vs timed out
 					pendingWithdrawals = data.filter((w: any) => {
-						const created = Math.floor(new Date(w.created_at).getTime() / 1000);
-						return (now - created) < 300;
+						if (!w._expiresAt) return true; // no on-chain data yet, show as pending
+						return now < w._expiresAt;
 					});
 					timeoutWithdrawals = data.filter((w: any) => {
-						const created = Math.floor(new Date(w.created_at).getTime() / 1000);
-						return (now - created) >= 300;
+						if (!w._expiresAt) return false;
+						return now >= w._expiresAt;
 					});
 				}
 			} else {
 				const res = await fetch('/api/withdrawals');
-				if (res.ok) allWithdrawals = await res.json();
+				if (res.ok) {
+					let data = await res.json();
+					data = await enrichWithOnChain(data);
+					allWithdrawals = data;
+				}
 			}
-		// Preload USDT decimals for all chains in results
+			// Preload USDT decimals for all chains in results
 			const allData = [...pendingWithdrawals, ...timeoutWithdrawals, ...allWithdrawals];
 			const chainIds = [...new Set(allData.map((w: any) => w.chain_id).filter(Boolean))];
 			await Promise.all(chainIds.map(id => getUsdtDecimals(id)));
@@ -155,13 +193,13 @@
 		} finally { processingId = null; }
 	}
 
-	async function processWithFlutterwave(id: number) {
-		processingId = id;
+	async function processWithFlutterwave(w: any) {
+		processingId = w.id;
 		try {
 			const res = await fetch('/api/withdrawals/process', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ withdrawal_id: id, naira_rate: parseFloat(nairaRate) })
+				body: JSON.stringify({ withdraw_id: w.withdraw_id, chain_id: w.chain_id, naira_rate: parseFloat(nairaRate) })
 			});
 			const data = await res.json();
 			if (data.success) {
@@ -189,6 +227,35 @@
 			}
 		} catch (e: any) {
 			addFeedback({ message: e.message, type: 'error' });
+		} finally { processingId = null; }
+	}
+
+	/** Refund a timed-out withdrawal on-chain — returns escrowed USDT to the user. */
+	async function refundWithdrawal(w: any) {
+		if (!signer) { addFeedback({ message: 'Connect admin wallet first', type: 'error' }); return; }
+		if (w.withdraw_id == null) { addFeedback({ message: 'No on-chain withdraw ID', type: 'error' }); return; }
+
+		processingId = w.id;
+		try {
+			const network = supportedNetworks.find((n: any) => n.chain_id === w.chain_id && n.trade_router_address);
+			if (!network) { addFeedback({ message: 'No trade router on this chain', type: 'error' }); return; }
+
+			addFeedback({ message: 'Refunding on-chain...', type: 'info' });
+			const router = new ethers.Contract(network.trade_router_address, TRADE_ROUTER_ABI, signer);
+			const tx = await router.refund(w.withdraw_id);
+			await tx.wait();
+
+			// Update DB status
+			await fetch('/api/withdrawals', {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ id: w.id, status: 'cancelled', admin_note: `Refunded on-chain by admin. USDT returned to user.` })
+			});
+
+			addFeedback({ message: 'Withdrawal refunded — USDT returned to user', type: 'success' });
+			loadWithdrawals();
+		} catch (e: any) {
+			addFeedback({ message: e.shortMessage || e.message || 'Refund failed', type: 'error' });
 		} finally { processingId = null; }
 	}
 
@@ -263,8 +330,11 @@
 							{@const usdtAmount = parseFloat(ethers.formatUnits(w.net_amount || w.gross_amount || '0', chainDec))}
 				{@const ngnAmount = usdtAmount * parseFloat(nairaRate)}
 				{@const createdTs = Math.floor(new Date(w.created_at).getTime() / 1000)}
-				{@const elapsed = Math.floor(tickNow / 1000) - createdTs}
-				{@const remaining = Math.max(0, 300 - elapsed)}
+				{@const expiresTs = w._expiresAt || (w.expires_at ? Math.floor(new Date(w.expires_at).getTime() / 1000) : 0)}
+				{@const nowSec = Math.floor(tickNow / 1000)}
+				{@const remaining = Math.max(0, expiresTs - nowSec)}
+				{@const totalDuration = expiresTs - createdTs}
+				{@const elapsed = nowSec - createdTs}
 				{@const timedOut = isPending && remaining <= 0}
 				<div class="card p-4" style={isPending ? 'border-color: rgba(245,158,11,0.2);' : ''}>
 					<div class="flex items-start justify-between gap-4 mb-3">
@@ -335,7 +405,7 @@
 					{#if isPending}
 						<div class="countdown-strip mb-3">
 							<div class="countdown-bar">
-								<div class="countdown-fill" style="width: {Math.min(100, (elapsed / 300) * 100)}%; background: {timedOut ? 'linear-gradient(90deg, #f87171, #dc2626)' : 'linear-gradient(90deg, #f59e0b, #d97706)'}"></div>
+								<div class="countdown-fill" style="width: {totalDuration > 0 ? Math.min(100, (elapsed / totalDuration) * 100) : 100}%; background: {timedOut ? 'linear-gradient(90deg, #f87171, #dc2626)' : 'linear-gradient(90deg, #f59e0b, #d97706)'}"></div>
 							</div>
 							<div class="flex justify-between items-center mt-1">
 								{#if timedOut}
@@ -347,10 +417,24 @@
 							</div>
 						</div>
 						{#if timedOut}
-							<!-- Timed out: can't confirm on-chain anymore -->
-							<div class="text-center py-2">
-								<span class="text-xs font-mono text-red-400">Cannot confirm — contract timeout reached. User may cancel anytime.</span>
+							<!-- Timed out: offer refund to return USDT to user -->
+							<div class="flex gap-2">
+								<button
+									class="text-xs px-4 py-2 cursor-pointer rounded-lg border border-amber-500/30 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 transition flex-1"
+									disabled={processingId === w.id}
+									onclick={() => refundWithdrawal(w)}
+								>
+									{processingId === w.id ? 'Refunding...' : 'Refund to user'}
+								</button>
+								<button
+									class="btn-danger text-xs px-3 py-2 cursor-pointer"
+									disabled={processingId === w.id}
+									onclick={() => cancelWithdrawal(w.id)}
+								>
+									Cancel (DB only)
+								</button>
 							</div>
+							<p class="text-[10px] font-mono text-gray-600 mt-1">Refund returns escrowed USDT to the user's wallet on-chain.</p>
 						{:else}
 						<div class="flex gap-2">
 							<button
@@ -363,7 +447,7 @@
 							<button
 								class="text-xs px-4 py-2 cursor-pointer rounded-lg border border-emerald-500/30 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition flex-1"
 								disabled={processingId === w.id}
-								onclick={() => processWithFlutterwave(w.id)}
+								onclick={() => processWithFlutterwave(w)}
 							>
 								{processingId === w.id ? 'Sending...' : `Send NGN ${ngnAmount.toLocaleString(undefined, {maximumFractionDigits: 0})}`}
 							</button>

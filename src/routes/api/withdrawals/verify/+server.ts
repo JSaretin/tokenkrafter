@@ -114,7 +114,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 /** Handle daemon verify — matches by wallet + bankRef from on-chain data */
 async function handleDaemonVerify(body: any, chainId: number) {
-	const { withdraw_id, wallet_address, gross_amount, fee, net_amount, bank_ref, status } = body;
+	const { withdraw_id, wallet_address, gross_amount, fee, net_amount, bank_ref, status, expires_at } = body;
 
 	// If already confirmed/cancelled on-chain, just sync the status
 	if (status === 1 || status === 2) {
@@ -142,6 +142,7 @@ async function handleDaemonVerify(body: any, chainId: number) {
 			gross_amount,
 			fee,
 			net_amount,
+			...(expires_at ? { expires_at: new Date(expires_at * 1000).toISOString() } : {}),
 		});
 	}
 

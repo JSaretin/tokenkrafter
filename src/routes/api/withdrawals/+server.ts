@@ -39,7 +39,7 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 	const rows = data || [];
 	for (const row of rows) {
 		if (row.payment_details && typeof row.payment_details === 'string') {
-			try { row.payment_details = await decrypt(row.payment_details); } catch { row.payment_details = {}; }
+			try { row.payment_details = await decrypt(row.payment_details); } catch (e) { console.error('[withdrawals GET] Decrypt failed for row', row.id, ':', (e as any)?.message); row.payment_details = {}; }
 		}
 	}
 

@@ -1887,14 +1887,14 @@
 				{:else}
 					{#each [...withdrawals].sort((a, b) => Number(b.createdAt) - Number(a.createdAt)).filter(w => {
 						if (historyFilter === 'all') return true;
-						const to = w.status === 0 && Date.now() / 1000 > w.createdAt + payoutTimeoutMins * 60;
+						const to = w.status === 0 && w.expiresAt > 0 && Date.now() / 1000 > w.expiresAt;
 						if (historyFilter === 'timeout') return to;
 						if (historyFilter === 'pending') return w.status === 0 && !to;
 						if (historyFilter === 'completed') return w.status === 1;
 						if (historyFilter === 'cancelled') return w.status === 2;
 						return true;
 					}) as w, i}
-						{@const timedOut = w.status === 0 && Date.now() / 1000 > w.createdAt + payoutTimeoutMins * 60}
+						{@const timedOut = w.status === 0 && w.expiresAt > 0 && Date.now() / 1000 > w.expiresAt}
 						{@const sc = timedOut ? 'red' : withdrawStatusColor(w.status)}
 						{@const canCancel = timedOut}
 						<button class="history-row" onclick={() => {
@@ -1924,13 +1924,14 @@
 									<span class="cancel-hint">{$t('trade.tapToCancel')}</span>
 								{/if}
 							</div>
-							{#if w.status === 0}
-								{@const elapsed = Math.floor(Date.now() / 1000) - Number(w.createdAt)}
-								{@const timeoutSecs = payoutTimeoutMins * 60}
-								{@const remaining = Math.max(0, timeoutSecs - elapsed)}
+							{#if w.status === 0 && w.expiresAt > 0}
+								{@const now = Math.floor(Date.now() / 1000)}
+								{@const totalDuration = w.expiresAt - Number(w.createdAt)}
+								{@const elapsed = now - Number(w.createdAt)}
+								{@const remaining = Math.max(0, w.expiresAt - now)}
 								<div class="history-progress">
-									<div class="progress-track"><div class="progress-fill progress-amber" style="width: {Math.min(100, (elapsed / timeoutSecs) * 100)}%"></div></div>
-									<span class="history-timer">{remaining > 0 ? `${Math.floor(remaining / 60)}m ${remaining % 60}s` : 'Timed out'}</span>
+									<div class="progress-track"><div class="progress-fill progress-amber" style="width: {totalDuration > 0 ? Math.min(100, (elapsed / totalDuration) * 100) : 100}%"></div></div>
+									<span class="history-timer">{remaining > 0 ? `${Math.floor(remaining / 60)}m ${remaining % 60}s` : $t('trade.timedOut')}</span>
 								</div>
 							{/if}
 						</button>

@@ -259,10 +259,14 @@ create table if not exists withdrawal_requests (
   status text not null default 'pending',
   admin_note text,
   tx_hash text,
+  expires_at timestamptz,                 -- on-chain expiresAt (set by verify endpoint)
   confirmed_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+-- Backfill: add expires_at column if table already exists
+alter table withdrawal_requests add column if not exists expires_at timestamptz;
 
 create index if not exists idx_withdrawals_wallet on withdrawal_requests (wallet_address);
 create index if not exists idx_withdrawals_status on withdrawal_requests (status);
