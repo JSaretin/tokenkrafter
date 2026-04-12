@@ -230,6 +230,25 @@
 		providersReady = true;
 	}
 
+	// ── Deferred signer creation ─────────────────────────────────
+	// autoReconnect and onWalletStateChange both fire before the network
+	// config is loaded from the DB, so supportedNetworks[0] is undefined
+	// and the signer never gets created. This effect retries once
+	// providers are ready and the wallet is unlocked but signer is still null.
+	$effect(() => {
+		if (providersReady && walletType === 'embedded' && !signer && userAddress) {
+			const state = getWalletState();
+			if (state.activeAccount && state.isUnlocked) {
+				const net = supportedNetworks[0];
+				if (net?.rpc) {
+					const rpcProvider = new ethers.JsonRpcProvider(net.rpc, net.chain_id, { staticNetwork: true });
+					signer = getEmbeddedSigner(rpcProvider);
+					startBalancePoller(rpcProvider, state.activeAccount.address, net.chain_id);
+				}
+			}
+		}
+	});
+
 	// ── Admin realtime notifications (daemon-confirmed events) ──
 	let adminChannel: any = null;
 	$effect(() => {

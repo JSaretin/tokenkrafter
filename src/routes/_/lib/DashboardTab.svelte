@@ -47,20 +47,28 @@
 
 	async function loadAllChains() {
 		chainsLoading = true;
+		let needsFallback = false;
 		try {
 			const { chains, lensResults: lr } = await loadAdminLens(
 				supportedNetworks, getNetworkProviders(), userAddress, 10, 10
 			);
-			allChainData = chains;
-			lensResults = lr;
+			if (chains.length > 0) {
+				allChainData = chains;
+				lensResults = lr;
+			} else {
+				// AdminLens returned successfully but with no data — per-chain errors were swallowed
+				needsFallback = true;
+			}
 		} catch (e) {
 			console.warn('AdminLens load failed, falling back to individual calls:', e);
-			// Fallback: use the old per-chain getState() approach
+			needsFallback = true;
+		}
+		if (needsFallback) {
 			try {
 				const { loadAllChains: fallback } = await import('./dashboardData');
 				allChainData = await fallback(supportedNetworks, getNetworkProviders(), userAddress);
 			} catch (e2) {
-				console.warn('Fallback also failed:', e2);
+				console.warn('Fallback loadAllChains also failed:', e2);
 			}
 		}
 		chainsLoading = false;

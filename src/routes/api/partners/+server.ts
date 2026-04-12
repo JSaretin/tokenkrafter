@@ -29,7 +29,7 @@ async function getNetworks(): Promise<Array<{ chain_id: number; name: string; rp
 		.single();
 
 	if (!data?.value) return [];
-	return (data.value as any[]).filter((n: any) => n.rpc && n.factory_address);
+	return (data.value as any[]).filter((n: any) => n.rpc && n.platform_address);
 }
 
 export const GET: RequestHandler = async ({ url }) => {
@@ -46,7 +46,7 @@ export const GET: RequestHandler = async ({ url }) => {
 	for (const net of networks) {
 		try {
 			const provider = new ethers.JsonRpcProvider(net.rpc, net.chain_id, { staticNetwork: true });
-			const factory = new ethers.Contract(net.factory_address, FACTORY_ABI, provider);
+			const factory = new ethers.Contract(net.platform_address, FACTORY_ABI, provider);
 
 			// Query TokenCreated events for partner types (typeKey 4-7)
 			const filter = factory.filters.TokenCreated();
