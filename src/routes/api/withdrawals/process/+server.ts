@@ -3,6 +3,23 @@ import type { RequestHandler } from './$types';
 import { supabaseAdmin } from '$lib/supabaseServer';
 import { initiateTransfer } from '$lib/flutterwave';
 import { decrypt } from '$lib/crypto';
+import { ethers } from 'ethers';
+import { TRADE_ROUTER_ABI } from '$lib/tradeRouter';
+
+/** Get network config from DB */
+async function getNetworkConfig(chainId: number): Promise<{ rpc: string; trade_router_address: string } | null> {
+	const { data } = await supabaseAdmin
+		.from('platform_config')
+		.select('value')
+		.eq('key', 'networks')
+		.single();
+
+	if (!data?.value) return null;
+	const networks = data.value as any[];
+	const net = networks.find((n: any) => n.chain_id === chainId);
+	if (!net?.rpc || !net?.trade_router_address) return null;
+	return { rpc: net.rpc, trade_router_address: net.trade_router_address };
+}
 
 // POST /api/withdrawals/process — initiate Flutterwave transfer
 // Auth: admin session (set by hooks.server.ts)
@@ -25,6 +42,39 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	if (dbErr || !withdrawal) return error(404, 'Withdrawal not found');
 	if (withdrawal.status !== 'pending') return error(400, 'Withdrawal not pending');
 	if (withdrawal.payment_method !== 'bank') return error(400, 'Only bank transfers are auto-processed');
+
+	// C2/H2: Check on-chain withdrawal status before processing.
+	// Prevents race condition where user cancels on-chain while admin initiates fiat transfer.
+	if (withdrawal.withdraw_id != null && withdrawal.chain_id != null) {
+		const netConfig = await getNetworkConfig(withdrawal.chain_id);
+		if (!netConfig) return error(500, `No network config for chain ${withdrawal.chain_id}`);
+
+		try {
+			const provider = new ethers.JsonRpcProvider(netConfig.rpc, withdrawal.chain_id, { staticNetwork: true });
+			const router = new ethers.Contract(netConfig.trade_router_address, TRADE_ROUTER_ABI, provider);
+			const onChain = await router.getWithdrawal(withdrawal.withdraw_id);
+			const onChainStatus = Number(onChain.status);
+
+			if (onChainStatus !== 0) {
+				// Status 0=Pending, 1=Confirmed, 2=Cancelled
+				const label = onChainStatus === 1 ? 'Confirmed' : onChainStatus === 2 ? 'Cancelled' : `Unknown(${onChainStatus})`;
+				// Sync DB status to match on-chain reality
+				const dbStatus = onChainStatus === 2 ? 'cancelled' : 'confirmed';
+				await supabaseAdmin
+					.from('withdrawal_requests')
+					.update({
+						status: dbStatus,
+						admin_note: `On-chain status is ${label} — aborting fiat transfer.`,
+						updated_at: new Date().toISOString()
+					})
+					.eq('id', withdrawal_id);
+				return error(409, `Withdrawal already ${label} on-chain. Cannot process.`);
+			}
+		} catch (e: any) {
+			console.error('[withdrawals/process] On-chain status check failed:', e.message);
+			return error(502, `Failed to verify on-chain status: ${e.message}`);
+		}
+	}
 
 	// Decrypt payment details
 	let details = withdrawal.payment_details;

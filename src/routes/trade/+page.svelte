@@ -89,7 +89,9 @@
 	let paymentMethod = $state<'bank' | 'paypal' | 'wise'>('bank');
 	let previewFee = $state(0n);
 	let previewNet = $state(0n);
-	let payoutTimeoutMins = $state(10); // default, updated from contract
+	let payoutTimeoutMins = $state(0);
+	let payoutTimeoutLoaded = $state(false);
+	let minWithdrawUsdt = $state(0n);
 
 	// Withdrawal step tracking (bank off-ramp)
 	// 0=idle, 1=signing, 2=approving, 3=trading
@@ -444,18 +446,17 @@
 			wethAddr = result.weth;
 			pricesLoaded = true;
 
-			// Load payout timeout from TradeRouter
+			// Load payout timeout + min withdrawal from TradeRouter
 			if (net.trade_router_address) {
 				try {
 					const router = new ethers.Contract(net.trade_router_address, TRADE_ROUTER_ABI, provider);
-					try {
-						const state = await router.getState();
-						payoutTimeoutMins = Math.round(Number(state.payoutTimeout) / 60);
-					} catch {
-						// Fallback: read payoutTimeout directly
-						const timeout = await router.payoutTimeout();
-						payoutTimeoutMins = Math.round(Number(timeout) / 60);
-					}
+					const [timeout, minW] = await Promise.all([
+						router.payoutTimeout(),
+						router.minWithdrawUsdt().catch(() => 0n),
+					]);
+					payoutTimeoutMins = Math.ceil(Number(timeout) / 60);
+					payoutTimeoutLoaded = true;
+					minWithdrawUsdt = BigInt(minW);
 				} catch {}
 			}
 
@@ -585,6 +586,9 @@
 		bankBankName = bank.name;
 		bankSearchQuery = bank.name;
 		showBankDropdown = false;
+		bankResolved = false;
+		bankName = '';
+		bankError = '';
 	}
 
 	// ── Token metadata fetch ───────────────────────────────────
@@ -1055,6 +1059,12 @@
 			let tx;
 			if (outputMode === 'bank') {
 				// ── 3-step off-ramp flow ──────────────────────────
+				const usdtGrossCheck = previewFee + previewNet;
+				if (minWithdrawUsdt > 0n && usdtGrossCheck < minWithdrawUsdt) {
+					addFeedback({ message: `Minimum withdrawal is ${parseFloat(ethers.formatUnits(minWithdrawUsdt, usdtDecimals)).toFixed(2)} USDT`, type: 'error' });
+					isSwapping = false;
+					return;
+				}
 				let paymentDetails: any = {};
 				let bankRef: string;
 
@@ -1373,23 +1383,6 @@
 					chain_id: db?.chain_id || net?.chain_id,
 					tx_hash: db?.tx_hash || '',
 					db_status: chain.status === 1 ? 'confirmed' : chain.status === 2 ? 'cancelled' : 'pending',
-				});
-			}
-
-			// Add DB-only records not matched to any on-chain record (awaiting_trade)
-			for (const db of dbRecords.filter((r: any) => !usedDbIds.has(r.id) && r.status === 'awaiting_trade')) {
-				merged.push({
-					id: db.id, user: db.wallet_address, token: db.token_in,
-					grossAmount: safeBigInt(db.gross_amount),
-					fee: safeBigInt(db.fee),
-					netAmount: safeBigInt(db.net_amount),
-					createdAt: Math.floor(new Date(db.created_at).getTime() / 1000),
-					status: 0,
-					bankRef: '', withdraw_id: 0,
-					payment_method: db.payment_method,
-					payment_details: db.payment_details || {},
-					chain_id: db.chain_id, tx_hash: db.tx_hash,
-					db_status: db.status,
 				});
 			}
 
@@ -1764,16 +1757,6 @@
 				<!-- Bank fields -->
 				<div class="bank-section-compact">
 					<div class="field-group">
-						<label class="field-label">{$t('trade.accountNumber')}</label>
-						<input
-							class="input-field"
-							placeholder="10-digit account number"
-							bind:value={bankAccount}
-							maxlength="10"
-							inputmode="numeric"
-						/>
-					</div>
-					<div class="field-group">
 						<label class="field-label">{$t('trade.bank')}</label>
 						<button class="bank-selector-btn" onclick={() => { showBankModal = true; bankSearchQuery = ''; }}>
 							{#if bankBankName}
@@ -1783,6 +1766,16 @@
 							{/if}
 							<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M6 9l6 6 6-6"/></svg>
 						</button>
+					</div>
+					<div class="field-group">
+						<label class="field-label">{$t('trade.accountNumber')}</label>
+						<input
+							class="input-field"
+							placeholder="10-digit account number"
+							bind:value={bankAccount}
+							maxlength="10"
+							inputmode="numeric"
+						/>
 					</div>
 					{#if bankResolving}
 						<div class="resolve-status resolve-loading">
@@ -1804,7 +1797,7 @@
 
 				<div class="bank-safety-pill">
 					<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-					Escrowed on-chain &middot; Cancel if not processed in {payoutTimeoutMins}min
+					Escrowed on-chain{#if payoutTimeoutLoaded} &middot; Cancel if not processed in {payoutTimeoutMins}min{/if}
 				</div>
 			{/if}
 
@@ -2244,7 +2237,7 @@
 							<div class="cr-row cr-row-highlight"><span>{$t('trade.youReceive')}</span><span class="cr-ngn">{fiatEquivalent}</span></div>
 							{#if ngnRate > 0}<div class="cr-row"><span>{$t('trade.rate')}</span><span>1 USD = ₦{ngnRate.toFixed(2)}</span></div>{/if}
 						{/if}
-						<div class="cr-row"><span>{$t('trade.processing2')}</span><span>Under {payoutTimeoutMins} min</span></div>
+						{#if payoutTimeoutLoaded}<div class="cr-row"><span>{$t('trade.processing2')}</span><span>Under {payoutTimeoutMins} min</span></div>{/if}
 						<div class="cr-row"><span>{$t('trade.safety')}</span><span>{$t('trade.cancelAnytime')}</span></div>
 					{/if}
 				</div>
