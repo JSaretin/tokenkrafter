@@ -540,7 +540,7 @@
 
 	.spinner-sm {
 		width: 14px; height: 14px;
-		border: 2px solid rgba(255,255,255,0.15); border-top-color: #00d2ff;
+		border: 2px solid var(--border-input); border-top-color: #00d2ff;
 		border-radius: 50%; animation: spin 0.6s linear infinite;
 	}
 	@keyframes spin { to { transform: rotate(360deg); } }
@@ -574,16 +574,17 @@
 	.toggle-label { font-family: 'Space Mono', monospace; font-size: 0.78rem; color: var(--text-muted); }
 	.toggle-track {
 		width: 2.2rem; height: 1.2rem; border-radius: 0.6rem;
-		background: var(--bg-surface-hover); position: relative; transition: background 0.2s;
-		flex-shrink: 0;
+		background: var(--toggle-track); position: relative; transition: background 0.2s;
+		flex-shrink: 0; border: 1px solid var(--border);
 	}
-	.toggle-track.active { background: #00d2ff; }
+	.toggle-track.active { background: #00d2ff; border-color: rgba(0,210,255,0.5); }
 	.toggle-thumb {
-		position: absolute; top: 2px; left: 2px;
+		position: absolute; top: 1px; left: 1px;
 		width: 0.85rem; height: 0.85rem; border-radius: 50%;
-		background: #e2e8f0; transition: transform 0.2s;
+		background: var(--toggle-thumb-off); transition: transform 0.2s;
+		box-shadow: 0 1px 3px rgba(0,0,0,0.2);
 	}
-	.toggle-track.active .toggle-thumb { transform: translateX(1rem); }
+	.toggle-track.active .toggle-thumb { transform: translateX(1rem); background: var(--toggle-thumb); }
 
 	/* Metadata */
 	.meta-toggle {

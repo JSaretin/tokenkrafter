@@ -263,7 +263,7 @@
 	.auth-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 28px rgba(0,210,255,0.3); }
 	.auth-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 	.auth-spinner {
-		width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.3);
+		width: 16px; height: 16px; border: 2px solid var(--border-input);
 		border-top-color: white; border-radius: 50%; animation: spin 0.8s linear infinite;
 	}
 

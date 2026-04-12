@@ -531,7 +531,7 @@
 		display: flex; align-items: center; justify-content: center;
 		cursor: pointer; transition: all 0.15s; flex-shrink: 0;
 	}
-	.wm-close:hover { background: rgba(255,255,255,0.1); color: var(--text-heading); }
+	.wm-close:hover { background: var(--border-input); color: var(--text-heading); }
 
 	/* Recommended badge — absolute top-right of option */
 	.wm-rec-badge {
@@ -603,7 +603,7 @@
 		gap: 12px; padding: 24px 0;
 	}
 	.wm-spinner {
-		width: 32px; height: 32px; border: 2px solid rgba(255,255,255,0.1);
+		width: 32px; height: 32px; border: 2px solid var(--border-input);
 		border-top-color: #00d2ff; border-radius: 50%;
 		animation: spin 0.8s linear infinite;
 	}

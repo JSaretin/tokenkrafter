@@ -1021,7 +1021,7 @@
 
 	.ws-spinner {
 		width: 11px; height: 11px; border-radius: 50%;
-		border: 1.5px solid rgba(255,255,255,0.1); border-top-color: #00d2ff;
+		border: 1.5px solid var(--border-input); border-top-color: #00d2ff;
 		animation: wsSpin 0.8s linear infinite; margin: 0 4px;
 	}
 	@keyframes wsSpin { to { transform: rotate(360deg); } }
@@ -1032,7 +1032,7 @@
 		padding: 6px 6px 8px 6px;
 		margin: 2px 4px 0 4px;
 		display: flex; flex-direction: column; gap: 2px;
-		border-top: 1px dashed rgba(255,255,255,0.04);
+		border-top: 1px dashed var(--border-subtle);
 	}
 	.ws-acct-row { display: flex; align-items: center; gap: 2px; }
 	.ws-acct-btn {

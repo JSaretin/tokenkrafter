@@ -2094,7 +2094,7 @@
 	.dp-step-icon {
 		width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
 		display: flex; align-items: center; justify-content: center;
-		border: 2px solid rgba(255,255,255,0.06); background: transparent;
+		border: 2px solid var(--border); background: transparent;
 		transition: all 0.3s;
 	}
 	.dp-done .dp-step-icon { border-color: #10b981; color: #10b981; background: rgba(16,185,129,0.1); }

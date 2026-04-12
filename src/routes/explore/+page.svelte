@@ -575,7 +575,7 @@
 
 	/* Header */
 	.tc-header { display: flex; align-items: center; gap: 10px; text-decoration: none; color: inherit; }
-	.tc-logo { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; border: 2px solid rgba(255,255,255,0.06); flex-shrink: 0; }
+	.tc-logo { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; border: 2px solid var(--border); flex-shrink: 0; }
 	.tc-logo-fallback {
 		width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0;
 		display: flex; align-items: center; justify-content: center;
@@ -624,7 +624,7 @@
 	/* Stats */
 	.tc-stats { display: flex; gap: 0; border-radius: 8px; overflow: hidden; border: 1px solid var(--border-subtle); }
 	.tc-stat { flex: 1; padding: 7px 10px; }
-	.tc-stat + .tc-stat { border-left: 1px solid rgba(255,255,255,0.04); }
+	.tc-stat + .tc-stat { border-left: 1px solid var(--border-subtle); }
 	.tc-stat-label { display: block; font-size: 8px; color: var(--text-dim); font-family: 'Space Mono', monospace; text-transform: uppercase; letter-spacing: 0.04em; }
 	.tc-stat-value { display: block; font-family: 'Rajdhani', sans-serif; font-size: 14px; font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; margin-top: 1px; }
 

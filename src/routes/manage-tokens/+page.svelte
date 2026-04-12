@@ -371,7 +371,7 @@
 	/* Card stats */
 	.tc-stats { display: flex; gap: 0; border-radius: 8px; overflow: hidden; border: 1px solid var(--border-subtle); }
 	.tc-stat { flex: 1; padding: 8px 10px; }
-	.tc-stat + .tc-stat { border-left: 1px solid rgba(255,255,255,0.04); }
+	.tc-stat + .tc-stat { border-left: 1px solid var(--border-subtle); }
 	.tc-stat-label { display: block; font-size: 8px; color: var(--text-dim); font-family: 'Space Mono', monospace; text-transform: uppercase; letter-spacing: 0.04em; }
 	.tc-stat-value { display: block; font-family: 'Rajdhani', sans-serif; font-size: 14px; font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; margin-top: 1px; }
 

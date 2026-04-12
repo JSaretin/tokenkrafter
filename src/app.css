@@ -498,6 +498,20 @@ a.no-underline { text-decoration: none; }
 :root.light .border-white\/20 { border-color: var(--border-input) !important; }
 :root.light .hover\:text-gray-300:hover { color: var(--text) !important; }
 :root.light .bg-black\/70 { background-color: rgba(0,0,0,0.4) !important; }
+
+/* ─── Light-mode toggle/switch track fix ─── */
+/* All toggle tracks in the app use near-transparent-white backgrounds
+   that are invisible on light bg. This gives them a visible pill shape. */
+:root.light {
+  --toggle-track: rgba(0,0,0,0.12);
+  --toggle-thumb: #ffffff;
+  --toggle-thumb-off: rgba(0,0,0,0.3);
+}
+:root {
+  --toggle-track: rgba(255,255,255,0.1);
+  --toggle-thumb: #ffffff;
+  --toggle-thumb-off: rgba(255,255,255,0.5);
+}
 :root.light .bg-emerald-950\/90 { background-color: rgba(236,253,245,0.95) !important; }
 :root.light .text-emerald-300 { color: #059669 !important; }
 :root.light .border-emerald-500\/40 { border-color: rgba(16,185,129,0.3) !important; }

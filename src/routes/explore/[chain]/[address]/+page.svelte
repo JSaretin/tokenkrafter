@@ -342,7 +342,7 @@
 
 	.avatar {
 		width: 64px; height: 64px; border-radius: 16px; object-fit: cover;
-		border: 2px solid rgba(255,255,255,0.06); flex-shrink: 0;
+		border: 2px solid var(--border); flex-shrink: 0;
 		box-shadow: 0 0 24px rgba(0,210,255,0.08);
 	}
 	.avatar-gen {
@@ -509,7 +509,7 @@
 	.pool {
 		display: block; padding: 14px 16px; border-radius: 10px;
 		border: 1px solid var(--border-subtle);
-		background: rgba(255,255,255,0.012);
+		background: var(--bg-surface);
 		text-decoration: none; color: inherit;
 		transition: all 0.2s; animation: pool-in 0.3s ease-out both;
 	}

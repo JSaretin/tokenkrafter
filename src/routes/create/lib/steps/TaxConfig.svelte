@@ -339,15 +339,17 @@
 	.tc-toggle-title { display: block; font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 600; color: var(--text); }
 	.tc-toggle-desc { display: block; font-size: 10px; color: var(--text-dim); font-family: 'Space Mono', monospace; margin-top: 1px; }
 	.tc-switch {
-		width: 36px; height: 20px; border-radius: 10px; background: var(--bg-surface-hover);
+		width: 36px; height: 20px; border-radius: 10px; background: var(--toggle-track);
 		position: relative; flex-shrink: 0; transition: background 0.2s;
+		border: 1px solid var(--border);
 	}
-	.tc-switch-on { background: #f59e0b; }
+	.tc-switch-on { background: #f59e0b; border-color: rgba(245,158,11,0.5); }
 	.tc-switch-thumb {
-		position: absolute; top: 2px; left: 2px; width: 16px; height: 16px;
-		border-radius: 50%; background: rgba(255,255,255,0.6); transition: all 0.2s;
+		position: absolute; top: 1px; left: 1px; width: 16px; height: 16px;
+		border-radius: 50%; background: var(--toggle-thumb-off); transition: all 0.2s;
+		box-shadow: 0 1px 3px rgba(0,0,0,0.2);
 	}
-	.tc-switch-on .tc-switch-thumb { left: 18px; background: #fff; }
+	.tc-switch-on .tc-switch-thumb { left: 17px; background: var(--toggle-thumb); }
 
 	/* ── Protection Grid ── */
 	.tc-prot-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }

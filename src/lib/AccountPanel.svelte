@@ -1665,7 +1665,7 @@
 
 	/* Token rows */
 	.ap-row { display: flex; align-items: center; gap: 12px; padding: 12px 16px; transition: background 0.1s; }
-	.ap-row:hover { background: rgba(255,255,255,0.025); }
+	.ap-row:hover { background: var(--bg-surface); }
 	.ap-row-icon {
 		width: 40px; height: 40px; border-radius: 50%;
 		background: var(--bg-surface-input); border: 1px solid var(--border);

@@ -65,13 +65,15 @@
 	.badge { font-size: 0.6rem; background: rgba(0,210,255,0.15); color: #00d2ff; padding: 0.1rem 0.4rem; border-radius: 4px; font-family: 'Space Mono', monospace; }
 	.note { font-size: 0.65rem; color: rgba(0,210,255,0.6); margin-top: 0.1rem; }
 	.toggle {
-		width: 36px; height: 20px; border-radius: 10px; background: rgba(255,255,255,0.1);
+		width: 36px; height: 20px; border-radius: 10px; background: var(--toggle-track);
 		position: relative; flex-shrink: 0; transition: background 0.2s;
+		border: 1px solid var(--border);
 	}
-	.toggle.on { background: rgba(0,210,255,0.4); }
+	.toggle.on { background: rgba(0,210,255,0.4); border-color: rgba(0,210,255,0.5); }
 	.knob {
-		position: absolute; top: 2px; left: 2px; width: 16px; height: 16px;
-		border-radius: 50%; background: rgba(255,255,255,0.5); transition: all 0.2s;
+		position: absolute; top: 1px; left: 1px; width: 16px; height: 16px;
+		border-radius: 50%; background: var(--toggle-thumb-off); transition: all 0.2s;
+		box-shadow: 0 1px 3px rgba(0,0,0,0.2);
 	}
-	.toggle.on .knob { left: 18px; background: #00d2ff; }
+	.toggle.on .knob { left: 17px; background: #00d2ff; }
 </style>

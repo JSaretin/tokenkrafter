@@ -2505,7 +2505,7 @@
 		}
 		.right-col::-webkit-scrollbar { width: 4px; }
 		.right-col::-webkit-scrollbar-track { background: transparent; }
-		.right-col::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+		.right-col::-webkit-scrollbar-thumb { background: var(--border-input); border-radius: 2px; }
 	}
 
 	.preview-box {
