@@ -1,58 +1,34 @@
 <script lang="ts">
 	import { ethers } from 'ethers';
-	import { onMount } from 'svelte';
-	import { queryTradeLens, type TaxInfo } from '$lib/tradeLens';
 
 	let { data }: { data: any } = $props();
 
-	const { tokenAddress, chain: chainInfo, dbData, onChainData, geckoData: ssrGecko } = data;
+	const { tokenAddress, chain: chainInfo, dbData, lensData } = data;
 
-	// ── GeckoTerminal data (SSR + client-side enrichment) ──
-	let geckoData = $state<any>(ssrGecko ? {
-		name: null, symbol: null, image_url: ssrGecko.image_url,
-		price_usd: String(ssrGecko.price_usd || '0'),
-		price_change_24h: 0,
-		market_cap_usd: String(ssrGecko.fdv_usd || '0'),
-		volume_24h_usd: String(ssrGecko.volume_24h || '0'),
-		websites: [],
-	} : null);
-	let pools: any[] = $state(ssrGecko?.pools || []);
+	// TradeLensV2 data from SSR (on-chain: token info + pools + tax)
+	const onChainData = lensData?.tokenInfo || null;
+	let pools: any[] = $state(lensData?.pools || []);
+	const ssrTaxInfo = lensData?.taxInfo || null;
 	let copied = $state(false);
 	let copiedUrl = $state(false);
-	let priceLoading = $state(true);
-	let taxInfo = $state<TaxInfo | null>(null);
-	let taxLoading = $state(false);
+	let taxInfo = ssrTaxInfo;
 	let addedToWallet = $state(false);
 
 	// ── Derived display values ──
-	let tokenName = $derived(dbData?.name || onChainData?.name || geckoData?.name || 'Unknown Token');
-	let tokenSymbol = $derived(dbData?.symbol || onChainData?.symbol || geckoData?.symbol || '???');
+	let tokenName = $derived(dbData?.name || onChainData?.name || 'Unknown Token');
+	let tokenSymbol = $derived(dbData?.symbol || onChainData?.symbol || '???');
 	let tokenDecimals = $derived(dbData?.decimals || onChainData?.decimals || 18);
 	let totalSupply = $derived(onChainData?.totalSupply || '0');
-	let logoUrl = $derived(dbData?.logo_url || geckoData?.image_url || '');
-	let description = $derived(dbData?.description || geckoData?.description || '');
-	let website = $derived(dbData?.website || geckoData?.websites?.[0] || '');
+	let logoUrl = $derived(dbData?.logo_url || '');
+	let description = $derived(dbData?.description || '');
+	let website = $derived(dbData?.website || '');
 	let twitter = $derived(dbData?.twitter || '');
 	let telegram = $derived(dbData?.telegram || '');
 	let creator = $derived(dbData?.creator || '');
 	let isOnPlatform = $derived(!!dbData);
 	let isTaxable = $derived(dbData?.is_taxable || false);
-	let tokenType = $derived.by(() => {
-		if (!dbData) return '';
-		if (dbData.is_partner && dbData.is_taxable) return 'Partner + Taxable';
-		if (dbData.is_partner) return 'Partner';
-		if (dbData.is_taxable && dbData.is_mintable) return 'Taxable + Mintable';
-		if (dbData.is_taxable) return 'Taxable';
-		if (dbData.is_mintable) return 'Mintable';
-		return 'Basic';
-	});
 	let createdAt = $derived(dbData?.created_at ? new Date(dbData.created_at).toLocaleDateString() : '');
-
-	let price = $derived(geckoData?.price_usd ? parseFloat(geckoData.price_usd) : 0);
-	let priceChange24h = $derived(geckoData?.price_change_24h || 0);
-	let marketCap = $derived(geckoData?.market_cap_usd ? parseFloat(geckoData.market_cap_usd) : 0);
-	let volume24h = $derived(geckoData?.volume_24h_usd ? parseFloat(geckoData.volume_24h_usd) : 0);
-	let totalReserveUsd = $derived(ssrGecko?.total_reserve_usd || pools.reduce((s: number, p: any) => s + (p.reserve_usd || 0), 0));
+	let hasLiquidity = $derived(onChainData?.hasLiquidity || pools.some((p: any) => p.has_liquidity));
 
 	function fmtReserve(val: number): string {
 		if (val >= 1e6) return `$${(val / 1e6).toFixed(2)}M`;
@@ -139,26 +115,8 @@
 		setTimeout(() => addedToWallet = false, 3000);
 	}
 
-	// GeckoTerminal data is now loaded SSR-side — no client-side fetch needed.
-	// Only tax simulation runs client-side (requires eth_call).
-	onMount(async () => {
-		priceLoading = false;
-
-		// Tax simulation (if taxable)
-		if (isTaxable && chainInfo.rpc) {
-			taxLoading = true;
-			try {
-				const provider = new ethers.JsonRpcProvider(chainInfo.rpc);
-				// We need the dex router — use PancakeSwap on BSC
-				const dexRouter = chainInfo.id === 56 ? '0x10ED43C718714eb63d5aA57B78B54704E256024E' : '';
-				if (dexRouter) {
-					const result = await queryTradeLens(provider, dexRouter, [tokenAddress], tokenAddress, ethers.parseEther('0.001'), [], chainInfo.id, []);
-					taxInfo = result.taxInfo;
-				}
-			} catch {}
-			taxLoading = false;
-		}
-	});
+	// All data now loaded SSR-side via TradeLensV2 (token info + pools + tax).
+	// No client-side fetches needed — page renders fully on first paint.
 </script>
 
 <svelte:head>
@@ -188,9 +146,9 @@
 					{#if isOnPlatform}
 						<span class="td-tk-badge">TokenKrafter</span>
 					{/if}
-					{#if tokenType}
-						<span class="td-type-badge">{tokenType}</span>
-					{/if}
+					{#if dbData?.is_taxable}<span class="td-type-badge">Taxable</span>{/if}
+					{#if dbData?.is_mintable}<span class="td-type-badge">Mintable</span>{/if}
+					{#if dbData?.is_partner}<span class="td-type-badge">Partner</span>{/if}
 				</div>
 			</div>
 		</div>
@@ -203,38 +161,25 @@
 		{/if}
 	</div>
 
-	<!-- Price -->
+	<!-- Status -->
 	<div class="td-price-section">
 		<div class="td-price-main">
-			{#if price > 0}
-				<span class="td-price">{fmtPrice(price)}</span>
-				<span class="td-change" class:td-change-up={priceChange24h > 0} class:td-change-down={priceChange24h < 0} class:td-change-neutral={priceChange24h === 0}>
-					{priceChange24h > 0 ? '+' : ''}{priceChange24h.toFixed(2)}%
-				</span>
-			{:else if !priceLoading}
-				<span class="td-price td-price-na">Not Listed</span>
+			{#if hasLiquidity}
+				<span class="td-price" style="color: #10b981;">Tradeable</span>
 			{:else}
-				<span class="td-price td-price-loading">Loading...</span>
+				<span class="td-price td-price-na">Not Listed</span>
 			{/if}
 		</div>
 
-		<!-- Stats row (always show supply, conditionally show market data) -->
+		<!-- Stats row -->
 		<div class="td-stats">
-			{#if price > 0}
-				<div class="td-stat">
-					<span class="td-stat-label">Market Cap</span>
-					<span class="td-stat-value">{fmtLarge(marketCap)}</span>
-				</div>
-				{#if volume24h > 0}
-					<div class="td-stat">
-						<span class="td-stat-label">24h Volume</span>
-						<span class="td-stat-value">{fmtLarge(volume24h)}</span>
-					</div>
-				{/if}
-			{/if}
 			<div class="td-stat">
 				<span class="td-stat-label">Total Supply</span>
 				<span class="td-stat-value">{fmtSupply(totalSupply, tokenDecimals)}</span>
+			</div>
+			<div class="td-stat">
+				<span class="td-stat-label">Liquidity</span>
+				<span class="td-stat-value">{hasLiquidity ? `${pools.filter((p: any) => p.has_liquidity).length} pool${pools.filter((p: any) => p.has_liquidity).length !== 1 ? 's' : ''}` : 'None'}</span>
 			</div>
 			{#if createdAt}
 				<div class="td-stat">
@@ -245,39 +190,33 @@
 		</div>
 	</div>
 
-	<!-- Tax Info (if taxable) -->
-	{#if isTaxable}
+	<!-- Tax Info (from TradeLensV2 SSR simulation) -->
+	{#if taxInfo}
 		<div class="td-tax">
-			{#if taxLoading}
-				<div class="td-tax-row"><span class="td-tax-label">Tax</span><span class="td-tax-val td-tax-loading">Simulating...</span></div>
-			{:else if taxInfo}
-				<div class="td-tax-row">
-					<span class="td-tax-label">Buy Tax</span>
-					<span class="td-tax-val">{(taxInfo.buyTaxBps / 100).toFixed(1)}%</span>
-				</div>
-				<div class="td-tax-row">
-					<span class="td-tax-label">Sell Tax</span>
-					<span class="td-tax-val">{(taxInfo.sellTaxBps / 100).toFixed(1)}%</span>
-				</div>
-				<div class="td-tax-row">
-					<span class="td-tax-label">Transfer Tax</span>
-					<span class="td-tax-val {taxInfo.transferTaxBps === 0 ? 'td-tax-free' : ''}">{taxInfo.transferTaxBps === 0 ? 'Free' : `${(taxInfo.transferTaxBps / 100).toFixed(1)}%`}</span>
-				</div>
-				{#if !taxInfo.canBuy}
-					<div class="td-tax-warn">Cannot buy: {taxInfo.buyError || 'unknown'}</div>
-				{/if}
-				{#if !taxInfo.canSell}
-					<div class="td-tax-warn">Cannot sell: {taxInfo.sellError || 'honeypot'}</div>
-				{/if}
-			{:else}
-				<div class="td-tax-row"><span class="td-tax-label">Tax</span><span class="td-tax-val">Taxable token</span></div>
+			<div class="td-tax-row">
+				<span class="td-tax-label">Buy Tax</span>
+				<span class="td-tax-val">{(taxInfo.buyTaxBps / 100).toFixed(1)}%</span>
+			</div>
+			<div class="td-tax-row">
+				<span class="td-tax-label">Sell Tax</span>
+				<span class="td-tax-val">{(taxInfo.sellTaxBps / 100).toFixed(1)}%</span>
+			</div>
+			<div class="td-tax-row">
+				<span class="td-tax-label">Transfer Tax</span>
+				<span class="td-tax-val {taxInfo.transferTaxBps === 0 ? 'td-tax-free' : ''}">{taxInfo.transferTaxBps === 0 ? 'Free' : `${(taxInfo.transferTaxBps / 100).toFixed(1)}%`}</span>
+			</div>
+			{#if !taxInfo.canBuy}
+				<div class="td-tax-warn">Cannot buy: {taxInfo.buyError || 'unknown'}</div>
+			{/if}
+			{#if !taxInfo.canSell}
+				<div class="td-tax-warn">Cannot sell: {taxInfo.sellError || 'honeypot'}</div>
 			{/if}
 		</div>
 	{/if}
 
 	<!-- Actions -->
 	<div class="td-actions">
-		{#if price > 0}
+		{#if hasLiquidity}
 			<a href="/trade?token={tokenAddress}" class="td-act td-act-primary">
 				<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
 				Trade
@@ -302,7 +241,7 @@
 		<div class="td-section">
 			<div class="td-section-header">
 				<h2 class="td-section-title">Liquidity Pools</h2>
-				<span class="td-section-sub">{pools.length} pool{pools.length > 1 ? 's' : ''} · {fmtReserve(totalReserveUsd)} total</span>
+				<span class="td-section-sub">{pools.length} pool{pools.length > 1 ? 's' : ''} · {pools.filter((p: any) => p.has_liquidity).length} active</span>
 			</div>
 			<div class="pool-grid">
 				{#each pools as pool}
@@ -317,24 +256,18 @@
 						</div>
 						<div class="pool-stats">
 							<div class="pool-stat">
-								<span class="pool-stat-label">Reserve</span>
-								<span class="pool-stat-value" class:pool-low={pool.reserve_usd < 1000}>{fmtReserve(pool.reserve_usd)}</span>
+								<span class="pool-stat-label">{tokenSymbol}</span>
+								<span class="pool-stat-value">{fmtSupply(pool.reserve_token, tokenDecimals)}</span>
 							</div>
 							<div class="pool-stat">
-								<span class="pool-stat-label">24h Vol</span>
-								<span class="pool-stat-value">{pool.volume_24h > 0 ? fmtReserve(pool.volume_24h) : '—'}</span>
+								<span class="pool-stat-label">{pool.base_symbol}</span>
+								<span class="pool-stat-value">{fmtSupply(pool.reserve_base, 18)}</span>
 							</div>
 							<div class="pool-stat">
-								<span class="pool-stat-label">Txns</span>
-								<span class="pool-stat-value">{pool.txns_24h > 0 ? `${pool.buys_24h}B / ${pool.sells_24h}S` : '—'}</span>
+								<span class="pool-stat-label">Status</span>
+								<span class="pool-stat-value" class:pool-low={!pool.has_liquidity}>{pool.has_liquidity ? 'Active' : 'Empty'}</span>
 							</div>
 						</div>
-						{#if pool.price_usd && parseFloat(pool.price_usd) > 0}
-							<div class="pool-price">
-								<span class="pool-price-label">Price</span>
-								<span class="pool-price-value">{fmtPrice(parseFloat(pool.price_usd))}</span>
-							</div>
-						{/if}
 					</a>
 				{/each}
 			</div>
