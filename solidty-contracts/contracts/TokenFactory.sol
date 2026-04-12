@@ -8,8 +8,10 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/proxy/Clones.sol";
 
-import "./TokenImplementations.sol";
+import "./shared/TokenInterfaces.sol";
 import "./shared/DexInterfaces.sol";
+import "./tokens/BasicToken.sol";
+import "./tokens/TaxableToken.sol";
 
 // =============================================================
 // LAUNCHPAD INTERFACE (minimal, for fee queries)
@@ -20,18 +22,17 @@ interface ILaunchpadFee {
 }
 
 // =============================================================
-// DEX INTERFACES
-// =============================================================
-
-// Note: IUniswapV2Router02 + IUniswapV2Factory come from shared/DexInterfaces.sol
-
-// =============================================================
 // TOKEN FACTORY
 // =============================================================
 
 /// @title TokenFactory
-/// @notice Creates ERC20 tokens via EIP-1167 minimal proxies (Clones) with built-in
-///         fee management, referral system, payment token support, and daily statistics.
+/// @notice Creates ERC20 tokens via EIP-1167 minimal proxies (Clones) with
+///         USDT-only fee collection. Multi-token / native fee support and
+///         on-the-fly conversion were removed: the PlatformRouter is now the
+///         only place that swaps user input into USDT before paying the
+///         factory, so this contract no longer needs to know about prices,
+///         payment tokens, or DEX paths. The DEX router is still kept for
+///         tax processing (swapping accumulated tax tokens into USDT).
 contract TokenFactory is Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
@@ -41,18 +42,12 @@ contract TokenFactory is Ownable, ReentrancyGuard {
 
     error InvalidAddress();
     error InvalidTokenType();
-    error UnsupportedPaymentToken();
     error ImplementationNotSet();
-    error InsufficientPayment();
-    error CannotDetermineFee();
-    error RefundFailed();
     error TransferFailed();
     error CircularReferral();
     error NoRewards();
     error NoBalance();
     error InvalidParams();
-    error AlreadySupported();
-    error NotSupported();
     error MaxLevelsExceeded();
     error TotalExceedsMax();
     error NotFactoryToken();
@@ -70,7 +65,25 @@ contract TokenFactory is Ownable, ReentrancyGuard {
         bool isPartnership;
     }
 
-    /// @notice Parameters for creating a new token.
+    /// @notice Full token-view returned by `getTokensInfo`. Combines factory-side
+    ///         metadata with token-side ERC20 fields so the explore page can
+    ///         render a token row from one RPC call instead of N+1.
+    struct TokenView {
+        address tokenAddress;
+        string name;
+        string symbol;
+        uint8 decimals;
+        uint256 totalSupply;
+        address creator;
+        bool isMintable;
+        bool isTaxable;
+        bool isPartnership;
+    }
+
+    /// @notice Parameters for creating a new token. `bases` are the DEX base
+    ///         tokens for which the token implementation should pre-create
+    ///         pairs at init time (e.g. WBNB, USDT). Creator-supplied — the
+    ///         factory does not maintain a base-token allowlist.
     struct CreateTokenParams {
         string name;
         string symbol;
@@ -79,7 +92,7 @@ contract TokenFactory is Ownable, ReentrancyGuard {
         bool isTaxable;
         bool isMintable;
         bool isPartner;
-        address paymentToken;
+        address[] bases;
     }
 
     /// @notice Daily statistics snapshot.
@@ -113,69 +126,62 @@ contract TokenFactory is Ownable, ReentrancyGuard {
     event TaxProcessed(address indexed token, uint256 amountIn, uint256 amountOut);
     event ConvertTaxToStableUpdated(bool enabled);
     event TaxProcessFailed(address indexed token, uint256 amount);
-    event PaymentTokenAdded(address indexed token);
-    event PaymentTokenRemoved(address indexed token);
     event ReferralRecorded(address indexed creator, address indexed referrer);
-    event ReferralRewardDistributed(address indexed referrer, address paymentToken, uint256 amount, uint8 level);
-    event ReferralRewardClaimed(address indexed user, address paymentToken, uint256 amount);
+    event ReferralRewardDistributed(address indexed referrer, uint256 amount, uint8 level);
+    event ReferralRewardClaimed(address indexed user, uint256 amount);
+    event PlatformWalletUpdated(address indexed oldWallet, address indexed newWallet);
 
     // =============================================================
-    // STATE VARIABLES
+    // STATE
     // =============================================================
 
-    /// @notice The DEX router used for fee conversion and tax processing swaps.
+    /// @notice DEX router used for tax-processing swaps. Not used for fees.
     IUniswapV2Router02 public dexRouter;
 
-    /// @notice The stablecoin address (e.g., USDT) used as the base fee denomination.
+    /// @notice Stablecoin all fees are denominated in.
     address public usdt;
 
-    /// @notice Implementation contract address for each token type (indexed by type key 0-7).
+    /// @notice Implementation contract address per token type (0..7).
     mapping(uint8 => address) public implementations;
 
-    /// @notice Creation fee in USDT for each token type (indexed by type key 0-7).
+    /// @notice Creation fee in USDT for each token type (0..7).
     mapping(uint8 => uint256) public creationFee;
 
-    /// @dev List of supported payment tokens. address(0) represents native currency.
-    address[] private _supportedTokens;
-
-    /// @notice Returns true if a token is accepted as payment for creation fees.
-    mapping(address => bool) public isPaymentSupported;
-
-    /// @dev Mapping of creator address to their created token addresses.
+    /// @dev Mapping of creator to their created token addresses.
     mapping(address => address[]) private createdTokens;
 
     /// @notice Metadata for each token created by this factory.
     mapping(address => TokenInfo) public tokenInfo;
 
-    /// @notice Total number of tokens created across all types.
+    /// @notice Total tokens created across all types.
     uint256 public totalTokensCreated;
 
-    /// @dev Global ordered list of all created token addresses (index 0 = first token).
+    /// @dev Global ordered list of all created token addresses.
     address[] private _allTokens;
 
     /// @notice Per-creator nonce used for deterministic salt computation.
     mapping(address => uint256) public creatorNonce;
 
-    /// @notice Number of tokens created per type key (0-7).
+    /// @notice Number of tokens created per type key (0..7).
     mapping(uint8 => uint256) public tokensCreatedByType;
 
-    /// @notice When true, `processTax` will swap accumulated tax tokens to USDT.
+    /// @notice When true, `processTax` swaps accumulated tax tokens to USDT.
     bool public convertTaxToStable;
 
-    /// @notice Slippage tolerance for tax swaps in basis points (default 500 = 5%).
+    /// @notice Slippage tolerance (bps) for tax swaps. Default 500 = 5%.
     uint256 public taxSlippageBps = 500;
 
     // =============================================================
-    // REFERRAL STATE
+    // REFERRALS (USDT only)
     // =============================================================
 
     /// @notice Maps a user to their referrer.
     mapping(address => address) public referrals;
 
-    /// @notice Number of referral levels to walk up the chain (default 3, max 10).
+    /// @notice Number of referral levels to walk up the chain (default 3).
     uint8 public referralLevels = 3;
 
-    /// @notice When true, referral rewards are sent immediately on token creation.
+    /// @notice When true, rewards are sent immediately on token creation.
     bool public autoDistributeReward = true;
 
     /// @notice Reward percentage per referral level in basis points.
@@ -184,41 +190,51 @@ contract TokenFactory is Ownable, ReentrancyGuard {
     /// @notice Number of direct referrals per referrer.
     mapping(address => uint256) public totalReferred;
 
-    /// @notice Total rewards earned per referrer per payment token.
-    mapping(address => mapping(address => uint256)) public totalEarned;
+    /// @notice Total USDT rewards earned per referrer (lifetime).
+    mapping(address => uint256) public totalEarned;
 
-    /// @notice Claimable reward balance per user per payment token.
-    mapping(address => mapping(address => uint256)) public pendingRewards;
+    /// @notice Claimable USDT reward balance per user.
+    mapping(address => uint256) public pendingRewards;
 
-    /// @notice Sum of all pending rewards across all users, per payment token.
-    mapping(address => uint256) public totalPendingRewards;
+    /// @notice Sum of all pending USDT rewards across all users.
+    uint256 public totalPendingRewards;
 
     // =============================================================
     // DAILY STATS
     // =============================================================
 
-    /// @notice Daily statistics keyed by day number (block.timestamp / 1 days).
     mapping(uint256 => DayStats) public dailyStats;
-
-    /// @notice Cumulative fees earned in USDT-equivalent across all time.
     uint256 public totalFeeEarnedUsdt;
 
     // =============================================================
-    // AUTHORIZED ROUTER
+    // PLATFORM
     // =============================================================
 
-    /// @notice The PlatformRouter address authorized to call routerCreateToken.
     address public authorizedRouter;
-
-    /// @notice Wallet that receives platform fees.
     address public platformWallet;
+
+    // =============================================================
+    // PARTNER DEFAULT BASES
+    // =============================================================
+
+    /// @dev Base tokens (e.g. USDT, WBNB) that the factory force-merges into
+    ///      `bases[]` for every partner-variant token. Non-partner tokens are
+    ///      free to pass any bases (or none) — only partner tokens get the
+    ///      platform-mandated bases injected, because partner tokens earn the
+    ///      platform an ongoing 1% fee and we want guaranteed pools on the
+    ///      bases that drive that revenue.
+    address[] private _defaultPartnerBases;
+    mapping(address => bool) public isDefaultPartnerBase;
+
+    /// @dev Hard cap on the default partner base list. Prevents an
+    ///      unbounded list from making partner-token creation prohibitively
+    ///      expensive via the O(n²) dedupe loop in `_sanitizeBases`.
+    uint256 public constant MAX_DEFAULT_PARTNER_BASES = 8;
 
     // =============================================================
     // CONSTRUCTOR
     // =============================================================
 
-    /// @param usdt_ The stablecoin address used for fee denomination
-    /// @param dexRouter_ The Uniswap V2-compatible router address
     constructor(
         address usdt_,
         address dexRouter_,
@@ -234,21 +250,20 @@ contract TokenFactory is Ownable, ReentrancyGuard {
 
         uint8 _usdtDecimals = ERC20(usdt_).decimals();
 
-        // Default fees in USDT
-        creationFee[0] = 50 * 10 ** _usdtDecimals;   // basic: $50
-        creationFee[1] = 150 * 10 ** _usdtDecimals;  // mintable: $150
-        creationFee[2] = 150 * 10 ** _usdtDecimals;  // taxable: $150
-        creationFee[3] = 250 * 10 ** _usdtDecimals;  // taxable+mintable: $250
-        creationFee[4] = 350 * 10 ** _usdtDecimals;  // partner: $350
-        creationFee[5] = 450 * 10 ** _usdtDecimals;  // partner+mintable: $450
-        creationFee[6] = 450 * 10 ** _usdtDecimals;  // partner+taxable: $450
-        creationFee[7] = 550 * 10 ** _usdtDecimals;  // partner+taxable+mintable: $550
+        // Additive pricing: basic = $50, each feature adds its own slice.
+        //   mint    = +$50
+        //   tax     = +$50
+        //   partner = +$100
+        creationFee[0] = 50 * 10 ** _usdtDecimals;
+        creationFee[1] = 100 * 10 ** _usdtDecimals;
+        creationFee[2] = 100 * 10 ** _usdtDecimals;
+        creationFee[3] = 150 * 10 ** _usdtDecimals;
+        creationFee[4] = 150 * 10 ** _usdtDecimals;
+        creationFee[5] = 200 * 10 ** _usdtDecimals;
+        creationFee[6] = 200 * 10 ** _usdtDecimals;
+        creationFee[7] = 250 * 10 ** _usdtDecimals;
 
-        // Auto-add USDT and native as supported payment
-        _addPaymentToken(usdt_);
-        _addPaymentToken(address(0));
-
-        // Default referral rewards: 5%, 3%, 2%
+        // Default referral split: 5% / 3% / 2%.
         referralPercents.push(500);
         referralPercents.push(300);
         referralPercents.push(200);
@@ -258,122 +273,77 @@ contract TokenFactory is Ownable, ReentrancyGuard {
     // INTERNAL HELPERS
     // =============================================================
 
-    /// @dev Computes the token type key from feature flags using a 3-bit bitfield.
-    ///      partner=4, taxable=2, mintable=1
+    /// @dev Computes the token type key from feature flags. partner=4, taxable=2, mintable=1.
     function _tokenTypeKey(bool isTaxable, bool isMintable, bool isPartner)
         internal pure returns (uint8)
     {
         return uint8((isPartner ? 4 : 0) | (isTaxable ? 2 : 0) | (isMintable ? 1 : 0));
     }
 
-    /// @dev Converts a USDT-denominated fee amount to an equivalent amount of `paymentToken`.
-    ///      Tries direct path first, then falls back to WETH path.
-    function _convertFee(uint256 usdtAmount, address paymentToken)
-        internal view returns (uint256)
+    /// @dev Pulls `amount` USDT from msg.sender. Caller is the immediate
+    ///      msg.sender (creator for direct calls, router for routerCreateToken).
+    function _collectFee(uint256 amount) internal {
+        if (amount == 0) return;
+        IERC20(usdt).safeTransferFrom(msg.sender, address(this), amount);
+    }
+
+    /// @dev Builds the final bases[] passed to the token's initialize().
+    ///      Always strips zero/self entries and dedupes. For partner-variant
+    ///      tokens the platform's default partner bases are force-merged in,
+    ///      so a creator who passes [] (or omits USDT/WBNB) still ends up
+    ///      with pools on the bases that earn the platform its 1% fee.
+    ///      Non-partner tokens are passed through untouched — creators are
+    ///      free to pick whatever DEX bases they like.
+    function _sanitizeBases(address[] calldata bases, address self, bool isPartner)
+        internal view returns (address[] memory clean)
     {
-        if (usdtAmount == 0) return 0;
-        if (paymentToken == usdt) return usdtAmount;
-
-        address tokenIn = paymentToken == address(0)
-            ? dexRouter.WETH()
-            : paymentToken;
-
-        // Try direct path: paymentToken → USDT
-        address[] memory path = new address[](2);
-        path[0] = tokenIn;
-        path[1] = usdt;
-
-        try dexRouter.getAmountsIn(usdtAmount, path) returns (uint256[] memory amounts) {
-            return amounts[0];
-        } catch {}
-
-        // Fallback: paymentToken → WETH → USDT
-        address weth = dexRouter.WETH();
-        if (tokenIn != weth) {
-            address[] memory wethPath = new address[](3);
-            wethPath[0] = tokenIn;
-            wethPath[1] = weth;
-            wethPath[2] = usdt;
-
-            try dexRouter.getAmountsIn(usdtAmount, wethPath) returns (uint256[] memory amounts) {
-                return amounts[0];
-            } catch {}
-        }
-
-        return 0;
-    }
-
-    /// @dev Collects the creation fee from `payer` in the specified `paymentToken`.
-    ///      For native payments, refunds excess unless `skipRefund` is true.
-    function _collectFee(
-        address,           // payer — unused after msg.sender refactor, kept for call-site readability
-        address paymentToken,
-        uint256 baseFeeUsdt,
-        bool skipRefund
-    ) internal returns (uint256 amount) {
-        if (baseFeeUsdt == 0) return 0;
-
-        if (!isPaymentSupported[paymentToken]) revert UnsupportedPaymentToken();
-
-        amount = _convertFee(baseFeeUsdt, paymentToken);
-        if (amount == 0) revert CannotDetermineFee();
-
-        if (paymentToken == address(0)) {
-            if (msg.value < amount) revert InsufficientPayment();
-            if (!skipRefund) {
-                uint256 excess = msg.value - amount;
-                if (excess > 0) {
-                    (bool ok, ) = msg.sender.call{value: excess}("");
-                    if (!ok) revert RefundFailed();
-                }
-            }
-        } else {
-            // Always pull from msg.sender (not payer) so router flow works:
-            // normal createToken: msg.sender == payer (creator)
-            // routerCreateToken: msg.sender == router (which pre-pulled from user)
-            IERC20(paymentToken).safeTransferFrom(msg.sender, address(this), amount);
-        }
-    }
-
-    /// @dev Builds the `bases[]` array passed to `IToken.initialize` so the
-    ///      token registers every supported base → pair mapping at init time.
-    ///      address(0) in _supportedTokens is mapped to WETH.
-    function _buildBases(address tokenToExclude) internal view returns (address[] memory bases) {
-        address weth = dexRouter.WETH();
-        uint256 len = _supportedTokens.length;
-        address[] memory tmp = new address[](len);
+        uint256 inLen = bases.length;
+        uint256 defaultsLen = isPartner ? _defaultPartnerBases.length : 0;
+        address[] memory tmp = new address[](inLen + defaultsLen);
         uint256 count;
-        for (uint256 i; i < len;) {
-            address base = _supportedTokens[i] == address(0) ? weth : _supportedTokens[i];
-            if (base != tokenToExclude && base != address(0)) {
-                tmp[count++] = base;
+
+        // Caller-supplied bases first
+        for (uint256 i; i < inLen;) {
+            address b = bases[i];
+            if (b != address(0) && b != self) {
+                bool dup;
+                for (uint256 j; j < count;) {
+                    if (tmp[j] == b) { dup = true; break; }
+                    unchecked { ++j; }
+                }
+                if (!dup) tmp[count++] = b;
             }
             unchecked { ++i; }
         }
-        bases = new address[](count);
-        for (uint256 i; i < count;) { bases[i] = tmp[i]; unchecked { ++i; } }
-    }
 
-    /// @dev Adds a token to the supported payment list if not already present.
-    function _addPaymentToken(address token) internal {
-        if (!isPaymentSupported[token]) {
-            isPaymentSupported[token] = true;
-            _supportedTokens.push(token);
-            emit PaymentTokenAdded(token);
+        // Force-merge platform defaults for partner variants
+        for (uint256 i; i < defaultsLen;) {
+            address b = _defaultPartnerBases[i];
+            if (b != address(0) && b != self) {
+                bool dup;
+                for (uint256 j; j < count;) {
+                    if (tmp[j] == b) { dup = true; break; }
+                    unchecked { ++j; }
+                }
+                if (!dup) tmp[count++] = b;
+            }
+            unchecked { ++i; }
         }
+
+        clean = new address[](count);
+        for (uint256 i; i < count;) { clean[i] = tmp[i]; unchecked { ++i; } }
     }
 
-    /// @dev Processes the referral chain: records the referral relationship, then walks up
-    ///      the chain distributing rewards at each level.
+    /// @dev Records the referral relationship and (if enabled) walks the
+    ///      chain distributing USDT rewards at each level. All amounts in USDT.
     function _processReferral(
         address creator,
         address referral,
-        address paymentToken,
-        uint256 feeAmount
+        uint256 feeUsdt
     ) internal {
         if (referral == address(0) || referral == creator) return;
 
-        // Walk the referral chain to detect cycles (2x depth for safety)
+        // Walk the existing chain to detect cycles.
         address current = referral;
         uint256 maxWalk = uint256(referralLevels) * 2;
         if (maxWalk < 10) maxWalk = 10;
@@ -383,16 +353,16 @@ contract TokenFactory is Ownable, ReentrancyGuard {
             current = referrals[current];
         }
 
-        // Record referral if creator doesn't already have one
+        // Record the relationship if creator doesn't already have one.
         if (referrals[creator] == address(0)) {
             referrals[creator] = referral;
             totalReferred[referral]++;
             emit ReferralRecorded(creator, referral);
         }
 
-        if (feeAmount == 0) return;
+        if (feeUsdt == 0) return;
 
-        // Walk up the referral chain from creator's referrer
+        // Walk upward distributing rewards.
         address ref = referrals[creator];
         uint8 levels = referralLevels;
         uint256 percentsLen = referralPercents.length;
@@ -401,26 +371,26 @@ contract TokenFactory is Ownable, ReentrancyGuard {
             if (ref == address(0)) break;
             if (i >= percentsLen) break;
 
-            uint256 reward = (feeAmount * referralPercents[i]) / 10000;
+            uint256 reward = (feeUsdt * referralPercents[i]) / 10000;
             if (reward > 0) {
                 if (autoDistributeReward) {
-                    if (paymentToken == address(0)) {
-                        // Cap gas to 2300 (transfer-like) to prevent reentrancy and gas griefing
-                        (bool ok, ) = ref.call{value: reward, gas: 2300}("");
+                    // Try direct USDT transfer; on failure, accrue.
+                    try IERC20(usdt).transfer(ref, reward) returns (bool ok) {
                         if (!ok) {
-                            pendingRewards[ref][paymentToken] += reward;
-                            totalPendingRewards[paymentToken] += reward;
+                            pendingRewards[ref] += reward;
+                            totalPendingRewards += reward;
                         }
-                    } else {
-                        IERC20(paymentToken).safeTransfer(ref, reward);
+                    } catch {
+                        pendingRewards[ref] += reward;
+                        totalPendingRewards += reward;
                     }
                 } else {
-                    pendingRewards[ref][paymentToken] += reward;
-                    totalPendingRewards[paymentToken] += reward;
+                    pendingRewards[ref] += reward;
+                    totalPendingRewards += reward;
                 }
 
-                totalEarned[ref][paymentToken] += reward;
-                emit ReferralRewardDistributed(ref, paymentToken, reward, i);
+                totalEarned[ref] += reward;
+                emit ReferralRewardDistributed(ref, reward, i);
             }
 
             ref = referrals[ref];
@@ -428,10 +398,7 @@ contract TokenFactory is Ownable, ReentrancyGuard {
         }
     }
 
-    /// @dev Initializes a cloned token, sets up pools (if applicable), records metadata,
-    ///      and emits the TokenCreated event.
-    /// @param mintTo The address that receives the minted supply (usually creator, but
-    ///        address(this) for routerCreateToken so factory holds tokens temporarily).
+    /// @dev Initializes a cloned token, records metadata, and emits TokenCreated.
     function _initAndRecord(
         CreateTokenParams calldata p,
         address creator,
@@ -441,7 +408,7 @@ contract TokenFactory is Ownable, ReentrancyGuard {
     ) internal {
         uint256 supply = p.totalSupply * 10 ** p.decimals;
 
-        address[] memory bases = _buildBases(tokenAddress);
+        address[] memory bases = _sanitizeBases(p.bases, tokenAddress, p.isPartner);
         IToken(tokenAddress).initialize(
             p.name, p.symbol, supply, p.decimals, mintTo, address(this),
             dexRouter.factory(), bases
@@ -471,8 +438,8 @@ contract TokenFactory is Ownable, ReentrancyGuard {
         return keccak256(abi.encodePacked(creator, nonce));
     }
 
-    /// @dev Records daily stats and cumulative USDT fee total.
-    function _recordStats(uint8 typeKey, address paymentToken, uint256 feeAmount) internal {
+    /// @dev Records daily stats. `feeUsdt` is the actual USDT amount collected.
+    function _recordStats(uint8 typeKey, uint256 feeUsdt) internal {
         uint256 day = block.timestamp / 1 days;
         DayStats storage ds = dailyStats[day];
 
@@ -486,37 +453,6 @@ contract TokenFactory is Ownable, ReentrancyGuard {
         else if (typeKey == 7) ds.partnerTaxMint++;
 
         ds.totalTokens++;
-
-        // Convert fee to USDT equivalent for stats
-        uint256 feeUsdt;
-        if (paymentToken == usdt) {
-            feeUsdt = feeAmount;
-        } else if (feeAmount > 0) {
-            address tokenIn = paymentToken == address(0)
-                ? dexRouter.WETH()
-                : paymentToken;
-
-            address[] memory path = new address[](2);
-            path[0] = tokenIn;
-            path[1] = usdt;
-
-            try dexRouter.getAmountsOut(feeAmount, path) returns (uint256[] memory amounts) {
-                feeUsdt = amounts[amounts.length - 1];
-            } catch {
-                // Fallback via WETH
-                address weth = dexRouter.WETH();
-                if (tokenIn != weth) {
-                    address[] memory wethPath = new address[](3);
-                    wethPath[0] = tokenIn;
-                    wethPath[1] = weth;
-                    wethPath[2] = usdt;
-                    try dexRouter.getAmountsOut(feeAmount, wethPath) returns (uint256[] memory amounts) {
-                        feeUsdt = amounts[amounts.length - 1];
-                    } catch {}
-                }
-            }
-        }
-
         ds.totalFeeUsdt += feeUsdt;
         totalFeeEarnedUsdt += feeUsdt;
     }
@@ -525,12 +461,10 @@ contract TokenFactory is Ownable, ReentrancyGuard {
     // TOKEN CREATION
     // =============================================================
 
-    /// @notice Creates a new token by cloning the appropriate implementation.
-    /// @param p Token creation parameters
-    /// @param referral The address that referred this creator (address(0) if none)
-    /// @return tokenAddress The address of the newly created token clone
+    /// @notice Creates a new token. Caller must have approved this contract
+    ///         for `creationFee[typeKey]` USDT before calling.
     function createToken(CreateTokenParams calldata p, address referral)
-        external payable nonReentrant returns (address tokenAddress)
+        external nonReentrant returns (address tokenAddress)
     {
         if (p.totalSupply == 0 || p.totalSupply > 1e30 || p.decimals > 18
             || bytes(p.name).length == 0 || bytes(p.symbol).length == 0)
@@ -540,24 +474,20 @@ contract TokenFactory is Ownable, ReentrancyGuard {
         address impl = implementations[typeKey];
         if (impl == address(0)) revert ImplementationNotSet();
 
-        uint256 feeAmount = _collectFee(msg.sender, p.paymentToken, creationFee[typeKey], false);
-        _processReferral(msg.sender, referral, p.paymentToken, feeAmount);
-        _recordStats(typeKey, p.paymentToken, feeAmount);
+        uint256 fee = creationFee[typeKey];
+        _collectFee(fee);
+        _processReferral(msg.sender, referral, fee);
+        _recordStats(typeKey, fee);
 
         bytes32 salt = _computeSalt(msg.sender);
         tokenAddress = Clones.cloneDeterministic(impl, salt);
         _initAndRecord(p, msg.sender, msg.sender, tokenAddress, typeKey);
-
-        return tokenAddress;
     }
 
-    /// @notice Creates a token on behalf of another address. Only callable by the factory owner.
-    /// @param creator The address that will own the token and pay the creation fee
-    /// @param p Token creation parameters
-    /// @param referral The address that referred the creator (address(0) if none)
-    /// @return tokenAddress The address of the newly created token clone
+    /// @notice Creates a token on behalf of `creator`. Owner only.
+    ///         Owner pays the USDT fee from their own balance.
     function ownerCreateToken(address creator, CreateTokenParams calldata p, address referral)
-        external payable onlyOwner nonReentrant returns (address tokenAddress)
+        external onlyOwner nonReentrant returns (address tokenAddress)
     {
         if (creator == address(0)) revert InvalidAddress();
         if (p.totalSupply == 0 || p.totalSupply > 1e30 || p.decimals > 18
@@ -568,26 +498,22 @@ contract TokenFactory is Ownable, ReentrancyGuard {
         address impl = implementations[typeKey];
         if (impl == address(0)) revert ImplementationNotSet();
 
-        uint256 feeAmount = _collectFee(creator, p.paymentToken, creationFee[typeKey], false);
-        _processReferral(creator, referral, p.paymentToken, feeAmount);
-        _recordStats(typeKey, p.paymentToken, feeAmount);
+        uint256 fee = creationFee[typeKey];
+        _collectFee(fee);
+        _processReferral(creator, referral, fee);
+        _recordStats(typeKey, fee);
 
         bytes32 salt = _computeSalt(creator);
         tokenAddress = Clones.cloneDeterministic(impl, salt);
         _initAndRecord(p, creator, creator, tokenAddress, typeKey);
-
-        return tokenAddress;
     }
 
-    /// @notice Creates a token on behalf of a user, called by the authorized PlatformRouter.
-    /// @dev Tokens are minted to address(this) so the router can distribute them (e.g., to a launch).
-    ///      skipRefund=true for fee collection since the router manages the combined native payment.
-    /// @param creator The real user who is creating the token
-    /// @param p Token creation parameters
-    /// @param referral The address that referred the creator (address(0) if none)
-    /// @return tokenAddress The address of the newly created token clone
+    /// @notice Creates a token on behalf of a user via the authorized PlatformRouter.
+    /// @dev    Tokens are minted to address(this) so the router can distribute them
+    ///         (e.g., to a launch instance). The router has already swapped the user's
+    ///         input token to USDT and approved this contract for the exact fee.
     function routerCreateToken(address creator, CreateTokenParams calldata p, address referral)
-        external payable nonReentrant returns (address tokenAddress)
+        external nonReentrant returns (address tokenAddress)
     {
         if (authorizedRouter == address(0) || msg.sender != authorizedRouter) revert NotAuthorizedRouter();
         if (creator == address(0)) revert InvalidAddress();
@@ -599,37 +525,32 @@ contract TokenFactory is Ownable, ReentrancyGuard {
         address impl = implementations[typeKey];
         if (impl == address(0)) revert ImplementationNotSet();
 
-        // skipRefund=false: excess native is refunded to msg.sender (the router),
-        // which then forwards the remaining balance to the launchpad factory.
-        uint256 feeAmount = _collectFee(creator, p.paymentToken, creationFee[typeKey], false);
-        _processReferral(creator, referral, p.paymentToken, feeAmount);
-        _recordStats(typeKey, p.paymentToken, feeAmount);
+        uint256 fee = creationFee[typeKey];
+        _collectFee(fee);
+        _processReferral(creator, referral, fee);
+        _recordStats(typeKey, fee);
 
         bytes32 salt = _computeSalt(creator);
         tokenAddress = Clones.cloneDeterministic(impl, salt);
 
-        // Mint tokens to address(this) so factory holds supply temporarily.
+        // Mint to factory so the router can pull the supply afterward.
         _initAndRecord(p, creator, address(this), tokenAddress, typeKey);
 
-        // Transfer all minted tokens to the router so it can distribute them
-        // (to launch instance, to creator, etc.)
         uint256 tokenBalance = IERC20(tokenAddress).balanceOf(address(this));
         IERC20(tokenAddress).safeTransfer(msg.sender, tokenBalance);
 
-        // Transfer token ownership to the router so it can configure protections,
-        // enable trading, and then transfer ownership to the real creator.
+        // Hand ownership to the router so it can configure protections,
+        // enable trading, and ultimately transfer ownership to the creator.
         IOwnableToken(tokenAddress).transferOwnership(msg.sender);
-
-        return tokenAddress;
     }
 
     // =============================================================
     // TAX PROCESSING
     // =============================================================
 
-    /// @notice Converts accumulated tax tokens held by the factory to USDT via the best DEX route.
-    /// @dev Callable by the factory owner or by a registered token itself (during _update callbacks).
-    /// @param token The ERC20 token address to swap for USDT
+    /// @notice Converts accumulated tax tokens held by the factory to USDT
+    ///         via the best DEX route. Callable by the factory owner or by a
+    ///         registered token itself (during _update callbacks).
     function processTax(address token) external {
         if (msg.sender != owner()
             && !(msg.sender == token && tokenInfo[token].creator != address(0)))
@@ -643,12 +564,10 @@ contract TokenFactory is Ownable, ReentrancyGuard {
 
         address weth = dexRouter.WETH();
 
-        // Route 1: token -> USDT (direct)
         address[] memory directPath = new address[](2);
         directPath[0] = token;
         directPath[1] = usdt;
 
-        // Route 2: token -> WETH -> USDT
         address[] memory wethPath = new address[](3);
         wethPath[0] = token;
         wethPath[1] = weth;
@@ -692,40 +611,31 @@ contract TokenFactory is Ownable, ReentrancyGuard {
     // REFERRAL CLAIMS
     // =============================================================
 
-    /// @notice Claims accumulated referral rewards for a specific payment token.
-    /// @param paymentToken The payment token to claim (address(0) for native)
-    function claimReward(address paymentToken) external nonReentrant {
-        uint256 amount = pendingRewards[msg.sender][paymentToken];
+    /// @notice Claims accumulated USDT referral rewards.
+    function claimReward() external nonReentrant {
+        uint256 amount = pendingRewards[msg.sender];
         if (amount == 0) revert NoRewards();
 
-        pendingRewards[msg.sender][paymentToken] = 0;
-        totalPendingRewards[paymentToken] -= amount;
+        pendingRewards[msg.sender] = 0;
+        totalPendingRewards -= amount;
 
-        if (paymentToken == address(0)) {
-            (bool ok, ) = msg.sender.call{value: amount}("");
-            if (!ok) revert TransferFailed();
-        } else {
-            IERC20(paymentToken).safeTransfer(msg.sender, amount);
-        }
+        IERC20(usdt).safeTransfer(msg.sender, amount);
 
-        emit ReferralRewardClaimed(msg.sender, paymentToken, amount);
+        emit ReferralRewardClaimed(msg.sender, amount);
     }
 
     // =============================================================
     // VIEW FUNCTIONS
     // =============================================================
 
-    /// @notice Returns all token addresses created by a specific creator.
     function getCreatedTokens(address creator) external view returns (address[] memory) {
         return createdTokens[creator];
     }
 
-    /// @notice Returns the token address at a given global index (0-based).
     function getTokenByIndex(uint256 index) external view returns (address) {
         return _allTokens[index];
     }
 
-    /// @notice Returns a paginated slice of all created token addresses.
     function getTokens(uint256 offset, uint256 limit) external view returns (address[] memory tokens, uint256 total) {
         total = _allTokens.length;
         if (offset >= total) return (new address[](0), total);
@@ -737,14 +647,38 @@ contract TokenFactory is Ownable, ReentrancyGuard {
         }
     }
 
-    /// @notice Returns all key factory state in a single call for dashboards.
+    function getTokensInfo(uint256 offset, uint256 limit) external view returns (TokenView[] memory views, uint256 total) {
+        total = _allTokens.length;
+        if (offset >= total) return (new TokenView[](0), total);
+        uint256 end = offset + limit;
+        if (end > total) end = total;
+        views = new TokenView[](end - offset);
+        for (uint256 i = offset; i < end; i++) {
+            views[i - offset] = _buildTokenView(_allTokens[i]);
+        }
+    }
+
+    function _buildTokenView(address token) internal view returns (TokenView memory v) {
+        v.tokenAddress = token;
+        TokenInfo memory info = tokenInfo[token];
+        v.creator = info.creator;
+        v.isMintable = info.isMintable;
+        v.isTaxable = info.isTaxable;
+        v.isPartnership = info.isPartnership;
+
+        try ERC20(token).name() returns (string memory n) { v.name = n; } catch {}
+        try ERC20(token).symbol() returns (string memory s) { v.symbol = s; } catch {}
+        try ERC20(token).decimals() returns (uint8 d) { v.decimals = d; } catch {}
+        try ERC20(token).totalSupply() returns (uint256 ts) { v.totalSupply = ts; } catch {}
+    }
+
+    /// @notice Returns key factory state in a single call for dashboards.
     function getState() external view returns (
         address factoryOwner,
         uint256 totalTokens,
         uint256 totalFeeUsdt,
         uint256[8] memory feesPerType,
         uint256[8] memory countPerType,
-        address[] memory paymentTokens,
         bool taxToStable,
         uint256 taxSlippage,
         uint8 refLevels,
@@ -757,42 +691,23 @@ contract TokenFactory is Ownable, ReentrancyGuard {
             feesPerType[i] = creationFee[i];
             countPerType[i] = tokensCreatedByType[i];
         }
-        paymentTokens = _supportedTokens;
         taxToStable = convertTaxToStable;
         taxSlippage = taxSlippageBps;
         refLevels = referralLevels;
         autoDistribute = autoDistributeReward;
     }
 
-    /// @notice Returns all supported payment token addresses.
-    function getSupportedPaymentTokens() external view returns (address[] memory) {
-        return _supportedTokens;
-    }
-
-    /// @notice Public wrapper around _convertFee for external queries (e.g., PlatformLens).
-    function convertFee(uint256 usdtAmount, address paymentToken) external view returns (uint256) {
-        return _convertFee(usdtAmount, paymentToken);
-    }
-
-    /// @notice Aggregated referral stats for a referrer across multiple payment tokens.
-    function getReferralStats(
-        address referrer,
-        address[] calldata paymentTokens
-    ) external view returns (
+    /// @notice Aggregated USDT referral stats for a referrer.
+    function getReferralStats(address referrer) external view returns (
         uint256 referred,
-        uint256[] memory earned,
-        uint256[] memory pending
+        uint256 earned,
+        uint256 pending
     ) {
         referred = totalReferred[referrer];
-        earned = new uint256[](paymentTokens.length);
-        pending = new uint256[](paymentTokens.length);
-        for (uint256 i = 0; i < paymentTokens.length; i++) {
-            earned[i] = totalEarned[referrer][paymentTokens[i]];
-            pending[i] = pendingRewards[referrer][paymentTokens[i]];
-        }
+        earned = totalEarned[referrer];
+        pending = pendingRewards[referrer];
     }
 
-    /// @notice Walks the referral chain upward from a user, up to referralLevels deep.
     function getReferralChain(address user) external view returns (address[] memory chain) {
         address[] memory temp = new address[](referralLevels);
         uint256 length = 0;
@@ -809,7 +724,6 @@ contract TokenFactory is Ownable, ReentrancyGuard {
         }
     }
 
-    /// @notice Returns all referral level percentages as an array.
     function getReferralPercents() external view returns (uint256[] memory percents) {
         percents = new uint256[](referralLevels);
         for (uint256 i = 0; i < referralLevels; i++) {
@@ -817,50 +731,23 @@ contract TokenFactory is Ownable, ReentrancyGuard {
         }
     }
 
-    /// @notice Returns creation fees (and optionally launchpad fees) for all supported payment tokens in one call.
-    /// @param isTaxable Whether the token is taxable
-    /// @param isMintable Whether the token is mintable
-    /// @param isPartner Whether the token is a partner token
-    /// @param launchpadFactory Address of LaunchpadFactory (address(0) to skip launchpad fees)
-    /// @return paymentTokens Array of supported payment token addresses
-    /// @return creationFees Array of creation fees denominated in each payment token
-    /// @return launchFees Array of launchpad fees denominated in each payment token (all zeros if launchpadFactory is address(0))
+    /// @notice Returns USDT-denominated creation + launchpad fees for the
+    ///         given token type. Single-token API since everything is USDT.
     function getCreationFees(
         bool isTaxable,
         bool isMintable,
         bool isPartner,
         address launchpadFactory
-    ) external view returns (
-        address[] memory paymentTokens,
-        uint256[] memory creationFees,
-        uint256[] memory launchFees
-    ) {
+    ) external view returns (uint256 creationFeeUsdt, uint256 launchFeeUsdt) {
         uint8 typeKey = _tokenTypeKey(isTaxable, isMintable, isPartner);
-        uint256 usdtFee = creationFee[typeKey];
-        uint256 len = _supportedTokens.length;
-
-        paymentTokens = new address[](len);
-        creationFees = new uint256[](len);
-        launchFees = new uint256[](len);
-
-        // Fetch launchpad fee in USDT if address provided
-        uint256 lpFeeUsdt = 0;
+        creationFeeUsdt = creationFee[typeKey];
         if (launchpadFactory != address(0)) {
             try ILaunchpadFee(launchpadFactory).launchFee() returns (uint256 f) {
-                lpFeeUsdt = f;
+                launchFeeUsdt = f;
             } catch {}
-        }
-
-        for (uint256 i = 0; i < len; i++) {
-            paymentTokens[i] = _supportedTokens[i];
-            creationFees[i] = _convertFee(usdtFee, _supportedTokens[i]);
-            if (lpFeeUsdt > 0) {
-                launchFees[i] = _convertFee(lpFeeUsdt, _supportedTokens[i]);
-            }
         }
     }
 
-    /// @notice Predicts the address of the next token that would be created by `creator`.
     function predictTokenAddress(
         address creator,
         bool isTaxable,
@@ -876,10 +763,9 @@ contract TokenFactory is Ownable, ReentrancyGuard {
     }
 
     // =============================================================
-    // ADMIN FUNCTIONS
+    // ADMIN
     // =============================================================
 
-    /// @notice Sets the implementation contract address for a token type.
     function setImplementation(uint8 tokenType, address impl) external onlyOwner {
         if (tokenType > 7) revert InvalidTokenType();
         if (impl == address(0)) revert InvalidAddress();
@@ -887,66 +773,50 @@ contract TokenFactory is Ownable, ReentrancyGuard {
         emit ImplementationUpdated(tokenType, impl);
     }
 
-    /// @notice Updates the USDT-denominated creation fee for a token type.
     function setCreationFee(uint8 tokenType, uint256 fee) external onlyOwner {
         if (tokenType > 7) revert InvalidTokenType();
         creationFee[tokenType] = fee;
     }
 
-    /// @notice Toggles whether `processTax` converts accumulated tokens to USDT.
+    /// @notice Set every implementation address and its creation fee in one
+    ///         transaction. Pass address(0) for an `impls[i]` slot to skip.
+    function setImplementationsAndFees(
+        address[8] calldata impls,
+        uint256[8] calldata fees
+    ) external onlyOwner {
+        for (uint8 i = 0; i < 8; i++) {
+            if (impls[i] == address(0)) continue;
+            implementations[i] = impls[i];
+            creationFee[i] = fees[i];
+            emit ImplementationUpdated(i, impls[i]);
+        }
+    }
+
     function setConvertTaxToStable(bool _enabled) external onlyOwner {
         convertTaxToStable = _enabled;
         emit ConvertTaxToStableUpdated(_enabled);
     }
 
-    /// @notice Updates the slippage tolerance for tax swaps.
     function setTaxSlippage(uint256 _bps) external onlyOwner {
         if (_bps > 5000) revert TotalExceedsMax();
         taxSlippageBps = _bps;
     }
 
-    /// @notice Updates the DEX router.
     function setDexRouter(address _dexRouter) external onlyOwner {
         if (_dexRouter == address(0)) revert InvalidAddress();
         dexRouter = IUniswapV2Router02(_dexRouter);
     }
 
-    /// @notice Updates the USDT address.
     function setUsdt(address _usdt) external onlyOwner {
         if (_usdt == address(0)) revert InvalidAddress();
         usdt = _usdt;
     }
 
-    /// @notice Adds a new accepted payment token.
-    function addPaymentToken(address token) external onlyOwner {
-        if (isPaymentSupported[token]) revert AlreadySupported();
-        _addPaymentToken(token);
-    }
-
-    /// @notice Removes a payment token from the accepted list.
-    function removePaymentToken(address token) external onlyOwner {
-        if (!isPaymentSupported[token]) revert NotSupported();
-        isPaymentSupported[token] = false;
-
-        uint256 len = _supportedTokens.length;
-        for (uint256 i; i < len;) {
-            if (_supportedTokens[i] == token) {
-                _supportedTokens[i] = _supportedTokens[len - 1];
-                _supportedTokens.pop();
-                break;
-            }
-            unchecked { ++i; }
-        }
-        emit PaymentTokenRemoved(token);
-    }
-
-    /// @notice Sets the number of referral levels.
     function setReferralLevels(uint8 _levels) external onlyOwner {
         if (_levels > 10) revert MaxLevelsExceeded();
         referralLevels = _levels;
     }
 
-    /// @notice Sets the referral reward percentages per level in basis points.
     function setReferralPercents(uint256[] calldata _percents) external onlyOwner {
         uint256 total;
         for (uint256 i; i < _percents.length;) {
@@ -962,56 +832,24 @@ contract TokenFactory is Ownable, ReentrancyGuard {
         }
     }
 
-    /// @notice Toggles whether referral rewards are sent immediately or accumulated.
     function setAutoDistributeReward(bool _enabled) external onlyOwner {
         autoDistributeReward = _enabled;
     }
 
-    /// @notice Withdraws accumulated fees minus reserved referral rewards.
-    /// @param token The token address to withdraw, or address(0) for native
+    /// @notice Withdraws accumulated balance of an arbitrary token. For USDT,
+    ///         the reserved referral rewards are excluded from withdrawable amount.
     function withdrawFees(address token) external onlyOwner {
-        _withdrawTo(token, platformWallet, 0);
+        if (token == address(0)) revert InvalidAddress();
+        uint256 bal = IERC20(token).balanceOf(address(this));
+        uint256 reserved = token == usdt ? totalPendingRewards : 0;
+        uint256 withdrawable = bal > reserved ? bal - reserved : 0;
+        if (withdrawable == 0) revert NoBalance();
+        IERC20(token).safeTransfer(platformWallet, withdrawable);
     }
 
-    function withdraw() external onlyOwner {
-        _withdrawTo(address(0), platformWallet, 0);
-    }
-
-    function withdraw(address to) external onlyOwner {
-        if (to == address(0)) revert InvalidAddress();
-        _withdrawTo(address(0), to, 0);
-    }
-
-    function withdraw(address to, uint256 amount) external onlyOwner {
-        if (to == address(0)) revert InvalidAddress();
-        _withdrawTo(address(0), to, amount);
-    }
-
-    function _withdrawTo(address token, address to, uint256 customAmount) internal {
-        if (token == address(0)) {
-            uint256 bal = address(this).balance;
-            uint256 reserved = totalPendingRewards[address(0)];
-            uint256 withdrawable = bal > reserved ? bal - reserved : 0;
-            if (withdrawable == 0) revert NoBalance();
-            uint256 amt = customAmount > 0 && customAmount <= withdrawable ? customAmount : withdrawable;
-            (bool ok, ) = to.call{value: amt}("");
-            if (!ok) revert TransferFailed();
-        } else {
-            uint256 bal = IERC20(token).balanceOf(address(this));
-            uint256 reserved = totalPendingRewards[token];
-            uint256 withdrawable = bal > reserved ? bal - reserved : 0;
-            if (withdrawable == 0) revert NoBalance();
-            uint256 amt = customAmount > 0 && customAmount <= withdrawable ? customAmount : withdrawable;
-            IERC20(token).safeTransfer(to, amt);
-        }
-    }
-
-    /// @notice Sets the authorized PlatformRouter address.
     function setAuthorizedRouter(address _router) external onlyOwner {
         authorizedRouter = _router;
     }
-
-    event PlatformWalletUpdated(address indexed oldWallet, address indexed newWallet);
 
     function setPlatformWallet(address wallet) external onlyOwner {
         if (wallet == address(0)) revert InvalidAddress();
@@ -1020,43 +858,112 @@ contract TokenFactory is Ownable, ReentrancyGuard {
     }
 
     // =============================================================
-    // PROTECTION OVERRIDES (factory owner can relax token protections)
+    // PARTNER DEFAULT BASES — admin
     // =============================================================
 
-    /// @notice Force-removes an address from a token's blacklist.
+    event DefaultPartnerBaseAdded(address indexed base);
+    event DefaultPartnerBaseRemoved(address indexed base);
+
+    /// @notice Adds a base token to the partner-default list. Future partner
+    ///         tokens will have this base force-merged into their `bases[]`.
+    function addDefaultPartnerBase(address base) external onlyOwner {
+        if (base == address(0)) revert InvalidAddress();
+        if (isDefaultPartnerBase[base]) return;
+        if (_defaultPartnerBases.length >= MAX_DEFAULT_PARTNER_BASES) revert InvalidParams();
+        isDefaultPartnerBase[base] = true;
+        _defaultPartnerBases.push(base);
+        emit DefaultPartnerBaseAdded(base);
+    }
+
+    /// @notice Removes a base from the partner-default list. Existing tokens
+    ///         are unaffected — only future creations stop force-merging it.
+    function removeDefaultPartnerBase(address base) external onlyOwner {
+        if (!isDefaultPartnerBase[base]) return;
+        isDefaultPartnerBase[base] = false;
+        uint256 len = _defaultPartnerBases.length;
+        for (uint256 i; i < len;) {
+            if (_defaultPartnerBases[i] == base) {
+                _defaultPartnerBases[i] = _defaultPartnerBases[len - 1];
+                _defaultPartnerBases.pop();
+                break;
+            }
+            unchecked { ++i; }
+        }
+        emit DefaultPartnerBaseRemoved(base);
+    }
+
+    function getDefaultPartnerBases() external view returns (address[] memory) {
+        return _defaultPartnerBases;
+    }
+
+    /// @notice Replace the entire partner-default base list in one call.
+    ///         Clears the existing list and installs `bases` as the new set.
+    ///         Duplicates and zero addresses are rejected. Existing tokens
+    ///         are unaffected — only future partner-variant creations see
+    ///         the new list.
+    function setDefaultPartnerBases(address[] calldata bases) external onlyOwner {
+        if (bases.length > MAX_DEFAULT_PARTNER_BASES) revert InvalidParams();
+        uint256 oldLen = _defaultPartnerBases.length;
+        for (uint256 i; i < oldLen;) {
+            address b = _defaultPartnerBases[i];
+            isDefaultPartnerBase[b] = false;
+            emit DefaultPartnerBaseRemoved(b);
+            unchecked { ++i; }
+        }
+        delete _defaultPartnerBases;
+
+        uint256 newLen = bases.length;
+        for (uint256 i; i < newLen;) {
+            address b = bases[i];
+            if (b == address(0)) revert InvalidAddress();
+            if (isDefaultPartnerBase[b]) revert InvalidParams(); // duplicate
+            isDefaultPartnerBase[b] = true;
+            _defaultPartnerBases.push(b);
+            emit DefaultPartnerBaseAdded(b);
+            unchecked { ++i; }
+        }
+    }
+
+    // =============================================================
+    // PROTECTION OVERRIDES (owner can relax token protections)
+    // =============================================================
+
     function forceUnblacklist(address token, address account) external onlyOwner {
         if (tokenInfo[token].creator == address(0)) revert NotFactoryToken();
         BasicTokenImpl(token).forceUnblacklist(account);
     }
 
-    /// @notice Force-increases or disables a token's max wallet limit.
     function forceRelaxMaxWallet(address token, uint256 amount) external onlyOwner {
         if (tokenInfo[token].creator == address(0)) revert NotFactoryToken();
         BasicTokenImpl(token).forceRelaxMaxWallet(amount);
     }
 
-    /// @notice Force-increases or disables a token's max transaction limit.
     function forceRelaxMaxTransaction(address token, uint256 amount) external onlyOwner {
         if (tokenInfo[token].creator == address(0)) revert NotFactoryToken();
         BasicTokenImpl(token).forceRelaxMaxTransaction(amount);
     }
 
-    /// @notice Force-reduces or disables a token's cooldown.
     function forceRelaxCooldown(address token, uint256 _seconds) external onlyOwner {
         if (tokenInfo[token].creator == address(0)) revert NotFactoryToken();
         BasicTokenImpl(token).forceRelaxCooldown(_seconds);
     }
 
-    /// @notice Force-disables a token's blacklist entirely.
     function forceDisableBlacklist(address token) external onlyOwner {
         if (tokenInfo[token].creator == address(0)) revert NotFactoryToken();
         BasicTokenImpl(token).forceDisableBlacklist();
     }
 
-    // =============================================================
-    // RECEIVE
-    // =============================================================
-
-    /// @dev Allows the factory to receive native currency for fee payments and refunds.
-    receive() external payable {}
+    /// @notice Force-reduce a taxable token's tax rates AND ceilings.
+    ///         Each new value must be ≤ the current value — the factory can
+    ///         only lower, never raise. The ceiling is tightened in lock-step
+    ///         so the creator can never undo the platform's reduction.
+    function forceRelaxTaxes(
+        address token,
+        uint256 newBuyBps,
+        uint256 newSellBps,
+        uint256 newTransferBps
+    ) external onlyOwner {
+        if (tokenInfo[token].creator == address(0)) revert NotFactoryToken();
+        TaxableTokenImpl(token).forceRelaxTaxes(newBuyBps, newSellBps, newTransferBps);
+    }
 }

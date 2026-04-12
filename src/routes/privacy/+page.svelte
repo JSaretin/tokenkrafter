@@ -14,8 +14,9 @@
 			<p class="mb-3">We believe in transparency. Here is exactly what we collect and why:</p>
 			<ul class="list-disc pl-5 space-y-2" style="color: var(--text-muted);">
 				<li><strong style="color: var(--text);">Wallet addresses</strong> — your public blockchain address when you connect an external wallet (MetaMask, Trust Wallet, etc.) or create an embedded wallet. Wallet addresses are publicly visible on the blockchain by design.</li>
-				<li><strong style="color: var(--text);">Google account info (embedded wallet users)</strong> — if you sign in with Google to use our Quick Wallet, we receive your Google email address and user ID via Supabase Auth. We use this solely to authenticate you and link your encrypted wallet vault. We do not access your Google contacts, files, or any other Google data.</li>
-				<li><strong style="color: var(--text);">Encrypted wallet vault (embedded wallet users)</strong> — your wallet's seed phrase is encrypted on your device using your PIN before it reaches our servers. We store the encrypted blob and a server-derived salt. We cannot read, decrypt, or recover your seed phrase. See Section 4 for full details.</li>
+				<li><strong style="color: var(--text);">Google account info (embedded wallet users)</strong> — if you sign in with Google to use our Quick Wallet, we receive your Google email address and user ID via Supabase Auth. We use this solely to authenticate you and link your encrypted wallet vaults. We do not access your Google contacts, files, or any other Google data.</li>
+				<li><strong style="color: var(--text);">Encrypted wallet vaults (embedded wallet users)</strong> — you can create multiple wallets, each with its own seed phrase. Every seed phrase is encrypted on your device using your PIN before it reaches our servers. We store one encrypted blob per wallet and a shared server-derived salt. We cannot read, decrypt, or recover any seed phrase. See Section 4 for full details.</li>
+				<li><strong style="color: var(--text);">Wallet and account metadata</strong> — custom wallet names, account names, and avatar selections are stored locally on your device and optionally synced to our server as part of your encrypted preferences so they can be restored on other devices.</li>
 				<li><strong style="color: var(--text);">Transaction data</strong> — on-chain transaction hashes, token creation details, launchpad participation records, and trade history. This data is already publicly available on the blockchain; we index it for display purposes.</li>
 				<li><strong style="color: var(--text);">Payment details (off-ramp users)</strong> — if you use our Sell to Bank feature, we collect your bank account number, bank name, and account holder name. This data is encrypted client-side with AES-256-GCM before being sent to our server. For PayPal or Wise withdrawals, we collect the email address you provide.</li>
 				<li><strong style="color: var(--text);">Token metadata</strong> — if you create a token, you may optionally provide a logo, description, website URL, and social links (Twitter, Telegram, Discord). This information is publicly displayed on your token's detail page.</li>
@@ -45,9 +46,9 @@
 			<p class="mb-3">For full transparency:</p>
 			<ul class="list-disc pl-5 space-y-2" style="color: var(--text-muted);">
 				<li><strong style="color: var(--text);">Private keys</strong> — we never have access to your private keys, whether you use an external wallet or our embedded wallet.</li>
-				<li><strong style="color: var(--text);">Seed phrases</strong> — embedded wallet seed phrases are encrypted on your device before being sent to our server. We store only the encrypted blob. Without your PIN, the seed phrase cannot be decrypted.</li>
-				<li><strong style="color: var(--text);">PINs</strong> — your embedded wallet PIN never leaves your browser. It is used locally to encrypt/decrypt your seed phrase.</li>
-				<li><strong style="color: var(--text);">Recovery codes</strong> — your 3 recovery codes are generated on your device and are not stored on our server in readable form. They are used as alternative decryption keys for your vault.</li>
+				<li><strong style="color: var(--text);">Seed phrases</strong> — each wallet's seed phrase is encrypted on your device before being sent to our server. We store only the encrypted blob per wallet. Without your PIN, no seed phrase can be decrypted.</li>
+				<li><strong style="color: var(--text);">PINs</strong> — your embedded wallet PIN never leaves your browser. It is used locally to encrypt and decrypt all your wallet seed phrases. When you change your PIN, every wallet is re-encrypted locally with the new PIN and the new blobs are sent to our server in a single atomic operation — the old or new PIN is never transmitted.</li>
+				<li><strong style="color: var(--text);">Recovery codes</strong> — each wallet has its own set of 3 recovery codes, generated on your device. Recovery codes are not stored on our server in readable form — they are used as alternative decryption keys for that specific wallet's vault. Recovering one wallet does not restore others.</li>
 				<li><strong style="color: var(--text);">Passwords</strong> — we do not use password-based authentication. External wallet users sign a cryptographic message; embedded wallet users authenticate via Google OAuth.</li>
 				<li><strong style="color: var(--text);">KYC documents</strong> — we do not collect identity documents, selfies, or government IDs.</li>
 			</ul>
@@ -55,14 +56,20 @@
 
 		<section>
 			<h2 class="syne text-lg font-semibold mb-3" style="color: var(--text-heading);">4. Embedded Wallet: How Your Keys Are Protected</h2>
-			<p class="mb-3">Our embedded wallet (Quick Wallet) uses a semi-custodial model. We want you to fully understand how it works:</p>
+			<p class="mb-3">Our embedded wallet (Quick Wallet) supports multiple wallets per account, each with multiple HD-derived accounts. We use a semi-custodial model. We want you to fully understand how it works:</p>
 			<ul class="list-disc pl-5 space-y-2" style="color: var(--text-muted);">
-				<li><strong style="color: var(--text);">Seed generation</strong> — your wallet's seed phrase (mnemonic) is generated entirely on your device using standard BIP-39. It is never transmitted to our servers in plaintext.</li>
-				<li><strong style="color: var(--text);">Encryption</strong> — your seed phrase is encrypted in your browser using PBKDF2 (600,000 iterations) with your PIN + a server-provided salt, then sealed with AES-256-GCM. The result is an encrypted blob that is meaningless without your PIN.</li>
-				<li><strong style="color: var(--text);">Server storage</strong> — we store the encrypted blob and a deterministic salt derived from your user ID. We also store up to 3 additional encrypted blobs corresponding to your recovery codes (each recovery code independently encrypts the same seed).</li>
-				<li><strong style="color: var(--text);">PIN caching</strong> — for convenience, your PIN is cached in your browser's local storage for 24 hours after you enter it. This allows automatic unlock without re-entering your PIN. You can clear this by logging out.</li>
-				<li><strong style="color: var(--text);">What this means</strong> — your wallet requires both our server (for the encrypted vault and salt) AND your PIN (or a recovery code) to unlock. If our platform were to become permanently unavailable and you had not exported your seed phrase or private keys, you would lose access to your wallet. <strong>We strongly recommend exporting your seed phrase as a backup.</strong> You can do this at any time from the Account Panel.</li>
-				<li><strong style="color: var(--text);">Vault deletion</strong> — you can permanently delete your encrypted vault from our servers at any time. This action is irreversible. Ensure you have exported your seed phrase before deleting.</li>
+				<li><strong style="color: var(--text);">Multi-wallet architecture</strong> — you can create or import multiple wallets under one login. Each wallet has its own independently generated seed phrase. All wallets share a single PIN for convenience — one PIN unlocks everything.</li>
+				<li><strong style="color: var(--text);">Seed generation</strong> — each wallet's seed phrase (mnemonic) is generated entirely on your device using standard BIP-39. It is never transmitted to our servers in plaintext.</li>
+				<li><strong style="color: var(--text);">HD accounts</strong> — each wallet can derive multiple accounts (addresses) from a single seed phrase using BIP-44 derivation paths. Account names and avatars are stored locally and optionally synced as encrypted preferences.</li>
+				<li><strong style="color: var(--text);">Encryption</strong> — each seed phrase is encrypted in your browser using PBKDF2 (600,000 iterations) with your PIN + a server-provided salt, then sealed with AES-256-GCM. The result is an encrypted blob per wallet that is meaningless without your PIN.</li>
+				<li><strong style="color: var(--text);">Server storage</strong> — we store one encrypted blob per wallet and a shared deterministic salt derived from your user ID. Each wallet also stores up to 3 additional encrypted blobs corresponding to its own recovery codes (each recovery code independently encrypts that wallet's seed).</li>
+				<li><strong style="color: var(--text);">PIN requirements</strong> — your PIN must be at least 6 digits. A 6-digit PIN provides 1,000,000 possible combinations, and PBKDF2 with 600,000 iterations makes brute-force attacks computationally expensive.</li>
+				<li><strong style="color: var(--text);">PIN changes</strong> — when you change your PIN, every wallet's seed phrase is decrypted locally with your current PIN, re-encrypted with the new PIN, and all new blobs are sent to our server in a single atomic database operation. Either all wallets update or none do — there is no partial-failure state. Neither the old nor new PIN is ever transmitted to our server.</li>
+				<li><strong style="color: var(--text);">PIN caching</strong> — for convenience, your PIN is cached in your browser's local storage after you enter it. This allows automatic unlock without re-entering your PIN. You can clear this by disconnecting your wallet.</li>
+				<li><strong style="color: var(--text);">Per-wallet recovery</strong> — each wallet has its own set of 3 recovery codes. Recovering one wallet with its codes does not restore your other wallets. <strong>We strongly recommend backing up recovery codes for each wallet separately.</strong></li>
+				<li><strong style="color: var(--text);">Export options</strong> — you can export individual account private keys or an entire wallet's recovery phrase at any time from the Account Panel. This gives you full portability — exported keys work with any Ethereum-compatible wallet.</li>
+				<li><strong style="color: var(--text);">What this means</strong> — your wallets require both our server (for the encrypted vaults and salt) AND your PIN (or a wallet-specific recovery code) to unlock. If our platform were to become permanently unavailable and you had not exported your seed phrases or private keys, you would lose access to your wallets. <strong>We strongly recommend exporting your seed phrases as a backup.</strong></li>
+				<li><strong style="color: var(--text);">Vault deletion</strong> — you can permanently delete your encrypted vaults from our servers at any time. This action is irreversible. Ensure you have exported your seed phrases before deleting.</li>
 			</ul>
 		</section>
 
@@ -97,7 +104,7 @@
 			<p class="mb-3">TokenKrafter uses minimal browser storage:</p>
 			<ul class="list-disc pl-5 space-y-2" style="color: var(--text-muted);">
 				<li><strong style="color: var(--text);">Essential cookies</strong> — required for the platform to function (wallet connection state, theme preference, language selection). These cannot be disabled.</li>
-				<li><strong style="color: var(--text);">Local storage</strong> — we store your preferences (theme, language, slippage tolerance, imported tokens, favorites), session tokens (HMAC-signed, 7-day expiry), and cached PIN (encrypted, 24-hour expiry for embedded wallet users). This data stays on your device.</li>
+				<li><strong style="color: var(--text);">Local storage</strong> — we store your preferences (theme, language, slippage tolerance, imported tokens, favorites), session tokens (HMAC-signed, 7-day expiry), cached PIN (for embedded wallet users), wallet and account metadata (names, avatars), and cached account balances for instant display on reload. This data stays on your device.</li>
 			</ul>
 			<p class="mt-3">We do not use tracking cookies, advertising cookies, or third-party analytics cookies.</p>
 		</section>
@@ -109,7 +116,7 @@
 				<li>Token metadata (name, logo, description, social links) is kept indefinitely as long as the token exists on-chain.</li>
 				<li>Payment details for completed withdrawals are retained for 90 days, then deleted.</li>
 				<li>Incomplete withdrawal requests (awaiting_trade) are automatically deleted after 30 minutes.</li>
-				<li>Embedded wallet vaults are retained until you explicitly delete them or request deletion.</li>
+				<li>Embedded wallet vaults (one per wallet) are retained until you explicitly delete them or request deletion.</li>
 				<li>Referral aliases are retained as long as the associated wallet is active.</li>
 				<li>Comments on launches are retained indefinitely unless you request deletion.</li>
 			</ul>
@@ -122,8 +129,8 @@
 				<li><strong style="color: var(--text);">Access</strong> — request a copy of the data we hold about your wallet address or Google account.</li>
 				<li><strong style="color: var(--text);">Deletion</strong> — request deletion of your off-chain data (payment details, comments, metadata, wallet vault, referral alias). Note: on-chain data (transactions, token contracts, launch records) cannot be deleted as it is part of the public blockchain.</li>
 				<li><strong style="color: var(--text);">Correction</strong> — update your payment details, token metadata, or referral alias at any time.</li>
-				<li><strong style="color: var(--text);">Export</strong> — export your embedded wallet's seed phrase and private keys at any time from the Account Panel. Your data portability is guaranteed — you can use your exported keys with any Ethereum-compatible wallet.</li>
-				<li><strong style="color: var(--text);">Vault deletion</strong> — permanently delete your encrypted wallet vault from our servers via the Account Panel or by contacting us.</li>
+				<li><strong style="color: var(--text);">Export</strong> — export each wallet's recovery phrase or individual account private keys at any time from the Account Panel. Your data portability is guaranteed — you can use your exported keys with any Ethereum-compatible wallet.</li>
+				<li><strong style="color: var(--text);">Vault deletion</strong> — permanently delete your encrypted wallet vaults from our servers via the Account Panel or by contacting us.</li>
 			</ul>
 			<p class="mt-3">To exercise these rights, contact us at <a href="mailto:support@tokenkrafter.com" class="text-cyan-400 hover:underline">support@tokenkrafter.com</a>.</p>
 		</section>

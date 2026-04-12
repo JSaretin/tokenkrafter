@@ -328,6 +328,35 @@ select create_policy_if_not_exists('referral_aliases', 'Anon read', 'select');
 -- ============================================================
 -- Platform config (unified key-value store for all settings)
 -- Stores: networks, site info, social links, exchange rates, etc.
+--
+-- Expected shape for the 'networks' key (JSONB array, one entry per chain):
+--   [
+--     {
+--       "name": "BSC",
+--       "symbol": "bsc",                    // lowercase chain slug, also used as the GeckoTerminal network slug
+--       "chain_id": 56,
+--       "native_coin": "BNB",
+--       "usdt_address": "0x55d398...",
+--       "usdc_address": "0x8AC76a...",
+--       "platform_address":     "0x...",    // TokenFactory
+--       "launchpad_address":    "0x...",    // LaunchpadFactory
+--       "router_address":       "0x...",    // PlatformRouter
+--       "trade_router_address": "0x...",    // TradeRouter
+--       "dex_router": "0x10ED43...",        // PancakeSwap V2 router (BSC)
+--       "rpc": "https://...",
+--       "explorer_url": "https://bscscan.com",
+--       "default_bases": [                  // Pre-selected pool bases shown
+--         { "address": "0x55d398...", "symbol": "USDT", "name": "Tether USD" },
+--         { "address": "0xbb4CdB...", "symbol": "WBNB", "name": "Wrapped BNB" },
+--         { "address": "0x8AC76a...", "symbol": "USDC", "name": "USD Coin" }
+--       ]                                   // in the create wizard's pool-base
+--                                           // multi-select. The wizard auto-
+--                                           // resolves any custom address the
+--                                           // creator adds via GeckoTerminal
+--                                           // (uses `symbol` as the network
+--                                           // slug) with on-chain ERC20 fallback.
+--     }
+--   ]
 -- ============================================================
 create table if not exists platform_config (
   key text primary key,
@@ -443,7 +472,7 @@ select cron.schedule(
 create table if not exists wallets (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
-  name text not null,                  -- user label e.g. "Personal", "Trading"
+  name text not null default 'Wallet', -- user label e.g. "Personal", "Trading"
   primary_blob text not null,          -- AES(seed, PBKDF2(pin, salt))
   recovery_blob_1 text,                -- null for imported wallets
   recovery_blob_2 text,
@@ -519,6 +548,11 @@ begin
 exception when others then
   raise notice 'wallet_vaults migration skipped: %', sqlerrm;
 end $$;
+
+-- Backfill for existing databases: make `name` default-able so batch
+-- upserts that only carry id + primary_blob can succeed at the insert
+-- path (Postgres checks NOT NULL before ON CONFLICT DO UPDATE fires).
+alter table wallets alter column name set default 'Wallet';
 
 -- ============================================================
 -- Token metadata (logo, description, socials)

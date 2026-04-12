@@ -72,17 +72,20 @@
 	</div>
 
 	<!-- Tax -->
-	{#if (isTaxable || isPartner) && totalTax > 0}
+	{#if isTaxable || isPartner}
 		<div class="rv-section">
 			<div class="rv-section-title">Tax</div>
 			<div class="rv-row"><span>Buy</span><span>{buyTaxPct || '0'}%</span></div>
 			<div class="rv-row"><span>Sell</span><span>{sellTaxPct || '0'}%</span></div>
-			{#if Number(transferTaxPct) > 0}
-				<div class="rv-row"><span>Transfer</span><span>{transferTaxPct}%</span></div>
-			{/if}
+			<div class="rv-row"><span>Transfer</span><span>{transferTaxPct || '0'}%</span></div>
 			{#each taxWallets.filter(w => w.address) as w}
 				<div class="rv-row rv-sub"><span>{fmtAddr(w.address)}</span><span>{w.sharePct}%</span></div>
 			{/each}
+			{#if totalTax === 0 && (launchEnabled || listingEnabled)}
+				<div class="rv-warn">
+					Tax is set to 0%. Once your {launchEnabled ? 'launch' : 'listing'} is created, tax will be <strong>permanently locked at 0%</strong> — you will never be able to add tax to this token.
+				</div>
+			{/if}
 		</div>
 	{/if}
 
@@ -152,4 +155,6 @@
 	.rv-pool-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 	.rv-pool span:nth-child(2) { flex: 0; white-space: nowrap; color: #e2e8f0; font-weight: 700; }
 	.rv-pool span:nth-child(3) { color: #64748b; font-size: 10px; text-align: right; flex: 1; }
+	.rv-warn { margin-top: 8px; padding: 8px 10px; border-radius: 8px; background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.2); color: #fbbf24; font-size: 11px; font-family: 'Space Mono', monospace; line-height: 1.5; }
+	.rv-warn strong { color: #f59e0b; }
 </style>

@@ -9,9 +9,9 @@
 	import { LAUNCHPAD_FACTORY_ABI, LAUNCH_INSTANCE_ABI, CURVE_TYPES, type CurveType } from '$lib/launchpad';
 	import { apiFetch } from '$lib/apiFetch';
 	import { friendlyError } from '$lib/errorDecoder';
-	import { TOKEN_READ_ABI, ERC20_DECIMALS_ABI } from '$lib/commonABIs';
+	import { TOKEN_READ_ABI, ERC20_DECIMALS_ABI, ROUTER_ABI_LITE } from '$lib/commonABIs';
 	import * as deployHelpers from './lib/deploy/helpers';
-	import { getBaseTokenAddress, getBaseDecimals, getBaseSymbol, feeCacheKey, matchFeesToPayments } from './lib/deploy/helpers';
+	import { getBaseTokenAddress, getBaseDecimals, getBaseSymbol, feeCacheKey } from './lib/deploy/helpers';
 	import TokenForm from './lib/TokenForm.svelte';
 	import type { ListingConfig, ListingPairConfig, TokenFormData, PreviewState } from './lib/TokenForm.svelte';
 
@@ -208,85 +208,117 @@
 		launchStep = 'fee';
 
 		try {
-			const factory = new ethers.Contract(launchNetwork.launchpad_address, LAUNCHPAD_FACTORY_ABI, signer);
-			const launchPaymentTokens: string[] = await factory.getSupportedPaymentTokens();
-			const paymentToken = launchPaymentTokens.length > 0 ? launchPaymentTokens[0] : ZERO_ADDRESS;
-			const isNativeFee = paymentToken === ZERO_ADDRESS;
-
-			// Get fee
-			const launchFee: bigint = await factory.getLaunchFee(paymentToken);
-
-			// Approve fee if ERC20
-			if (!isNativeFee && launchFee > 0n) {
-				launchStep = 'approving-fee';
-				addFeedback({ message: $t('ci.approvingFee'), type: 'info' });
-				const erc20 = new ethers.Contract(paymentToken, ERC20_ABI, signer);
-				const allowance = await erc20.allowance(userAddress, launchNetwork.launchpad_address);
-				if (allowance < launchFee) {
-					const approveTx = await erc20.approve(launchNetwork.launchpad_address, launchFee);
-					await approveTx.wait();
-				}
+			// Quick-launch flow for a token the user already owns. Uses
+			// PlatformRouter.launchCreatedToken which does the full setup
+			// atomically (ownership round-trip, exempt + authorize launch,
+			// pull tokens, create launch, deposit). Fee is paid in USDT:
+			// quick-launch UI doesn't offer payment-token selection, so
+			// the creator must approve the router for the launch fee
+			// ahead of time via the same allowance flow.
+			const routerAddr = launchNetwork.router_address;
+			if (!routerAddr || routerAddr === '0x') {
+				addFeedback({ message: 'Router not configured for this chain.', type: 'error' });
+				launchStep = 'idle';
+				return;
 			}
+			const router = new ethers.Contract(routerAddr, PLATFORM_ROUTER_ABI, signer);
 
-			// Get USDT decimals
+			// Launch fee in USDT
+			const lpFactoryRead = new ethers.Contract(launchNetwork.launchpad_address, LAUNCHPAD_FACTORY_ABI, signer);
+			const launchFee: bigint = await lpFactoryRead.launchFee();
+
+			// USDT decimals
 			let usdtDec = 18;
 			try {
 				const usdtC = new ethers.Contract(launchNetwork.usdt_address, ERC20_DECIMALS_ABI, signer);
 				usdtDec = Number(await usdtC.decimals());
 			} catch {}
 
+			// Approve USDT for the router
+			if (launchFee > 0n) {
+				launchStep = 'approving-fee';
+				addFeedback({ message: $t('ci.approvingFee'), type: 'info' });
+				const usdtC = new ethers.Contract(launchNetwork.usdt_address, ERC20_ABI, signer);
+				const allowance: bigint = await usdtC.allowance(userAddress, routerAddr);
+				if (allowance < launchFee) {
+					const approveTx = await usdtC.approve(routerAddr, launchFee);
+					await approveTx.wait();
+				}
+			}
+
 			const tokensForLaunch = ethers.parseUnits(launchAmount, launchTokenDecimals);
-			const txOptions = isNativeFee && launchFee > 0n ? { value: launchFee } : {};
+
+			// Transfer token ownership to the router (pre-condition).
+			launchStep = 'approving-tokens';
+			addFeedback({ message: 'Transferring ownership to router...', type: 'info' });
+			const tokenC = new ethers.Contract(
+				launchTokenAddress,
+				['function owner() view returns (address)', 'function transferOwnership(address) external', 'function approve(address,uint256) returns (bool)', 'function allowance(address,address) view returns (uint256)'],
+				signer
+			);
+			const currentOwner: string = await tokenC.owner();
+			if (currentOwner.toLowerCase() !== userAddress!.toLowerCase()) {
+				addFeedback({ message: 'You must be the token owner to launch it.', type: 'error' });
+				launchStep = 'idle';
+				return;
+			}
+			const xferTx = await tokenC.transferOwnership(routerAddr);
+			await xferTx.wait();
+
+			// Approve launch tokens for the router to pull
+			const tokenAllow: bigint = await tokenC.allowance(userAddress, routerAddr);
+			if (tokenAllow < tokensForLaunch) {
+				const approveTx = await tokenC.approve(routerAddr, tokensForLaunch);
+				await approveTx.wait();
+			}
+
+			const launchParams = {
+				tokensForLaunch,
+				curveType: BigInt(launchCurveType),
+				softCap: ethers.parseUnits(launchSoftCap, usdtDec),
+				hardCap: ethers.parseUnits(launchHardCap, usdtDec),
+				durationDays: BigInt(launchDurationDays),
+				maxBuyBps: BigInt(Math.round(parseFloat(launchMaxBuyPct || '0') * 100)),
+				creatorAllocationBps: BigInt(Math.round(parseFloat(launchCreatorAllocPct || '0') * 100)),
+				vestingDays: BigInt(launchVestingDays),
+				startTimestamp: 0n,
+				lockDurationAfterListing: 3600n,
+				minBuyUsdt: ethers.parseUnits('1', usdtDec),
+			};
+			const protectionParams = { maxWalletAmount: 0n, maxTransactionAmount: 0n, cooldownSeconds: 0n };
+			const taxParams = {
+				buyTaxBps: 0n, sellTaxBps: 0n, transferTaxBps: 0n,
+				taxWallets: [] as string[], taxSharesBps: [] as number[],
+			};
+			// USDT-direct fee payment
+			const feePayment = { path: [launchNetwork.usdt_address], maxAmountIn: 0n };
 
 			launchStep = 'creating';
 			addFeedback({ message: 'Creating launch...', type: 'info' });
-			const tx = await factory.createLaunch(
+			const tx = await router.launchCreatedToken(
 				launchTokenAddress,
-				tokensForLaunch,
-				BigInt(launchCurveType),
-				ethers.parseUnits(launchSoftCap, usdtDec),
-				ethers.parseUnits(launchHardCap, usdtDec),
-				BigInt(launchDurationDays),
-				BigInt(Math.round(parseFloat(launchMaxBuyPct || '0') * 100)),
-				BigInt(Math.round(parseFloat(launchCreatorAllocPct || '0') * 100)),
-				BigInt(launchVestingDays),
-				paymentToken,
-				0n, // startTimestamp = immediate
-				txOptions
+				launchParams,
+				protectionParams,
+				taxParams,
+				false, // isTaxable — quick-launch UI does not collect tax params
+				feePayment,
 			);
 			const receipt = await tx.wait();
 
-			// Extract launch address from event
+			// Extract launch address
 			let launchAddr: string | null = null;
-			const createdEvent = receipt?.logs?.find((log: any) => {
+			const event = receipt?.logs?.find((log: any) => {
 				try {
-					const parsed = factory.interface.parseLog({ topics: [...log.topics], data: log.data });
-					return parsed?.name === 'LaunchCreated';
+					const parsed = router.interface.parseLog({ topics: [...log.topics], data: log.data });
+					return parsed?.name === 'TokenLaunched';
 				} catch { return false; }
 			});
-			if (createdEvent) {
-				const parsed = factory.interface.parseLog({ topics: [...createdEvent.topics], data: createdEvent.data });
+			if (event) {
+				const parsed = router.interface.parseLog({ topics: [...event.topics], data: event.data });
 				launchAddr = parsed?.args?.launch ?? null;
 			}
 
 			if (launchAddr) {
-				// Approve + deposit tokens
-				launchStep = 'approving-tokens';
-				addFeedback({ message: $t('ci.approvingTokens'), type: 'info' });
-				const tokenContract = new ethers.Contract(launchTokenAddress, ERC20_ABI, signer);
-				const allowance = await tokenContract.allowance(userAddress, launchAddr);
-				if (allowance < tokensForLaunch) {
-					const approveTx = await tokenContract.approve(launchAddr, tokensForLaunch);
-					await approveTx.wait();
-				}
-
-				launchStep = 'depositing';
-				addFeedback({ message: $t('ci.depositingTokens'), type: 'info' });
-				const instance = new ethers.Contract(launchAddr, LAUNCH_INSTANCE_ABI, signer);
-				const depositTx = await instance.depositTokens(tokensForLaunch);
-				await depositTx.wait();
-
-				// Launch data indexed by daemon from on-chain events
 				launchStep = 'saving';
 				launchDeployedAddress = launchAddr;
 				launchStep = 'done';
@@ -363,6 +395,14 @@
 	let feeLoading = $state(false);
 	let selectedPaymentIndex = $state(0);
 	let paymentOptions: PaymentOption[] = $state([]);
+	// Per-option balances + quoteFee results (populated when modal opens)
+	let paymentBalances: bigint[] = $state([]);
+	let paymentQuotes: bigint[] = $state([]); // amountIn per option
+	let quoteFeeLoading = $state(false);
+	// Custom token import in payment modal
+	let payImportAddr = $state('');
+	let payImportBusy = $state(false);
+	let payImportError = $state<string | null>(null);
 
 	// Preloaded fee cache: keyed by "chainId-typeKey".
 	// USDT-only model: each entry holds the single USDT creation fee and
@@ -445,6 +485,109 @@
 			: '0'
 	);
 	let isNativePayment = $derived(selectedPayment?.address === ZERO_ADDRESS);
+	let selectedQuote = $derived(paymentQuotes[selectedPaymentIndex] ?? 0n);
+	// Fee displayed to user: quoteFee amountIn + 1% slippage buffer
+	let selectedFeeWithSlippage = $derived(selectedQuote > 0n ? selectedQuote * 101n / 100n : selectedFee);
+	let selectedFeeDisplay = $derived(
+		selectedPayment && selectedFeeWithSlippage > 0n
+			? parseFloat(ethers.formatUnits(selectedFeeWithSlippage, selectedPayment.decimals)).toFixed(4)
+			: selectedFeeFormatted
+	);
+
+	/// Fetch balances + quoteFee for every payment option. Called when
+	/// the payment modal opens (or when tokenInfo/payment options change).
+	async function loadPaymentQuotes() {
+		if (!tokenInfo || paymentOptions.length === 0) return;
+		quoteFeeLoading = true;
+		const net = tokenInfo.network;
+		const prov = getProviderForNetwork(net.chain_id) ?? new ethers.JsonRpcProvider(net.rpc);
+
+		try {
+			const typeKey = (tokenInfo.isPartner ? 4 : 0) | (tokenInfo.isTaxable ? 2 : 0) | (tokenInfo.isMintable ? 1 : 0);
+			const withLaunch = !!(tokenInfo.launch?.enabled);
+			const routerAddr = net.router_address;
+			const usdtAddr = net.usdt_address;
+
+			const router = new ethers.Contract(routerAddr, PLATFORM_ROUTER_ABI, prov);
+			const bals: bigint[] = [];
+			const quotes: bigint[] = [];
+
+			for (const opt of paymentOptions) {
+				// Balance
+				try {
+					if (opt.address === ZERO_ADDRESS) {
+						bals.push(userAddress ? await prov.getBalance(userAddress) : 0n);
+					} else {
+						const c = new ethers.Contract(opt.address, ERC20_ABI, prov);
+						bals.push(userAddress ? await c.balanceOf(userAddress) : 0n);
+					}
+				} catch { bals.push(0n); }
+
+				// Quote via router.quoteFee
+				try {
+					const path = opt.address === ZERO_ADDRESS
+						? [ZERO_ADDRESS, usdtAddr]
+						: opt.address.toLowerCase() === usdtAddr.toLowerCase()
+						? [usdtAddr]
+						: [opt.address, usdtAddr];
+					const [, amountIn] = await router.quoteFee(typeKey, withLaunch, path);
+					quotes.push(amountIn);
+				} catch { quotes.push(0n); }
+			}
+			paymentBalances = bals;
+			paymentQuotes = quotes;
+			// Also populate feeAmounts for backward compat with existing display
+			feeAmounts = quotes;
+		} catch (e) {
+			console.warn('loadPaymentQuotes failed:', e);
+		} finally {
+			quoteFeeLoading = false;
+		}
+	}
+
+	/// Import a custom token as a payment option via address paste.
+	async function importPaymentToken() {
+		payImportError = null;
+		const addr = payImportAddr.trim();
+		if (!ethers.isAddress(addr)) { payImportError = 'Invalid address'; return; }
+		if (!tokenInfo) return;
+		const net = tokenInfo.network;
+		const k = addr.toLowerCase();
+		if (paymentOptions.some(o => o.address.toLowerCase() === k)) {
+			payImportError = 'Already in the list';
+			return;
+		}
+		payImportBusy = true;
+		try {
+			const prov = getProviderForNetwork(net.chain_id) ?? new ethers.JsonRpcProvider(net.rpc);
+			// Resolve token info (gecko + on-chain fallback)
+			const slug = net.symbol?.toLowerCase?.() || 'bsc';
+			let sym = '', name = '', decimals = 18;
+			try {
+				const res = await fetch(`https://api.geckoterminal.com/api/v2/networks/${slug}/tokens/${addr}/info`,
+					{ headers: { Accept: 'application/json;version=20230203' } });
+				if (res.ok) {
+					const a = (await res.json())?.data?.attributes;
+					if (a?.symbol) { sym = a.symbol; name = a.name || a.symbol; decimals = Number(a.decimals ?? 18); }
+				}
+			} catch {}
+			if (!sym) {
+				const c = new ethers.Contract(addr, ERC20_ABI, prov);
+				sym = await c.symbol().catch(() => '');
+				name = await c.name().catch(() => sym);
+				decimals = Number(await c.decimals().catch(() => 18));
+			}
+			if (!sym) { payImportError = 'Could not resolve token'; return; }
+
+			const newOpt: PaymentOption = { symbol: sym, name: name || sym, address: addr, decimals };
+			paymentOptions = [...paymentOptions, newOpt];
+			payImportAddr = '';
+			// Re-fetch quotes to include the new option
+			await loadPaymentQuotes();
+		} finally {
+			payImportBusy = false;
+		}
+	}
 
 	function getProviderForNetwork(chainId: number): ethers.JsonRpcProvider | null {
 		return networkProviders.get(chainId) ?? null;
@@ -462,74 +605,72 @@
 
 		const isExistingToken = !!(info as any).existingTokenAddress;
 
-		// For existing tokens: show launch fee only
-		// For new tokens: show creation fee (+ launch fee is included in the router tx)
+		// Fetch the single USDT fee for this type (cached by preloadFees).
 		const key = feeCacheKey(info!.network.chain_id, info!.isTaxable, info!.isMintable, info!.isPartner);
-		const cached = feeCache.get(key);
+		let cached = feeCache.get(key);
 
-		if (cached) {
-			feeTokens = cached.tokens;
-			feeAmounts = isExistingToken ? cached.launchFees : cached.fees;
-			const feesToMatch = isExistingToken ? cached.launchFees : cached.fees;
-			const { matchedOptions, matchedFees } = matchFeesToPayments(cached.tokens, feesToMatch, options);
-			if (matchedOptions.length > 0) {
-				paymentOptions = matchedOptions;
-				feeAmounts = matchedFees;
-			}
-			feeLoading = false;
-			return;
-		}
-
-		// Fallback: fetch live if not cached
-		feeLoading = true;
-		feeTokens = [];
-		feeAmounts = [];
-
-		try {
-			if (isExistingToken) {
-				// Fetch launch fee directly from LaunchpadFactory
-				const pro = getProviderForNetwork(info!.network.chain_id)
-					?? new ethers.JsonRpcProvider(info!.network.rpc);
-				const { LAUNCHPAD_FACTORY_ABI } = await import('$lib/launchpad');
-				const lpFactory = new ethers.Contract(info!.network.launchpad_address, LAUNCHPAD_FACTORY_ABI, pro);
-				const supported = options.map(o => o.address);
-				const tokens: string[] = [];
-				const fees: bigint[] = [];
-				for (const pt of supported) {
-					try {
-						const fee = await lpFactory.getLaunchFee(pt);
-						tokens.push(pt);
-						fees.push(fee);
-					} catch {}
-				}
-				feeTokens = tokens;
-				feeAmounts = fees;
-				const { matchedOptions, matchedFees } = matchFeesToPayments(tokens, fees, options);
-				if (matchedOptions.length > 0) {
-					paymentOptions = matchedOptions;
-					feeAmounts = matchedFees;
-				}
-			} else {
+		if (!cached) {
+			feeLoading = true;
+			try {
 				const pro = getProviderForNetwork(info!.network.chain_id)
 					?? new ethers.JsonRpcProvider(info!.network.rpc);
 				const factory = new ethers.Contract(info!.network.platform_address, FACTORY_ABI, pro);
 				const lpAddr = info!.network.launchpad_address && info!.network.launchpad_address !== '0x'
 					? info!.network.launchpad_address
 					: ZERO_ADDRESS;
-				const [tokens, fees, launchFees] = await factory.getCreationFees(
+				const [creationFeeUsdt, launchFeeUsdt]: [bigint, bigint] = await factory.getCreationFees(
 					info!.isTaxable, info!.isMintable, info!.isPartner, lpAddr
 				);
-
-				feeTokens = [...tokens];
-				feeAmounts = [...fees];
-				feeCache.set(key, { tokens: [...tokens], fees: [...fees], launchFees: [...launchFees] });
-
-				const { matchedOptions, matchedFees } = matchFeesToPayments([...tokens], [...fees], options);
-				if (matchedOptions.length > 0) {
-					paymentOptions = matchedOptions;
-					feeAmounts = matchedFees;
-				}
+				cached = { creationFeeUsdt, launchFeeUsdt };
+				feeCache.set(key, cached);
+			} catch (e) {
+				console.warn('Fee fetch failed:', e);
+				feeLoading = false;
+				return;
 			}
+		}
+
+		// The USDT amount we actually need to pay the router/factory.
+		// Existing tokens: only the launch fee (no creation fee).
+		// New tokens:      creation fee alone for listing/create-only paths,
+		//                  creation + launch fee for create+launch (combined).
+		let usdtFeeNeeded: bigint;
+		if (isExistingToken) {
+			usdtFeeNeeded = cached.launchFeeUsdt;
+		} else if (info!.launch?.enabled) {
+			usdtFeeNeeded = cached.creationFeeUsdt + cached.launchFeeUsdt;
+		} else {
+			usdtFeeNeeded = cached.creationFeeUsdt;
+		}
+
+		// Compute per-payment-option display amounts via dexRouter.getAmountsIn.
+		// The on-chain fee is always USDT; these values only drive the UI
+		// ("pay ~X BNB / Y BUSD / Z USDT"). The real payment happens via
+		// the FeePayment struct at tx time (built from selectedPayment).
+		feeTokens = options.map(o => o.address);
+		feeAmounts = new Array(options.length).fill(0n);
+		feeLoading = true;
+		try {
+			const pro = getProviderForNetwork(info!.network.chain_id)
+				?? new ethers.JsonRpcProvider(info!.network.rpc);
+			const dex = new ethers.Contract(info!.network.dex_router, ROUTER_ABI_LITE, pro);
+			const usdtAddr = info!.network.usdt_address;
+
+			const quoted = await Promise.all(
+				options.map(async (opt) => {
+					if (opt.address.toLowerCase() === usdtAddr.toLowerCase()) return usdtFeeNeeded;
+					try {
+						let tokenIn = opt.address;
+						if (tokenIn === ZERO_ADDRESS) tokenIn = await dex.WETH();
+						const amounts: bigint[] = await dex.getAmountsIn(usdtFeeNeeded, [tokenIn, usdtAddr]);
+						return amounts[0];
+					} catch {
+						return 0n;
+					}
+				})
+			);
+			feeAmounts = quoted;
+			paymentOptions = options;
 		} catch (e) {
 			console.error('Fee fetch error:', e);
 			addFeedback({ message: 'Could not fetch fee. Check network.', type: 'error' });
@@ -630,9 +771,6 @@
 		try {
 			const storedRef = localStorage.getItem('referral');
 			const referral = storedRef && ethers.isAddress(storedRef) ? storedRef : ZERO_ADDRESS;
-			// Add 8% buffer for native payments to account for price movement between fee quote and tx execution
-			const nativeFeeWithBuffer = isNativePayment ? selectedFee * 108n / 100n : 0n;
-			const txOptions = isNativePayment ? { value: nativeFeeWithBuffer } : {};
 
 			// For existing tokens, totalSupply is formatted (e.g. "1000000.0"), parse it back to wei
 			// For new tokens, totalSupply is a raw integer (e.g. "1000000"), contract scales internally
@@ -644,6 +782,45 @@
 				? ethers.parseUnits(tokenInfo.totalSupply, tokenInfo.decimals)
 				: totalSupplyRaw * (10n ** BigInt(tokenInfo.decimals));
 
+			// Build FeePayment struct. Router validates path[last] == USDT.
+			// ERC20 path uses a 10% buffer on maxAmountIn so minor price
+			// movement between quote and swap doesn't revert the call.
+			// Surplus USDT is refunded to the caller in USDT (not the input).
+			const usdtAddr = tokenInfo.network.usdt_address;
+			const feePath: string[] =
+				selectedPayment.address === ZERO_ADDRESS
+					? [ZERO_ADDRESS, usdtAddr]
+					: selectedPayment.address.toLowerCase() === usdtAddr.toLowerCase()
+						? [usdtAddr]
+						: [selectedPayment.address, usdtAddr];
+			const feeMaxAmountIn: bigint =
+				feePath.length === 1 ? 0n
+				: selectedPayment.address === ZERO_ADDRESS ? 0n // native: msg.value carries it
+				: (selectedFee * 110n) / 100n; // 10% buffer on ERC20 input
+			const feePayment = { path: feePath, maxAmountIn: feeMaxAmountIn };
+
+			// Native `value` for router calls: fee (buffered) when paying with BNB,
+			// plus any native LP base if createAndList uses a native pair.
+			const nativeFeeWithBuffer =
+				selectedPayment.address === ZERO_ADDRESS
+					? (selectedFee * 110n) / 100n
+					: 0n;
+
+			// Approve ERC20 input token (if not native and not USDT-direct-zero-fee)
+			// for the router's maxAmountIn. For USDT-direct, approve usdt for the
+			// exact usdtFee.
+			if (selectedPayment.address !== ZERO_ADDRESS && selectedFee > 0n) {
+				const approvalAmount = feePath.length === 1 ? selectedFee : feeMaxAmountIn;
+				const erc20 = new ethers.Contract(selectedPayment.address, ERC20_ABI, signer);
+				const routerAddr = tokenInfo.network.router_address;
+				const allowance: bigint = await erc20.allowance(userAddress, routerAddr);
+				if (allowance < approvalAmount) {
+					addFeedback({ message: `Approving ${selectedPayment.symbol} for fee...`, type: 'info' });
+					const approveTx = await erc20.approve(routerAddr, approvalAmount);
+					await approveTx.wait();
+				}
+			}
+
 			const tokenParams = {
 				name: tokenInfo.name,
 				symbol: tokenInfo.symbol,
@@ -652,13 +829,15 @@
 				isTaxable: tokenInfo.isTaxable,
 				isMintable: tokenInfo.isMintable,
 				isPartner: tokenInfo.isPartner,
-				paymentToken: selectedPayment.address
+				bases: (tokenInfo as any).bases ?? []
 			};
 
 			if (tokenInfo.existingTokenAddress && tokenInfo.launch?.enabled) {
-				// Existing token — use LaunchpadFactory.createLaunch directly
-				addFeedback({ message: 'Creating launch for existing token...', type: 'info' });
-				const { LAUNCHPAD_FACTORY_ABI, LAUNCH_INSTANCE_ABI } = await import('$lib/launchpad');
+				// Existing token — use PlatformRouter.launchCreatedToken.
+				// The router needs ownership to exempt + authorize the launch;
+				// we transferOwnership(router) first, then it's returned to
+				// the creator atomically at the end of the router call.
+				addFeedback({ message: 'Preparing launch for existing token...', type: 'info' });
 
 				let usdtDec = 18;
 				try {
@@ -667,71 +846,100 @@
 				} catch {}
 
 				const tokensForLaunch = (totalSupplyWei * BigInt(tokenInfo.launch.tokensForLaunchPct)) / 100n;
-				const factory = new ethers.Contract(tokenInfo.network.launchpad_address, LAUNCHPAD_FACTORY_ABI, signer);
-
-				// Check and pay launch fee
-				const launchFee: bigint = await factory.getLaunchFee(selectedPayment.address);
-				const isNativeLaunchFee = selectedPayment.address === ZERO_ADDRESS;
-				if (!isNativeLaunchFee && launchFee > 0n) {
-					const erc20 = new ethers.Contract(selectedPayment.address, ERC20_ABI, signer);
-					const allowance = await erc20.allowance(userAddress, tokenInfo.network.launchpad_address);
-					if (allowance < launchFee) {
-						addFeedback({ message: `Approving ${selectedPayment.symbol} for launch fee...`, type: 'info' });
-						const approveTx = await erc20.approve(tokenInfo.network.launchpad_address, launchFee);
-						await approveTx.wait();
-					}
+				const routerAddr = tokenInfo.network.router_address;
+				if (!routerAddr || routerAddr === '0x') {
+					addFeedback({ message: 'Router not configured for this chain.', type: 'error' });
+					step = 'review';
+					isCreating = false;
+					return;
 				}
 
-				const txOptions = isNativeLaunchFee && launchFee > 0n ? { value: launchFee } : {};
-				const tx = await factory.createLaunch(
+				// Transfer ownership to router (pre-condition for launchCreatedToken).
+				addFeedback({ message: 'Transferring ownership to router...', type: 'info' });
+				const tokenC = new ethers.Contract(
 					tokenInfo.existingTokenAddress,
+					['function owner() view returns (address)', 'function transferOwnership(address) external', 'function approve(address,uint256) returns (bool)', 'function allowance(address,address) view returns (uint256)'],
+					signer
+				);
+				const currentOwner: string = await tokenC.owner();
+				if (currentOwner.toLowerCase() !== userAddress!.toLowerCase()) {
+					addFeedback({ message: 'You must be the token owner to launch it.', type: 'error' });
+					step = 'review';
+					isCreating = false;
+					return;
+				}
+				const xferTx = await tokenC.transferOwnership(routerAddr);
+				await xferTx.wait();
+
+				// Approve launch tokens for the router to pull.
+				addFeedback({ message: 'Approving launch tokens...', type: 'info' });
+				const tokenAllowance: bigint = await tokenC.allowance(userAddress, routerAddr);
+				if (tokenAllowance < tokensForLaunch) {
+					const approveTx = await tokenC.approve(routerAddr, tokensForLaunch);
+					await approveTx.wait();
+				}
+
+				const launchParams = {
 					tokensForLaunch,
-					BigInt(tokenInfo.launch.curveType),
-					ethers.parseUnits(String(tokenInfo.launch.softCap), usdtDec),
-					ethers.parseUnits(String(tokenInfo.launch.hardCap), usdtDec),
-					BigInt(tokenInfo.launch.durationDays),
-					BigInt(tokenInfo.launch.maxBuyBps),
-					BigInt(tokenInfo.launch.creatorAllocationBps),
-					BigInt(tokenInfo.launch.vestingDays),
-					selectedPayment.address,
-					0n, // startTimestamp
-					txOptions
+					curveType: tokenInfo.launch.curveType,
+					softCap: ethers.parseUnits(String(tokenInfo.launch.softCap), usdtDec),
+					hardCap: ethers.parseUnits(String(tokenInfo.launch.hardCap), usdtDec),
+					durationDays: BigInt(tokenInfo.launch.durationDays),
+					maxBuyBps: BigInt(tokenInfo.launch.maxBuyBps),
+					creatorAllocationBps: BigInt(tokenInfo.launch.creatorAllocationBps),
+					vestingDays: BigInt(tokenInfo.launch.vestingDays),
+					startTimestamp: 0n,
+					lockDurationAfterListing: BigInt(tokenInfo.launch.lockDurationAfterListing || '3600'),
+					minBuyUsdt: ethers.parseUnits(String(tokenInfo.launch.minBuyUsdt || '1'), usdtDec)
+				};
+
+				const protectionParams = {
+					maxWalletAmount: tokenInfo.protection?.maxWalletPct
+						? (totalSupplyWei * BigInt(Math.round(parseFloat(String(tokenInfo.protection.maxWalletPct)) * 100))) / 10000n
+						: 0n,
+					maxTransactionAmount: tokenInfo.protection?.maxTransactionPct
+						? (totalSupplyWei * BigInt(Math.round(parseFloat(String(tokenInfo.protection.maxTransactionPct)) * 100))) / 10000n
+						: 0n,
+					cooldownSeconds: BigInt(tokenInfo.protection?.cooldownSeconds || 0)
+				};
+
+				const taxParams = {
+					buyTaxBps: BigInt(Math.round(parseFloat(String(tokenInfo.tax?.buyTaxPct || '0')) * 100)),
+					sellTaxBps: BigInt(Math.round(parseFloat(String(tokenInfo.tax?.sellTaxPct || '0')) * 100)),
+					transferTaxBps: BigInt(Math.round(parseFloat(String(tokenInfo.tax?.transferTaxPct || '0')) * 100)),
+					taxWallets: tokenInfo.tax?.wallets?.map((w: any) => w.address).filter((a: string) => ethers.isAddress(a)) || [],
+					taxSharesBps: tokenInfo.tax?.wallets?.map((w: any) => Math.round(parseFloat(String(w.sharePct || '0')) * 100)) || []
+				};
+
+				addFeedback({ message: 'Launching...', type: 'info' });
+				const router = new ethers.Contract(routerAddr, PLATFORM_ROUTER_ABI, signer);
+				const tx = await router.launchCreatedToken(
+					tokenInfo.existingTokenAddress,
+					launchParams,
+					protectionParams,
+					taxParams,
+					tokenInfo.isTaxable || tokenInfo.isPartner,
+					feePayment,
+					{ value: nativeFeeWithBuffer }
 				);
 				deployTxHash = tx.hash;
 				const receipt = await tx.wait();
 
-				// Extract launch address
-				let launchAddr: string | null = null;
-				const createdEvent = receipt?.logs?.find((log: any) => {
+				// Extract launch from TokenLaunched event.
+				const event = receipt?.logs?.find((log: any) => {
 					try {
-						const parsed = factory.interface.parseLog({ topics: [...log.topics], data: log.data });
-						return parsed?.name === 'LaunchCreated';
+						const parsed = router.interface.parseLog({ topics: [...log.topics], data: log.data });
+						return parsed?.name === 'TokenLaunched';
 					} catch { return false; }
 				});
-				if (createdEvent) {
-					const parsed = factory.interface.parseLog({ topics: [...createdEvent.topics], data: createdEvent.data });
-					launchAddr = parsed?.args?.launch ?? null;
+				if (event) {
+					const parsed = router.interface.parseLog({ topics: [...event.topics], data: event.data });
+					deployedTokenAddress = parsed?.args?.token ?? tokenInfo.existingTokenAddress ?? null;
+				} else {
+					deployedTokenAddress = tokenInfo.existingTokenAddress ?? null;
 				}
 
-				deployedTokenAddress = tokenInfo.existingTokenAddress ?? null;
-
-				if (launchAddr) {
-					// Approve + deposit tokens
-					addFeedback({ message: 'Depositing tokens into launch...', type: 'info' });
-					const tokenContract = new ethers.Contract(tokenInfo.existingTokenAddress!, ERC20_ABI, signer);
-					const allowance = await tokenContract.allowance(userAddress, launchAddr);
-					if (allowance < tokensForLaunch) {
-						addFeedback({ message: `Approving ${tokenInfo.symbol}...`, type: 'info' });
-						const approveTx = await tokenContract.approve(launchAddr, tokensForLaunch);
-						await approveTx.wait();
-					}
-					const instance = new ethers.Contract(launchAddr, LAUNCH_INSTANCE_ABI, signer);
-					const depositTx = await instance.depositTokens(tokensForLaunch);
-					await depositTx.wait();
-
-					addFeedback({ message: 'Launch is live!', type: 'success' });
-					// Launch data indexed by daemon from on-chain events
-				}
+				addFeedback({ message: 'Launch is live!', type: 'success' });
 
 			} else if (tokenInfo.launch?.enabled && tokenInfo.network.router_address && tokenInfo.network.router_address !== '0x') {
 				// Use PlatformRouter for atomic Create + Launch
@@ -756,7 +964,6 @@
 					maxBuyBps: BigInt(tokenInfo.launch.maxBuyBps),
 					creatorAllocationBps: BigInt(tokenInfo.launch.creatorAllocationBps),
 					vestingDays: BigInt(tokenInfo.launch.vestingDays),
-					launchPaymentToken: selectedPayment.address,
 					startTimestamp: 0n,
 					// Anti-snipe window after curve graduation — creator picks
 					// this in the wizard (already in seconds via lockDurationAfterListing).
@@ -784,7 +991,10 @@
 					taxSharesBps: tokenInfo.tax?.wallets?.map((w: any) => Math.round(parseFloat(String(w.sharePct || '0')) * 100)) || []
 				};
 
-				const tx = await router.createTokenAndLaunch(tokenParams, launchParams, protectionParams, taxParams, referral, txOptions);
+				const tx = await router.createTokenAndLaunch(
+					tokenParams, launchParams, protectionParams, taxParams, feePayment, referral,
+					{ value: nativeFeeWithBuffer }
+				);
 				deployTxHash = tx.hash;
 				const receipt = await tx.wait();
 
@@ -919,11 +1129,15 @@
 					burnLP: false,
 					tradingDelay: BigInt(tokenInfo.listing.tradingDelay || '60'),
 				};
-				const nativeValue = (isNativePayment ? selectedFee * 108n / 100n : 0n) + ethValue;
+				// Native value budget: fee BNB (exact-output swap, only consumes
+				// what's needed) + LP BNB (wrapped to WBNB for the pair). The
+				// router handles the split internally — no longer reverts when
+				// both fee and LP use native.
+				const nativeValue = nativeFeeWithBuffer + ethValue;
 
 				const tx = await router.createAndList(
 					tokenParams, listParams,
-					protectionParams, taxParams, referral,
+					protectionParams, taxParams, feePayment, referral,
 					{ value: nativeValue }
 				);
 				deployTxHash = tx.hash;
@@ -961,7 +1175,10 @@
 				};
 
 				addFeedback({ message: 'Deploying token...', type: 'info' });
-				const tx = await router.createTokenOnly(tokenParams, protectionParams, taxParams, referral, txOptions);
+				const tx = await router.createTokenOnly(
+					tokenParams, protectionParams, taxParams, feePayment, referral,
+					{ value: nativeFeeWithBuffer }
+				);
 				deployTxHash = tx.hash;
 				const receipt = await tx.wait();
 
@@ -1494,7 +1711,7 @@
 					{#if !feeLoading && paymentOptions.length > 0}
 						<div class="pay-method-section mt-3">
 							<span class="pay-method-label">Pay with</span>
-							<button class="pay-method-card" onclick={() => showPaymentModal = true}>
+							<button class="pay-method-card" onclick={() => { showPaymentModal = true; loadPaymentQuotes(); }}>
 								{#if COIN_LOGOS[selectedPayment?.symbol?.toUpperCase()]}
 								<img src={COIN_LOGOS[selectedPayment.symbol.toUpperCase()]} alt={selectedPayment.symbol} class="pay-method-logo" />
 							{:else}
@@ -1502,46 +1719,78 @@
 							{/if}
 								<div class="pay-method-info">
 									<span class="pay-method-name">{selectedPayment?.symbol}</span>
-									<span class="pay-method-amount">{selectedFeeFormatted} {selectedPayment?.symbol}</span>
+									<span class="pay-method-amount">{selectedFeeDisplay} {selectedPayment?.symbol}</span>
 								</div>
 								<svg class="pay-method-chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
 							</button>
 						</div>
 
-						<!-- Payment method modal -->
+						<!-- Payment method modal (styled like the trade page token selector) -->
 						{#if showPaymentModal}
 							<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-							<div class="pay-modal-overlay" onclick={() => showPaymentModal = false}>
+							<div class="pm-backdrop" onclick={() => showPaymentModal = false}
+								role="dialog" aria-modal="true"
+							>
 								<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-								<div class="pay-modal" onclick={(e) => e.stopPropagation()}>
-									<div class="pay-modal-head">
-										<span class="pay-modal-title">Select payment</span>
-										<button class="pay-modal-close" onclick={() => showPaymentModal = false}>
-											<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+								<div class="pm-modal" onclick={(e) => e.stopPropagation()}>
+									<div class="pm-header">
+										<h3>Select payment</h3>
+										<button class="pm-close" onclick={() => showPaymentModal = false}>
+											<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
 										</button>
 									</div>
-									{#each paymentOptions as opt, i}
-										<button class="pay-modal-option" class:pay-modal-active={selectedPaymentIndex === i}
-											onclick={() => { selectedPaymentIndex = i; showPaymentModal = false; }}>
-											{#if COIN_LOGOS[opt.symbol.toUpperCase()]}
-												<img src={COIN_LOGOS[opt.symbol.toUpperCase()]} alt={opt.symbol} class="pay-modal-logo" />
-											{:else}
-												<span class="pay-modal-icon" class:pay-icon-native={opt.symbol === tokenInfo.network.native_coin}>
-													{opt.symbol.charAt(0)}
-												</span>
-											{/if}
-											<div class="pay-modal-meta">
-												<span class="pay-modal-sym">{opt.symbol}</span>
-												<span class="pay-modal-name">{opt.name}</span>
+
+									<input
+										class="input-field pm-search"
+										placeholder="0x... paste token address to import"
+										bind:value={payImportAddr}
+										disabled={payImportBusy}
+										onkeydown={(e) => { if (e.key === 'Enter') importPaymentToken(); }}
+									/>
+									{#if payImportError}
+										<p class="pm-import-error">{payImportError}</p>
+									{/if}
+									{#if payImportAddr.trim() && ethers.isAddress(payImportAddr.trim())}
+										<div class="pm-import-row">
+											<button class="pm-import-btn" disabled={payImportBusy} onclick={importPaymentToken}>
+												{payImportBusy ? 'Resolving...' : 'Import token'}
+											</button>
+										</div>
+									{/if}
+
+									<div class="pm-list">
+										{#if quoteFeeLoading}
+											<div class="pm-loading">
+												<div class="pm-spinner"></div>
+												<span>Loading quotes...</span>
 											</div>
-											<span class="pay-modal-fee">
-												{parseFloat(ethers.formatUnits(feeAmounts[i] ?? 0n, opt.decimals)).toFixed(4)}
-											</span>
-											{#if selectedPaymentIndex === i}
-												<span class="pay-modal-check">&#10003;</span>
-											{/if}
-										</button>
-									{/each}
+										{/if}
+										{#each paymentOptions as opt, i}
+											{@const bal = paymentBalances[i] ?? 0n}
+											{@const quote = paymentQuotes[i] ?? 0n}
+											{@const fmtBal = parseFloat(ethers.formatUnits(bal, opt.decimals)).toFixed(4)}
+											{@const fmtQuote = quote > 0n ? parseFloat(ethers.formatUnits(quote * 101n / 100n, opt.decimals)).toFixed(4) : '—'}
+											<button class="pm-item" class:pm-item-active={selectedPaymentIndex === i}
+												onclick={() => { selectedPaymentIndex = i; showPaymentModal = false; }}>
+												{#if COIN_LOGOS[opt.symbol.toUpperCase()]}
+													<img src={COIN_LOGOS[opt.symbol.toUpperCase()]} alt={opt.symbol} class="pm-logo" />
+												{:else}
+													<div class="pm-logo-placeholder">{opt.symbol.charAt(0)}</div>
+												{/if}
+												<div class="pm-info">
+													<span class="pm-sym">{opt.symbol}</span>
+													<span class="pm-name">{opt.name}</span>
+												</div>
+												<div class="pm-right">
+													<span class="pm-fee">{fmtQuote}</span>
+													<span class="pm-bal">{fmtBal}</span>
+												</div>
+												{#if selectedPaymentIndex === i}
+													<span class="pm-check">&#10003;</span>
+												{/if}
+											</button>
+										{/each}
+									</div>
 								</div>
 							</div>
 						{/if}
@@ -1846,42 +2095,80 @@
 	.pay-method-amount { display: block; font-family: 'Rajdhani', sans-serif; font-size: 12px; color: #64748b; font-variant-numeric: tabular-nums; }
 	.pay-method-chev { color: #374151; flex-shrink: 0; }
 
-	.pay-modal-overlay {
-		position: fixed; inset: 0; z-index: 100;
-		background: rgba(0,0,0,0.6); backdrop-filter: blur(3px);
-		display: flex; align-items: flex-end; justify-content: center;
+	/* ═══ PAYMENT MODAL (trade-page style) ═══ */
+	.pm-backdrop {
+		position: fixed; inset: 0; z-index: 100; background: rgba(0,0,0,0.7);
+		backdrop-filter: blur(4px); display: flex; align-items: flex-start;
+		justify-content: center; padding: 60px 16px;
 	}
-	.pay-modal {
-		width: 100%; max-width: 400px; background: #0a0b10;
-		border: 1px solid rgba(255,255,255,0.06); border-bottom: none;
-		border-radius: 16px 16px 0 0; padding: 16px;
-		animation: paySlide 0.2s ease-out;
+	.pm-modal {
+		width: 100%; max-width: 420px; max-height: 80vh;
+		background: var(--bg, #0a0b10); border: 1px solid var(--border, rgba(255,255,255,0.06));
+		border-radius: 20px; overflow: hidden; display: flex; flex-direction: column;
 	}
-	@keyframes paySlide { from { transform: translateY(100%); } }
-	.pay-modal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
-	.pay-modal-title { font-family: 'Syne', sans-serif; font-size: 15px; font-weight: 700; color: #fff; }
-	.pay-modal-close { width: 28px; height: 28px; border-radius: 8px; border: none; background: rgba(255,255,255,0.04); color: #64748b; cursor: pointer; display: flex; align-items: center; justify-content: center; }
-	.pay-modal-option {
+	.pm-header {
+		display: flex; justify-content: space-between; align-items: center;
+		padding: 16px 20px; border-bottom: 1px solid var(--border, rgba(255,255,255,0.06));
+	}
+	.pm-header h3 {
+		font-family: 'Syne', sans-serif; font-size: 16px; font-weight: 700;
+		color: var(--text-heading, #fff); margin: 0;
+	}
+	.pm-close {
+		background: none; border: none; color: var(--text-muted, #64748b); cursor: pointer;
+		padding: 4px; border-radius: 8px; transition: all 150ms;
+	}
+	.pm-close:hover { color: var(--text, #e2e8f0); background: var(--bg-surface-hover, rgba(255,255,255,0.04)); }
+	.pm-search { margin: 12px 16px; width: calc(100% - 32px); }
+	.pm-import-error { font-size: 11px; color: #f87171; font-family: 'Space Mono', monospace; padding: 0 16px 8px; margin: 0; }
+	.pm-import-row { padding: 0 16px 10px; }
+	.pm-import-btn {
+		width: 100%; padding: 8px; border-radius: 10px; border: 1px solid rgba(139,92,246,0.2);
+		background: rgba(139,92,246,0.1); color: #a78bfa; cursor: pointer;
+		font-family: 'Space Mono', monospace; font-size: 12px; font-weight: 700;
+		transition: all 150ms;
+	}
+	.pm-import-btn:hover { background: rgba(139,92,246,0.2); }
+	.pm-import-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+	.pm-list {
+		overflow-y: auto; padding: 0 8px 8px; flex: 1;
+		scrollbar-width: thin; scrollbar-color: var(--bg-surface-hover, rgba(255,255,255,0.04)) transparent;
+	}
+	.pm-loading {
+		display: flex; align-items: center; justify-content: center; gap: 8px;
+		padding: 16px; color: var(--text-muted, #64748b);
+		font-family: 'Space Mono', monospace; font-size: 11px;
+	}
+	.pm-spinner {
+		width: 16px; height: 16px; border: 2px solid var(--border, rgba(255,255,255,0.06));
+		border-top-color: #00d2ff; border-radius: 50%; animation: spin 0.8s linear infinite;
+	}
+	@keyframes spin { to { transform: rotate(360deg); } }
+	.pm-item {
 		display: flex; align-items: center; gap: 10px; width: 100%;
-		padding: 10px; border-radius: 10px; border: 1px solid transparent;
-		background: transparent; cursor: pointer; transition: all 0.1s;
-		font-family: inherit; color: inherit; text-align: left;
+		padding: 10px 12px; border-radius: 12px; border: 1px solid transparent;
+		background: transparent; cursor: pointer; transition: all 150ms; text-align: left;
 	}
-	.pay-modal-option:hover { background: rgba(255,255,255,0.03); }
-	.pay-modal-active { border-color: rgba(0,210,255,0.2); background: rgba(0,210,255,0.03); }
-	.pay-modal-icon {
-		width: 36px; height: 36px; border-radius: 50%;
-		background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06);
+	.pm-item:hover { background: var(--bg-surface-hover, rgba(255,255,255,0.03)); }
+	.pm-item-active { border-color: rgba(0,210,255,0.2); background: rgba(0,210,255,0.03); }
+	.pm-logo { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
+	.pm-logo-placeholder {
+		width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
 		display: flex; align-items: center; justify-content: center;
-		font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 800; color: #64748b; flex-shrink: 0;
+		background: rgba(0,210,255,0.08); color: #00d2ff; border: 1px solid rgba(0,210,255,0.15);
+		font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700;
 	}
-	.pay-icon-native { background: rgba(245,158,11,0.1); border-color: rgba(245,158,11,0.15); color: #f59e0b; }
-	.pay-modal-logo { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
-	.pay-modal-meta { flex: 1; }
-	.pay-modal-sym { display: block; font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700; color: #e2e8f0; }
-	.pay-modal-name { display: block; font-size: 10px; color: #475569; font-family: 'Space Mono', monospace; }
-	.pay-modal-fee { font-family: 'Rajdhani', sans-serif; font-size: 14px; font-weight: 600; color: #e2e8f0; font-variant-numeric: tabular-nums; }
-	.pay-modal-check { color: #10b981; font-size: 14px; flex-shrink: 0; }
+	.pm-info { flex: 1; min-width: 0; }
+	.pm-sym { display: block; font-family: 'Space Mono', monospace; font-size: 13px; font-weight: 700; color: var(--text-heading, #e2e8f0); }
+	.pm-name { display: block; font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text-muted, #475569); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+	.pm-right { text-align: right; flex-shrink: 0; }
+	.pm-fee { display: block; font-family: 'Rajdhani', sans-serif; font-size: 14px; font-weight: 600; color: var(--text-heading, #e2e8f0); font-variant-numeric: tabular-nums; }
+	.pm-bal { display: block; font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text-dim, #374151); }
+	.pm-check { color: #10b981; font-size: 14px; flex-shrink: 0; margin-left: 4px; }
+	@media (max-width: 640px) {
+		.pm-backdrop { padding: 0; align-items: flex-end; }
+		.pm-modal { max-width: 100%; border-radius: 20px 20px 0 0; max-height: 85vh; }
+	}
 
 	.receipt { display: flex; flex-direction: column; gap: 0; }
 	.receipt-row {

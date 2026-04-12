@@ -23,6 +23,7 @@ interface ILaunchToken {
     function isAuthorizedLauncher(address) external view returns (bool);
     function isExcludedFromLimits(address) external view returns (bool);
     function isTaxFree(address) external view returns (bool);
+    function unlockTaxCeiling() external;
 }
 
 // =============================================================
@@ -503,6 +504,11 @@ contract LaunchInstance is ReentrancyGuard {
         address paymentToken = path[0];
         uint256 usdtAmount;
 
+        // Credit the on-chain USDT delta rather than the swap router's
+        // reported output: if a non-canonical USDT ever taxes transfers,
+        // the reported amounts[last] would over-credit the buyer.
+        uint256 usdtBefore = IERC20(address(usdt)).balanceOf(address(this));
+
         if (paymentToken == address(0)) {
             // Native coin: msg.value must match amountIn exactly (no under/over pay).
             if (msg.value != amountIn) revert SendNativeCoin();
@@ -515,13 +521,13 @@ contract LaunchInstance is ReentrancyGuard {
                 fullPath[i] = path[i];
                 unchecked { ++i; }
             }
-            uint256[] memory amounts = dexRouter.swapExactETHForTokens{value: amountIn}(
+            dexRouter.swapExactETHForTokens{value: amountIn}(
                 minUsdtOut,
                 fullPath,
                 address(this),
                 block.timestamp + 300
             );
-            usdtAmount = amounts[amounts.length - 1];
+            usdtAmount = IERC20(address(usdt)).balanceOf(address(this)) - usdtBefore;
         } else {
             // ERC20 payment: no native expected.
             if (msg.value != 0) revert SendNativeCoin();
@@ -533,14 +539,14 @@ contract LaunchInstance is ReentrancyGuard {
                 usdtAmount = amountIn;
             } else {
                 IERC20(paymentToken).forceApprove(address(dexRouter), amountIn);
-                uint256[] memory amounts = dexRouter.swapExactTokensForTokens(
+                dexRouter.swapExactTokensForTokens(
                     amountIn,
                     minUsdtOut,
                     path,
                     address(this),
                     block.timestamp + 300
                 );
-                usdtAmount = amounts[amounts.length - 1];
+                usdtAmount = IERC20(address(usdt)).balanceOf(address(this)) - usdtBefore;
             }
         }
 
@@ -725,6 +731,13 @@ contract LaunchInstance is ReentrancyGuard {
 
         // Buy fees already sent to platform on each buy — no transfer needed here
 
+        // Unlock the tax ceiling so the creator can adjust rates and
+        // relaunch. This instance is an authorized launcher on the token,
+        // which is the only role permitted to unlock. The call is wrapped
+        // in try/catch because non-taxable token variants won't have the
+        // function — and that's fine (no ceiling to unlock).
+        try ILaunchToken(address(token)).unlockTaxCeiling() {} catch {}
+
         emit RefundingEnabled();
     }
 
@@ -802,16 +815,29 @@ contract LaunchInstance is ReentrancyGuard {
         emit CreatorReclaim(creator, available);
     }
 
-    /// @notice Platform rescue: after 90 days in Refunding, sweep any USDT
-    ///         still stranded from buyers who abandoned their refund. This
-    ///         never touches USDT owed to live entitlements — by the time
-    ///         the sweep window opens, the expectation is that active
-    ///         buyers have long since refunded.
+    /// @notice Platform rescue: after STRANDED_SWEEP_DELAY in Refunding,
+    ///         sweep any USDT still stranded from buyers who abandoned
+    ///         their refund. Never touches USDT owed to live entitlements —
+    ///         by the time the sweep window opens, the expectation is that
+    ///         active buyers have long since refunded.
+    ///
+    ///         5 years is deliberately long. Abandoned refunds are almost
+    ///         always dust; platform revenue from sweeps is negligible, so
+    ///         the window is sized to protect buyers who lost access
+    ///         (hospital, lost keys, divorce, moved countries) rather than
+    ///         to recover value fast. Also lines up with 3-5 year
+    ///         unclaimed-property escheatment norms in most jurisdictions.
+    uint256 public constant STRANDED_SWEEP_DELAY = 1825 days;
+
     function sweepStrandedUsdt() external {
         if (state != LaunchState.Refunding) revert NotRefunding();
-        if (block.timestamp < refundStartTimestamp + 90 days) revert StrandedSweepTooEarly();
+        if (block.timestamp < refundStartTimestamp + STRANDED_SWEEP_DELAY) revert StrandedSweepTooEarly();
         address _platformWallet = ILaunchpadFactory(factory).platformWallet();
-        if (msg.sender != _platformWallet && msg.sender != creator) revert NotCreator();
+        // Platform-only. The creator used to be allowed here too, but the
+        // funds always land in `platformWallet` — leaving creator in the
+        // access list was cosmetic (no incentive to call) and encouraged
+        // confused-deputy expectations.
+        if (msg.sender != _platformWallet) revert NotCreator();
         uint256 bal = usdt.balanceOf(address(this));
         if (bal == 0) revert NoTokens();
         usdt.safeTransfer(_platformWallet, bal);

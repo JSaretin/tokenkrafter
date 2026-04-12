@@ -92,6 +92,12 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
 
     uint256 public feeBps = 100;                // 1% default
     uint256 public payoutTimeout = 600;         // 10 minutes default
+    /// @notice Minimum withdrawal value in USDT (native units). Anti-dust
+    ///         floor that stops attackers from spamming `withdrawals` /
+    ///         `pendingIds` / `userWithdrawIds` with sub-cent requests to
+    ///         bloat storage and DoS the indexer. Owner-configurable.
+    ///         Set to 0 to disable the floor entirely.
+    uint256 public minWithdrawUsdt;
     address public platformWallet;
     address[] public admins;
     mapping(address => bool) public isAdmin;
@@ -127,7 +133,7 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
         address token, uint256 grossAmount, uint256 fee,
         uint256 netAmount, bytes32 bankRef
     );
-    event WithdrawConfirmed(uint256 indexed id, address indexed admin);
+    event WithdrawConfirmed(uint256 indexed id, address indexed admin, address indexed to, uint256 amount);
     event WithdrawCancelled(uint256 indexed id, address indexed user, uint256 refundedAmount);
     event FeesWithdrawn(address indexed token, uint256 amount, address indexed to);
     event TokenRescued(address indexed token, uint256 amount, address indexed to);
@@ -137,6 +143,7 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
     event AdminRemoved(address indexed admin);
     event PlatformWalletUpdated(address indexed oldWallet, address indexed newWallet);
     event MaxSlippageUpdated(uint256 oldBps, uint256 newBps);
+    event MinWithdrawUpdated(uint256 oldMin, uint256 newMin);
     event AffiliatePaid(uint256 indexed id, address indexed referrer, uint256 amount);
 
     // ── Errors ──────────────────────────────────────────────────────
@@ -144,6 +151,7 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
     error InvalidFee();
     error InvalidTimeout();
     error ZeroAmount();
+    error BelowMinWithdraw();
     error ZeroAddress();
     error InvalidRequest();
     error NotPending();
@@ -421,22 +429,22 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
         id = _createWithdrawRequest(msg.sender, address(usdt), usdtReceived, bankRef, referrer);
     }
 
-    /// @notice Confirm withdrawal — send net amount to platformWallet
+    /// @notice Confirm withdrawal — send full net amount to platformWallet
     function confirm(uint256 id) external onlyAdmin nonReentrant {
-        _confirm(id, platformWallet, 0);
+        _confirm(id, platformWallet);
     }
 
-    /// @notice Confirm withdrawal — send net amount to custom address
+    /// @notice Confirm withdrawal — send full net amount to a custom address
     function confirm(uint256 id, address to) external onlyAdmin nonReentrant {
-        _confirm(id, to, 0);
+        _confirm(id, to);
     }
 
-    /// @notice Confirm withdrawal — send custom amount to custom address, rest to platformWallet
-    function confirm(uint256 id, address to, uint256 amount) external onlyAdmin nonReentrant {
-        _confirm(id, to, amount);
-    }
-
-    function _confirm(uint256 id, address to, uint256 customAmount) internal {
+    /// @dev Internal confirmation path. Always pays the full `req.netAmount`
+    ///      to `to`. The custom-amount variant was intentionally removed:
+    ///      anything less than netAmount silently extracted the shortfall
+    ///      to the platform, which doubled the trust surface on admins and
+    ///      made payouts non-auditable from event logs alone.
+    function _confirm(uint256 id, address to) internal {
         if (id >= withdrawals.length) revert InvalidRequest();
         if (to == address(0)) revert ZeroAddress();
         WithdrawRequest storage req = withdrawals[id];
@@ -459,17 +467,9 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
         }
         platformEarnings[req.token] += platformFee;
 
-        if (customAmount > 0 && customAmount <= req.netAmount) {
-            IERC20(req.token).safeTransfer(to, customAmount);
-            uint256 remainder = req.netAmount - customAmount;
-            if (remainder > 0) {
-                IERC20(req.token).safeTransfer(platformWallet, remainder);
-            }
-        } else {
-            IERC20(req.token).safeTransfer(to, req.netAmount);
-        }
+        IERC20(req.token).safeTransfer(to, req.netAmount);
 
-        emit WithdrawConfirmed(id, msg.sender);
+        emit WithdrawConfirmed(id, msg.sender, to, req.netAmount);
     }
 
     /// @notice Batch confirm — all net amounts to platformWallet, with proper affiliate handling
@@ -480,7 +480,7 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
             if (withdrawals[id].status != WithdrawStatus.Pending) continue;
             if (block.timestamp >= withdrawals[id].createdAt + payoutTimeout) continue;
 
-            _confirm(id, platformWallet, 0);
+            _confirm(id, platformWallet);
             confirmed++;
         }
     }
@@ -586,6 +586,14 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
         if (newBps > MAX_SLIPPAGE_CAP) revert SlippageConfigTooHigh();
         emit MaxSlippageUpdated(maxSlippageBps, newBps);
         maxSlippageBps = newBps;
+    }
+
+    /// @notice Set the minimum withdrawal value in USDT native units. Pass 0
+    ///         to disable the floor. Anti-dust storage protection — see
+    ///         `minWithdrawUsdt` declaration for context.
+    function setMinWithdrawUsdt(uint256 newMin) external onlyOwner {
+        emit MinWithdrawUpdated(minWithdrawUsdt, newMin);
+        minWithdrawUsdt = newMin;
     }
 
     function setAffiliateEnabled(bool enabled) external onlyOwner {
@@ -729,6 +737,11 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
         bytes32 bankRef,
         address referrer
     ) internal returns (uint256 id) {
+        // Anti-dust floor. Single chokepoint catches all three deposit paths
+        // (deposit, depositAndSwap, depositETH) so attackers can't bloat the
+        // unbounded `withdrawals` / `pendingIds` arrays with sub-cent requests.
+        if (minWithdrawUsdt > 0 && grossAmount < minWithdrawUsdt) revert BelowMinWithdraw();
+
         uint256 fee = (grossAmount * feeBps) / 10000;
         uint256 netAmount = grossAmount - fee;
 

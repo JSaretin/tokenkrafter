@@ -13,7 +13,6 @@
 		enabled: boolean; tokensForLaunchPct: number; curveType: number;
 		softCap: string; hardCap: string; durationDays: string;
 		maxBuyBps: string; creatorAllocationBps: string; vestingDays: string;
-		launchPaymentToken: string;
 		// Anti-snipe window after curve graduation, in seconds. Cap 24h.
 		// Default 1 hour gives buyers time to react before DEX trading opens.
 		lockDurationAfterListing: string;
@@ -28,6 +27,12 @@
 		name: string; symbol: string; totalSupply: string; decimals: number;
 		isMintable: boolean; isTaxable: boolean; isPartner: boolean;
 		network: any; existingTokenAddress?: string;
+		// Base token addresses passed to CreateTokenParams.bases at tx time.
+		// Pre-populated from network.default_bases; user can add more in the
+		// wizard. Pre-registering these as pools on the token closes the
+		// grifter vector where someone opens a WBNB pair (or similar) with
+		// a malicious initial price before the creator's real listing.
+		bases: string[];
 		listing: ListingConfig; launch: LaunchConfig; protection: ProtectionConfig; tax: TaxConfig;
 		metadata?: TokenMetadata;
 	};
@@ -144,6 +149,75 @@
 	// Contract caps at 24h. UI displays as seconds.
 	let listingTradingDelaySeconds = $state('60');
 
+	// Base tokens pre-registered as pools on the new token. The wizard seeds
+	// these from `network.default_bases` (DB-driven, per-chain). Each entry is
+	// `{ address, symbol, name }`. Pre-selected bases = every default + every
+	// custom the user added. The resulting list becomes `CreateTokenParams.bases`
+	// at tx time so the token's pool-lock gate blocks grifter-opened pairs
+	// (malicious initial price) before the creator's real listing lands.
+	type BaseOption = { address: string; symbol: string; name?: string; custom?: boolean };
+	let baseSelection = $state<Record<string, boolean>>({});
+	let customBases = $state<BaseOption[]>([]);
+	let newBaseAddress = $state('');
+	let baseLookupBusy = $state(false);
+	let baseLookupError = $state<string | null>(null);
+
+	/**
+	 * Resolve a token address to {symbol, name, decimals}. Tries GeckoTerminal
+	 * first (faster + has display name + curated data), falls back to an
+	 * on-chain ERC20 read so unlisted tokens still work.
+	 */
+	async function lookupBaseInfo(
+		net: SupportedNetwork,
+		address: string
+	): Promise<{ symbol: string; name: string; decimals: number } | null> {
+		// Gecko's network slug = the chain's lowercase symbol (bsc, eth, base, …).
+		// Set on the SupportedNetwork row in the DB.
+		const slug = net.symbol?.toLowerCase();
+		if (slug) {
+			try {
+				const res = await fetch(
+					`https://api.geckoterminal.com/api/v2/networks/${slug}/tokens/${address}/info`,
+					{ headers: { Accept: 'application/json;version=20230203' } }
+				);
+				if (res.ok) {
+					const json = await res.json();
+					const a = json?.data?.attributes;
+					if (a?.symbol) {
+						return {
+							symbol: String(a.symbol),
+							name: String(a.name || a.symbol),
+							decimals: Number(a.decimals ?? 18),
+						};
+					}
+				}
+			} catch {}
+		}
+		// On-chain fallback. Use the network's RPC provider directly.
+		try {
+			const provider = getNetworkProviders?.()?.get(net.chain_id)
+				?? new ethers.JsonRpcProvider(net.rpc);
+			const c = new ethers.Contract(
+				address,
+				[
+					'function name() view returns (string)',
+					'function symbol() view returns (string)',
+					'function decimals() view returns (uint8)',
+				],
+				provider
+			);
+			const [name, symbol, decimals] = await Promise.all([
+				c.name().catch(() => ''),
+				c.symbol().catch(() => ''),
+				c.decimals().catch(() => 18),
+			]);
+			if (!symbol) return null;
+			return { symbol: String(symbol), name: String(name || symbol), decimals: Number(decimals) };
+		} catch {
+			return null;
+		}
+	}
+
 	// Handle preset loaded from BasicInfo's contract loader — resets all token features
 	function handlePresetLoaded(data: { isTaxable: boolean; buyTaxPct: string; sellTaxPct: string; transferTaxPct: string }) {
 		isTaxable = data.isTaxable;
@@ -165,6 +239,81 @@
 	// ── Derived ────────────────────────────────────────────
 	let selectedNetwork = $derived(supportedNetworks.find(n => n.chain_id == chainId));
 	let nativeCoin = $derived(selectedNetwork?.native_coin || 'BNB');
+
+	// Merge chain defaults + user customs into the displayed base options.
+	// Defaults always render first; customs follow in insertion order.
+	let baseOptions: BaseOption[] = $derived.by(() => {
+		const defs: BaseOption[] = (selectedNetwork?.default_bases ?? [])
+			.map(b => ({ address: b.address, symbol: b.symbol, name: b.name }));
+		return [...defs, ...customBases];
+	});
+
+	// Auto-select all default bases whenever the chain changes. Merges
+	// rather than replacing so a restored draft (sessionStorage) keeps its
+	// per-base toggle state. New defaults pre-select to true; existing
+	// entries — including the user's "I unchecked this default" decisions
+	// — are preserved as-is.
+	let _lastBaseChainId: number | undefined;
+	$effect(() => {
+		if (!selectedNetwork) return;
+		if (_lastBaseChainId === selectedNetwork.chain_id) return;
+		_lastBaseChainId = selectedNetwork.chain_id;
+		const next: Record<string, boolean> = { ...baseSelection };
+		for (const b of selectedNetwork.default_bases ?? []) {
+			const k = b.address.toLowerCase();
+			if (!(k in next)) next[k] = true;
+		}
+		baseSelection = next;
+	});
+
+	function toggleBase(address: string) {
+		const k = address.toLowerCase();
+		baseSelection = { ...baseSelection, [k]: !baseSelection[k] };
+	}
+
+	async function addCustomBase() {
+		baseLookupError = null;
+		const addr = newBaseAddress.trim();
+		if (!ethers.isAddress(addr)) {
+			baseLookupError = 'Invalid address';
+			return;
+		}
+		const k = addr.toLowerCase();
+		if (baseOptions.some(b => b.address.toLowerCase() === k)) {
+			baseLookupError = 'Already in the list';
+			return;
+		}
+		if (!selectedNetwork) {
+			baseLookupError = 'Pick a network first';
+			return;
+		}
+		baseLookupBusy = true;
+		try {
+			const info = await lookupBaseInfo(selectedNetwork, addr);
+			if (!info) {
+				baseLookupError = 'Could not resolve token. Check the address.';
+				return;
+			}
+			customBases = [...customBases, { address: addr, symbol: info.symbol, name: info.name, custom: true }];
+			baseSelection = { ...baseSelection, [k]: true };
+			newBaseAddress = '';
+		} finally {
+			baseLookupBusy = false;
+		}
+	}
+
+	function removeCustomBase(address: string) {
+		const k = address.toLowerCase();
+		customBases = customBases.filter(c => c.address.toLowerCase() !== k);
+		const { [k]: _, ...rest } = baseSelection;
+		baseSelection = rest;
+	}
+
+	let selectedBaseAddresses: string[] = $derived(
+		baseOptions
+			.filter(b => baseSelection[b.address.toLowerCase()])
+			.map(b => b.address)
+	);
 	let getNetworkProviders: () => Map<number, ethers.JsonRpcProvider> = getContext('networkProviders');
 
 	// BNB price for listing preview
@@ -240,6 +389,29 @@
 		}
 	}
 
+	// Restore custom base additions from initialData. Defaults are
+	// re-auto-selected on network change by the chain-change effect above;
+	// only user-added customs need explicit restore. Done in an effect so
+	// it can wait for `selectedNetwork` to become available, and so reads
+	// of $state values stay reactive.
+	let _customBasesRestored = false;
+	$effect(() => {
+		if (_customBasesRestored) return;
+		if (!selectedNetwork) return;
+		const seed = (initialData as any)?.bases as string[] | undefined;
+		if (!seed?.length) { _customBasesRestored = true; return; }
+		const defaultSet = new Set(
+			(selectedNetwork.default_bases ?? []).map((b: any) => b.address.toLowerCase())
+		);
+		for (const addr of seed) {
+			if (!ethers.isAddress(addr)) continue;
+			if (defaultSet.has(addr.toLowerCase())) continue;
+			customBases = [...customBases, { address: addr, symbol: 'CUSTOM', custom: true }];
+			baseSelection = { ...baseSelection, [addr.toLowerCase()]: true };
+		}
+		_customBasesRestored = true;
+	});
+
 	// ── Persist form state across OAuth redirects ──────────
 	const FORM_STORAGE_KEY = 'tk_create_form_draft';
 
@@ -254,6 +426,9 @@
 			launchTokensPct, launchCurveType, launchSoftCap, launchHardCap,
 			launchDurationDays, launchMaxBuyPct, launchCreatorAllocPct, launchVestingDays,
 			listingPoolPct, listingPairs, listingPricePerToken, wizardStep,
+			// Pool-base picker — both the toggle map AND the user-added customs
+			// (which carry resolved name/symbol so we don't re-hit gecko on reload)
+			customBases, baseSelection,
 		};
 	}
 
@@ -296,6 +471,11 @@
 		if (s.listingPairs?.length) listingPairs = s.listingPairs;
 		if (s.listingPricePerToken) listingPricePerToken = s.listingPricePerToken;
 		if (s.wizardStep) wizardStep = s.wizardStep;
+		// Pool-base picker — restore customs first so the chain-change effect
+		// can preserve their selection state. baseSelection holds the toggle
+		// for both default and custom bases as a single { addrLower → bool }.
+		if (Array.isArray(s.customBases)) customBases = s.customBases;
+		if (s.baseSelection && typeof s.baseSelection === 'object') baseSelection = s.baseSelection;
 	}
 
 	// Restore draft if returning from OAuth redirect or page reload
@@ -394,6 +574,7 @@
 		updateTokenInfo({
 			name, symbol, totalSupply, decimals, isMintable, isTaxable, isPartner, network,
 			existingTokenAddress: isRealExistingToken ? existingTokenAddress : undefined,
+			bases: selectedBaseAddresses,
 			listing: {
 				enabled: listingEnabled, baseCoin: listingPairs[0]?.base ?? 'native',
 				mode: 'price', tokenAmount: String(totalTokensForListing),
@@ -407,7 +588,6 @@
 				curveType: launchCurveType, softCap: launchSoftCap, hardCap: launchHardCap,
 				durationDays: launchDurationDays, maxBuyBps: String(Math.round(parseFloat(launchMaxBuyPct || '0') * 100)),
 				creatorAllocationBps: String(Math.round(parseFloat(launchCreatorAllocPct || '0') * 100)), vestingDays: launchVestingDays,
-				launchPaymentToken: '',
 				// Convert minutes to seconds for the contract (contract caps at 24h = 1440 min).
 				lockDurationAfterListing: String(Math.round(parseFloat(launchLockDurationMinutes || '0') * 60)),
 				minBuyUsdt: launchMinBuyUsdt,
@@ -488,6 +668,61 @@
 
 		{:else if wizardStep === 'features'}
 			<Features bind:isMintable bind:isTaxable bind:isPartner />
+
+			<!-- Base-token pre-registration. Every checked base gets a pool
+			     created on the token at initialize() time, which means the
+			     pool-lock gate blocks anyone from trading it before the
+			     creator's real listing opens. Without this, a grifter can
+			     open e.g. the WBNB pair with a malicious initial price and
+			     drain it as soon as trading flips on. -->
+			{#if baseOptions.length > 0 || selectedNetwork}
+			<div class="wz-section" style="margin-top: 18px;">
+				<h3 class="wz-subtitle">Pool bases</h3>
+				<p class="wz-hint" style="margin-bottom: 10px;">
+					These are the DEX base tokens where pools will be pre-registered.
+					Keep all selected — it blocks grifters from opening a pair at a
+					bad price before you can list.
+				</p>
+				<div class="base-grid">
+					{#each baseOptions as b (b.address.toLowerCase())}
+						<label class="base-pill" class:base-pill-on={baseSelection[b.address.toLowerCase()]} title={b.name || b.symbol}>
+							<input
+								type="checkbox"
+								checked={!!baseSelection[b.address.toLowerCase()]}
+								onchange={() => toggleBase(b.address)}
+							/>
+							<span class="base-sym">{b.symbol}</span>
+							{#if b.custom}
+								<button
+									type="button"
+									class="base-remove"
+									onclick={(e) => { e.preventDefault(); removeCustomBase(b.address); }}
+									title="Remove"
+								>×</button>
+							{/if}
+						</label>
+					{/each}
+				</div>
+				<div class="base-add-row">
+					<input
+						class="input-field base-add-addr"
+						type="text"
+						placeholder="0x… add custom base"
+						bind:value={newBaseAddress}
+						disabled={baseLookupBusy}
+					/>
+					<button
+						type="button"
+						class="base-add-btn"
+						onclick={addCustomBase}
+						disabled={!newBaseAddress.trim() || baseLookupBusy}
+					>{baseLookupBusy ? '…' : 'Add'}</button>
+				</div>
+				{#if baseLookupError}
+					<p class="base-error">{baseLookupError}</p>
+				{/if}
+			</div>
+			{/if}
 
 		{:else if wizardStep === 'tax'}
 			<TaxStep bind:buyTaxPct bind:sellTaxPct bind:transferTaxPct bind:taxWallets bind:protectionEnabled bind:maxWalletPct bind:maxTransactionPct bind:cooldownSeconds />
@@ -736,7 +971,40 @@
 	.wz-radio-active { border-color: rgba(0,210,255,0.4); color: #00d2ff; background: rgba(0,210,255,0.08); }
 
 	.wz-field-hint { display: block; font-size: 10px; color: #64748b; font-family: 'Space Mono', monospace; margin-top: 3px; }
+	.wz-subtitle { font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700; color: #e2e8f0; margin: 0 0 6px; }
 	.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
+
+	/* Base-token multi-select */
+	.base-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+	.base-pill {
+		display: inline-flex; align-items: center; gap: 6px;
+		padding: 7px 12px; border-radius: 10px;
+		border: 1px solid rgba(255,255,255,0.1);
+		background: transparent; color: #64748b;
+		font-family: 'Space Mono', monospace; font-size: 11px;
+		cursor: pointer; transition: all 150ms;
+	}
+	.base-pill input { position: absolute; opacity: 0; pointer-events: none; }
+	.base-pill:hover { border-color: rgba(0,210,255,0.3); color: #e2e8f0; }
+	.base-pill-on { border-color: rgba(0,210,255,0.4); color: #00d2ff; background: rgba(0,210,255,0.08); }
+	.base-sym { font-weight: 700; }
+	.base-remove {
+		background: none; border: none; color: inherit; cursor: pointer;
+		font-size: 14px; line-height: 1; padding: 0 2px;
+		opacity: 0.6;
+	}
+	.base-remove:hover { opacity: 1; }
+	.base-add-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+	.base-add-addr { font-size: 11px; }
+	.base-error { font-size: 11px; color: #f87171; font-family: 'Space Mono', monospace; margin-top: 6px; }
+	.base-add-btn {
+		padding: 8px 16px; border-radius: 10px;
+		border: 1px solid rgba(0,210,255,0.4); background: rgba(0,210,255,0.08);
+		color: #00d2ff; font-family: 'Space Mono', monospace; font-size: 11px;
+		cursor: pointer; transition: all 150ms;
+	}
+	.base-add-btn:hover:not(:disabled) { background: rgba(0,210,255,0.15); }
+	.base-add-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 	/* Toggle card */
 	.wz-toggle-card { border: 1px solid rgba(255,255,255,0.06); border-radius: 12px; padding: 0; margin-top: 14px; overflow: hidden; transition: border-color 200ms; }

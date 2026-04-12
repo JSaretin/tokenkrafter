@@ -13,6 +13,7 @@
 	import { ERC20_ABI, ZERO_ADDRESS, FACTORY_ABI } from '$lib/tokenCrafter';
 	import {
 		LAUNCH_INSTANCE_ABI,
+		LAUNCHPAD_FACTORY_ABI,
 		type LaunchInfo,
 		type LaunchState,
 		type BuyPreview,
@@ -80,6 +81,10 @@
 	let strandedUsdtBalance = $state(0n);    // contract's current USDT balance during Refunding
 	let refundStartTimestamp = $state(0n);   // timestamp when enableRefunds was called
 	let lockDurationAfterListing = $state(0n);
+	// Platform wallet (read from LaunchpadFactory). Gates the stranded-USDT
+	// sweep button: after the audit L2 fix, `sweepStrandedUsdt()` is
+	// platform-only and will revert for any other caller.
+	let platformWalletAddress = $state<string>('');
 
 	// Preflight status for Pending launches. preflightReason is one of:
 	//   "" (ready), "NOT_PENDING", "NOT_FUNDED", "NOT_EXCLUDED_FROM_LIMITS",
@@ -389,6 +394,8 @@
 			//   - the launch's current USDT balance (available for platform sweep after 90 days)
 			//   - refundStartTimestamp (gates the sweep window)
 			//   - lockDurationAfterListing (informational for the UI)
+			//   - platformWallet (gates who can call sweepStrandedUsdt — the
+			//     audit L2 fix made this platform-only)
 			if (info.state === 3) {
 				try {
 					const tokenC = new ethers.Contract(info.token, ERC20_ABI, prov);
@@ -400,11 +407,28 @@
 				} catch { strandedUsdtBalance = 0n; }
 				try {
 					const instance = new ethers.Contract(launchAddress, LAUNCH_INSTANCE_ABI, prov);
-					refundStartTimestamp = await instance.refundStartTimestamp();
-					lockDurationAfterListing = await instance.lockDurationAfterListing();
+					const [rts, lda, ssd] = await Promise.all([
+						instance.refundStartTimestamp(),
+						instance.lockDurationAfterListing(),
+						instance.STRANDED_SWEEP_DELAY(),
+					]);
+					refundStartTimestamp = rts;
+					lockDurationAfterListing = lda;
+					strandedSweepDelay = ssd;
 				} catch {
 					refundStartTimestamp = 0n;
 					lockDurationAfterListing = 0n;
+					strandedSweepDelay = 0n;
+				}
+				try {
+					const lpFactory = new ethers.Contract(
+						net.launchpad_address,
+						LAUNCHPAD_FACTORY_ABI,
+						prov
+					);
+					platformWalletAddress = await lpFactory.platformWallet();
+				} catch {
+					platformWalletAddress = '';
 				}
 			}
 
@@ -1003,9 +1027,11 @@
 		}
 	}
 
-	// Platform / creator sweep of stranded USDT after 90 days of Refunding.
-	// For buyers who abandoned their refund — the USDT goes to the platform
-	// wallet, never to the caller.
+	// Platform sweep of stranded USDT after 90 days of Refunding. For
+	// buyers who abandoned their refund — the USDT goes to the platform
+	// wallet, never to the caller. Contract-gated to msg.sender ==
+	// platformWallet after the audit L2 fix, so the UI only renders
+	// the button when the connected wallet matches.
 	async function handleSweepStranded() {
 		if (!signer || !launch || launch.state !== 3) return;
 		isSweeping = true;
@@ -1024,12 +1050,21 @@
 	}
 
 	// Derived state for the reclaim/sweep UI.
-	// Available 90 days after refundStartTimestamp, per the contract gate.
-	const SWEEP_WINDOW_SECONDS = 90 * 24 * 60 * 60;
-	let sweepAvailable = $derived.by(() => {
-		if (!launch || launch.state !== 3 || refundStartTimestamp === 0n) return false;
-		return BigInt(Math.floor(Date.now() / 1000)) >= refundStartTimestamp + BigInt(SWEEP_WINDOW_SECONDS);
+	// Sweep delay is read from the on-chain constant STRANDED_SWEEP_DELAY
+	// (currently 5 years / 1825 days). Reading dynamically means any future
+	// impl bump via setLaunchImplementation auto-propagates to the UI
+	// without a frontend redeploy.
+	let strandedSweepDelay = $state(0n); // loaded alongside refund state
+	let sweepWindowOpen = $derived.by(() => {
+		if (!launch || launch.state !== 3 || refundStartTimestamp === 0n || strandedSweepDelay === 0n) return false;
+		return BigInt(Math.floor(Date.now() / 1000)) >= refundStartTimestamp + strandedSweepDelay;
 	});
+	let isPlatformWallet = $derived(
+		!!userAddress &&
+		!!platformWalletAddress &&
+		userAddress.toLowerCase() === platformWalletAddress.toLowerCase()
+	);
+	let sweepAvailable = $derived(sweepWindowOpen && isPlatformWallet && strandedUsdtBalance > 0n);
 
 	function shortAddr(addr: string) {
 		return addr.slice(0, 6) + '...' + addr.slice(-4);
@@ -2259,12 +2294,16 @@
 					</div>
 				{/if}
 
-				<!-- Creator Reclaim + Stranded USDT Sweep (Refunding state only) -->
+				<!-- Creator Reclaim (Refunding state only).
+				     Stranded-USDT sweep was previously rendered inside this
+				     panel but moved to its own platform-gated panel below,
+				     since the L2 audit fix made sweepStrandedUsdt() platform-
+				     only on-chain — the creator button would revert. -->
 				{#if launch.state === 3 && userAddress && launch.creator.toLowerCase() === userAddress.toLowerCase()}
 					<div class="card p-6 mb-4 border-amber-500/20">
 						<h3 class="syne font-bold text-amber-300 mb-1">Creator tools</h3>
 						<p class="text-gray-500 text-xs font-mono mb-4">
-							This launch is refunding. You can reclaim the tokens that weren't sold (or that buyers have returned so far) at any time. After 90 days the platform can sweep any USDT that abandoned buyers never came back to claim.
+							This launch is refunding. You can reclaim the tokens that weren't sold (or that buyers have returned so far) at any time.
 						</p>
 
 						{#if reclaimableBalance > 0n}
@@ -2286,31 +2325,41 @@
 							<p class="text-gray-600 text-xs font-mono">No tokens currently available to reclaim.</p>
 						{/if}
 
-						{#if strandedUsdtBalance > 0n}
-							<div class="mt-4 pt-4 border-t border-white/5">
-								<div class="detail-row mb-3">
-									<span class="detail-label">Stranded USDT</span>
-									<span class="detail-value">{formatUsdt(strandedUsdtBalance, ud)}</span>
-								</div>
-								{#if sweepAvailable}
-									<button
-										onclick={handleSweepStranded}
-										disabled={isSweeping}
-										class="btn-secondary w-full py-2.5 text-sm cursor-pointer"
-									>
-										{isSweeping ? 'Sweeping…' : 'Sweep stranded USDT to platform'}
-									</button>
-									<p class="text-gray-600 text-[10px] font-mono mt-2">
-										90-day refund window has passed. Remaining USDT goes to the platform wallet — abandoned refunds can no longer be claimed.
-									</p>
-								{:else if refundStartTimestamp > 0n}
-									{@const unlockTs = Number(refundStartTimestamp) + 90 * 24 * 60 * 60}
-									{@const daysLeft = Math.max(0, Math.ceil((unlockTs * 1000 - Date.now()) / (24 * 60 * 60 * 1000)))}
-									<p class="text-gray-600 text-xs font-mono">
-										Stranded USDT sweep unlocks in {daysLeft} day{daysLeft === 1 ? '' : 's'}.
-									</p>
-								{/if}
-							</div>
+					</div>
+				{/if}
+
+				<!-- Platform stranded-USDT sweep (Refunding state, platform
+				     wallet only). Appears after the 90-day refund window
+				     closes, when there's still USDT sitting on the launch
+				     that nobody claimed. Sends the balance to the platform
+				     wallet. On-chain: LaunchInstance.sweepStrandedUsdt(). -->
+				{#if launch.state === 3 && isPlatformWallet && strandedUsdtBalance > 0n}
+					<div class="card p-6 mb-4 border-cyan-500/20">
+						<h3 class="syne font-bold text-cyan-300 mb-1">Platform tools</h3>
+						<p class="text-gray-500 text-xs font-mono mb-4">
+							You're connected as the platform wallet. The stranded USDT on this refunding launch can be swept after the 90-day buyer refund window closes.
+						</p>
+						<div class="detail-row mb-3">
+							<span class="detail-label">Stranded USDT</span>
+							<span class="detail-value">{formatUsdt(strandedUsdtBalance, ud)}</span>
+						</div>
+						{#if sweepWindowOpen}
+							<button
+								onclick={handleSweepStranded}
+								disabled={isSweeping}
+								class="btn-secondary w-full py-2.5 text-sm cursor-pointer"
+							>
+								{isSweeping ? 'Sweeping…' : 'Sweep stranded USDT to platform wallet'}
+							</button>
+							<p class="text-gray-600 text-[10px] font-mono mt-2">
+								90-day refund window has passed. Abandoned refunds can no longer be claimed by buyers.
+							</p>
+						{:else if refundStartTimestamp > 0n}
+							{@const unlockTs = Number(refundStartTimestamp) + Number(strandedSweepDelay)}
+							{@const daysLeft = Math.max(0, Math.ceil((unlockTs * 1000 - Date.now()) / (24 * 60 * 60 * 1000)))}
+							<p class="text-gray-600 text-xs font-mono">
+								Sweep unlocks in {daysLeft} day{daysLeft === 1 ? '' : 's'}.
+							</p>
 						{/if}
 					</div>
 				{/if}

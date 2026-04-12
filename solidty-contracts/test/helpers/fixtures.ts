@@ -136,20 +136,25 @@ export async function createToken(
     isTaxable?: boolean;
     isMintable?: boolean;
     isPartner?: boolean;
+    bases?: string[];
   } = {}
 ) {
   const p = {
     name: opts.name ?? "Test Token",
     symbol: opts.symbol ?? "TEST",
-    totalSupply: opts.supply ?? 1_000_000n, // whole tokens (factory multiplies by 10^decimals)
+    totalSupply: opts.supply ?? 1_000_000n,
     decimals: opts.decimals ?? 18,
     isTaxable: opts.isTaxable ?? false,
     isMintable: opts.isMintable ?? false,
     isPartner: opts.isPartner ?? false,
-    paymentToken: await stack.usdt.getAddress(),
+    bases:
+      opts.bases ?? [
+        await stack.weth.getAddress(),
+        await stack.usdt.getAddress(),
+      ],
   };
 
-  // Pay the creation fee: user must approve USDT for the factory.
+  // Pay the creation fee in USDT. Factory is USDT-only now.
   const typeKey =
     (p.isPartner ? 4 : 0) | (p.isTaxable ? 2 : 0) | (p.isMintable ? 1 : 0);
   const fee = await stack.tokenFactory.creationFee(typeKey);

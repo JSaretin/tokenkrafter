@@ -65,7 +65,7 @@
 							class="input-field"
 							type="number"
 							min="0"
-							max="10"
+							max="4"
 							step="0.01"
 							bind:value={buyTaxPctInput}
 							placeholder="0"
@@ -85,7 +85,7 @@
 							class="input-field"
 							type="number"
 							min="0"
-							max="10"
+							max="4"
 							step="0.01"
 							bind:value={sellTaxPctInput}
 							placeholder="0"
@@ -105,7 +105,7 @@
 							class="input-field"
 							type="number"
 							min="0"
-							max="5"
+							max="2"
 							step="0.01"
 							bind:value={transferTaxPctInput}
 							placeholder="0"
@@ -118,7 +118,7 @@
 					{/if}
 				</div>
 			</div>
-			<div class="text-xs text-gray-500 font-mono mt-2">{$t('mt.taxMaxHint')}</div>
+			<div class="text-xs text-gray-500 font-mono mt-2">Max: 4% buy, 4% sell, 2% transfer. Tax can only be lowered once locked (launch/listing).</div>
 			<button
 				onclick={onSetTaxes}
 				disabled={!isOwner || actionLoading}

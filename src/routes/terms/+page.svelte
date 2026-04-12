@@ -63,6 +63,7 @@
 				<li>{$t('tos.s5.l3')}</li>
 				<li>{$t('tos.s5.l4')}</li>
 				<li>{$t('tos.s5.l5')}</li>
+				<li>{$t('tos.s5.l6')}</li>
 			</ul>
 		</section>
 
@@ -91,6 +92,7 @@
 				<li>{$t('tos.s7.l4')}</li>
 				<li>{$t('tos.s7.l5')}</li>
 				<li>{$t('tos.s7.l6')}</li>
+				<li>{$t('tos.s7.l7')}</li>
 			</ul>
 		</section>
 
@@ -153,16 +155,33 @@
 			</ul>
 		</section>
 
-		<!-- 14. Jurisdictional Compliance -->
+		<!-- 14. Smart Contract Design Philosophy -->
 		<section>
 			<h2 class="syne text-lg font-semibold mb-3" style="color: var(--text-heading);">{$t('tos.s14.title')}</h2>
-			<p>{$t('tos.s14.body')}</p>
+			<p class="mb-3">{$t('tos.s14.intro')}</p>
+			<ul class="list-disc pl-5 space-y-2" style="color: var(--text-muted);">
+				<li>{$t('tos.s14.l1')}</li>
+				<li>{$t('tos.s14.l2')}</li>
+				<li>{$t('tos.s14.l3')}</li>
+				<li>{$t('tos.s14.l4')}</li>
+				<li>{$t('tos.s14.l5')}</li>
+				<li>{$t('tos.s14.l6')}</li>
+				<li>{$t('tos.s14.l7')}</li>
+				<li>{$t('tos.s14.l8')}</li>
+				<li>{$t('tos.s14.l9')}</li>
+			</ul>
 		</section>
 
-		<!-- 15. Modification of Terms -->
+		<!-- 15. Jurisdictional Compliance -->
 		<section>
 			<h2 class="syne text-lg font-semibold mb-3" style="color: var(--text-heading);">{$t('tos.s15.title')}</h2>
 			<p>{$t('tos.s15.body')}</p>
+		</section>
+
+		<!-- 16. Modification of Terms -->
+		<section>
+			<h2 class="syne text-lg font-semibold mb-3" style="color: var(--text-heading);">{$t('tos.s16.title')}</h2>
+			<p>{$t('tos.s16.body')}</p>
 		</section>
 
 		<!-- Divider -->

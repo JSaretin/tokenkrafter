@@ -2,7 +2,7 @@
 	import { getContext, onMount } from 'svelte';
 	import { ethers } from 'ethers';
 	import { TokenFactory, ZERO_ADDRESS } from '$lib/tokenCrafter';
-	import type { SupportedNetworks, SupportedNetwork, PaymentOption } from '$lib/structure';
+	import type { SupportedNetworks, SupportedNetwork } from '$lib/structure';
 	import { t } from '$lib/i18n';
 
 	let connectWallet: () => Promise<boolean> = getContext('connectWallet');
@@ -13,8 +13,6 @@
 	let supportedNetworks = $derived(_getNetworks());
 	let getNetworkProviders: () => Map<number, ethers.JsonRpcProvider> = getContext('networkProviders');
 	let getProvidersReady: () => boolean = getContext('providersReady');
-	let getPaymentOptions: (n: SupportedNetwork) => PaymentOption[] = getContext('getPaymentOptions');
-
 	let userAddress = $derived(getUserAddress());
 	let signer = $derived(getSigner());
 	let providersReady = $derived(getProvidersReady());
@@ -25,8 +23,10 @@
 
 	// Referral stats
 	let loading = $state(false);
-	let claiming = $state<string | null>(null);
+	let claiming = $state(false);
 	let copied = $state(false);
+	let usdtSymbol = $state('USDT');
+	let usdtDecimals = $state(18);
 
 	// Alias
 	let myAlias = $state('');
@@ -41,11 +41,11 @@
 		return myAlias ? `${origin}/?ref=${myAlias}` : `${origin}/?ref=${userAddress}`;
 	});
 
-	// Stats data
+	// Stats data — USDT-only after refactor
 	let totalReferred = $state<bigint>(0n);
-	let earnings: { symbol: string; address: string; earned: bigint; pending: bigint; decimals: number }[] = $state([]);
+	let totalEarnedUsdt = $state<bigint>(0n);
+	let pendingUsdt = $state<bigint>(0n);
 	let referralChain: string[] = $state([]);
-	let referralPercents: bigint[] = $state([]);
 	let referralLevels = $state(3);
 	let autoDistribute = $state(true);
 	let myReferrer = $state<string | null>(null);
@@ -86,32 +86,32 @@
 			}
 
 			const factory = new TokenFactory(selectedNetwork.platform_address, provider);
-			const paymentOptions = getPaymentOptions(selectedNetwork);
-			const paymentAddresses = paymentOptions.map((p) => p.address);
+			// USDT metadata for display
+			const usdtAbi = [
+				'function decimals() view returns (uint8)',
+				'function symbol() view returns (string)'
+			];
+			const usdt = new ethers.Contract(selectedNetwork.usdt_address, usdtAbi, provider);
 
-			const [stats, chain, percents, levels, autoDist, referrer] = await Promise.all([
-				factory.getReferralStats(userAddress, paymentAddresses),
+			const [stats, chain, levels, autoDist, referrer, dec, sym] = await Promise.all([
+				factory.getReferralStats(userAddress),
 				factory.getReferralChain(userAddress),
-				factory.getReferralPercents(),
 				factory.getReferralLevels(),
 				factory.getAutoDistributeReward(),
-				factory.getReferrer(userAddress)
+				factory.getReferrer(userAddress),
+				usdt.decimals().catch(() => 18),
+				usdt.symbol().catch(() => 'USDT')
 			]);
 
 			totalReferred = stats.referred;
+			totalEarnedUsdt = stats.earned;
+			pendingUsdt = stats.pending;
 			referralChain = [...chain];
-			referralPercents = [...percents];
 			referralLevels = levels;
 			autoDistribute = autoDist;
 			myReferrer = referrer !== ZERO_ADDRESS ? referrer : null;
-
-			earnings = paymentOptions.map((p, i) => ({
-				symbol: p.symbol,
-				address: p.address,
-				earned: stats.earned[i] ?? 0n,
-				pending: stats.pending[i] ?? 0n,
-				decimals: p.decimals
-			}));
+			usdtDecimals = Number(dec);
+			usdtSymbol = sym;
 		} catch (e: any) {
 			console.error('Failed to load referral stats:', e);
 			addFeedback({ message: 'Failed to load referral stats.', type: 'error' });
@@ -120,19 +120,19 @@
 		}
 	}
 
-	async function claimReward(paymentToken: string, symbol: string) {
+	async function claimReward() {
 		if (!signer || !selectedNetwork) return;
-		claiming = paymentToken;
+		claiming = true;
 		try {
 			const factory = new TokenFactory(selectedNetwork.platform_address, signer);
-			await factory.claimReward(paymentToken);
-			addFeedback({ message: `${symbol} reward claimed!`, type: 'success' });
+			await factory.claimReward();
+			addFeedback({ message: `${usdtSymbol} reward claimed!`, type: 'success' });
 			await loadStats();
 		} catch (e: any) {
 			console.error('Claim failed:', e);
 			addFeedback({ message: e?.reason || 'Claim failed.', type: 'error' });
 		} finally {
-			claiming = null;
+			claiming = false;
 		}
 	}
 
@@ -416,53 +416,36 @@
 					</div>
 				{/if}
 
-				<!-- Earnings Table -->
+				<!-- Earnings (USDT only) -->
 				<div class="card overflow-hidden mb-4">
 					<div class="p-4 border-b border-white/5">
 						<h3 class="section-title">{$t('aff.earningsTitle')}</h3>
 					</div>
-					<div class="overflow-x-auto">
-						<table class="w-full text-sm font-mono">
-							<thead>
-								<tr class="text-left text-gray-500 text-xs uppercase">
-									<th class="px-4 py-3">{$t('aff.token')}</th>
-									<th class="px-4 py-3">{$t('aff.totalEarned')}</th>
-									<th class="px-4 py-3">{$t('aff.pending')}</th>
-									<th class="px-4 py-3 text-right">{$t('aff.action')}</th>
-								</tr>
-							</thead>
-							<tbody>
-								{#each earnings as e}
-									<tr class="border-t border-white/5 hover:bg-white/2">
-										<td class="px-4 py-3 text-white font-semibold">{e.symbol}</td>
-										<td class="px-4 py-3 text-emerald-400">{formatAmount(e.earned, e.decimals)}</td>
-										<td class="px-4 py-3 text-amber-400">{formatAmount(e.pending, e.decimals)}</td>
-										<td class="px-4 py-3 text-right">
-											{#if e.pending > 0n}
-												<button
-													onclick={() => claimReward(e.address, e.symbol)}
-													disabled={claiming === e.address}
-													class="btn-primary text-xs px-4 py-1.5 cursor-pointer"
-												>
-													{#if claiming === e.address}
-														<span class="spinner-inline"></span> {$t('aff.claiming')}
-													{:else}
-														{$t('aff.claim')}
-													{/if}
-												</button>
-											{:else}
-												<span class="text-gray-600 text-xs">{$t('aff.noRewards')}</span>
-											{/if}
-										</td>
-									</tr>
-								{/each}
-								{#if earnings.length === 0}
-									<tr>
-										<td colspan="4" class="px-4 py-8 text-center text-gray-500">{$t('aff.noEarnings')}</td>
-									</tr>
-								{/if}
-							</tbody>
-						</table>
+					<div class="p-5 grid grid-cols-1 sm:grid-cols-2 gap-4 items-center">
+						<div>
+							<div class="text-xs text-gray-500 font-mono uppercase mb-1">{$t('aff.totalEarned')} ({usdtSymbol})</div>
+							<div class="syne text-2xl font-bold text-emerald-400">{formatAmount(totalEarnedUsdt, usdtDecimals)}</div>
+							<div class="text-xs text-gray-500 font-mono uppercase mt-3 mb-1">{$t('aff.pending')} ({usdtSymbol})</div>
+							<div class="syne text-2xl font-bold text-amber-400">{formatAmount(pendingUsdt, usdtDecimals)}</div>
+						</div>
+						<div class="text-right">
+							{#if pendingUsdt > 0n}
+								<button
+									onclick={() => claimReward()}
+									disabled={claiming}
+									class="btn-primary text-sm px-5 py-2 cursor-pointer"
+								>
+									{#if claiming}
+										<span class="spinner-inline"></span> {$t('aff.claiming')}
+									{:else}
+										{$t('aff.claim')}
+									{/if}
+								</button>
+							{:else}
+								<span class="text-gray-600 text-xs font-mono">{$t('aff.noRewards')}</span>
+							{/if}
+							<p class="text-[10px] text-gray-600 font-mono mt-2">Rewards paid in USDT only.</p>
+						</div>
 					</div>
 				</div>
 
@@ -560,5 +543,4 @@
 		background: radial-gradient(ellipse at 50% 0%, rgba(16,185,129,0.08), transparent 70%);
 	}
 
-	table { border-collapse: collapse; }
 </style>

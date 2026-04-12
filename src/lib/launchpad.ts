@@ -1,8 +1,11 @@
 import { ethers } from 'ethers';
 
 export const LAUNCHPAD_FACTORY_ABI = [
-	// Launch creation
-	'function createLaunch(address token_, uint256 totalTokens_, uint8 curveType_, uint256 softCap_, uint256 hardCap_, uint256 durationDays_, uint256 maxBuyBps_, uint256 creatorAllocationBps_, uint256 vestingDays_, address paymentToken_, uint256 startTimestamp_) external payable returns (address)',
+	// Launch creation — USDT-only. Caller must approve(usdt, factory, launchFee)
+	// before calling. Not payable.
+	'function createLaunch(address token_, uint256 totalTokens_, uint8 curveType_, uint256 softCap_, uint256 hardCap_, uint256 durationDays_, uint256 maxBuyBps_, uint256 creatorAllocationBps_, uint256 vestingDays_, uint256 startTimestamp_, uint256 lockDurationAfterListing_, uint256 minBuyUsdt_) external returns (address)',
+	'function createLaunchCustomCurve(address token_, uint256 totalTokens_, uint8 curveType_, uint256 curveParam1_, uint256 curveParam2_, uint256 softCap_, uint256 hardCap_, uint256 durationDays_, uint256 maxBuyBps_, uint256 creatorAllocationBps_, uint256 vestingDays_, uint256 startTimestamp_, uint256 lockDurationAfterListing_, uint256 minBuyUsdt_) external returns (address)',
+	'function cancelPendingLaunch(address token_) external',
 
 	// View functions
 	'function totalLaunches() view returns (uint256)',
@@ -12,25 +15,19 @@ export const LAUNCHPAD_FACTORY_ABI = [
 	'function getState() view returns (address factoryOwner, uint256 totalLaunchCount, uint256 totalFeeUsdt, uint256 fee)',
 	'function getCreatorLaunches(address creator_) view returns (address[])',
 	'function tokenToLaunch(address token_) view returns (address)',
-	'function getActiveLaunches(uint256 offset, uint256 limit) view returns (address[] result, uint256 total)',
-	'function getLaunchFee(address paymentToken) view returns (uint256)',
-	'function getSupportedPaymentTokens() view returns (address[])',
-	'function getDailyLaunchStats(uint256 fromDay, uint256 toDay) view returns (tuple(uint256 created, uint256 graduated, uint256 totalFeeUsdt)[])',
 	'function totalLaunchFeeEarnedUsdt() view returns (uint256)',
 
 	// Admin
 	'function owner() view returns (address)',
 	'function platformWallet() view returns (address)',
 	'function dexRouter() view returns (address)',
-	'function tokenFactory() view returns (address)',
 	'function usdt() view returns (address)',
 	'function launchFee() view returns (uint256)',
 	'function setLaunchFee(uint256 fee_) external',
 	'function setPlatformWallet(address wallet_) external',
 	'function setDexRouter(address router_) external',
-	'function setTokenFactory(address factory_) external',
-	'function addPaymentToken(address token_) external',
-	'function removePaymentToken(address token_) external',
+	'function setAuthorizedRouter(address router_) external',
+	'function setLaunchImplementation(address impl_) external',
 	'function setCurveDefaults(tuple(uint256 linearSlope, uint256 linearIntercept, uint256 sqrtCoefficient, uint256 quadraticCoefficient, uint256 expBase, uint256 expKFactor) defaults_) external',
 	'function withdrawFees(address token_) external',
 
@@ -39,16 +36,34 @@ export const LAUNCHPAD_FACTORY_ABI = [
 ];
 
 export const LAUNCH_INSTANCE_ABI = [
-	// Buy / Refund
-	'function buy(uint256 minUsdtOut, uint256 minTokensOut) external payable',
-	'function buyWithToken(address paymentToken, uint256 amount, uint256 minUsdtOut, uint256 minTokensOut) external',
-	'function refund() external',
+	// Unified buy. path is [tokenIn, ..., USDT]; path[0] = address(0)
+	// signals native payment (msg.value must equal amountIn). For ERC20
+	// payments msg.value must be 0. The frontend uses findBestRoute()
+	// from tradeLens to compute the optimal multi-hop path off-chain.
+	'function buy(address[] path, uint256 amountIn, uint256 minUsdtOut, uint256 minTokensOut) external payable',
+	// Partial refund — pass the exact amount of launch tokens to return
+	// for a pro-rata USDT share of your original payment.
+	'function refund(uint256 tokensToReturn) external',
 	'function depositTokens(uint256 amount) external',
 	'function withdrawPendingTokens() external',
 	'function graduate() external',
 	'function enableRefunds() external',
 	'function claimCreatorTokens() external',
-	'function creatorWithdrawAfterRefund() external',
+	// Replaces the old creatorWithdrawAfterRefund — incremental, callable
+	// any time during Refunding. Each call drains the contract's current
+	// token balance to the creator.
+	'function creatorWithdrawAvailable() external',
+	// Platform wallet can sweep stranded USDT after STRANDED_SWEEP_DELAY
+	// (5 years on the current deployment). The sweep window is a public
+	// constant on the clone; reading it at runtime lets the UI pick up
+	// future impl bumps without a frontend change.
+	'function sweepStrandedUsdt() external',
+	'function STRANDED_SWEEP_DELAY() view returns (uint256)',
+	// Preflight + manual activation. preflight() returns (ready, reasonCode).
+	// Reason codes: "" (ready), "NOT_PENDING", "NOT_FUNDED",
+	// "NOT_EXCLUDED_FROM_LIMITS", "NOT_TAX_EXEMPT", "NOT_AUTHORIZED_LAUNCHER".
+	'function preflight() view returns (bool ready, string reason)',
+	'function activate() external',
 
 	// View
 	'function factory() view returns (address)',
@@ -66,6 +81,8 @@ export const LAUNCH_INSTANCE_ABI = [
 	'function creatorAllocationBps() view returns (uint256)',
 	'function vestingDuration() view returns (uint256)',
 	'function vestingCliff() view returns (uint256)',
+	'function lockDurationAfterListing() view returns (uint256)',
+	'function minBuyUsdt() view returns (uint256)',
 	'function state() view returns (uint8)',
 	'function tokensSold() view returns (uint256)',
 	'function totalBaseRaised() view returns (uint256)',
@@ -80,12 +97,14 @@ export const LAUNCH_INSTANCE_ABI = [
 	'function progressBps() view returns (uint256 softCapBps, uint256 hardCapBps)',
 	'function vestingInfo() view returns (uint256 total, uint256 claimed, uint256 claimable, uint256 nextClaimTimestamp)',
 	'function startTimestamp() view returns (uint256)',
+	'function refundStartTimestamp() view returns (uint256)',
 	'function getLaunchInfo() view returns (address token_, address creator_, uint8 curveType_, uint8 state_, uint256 softCap_, uint256 hardCap_, uint256 deadline_, uint256 totalBaseRaised_, uint256 tokensSold_, uint256 tokensForCurve_, uint256 tokensForLP_, uint256 creatorAllocationBps_, uint256 currentPrice_, address usdt_, uint256 startTimestamp_)',
 
 	// Events
 	'event TokenBought(address indexed buyer, uint256 tokenAmount, uint256 basePaid, uint256 newPrice)',
 	'event Graduated(address indexed dexPair, uint256 baseToLP, uint256 tokensToLP, uint256 platformBaseFee, uint256 platformTokenFee)',
 	'event Refunded(address indexed buyer, uint256 baseAmount)',
+	'event CreatorReclaim(address indexed creator, uint256 tokenAmount)',
 	'event LaunchActivated()',
 	'event RefundingEnabled()'
 ];

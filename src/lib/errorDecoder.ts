@@ -41,18 +41,12 @@ const CUSTOM_ERRORS: Record<string, string> = {
 	// TokenFactory
 	'InvalidAddress()': 'Address is invalid.',
 	'InvalidTokenType()': 'Unsupported token type.',
-	'UnsupportedPaymentToken()': 'This payment token is not supported.',
 	'ImplementationNotSet()': 'Contract implementation missing. Contact support.',
-	'InsufficientPayment()': 'Not enough to cover the creation fee.',
-	'CannotDetermineFee()': 'Could not determine the fee for this payment token.',
-	'RefundFailed()': 'Refund transfer failed.',
 	'TransferFailed()': 'Token transfer failed.',
 	'CircularReferral()': 'Referral loop detected — pick a different referrer.',
 	'NoRewards()': 'No rewards available to claim.',
 	'NoBalance()': 'No balance available.',
 	'InvalidParams()': 'One or more parameters are invalid.',
-	'AlreadySupported()': 'Already on the supported list.',
-	'NotSupported()': 'Not on the supported list.',
 	'MaxLevelsExceeded()': 'Referral depth limit exceeded.',
 	'TotalExceedsMax()': 'Total exceeds the allowed maximum.',
 	'NotFactoryToken()': 'This token was not created by the factory.',
@@ -66,6 +60,8 @@ const CUSTOM_ERRORS: Record<string, string> = {
 	'ArrayLengthMismatch()': 'Mismatched array lengths in the request.',
 	'InsufficientTokensForLiquidity()': 'Not enough tokens allocated to liquidity.',
 	'BelowMinLiquidity()': 'Below the minimum liquidity threshold.',
+	'InvalidFeePath()': 'Fee payment path is invalid — must end in USDT.',
+	// NativeFeeWithNativeLp removed — router now splits msg.value between fee swap + LP wrap.
 
 	// LaunchpadFactory
 	'InvalidToken()': 'Token address is invalid.',
@@ -77,7 +73,6 @@ const CUSTOM_ERRORS: Record<string, string> = {
 	'NotLaunchCreator()': 'Only the launch creator can do this.',
 	'NotRegisteredLaunch()': 'Launch is not registered on the factory.',
 	'TokenAlreadyHasLaunch()': 'This token already has an active launch.',
-	'InsufficientNativePayment()': 'Not enough native coin sent to cover the fee.',
 	'WithdrawFailed()': 'Withdrawal failed.',
 	'OnlyLaunch()': 'Only a launch instance can call this.',
 	'OnlyAuthorizedRouter()': 'Only an authorized router can call this.',

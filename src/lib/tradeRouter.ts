@@ -15,7 +15,6 @@ export const TRADE_ROUTER_ABI = [
 	'function depositETH(address[] path, uint256 minUsdtOut, bytes32 bankRef, address referrer) external payable returns (uint256 id)',
 	'function confirm(uint256 id) external',
 	'function confirm(uint256 id, address to) external',
-	'function confirm(uint256 id, address to, uint256 amount) external',
 	'function confirmBatch(uint256[] ids) external returns (uint256 confirmed)',
 	'function cancel(uint256 id) external',
 	'function getWithdrawal(uint256 id) view returns (tuple(address user, address token, uint256 grossAmount, uint256 fee, uint256 netAmount, uint256 createdAt, uint8 status, bytes32 bankRef, address referrer))',
@@ -44,6 +43,8 @@ export const TRADE_ROUTER_ABI = [
 	'function setFeeBps(uint256 newFee) external',
 	'function setPayoutTimeout(uint256 newTimeout) external',
 	'function setMaxSlippage(uint256 newBps) external',
+	'function setMinWithdrawUsdt(uint256 newMin) external',
+	'function minWithdrawUsdt() view returns (uint256)',
 	'function setPlatformWallet(address wallet) external',
 	'function addAdmin(address admin) external',
 	'function removeAdmin(address admin) external',
@@ -64,7 +65,8 @@ export const TRADE_ROUTER_ABI = [
 	// Events
 	'event Swap(address indexed user, address tokenIn, address tokenOut, uint256 amountIn, uint256 amountOut)',
 	'event WithdrawRequested(uint256 indexed id, address indexed user, address token, uint256 grossAmount, uint256 fee, uint256 netAmount, bytes32 bankRef)',
-	'event WithdrawConfirmed(uint256 indexed id, address indexed admin)',
+	'event WithdrawConfirmed(uint256 indexed id, address indexed admin, address indexed to, uint256 amount)',
+	'event MinWithdrawUpdated(uint256 oldMin, uint256 newMin)',
 	'event WithdrawCancelled(uint256 indexed id, address indexed user)',
 	'event AffiliatePaid(uint256 indexed id, address indexed referrer, uint256 amount)'
 ];

@@ -3,11 +3,18 @@
 	import { chainSlug } from '$lib/structure';
 	import { supabase } from '$lib/supabaseClient';
 	import { ethers } from 'ethers';
-	import { TokenFactory, FACTORY_ABI, ERC20_ABI, ZERO_ADDRESS } from '$lib/tokenCrafter';
-	import { LAUNCHPAD_FACTORY_ABI } from '$lib/launchpad';
-	import type { SupportedNetworks, SupportedNetwork } from '$lib/structure';
+	import { TokenFactory, ZERO_ADDRESS } from '$lib/tokenCrafter';
+	import type { SupportedNetworks } from '$lib/structure';
 	import Chart from '$lib/Chart.svelte';
 	import ChartTypeToggle from '$lib/ChartTypeToggle.svelte';
+	import {
+		loadAllChains as fetchAllChains,
+		loadDashboardStats,
+		loadRecentTokens as fetchRecentTokens,
+		type DashboardData,
+		type ChainData,
+		type DateRange,
+	} from './dashboardData';
 
 	let _getNetworks: () => SupportedNetworks = getContext('supportedNetworks');
 	let supportedNetworks = $derived(_getNetworks());
@@ -18,48 +25,37 @@
 	let userAddress = $derived(getUserAddress());
 	let providersReady = $derived(getProvidersReady());
 
-	// Dashboard analytics
-	type DailyStats = {
-		stat_date: string;
-		tokens_created: number;
-		partner_tokens_created: number;
-		creation_fees_usdt: number;
-		launches_created: number;
-		launches_graduated: number;
-		total_raised_usdt: number;
-		launch_fees_usdt: number;
-		tax_revenue_usdt: number;
-	};
-	type DashboardData = {
-		daily: DailyStats[];
-		totals: DailyStats & { total_tokens: number };
-		visitors: { total_visitors: number; browsing: number; creating: number; investing: number };
-	};
 	let dashData: DashboardData | null = $state(null);
 	let dashLoading = $state(false);
 	let recentLaunches: any[] = $state([]);
-
-	// Recent tokens from DB
 	let recentTokens: any[] = $state([]);
-
-	// Multi-chain contract data
-	type ChainData = {
-		network: SupportedNetwork;
-		totalTokens: bigint;
-		totalLaunches: bigint;
-		totalFeeUsdt: bigint;
-		tokenFeeUsdt: bigint;
-		launchFeeUsdt: bigint;
-		launchFee: string;
-		platformWallet: string;
-		owner: string;
-		usdtDecimals: number;
-		paymentTokens: string[];
-		lpPaymentTokens: string[];
-		isOwner: boolean;
-	};
 	let allChainData: ChainData[] = $state([]);
 	let chainsLoading = $state(false);
+
+	// ── Date range filter ────────────────────────────────────────────────
+	// `preset` selects one of the quick-pick windows, or 'custom' for
+	// explicit from/to inputs. Changing any of these triggers a reload.
+	type Preset = '7d' | '30d' | '90d' | '365d' | 'custom';
+	let preset: Preset = $state('90d');
+	const todayIso = new Date().toISOString().split('T')[0];
+	const ninetyDaysAgoIso = (() => {
+		const d = new Date();
+		d.setDate(d.getDate() - 90);
+		return d.toISOString().split('T')[0];
+	})();
+	let customFrom = $state(ninetyDaysAgoIso);
+	let customTo = $state(todayIso);
+
+	function currentRange(): DateRange {
+		if (preset === 'custom') return { kind: 'absolute', from: customFrom, to: customTo };
+		const daysByPreset: Record<Exclude<Preset, 'custom'>, number> = {
+			'7d': 7,
+			'30d': 30,
+			'90d': 90,
+			'365d': 365,
+		};
+		return { kind: 'days', days: daysByPreset[preset] };
+	}
 
 	// Fallback totals from on-chain data
 	let onChainTokens = $derived(allChainData.reduce((s, c) => s + Number(c.totalTokens), 0));
@@ -67,132 +63,24 @@
 
 	async function loadAllChains() {
 		chainsLoading = true;
-		const providers = getNetworkProviders();
-		const results: ChainData[] = [];
-
-		for (const net of supportedNetworks) {
-			if (!net.platform_address || net.platform_address === '0x') continue;
-			const provider = providers.get(net.chain_id);
-			if (!provider) continue;
-
-			try {
-				const factory = new ethers.Contract(net.platform_address, FACTORY_ABI, provider);
-
-				// Single getState() call replaces 4 separate calls
-				const [owner, totalTokens, tokenFeeUsdt, , , supported] = await factory.getState();
-
-				let lpTotal = 0n, lpFeeUsdt = 0n, lpFee = '0', lpPW = '', lpSupported: string[] = [];
-				let ud = 18;
-
-				try {
-					const usdtC = new ethers.Contract(await factory.usdt(), ERC20_ABI, provider);
-					ud = Number(await usdtC.decimals());
-				} catch {}
-
-				if (net.launchpad_address && net.launchpad_address !== '0x') {
-					try {
-						const lp = new ethers.Contract(net.launchpad_address, LAUNCHPAD_FACTORY_ABI, provider);
-						// Single getState() call replaces 5 separate calls
-						const [, lpTotalCount, lpTotalFee, lpFeeRaw] = await lp.getState();
-						lpTotal = lpTotalCount;
-						lpFeeUsdt = lpTotalFee;
-						lpFee = ethers.formatUnits(lpFeeRaw, ud);
-						lpPW = await lp.platformWallet();
-						lpSupported = [...(await lp.getSupportedPaymentTokens())];
-					} catch {}
-				}
-
-				results.push({
-					network: net,
-					totalTokens: totalTokens,
-					totalLaunches: lpTotal,
-					totalFeeUsdt: tokenFeeUsdt + lpFeeUsdt,
-					tokenFeeUsdt: tokenFeeUsdt,
-					launchFeeUsdt: lpFeeUsdt,
-					launchFee: lpFee,
-					platformWallet: lpPW,
-					owner,
-					usdtDecimals: ud,
-					paymentTokens: [...supported],
-					lpPaymentTokens: lpSupported,
-					isOwner: userAddress ? userAddress.toLowerCase() === owner.toLowerCase() : false
-				});
-			} catch {}
-		}
-
-		allChainData = results;
+		try {
+			allChainData = await fetchAllChains(supportedNetworks, getNetworkProviders(), userAddress);
+		} catch {}
 		chainsLoading = false;
 	}
 
 	async function loadDashboard() {
 		dashLoading = true;
 		try {
-			const activeChains = supportedNetworks.filter(n => n.platform_address && n.platform_address !== '0x');
-			const statsFetches = activeChains.map(n => fetch(`/api/platform-stats?chain_id=${n.chain_id}&days=90`).then(r => r.ok ? r.json() : null));
-			const launchesRes = await fetch(`/api/launches?limit=10`);
-
-			const allStats = await Promise.all(statsFetches);
-
-			const merged: DashboardData = {
-				daily: [],
-				totals: { tokens_created: 0, partner_tokens_created: 0, creation_fees_usdt: 0, launches_created: 0, launches_graduated: 0, total_raised_usdt: 0, launch_fees_usdt: 0, tax_revenue_usdt: 0, stat_date: '', total_tokens: 0 },
-				visitors: { total_visitors: 0, browsing: 0, creating: 0, investing: 0 }
-			};
-
-			const dailyMap = new Map<string, DailyStats>();
-			for (const stats of allStats) {
-				if (!stats) continue;
-				const t = stats.totals;
-				merged.totals.tokens_created += t.tokens_created || 0;
-				merged.totals.partner_tokens_created += t.partner_tokens_created || 0;
-				merged.totals.creation_fees_usdt += t.creation_fees_usdt || 0;
-				merged.totals.launches_created += t.launches_created || 0;
-				merged.totals.launches_graduated += t.launches_graduated || 0;
-				merged.totals.total_raised_usdt += t.total_raised_usdt || 0;
-				merged.totals.launch_fees_usdt += t.launch_fees_usdt || 0;
-				merged.totals.tax_revenue_usdt += t.tax_revenue_usdt || 0;
-				merged.totals.total_tokens += t.total_tokens || 0;
-
-				if (stats.visitors) {
-					merged.visitors.total_visitors = Math.max(merged.visitors.total_visitors, stats.visitors.total_visitors || 0);
-					merged.visitors.browsing += stats.visitors.browsing || 0;
-					merged.visitors.creating += stats.visitors.creating || 0;
-					merged.visitors.investing += stats.visitors.investing || 0;
-				}
-
-				for (const day of (stats.daily || [])) {
-					const existing = dailyMap.get(day.stat_date);
-					if (existing) {
-						existing.tokens_created += day.tokens_created || 0;
-						existing.partner_tokens_created += day.partner_tokens_created || 0;
-						existing.creation_fees_usdt += parseFloat(day.creation_fees_usdt) || 0;
-						existing.launches_created += day.launches_created || 0;
-						existing.launches_graduated += day.launches_graduated || 0;
-						existing.total_raised_usdt += parseFloat(day.total_raised_usdt) || 0;
-						existing.launch_fees_usdt += parseFloat(day.launch_fees_usdt) || 0;
-						existing.tax_revenue_usdt += parseFloat(day.tax_revenue_usdt) || 0;
-					} else {
-						dailyMap.set(day.stat_date, {
-							stat_date: day.stat_date,
-							tokens_created: day.tokens_created || 0,
-							partner_tokens_created: day.partner_tokens_created || 0,
-							creation_fees_usdt: parseFloat(day.creation_fees_usdt) || 0,
-							launches_created: day.launches_created || 0,
-							launches_graduated: day.launches_graduated || 0,
-							total_raised_usdt: parseFloat(day.total_raised_usdt) || 0,
-							launch_fees_usdt: parseFloat(day.launch_fees_usdt) || 0,
-							tax_revenue_usdt: parseFloat(day.tax_revenue_usdt) || 0
-						});
-					}
-				}
-			}
-
-			merged.daily = [...dailyMap.values()].sort((a, b) => a.stat_date.localeCompare(b.stat_date));
-			dashData = merged;
-
-			if (launchesRes.ok) recentLaunches = await launchesRes.json();
+			const { data, recentLaunches: rl } = await loadDashboardStats(supportedNetworks, currentRange());
+			dashData = data;
+			recentLaunches = rl;
 		} catch {}
 		dashLoading = false;
+	}
+
+	function applyDateRange() {
+		loadDashboard();
 	}
 
 	// On-chain fee totals as fallback
@@ -287,6 +175,41 @@
 		channels.forEach(c => supabase.removeChannel(c));
 	});
 </script>
+
+<!-- Date range filter — always rendered, even while loading, so the user
+     can adjust without losing their place. -->
+<div class="date-range-bar">
+	<div class="date-range-presets">
+		{#each [
+			['7d', 'Last 7 days'],
+			['30d', 'Last 30 days'],
+			['90d', 'Last 90 days'],
+			['365d', 'Last year'],
+			['custom', 'Custom'],
+		] as [key, label]}
+			<button
+				class="date-range-btn"
+				class:date-range-btn-active={preset === key}
+				onclick={() => { preset = key as Preset; if (key !== 'custom') applyDateRange(); }}
+			>{label}</button>
+		{/each}
+	</div>
+	{#if preset === 'custom'}
+		<div class="date-range-custom">
+			<label>
+				<span>From</span>
+				<input type="date" bind:value={customFrom} max={customTo} />
+			</label>
+			<label>
+				<span>To</span>
+				<input type="date" bind:value={customTo} min={customFrom} max={todayIso} />
+			</label>
+			<button class="date-range-apply" onclick={applyDateRange} disabled={dashLoading}>
+				{dashLoading ? 'Loading…' : 'Apply'}
+			</button>
+		</div>
+	{/if}
+</div>
 
 {#if dashLoading}
 	<div class="flex items-center justify-center py-20">
@@ -576,6 +499,79 @@
 {/if}
 
 <style>
+	.date-range-bar {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 12px;
+		align-items: center;
+		padding: 10px 12px;
+		margin-bottom: 14px;
+		background: rgba(255, 255, 255, 0.02);
+		border: 1px solid rgba(255, 255, 255, 0.05);
+		border-radius: 10px;
+	}
+	.date-range-presets {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+	}
+	.date-range-btn {
+		padding: 6px 12px;
+		border-radius: 8px;
+		border: 1px solid rgba(255, 255, 255, 0.06);
+		background: rgba(255, 255, 255, 0.02);
+		color: #94a3b8;
+		font-family: 'Space Mono', monospace;
+		font-size: 11px;
+		cursor: pointer;
+		transition: all 0.15s;
+	}
+	.date-range-btn:hover { border-color: rgba(0, 210, 255, 0.2); color: #e2e8f0; }
+	.date-range-btn-active {
+		background: rgba(0, 210, 255, 0.08);
+		border-color: rgba(0, 210, 255, 0.35);
+		color: #00d2ff;
+	}
+	.date-range-custom {
+		display: flex;
+		gap: 10px;
+		align-items: end;
+		margin-left: auto;
+	}
+	.date-range-custom label {
+		display: flex;
+		flex-direction: column;
+		gap: 3px;
+	}
+	.date-range-custom span {
+		font-family: 'Space Mono', monospace;
+		font-size: 9px;
+		color: #64748b;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+	}
+	.date-range-custom input[type='date'] {
+		padding: 6px 10px;
+		border-radius: 6px;
+		border: 1px solid rgba(255, 255, 255, 0.08);
+		background: rgba(255, 255, 255, 0.03);
+		color: #e2e8f0;
+		font-family: 'Space Mono', monospace;
+		font-size: 11px;
+	}
+	.date-range-apply {
+		padding: 7px 14px;
+		border-radius: 6px;
+		border: 1px solid rgba(0, 210, 255, 0.4);
+		background: rgba(0, 210, 255, 0.08);
+		color: #00d2ff;
+		font-family: 'Space Mono', monospace;
+		font-size: 11px;
+		font-weight: 700;
+		cursor: pointer;
+	}
+	.date-range-apply:disabled { opacity: 0.5; cursor: not-allowed; }
+
 	.kpi-grid {
 		display: grid;
 		grid-template-columns: 1fr 1fr;

@@ -37,12 +37,31 @@
 	let providersReady = $state(false);
 
 	function getPaymentOptions(network: SupportedNetwork): PaymentOption[] {
+		const options: PaymentOption[] = [];
+		// Derive from default_bases (DB-driven, per-chain), but skip the
+		// wrapped native coin (WBNB/WETH) since native BNB/ETH is listed
+		// separately as a convenience — having both is confusing. The
+		// wrapped native stays in default_bases for pool pre-registration.
+		const wrappedSymbols = new Set(['WBNB', 'WETH', 'WMATIC', 'WAVAX']);
+		for (const b of network.default_bases ?? []) {
+			if (!b.address) continue;
+			if (wrappedSymbols.has(b.symbol.toUpperCase())) continue;
+			options.push({
+				symbol: b.symbol,
+				name: b.name || b.symbol,
+				address: b.address,
+				decimals: network.chain_id === 56 ? 18 : 6,
+			});
+		}
+		// Always include native coin
 		const nativeSymbol = network.native_coin;
-		return [
-			{ symbol: 'USDT', name: 'Tether USDT', address: network.usdt_address, decimals: network.chain_id === 56 ? 18 : 6 },
-			{ symbol: 'USDC', name: 'USD Coin USDC', address: network.usdc_address, decimals: network.chain_id === 56 ? 18 : 6 },
-			{ symbol: nativeSymbol, name: `${nativeSymbol} (Native)`, address: '0x0000000000000000000000000000000000000000', decimals: 18 }
-		];
+		options.push({
+			symbol: nativeSymbol,
+			name: `${nativeSymbol} (Native)`,
+			address: '0x0000000000000000000000000000000000000000',
+			decimals: 18,
+		});
+		return options;
 	}
 
 	let feedbacks: { message: string; type: string; id: number }[] = $state([]);
@@ -127,11 +146,17 @@
 		walletType = null;
 		stopBalancePoller();
 
+		// Close any wallet UI immediately so the user sees the disconnect.
+		// AccountPanel reads `walletType` and `userAddress` directly, so
+		// without this it would linger with stale state until manually closed.
+		showAccountPanel = false;
+
 		// Background cleanup
 		if (wasEmbedded) {
 			lockWallet();
 			localStorage.removeItem('_wp');
 			localStorage.removeItem('_active_acct');
+			localStorage.removeItem('_active_wallet');
 			signOut().catch(() => {});
 		} else {
 			const kit = getAppKit();
@@ -332,20 +357,15 @@
 						}
 					}
 				} else if (result === 'needs-pin') {
-					// Session exists but PIN not cached — show address, prompt PIN on action.
-					// Fetch default address from vault.
-					const { data: { session } } = await supabase.auth.getSession();
-					if (session) {
-						const res = await fetch('/api/wallet', {
-							headers: { 'Authorization': `Bearer ${session.access_token}` }
-						});
-						if (res.ok) {
-							const { vault } = await res.json();
-							if (vault?.default_address) {
-								userAddress = vault.default_address;
-								walletType = 'embedded';
-							}
-						}
+					// Session exists but PIN not cached. autoReconnect already
+					// populated the wallet list + active wallet, so we can pull
+					// the default address straight from the in-memory store —
+					// no extra HTTP roundtrip needed.
+					const state = getWalletState();
+					const active = state.wallets.find((w) => w.id === state.activeWalletId);
+					if (active?.defaultAddress) {
+						userAddress = active.defaultAddress;
+						walletType = 'embedded';
 					}
 				}
 			} catch {}
@@ -875,7 +895,7 @@
 <AccountPanel
 	bind:open={showAccountPanel}
 	userAddress={userAddress || ''}
-	walletType={walletType || 'embedded'}
+	walletType={walletType ?? 'embedded'}
 	networkName={supportedNetworks[0]?.name || 'BNB Smart Chain'}
 	nativeCoin={supportedNetworks[0]?.native_coin || 'BNB'}
 	{nativeBalance}

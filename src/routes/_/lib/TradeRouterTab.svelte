@@ -28,6 +28,9 @@
 	let usdtEarnings = $state(0n);
 	let usdtDecimals = $state(18);
 	let maxSlippageBps = $state(0);
+	let minWithdrawUsdt = $state(0n);
+	let affiliateEnabled = $state(false);
+	let affiliateShareBps = $state(0);
 
 	// Form state
 	let newFeeBps = $state('');
@@ -39,6 +42,8 @@
 	let withdrawMode = $state('all');
 	let withdrawTo = $state('');
 	let withdrawAmount = $state('');
+	let newMinWithdraw = $state('');
+	let newAffiliateShareBps = $state('');
 	let processing = $state(false);
 
 	async function loadData() {
@@ -49,7 +54,7 @@
 			if (!provider) return;
 			const router = new ethers.Contract(selectedNetwork.trade_router_address, TRADE_ROUTER_ABI, provider);
 
-			const [o, f, t, pw, te, pc, tw, a, p, ms] = await Promise.all([
+			const [o, f, t, pw, te, pc, tw, a, p, ms, mw, ae, asb] = await Promise.all([
 				router.owner(),
 				router.feeBps(),
 				router.payoutTimeout(),
@@ -60,6 +65,9 @@
 				router.getAdmins(),
 				router.paused(),
 				router.maxSlippageBps(),
+				router.minWithdrawUsdt().catch(() => 0n),
+				router.affiliateEnabled().catch(() => false),
+				router.affiliateShareBps().catch(() => 0),
 			]);
 
 			owner = o;
@@ -72,6 +80,9 @@
 			totalWithdrawals = Number(tw);
 			admins = [...a];
 			isPaused = p;
+			minWithdrawUsdt = mw;
+			affiliateEnabled = ae;
+			affiliateShareBps = Number(asb);
 
 			const userAddr = signer ? await (signer as any).getAddress() : '';
 			isOwner = userAddr ? userAddr.toLowerCase() === owner.toLowerCase() : false;
@@ -88,6 +99,8 @@
 			newFeeBps = String(feeBps);
 			newTimeout = String(payoutTimeout);
 			newMaxSlippage = String(maxSlippageBps);
+			newMinWithdraw = ethers.formatUnits(minWithdrawUsdt, usdtDecimals);
+			newAffiliateShareBps = String(affiliateShareBps);
 			withdrawToken = selectedNetwork.usdt_address || '';
 		} catch (e: any) {
 			addFeedback({ message: e.message?.slice(0, 80) || 'Failed to load', type: 'error' });
@@ -226,6 +239,51 @@
 					onclick={() => execTx('Set wallet', (r: any) => r.setPlatformWallet(newPlatformWallet))}>
 					Update
 				</button>
+			</div>
+		</div>
+
+		<!-- Min Withdraw -->
+		<div class="card p-4">
+			<h3 class="text-white text-sm font-semibold mb-3">Min Withdraw (USDT)</h3>
+			<p class="text-xs text-gray-500 font-mono mb-2">
+				Anti-dust floor. Users cannot request withdrawals below this amount.
+				Current: <span class="text-cyan-400">{parseFloat(ethers.formatUnits(minWithdrawUsdt, usdtDecimals)).toLocaleString()} USDT</span>
+			</p>
+			<div class="flex gap-2">
+				<input class="input-field flex-1" type="number" step="any" min="0" bind:value={newMinWithdraw} placeholder="10" />
+				<button class="btn-action btn-cyan" disabled={processing || newMinWithdraw === ''}
+					onclick={() => execTx('Set min withdraw', (r: any) => r.setMinWithdrawUsdt(ethers.parseUnits(String(newMinWithdraw || '0'), usdtDecimals)))}>
+					Update
+				</button>
+			</div>
+		</div>
+
+		<!-- Affiliate Program -->
+		<div class="card p-4">
+			<h3 class="text-white text-sm font-semibold mb-3">Affiliate Program</h3>
+			<p class="text-xs text-gray-500 font-mono mb-3">
+				Referrers earn a share of the withdrawal fee. Share is in basis points (100 = 1%).
+			</p>
+			<div class="flex flex-wrap gap-3 items-center">
+				<div class="flex items-center gap-2">
+					<span class="text-gray-400 text-xs font-mono">Status</span>
+					<span class="text-xs font-mono {affiliateEnabled ? 'text-emerald-400' : 'text-gray-500'}">
+						{affiliateEnabled ? 'ENABLED' : 'DISABLED'}
+					</span>
+					<button class="btn-action btn-cyan" disabled={processing}
+						onclick={() => execTx(affiliateEnabled ? 'Disable affiliate' : 'Enable affiliate', (r: any) => r.setAffiliateEnabled(!affiliateEnabled))}>
+						{affiliateEnabled ? 'Disable' : 'Enable'}
+					</button>
+				</div>
+				<div class="flex items-center gap-2">
+					<label class="text-gray-400 text-xs font-mono">Share (bps)</label>
+					<input class="input-field w-24" type="number" min="0" max="10000" bind:value={newAffiliateShareBps} placeholder="1000" />
+					<button class="btn-action btn-cyan" disabled={processing || newAffiliateShareBps === ''}
+						onclick={() => execTx('Set affiliate share', (r: any) => r.setAffiliateShare(parseInt(newAffiliateShareBps)))}>
+						Set
+					</button>
+					<span class="text-[10px] text-gray-600 font-mono">{(affiliateShareBps / 100).toFixed(2)}%</span>
+				</div>
 			</div>
 		</div>
 

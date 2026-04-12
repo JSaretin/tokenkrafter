@@ -13,6 +13,14 @@ export interface SupportedNetwork {
 	rpc: string;
 	explorer_url?: string;       // e.g. "https://bscscan.com"
 	gecko_network?: string;      // e.g. "bsc" for GeckoTerminal API
+	/**
+	 * Default base tokens shown in the create wizard for pool pre-registration.
+	 * All entries are pre-selected; users may add more via a custom-address
+	 * input. These drive `CreateTokenParams.bases` so the token's pool-lock
+	 * gate can block grifter-created pools with malicious initial prices
+	 * from opening before the creator's real listing.
+	 */
+	default_bases?: { address: string; symbol: string; name?: string }[];
 }
 
 export interface PaymentOption {

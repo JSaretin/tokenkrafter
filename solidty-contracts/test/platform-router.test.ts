@@ -35,16 +35,23 @@ describe("PlatformRouter", () => {
     return { ...stack, ...launchStack, router };
   }
 
-  const p = (isMintable = false, isTaxable = false, isPartner = false) => ({
-    name: "Rtest",
-    symbol: "RT",
-    totalSupply: 1_000_000n,
-    decimals: 18,
-    isTaxable,
-    isMintable,
-    isPartner,
-    paymentToken: ethers.ZeroAddress, // native
-  });
+  async function pAsync(
+    s: any,
+    isMintable = false,
+    isTaxable = false,
+    isPartner = false
+  ) {
+    return {
+      name: "Rtest",
+      symbol: "RT",
+      totalSupply: 1_000_000n,
+      decimals: 18,
+      isTaxable,
+      isMintable,
+      isPartner,
+      bases: [await s.weth.getAddress(), await s.usdt.getAddress()],
+    };
+  }
 
   const emptyProtection = {
     maxWalletAmount: 0n,
@@ -72,6 +79,17 @@ describe("PlatformRouter", () => {
       .find((l: any) => l?.name === name);
   }
 
+  /**
+   * Build a direct-USDT FeePayment, minting + approving the router for `amount`.
+   */
+  async function makeUsdtFee(s: any, caller: any, amount: bigint) {
+    await s.usdt.mint(caller.address, amount);
+    await s.usdt
+      .connect(caller)
+      .approve(await s.router.getAddress(), amount);
+    return { path: [await s.usdt.getAddress()], maxAmountIn: 0n };
+  }
+
   describe("createAndList — single-tx create + seed + enable trading", () => {
     it("deploys token, registers pools, schedules trading with delay", async () => {
       const s = await setup();
@@ -86,10 +104,13 @@ describe("PlatformRouter", () => {
         tradingDelay: 300n, // 5 minutes
       };
 
+      const creationFee = await s.tokenFactory.creationFee(0);
+      const fee = await makeUsdtFee(s, s.alice, creationFee);
+
       const tx = await s.router
         .connect(s.alice)
-        .createAndList(p(), list, emptyProtection, emptyTax, ethers.ZeroAddress, {
-          value: ethAmountPerPair + PARSE_ETH("1"), // LP + fee buffer
+        .createAndList(await pAsync(s), list, emptyProtection, emptyTax, fee, ethers.ZeroAddress, {
+          value: ethAmountPerPair,
         });
       const receipt = await tx.wait();
 
@@ -103,19 +124,13 @@ describe("PlatformRouter", () => {
       expect(tradingStart).to.not.equal(2n ** 256n - 1n);
       expect(tradingStart).to.be.closeTo(BigInt(latest) + 300n, 10n);
 
-      // Both pre-registered pools (WETH + USDT) are marked
+      // WETH pool was pre-registered via ListParams.bases
       const weth = await s.weth.getAddress();
-      const usdt = await s.usdt.getAddress();
       const wethPair = await s.dexFactory.getPair(tokenAddress, weth);
-      const usdtPair = await s.dexFactory.getPair(tokenAddress, usdt);
       expect(wethPair).to.not.equal(ethers.ZeroAddress);
-      expect(usdtPair).to.not.equal(ethers.ZeroAddress);
       expect(await token.pools(wethPair)).to.equal(true);
-      expect(await token.pools(usdtPair)).to.equal(true);
 
       // Direct-seed path: the WETH pair actually received both sides.
-      // This would have silently "passed" under the old router path
-      // (mock addLiquidity pulled tokens to itself, not the pair).
       expect(await token.balanceOf(wethPair)).to.equal(tokenAmountPerPair);
       expect(await s.weth.balanceOf(wethPair)).to.equal(ethAmountPerPair);
 
@@ -136,10 +151,13 @@ describe("PlatformRouter", () => {
         tradingDelay: 0n,
       };
 
+      const creationFee = await s.tokenFactory.creationFee(0);
+      const fee = await makeUsdtFee(s, s.alice, creationFee);
+
       const tx = await s.router
         .connect(s.alice)
-        .createAndList(p(), list, emptyProtection, emptyTax, ethers.ZeroAddress, {
-          value: ethAmountPerPair + PARSE_ETH("1"),
+        .createAndList(await pAsync(s), list, emptyProtection, emptyTax, fee, ethers.ZeroAddress, {
+          value: ethAmountPerPair,
         });
       const receipt = await tx.wait();
       const log = findLog(receipt, "TokenCreated");
@@ -164,10 +182,13 @@ describe("PlatformRouter", () => {
         tradingDelay: 300n,
       };
 
+      const creationFee = await s.tokenFactory.creationFee(0);
+      const fee = await makeUsdtFee(s, s.alice, creationFee);
+
       const tx = await s.router
         .connect(s.alice)
-        .createAndList(p(), list, emptyProtection, emptyTax, ethers.ZeroAddress, {
-          value: ethAmountPerPair + PARSE_ETH("1"),
+        .createAndList(await pAsync(s), list, emptyProtection, emptyTax, fee, ethers.ZeroAddress, {
+          value: ethAmountPerPair,
         });
       const receipt = await tx.wait();
       const log = findLog(receipt, "TokenCreated");
@@ -207,21 +228,24 @@ describe("PlatformRouter", () => {
         maxBuyBps: 500n,
         creatorAllocationBps: 0n,
         vestingDays: 0n,
-        launchPaymentToken: ethers.ZeroAddress,
         startTimestamp: 0n,
         lockDurationAfterListing: 300n,
         minBuyUsdt: PARSE_USDT(1),
       };
 
+      const creationFee = await s.tokenFactory.creationFee(0);
+      const launchFee = await s.launchpadFactory.launchFee();
+      const fee = await makeUsdtFee(s, s.alice, creationFee + launchFee);
+
       const tx = await s.router
         .connect(s.alice)
         .createTokenAndLaunch(
-          p(),
+          await pAsync(s),
           launchParams,
           emptyProtection,
           emptyTax,
-          ethers.ZeroAddress,
-          { value: PARSE_ETH("0.5") }
+          fee,
+          ethers.ZeroAddress
         );
       const receipt = await tx.wait();
 

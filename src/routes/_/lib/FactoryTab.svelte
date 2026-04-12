@@ -4,6 +4,7 @@
 	import { FACTORY_ABI, ERC20_ABI, ZERO_ADDRESS } from '$lib/tokenCrafter';
 	import type { SupportedNetworks, SupportedNetwork } from '$lib/structure';
 	import { t } from '$lib/i18n';
+	import { friendlyError } from '$lib/errorDecoder';
 
 	let getSigner: () => ethers.Signer | null = getContext('signer');
 	let addFeedback: (f: { message: string; type: string }) => void = getContext('addFeedback');
@@ -35,10 +36,12 @@
 	let feeInput = $state({ typeKey: 0, amount: '' });
 	let usdtDecimals = $state(18);
 
-	// Payment tokens
-	let paymentTokens = $state<string[]>([]);
-	let addPaymentInput = $state('');
-	let removePaymentInput = $state('');
+	// Partner default bases (force-merged into bases[] for partner variants)
+	let partnerBases = $state<string[]>([]);
+	let maxPartnerBases = $state(8);
+	let addBaseInput = $state('');
+	let removeBaseInput = $state('');
+	let setBasesInput = $state('');
 
 	// Referral
 	let refLevels = $state(0);
@@ -66,9 +69,23 @@
 	let newDexRouter = $state('');
 	let usdtAddr = $state('');
 
+	// Additional admin state — loaded via individual getters since getState()
+	// doesn't expose all the fields we care about.
+	let authorizedRouterAddr = $state('');
+	let platformWalletAddr = $state('');
+	let taxSlippageBps = $state(0);
+
+	// Form state for the new setters. Partner-base management already
+	// exists via addBaseInput/removeBaseInput/setBasesInput above — these
+	// are only for the four governance setters that were missing.
+	let newUsdt = $state('');
+	let newAuthorizedRouter = $state('');
+	let newTaxSlippageBps = $state('');
+	let newPlatformWallet = $state('');
+
 	const TYPE_LABELS = ['Basic', 'Mintable', 'Taxable', 'Tax+Mint', 'Partner', 'Part+Mint', 'Part+Tax', 'Part+Tax+Mint'];
 
-	let openSections = $state<Record<string, boolean>>({ fees: true, payments: true });
+	let openSections = $state<Record<string, boolean>>({ fees: true, bases: true });
 	function toggleSection(key: string) { openSections = { ...openSections, [key]: !openSections[key] }; }
 
 	function formatAddress(addr: string) {
@@ -93,40 +110,42 @@
 
 			const contract = getContract(provider);
 
-			const [owner, total, supported, convertTax, router, usdt_, levels, autoDist] = await Promise.all([
-				contract.owner(),
-				contract.totalTokensCreated(),
-				contract.getSupportedPaymentTokens(),
-				contract.convertTaxToStable(),
+			// getState() packs most reads into one call: (owner, totalTokens,
+			// totalFeeUsdt, feesPerType[8], countPerType[8], taxToStable,
+			// taxSlippage, refLevels, autoDistribute)
+			const [state, router, usdt_, bases, maxBases, authRouter, platWallet] = await Promise.all([
+				contract.getState(),
 				contract.dexRouter(),
 				contract.usdt(),
-				contract.referralLevels(),
-				contract.autoDistributeReward()
+				contract.getDefaultPartnerBases(),
+				contract.MAX_DEFAULT_PARTNER_BASES(),
+				contract.authorizedRouter().catch(() => ZERO_ADDRESS),
+				contract.platformWallet().catch(() => ZERO_ADDRESS),
 			]);
 
-			factoryOwner = owner;
-			totalTokens = total;
-			paymentTokens = [...supported];
-			convertTaxEnabled = convertTax;
+			factoryOwner = state[0];
+			totalTokens = state[1];
+			convertTaxEnabled = state[5];
+			taxSlippageBps = Number(state[6]);
+			refLevels = Number(state[7]);
+			autoDistribute = state[8];
 			dexRouterAddr = router;
 			usdtAddr = usdt_;
-			refLevels = Number(levels);
-			autoDistribute = autoDist;
-			newAutoDistribute = autoDist;
+			authorizedRouterAddr = authRouter;
+			platformWalletAddr = platWallet;
+			newAutoDistribute = autoDistribute;
 			newRefLevels = String(refLevels);
+			newTaxSlippageBps = String(taxSlippageBps);
+			partnerBases = [...bases];
+			maxPartnerBases = Number(maxBases);
+
+			const fees: bigint[] = [...state[3]];
 
 			const implPromises = [];
-			const feePromises = [];
 			for (let i = 0; i < 8; i++) {
 				implPromises.push(contract.implementations(i));
-				feePromises.push(contract.creationFee(i));
 			}
-
-			const [impls, fees] = await Promise.all([
-				Promise.all(implPromises),
-				Promise.all(feePromises)
-			]);
-
+			const impls = await Promise.all(implPromises);
 			implAddresses = impls.map((a: string) => a);
 
 			try {
@@ -183,30 +202,69 @@
 		} finally { busy = false; }
 	}
 
-	async function doAddPayment() {
+	// Partner default bases admin. Creation fees are USDT-only now —
+	// the old doAddPayment/doRemovePayment functions were removed along
+	// with TokenFactory.addPaymentToken/removePaymentToken. What replaces
+	// them is this partner-default-bases surface: these addresses are
+	// force-merged into `CreateTokenParams.bases` for every partner-variant
+	// token so the platform always has pools on the bases that drive its
+	// 1% partner fee revenue.
+	async function doAddBase() {
 		if (!signer) return;
+		if (!ethers.isAddress(addBaseInput)) {
+			addFeedback({ message: 'Invalid address', type: 'error' });
+			return;
+		}
 		busy = true;
 		try {
 			const contract = getContract(signer);
-			const tx = await contract.addPaymentToken(addPaymentInput);
+			const tx = await contract.addDefaultPartnerBase(addBaseInput);
 			await tx.wait();
-			addFeedback({ message: 'Payment token added', type: 'success' });
-			addPaymentInput = '';
+			addFeedback({ message: 'Default partner base added', type: 'success' });
+			addBaseInput = '';
 			loadData();
 		} catch (e: any) {
 			addFeedback({ message: e.reason || e.message?.slice(0, 80), type: 'error' });
 		} finally { busy = false; }
 	}
 
-	async function doRemovePayment() {
+	async function doRemoveBase() {
 		if (!signer) return;
+		if (!ethers.isAddress(removeBaseInput)) {
+			addFeedback({ message: 'Invalid address', type: 'error' });
+			return;
+		}
 		busy = true;
 		try {
 			const contract = getContract(signer);
-			const tx = await contract.removePaymentToken(removePaymentInput);
+			const tx = await contract.removeDefaultPartnerBase(removeBaseInput);
 			await tx.wait();
-			addFeedback({ message: 'Payment token removed', type: 'success' });
-			removePaymentInput = '';
+			addFeedback({ message: 'Default partner base removed', type: 'success' });
+			removeBaseInput = '';
+			loadData();
+		} catch (e: any) {
+			addFeedback({ message: e.reason || e.message?.slice(0, 80), type: 'error' });
+		} finally { busy = false; }
+	}
+
+	async function doSetBases() {
+		if (!signer) return;
+		const addrs = setBasesInput.split(/[,\s]+/).map(s => s.trim()).filter(Boolean);
+		if (addrs.some(a => !ethers.isAddress(a))) {
+			addFeedback({ message: 'Invalid address in list', type: 'error' });
+			return;
+		}
+		if (addrs.length > maxPartnerBases) {
+			addFeedback({ message: `Max ${maxPartnerBases} bases`, type: 'error' });
+			return;
+		}
+		busy = true;
+		try {
+			const contract = getContract(signer);
+			const tx = await contract.setDefaultPartnerBases(addrs);
+			await tx.wait();
+			addFeedback({ message: 'Default partner bases replaced', type: 'success' });
+			setBasesInput = '';
 			loadData();
 		} catch (e: any) {
 			addFeedback({ message: e.reason || e.message?.slice(0, 80), type: 'error' });
@@ -295,10 +353,98 @@
 			addFeedback({ message: 'DEX router updated', type: 'success' });
 			newDexRouter = '';
 			loadData();
-		} catch (e: any) {
-			addFeedback({ message: e.reason || e.message?.slice(0, 80), type: 'error' });
+		} catch (e) {
+			addFeedback({ message: friendlyError(e), type: 'error' });
 		} finally { busy = false; }
 	}
+
+	// ── Critical governance setters ────────────────────────────────────
+	//
+	// setAuthorizedRouter is the biggest one: it controls which address
+	// can invoke routerCreateToken() on the factory. If PlatformRouter is
+	// ever redeployed the new address must be authorized here — there is
+	// no other path to do it without a direct contract call.
+
+	async function doSetAuthorizedRouter() {
+		if (!signer || !newAuthorizedRouter) return;
+		if (!ethers.isAddress(newAuthorizedRouter)) {
+			addFeedback({ message: 'Invalid address', type: 'error' });
+			return;
+		}
+		busy = true;
+		try {
+			const contract = getContract(signer);
+			const tx = await contract.setAuthorizedRouter(newAuthorizedRouter);
+			await tx.wait();
+			addFeedback({ message: 'Authorized router updated', type: 'success' });
+			newAuthorizedRouter = '';
+			loadData();
+		} catch (e) {
+			addFeedback({ message: friendlyError(e), type: 'error' });
+		} finally { busy = false; }
+	}
+
+	async function doSetUsdt() {
+		if (!signer || !newUsdt) return;
+		if (!ethers.isAddress(newUsdt)) {
+			addFeedback({ message: 'Invalid address', type: 'error' });
+			return;
+		}
+		if (!confirm(`Change the factory's USDT address to ${newUsdt}? This affects every new token's fee accounting.`)) return;
+		busy = true;
+		try {
+			const contract = getContract(signer);
+			const tx = await contract.setUsdt(newUsdt);
+			await tx.wait();
+			addFeedback({ message: 'USDT address updated', type: 'success' });
+			newUsdt = '';
+			loadData();
+		} catch (e) {
+			addFeedback({ message: friendlyError(e), type: 'error' });
+		} finally { busy = false; }
+	}
+
+	async function doSetPlatformWallet() {
+		if (!signer || !newPlatformWallet) return;
+		if (!ethers.isAddress(newPlatformWallet)) {
+			addFeedback({ message: 'Invalid address', type: 'error' });
+			return;
+		}
+		busy = true;
+		try {
+			const contract = getContract(signer);
+			const tx = await contract.setPlatformWallet(newPlatformWallet);
+			await tx.wait();
+			addFeedback({ message: 'Platform wallet updated', type: 'success' });
+			newPlatformWallet = '';
+			loadData();
+		} catch (e) {
+			addFeedback({ message: friendlyError(e), type: 'error' });
+		} finally { busy = false; }
+	}
+
+	async function doSetTaxSlippage() {
+		if (!signer || newTaxSlippageBps === '') return;
+		const bps = Number(newTaxSlippageBps);
+		if (!Number.isFinite(bps) || bps < 0 || bps > 10000) {
+			addFeedback({ message: 'Slippage must be 0–10000 bps', type: 'error' });
+			return;
+		}
+		busy = true;
+		try {
+			const contract = getContract(signer);
+			const tx = await contract.setTaxSlippage(BigInt(bps));
+			await tx.wait();
+			addFeedback({ message: 'Tax slippage updated', type: 'success' });
+			loadData();
+		} catch (e) {
+			addFeedback({ message: friendlyError(e), type: 'error' });
+		} finally { busy = false; }
+	}
+
+	// Partner-base add/remove/set already exist above as doAddBase,
+	// doRemoveBase, doSetBases — wired to the template at the partner
+	// bases section. No new handlers needed here.
 
 	async function doProtectionOverride() {
 		if (!signer || !protTokenAddr) return;
@@ -364,9 +510,57 @@
 			<div class="info-row"><span class="text-gray-500 text-xs">Contract</span><span class="text-white text-xs font-mono">{selectedNetwork.platform_address}</span></div>
 			<div class="info-row"><span class="text-gray-500 text-xs">DEX Router</span><span class="text-white text-xs font-mono">{formatAddress(dexRouterAddr)}</span></div>
 			<div class="info-row"><span class="text-gray-500 text-xs">USDT</span><span class="text-white text-xs font-mono">{formatAddress(usdtAddr)}</span></div>
+			<div class="info-row"><span class="text-gray-500 text-xs">Authorized Router</span><span class="text-white text-xs font-mono">{formatAddress(authorizedRouterAddr)}</span></div>
+			<div class="info-row"><span class="text-gray-500 text-xs">Platform Wallet</span><span class="text-white text-xs font-mono">{formatAddress(platformWalletAddr)}</span></div>
+			<div class="info-row"><span class="text-gray-500 text-xs">Tax Slippage</span><span class="text-white text-xs font-mono">{(taxSlippageBps / 100).toFixed(2)}%</span></div>
 			<div class="info-row"><span class="text-gray-500 text-xs">Tokens Created</span><span class="text-cyan-400 text-sm font-bold">{totalTokens.toString()}</span></div>
 		</div>
 	</div>
+
+	<!-- Governance — setAuthorizedRouter / setUsdt / setPlatformWallet / setTaxSlippage -->
+	<button class="collapse-header" onclick={() => toggleSection('governance')}>
+		<span>Governance</span>
+		<span class="collapse-arrow" class:open={openSections['governance']}>▸</span>
+	</button>
+	{#if openSections['governance']}
+		<div class="collapse-body">
+			<div class="card p-4 mb-3">
+				<h3 class="section-title mb-2 text-xs">Authorized Router</h3>
+				<p class="text-gray-500 text-xs mb-2">Only this address can call routerCreateToken(). Update when PlatformRouter is redeployed — there is no other admin path for this.</p>
+				<div class="flex gap-2">
+					<input class="input-field flex-1 text-xs" placeholder="0x... new PlatformRouter" bind:value={newAuthorizedRouter} />
+					<button class="btn-primary text-xs px-4 py-1.5 cursor-pointer" disabled={busy || !newAuthorizedRouter} onclick={doSetAuthorizedRouter}>{busy ? '...' : 'Authorize'}</button>
+				</div>
+			</div>
+
+			<div class="card p-4 mb-3">
+				<h3 class="section-title mb-2 text-xs">USDT Address</h3>
+				<p class="text-gray-500 text-xs mb-2">Changes the fee token. Critical — affects all new token creations.</p>
+				<div class="flex gap-2">
+					<input class="input-field flex-1 text-xs" placeholder="0x... new USDT" bind:value={newUsdt} />
+					<button class="btn-primary text-xs px-4 py-1.5 cursor-pointer" disabled={busy || !newUsdt} onclick={doSetUsdt}>{busy ? '...' : 'Update'}</button>
+				</div>
+			</div>
+
+			<div class="card p-4 mb-3">
+				<h3 class="section-title mb-2 text-xs">Platform Wallet</h3>
+				<p class="text-gray-500 text-xs mb-2">Destination for withdrawn fees.</p>
+				<div class="flex gap-2">
+					<input class="input-field flex-1 text-xs" placeholder="0x... new platform wallet" bind:value={newPlatformWallet} />
+					<button class="btn-primary text-xs px-4 py-1.5 cursor-pointer" disabled={busy || !newPlatformWallet} onclick={doSetPlatformWallet}>{busy ? '...' : 'Update'}</button>
+				</div>
+			</div>
+
+			<div class="card p-4">
+				<h3 class="section-title mb-2 text-xs">Tax Slippage (bps)</h3>
+				<p class="text-gray-500 text-xs mb-2">Slippage tolerance when converting partner tax to USDT via DEX. 100 bps = 1%.</p>
+				<div class="flex gap-2">
+					<input class="input-field flex-1 text-xs" type="number" min="0" max="10000" bind:value={newTaxSlippageBps} />
+					<button class="btn-primary text-xs px-4 py-1.5 cursor-pointer" disabled={busy || newTaxSlippageBps === ''} onclick={doSetTaxSlippage}>{busy ? '...' : 'Update'}</button>
+				</div>
+			</div>
+		</div>
+	{/if}
 
 	<!-- Fees & Implementations -->
 	<button class="collapse-header" onclick={() => toggleSection('fees')}>
@@ -406,33 +600,43 @@
 		</div>
 	{/if}
 
-	<!-- Payment Tokens -->
-	<button class="collapse-header" onclick={() => toggleSection('payments')}>
-		<span>Payment Tokens</span>
-		<span class="collapse-arrow" class:open={openSections['payments']}>▸</span>
+	<!-- Partner default bases. Fees are USDT-only; this replaces the old
+	     "Payment Tokens" admin section. These bases are force-merged into
+	     every partner-variant token's bases[] at creation time. -->
+	<button class="collapse-header" onclick={() => toggleSection('bases')}>
+		<span>Partner Default Bases ({partnerBases.length}/{maxPartnerBases})</span>
+		<span class="collapse-arrow" class:open={openSections['bases']}>▸</span>
 	</button>
-	{#if openSections['payments']}
+	{#if openSections['bases']}
 		<div class="collapse-body">
 			<div class="card p-5 mb-3">
+				<p class="text-gray-500 text-xs mb-2">Force-merged into bases[] for partner-variant tokens so the platform always has pools on these bases (drives the 1% partner fee).</p>
 				<div class="flex flex-col gap-1.5">
-					{#each paymentTokens as token}
-						<div class="info-row"><span class="font-mono text-xs text-cyan-400">{token === ZERO_ADDRESS ? `Native (${selectedNetwork.native_coin})` : token}</span></div>
+					{#each partnerBases as base}
+						<div class="info-row"><span class="font-mono text-xs text-cyan-400">{base}</span></div>
 					{/each}
-					{#if paymentTokens.length === 0}<p class="text-gray-500 text-sm">No payment tokens</p>{/if}
+					{#if partnerBases.length === 0}<p class="text-gray-500 text-sm">No default bases set</p>{/if}
 				</div>
 			</div>
 			<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
 				<div class="card p-4">
 					<div class="flex flex-col gap-2">
-						<input class="input-field text-xs" placeholder="0x... token address" bind:value={addPaymentInput} />
-						<button class="btn-primary text-xs px-4 py-1.5 cursor-pointer" disabled={busy} onclick={doAddPayment}>{busy ? '...' : 'Add Token'}</button>
+						<input class="input-field text-xs" placeholder="0x... base address" bind:value={addBaseInput} />
+						<button class="btn-primary text-xs px-4 py-1.5 cursor-pointer" disabled={busy || partnerBases.length >= maxPartnerBases} onclick={doAddBase}>{busy ? '...' : 'Add Base'}</button>
 					</div>
 				</div>
 				<div class="card p-4">
 					<div class="flex flex-col gap-2">
-						<input class="input-field text-xs" placeholder="0x... token address" bind:value={removePaymentInput} />
-						<button class="btn-danger text-xs px-4 py-1.5 cursor-pointer" disabled={busy} onclick={doRemovePayment}>{busy ? '...' : 'Remove'}</button>
+						<input class="input-field text-xs" placeholder="0x... base address" bind:value={removeBaseInput} />
+						<button class="btn-danger text-xs px-4 py-1.5 cursor-pointer" disabled={busy} onclick={doRemoveBase}>{busy ? '...' : 'Remove'}</button>
 					</div>
+				</div>
+			</div>
+			<div class="card p-4 mt-3">
+				<div class="flex flex-col gap-2">
+					<label class="text-xs text-gray-500">Replace entire list (comma or whitespace separated)</label>
+					<input class="input-field text-xs" placeholder="0x..., 0x..., 0x..." bind:value={setBasesInput} />
+					<button class="btn-primary text-xs px-4 py-1.5 cursor-pointer" disabled={busy} onclick={doSetBases}>{busy ? '...' : 'Replace All'}</button>
 				</div>
 			</div>
 		</div>

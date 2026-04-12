@@ -50,7 +50,6 @@ describe("LaunchInstance", () => {
         MAX_BUY_BPS,
         CREATOR_ALLOC,
         VESTING,
-        ethers.ZeroAddress, // paymentToken = native
         0, // startTimestamp = now
         opts.lockDuration ?? 0,
         PARSE_USDT(1) // minBuyUsdt = 1 USDT
@@ -435,8 +434,24 @@ describe("LaunchInstance", () => {
       await launch.enableRefunds();
 
       await expect(
-        launch.connect(s.alice).sweepStrandedUsdt()
+        launch.connect(s.platform).sweepStrandedUsdt()
       ).to.be.revertedWithCustomError(launch, "StrandedSweepTooEarly");
+    });
+
+    it("creator cannot sweep stranded USDT (platform-only)", async () => {
+      const s = await setup();
+      const { token, launch, launchAddress } = await createTokenWithLaunch(s);
+      const req = await launch.totalTokensRequired();
+      await token.connect(s.alice).setExcludedFromLimits(launchAddress, true);
+      await token.connect(s.alice).setAuthorizedLauncher(launchAddress, true);
+      await token.connect(s.alice).approve(launchAddress, req);
+      await launch.connect(s.alice).depositTokens(req);
+
+      await time.increase(DURATION_DAYS * 24 * 3600 + 1);
+      await launch.enableRefunds();
+      await time.increase(90 * 24 * 3600 + 1);
+
+      await expect(launch.connect(s.alice).sweepStrandedUsdt()).to.be.reverted;
     });
 
     it("after 90 days, stranded USDT can be swept to platform wallet", async () => {
@@ -466,7 +481,7 @@ describe("LaunchInstance", () => {
       await time.increase(90 * 24 * 3600 + 1);
 
       const platformBefore = await s.usdt.balanceOf(s.platform.address);
-      await launch.connect(s.alice).sweepStrandedUsdt();
+      await launch.connect(s.platform).sweepStrandedUsdt();
       const platformAfter = await s.usdt.balanceOf(s.platform.address);
       expect(platformAfter).to.be.gt(platformBefore);
     });
@@ -600,7 +615,6 @@ describe("LaunchInstance", () => {
         MAX_BUY_BPS, // 500 = 5% per wallet → 10 USDT max
         CREATOR_ALLOC,
         VESTING,
-        ethers.ZeroAddress,
         0,
         300, // 5-minute anti-snipe window
         PARSE_USDT(1) // minBuyUsdt

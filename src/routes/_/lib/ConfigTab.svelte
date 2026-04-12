@@ -4,6 +4,8 @@
 
 	const addFeedback = getContext<(f: { message: string; type: string }) => void>('addFeedback');
 
+	type DefaultBase = { address: string; symbol: string; name?: string };
+
 	let networks: any[] = $state([]);
 	let site: any = $state({ name: '', description: '', support_email: '' });
 	let socials: any = $state({});
@@ -27,7 +29,8 @@
 		trade_lens_address: '',
 		rpc: '',
 		explorer_url: '',
-		gecko_network: ''
+		gecko_network: '',
+		default_bases: [] as DefaultBase[],
 	});
 
 	onMount(async () => {
@@ -75,11 +78,42 @@
 		}
 		networks = [...networks, net];
 		showAddNetwork = false;
-		newNetwork = { chain_id: '', name: '', symbol: '', native_coin: '', usdt_address: '', usdc_address: '', platform_address: '', launchpad_address: '', router_address: '', dex_router: '', trade_router_address: '', trade_lens_address: '', rpc: '', explorer_url: '', gecko_network: '' };
+		newNetwork = { chain_id: '', name: '', symbol: '', native_coin: '', usdt_address: '', usdc_address: '', platform_address: '', launchpad_address: '', router_address: '', dex_router: '', trade_router_address: '', trade_lens_address: '', rpc: '', explorer_url: '', gecko_network: '', default_bases: [] };
 	}
 
 	function removeNetwork(idx: number) {
 		networks = networks.filter((_: any, i: number) => i !== idx);
+	}
+
+	// ── Default bases editors ───────────────────────────────
+	// Backs the create-wizard's pool-base multi-select. Each entry seeds
+	// the token's `bases[]` at deploy time so the pool-lock gate covers
+	// every default trading pair from block one — closes the grifter
+	// vector where someone opens a WBNB pair at a malicious initial price
+	// before the creator's real listing.
+
+	function ensureBasesArr(net: any) {
+		if (!Array.isArray(net.default_bases)) net.default_bases = [];
+	}
+
+	function addBaseRow(net: any) {
+		ensureBasesArr(net);
+		net.default_bases = [...net.default_bases, { address: '', symbol: '', name: '' }];
+		networks = [...networks];
+	}
+
+	function removeBaseRow(net: any, idx: number) {
+		ensureBasesArr(net);
+		net.default_bases = net.default_bases.filter((_: any, i: number) => i !== idx);
+		networks = [...networks];
+	}
+
+	function addNewNetworkBaseRow() {
+		newNetwork.default_bases = [...newNetwork.default_bases, { address: '', symbol: '', name: '' }];
+	}
+
+	function removeNewNetworkBaseRow(idx: number) {
+		newNetwork.default_bases = newNetwork.default_bases.filter((_, i) => i !== idx);
 	}
 </script>
 
@@ -220,7 +254,27 @@
 							<input class="input-field" placeholder="bsc" bind:value={newNetwork.gecko_network} />
 						</div>
 					</div>
-					<button class="btn-primary text-xs px-4 py-2 cursor-pointer" onclick={addNetwork}>
+
+					<!-- Default partner bases for the create wizard -->
+					<div class="bases-editor mt-3">
+						<div class="flex justify-between items-center mb-2">
+							<span class="label-text mb-0">Default Pool Bases (pre-selected in wizard)</span>
+							<button type="button" class="btn-secondary text-[10px] px-2 py-1 cursor-pointer" onclick={addNewNetworkBaseRow}>+ Add Base</button>
+						</div>
+						{#each newNetwork.default_bases as base, bi}
+							<div class="grid grid-cols-12 gap-2 mb-2">
+								<input class="input-field text-xs col-span-6" placeholder="0x... address" bind:value={base.address} />
+								<input class="input-field text-xs col-span-2" placeholder="SYMBOL" bind:value={base.symbol} />
+								<input class="input-field text-xs col-span-3" placeholder="Name (optional)" bind:value={base.name} />
+								<button type="button" class="btn-danger text-[10px] col-span-1 cursor-pointer" onclick={() => removeNewNetworkBaseRow(bi)}>×</button>
+							</div>
+						{/each}
+						{#if newNetwork.default_bases.length === 0}
+							<p class="text-gray-500 text-[10px] font-mono">No bases. Wizard will only show on-chain custom adds.</p>
+						{/if}
+					</div>
+
+					<button class="btn-primary text-xs px-4 py-2 cursor-pointer mt-3" onclick={addNetwork}>
 						Add Network
 					</button>
 				</div>
@@ -284,6 +338,25 @@
 							<label class="label-text text-[9px]">Gecko Network</label>
 							<input class="input-field text-xs" bind:value={net.gecko_network} />
 						</div>
+					</div>
+
+					<!-- Default partner bases editor -->
+					<div class="bases-editor mt-3">
+						<div class="flex justify-between items-center mb-2">
+							<span class="label-text text-[9px] mb-0">Default Pool Bases ({(net.default_bases || []).length})</span>
+							<button type="button" class="btn-secondary text-[10px] px-2 py-1 cursor-pointer" onclick={() => addBaseRow(net)}>+ Add Base</button>
+						</div>
+						{#each (net.default_bases || []) as base, bi}
+							<div class="grid grid-cols-12 gap-2 mb-2">
+								<input class="input-field text-xs col-span-6" placeholder="0x... address" bind:value={base.address} />
+								<input class="input-field text-xs col-span-2" placeholder="SYMBOL" bind:value={base.symbol} />
+								<input class="input-field text-xs col-span-3" placeholder="Name (optional)" bind:value={base.name} />
+								<button type="button" class="btn-danger text-[10px] col-span-1 cursor-pointer" onclick={() => removeBaseRow(net, bi)}>×</button>
+							</div>
+						{/each}
+						{#if !(net.default_bases?.length)}
+							<p class="text-gray-500 text-[10px] font-mono">No bases configured</p>
+						{/if}
 					</div>
 				</div>
 			{/each}

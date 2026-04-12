@@ -24,17 +24,21 @@
 	let totalShares = $derived(taxWallets.reduce((s, w) => s + num(w.sharePct), 0));
 	let sharesValid = $derived(totalShares <= 100 && totalShares > 0);
 	let sharesBurned = $derived(100 - totalShares);
+	let hasValidWallet = $derived(taxWallets.some(w => w.address.trim() && /^0x[a-fA-F0-9]{40}$/.test(w.address.trim())));
+	let taxWithoutWallet = $derived(totalTax > 0 && !hasValidWallet);
 
-	// Per-tax limits (from contract)
-	const MAX_BUY = 10;
-	const MAX_SELL = 10;
-	const MAX_TRANSFER = 5;
-	const MAX_TOTAL = 25;
+	// Per-tax limits (from contract). 4/4/2 for plain taxable. Partner-
+	// taxable tokens have 3.5/3.5/2 but the wizard doesn't differentiate
+	// at this step — the contract enforces the tighter cap at setTaxes time.
+	const MAX_BUY = 4;
+	const MAX_SELL = 4;
+	const MAX_TRANSFER = 2;
+	const MAX_TOTAL = 10;
 	let buyOver = $derived(num(buyTaxPct) > MAX_BUY);
 	let sellOver = $derived(num(sellTaxPct) > MAX_SELL);
 	let transferOver = $derived(num(transferTaxPct) > MAX_TRANSFER);
 
-	const presets = [0, 1, 2, 3, 5];
+	const presets = [0, 1, 2, 3, 4];
 
 	function addWallet() {
 		if (taxWallets.length < 10) taxWallets = [...taxWallets, { address: '', sharePct: '' }];
@@ -154,6 +158,11 @@
 					<span class="tc-wallet-burn">{sharesBurned}% will be burned</span>
 				{/if}
 			</div>
+			{#if taxWithoutWallet}
+				<div class="tc-burn-warning">
+					No valid wallet address set. All collected tax ({totalTax}%) will be permanently burned (sent to address zero) on every trade.
+				</div>
+			{/if}
 		</div>
 	{/if}
 
@@ -306,6 +315,7 @@
 	.tc-wallet-add:hover { color: #00d2ff; border-color: rgba(0,210,255,0.2); }
 	.tc-wallet-warn { font-size: 10px; color: #f87171; font-family: 'Space Mono', monospace; }
 	.tc-wallet-burn { font-size: 10px; color: #64748b; font-family: 'Space Mono', monospace; }
+	.tc-burn-warning { margin-top: 10px; padding: 8px 10px; border-radius: 8px; background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.2); color: #fbbf24; font-size: 11px; font-family: 'Space Mono', monospace; line-height: 1.5; }
 	.tc-rate-error { border-color: rgba(248,113,113,0.25); }
 	.tc-input-error { border-color: rgba(248,113,113,0.4); }
 	.tc-input-error .tc-rate-input { color: #f87171; }

@@ -8,7 +8,6 @@
 		isOwner,
 		actionLoading,
 		onAddPool,
-		onRemovePool,
 		onCheckPool,
 	}: {
 		poolAddressInput: string;
@@ -17,7 +16,6 @@
 		isOwner: boolean;
 		actionLoading: boolean;
 		onAddPool: () => void;
-		onRemovePool: () => void;
 		onCheckPool: () => void;
 	} = $props();
 </script>
@@ -39,37 +37,31 @@
 	{/if}
 
 	<div class="form-fields">
-		<!-- Add / Remove Pool -->
+		<!-- Register Pool by Base Token -->
 		<div class="sub-panel">
-			<h4 class="syne text-sm font-bold text-white mb-3">{$t('mt.addRemovePool')}</h4>
+			<h4 class="syne text-sm font-bold text-white mb-3">{$t('mt.addPool')}</h4>
+			<p class="text-xs text-gray-500 font-mono mb-3">
+				Enter a base token address (e.g. WBNB, USDT). The contract resolves the
+				V2 pair via its DEX factory and registers it in the pool-lock gate.
+				Pools are one-way — once registered, they cannot be removed.
+			</p>
 			<div class="field-group">
-				<label class="label-text" for="pool-addr">{$t('mt.poolAddress')}</label>
+				<label class="label-text" for="pool-addr">Base token address</label>
 				<input
 					id="pool-addr"
 					class="input-field"
 					bind:value={poolAddressInput}
-					placeholder="0x..."
+					placeholder="0x... (WBNB, USDT, etc.)"
 					disabled={!isOwner}
 				/>
 			</div>
-			<div class="flex gap-3 mt-3">
-				<button
-					onclick={onAddPool}
-					disabled={!isOwner || actionLoading || !poolAddressInput}
-					class="action-btn mint-btn syne cursor-pointer"
-					style="flex:1;"
-				>
-					{actionLoading ? $t('mt.processing') : $t('mt.addPool')}
-				</button>
-				<button
-					onclick={onRemovePool}
-					disabled={!isOwner || actionLoading || !poolAddressInput}
-					class="action-btn burn-btn syne cursor-pointer"
-					style="flex:1;"
-				>
-					{actionLoading ? $t('mt.processing') : $t('mt.removePool')}
-				</button>
-			</div>
+			<button
+				onclick={onAddPool}
+				disabled={!isOwner || actionLoading || !poolAddressInput}
+				class="action-btn mint-btn syne cursor-pointer mt-3 w-full"
+			>
+				{actionLoading ? $t('mt.processing') : $t('mt.addPool')}
+			</button>
 		</div>
 
 		<!-- Check Pool Status -->

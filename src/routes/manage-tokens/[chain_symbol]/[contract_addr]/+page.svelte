@@ -659,28 +659,18 @@
 		} finally { actionLoading = false; }
 	}
 
-	async function doRemovePool() {
-		const s = await ensureSigner();
-		if (!s || !poolAddressInput) return;
-		actionLoading = true;
-		try {
-			const contract = new ethers.Contract(contractAddress, TOKEN_ABI, s);
-			const tx = await contract.removePool(poolAddressInput);
-			addFeedback({ message: 'Removing pool...', type: 'info' });
-			await tx.wait();
-			addFeedback({ message: 'Pool removed!', type: 'success' });
-			poolAddressInput = '';
-		} catch (e: any) {
-			addFeedback({ message: friendlyError(e), type: 'error' });
-		} finally { actionLoading = false; }
-	}
+	// removePool was removed from the contract — pools are one-way
+	// registrations (prevents owners weaponizing the gate to selectively
+	// block trading on pairs). doRemovePool deleted.
 
 	async function doCheckPool() {
 		if (!poolCheckAddr || !network) return;
 		try {
 			const provider = getProvider() ?? new ethers.JsonRpcProvider(network.rpc);
 			const contract = new ethers.Contract(contractAddress, TOKEN_ABI, provider);
-			poolCheckResult = await contract.isPool(poolCheckAddr);
+			// pools(addr) returns a struct { bool isPool }. Ethers v6 returns
+			// bare scalar for single-field struct mappings.
+			poolCheckResult = await contract.pools(poolCheckAddr);
 		} catch (e: any) {
 			addFeedback({ message: friendlyError(e), type: 'error' });
 		}
@@ -1584,7 +1574,6 @@
 					{isOwner}
 					{actionLoading}
 					onAddPool={doAddPool}
-					onRemovePool={doRemovePool}
 					onCheckPool={doCheckPool}
 				/>
 			{/if}

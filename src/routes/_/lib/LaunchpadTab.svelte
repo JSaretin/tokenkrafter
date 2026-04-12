@@ -5,6 +5,7 @@
 	import { LAUNCHPAD_FACTORY_ABI } from '$lib/launchpad';
 	import type { SupportedNetworks, SupportedNetwork } from '$lib/structure';
 	import { t } from '$lib/i18n';
+	import { friendlyError } from '$lib/errorDecoder';
 
 	let getSigner: () => ethers.Signer | null = getContext('signer');
 	let addFeedback: (f: { message: string; type: string }) => void = getContext('addFeedback');
@@ -28,17 +29,19 @@
 	let lpPlatformWallet = $state('');
 	let lpDexRouter = $state('');
 	let lpUsdtAddr = $state('');
-	let lpPaymentTokens = $state<string[]>([]);
 	let lpOwner = $state('');
+	let lpAuthorizedRouter = $state('');
+	let lpLaunchImpl = $state('');
 	let usdtDecimals = $state(18);
 
 	// Input state
 	let lpNewFee = $state('');
 	let lpNewPlatformWallet = $state('');
 	let lpNewDexRouter = $state('');
-	let lpAddPaymentInput = $state('');
-	let lpRemovePaymentInput = $state('');
 	let lpWithdrawTokenAddr = $state('');
+	let lpNewAuthorizedRouter = $state('');
+	let lpNewLaunchImpl = $state('');
+	let lpNewUsdt = $state('');
 
 	function formatAddress(addr: string) {
 		if (!addr || addr === ZERO_ADDRESS) return 'Not set';
@@ -68,7 +71,7 @@
 			}
 
 			const lpContract = getLpContract(provider);
-			const [lpOwner_, lpTotal, lpFeeUsdt, lpFee, lpPW, lpRouter, lpUsdt, lpSupported] = await Promise.all([
+			const [lpOwner_, lpTotal, lpFeeUsdt, lpFee, lpPW, lpRouter, lpUsdt, lpAuthRouter, lpImpl] = await Promise.all([
 				lpContract.owner(),
 				lpContract.totalLaunches(),
 				lpContract.totalLaunchFeeEarnedUsdt(),
@@ -76,7 +79,8 @@
 				lpContract.platformWallet(),
 				lpContract.dexRouter(),
 				lpContract.usdt(),
-				lpContract.getSupportedPaymentTokens()
+				lpContract.authorizedRouter().catch(() => ZERO_ADDRESS),
+				lpContract.launchImplementation().catch(() => ZERO_ADDRESS),
 			]);
 			lpOwner = lpOwner_;
 			lpTotalLaunches = lpTotal;
@@ -85,7 +89,8 @@
 			lpPlatformWallet = lpPW;
 			lpDexRouter = lpRouter;
 			lpUsdtAddr = lpUsdt;
-			lpPaymentTokens = [...lpSupported];
+			lpAuthorizedRouter = lpAuthRouter;
+			lpLaunchImpl = lpImpl;
 		} catch (e: any) {
 			console.warn('Failed to load launchpad data:', e.message);
 		} finally {
@@ -139,33 +144,72 @@
 		} finally { busy = false; }
 	}
 
-	async function lpAddPayment() {
-		if (!signer) return;
+	// lpAddPayment / lpRemovePayment removed: LaunchpadFactory is USDT-only
+	// after the fee refactor. Payment token management moved into
+	// PlatformRouter's FeePayment flow on the frontend, not on-chain.
+
+	// ── Critical governance setters ────────────────────────────────────
+	//
+	// Same story as TokenFactory: these exist on the contract but had no
+	// admin UI path until now. setAuthorizedRouter is the important one —
+	// it's how PlatformRouter gets authorized to call routerCreateLaunch.
+
+	async function lpSetAuthorizedRouter() {
+		if (!signer || !lpNewAuthorizedRouter) return;
+		if (!ethers.isAddress(lpNewAuthorizedRouter)) {
+			addFeedback({ message: 'Invalid address', type: 'error' });
+			return;
+		}
 		busy = true;
 		try {
 			const contract = getLpContract(signer);
-			const tx = await contract.addPaymentToken(lpAddPaymentInput);
+			const tx = await contract.setAuthorizedRouter(lpNewAuthorizedRouter);
 			await tx.wait();
-			addFeedback({ message: 'Launchpad payment token added', type: 'success' });
-			lpAddPaymentInput = '';
+			addFeedback({ message: 'Authorized router updated', type: 'success' });
+			lpNewAuthorizedRouter = '';
 			loadData();
-		} catch (e: any) {
-			addFeedback({ message: e.reason || e.message?.slice(0, 80), type: 'error' });
+		} catch (e) {
+			addFeedback({ message: friendlyError(e), type: 'error' });
 		} finally { busy = false; }
 	}
 
-	async function lpRemovePayment() {
-		if (!signer) return;
+	async function lpSetLaunchImplementation() {
+		if (!signer || !lpNewLaunchImpl) return;
+		if (!ethers.isAddress(lpNewLaunchImpl)) {
+			addFeedback({ message: 'Invalid address', type: 'error' });
+			return;
+		}
+		if (!confirm(`Update the LaunchInstance clone implementation to ${lpNewLaunchImpl}? Only future launches will use it.`)) return;
 		busy = true;
 		try {
 			const contract = getLpContract(signer);
-			const tx = await contract.removePaymentToken(lpRemovePaymentInput);
+			const tx = await contract.setLaunchImplementation(lpNewLaunchImpl);
 			await tx.wait();
-			addFeedback({ message: 'Launchpad payment token removed', type: 'success' });
-			lpRemovePaymentInput = '';
+			addFeedback({ message: 'Launch implementation updated', type: 'success' });
+			lpNewLaunchImpl = '';
 			loadData();
-		} catch (e: any) {
-			addFeedback({ message: e.reason || e.message?.slice(0, 80), type: 'error' });
+		} catch (e) {
+			addFeedback({ message: friendlyError(e), type: 'error' });
+		} finally { busy = false; }
+	}
+
+	async function lpSetUsdt() {
+		if (!signer || !lpNewUsdt) return;
+		if (!ethers.isAddress(lpNewUsdt)) {
+			addFeedback({ message: 'Invalid address', type: 'error' });
+			return;
+		}
+		if (!confirm(`Change the launchpad's USDT address to ${lpNewUsdt}? This affects every new launch's fee accounting.`)) return;
+		busy = true;
+		try {
+			const contract = getLpContract(signer);
+			const tx = await contract.setUsdt(lpNewUsdt);
+			await tx.wait();
+			addFeedback({ message: 'USDT address updated', type: 'success' });
+			lpNewUsdt = '';
+			loadData();
+		} catch (e) {
+			addFeedback({ message: friendlyError(e), type: 'error' });
 		} finally { busy = false; }
 	}
 
@@ -280,36 +324,42 @@
 		</div>
 	</div>
 
-	<!-- Launchpad Payment Tokens -->
+	<!-- Authorized Router -->
 	<div class="card p-5 mb-4">
-		<h3 class="section-title mb-4">{$t('admin.launchpadPaymentTokens')}</h3>
-		<div class="flex flex-col gap-2 mb-4">
-			{#each lpPaymentTokens as token}
-				<div class="info-row">
-					<span class="font-mono text-xs text-cyan-400">{token === ZERO_ADDRESS ? `Native (${selectedNetwork.native_coin})` : token}</span>
-				</div>
-			{/each}
-			{#if lpPaymentTokens.length === 0}
-				<p class="text-gray-500 text-sm">{$t('admin.noPaymentTokens')}</p>
-			{/if}
+		<h3 class="section-title mb-1">Authorized Router</h3>
+		<p class="text-xs text-gray-500 mb-3">Only this address can call routerCreateLaunch(). Update when PlatformRouter is redeployed.</p>
+		<div class="text-xs text-gray-400 font-mono mb-3">Current: {formatAddress(lpAuthorizedRouter)}</div>
+		<div class="flex flex-col sm:flex-row gap-3">
+			<input class="input-field flex-1" placeholder="0x... new PlatformRouter" bind:value={lpNewAuthorizedRouter} />
+			<button class="btn-primary text-xs px-5 py-2 cursor-pointer" disabled={busy || !lpNewAuthorizedRouter} onclick={lpSetAuthorizedRouter}>
+				{busy ? '...' : 'Authorize'}
+			</button>
 		</div>
-		<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-			<div>
-				<div class="flex flex-col gap-3">
-					<input class="input-field" placeholder={$t('admin.addTokenPlaceholder')} bind:value={lpAddPaymentInput} />
-					<button class="btn-primary text-xs px-5 py-2 cursor-pointer" disabled={busy} onclick={lpAddPayment}>
-						{busy ? $t('admin.adding') : $t('admin.addToken')}
-					</button>
-				</div>
-			</div>
-			<div>
-				<div class="flex flex-col gap-3">
-					<input class="input-field" placeholder={$t('admin.removeTokenPlaceholder')} bind:value={lpRemovePaymentInput} />
-					<button class="btn-danger text-xs px-5 py-2 cursor-pointer" disabled={busy} onclick={lpRemovePayment}>
-						{busy ? $t('admin.removing') : $t('admin.removeToken')}
-					</button>
-				</div>
-			</div>
+	</div>
+
+	<!-- Launch Implementation -->
+	<div class="card p-5 mb-4">
+		<h3 class="section-title mb-1">Launch Implementation</h3>
+		<p class="text-xs text-gray-500 mb-3">Clone template for new LaunchInstance deploys. Existing launches are unaffected.</p>
+		<div class="text-xs text-gray-400 font-mono mb-3">Current: {formatAddress(lpLaunchImpl)}</div>
+		<div class="flex flex-col sm:flex-row gap-3">
+			<input class="input-field flex-1" placeholder="0x... new LaunchInstance implementation" bind:value={lpNewLaunchImpl} />
+			<button class="btn-primary text-xs px-5 py-2 cursor-pointer" disabled={busy || !lpNewLaunchImpl} onclick={lpSetLaunchImplementation}>
+				{busy ? '...' : 'Update'}
+			</button>
+		</div>
+	</div>
+
+	<!-- USDT Address -->
+	<div class="card p-5 mb-4">
+		<h3 class="section-title mb-1">USDT Address</h3>
+		<p class="text-xs text-gray-500 mb-3">Fee token for launch creation. Critical — affects every new launch.</p>
+		<div class="text-xs text-gray-400 font-mono mb-3">Current: {formatAddress(lpUsdtAddr)}</div>
+		<div class="flex flex-col sm:flex-row gap-3">
+			<input class="input-field flex-1" placeholder="0x... new USDT" bind:value={lpNewUsdt} />
+			<button class="btn-primary text-xs px-5 py-2 cursor-pointer" disabled={busy || !lpNewUsdt} onclick={lpSetUsdt}>
+				{busy ? '...' : 'Update'}
+			</button>
 		</div>
 	</div>
 

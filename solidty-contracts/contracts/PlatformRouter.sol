@@ -7,6 +7,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 import "./shared/DexInterfaces.sol";
+import "./shared/TokenInterfaces.sol";
 
 interface ITokenFactory {
     struct CreateTokenParams {
@@ -17,21 +18,18 @@ interface ITokenFactory {
         bool isTaxable;
         bool isMintable;
         bool isPartner;
-        address paymentToken;
+        address[] bases;
     }
 
     function routerCreateToken(
         address creator,
         CreateTokenParams calldata p,
         address referral
-    ) external payable returns (address);
-
-    function convertFee(
-        uint256 usdtAmount,
-        address paymentToken
-    ) external view returns (uint256);
+    ) external returns (address);
 
     function creationFee(uint8 typeKey) external view returns (uint256);
+
+    function usdt() external view returns (address);
 }
 
 interface ILaunchpadFactory {
@@ -46,47 +44,30 @@ interface ILaunchpadFactory {
         uint256 maxBuyBps_,
         uint256 creatorAllocationBps_,
         uint256 vestingDays_,
-        address paymentToken_,
         uint256 startTimestamp_,
         uint256 lockDurationAfterListing_,
         uint256 minBuyUsdt_
-    ) external payable returns (address);
+    ) external returns (address);
 
     function notifyDeposit(address launch_, uint256 amount) external;
-
-    function convertFee(
-        uint256 usdtAmount,
-        address paymentToken
-    ) external view returns (uint256);
 
     function launchFee() external view returns (uint256);
 }
 
 // DEX interfaces (IUniswapV2Router02, IUniswapV2Factory, IUniswapV2Pair,
 // IWETH) come from shared/DexInterfaces.sol.
+// Token interfaces (IProtectedToken, ITaxableToken, IOwnableToken) come
+// from shared/TokenInterfaces.sol.
 
-interface IProtectedToken {
-    function enableTrading(uint256 delay) external;
-    function setMaxWalletAmount(uint256) external;
-    function setMaxTransactionAmount(uint256) external;
-    function setCooldownTime(uint256) external;
-    function setExcludedFromLimits(address, bool) external;
-    function setAuthorizedLauncher(address, bool) external;
-}
-
-interface ITaxableToken {
-    function setTaxes(uint256, uint256, uint256) external;
-    function setTaxDistribution(address[] calldata, uint16[] calldata) external;
-    function excludeFromTax(address, bool) external;
-}
-
-interface IOwnableToken {
-    function transferOwnership(address newOwner) external;
-}
-
-// Dead address for burning LP tokens
 address constant DEAD = 0x000000000000000000000000000000000000dEaD;
 
+/// @title PlatformRouter
+/// @notice Single user-facing entrypoint for token creation, listing, and
+///         launching. Always pays the underlying factories in USDT — when the
+///         user wants to pay with another token (or native), the router
+///         swaps the input through the DEX first via a caller-supplied
+///         `FeePayment.path`. The factories themselves never see anything
+///         but USDT, which keeps their fee logic trivial.
 contract PlatformRouter is Ownable, ReentrancyGuard, Pausable {
     using SafeERC20 for IERC20;
 
@@ -100,11 +81,13 @@ contract PlatformRouter is Ownable, ReentrancyGuard, Pausable {
     error ArrayLengthMismatch();
     error InsufficientTokensForLiquidity();
     error BelowMinLiquidity();
+    error InvalidFeePath();
 
     // ----------------------------------------------------------------
     // Events
     // ----------------------------------------------------------------
     event TokenCreatedAndLaunched(address indexed creator, address indexed token, address indexed launch);
+    event TokenLaunched(address indexed creator, address indexed token, address indexed launch);
     event TokenCreatedAndListed(address indexed creator, address indexed token, uint256 poolCount, bool lpBurned);
     event TokenCreated(address indexed creator, address indexed token);
     event TokenListed(address indexed owner, address indexed token, uint256 poolCount, bool lpBurned);
@@ -116,12 +99,26 @@ contract PlatformRouter is Ownable, ReentrancyGuard, Pausable {
     ITokenFactory public immutable tokenFactory;
     ILaunchpadFactory public immutable launchpadFactory;
     IUniswapV2Router02 public immutable dexRouter;
+    address public immutable usdt;
 
     uint256 public minLiquidity;  // minimum base amount per pool (0 = no minimum)
 
     // ----------------------------------------------------------------
     // Structs
     // ----------------------------------------------------------------
+
+    /// @notice How the user wants to pay USDT-denominated fees.
+    /// @dev    `path[length-1]` MUST equal `usdt`. Three modes:
+    ///         - `path == [usdt]` (length 1): direct USDT payment, no swap.
+    ///         - `path[0] == address(0)`: native input. The router treats
+    ///           this as `[WETH, ..., USDT]` for the swap and uses `msg.value`.
+    ///         - otherwise: ERC20 input, router pulls `maxAmountIn` and swaps.
+    ///         `maxAmountIn` is ignored for the native and direct-USDT modes.
+    struct FeePayment {
+        address[] path;
+        uint256 maxAmountIn;
+    }
+
     struct ProtectionParams {
         uint256 maxWalletAmount;
         uint256 maxTransactionAmount;
@@ -138,10 +135,10 @@ contract PlatformRouter is Ownable, ReentrancyGuard, Pausable {
 
     struct ListParams {
         address[] bases;           // base tokens for LP (address(0) = native coin)
-        uint256[] baseAmounts;     // amount of each base token for LP
-        uint256[] tokenAmounts;    // amount of created token per pool
-        bool burnLP;               // burn LP tokens to dead address
-        uint256 tradingDelay;      // seconds between enableTrading() and public trading (anti-snipe)
+        uint256[] baseAmounts;
+        uint256[] tokenAmounts;
+        bool burnLP;
+        uint256 tradingDelay;
     }
 
     struct LaunchParams {
@@ -153,10 +150,9 @@ contract PlatformRouter is Ownable, ReentrancyGuard, Pausable {
         uint256 maxBuyBps;
         uint256 creatorAllocationBps;
         uint256 vestingDays;
-        address launchPaymentToken;
         uint256 startTimestamp;
-        uint256 lockDurationAfterListing;  // anti-snipe window after graduation
-        uint256 minBuyUsdt;                // anti-dust floor, in USDT native units
+        uint256 lockDurationAfterListing;
+        uint256 minBuyUsdt;
     }
 
     // ----------------------------------------------------------------
@@ -169,6 +165,7 @@ contract PlatformRouter is Ownable, ReentrancyGuard, Pausable {
         tokenFactory = ITokenFactory(tokenFactory_);
         launchpadFactory = ILaunchpadFactory(launchpadFactory_);
         dexRouter = IUniswapV2Router02(dexRouter_);
+        usdt = ITokenFactory(tokenFactory_).usdt();
     }
 
     // ================================================================
@@ -180,6 +177,7 @@ contract PlatformRouter is Ownable, ReentrancyGuard, Pausable {
         LaunchParams calldata launch,
         ProtectionParams calldata protection,
         TaxParams calldata tax,
+        FeePayment calldata fee,
         address referral
     )
         external
@@ -198,32 +196,17 @@ contract PlatformRouter is Ownable, ReentrancyGuard, Pausable {
             (p.isPartner ? 4 : 0) | (p.isTaxable ? 2 : 0) | (p.isMintable ? 1 : 0)
         );
 
-        // Fee handling
-        uint256 totalUsdtFee = tokenFactory.creationFee(typeKey) + launchpadFactory.launchFee();
-        uint256 nativeValue;
+        // Acquire USDT for both fees in a single swap.
+        uint256 creationFee = tokenFactory.creationFee(typeKey);
+        uint256 launchFee = launchpadFactory.launchFee();
+        _payFee(fee, creationFee + launchFee);
 
-        if (p.paymentToken == address(0)) {
-            nativeValue = msg.value;
-        } else {
-            uint256 erc20Fee = tokenFactory.convertFee(totalUsdtFee, p.paymentToken);
-            if (erc20Fee > 0) {
-                IERC20(p.paymentToken).safeTransferFrom(msg.sender, address(this), erc20Fee);
-                uint256 factoryFee = tokenFactory.convertFee(tokenFactory.creationFee(typeKey), p.paymentToken);
-                IERC20(p.paymentToken).forceApprove(address(tokenFactory), factoryFee);
-                uint256 launchFee = erc20Fee - factoryFee;
-                IERC20(p.paymentToken).forceApprove(address(launchpadFactory), launchFee);
-            }
-        }
+        // Approve each factory for its slice and create.
+        IERC20(usdt).forceApprove(address(tokenFactory), creationFee);
+        tokenAddress = tokenFactory.routerCreateToken(msg.sender, p, referral);
 
-        // Create token
-        uint256 factoryNativeValue = p.paymentToken == address(0) ? nativeValue : 0;
-        tokenAddress = tokenFactory.routerCreateToken{value: factoryNativeValue}(
-            msg.sender, p, referral
-        );
-
-        // Create launch
-        uint256 remainingNative = address(this).balance - preBalance;
-        launchAddress = launchpadFactory.routerCreateLaunch{value: remainingNative}(
+        IERC20(usdt).forceApprove(address(launchpadFactory), launchFee);
+        launchAddress = launchpadFactory.routerCreateLaunch(
             msg.sender,
             tokenAddress,
             launch.tokensForLaunch,
@@ -234,7 +217,6 @@ contract PlatformRouter is Ownable, ReentrancyGuard, Pausable {
             launch.maxBuyBps,
             launch.creatorAllocationBps,
             launch.vestingDays,
-            launch.launchPaymentToken,
             launch.startTimestamp,
             launch.lockDurationAfterListing,
             launch.minBuyUsdt
@@ -246,7 +228,6 @@ contract PlatformRouter is Ownable, ReentrancyGuard, Pausable {
         // Deposit tokens to launch
         uint256 tokenBal = IERC20(tokenAddress).balanceOf(address(this));
         if (tokenBal > 0) {
-            IERC20(tokenAddress).forceApprove(launchAddress, tokenBal);
             IERC20(tokenAddress).safeTransfer(launchAddress, tokenBal);
             launchpadFactory.notifyDeposit(launchAddress, tokenBal);
         }
@@ -268,6 +249,7 @@ contract PlatformRouter is Ownable, ReentrancyGuard, Pausable {
         ListParams calldata list,
         ProtectionParams calldata protection,
         TaxParams calldata tax,
+        FeePayment calldata fee,
         address referral
     )
         external
@@ -285,23 +267,11 @@ contract PlatformRouter is Ownable, ReentrancyGuard, Pausable {
             (p.isPartner ? 4 : 0) | (p.isTaxable ? 2 : 0) | (p.isMintable ? 1 : 0)
         );
 
-        uint256 creationFeeNativeValue;
-        if (p.paymentToken == address(0)) {
-            creationFeeNativeValue = msg.value;
-        } else {
-            uint256 creationFeeAmount = tokenFactory.convertFee(
-                tokenFactory.creationFee(typeKey), p.paymentToken
-            );
-            if (creationFeeAmount > 0) {
-                IERC20(p.paymentToken).safeTransferFrom(msg.sender, address(this), creationFeeAmount);
-                IERC20(p.paymentToken).forceApprove(address(tokenFactory), creationFeeAmount);
-            }
-        }
+        uint256 creationFee = tokenFactory.creationFee(typeKey);
+        _payFee(fee, creationFee);
+        IERC20(usdt).forceApprove(address(tokenFactory), creationFee);
 
-        // Create token — router receives full supply + ownership
-        tokenAddress = tokenFactory.routerCreateToken{value: creationFeeNativeValue}(
-            msg.sender, p, referral
-        );
+        tokenAddress = tokenFactory.routerCreateToken(msg.sender, p, referral);
 
         // Exempt router + caller BEFORE seeding. The pool-lock gate would
         // otherwise block the direct-transfer seed because neither side is
@@ -312,18 +282,14 @@ contract PlatformRouter is Ownable, ReentrancyGuard, Pausable {
             t.setExcludedFromLimits(address(this), true);
         }
 
-        // Add liquidity by direct transfer + pair.mint()
         uint256 poolCount = _addLiquidity(tokenAddress, list, preBalance);
 
-        // Configure protections + tax, then open trading
         _configureAndEnableTrading(tokenAddress, protection, tax, p.isTaxable || p.isPartner, list.tradingDelay);
 
-        // Transfer remaining tokens + ownership to creator
         uint256 remaining = IERC20(tokenAddress).balanceOf(address(this));
         if (remaining > 0) IERC20(tokenAddress).safeTransfer(msg.sender, remaining);
         IOwnableToken(tokenAddress).transferOwnership(msg.sender);
 
-        // Refund excess native
         _refundExcess(preBalance);
 
         emit TokenCreatedAndListed(msg.sender, tokenAddress, poolCount, list.burnLP);
@@ -333,12 +299,11 @@ contract PlatformRouter is Ownable, ReentrancyGuard, Pausable {
     //  CREATE TOKEN ONLY (no listing, no launch)
     // ================================================================
 
-    /// @notice Create a token with protections and tax in one transaction.
-    ///         No liquidity, no launch. Creator receives full supply + ownership.
     function createTokenOnly(
         ITokenFactory.CreateTokenParams calldata p,
         ProtectionParams calldata protection,
         TaxParams calldata tax,
+        FeePayment calldata fee,
         address referral
     )
         external
@@ -353,24 +318,13 @@ contract PlatformRouter is Ownable, ReentrancyGuard, Pausable {
             (p.isPartner ? 4 : 0) | (p.isTaxable ? 2 : 0) | (p.isMintable ? 1 : 0)
         );
 
-        uint256 creationFeeNativeValue;
-        if (p.paymentToken == address(0)) {
-            creationFeeNativeValue = msg.value;
-        } else {
-            uint256 creationFeeAmount = tokenFactory.convertFee(
-                tokenFactory.creationFee(typeKey), p.paymentToken
-            );
-            if (creationFeeAmount > 0) {
-                IERC20(p.paymentToken).safeTransferFrom(msg.sender, address(this), creationFeeAmount);
-                IERC20(p.paymentToken).forceApprove(address(tokenFactory), creationFeeAmount);
-            }
-        }
+        uint256 creationFee = tokenFactory.creationFee(typeKey);
+        _payFee(fee, creationFee);
+        IERC20(usdt).forceApprove(address(tokenFactory), creationFee);
 
-        tokenAddress = tokenFactory.routerCreateToken{value: creationFeeNativeValue}(
-            msg.sender, p, referral
-        );
+        tokenAddress = tokenFactory.routerCreateToken(msg.sender, p, referral);
 
-        // No DEX listing here, no pools registered → no anti-snipe window needed.
+        // No DEX listing here — no anti-snipe window needed.
         _configureAndEnableTrading(tokenAddress, protection, tax, p.isTaxable || p.isPartner, 0);
 
         uint256 balance = IERC20(tokenAddress).balanceOf(address(this));
@@ -380,6 +334,88 @@ contract PlatformRouter is Ownable, ReentrancyGuard, Pausable {
         _refundExcess(preBalance);
 
         emit TokenCreated(msg.sender, tokenAddress);
+    }
+
+    // ================================================================
+    //  LAUNCH EXISTING TOKEN (caller-owned)
+    // ================================================================
+
+    /// @notice Launch an already-created token via the launchpad.
+    /// @dev Caller MUST `transferOwnership(router)` before calling — the
+    ///      router needs ownership to exempt the launch instance, set it
+    ///      as authorized launcher, and configure protections. Ownership
+    ///      is handed back to msg.sender at the end of the call.
+    ///      Restricted to **platform-minted tokens**: the setters invoked
+    ///      here (`setExcludedFromLimits`, `setAuthorizedLauncher`,
+    ///      `excludeFromTax`) only exist on the TokenKrafter token
+    ///      implementations. A vanilla Ownable ERC20 will revert at the
+    ///      first unknown-selector call.
+    function launchCreatedToken(
+        address tokenAddress,
+        LaunchParams calldata launch,
+        ProtectionParams calldata protection,
+        TaxParams calldata tax,
+        bool isTaxable,
+        FeePayment calldata fee
+    )
+        external
+        payable
+        nonReentrant
+        whenNotPaused
+        returns (address launchAddress)
+    {
+        if (tokenAddress == address(0)) revert ZeroAddress();
+        if (launch.tokensForLaunch == 0) revert TokensForLaunchExceedsSupply();
+
+        uint256 preBalance = address(this).balance - msg.value;
+
+        // Pay launch fee in USDT (router swaps user input first).
+        uint256 launchFee = launchpadFactory.launchFee();
+        _payFee(fee, launchFee);
+        IERC20(usdt).forceApprove(address(launchpadFactory), launchFee);
+
+        // Exempt router + caller BEFORE pulling tokens. The tax exemption
+        // on the router is critical for taxable variants: without it, the
+        // creator→router pull would be skimmed by `transferTaxBps` and the
+        // later deposit into the launch would revert with ERC20 underflow.
+        {
+            IProtectedToken t = IProtectedToken(tokenAddress);
+            t.setExcludedFromLimits(address(this), true);
+            t.setExcludedFromLimits(msg.sender, true);
+            if (isTaxable) {
+                ITaxableToken(tokenAddress).excludeFromTax(address(this), true);
+                ITaxableToken(tokenAddress).excludeFromTax(msg.sender, true);
+            }
+        }
+
+        IERC20(tokenAddress).safeTransferFrom(msg.sender, address(this), launch.tokensForLaunch);
+
+        launchAddress = launchpadFactory.routerCreateLaunch(
+            msg.sender,
+            tokenAddress,
+            launch.tokensForLaunch,
+            launch.curveType,
+            launch.softCap,
+            launch.hardCap,
+            launch.durationDays,
+            launch.maxBuyBps,
+            launch.creatorAllocationBps,
+            launch.vestingDays,
+            launch.startTimestamp,
+            launch.lockDurationAfterListing,
+            launch.minBuyUsdt
+        );
+
+        _configureLaunchProtections(tokenAddress, launchAddress, protection, tax, isTaxable);
+
+        IERC20(tokenAddress).safeTransfer(launchAddress, launch.tokensForLaunch);
+        launchpadFactory.notifyDeposit(launchAddress, launch.tokensForLaunch);
+
+        IOwnableToken(tokenAddress).transferOwnership(msg.sender);
+
+        _refundExcess(preBalance);
+
+        emit TokenLaunched(msg.sender, tokenAddress, launchAddress);
     }
 
     // ================================================================
@@ -409,10 +445,8 @@ contract PlatformRouter is Ownable, ReentrancyGuard, Pausable {
         }
         IERC20(tokenAddress).safeTransferFrom(msg.sender, address(this), totalTokensNeeded);
 
-        // Add liquidity (handles burn internally)
         uint256 poolCount = _addLiquidity(tokenAddress, list, preBalance);
 
-        // Return any unused tokens
         uint256 leftover = IERC20(tokenAddress).balanceOf(address(this));
         if (leftover > 0) IERC20(tokenAddress).safeTransfer(msg.sender, leftover);
 
@@ -422,21 +456,60 @@ contract PlatformRouter is Ownable, ReentrancyGuard, Pausable {
     }
 
     // ================================================================
+    //  FEE QUOTING (view)
+    // ================================================================
+
+    /// @notice Quote how much of `path[0]` the user needs to cover the
+    ///         platform fees for a given token type and flow. Saves the
+    ///         frontend from making 3 separate RPC calls (creationFee +
+    ///         launchFee + getAmountsIn).
+    /// @param typeKey     Token type bitfield (0-7): partner=4|taxable=2|mintable=1
+    /// @param withLaunch  true = include LaunchpadFactory.launchFee() on top
+    /// @param path        Same shape as FeePayment.path.
+    ///                    [usdt] → direct USDT (amountIn == usdtFee).
+    ///                    [address(0), usdt] → native input.
+    ///                    [erc20, ..., usdt] → ERC20 input.
+    /// @return usdtFee    Total USDT fee the factories will charge
+    /// @return amountIn   How much of path[0] is needed to produce that USDT
+    function quoteFee(
+        uint8 typeKey,
+        bool withLaunch,
+        address[] calldata path
+    ) external view returns (uint256 usdtFee, uint256 amountIn) {
+        usdtFee = tokenFactory.creationFee(typeKey);
+        if (withLaunch) usdtFee += launchpadFactory.launchFee();
+
+        if (usdtFee == 0 || path.length == 0) {
+            amountIn = 0;
+            return (usdtFee, amountIn);
+        }
+
+        // Direct USDT — no swap needed
+        if (path.length == 1 || path[path.length - 1] == path[0]) {
+            amountIn = usdtFee;
+            return (usdtFee, amountIn);
+        }
+
+        // Build a quote path: replace address(0) sentinel with WETH
+        address[] memory quotePath = new address[](path.length);
+        quotePath[0] = path[0] == address(0) ? dexRouter.WETH() : path[0];
+        for (uint256 i = 1; i < path.length; i++) quotePath[i] = path[i];
+
+        uint256[] memory amounts = dexRouter.getAmountsIn(usdtFee, quotePath);
+        amountIn = amounts[0];
+    }
+
+    // ================================================================
     //  ADMIN
     // ================================================================
 
-    /// @notice Pause all creation/listing. Emergency only.
     function pause() external onlyOwner { _pause(); }
-
-    /// @notice Unpause.
     function unpause() external onlyOwner { _unpause(); }
 
-    /// @notice Set minimum base amount per liquidity pool (0 = no minimum).
     function setMinLiquidity(uint256 amount) external onlyOwner {
         minLiquidity = amount;
     }
 
-    /// @notice Recover tokens accidentally sent to this contract.
     function withdrawStuckTokens(address token) external onlyOwner {
         if (token == address(0)) {
             uint256 bal = address(this).balance;
@@ -454,13 +527,82 @@ contract PlatformRouter is Ownable, ReentrancyGuard, Pausable {
     //  INTERNAL HELPERS
     // ================================================================
 
+    /// @dev Acquires at least `usdtNeeded` USDT from the caller's input via
+    ///      the DEX. Always validates `path[last] == usdt`. Three modes:
+    ///        - `path == [usdt]` (length 1): direct USDT transferFrom.
+    ///        - `path[0] == address(0)`: native — entire `msg.value` is
+    ///          swapped to USDT via swapExactETHForTokens.
+    ///        - otherwise: ERC20 — entire `fee.maxAmountIn` is pulled and
+    ///          swapped via swapExactTokensForTokens.
+    ///      Surplus USDT (received minus needed) is refunded to msg.sender
+    ///      *in USDT*, not in the original input token. This intentionally
+    ///      avoids ever sending the input token back: the user always
+    ///      ends up holding USDT for any unspent budget, which is what
+    ///      they'd convert to anyway. Slippage protection comes from the
+    ///      `usdtNeeded` floor — if the swap can't yield that much, it
+    ///      reverts.
+    function _payFee(FeePayment calldata fee, uint256 usdtNeeded) internal {
+        if (usdtNeeded == 0) return;
+        uint256 len = fee.path.length;
+        if (len == 0) revert InvalidFeePath();
+        if (fee.path[len - 1] != usdt) revert InvalidFeePath();
+
+        // Direct USDT — pull exactly what's needed, no surplus.
+        if (len == 1) {
+            IERC20(usdt).safeTransferFrom(msg.sender, address(this), usdtNeeded);
+            return;
+        }
+
+        uint256 usdtBefore = IERC20(usdt).balanceOf(address(this));
+
+        if (fee.path[0] == address(0)) {
+            // Native input. Uses swapETHForExactTokens so only the BNB
+            // needed for `usdtNeeded` is consumed. Any leftover BNB
+            // stays in the contract for LP wrapping (createAndList) or
+            // gets refunded via _refundExcess at the end of the parent
+            // call. This lets users pay fee + seed native LP in one tx.
+            address weth = dexRouter.WETH();
+            address[] memory swapPath = new address[](len);
+            swapPath[0] = weth;
+            for (uint256 i = 1; i < len; i++) swapPath[i] = fee.path[i];
+
+            dexRouter.swapETHForExactTokens{value: msg.value}(
+                usdtNeeded, swapPath, address(this), block.timestamp
+            );
+            // No USDT surplus possible — exact-output swap delivers
+            // exactly usdtNeeded. Skip the surplus refund below.
+            return;
+        } else {
+            // ERC20 input. Fee-on-transfer safety: use the post-transferFrom
+            // balance delta as the real amount we control, not `maxAmountIn`,
+            // because the pulled amount may be less if `tokenIn` taxes
+            // transfers. Passing `maxAmountIn` to the swap when we hold less
+            // would revert with INSUFFICIENT_INPUT_AMOUNT.
+            address tokenIn = fee.path[0];
+            uint256 balBefore = IERC20(tokenIn).balanceOf(address(this));
+            IERC20(tokenIn).safeTransferFrom(msg.sender, address(this), fee.maxAmountIn);
+            uint256 amountIn = IERC20(tokenIn).balanceOf(address(this)) - balBefore;
+            IERC20(tokenIn).forceApprove(address(dexRouter), amountIn);
+
+            address[] memory swapPath2 = new address[](len);
+            for (uint256 i = 0; i < len; i++) swapPath2[i] = fee.path[i];
+
+            dexRouter.swapExactTokensForTokens(
+                amountIn, usdtNeeded, swapPath2, address(this), block.timestamp
+            );
+            IERC20(tokenIn).forceApprove(address(dexRouter), 0);
+        }
+
+        // Surplus USDT goes back to the caller in USDT.
+        uint256 received = IERC20(usdt).balanceOf(address(this)) - usdtBefore;
+        if (received > usdtNeeded) {
+            IERC20(usdt).safeTransfer(msg.sender, received - usdtNeeded);
+        }
+    }
+
     /// @dev Seed liquidity by transferring both sides directly into the pair
     ///      and calling `pair.mint(recipient)`. Bypasses the router's
-    ///      ratio-matching machinery entirely, which makes the listing
-    ///      immune to pre-seed grief: if anyone dust-donated to a
-    ///      pre-registered pair, our large transfers dominate and their
-    ///      donation becomes free LP backing at our chosen ratio.
-    ///      Also cheaper in gas: no approvals, no router hop.
+    ///      ratio-matching machinery for grifter resistance.
     function _addLiquidity(
         address tokenAddress,
         ListParams calldata list,
@@ -472,10 +614,8 @@ contract PlatformRouter is Ownable, ReentrancyGuard, Pausable {
         address lpRecipient = list.burnLP ? DEAD : msg.sender;
 
         for (uint256 i = 0; i < poolCount; i++) {
-            // Enforce minimum liquidity
             if (minLiquidity > 0 && list.baseAmounts[i] < minLiquidity) revert BelowMinLiquidity();
 
-            // Resolve the base to an ERC20. For native, wrap into WETH first.
             address base = list.bases[i];
             uint256 baseAmount = list.baseAmounts[i];
             if (base == address(0)) {
@@ -488,29 +628,18 @@ contract PlatformRouter is Ownable, ReentrancyGuard, Pausable {
                 IERC20(base).safeTransferFrom(msg.sender, address(this), baseAmount);
             }
 
-            // Resolve or create the pair. Pre-registered pools from the
-            // token's init() will already exist; external bases may not.
             address pair = factory.getPair(tokenAddress, base);
             if (pair == address(0)) {
                 pair = factory.createPair(tokenAddress, base);
             }
 
-            // Direct-transfer both sides and mint in one shot.
             IERC20(tokenAddress).safeTransfer(pair, list.tokenAmounts[i]);
             IERC20(base).safeTransfer(pair, baseAmount);
             uint256 lp = IUniswapV2Pair(pair).mint(lpRecipient);
             if (list.burnLP && lp > 0) emit LiquidityBurned(tokenAddress, pair, lp);
         }
-
-        // Pools are already pre-registered in the token at initialize() time
-        // via bases[] → factory.createPair, so no post-creation addPool loop is needed.
     }
 
-    /// @dev Configure protections, tax, and enable trading for a newly created token.
-    ///      `tradingDelay` is the anti-snipe window (0 = trading opens immediately).
-    ///      For `createAndList`, router + caller were already added to
-    ///      isExcludedFromLimits before liquidity seeding; these setter calls
-    ///      are idempotent for that path and do the real work for `createTokenOnly`.
     function _configureAndEnableTrading(
         address tokenAddress,
         ProtectionParams calldata protection,
@@ -522,25 +651,42 @@ contract PlatformRouter is Ownable, ReentrancyGuard, Pausable {
         token.setExcludedFromLimits(msg.sender, true);
         token.setExcludedFromLimits(address(this), true);
 
+        // Tax exemption for router + creator. Critical because this helper
+        // runs setTaxes BEFORE the caller site returns leftover supply to
+        // the creator; without the router exemption, that return hop
+        // would silently skim `transferTaxBps` off the creator's own
+        // supply. The creator exemption is a courtesy for any follow-up
+        // transfers they make from an otherwise tax-exempt wallet (e.g.
+        // funding an LP pair themselves later).
+        if (isTaxable) {
+            ITaxableToken taxToken = ITaxableToken(tokenAddress);
+            taxToken.excludeFromTax(address(this), true);
+            taxToken.excludeFromTax(msg.sender, true);
+        }
+
         if (protection.maxWalletAmount > 0) token.setMaxWalletAmount(protection.maxWalletAmount);
         if (protection.maxTransactionAmount > 0) token.setMaxTransactionAmount(protection.maxTransactionAmount);
         if (protection.cooldownSeconds > 0) token.setCooldownTime(protection.cooldownSeconds);
 
-        if (isTaxable && (tax.buyTaxBps > 0 || tax.sellTaxBps > 0 || tax.transferTaxBps > 0)) {
+        if (isTaxable) {
             ITaxableToken taxToken = ITaxableToken(tokenAddress);
-            taxToken.setTaxes(tax.buyTaxBps, tax.sellTaxBps, tax.transferTaxBps);
-            if (tax.taxWallets.length > 0) {
-                taxToken.setTaxDistribution(tax.taxWallets, tax.taxSharesBps);
+            if (tax.buyTaxBps > 0 || tax.sellTaxBps > 0 || tax.transferTaxBps > 0) {
+                taxToken.setTaxes(tax.buyTaxBps, tax.sellTaxBps, tax.transferTaxBps);
+                if (tax.taxWallets.length > 0) {
+                    taxToken.setTaxDistribution(tax.taxWallets, tax.taxSharesBps);
+                }
             }
+            // Lock tax ceiling before enableTrading. enableTrading also does
+            // a belt-and-suspenders snapshot, but calling lockTaxCeiling
+            // explicitly makes the intent clear and covers the edge case
+            // where the creator set taxes to 0/0/0 (enableTrading's snapshot
+            // skips zero values, but lockTaxCeiling locks them at zero).
+            taxToken.lockTaxCeiling();
         }
 
         token.enableTrading(tradingDelay);
     }
 
-    /// @dev Configure protections for launch. Does NOT enable trading —
-    ///      LaunchInstance.graduate() calls enableTrading(delay) atomically
-    ///      when the curve graduates, so the anti-snipe window starts from
-    ///      the actual DEX seeding moment, not from token creation.
     function _configureLaunchProtections(
         address tokenAddress,
         address launchAddress,
@@ -551,7 +697,6 @@ contract PlatformRouter is Ownable, ReentrancyGuard, Pausable {
         IProtectedToken token = IProtectedToken(tokenAddress);
         token.setExcludedFromLimits(msg.sender, true);
         token.setExcludedFromLimits(launchAddress, true);
-        // Authorize the launch instance to call enableTrading on graduation.
         token.setAuthorizedLauncher(launchAddress, true);
 
         if (isTaxable) {
@@ -562,16 +707,22 @@ contract PlatformRouter is Ownable, ReentrancyGuard, Pausable {
         if (protection.maxTransactionAmount > 0) token.setMaxTransactionAmount(protection.maxTransactionAmount);
         if (protection.cooldownSeconds > 0) token.setCooldownTime(protection.cooldownSeconds);
 
-        if (isTaxable && (tax.buyTaxBps > 0 || tax.sellTaxBps > 0 || tax.transferTaxBps > 0)) {
+        if (isTaxable) {
             ITaxableToken taxToken = ITaxableToken(tokenAddress);
-            taxToken.setTaxes(tax.buyTaxBps, tax.sellTaxBps, tax.transferTaxBps);
-            if (tax.taxWallets.length > 0) {
-                taxToken.setTaxDistribution(tax.taxWallets, tax.taxSharesBps);
+            if (tax.buyTaxBps > 0 || tax.sellTaxBps > 0 || tax.transferTaxBps > 0) {
+                taxToken.setTaxes(tax.buyTaxBps, tax.sellTaxBps, tax.transferTaxBps);
+                if (tax.taxWallets.length > 0) {
+                    taxToken.setTaxDistribution(tax.taxWallets, tax.taxSharesBps);
+                }
             }
+            // Lock the tax ceiling after setting rates. Once locked, the
+            // creator can only lower — never raise above these values.
+            // If tax is 0/0/0, the ceiling locks at 0/0/0 — creator can
+            // never add tax. The wizard warns about this before submission.
+            taxToken.lockTaxCeiling();
         }
     }
 
-    /// @dev Refund any excess ETH back to the caller.
     function _refundExcess(uint256 preBalance) internal {
         uint256 excess = address(this).balance > preBalance ? address(this).balance - preBalance : 0;
         if (excess > 0) {
@@ -580,8 +731,5 @@ contract PlatformRouter is Ownable, ReentrancyGuard, Pausable {
         }
     }
 
-    // ----------------------------------------------------------------
-    // Receive native (for refunds from DEX router)
-    // ----------------------------------------------------------------
     receive() external payable {}
 }

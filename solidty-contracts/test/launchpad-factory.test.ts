@@ -35,7 +35,6 @@ describe("LaunchpadFactory", () => {
         500,
         0,
         0,
-        ethers.ZeroAddress,
         0,
         0,
         PARSE_USDT(1) // minBuyUsdt
@@ -157,7 +156,6 @@ describe("LaunchpadFactory", () => {
             500,
             0,
             0,
-            ethers.ZeroAddress,
             0,
             0,
             PARSE_USDT(1)
@@ -184,7 +182,6 @@ describe("LaunchpadFactory", () => {
             500,
             0,
             0,
-            ethers.ZeroAddress,
             0,
             25 * 3600,
             PARSE_USDT(1)
@@ -210,7 +207,6 @@ describe("LaunchpadFactory", () => {
             500,
             0,
             0,
-            ethers.ZeroAddress,
             0,
             0,
             0
@@ -236,7 +232,6 @@ describe("LaunchpadFactory", () => {
             500,
             0,
             0,
-            ethers.ZeroAddress,
             0,
             0,
             SOFT_CAP + 1n
