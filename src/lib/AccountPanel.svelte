@@ -1,25 +1,25 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { ethers } from 'ethers';
+	import { fly, fade } from 'svelte/transition';
 	import {
 		getWalletState,
 		exportPrivateKey,
 		exportSeedPhrase,
 		setActiveAccount,
-		addAccount,
 		unlockWallet,
 		onWalletStateChange,
 		getSigner,
 		pushPreferences,
-		createNewWallet,
-		importWallet,
-		switchWallet,
-		renameWallet,
-		deleteWallet,
-		setPrimaryWallet,
+		getAccountName,
+		setAccountMeta,
+		getAccountMeta,
+		getAllAccountMeta,
+		extendSession,
 		type WalletState,
 		type WalletContext,
 	} from './embeddedWallet';
+	import WalletSwitcher from './WalletSwitcher.svelte';
 	import { getKnownLogo, resolveTokenLogo } from './tokenLogo';
 	import { balanceState } from './balancePoller';
 	import { queryTradeLens } from './tradeLens';
@@ -78,6 +78,16 @@
 		return unsub;
 	});
 
+	// Auto-close the panel on disconnect — defends against any path that
+	// clears userAddress without explicitly closing the panel. Without this
+	// the chip lingers with stale "Account 4" state because the wallet
+	// store has been reset but the parent never closed the panel.
+	$effect(() => {
+		if (open && walletType === 'embedded' && !userAddress) {
+			close();
+		}
+	});
+
 	let accounts = $derived(walletState.accounts || []);
 	let activeIndex = $derived(walletState.activeAccount?.index ?? 0);
 
@@ -110,178 +120,57 @@
 	});
 
 	// ── UI state ──
-	type View = 'main' | 'receive' | 'send' | 'security' | 'export-key' | 'export-seed';
+	type View = 'main' | 'receive' | 'security' | 'export-key' | 'export-seed';
 	let view = $state<View>('main');
-	let showAccountDropdown = $state(false);
-	let renamingIndex = $state<number | null>(null);
-	let renameValue = $state('');
+	// Send is a bottom-up sheet overlaid on the main wallet panel, not a
+	// full-view swap — keeps the user's balance / account chrome visible
+	// behind the form (MetaMask-style).
+	let showSend = $state(false);
+	let showSwitcher = $state(false);
 
-	// ── Multi-wallet UI state ──
+	// ── Multi-wallet derived state (for switcher chip + send tab) ──
 	let wallets = $derived<WalletContext[]>(walletState.wallets || []);
 	let activeWalletId = $derived(walletState.activeWalletId);
 	let activeWallet = $derived(wallets.find((w) => w.id === activeWalletId) || null);
-	let addWalletMode = $state<'create' | 'import' | null>(null);
-	let newWalletName = $state('');
-	let newWalletPin = $state('');
-	let importMnemonic = $state('');
-	let importAck = $state(false);
-	let addWalletError = $state('');
-	let addWalletLoading = $state(false);
-	let addWalletCodes = $state<string[]>([]);
-	let renamingWalletId = $state<string | null>(null);
-	let renamingWalletValue = $state('');
-	let switchingWalletId = $state<string | null>(null);
 
-	function resetAddWalletForm() {
-		addWalletMode = null;
-		newWalletName = '';
-		newWalletPin = '';
-		importMnemonic = '';
-		importAck = false;
-		addWalletError = '';
-		addWalletLoading = false;
-		addWalletCodes = [];
+	function handleSwitcherAccountSwitched(addr: string) {
+		userAddress = addr;
+		onAccountSwitch(addr);
+		// Restore cached portfolio for the new account
+		lastRestoredAddr = addr;
+		restoreWalletCache(addr);
 	}
 
-	async function handleSwitchWallet(walletId: string) {
-		if (walletId === activeWalletId) { showAccountDropdown = false; return; }
-		switchingWalletId = walletId;
-		try {
-			const ok = await switchWallet(walletId);
-			if (!ok) {
-				onAddFeedback({ message: 'Wallet locked — PIN required', type: 'error' });
-				return;
-			}
-			// Update parent's userAddress to the newly-active wallet's default account
-			const next = getWalletState();
-			if (next.activeAccount?.address) {
-				userAddress = next.activeAccount.address;
-				onAccountSwitch(next.activeAccount.address);
-			}
-			showAccountDropdown = false;
-		} catch (e) {
-			onAddFeedback({ message: friendlyError(e), type: 'error' });
-		} finally {
-			switchingWalletId = null;
-		}
-	}
-
-	async function handleCreateWalletSubmit() {
-		addWalletError = '';
-		if (!newWalletName.trim()) { addWalletError = 'Name required'; return; }
-		// For the first wallet the user sets their PIN; for subsequent wallets
-		// we reuse the cached PIN so no PIN input needed. But we don't know
-		// which case we're in without hitting state — createNewWallet needs a
-		// pin either way, so on subsequent calls we pass an empty placeholder
-		// and let the flow error if unexpected.
-		const hasExistingWallet = wallets.length > 0;
-		let pinToUse = newWalletPin;
-		if (hasExistingWallet) {
-			// The shared PIN cache inside embeddedWallet handles this — but
-			// createNewWallet takes a PIN argument, so we need to ask.
-			if (!newWalletPin || newWalletPin.length < 4) {
-				addWalletError = 'Enter your existing PIN to encrypt the new wallet';
-				return;
-			}
-			pinToUse = newWalletPin;
-		} else if (!newWalletPin || newWalletPin.length < 4) {
-			addWalletError = 'PIN must be at least 4 digits';
-			return;
-		}
-
-		addWalletLoading = true;
-		try {
-			const result = await createNewWallet(newWalletName.trim(), pinToUse);
-			addWalletCodes = result.recoveryCodes;
-			onAddFeedback({ message: `Wallet "${result.wallet.name}" created`, type: 'success' });
-			// Switch to it
-			await handleSwitchWallet(result.wallet.id);
-		} catch (e) {
-			addWalletError = friendlyError(e);
-		} finally {
-			addWalletLoading = false;
-		}
-	}
-
-	async function handleImportWalletSubmit() {
-		addWalletError = '';
-		if (!newWalletName.trim()) { addWalletError = 'Name required'; return; }
-		if (!importMnemonic.trim()) { addWalletError = 'Recovery phrase required'; return; }
-		if (!importAck) { addWalletError = 'Acknowledge the warning'; return; }
-
-		addWalletLoading = true;
-		try {
-			const ctx = await importWallet(newWalletName.trim(), importMnemonic);
-			onAddFeedback({ message: `Wallet "${ctx.name}" imported`, type: 'success' });
-			resetAddWalletForm();
-			await handleSwitchWallet(ctx.id);
-		} catch (e) {
-			addWalletError = friendlyError(e);
-		} finally {
-			addWalletLoading = false;
-		}
-	}
-
-	async function handleRenameWallet(id: string) {
-		const name = renamingWalletValue.trim();
-		if (!name) { renamingWalletId = null; return; }
-		try {
-			await renameWallet(id, name);
-			onAddFeedback({ message: 'Renamed', type: 'success' });
-		} catch (e) {
-			onAddFeedback({ message: friendlyError(e), type: 'error' });
-		} finally {
-			renamingWalletId = null;
-			renamingWalletValue = '';
-		}
-	}
-
-	async function handleDeleteWallet(id: string, name: string) {
-		if (!confirm(`Delete wallet "${name}"? This removes the encrypted seed from the server. Make sure you have your own backup if it's an imported wallet.`)) return;
-		try {
-			await deleteWallet(id);
-			onAddFeedback({ message: `Wallet "${name}" deleted`, type: 'success' });
-		} catch (e) {
-			onAddFeedback({ message: friendlyError(e), type: 'error' });
-		}
-	}
-
-	async function handleSetPrimary(id: string) {
-		try {
-			await setPrimaryWallet(id);
-			onAddFeedback({ message: 'Primary wallet updated', type: 'success' });
-		} catch (e) {
-			onAddFeedback({ message: friendlyError(e), type: 'error' });
-		}
-	}
-
-	// Well-known token logos (native + major stables)
-	function getTokenLogo(tok: { symbol: string; logoUrl?: string; address?: string }): string {
+	// Well-known token logos (native + major stables).
+	// Accepts null/undefined because Svelte 5 evaluates `{@const}` + child
+	// `{#if}` deriveds inside an `{:else}` branch regardless of whether that
+	// branch is currently rendered — an unguarded `tok.logoUrl` crashes the
+	// whole effect graph when `sendAsset === 'native'` and no token matches.
+	function getTokenLogo(tok: { symbol: string; logoUrl?: string; address?: string } | null | undefined): string {
+		if (!tok) return '';
 		if (tok.logoUrl) return tok.logoUrl;
 		return getKnownLogo(tok.symbol || '');
 	}
-	let accountNames = $state<Record<number, string>>({});
 
-	// Load saved names from localStorage
-	$effect(() => {
-		try {
-			const saved = localStorage.getItem('account_names');
-			if (saved) accountNames = JSON.parse(saved);
-		} catch {}
-	});
+	// ── Per-wallet account name resolution (re-reads from store when wallet
+	//    or wallet metadata changes; uses a tick counter so renames bust the
+	//    derived caches without needing to re-derive every paint).
+	let metaTick = $state(0);
+	function bumpMeta() { metaTick++; pushPreferences().catch(() => {}); }
 
-	function getAccountName(idx: number): string {
-		return accountNames[idx] || `Account ${idx + 1}`;
+	function acctName(idx: number): string {
+		void metaTick;
+		if (!activeWalletId) return `Account ${idx + 1}`;
+		return getAccountName(activeWalletId, idx);
 	}
 
-	function saveAccountName(idx: number, name: string) {
-		accountNames[idx] = name;
-		localStorage.setItem('account_names', JSON.stringify(accountNames));
-		renamingIndex = null;
-		renameValue = '';
-		if (walletType === 'embedded') pushPreferences();
+	function acctAvatar(idx: number): string {
+		void metaTick;
+		if (!activeWalletId) return '';
+		const map = getAllAccountMeta(activeWalletId);
+		return map[String(idx)]?.avatar || '';
 	}
-	let creatingAccount = $state(false);
+
 	let copiedAddr = $state(false);
 
 	// Export
@@ -295,13 +184,122 @@
 	let sending = $state(false);
 	let sendAsset = $state<'native' | string>('native'); // 'native' or token address
 	let showAssetPicker = $state(false);
-	let showContactBook = $state(false);
+	// Two-step send: user fills the form, then sees a preview card summarising
+	// recipient / amount / estimated fee before the tx actually signs. The
+	// preview step is what the user explicitly approves — the form's button
+	// only *advances* to it.
+	let sendStep = $state<'form' | 'preview'>('form');
+	let sendFeeEst = $state<string>(''); // human-readable native-coin fee, empty if unknown
+	let sendFeeLoading = $state(false);
+	// Preview amount display: false = full precision (default), true = compact
+	// (B/T/M) for fast legibility of huge numbers. Toggles on tap. Reset per
+	// Send session so the first view is always the precise value.
+	let previewCompact = $state(false);
 
-	let sendAssetInfo = $derived.by(() => {
-		if (sendAsset === 'native') return { symbol: nativeCoin, decimals: nativeDecimals, balance: nativeBalance, priceUsd: nativePriceUsd };
-		const tok = [...tokens, ...importedTokens].find(t => t.address.toLowerCase() === sendAsset.toLowerCase());
-		return tok ? { symbol: tok.symbol, decimals: tok.decimals, balance: tok.balance, priceUsd: tok.priceUsd || 0 } : { symbol: nativeCoin, decimals: nativeDecimals, balance: nativeBalance, priceUsd: nativePriceUsd };
+	// Per-row compact toggle on the home token list. Rows default to full
+	// precision (matches the Send preview); tapping a row's USD "worth"
+	// toggles it into compact form. Keyed by lowercased address — or the
+	// literal string 'native' for the native-coin row.
+	let compactRows = $state<Set<string>>(new Set());
+	function toggleRowCompact(key: string) {
+		const next = new Set(compactRows);
+		if (next.has(key)) next.delete(key);
+		else next.add(key);
+		compactRows = next;
+	}
+
+	// Address book picker — opened via the book icon on the recipient field.
+	// Lists the user's own addresses across every wallet, with the current
+	// wallet's accounts pinned to the top (most common case: moving between
+	// hot/cold accounts you already control).
+	let showAddressBook = $state(false);
+	let addressBookQuery = $state('');
+
+	type BookEntry = {
+		address: string;
+		label: string;
+		sublabel: string;
+		avatar: string;
+		group: 'current' | 'other';
+	};
+
+	// Locked wallets only expose their default_address (account 0); we don't
+	// have derivation paths for index>0 until unlock. So for non-active
+	// wallets we surface just the primary account — good enough for the
+	// "send to my other wallet" use case.
+	let addressBookEntries = $derived.by<BookEntry[]>(() => {
+		void metaTick;
+		const entries: BookEntry[] = [];
+		const activeAddrLower = (userAddress || '').toLowerCase();
+
+		if (activeWallet) {
+			for (const acc of activeWallet.accounts || []) {
+				if (acc.address.toLowerCase() === activeAddrLower) continue;
+				const meta = getAccountMeta(activeWallet.id, acc.index);
+				entries.push({
+					address: acc.address,
+					label: meta.name || `Account ${acc.index + 1}`,
+					sublabel: `${activeWallet.name} · ${acc.address.slice(0, 6)}…${acc.address.slice(-4)}`,
+					avatar: meta.avatar || '',
+					group: 'current',
+				});
+			}
+		}
+
+		for (const w of wallets) {
+			if (w.id === activeWalletId) continue;
+			if (!w.defaultAddress) continue;
+			if (w.defaultAddress.toLowerCase() === activeAddrLower) continue;
+			const meta = getAccountMeta(w.id, 0);
+			entries.push({
+				address: w.defaultAddress,
+				label: w.name || 'Wallet',
+				sublabel: `${meta.name || 'Account 1'} · ${w.defaultAddress.slice(0, 6)}…${w.defaultAddress.slice(-4)}`,
+				avatar: meta.avatar || '',
+				group: 'other',
+			});
+		}
+
+		return entries;
 	});
+
+	// Filter the book by the search query. Matches label, sublabel, or the
+	// full address — so the user can paste/type part of any to narrow.
+	let filteredBookEntries = $derived.by<BookEntry[]>(() => {
+		const q = addressBookQuery.trim().toLowerCase();
+		if (!q) return addressBookEntries;
+		return addressBookEntries.filter(
+			(e) =>
+				e.label.toLowerCase().includes(q) ||
+				e.sublabel.toLowerCase().includes(q) ||
+				e.address.toLowerCase().includes(q)
+		);
+	});
+
+	// Resolved token for the current sendAsset selection. `null` when
+	// sendAsset === 'native' OR no match. Lifted to script level so the
+	// template can branch on it directly instead of using `{@const}`
+	// inside `{:else}` — the latter tickles a Svelte 5 reactivity bug
+	// where descendant deriveds evaluate before the `{#if tok}` guard
+	// and crash on `tok.symbol`.
+	let sendAssetTok = $derived.by(() => {
+		if (sendAsset === 'native') return null;
+		const target = sendAsset.toLowerCase();
+		return [...tokens, ...importedTokens].find((t) => t.address.toLowerCase() === target) || null;
+	});
+
+	let sendAssetInfo = $derived(
+		sendAssetTok
+			? { symbol: sendAssetTok.symbol, decimals: sendAssetTok.decimals, balance: sendAssetTok.balance, priceUsd: sendAssetTok.priceUsd || 0 }
+			: { symbol: nativeCoin, decimals: nativeDecimals, balance: nativeBalance, priceUsd: nativePriceUsd }
+	);
+
+	// Preview derived values — lifted out of {@const} inside the
+	// {#if sendStep === 'preview'} block because the block's local
+	// deriveds were getting destroyed mid-flight during fly-out
+	// transitions and throwing "$.get(...) is undefined".
+	let previewUsd = $derived(parseFloat(sendAmount || '0') * (sendAssetInfo?.priceUsd || 0));
+	let previewBookLabel = $derived(matchBookLabel(sendTo));
 
 	// Import
 	let importAddress = $state('');
@@ -532,9 +530,9 @@
 		}
 	});
 
-	// Auto-refresh portfolio every 10s when panel is open (pause when account dropdown is open)
+	// Auto-refresh portfolio every 10s when panel is open (pause when switcher is open)
 	$effect(() => {
-		if (!open || !userAddress || !dexRouter || showAccountDropdown) return;
+		if (!open || !userAddress || !dexRouter || showSwitcher) return;
 		refreshTokenBalances();
 		const interval = setInterval(refreshTokenBalances, 10000);
 		return () => clearInterval(interval);
@@ -593,7 +591,135 @@
 	}
 
 	// ── Helpers ──
-	function close() { open = false; view = 'main'; resetExport(); showAccountDropdown = false; renamingIndex = null; }
+
+	/** Discard all pending send-transaction state. Called from every path
+	 *  that dismisses the Send sheet (X button, backdrop click, Escape, or
+	 *  the whole panel closing) so the next Send starts clean. */
+	function resetSend() {
+		showSend = false;
+		sendStep = 'form';
+		sendFeeEst = '';
+		sendTo = '';
+		sendAmount = '';
+		sendAsset = 'native';
+		showAssetPicker = false;
+		showAddressBook = false;
+		addressBookQuery = '';
+		previewCompact = false;
+	}
+
+	function close() {
+		open = false;
+		view = 'main';
+		resetExport();
+		showSwitcher = false;
+		resetSend();
+	}
+
+	// Per-address cached native balance, pulled from the same localStorage
+	// cache the wallet uses for instant-restore on reload. Users recognise
+	// their own accounts by balance more than by address, so showing it in
+	// the book is a real usability lift.
+	function cachedNativeBalance(addr: string): string {
+		try {
+			const raw = localStorage.getItem(cacheKey(addr));
+			if (!raw) return '';
+			const c = JSON.parse(raw);
+			if (!c.nativeBalance) return '';
+			return parseFloat(ethers.formatEther(BigInt(c.nativeBalance))).toFixed(4);
+		} catch {
+			return '';
+		}
+	}
+
+	function matchBookLabel(addr: string): string {
+		if (!addr) return '';
+		const e = addressBookEntries.find((x) => x.address.toLowerCase() === addr.toLowerCase());
+		return e ? `${e.label} — ${e.sublabel}` : '';
+	}
+
+	// Validate → estimate gas → advance to preview. We don't block on fee
+	// estimation: if it fails (no provider, RPC hiccup), the preview still
+	// opens with fee shown as "—" so the user isn't stuck.
+	async function reviewSend() {
+		if (!ethers.isAddress(sendTo)) { onAddFeedback({ message: 'Invalid recipient address', type: 'error' }); return; }
+		const amt = parseFloat(sendAmount);
+		if (isNaN(amt) || amt <= 0) { onAddFeedback({ message: 'Invalid amount', type: 'error' }); return; }
+
+		sendStep = 'preview';
+		sendFeeEst = '';
+		sendFeeLoading = true;
+		try {
+			const net = getProvider();
+			if (!net) throw new Error('No provider');
+			const provider = net.provider as any;
+			const dec = sendAsset === 'native' ? nativeDecimals : sendAssetInfo.decimals;
+			const parts = sendAmount.split('.');
+			const sanitized = parts.length > 1 ? `${parts[0]}.${parts[1].slice(0, dec)}` : sendAmount;
+
+			let gasLimit: bigint;
+			if (sendAsset === 'native') {
+				gasLimit = await provider.estimateGas({
+					from: userAddress,
+					to: sendTo,
+					value: ethers.parseUnits(sanitized, nativeDecimals),
+				});
+			} else {
+				const iface = new ethers.Interface(['function transfer(address to, uint256 amount) returns (bool)']);
+				const data = iface.encodeFunctionData('transfer', [sendTo, ethers.parseUnits(sanitized, sendAssetInfo.decimals)]);
+				gasLimit = await provider.estimateGas({ from: userAddress, to: sendAsset, data });
+			}
+			const feeData = await provider.getFeeData();
+			const gasPrice: bigint = feeData.maxFeePerGas ?? feeData.gasPrice ?? 0n;
+			if (gasPrice > 0n) {
+				const weiFee = gasLimit * gasPrice;
+				sendFeeEst = parseFloat(ethers.formatEther(weiFee)).toFixed(6);
+			}
+		} catch {
+			sendFeeEst = '';
+		} finally {
+			sendFeeLoading = false;
+		}
+	}
+
+	async function executeSend() {
+		sending = true;
+		try {
+			const net = getProvider();
+			if (!net) throw new Error('No provider');
+			const wallet = getSigner(net.provider as any);
+			if (!wallet) throw new Error('Wallet locked — unlock first');
+
+			const dec = sendAsset === 'native' ? nativeDecimals : sendAssetInfo.decimals;
+			const parts = sendAmount.split('.');
+			const sanitized = parts.length > 1 ? `${parts[0]}.${parts[1].slice(0, dec)}` : sendAmount;
+
+			if (sendAsset === 'native') {
+				const tx = await wallet.sendTransaction({
+					to: sendTo,
+					value: ethers.parseUnits(sanitized, nativeDecimals),
+				});
+				await tx.wait();
+				onAddFeedback({ message: `Sent ${sanitized} ${nativeCoin}`, type: 'success' });
+			} else {
+				const erc20 = new ethers.Contract(sendAsset, [
+					'function transfer(address to, uint256 amount) returns (bool)',
+				], wallet);
+				const tx = await erc20.transfer(sendTo, ethers.parseUnits(sanitized, sendAssetInfo.decimals));
+				await tx.wait();
+				onAddFeedback({ message: `Sent ${sanitized} ${sendAssetInfo.symbol}`, type: 'success' });
+			}
+
+			resetSend();
+			onRefreshBalance();
+			refreshTokenBalances();
+		} catch (e: any) {
+			const msg = friendlyError(e);
+			onAddFeedback({ message: msg.slice(0, 80), type: 'error' });
+		} finally {
+			sending = false;
+		}
+	}
 
 	function resetExport() { exportPin = ''; exportedValue = ''; exportError = ''; }
 
@@ -618,32 +744,52 @@
 		return `$${val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 	}
 
+	/** Compact amount display for tap-to-shrink: "1041644.53..." → "1.04M",
+	 *  "73241648253446" → "73.24T". Under 1M returns a decimal-capped
+	 *  locale string (nothing to compact). Beyond 1e21 falls back to
+	 *  scientific notation. Operates on a string so we don't lose the
+	 *  precision of the raw sendAmount. */
+	function fmtCompactAmount(s: string | number): string {
+		const n = typeof s === 'number' ? s : parseFloat(s || '0');
+		if (!isFinite(n) || n === 0) return '0';
+		const abs = Math.abs(n);
+		if (abs < 1e6) {
+			return n.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 4 });
+		}
+		if (abs >= 1e21) return n.toExponential(2).replace('e+', 'e');
+		const units: Array<[number, string]> = [
+			[1e18, 'Qn'],
+			[1e15, 'Qa'],
+			[1e12, 'T'],
+			[1e9, 'B'],
+			[1e6, 'M'],
+		];
+		for (const [base, suffix] of units) {
+			if (abs >= base) {
+				return (n / base).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 }) + suffix;
+			}
+		}
+		return n.toLocaleString();
+	}
+
+	/** USD-prefixed variant of fmtCompactAmount for the token row USD column. */
+	function fmtCompactUsd(val: number): string {
+		if (val === 0) return '$0.00';
+		if (val < 0.01) return '<$0.01';
+		if (val < 1e6) return fmtUsd(val);
+		return '$' + fmtCompactAmount(val);
+	}
+
 	function shortAddr(addr: string): string {
 		if (!addr || addr.length < 12) return addr || '';
 		return addr.slice(0, 8) + '...' + addr.slice(-6);
 	}
 
 	// ── Actions ──
-	async function handleAddAccount() {
-		creatingAccount = true;
-		try {
-			const acc = await addAccount();
-			setActiveAccount(acc.index);
-			onAccountSwitch(acc.address);
-			onAddFeedback({ message: `Account ${acc.index + 1} created`, type: 'success' });
-			showAccountDropdown = false;
-		} catch (e: any) {
-			onAddFeedback({ message: e.message || 'Failed to create account', type: 'error' });
-		} finally {
-			creatingAccount = false;
-		}
-	}
-
 	function handleSwitchAccount(idx: number) {
 		setActiveAccount(idx);
 		const acc = accounts.find(a => a.index === idx);
 		if (acc) onAccountSwitch(acc.address);
-		showAccountDropdown = false;
 
 		// Restore from cache (already populated by polling all accounts)
 		if (acc) {
@@ -678,7 +824,8 @@
 	} as const;
 </script>
 
-<svelte:window onkeydown={(e) => { if (e.key === 'Escape') { if (view !== 'main') view = 'main'; else close(); } }} />
+<svelte:window onkeydown={(e) => { if (e.key === 'Escape') { if (showSend) { resetSend(); } else if (view !== 'main') view = 'main'; else close(); } }}
+	onpointerdown={() => { if (open && walletType === 'embedded') extendSession(); }} />
 
 {#if open}
 <div class="ap-backdrop" onclick={close} role="presentation"></div>
@@ -691,176 +838,57 @@
 				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
 			</button>
 			<span class="ap-head-title">
-				{view === 'receive' ? 'Receive' : view === 'send' ? 'Send' : view === 'security' ? 'Security' : view === 'export-key' ? 'Private Key' : 'Recovery Phrase'}
+				{view === 'receive' ? 'Receive' : view === 'security' ? 'Security' : view === 'export-key' ? 'Private Key' : 'Recovery Phrase'}
 			</span>
 		{:else}
-			<!-- Account picker -->
-			<button class="ap-acct-btn" onclick={(e) => { e.stopPropagation(); showAccountDropdown = !showAccountDropdown; }}>
-				<div class="ap-avatar">{activeIndex + 1}</div>
-				<div class="ap-acct-meta">
-					<span class="ap-acct-name">{getAccountName(activeIndex)}</span>
-					<span class="ap-acct-addr">{shortAddr(userAddress)}</span>
-				</div>
-				<svg class="ap-chev" class:ap-chev-flip={showAccountDropdown} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
-			</button>
-
-			{#if showAccountDropdown}
-				<!-- svelte-ignore a11y_no_static_element_interactions -->
-				<div class="ap-dd" onclick={(e) => e.stopPropagation()}>
-					<!-- ═══ WALLETS ═══ -->
-					{#if walletType === 'embedded' && wallets.length > 0}
-						<div class="ap-dd-section-label">Wallets</div>
-						{#each wallets as w (w.id)}
-							<div class="ap-dd-row ap-dd-wallet-row">
-								{#if renamingWalletId === w.id}
-									<input class="ap-dd-rename" bind:value={renamingWalletValue} placeholder={w.name}
-										onkeydown={(e) => { if (e.key === 'Enter') handleRenameWallet(w.id); if (e.key === 'Escape') { renamingWalletId = null; renamingWalletValue = ''; } }}
-										{...INPUT_ATTRS} />
-									<button class="ap-dd-gear" onclick={() => handleRenameWallet(w.id)} title="Save">
-										<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
-									</button>
-								{:else}
-									<button class="ap-dd-item" class:ap-dd-active={w.id === activeWalletId} onclick={() => handleSwitchWallet(w.id)} disabled={switchingWalletId === w.id}>
-										<div class="ap-avatar ap-avatar-sm ap-avatar-wallet">{w.name.charAt(0).toUpperCase()}</div>
-										<span class="ap-dd-name">
-											{w.name}
-											{#if w.isPrimary}<span class="ap-dd-badge ap-dd-badge-primary">primary</span>{/if}
-											{#if w.isImported}<span class="ap-dd-badge ap-dd-badge-imported">imported</span>{/if}
-										</span>
-										<span class="ap-dd-addr">{w.accountCount} acc</span>
-										<span class="ap-dd-check">
-											{#if switchingWalletId === w.id}
-												<span class="ap-dd-spinner"></span>
-											{:else if w.id === activeWalletId}
-												&#10003;
-											{/if}
-										</span>
-									</button>
-									<button class="ap-dd-gear" title="Rename wallet" onclick={(e) => { e.stopPropagation(); renamingWalletId = w.id; renamingWalletValue = w.name; }}>
-										<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-									</button>
-									{#if !w.isPrimary}
-										<button class="ap-dd-gear" title="Set as primary" onclick={(e) => { e.stopPropagation(); handleSetPrimary(w.id); }}>
-											<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-										</button>
-									{/if}
-									{#if wallets.length > 1 && !w.isPrimary}
-										<button class="ap-dd-gear" title="Delete wallet" onclick={(e) => { e.stopPropagation(); handleDeleteWallet(w.id, w.name); }}>
-											<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-										</button>
-									{/if}
-								{/if}
-							</div>
-						{/each}
-
-						<!-- Add wallet form -->
-						{#if addWalletMode === null}
-							<div class="ap-dd-wallet-actions">
-								<button class="ap-dd-item ap-dd-add" onclick={() => { resetAddWalletForm(); addWalletMode = 'create'; newWalletName = `Wallet ${wallets.length + 1}`; }}>
-									<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-									New wallet
-								</button>
-								<button class="ap-dd-item ap-dd-add" onclick={() => { resetAddWalletForm(); addWalletMode = 'import'; newWalletName = `Imported ${wallets.length + 1}`; }}>
-									<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-									Import wallet
-								</button>
-							</div>
-						{:else if addWalletMode === 'create' && addWalletCodes.length === 0}
-							<div class="ap-dd-form">
-								<div class="ap-dd-form-title">Create new wallet</div>
-								<input class="ap-input" type="text" placeholder="Wallet name" bind:value={newWalletName} maxlength="40" {...INPUT_ATTRS} />
-								<input class="ap-input" type="password" placeholder="Your PIN" bind:value={newWalletPin} {...INPUT_ATTRS} />
-								{#if addWalletError}<p class="ap-dd-error">{addWalletError}</p>{/if}
-								<div class="ap-dd-form-btns">
-									<button class="ap-btn-s" onclick={() => resetAddWalletForm()}>Cancel</button>
-									<button class="ap-btn-s ap-btn-primary" disabled={addWalletLoading} onclick={handleCreateWalletSubmit}>
-										{addWalletLoading ? 'Creating...' : 'Create'}
-									</button>
-								</div>
-							</div>
-						{:else if addWalletMode === 'create' && addWalletCodes.length > 0}
-							<div class="ap-dd-form">
-								<div class="ap-dd-form-title">Recovery codes</div>
-								<p class="ap-dd-form-hint">Save these. Each can unlock this wallet if you forget your PIN. They won't be shown again.</p>
-								<div class="ap-dd-codes">
-									{#each addWalletCodes as code, i}
-										<div class="ap-dd-code">{i + 1}. {code}</div>
-									{/each}
-								</div>
-								<button class="ap-btn-s ap-btn-primary" onclick={() => resetAddWalletForm()}>Done</button>
-							</div>
-						{:else if addWalletMode === 'import'}
-							<div class="ap-dd-form">
-								<div class="ap-dd-form-title">Import existing wallet</div>
-								<input class="ap-input" type="text" placeholder="Wallet name" bind:value={newWalletName} maxlength="40" {...INPUT_ATTRS} />
-								<textarea class="ap-input ap-dd-textarea" rows="3" placeholder="12 or 24 word recovery phrase" bind:value={importMnemonic} {...INPUT_ATTRS}></textarea>
-								<label class="ap-dd-ack">
-									<input type="checkbox" bind:checked={importAck} />
-									<span>Imported wallets have no platform recovery — I have my own backup.</span>
-								</label>
-								{#if addWalletError}<p class="ap-dd-error">{addWalletError}</p>{/if}
-								<div class="ap-dd-form-btns">
-									<button class="ap-btn-s" onclick={() => resetAddWalletForm()}>Cancel</button>
-									<button class="ap-btn-s ap-btn-primary" disabled={addWalletLoading} onclick={handleImportWalletSubmit}>
-										{addWalletLoading ? 'Importing...' : 'Import'}
-									</button>
-								</div>
-							</div>
-						{/if}
-
-						<div class="ap-set-divider"></div>
-					{/if}
-
-					<!-- ═══ ACCOUNTS (in active wallet) ═══ -->
-					{#if walletType === 'embedded' && activeWallet}
-						<div class="ap-dd-section-label">Accounts in {activeWallet.name}</div>
-					{/if}
-					{#each accounts as acc, i}
-						<div class="ap-dd-row">
-							{#if renamingIndex === i}
-								<input class="ap-dd-rename" bind:value={renameValue} placeholder={getAccountName(i)}
-									onkeydown={(e) => { if (e.key === 'Enter') saveAccountName(i, renameValue || getAccountName(i)); if (e.key === 'Escape') renamingIndex = null; }}
-									{...INPUT_ATTRS} />
-								<button class="ap-dd-gear" onclick={() => saveAccountName(i, renameValue || getAccountName(i))} title="Save">
-									<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
-								</button>
-							{:else}
-								<button class="ap-dd-item" class:ap-dd-active={i === activeIndex} onclick={() => handleSwitchAccount(i)}>
-									<div class="ap-avatar ap-avatar-sm">{i + 1}</div>
-									<span class="ap-dd-name">{getAccountName(i)}</span>
-									<span class="ap-dd-addr">{acc.address.slice(0, 6)}...{acc.address.slice(-4)}</span>
-									<span class="ap-dd-check">{#if i === activeIndex}&#10003;{/if}</span>
-								</button>
-								<button class="ap-dd-gear" title="Rename" onclick={(e) => { e.stopPropagation(); renamingIndex = i; renameValue = getAccountName(i); }}>
-									<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-								</button>
-								{#if walletType === 'embedded'}
-									<button class="ap-dd-gear" title="Security" onclick={(e) => { e.stopPropagation(); setActiveAccount(i); onAccountSwitch(acc.address); showAccountDropdown = false; view = 'security'; }}>
-										<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-									</button>
-								{/if}
-							{/if}
-						</div>
-					{/each}
+			<!-- Unified wallet+account chip — opens WalletSwitcher sheet -->
+			<button class="ap-chip" onclick={() => { showSwitcher = true; }}>
+				<div class="ap-chip-icon">
 					{#if walletType === 'embedded'}
-						<button class="ap-dd-item ap-dd-add" onclick={handleAddAccount} disabled={creatingAccount}>
-							<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-							{creatingAccount ? 'Creating...' : 'New Account'}
-						</button>
+						{#if acctAvatar(activeIndex)}
+							<span class="ap-chip-emoji">{acctAvatar(activeIndex)}</span>
+						{:else}
+							{activeIndex + 1}
+						{/if}
+					{:else}
+						◆
 					{/if}
-					<div class="ap-set-divider"></div>
-					<button class="ap-dd-item ap-dd-disconnect" onclick={() => { onDisconnect(); close(); }}>
-						<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-						Disconnect
-					</button>
 				</div>
-			{/if}
+				<div class="ap-chip-meta">
+					<span class="ap-chip-line1">
+						{#if walletType === 'embedded' && activeWallet}
+							<span class="ap-chip-wallet">{activeWallet.name}</span>
+							<span class="ap-chip-sep">•</span>
+							<span class="ap-chip-acct">{acctName(activeIndex)}</span>
+						{:else}
+							External Wallet
+						{/if}
+					</span>
+					<span class="ap-chip-line2">{shortAddr(userAddress)}</span>
+				</div>
+				<svg class="ap-chip-chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+			</button>
 		{/if}
 
 		<button class="ap-x" onclick={close}>
 			<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
 		</button>
 	</div>
+
+	<!-- Unified wallet/account switcher sheet (overlay above panel).
+	     Reads its own state directly from the wallet store — no need to
+	     pipe wallets/accounts/activeWalletId through props. -->
+	{#if walletType === 'embedded'}
+		<WalletSwitcher
+			bind:open={showSwitcher}
+			onAccountSwitched={(addr) => { handleSwitcherAccountSwitched(addr); bumpMeta(); }}
+			onFeedback={onAddFeedback}
+			onExportSeed={() => { resetExport(); view = 'export-seed'; }}
+			onExportKey={() => { resetExport(); view = 'export-key'; }}
+			onDisconnect={onDisconnect}
+			onAccountMetaChanged={bumpMeta}
+		/>
+	{/if}
 
 	<!-- ═══ MAIN VIEW ═══ -->
 	{#if view === 'main'}
@@ -885,7 +913,7 @@
 				<div class="ap-act-circle"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg></div>
 				<span>Buy</span>
 			</button>
-			<button class="ap-act" onclick={() => view = 'send'}>
+			<button class="ap-act" onclick={() => showSend = true}>
 				<div class="ap-act-circle"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg></div>
 				<span>Send</span>
 			</button>
@@ -899,11 +927,31 @@
 			</button>
 		</div>
 
+		<!-- Empty-state CTA: shown the first time a user opens an empty wallet.
+		     Replaces the "navigate away to /trade" friction with a one-tap path
+		     to the receive view + native faucet hint. -->
+		{#if totalUsd === 0 && nativeBalance === 0n && sortedTokens.length === 0 && !portfolioLoading}
+			<div class="ap-empty-cta">
+				<div class="ap-empty-cta-icon">
+					<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>
+				</div>
+				<div class="ap-empty-cta-text">
+					<strong>Fund your wallet to get started</strong>
+					<p>Receive {nativeCoin}, USDT or any token on {networkName} at your address.</p>
+				</div>
+				<div class="ap-empty-cta-btns">
+					<button class="ap-btn ap-btn-primary" onclick={() => view = 'receive'}>Show address</button>
+					<button class="ap-btn" onclick={() => { close(); goto('/trade'); }}>Buy with card</button>
+				</div>
+			</div>
+		{/if}
+
 		<!-- Assets header -->
 		<div class="ap-section-head">Assets</div>
 
 
 		{#if true}
+			{@const nativeCompact = compactRows.has('native')}
 			<div class="ap-scroll">
 				<!-- Native -->
 				<div class="ap-row">
@@ -916,16 +964,18 @@
 						<span class="ap-row-name">{nativeCoin}</span>
 						<span class="ap-row-sub">Native</span>
 					</div>
-					<div class="ap-row-right">
+					<button class="ap-row-right" type="button" onclick={() => toggleRowCompact('native')} title={nativeCompact ? 'Tap to expand' : 'Tap to shrink'}>
 						<span class="ap-row-amt">{fmtBal(nativeBalance, nativeDecimals)}</span>
-						<span class="ap-row-usd">{fmtUsd(nativeUsd)}</span>
-					</div>
+						<span class="ap-row-usd">{nativeCompact ? fmtCompactUsd(nativeUsd) : fmtUsd(nativeUsd)}</span>
+					</button>
 				</div>
 
 				<!-- Tokens sorted by USD value -->
 				{#each sortedTokens as tok}
 					{@const usd = tok._usd}
 					{@const logo = getTokenLogo(tok)}
+					{@const rowKey = (tok.address || tok.symbol).toLowerCase()}
+					{@const isCompact = compactRows.has(rowKey)}
 					<div class="ap-row">
 					{#if logo}
 						<img src={logo} alt={tok.symbol} class="ap-row-logo" />
@@ -936,10 +986,10 @@
 							<span class="ap-row-name">{tok.symbol}</span>
 							<span class="ap-row-sub">{tok.name}</span>
 						</div>
-						<div class="ap-row-right">
-							<span class="ap-row-amt">{fmtBal(tok.balance, tok.decimals)}</span>
-							<span class="ap-row-usd">{usd > 0 ? fmtUsd(usd) : ''}</span>
-						</div>
+						<button class="ap-row-right" type="button" onclick={() => toggleRowCompact(rowKey)} title={isCompact ? 'Tap to expand' : 'Tap to shrink'}>
+							<span class="ap-row-amt">{isCompact ? fmtCompactAmount(parseFloat(ethers.formatUnits(tok.balance, tok.decimals))) : fmtBal(tok.balance, tok.decimals)}</span>
+							<span class="ap-row-usd">{usd > 0 ? (isCompact ? fmtCompactUsd(usd) : fmtUsd(usd)) : ''}</span>
+						</button>
 					</div>
 				{/each}
 
@@ -993,194 +1043,6 @@
 			</div>
 		</div>
 
-	<!-- ═══ SEND VIEW ═══ -->
-	{:else if view === 'send'}
-		<div class="ap-view-content">
-			<label class="ap-label">Asset</label>
-			<button class="ap-asset-btn" type="button" onclick={() => showAssetPicker = true}>
-				{#if sendAsset === 'native'}
-					{#if getKnownLogo(nativeCoin)}
-						<img src={getKnownLogo(nativeCoin)} alt="" class="ap-asset-logo" />
-					{:else}
-						<span class="ap-asset-letter">{nativeCoin.charAt(0)}</span>
-					{/if}
-					<span class="ap-asset-name">{nativeCoin}</span>
-					<span class="ap-asset-bal">{fmtBal(nativeBalance, nativeDecimals)}</span>
-				{:else}
-					{@const tok = [...tokens, ...importedTokens].find(t => t.address.toLowerCase() === sendAsset.toLowerCase())}
-					{#if tok}
-						{#if getTokenLogo(tok)}
-							<img src={getTokenLogo(tok)} alt="" class="ap-asset-logo" />
-						{:else}
-							<span class="ap-asset-letter">{tok.symbol.charAt(0)}</span>
-						{/if}
-						<span class="ap-asset-name">{tok.symbol}</span>
-						<span class="ap-asset-bal">{fmtBal(tok.balance, tok.decimals)}</span>
-					{/if}
-				{/if}
-				<svg class="ap-asset-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
-			</button>
-
-			{#if showAssetPicker}
-				<!-- svelte-ignore a11y_no_static_element_interactions -->
-				<!-- svelte-ignore a11y_click_events_have_key_events -->
-				<div class="ap-picker-overlay" onclick={(e) => { if (e.target === e.currentTarget) showAssetPicker = false; }}>
-					<div class="ap-picker">
-						<div class="ap-picker-header">
-							<span class="ap-picker-title">Select Asset</span>
-							<button class="ap-picker-close" type="button" onclick={() => showAssetPicker = false}>
-								<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-							</button>
-						</div>
-						<div class="ap-picker-list">
-							<!-- Native coin (always first if has balance) -->
-							{#if nativeBalance > 0n}
-								<button class="ap-picker-item" class:active={sendAsset === 'native'} onclick={() => { sendAsset = 'native'; showAssetPicker = false; }}>
-									{#if getKnownLogo(nativeCoin)}
-										<img src={getKnownLogo(nativeCoin)} alt="" class="ap-picker-logo" />
-									{:else}
-										<span class="ap-picker-letter">{nativeCoin.charAt(0)}</span>
-									{/if}
-									<div class="ap-picker-info">
-										<span class="ap-picker-symbol">{nativeCoin}</span>
-										<span class="ap-picker-name">Native</span>
-									</div>
-									<div class="ap-picker-right">
-										<span class="ap-picker-bal">{fmtBal(nativeBalance, nativeDecimals)}</span>
-										{#if nativeUsd > 0}<span class="ap-picker-usd">{fmtUsd(nativeUsd)}</span>{/if}
-									</div>
-								</button>
-							{/if}
-							<!-- Tokens sorted by USD value, hide zero balance -->
-							{#each sortedTokens as tok}
-								{@const logo = getTokenLogo(tok)}
-								<button class="ap-picker-item" class:active={sendAsset.toLowerCase() === tok.address?.toLowerCase()} onclick={() => { sendAsset = tok.address; showAssetPicker = false; }}>
-									{#if logo}
-										<img src={logo} alt="" class="ap-picker-logo" />
-									{:else}
-										<span class="ap-picker-letter">{tok.symbol.charAt(0)}</span>
-									{/if}
-									<div class="ap-picker-info">
-										<span class="ap-picker-symbol">{tok.symbol}</span>
-										<span class="ap-picker-name">{tok.name || tok.symbol}</span>
-									</div>
-									<div class="ap-picker-right">
-										<span class="ap-picker-bal">{fmtBal(tok.balance, tok.decimals)}</span>
-										{#if tok._usd > 0}<span class="ap-picker-usd">{fmtUsd(tok._usd)}</span>{/if}
-									</div>
-								</button>
-							{/each}
-						</div>
-					</div>
-				</div>
-			{/if}
-
-			<label class="ap-label">To</label>
-			<div class="ap-to-wrap">
-				<input class="ap-input" style="padding-right: 40px;" type="text" placeholder="Recipient (0x...)" bind:value={sendTo} {...INPUT_ATTRS} />
-				{#if walletType === 'embedded' && accounts.length > 1}
-					<button class="ap-book-btn" type="button" title="My accounts" onclick={() => showContactBook = !showContactBook}>
-						<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/><path d="M8 7h6"/><path d="M8 11h4"/></svg>
-					</button>
-				{/if}
-			</div>
-
-			{#if showContactBook}
-				<!-- svelte-ignore a11y_no_static_element_interactions -->
-				<!-- svelte-ignore a11y_click_events_have_key_events -->
-				<div class="ap-book-overlay" onclick={() => showContactBook = false}>
-					<div class="ap-book-modal" onclick={(e) => e.stopPropagation()}>
-						<div class="ap-book-header">
-							<span class="ap-book-title">My Accounts</span>
-							<button class="ap-book-close" type="button" onclick={() => showContactBook = false}>
-								<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-							</button>
-						</div>
-						{#each accounts.filter(a => a.address.toLowerCase() !== userAddress.toLowerCase()) as acc}
-							{@const cached = (() => { try { const c = JSON.parse(localStorage.getItem(cacheKey(acc.address)) || '{}'); return c.nativeBalance ? parseFloat(ethers.formatEther(BigInt(c.nativeBalance))).toFixed(4) : '0'; } catch { return '0'; } })()}
-							<button class="ap-book-item" type="button" onclick={() => { sendTo = acc.address; showContactBook = false; }}>
-								<div class="ap-book-avatar">{(accountNames[acc.index] || `A${acc.index + 1}`).charAt(0)}</div>
-								<div class="ap-book-info">
-									<span class="ap-book-name">{accountNames[acc.index] || `Account ${acc.index + 1}`}</span>
-									<span class="ap-book-addr">{acc.address.slice(0, 8)}...{acc.address.slice(-6)}</span>
-								</div>
-								<span class="ap-book-bal">{cached} {nativeCoin}</span>
-							</button>
-						{/each}
-					</div>
-				</div>
-			{/if}
-
-			<label class="ap-label">Amount</label>
-			<input class="ap-input" type="text" inputmode="decimal" placeholder="0.0" bind:value={sendAmount} {...INPUT_ATTRS} />
-			{#if sendAmount && sendAssetInfo.priceUsd > 0}
-				{@const sendUsdEstimate = parseFloat(sendAmount || '0') * sendAssetInfo.priceUsd}
-				{#if sendUsdEstimate > 0}
-					<div class="ap-send-estimate">≈ {fmtUsd(sendUsdEstimate)}</div>
-				{/if}
-			{/if}
-			<div class="ap-send-info">
-				<span>Balance: {fmtBal(sendAssetInfo.balance, sendAssetInfo.decimals)} {sendAssetInfo.symbol}</span>
-				<button class="ap-link" onclick={() => {
-					const dec = sendAsset === 'native' ? nativeDecimals : sendAssetInfo.decimals;
-					if (sendAsset === 'native') {
-						const reserve = ethers.parseUnits('0.001', dec);
-						const max = sendAssetInfo.balance > reserve ? sendAssetInfo.balance - reserve : 0n;
-						sendAmount = ethers.formatUnits(max, dec);
-					} else {
-						sendAmount = ethers.formatUnits(sendAssetInfo.balance, dec);
-					}
-				}}>MAX</button>
-			</div>
-
-			<button class="ap-btn ap-btn-primary ap-btn-full" disabled={sending || !sendTo || !sendAmount} onclick={async () => {
-				if (!ethers.isAddress(sendTo)) { onAddFeedback({ message: 'Invalid recipient address', type: 'error' }); return; }
-				const amt = parseFloat(sendAmount);
-				if (isNaN(amt) || amt <= 0) { onAddFeedback({ message: 'Invalid amount', type: 'error' }); return; }
-
-				sending = true;
-				try {
-					const net = getProvider();
-					if (!net) throw new Error('No provider');
-					const wallet = getSigner(net.provider as any);
-					if (!wallet) throw new Error('Wallet locked — unlock first');
-
-					// Truncate decimals to token's precision
-					const dec = sendAsset === 'native' ? nativeDecimals : sendAssetInfo.decimals;
-					const parts = sendAmount.split('.');
-					const sanitized = parts.length > 1 ? `${parts[0]}.${parts[1].slice(0, dec)}` : sendAmount;
-
-					if (sendAsset === 'native') {
-						const tx = await wallet.sendTransaction({
-							to: sendTo,
-							value: ethers.parseUnits(sanitized, nativeDecimals),
-						});
-						await tx.wait();
-						onAddFeedback({ message: `Sent ${sanitized} ${nativeCoin}`, type: 'success' });
-					} else {
-						const erc20 = new ethers.Contract(sendAsset, [
-							'function transfer(address to, uint256 amount) returns (bool)',
-						], wallet);
-						const tx = await erc20.transfer(sendTo, ethers.parseUnits(sanitized, sendAssetInfo.decimals));
-						await tx.wait();
-						onAddFeedback({ message: `Sent ${sanitized} ${sendAssetInfo.symbol}`, type: 'success' });
-					}
-
-					sendTo = ''; sendAmount = ''; sendAsset = 'native'; view = 'main';
-					// Refresh balances
-					onRefreshBalance();
-					refreshTokenBalances();
-				} catch (e: any) {
-					const msg = friendlyError(e);
-					onAddFeedback({ message: msg.slice(0, 80), type: 'error' });
-				} finally {
-					sending = false;
-				}
-			}}>
-				{sending ? 'Sending...' : `Send ${sendAssetInfo.symbol}`}
-			</button>
-		</div>
-
 	<!-- ═══ SECURITY VIEW ═══ -->
 	{:else if view === 'security'}
 		<div class="ap-view-content">
@@ -1231,6 +1093,275 @@
 			{/if}
 		</div>
 	{/if}
+
+	<!-- ═══ SEND SHEET — slides up from bottom, main wallet panel stays visible behind it ═══ -->
+	{#if showSend}
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<!-- svelte-ignore a11y_click_events_have_key_events -->
+		<div class="ap-picker-overlay" transition:fade={{ duration: 150 }} onclick={(e) => { if (e.target === e.currentTarget && !sending) resetSend(); }}>
+			<div class="ap-picker ap-send-sheet" transition:fly={{ y: 400, duration: 220 }}>
+				<div class="ap-picker-header">
+					<span class="ap-picker-title">Send</span>
+					<button class="ap-picker-close" type="button" disabled={sending} onclick={resetSend}>
+						<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+					</button>
+				</div>
+				<div class="ap-send-body">
+					<label class="ap-label">Asset</label>
+					<button class="ap-asset-btn" type="button" onclick={() => showAssetPicker = true}>
+						{#if sendAsset === 'native'}
+							{#if getKnownLogo(nativeCoin)}
+								<img src={getKnownLogo(nativeCoin)} alt="" class="ap-asset-logo" />
+							{:else}
+								<span class="ap-asset-letter">{nativeCoin.charAt(0)}</span>
+							{/if}
+							<span class="ap-asset-name">{nativeCoin}</span>
+							<span class="ap-asset-bal">{fmtBal(nativeBalance, nativeDecimals)}</span>
+						{:else if sendAssetTok}
+							{#if getTokenLogo(sendAssetTok)}
+								<img src={getTokenLogo(sendAssetTok)} alt="" class="ap-asset-logo" />
+							{:else}
+								<span class="ap-asset-letter">{sendAssetTok.symbol.charAt(0)}</span>
+							{/if}
+							<span class="ap-asset-name">{sendAssetTok.symbol}</span>
+							<span class="ap-asset-bal">{fmtBal(sendAssetTok.balance, sendAssetTok.decimals)}</span>
+						{/if}
+						<svg class="ap-asset-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+					</button>
+
+					<label class="ap-label">Recipient</label>
+					<div class="ap-recipient-row">
+						<input class="ap-input ap-recipient-input" type="text" placeholder="0x…" bind:value={sendTo} {...INPUT_ATTRS} />
+						{#if walletType === 'embedded' && addressBookEntries.length > 0}
+							<button class="ap-book-btn" type="button" title="My addresses" onclick={() => showAddressBook = !showAddressBook}>
+								<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+									<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+									<path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+								</svg>
+							</button>
+						{/if}
+					</div>
+
+					<label class="ap-label">Amount</label>
+					<!-- Amount input with inset MAX pill — mirrors the recipient
+					     row's address-book icon for structural consistency. -->
+					<div class="ap-recipient-row">
+						<input class="ap-input ap-recipient-input" type="text" inputmode="decimal" placeholder="0.0" bind:value={sendAmount} {...INPUT_ATTRS} />
+						<button
+							class="ap-max-btn"
+							type="button"
+							title="Use max balance"
+							onclick={() => {
+								const dec = sendAsset === 'native' ? nativeDecimals : sendAssetInfo.decimals;
+								if (sendAsset === 'native') {
+									const reserve = ethers.parseUnits('0.001', dec);
+									const max = sendAssetInfo.balance > reserve ? sendAssetInfo.balance - reserve : 0n;
+									sendAmount = ethers.formatUnits(max, dec);
+								} else {
+									sendAmount = ethers.formatUnits(sendAssetInfo.balance, dec);
+								}
+							}}
+						>
+							MAX
+						</button>
+					</div>
+					{#if sendAmount && sendAssetInfo.priceUsd > 0}
+						{@const sendUsdEstimate = parseFloat(sendAmount || '0') * sendAssetInfo.priceUsd}
+						{#if sendUsdEstimate > 0}
+							<div class="ap-send-estimate">≈ {fmtUsd(sendUsdEstimate)}</div>
+						{/if}
+					{/if}
+					<div class="ap-send-info">
+						<span>Balance: {fmtBal(sendAssetInfo.balance, sendAssetInfo.decimals)} {sendAssetInfo.symbol}</span>
+					</div>
+				</div>
+				<div class="ap-send-footer">
+					<button class="ap-btn ap-btn-primary ap-btn-full" disabled={!sendTo || !sendAmount} onclick={reviewSend}>
+						Review
+					</button>
+				</div>
+			</div>
+		</div>
+
+		<!-- Asset picker — stacked above the send sheet -->
+		{#if showAssetPicker}
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<!-- svelte-ignore a11y_click_events_have_key_events -->
+			<div class="ap-picker-overlay" transition:fade={{ duration: 150 }} onclick={(e) => { if (e.target === e.currentTarget) showAssetPicker = false; }}>
+				<div class="ap-picker" transition:fly={{ y: 400, duration: 220 }}>
+					<div class="ap-picker-header">
+						<span class="ap-picker-title">Select Asset</span>
+						<button class="ap-picker-close" type="button" onclick={() => showAssetPicker = false}>
+							<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+						</button>
+					</div>
+					<div class="ap-picker-list">
+						{#if nativeBalance > 0n}
+							<button class="ap-picker-item" class:active={sendAsset === 'native'} onclick={() => { sendAsset = 'native'; showAssetPicker = false; }}>
+								{#if getKnownLogo(nativeCoin)}
+									<img src={getKnownLogo(nativeCoin)} alt="" class="ap-picker-logo" />
+								{:else}
+									<span class="ap-picker-letter">{nativeCoin.charAt(0)}</span>
+								{/if}
+								<div class="ap-picker-info">
+									<span class="ap-picker-symbol">{nativeCoin}</span>
+									<span class="ap-picker-name">Native</span>
+								</div>
+								<div class="ap-picker-right">
+									<span class="ap-picker-bal">{fmtBal(nativeBalance, nativeDecimals)}</span>
+									{#if nativeUsd > 0}<span class="ap-picker-usd">{fmtUsd(nativeUsd)}</span>{/if}
+								</div>
+							</button>
+						{/if}
+						{#each sortedTokens as tok}
+							{@const logo = getTokenLogo(tok)}
+							<button class="ap-picker-item" class:active={sendAsset.toLowerCase() === tok.address?.toLowerCase()} onclick={() => { sendAsset = tok.address; showAssetPicker = false; }}>
+								{#if logo}
+									<img src={logo} alt="" class="ap-picker-logo" />
+								{:else}
+									<span class="ap-picker-letter">{tok.symbol.charAt(0)}</span>
+								{/if}
+								<div class="ap-picker-info">
+									<span class="ap-picker-symbol">{tok.symbol}</span>
+									<span class="ap-picker-name">{tok.name || tok.symbol}</span>
+								</div>
+								<div class="ap-picker-right">
+									<span class="ap-picker-bal">{fmtBal(tok.balance, tok.decimals)}</span>
+									{#if tok._usd > 0}<span class="ap-picker-usd">{fmtUsd(tok._usd)}</span>{/if}
+								</div>
+							</button>
+						{/each}
+					</div>
+				</div>
+			</div>
+		{/if}
+
+		<!-- Address book picker — stacked above the send sheet -->
+		{#if showAddressBook && addressBookEntries.length > 0}
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<!-- svelte-ignore a11y_click_events_have_key_events -->
+			<div class="ap-picker-overlay" transition:fade={{ duration: 150 }} onclick={(e) => { if (e.target === e.currentTarget) { showAddressBook = false; addressBookQuery = ''; } }}>
+				<div class="ap-picker" transition:fly={{ y: 400, duration: 220 }}>
+					<div class="ap-picker-header">
+						<span class="ap-picker-title">My Addresses</span>
+						<button class="ap-picker-close" type="button" onclick={() => { showAddressBook = false; addressBookQuery = ''; }}>
+							<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+						</button>
+					</div>
+					<div class="ap-book-search">
+						<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+							<circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" />
+						</svg>
+						<input
+							class="ap-book-search-input"
+							type="text"
+							placeholder="Search wallet, account, or address"
+							bind:value={addressBookQuery}
+							{...INPUT_ATTRS}
+						/>
+						{#if addressBookQuery}
+							<button class="ap-book-search-clear" type="button" onclick={() => addressBookQuery = ''}>×</button>
+						{/if}
+					</div>
+					<div class="ap-book-list">
+						{#each filteredBookEntries as entry, i (entry.address)}
+							{#if i === 0 || filteredBookEntries[i - 1].group !== entry.group}
+								<div class="ap-book-header">
+									{entry.group === 'current' ? 'This wallet' : 'Other wallets'}
+								</div>
+							{/if}
+							{@const bal = cachedNativeBalance(entry.address)}
+							<button
+								class="ap-book-item"
+								type="button"
+								class:selected={sendTo.toLowerCase() === entry.address.toLowerCase()}
+								onclick={() => { sendTo = entry.address; showAddressBook = false; addressBookQuery = ''; }}
+							>
+								<div class="ap-book-avatar">
+									{#if entry.avatar}<span style="font-size:15px">{entry.avatar}</span>{:else}{entry.label.slice(0, 1).toUpperCase()}{/if}
+								</div>
+								<div class="ap-book-info">
+									<span class="ap-book-name">{entry.label}</span>
+									<span class="ap-book-sub">{entry.sublabel}</span>
+								</div>
+								{#if bal}
+									<span class="ap-book-bal">{bal} {nativeCoin}</span>
+								{/if}
+							</button>
+						{/each}
+						{#if filteredBookEntries.length === 0}
+							<p class="ap-book-empty">No matches</p>
+						{/if}
+					</div>
+				</div>
+			</div>
+		{/if}
+
+		<!-- Confirm preview — stacked above the send sheet -->
+		{#if sendStep === 'preview'}
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<!-- svelte-ignore a11y_click_events_have_key_events -->
+			<div class="ap-picker-overlay" transition:fade={{ duration: 150 }} onclick={(e) => { if (e.target === e.currentTarget && !sending) { sendStep = 'form'; sendFeeEst = ''; } }}>
+				<div class="ap-picker" transition:fly={{ y: 400, duration: 220 }}>
+					<div class="ap-picker-header">
+						<span class="ap-picker-title">Confirm transaction</span>
+						<button class="ap-picker-close" type="button" disabled={sending} onclick={() => { sendStep = 'form'; sendFeeEst = ''; }}>
+							<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+						</button>
+					</div>
+					<div class="ap-preview-body">
+						<!-- Tap the number to toggle between full precision and compact
+						     (B/T/M) display. Default is full — the compact view is the
+						     opt-in "quick scan" mode. -->
+						<button
+							type="button"
+							class="ap-preview-amount"
+							onclick={() => previewCompact = !previewCompact}
+							title={previewCompact ? 'Tap to show full amount' : 'Tap to shrink'}
+							style="--char-count: {(previewCompact ? fmtCompactAmount(sendAmount) : sendAmount).length}"
+						>
+							<span class="ap-preview-num">{previewCompact ? fmtCompactAmount(sendAmount) : sendAmount}</span>
+							<span class="ap-preview-sym">{sendAssetInfo.symbol}</span>
+						</button>
+						{#if previewUsd > 0}
+							<div class="ap-preview-usd">≈ {fmtUsd(previewUsd)}</div>
+						{/if}
+
+						<div class="ap-preview-rows">
+							<div class="ap-preview-row">
+								<span class="ap-preview-k">From</span>
+								<span class="ap-preview-v">{userAddress.slice(0, 8)}…{userAddress.slice(-6)}</span>
+							</div>
+							<div class="ap-preview-row">
+								<span class="ap-preview-k">To</span>
+								<span class="ap-preview-v">
+									{#if previewBookLabel}<span class="ap-preview-tag">{previewBookLabel}</span>{/if}
+									{sendTo.slice(0, 8)}…{sendTo.slice(-6)}
+								</span>
+							</div>
+							<div class="ap-preview-row">
+								<span class="ap-preview-k">Asset</span>
+								<span class="ap-preview-v">{sendAssetInfo.symbol}</span>
+							</div>
+							<div class="ap-preview-row">
+								<span class="ap-preview-k">Network fee</span>
+								<span class="ap-preview-v">
+									{#if sendFeeLoading}estimating…
+									{:else if sendFeeEst}~{sendFeeEst} {nativeCoin}
+									{:else}—{/if}
+								</span>
+							</div>
+						</div>
+					</div>
+					<div class="ap-preview-btns">
+						<button class="ap-btn ap-btn-primary ap-btn-full" disabled={sending} onclick={executeSend}>
+							{sending ? 'Sending…' : 'Confirm & send'}
+						</button>
+					</div>
+				</div>
+			</div>
+		{/if}
+	{/if}
 </div>
 {/if}
 
@@ -1270,136 +1401,238 @@
 	}
 	.ap-x:hover { background: rgba(255,255,255,0.08); color: #fff; }
 
-	/* Account picker */
-	.ap-acct-btn {
-		display: flex; align-items: center; gap: 10px; flex: 1;
+	/* Wallet/account chip — single button, opens WalletSwitcher sheet */
+	.ap-chip {
+		display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0;
 		background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
 		border-radius: 10px; padding: 7px 12px; cursor: pointer;
 		color: inherit; font-family: inherit; transition: border-color 0.15s;
 	}
-	.ap-acct-btn:hover { border-color: rgba(0,210,255,0.2); }
-	.ap-avatar {
-		width: 26px; height: 26px; border-radius: 50%;
-		background: linear-gradient(135deg, rgba(0,210,255,0.12), rgba(58,123,213,0.12));
-		border: 1px solid rgba(0,210,255,0.2);
+	.ap-chip:hover { border-color: rgba(0,210,255,0.25); background: rgba(0,210,255,0.04); }
+	.ap-chip-icon {
+		width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
+		background: linear-gradient(135deg, rgba(0,210,255,0.16), rgba(58,123,213,0.16));
+		border: 1px solid rgba(0,210,255,0.25);
 		display: flex; align-items: center; justify-content: center;
-		font-family: 'Syne', sans-serif; font-size: 10px; font-weight: 800;
-		color: #00d2ff; flex-shrink: 0;
+		font-family: 'Syne', sans-serif; font-size: 11px; font-weight: 800; color: #00d2ff;
 	}
-	.ap-avatar-sm { width: 20px; height: 20px; font-size: 8px; }
-	.ap-acct-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0; }
-	.ap-acct-name { font-family: 'Syne', sans-serif; font-size: 11px; font-weight: 700; color: #e2e8f0; }
-	.ap-acct-addr { font-family: 'Space Mono', monospace; font-size: 8px; color: #475569; }
-	.ap-chev { color: #475569; flex-shrink: 0; transition: transform 0.15s; }
-	.ap-chev-flip { transform: rotate(180deg); }
+	.ap-chip-emoji { font-size: 15px; line-height: 1; }
+	.ap-chip-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; overflow: hidden; }
+	.ap-chip-line1 {
+		display: flex; align-items: center; gap: 5px; min-width: 0;
+		font-family: 'Syne', sans-serif; font-size: 11px; font-weight: 700; color: #e2e8f0;
+		white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+	}
+	.ap-chip-wallet { color: #e2e8f0; }
+	.ap-chip-acct { color: #94a3b8; font-weight: 600; }
+	.ap-chip-sep { color: #374151; }
+	.ap-chip-line2 { font-family: 'Space Mono', monospace; font-size: 8px; color: #475569; }
+	.ap-chip-chev { color: #475569; flex-shrink: 0; }
 
-	/* Dropdown */
-	.ap-dd {
-		position: absolute; top: 58px; left: 16px; right: 50px; z-index: 10;
-		background: #0f1118; border: 1px solid rgba(255,255,255,0.08);
-		border-radius: 10px; padding: 4px; box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+	/* Empty-state CTA card (shown when wallet is empty) */
+	.ap-empty-cta {
+		display: flex; flex-direction: column; gap: 10px;
+		margin: 0 16px 12px; padding: 16px;
+		background: linear-gradient(135deg, rgba(0,210,255,0.06), rgba(58,123,213,0.04));
+		border: 1px solid rgba(0,210,255,0.18); border-radius: 12px;
 	}
-	.ap-dd-item {
-		display: flex; align-items: center; gap: 8px; width: 100%;
-		padding: 8px 10px; border-radius: 7px; border: none;
-		background: transparent; color: #94a3b8; cursor: pointer;
-		font-family: 'Space Mono', monospace; font-size: 10px; transition: all 0.1s;
-	}
-	.ap-dd-item:hover { background: rgba(255,255,255,0.04); color: #fff; }
-	.ap-dd-active { color: #00d2ff; }
-	.ap-dd-row { display: flex; align-items: center; gap: 0; }
-	.ap-dd-row .ap-dd-item { flex: 1; min-width: 0; }
-	.ap-dd-name { font-family: 'Syne', sans-serif; font-weight: 600; font-size: 11px; white-space: nowrap; }
-	.ap-dd-addr { font-size: 8px; color: #374151; margin-left: auto; white-space: nowrap; }
-	.ap-dd-check { color: #10b981; font-size: 11px; width: 16px; text-align: center; flex-shrink: 0; }
-	.ap-dd-gear {
-		width: 28px; height: 28px; border-radius: 6px; border: none;
-		background: transparent; color: #374151; cursor: pointer;
+	.ap-empty-cta-icon {
+		width: 38px; height: 38px; border-radius: 50%;
+		background: rgba(0,210,255,0.12); border: 1px solid rgba(0,210,255,0.25);
 		display: flex; align-items: center; justify-content: center;
-		transition: all 0.12s; flex-shrink: 0;
+		color: #00d2ff;
 	}
-	.ap-dd-gear:hover { background: rgba(255,255,255,0.04); color: #94a3b8; }
-	.ap-dd-rename {
-		flex: 1; padding: 6px 10px; border-radius: 6px;
-		background: rgba(255,255,255,0.04); border: 1px solid rgba(0,210,255,0.3);
-		color: #fff; font-family: 'Syne', sans-serif; font-size: 11px; font-weight: 600;
-		outline: none;
+	.ap-empty-cta-text strong {
+		display: block; font-family: 'Syne', sans-serif; font-size: 13px;
+		color: #fff; margin-bottom: 3px;
 	}
-	.ap-dd-add { color: #00d2ff; border-top: 1px solid rgba(255,255,255,0.04); margin-top: 2px; }
-	.ap-dd-disconnect { color: #f87171; border-top: 1px solid rgba(255,255,255,0.04); margin-top: 2px; }
-	.ap-dd-disconnect:hover { background: rgba(248,113,113,0.06); color: #f87171; }
+	.ap-empty-cta-text p {
+		margin: 0; font-family: 'Space Mono', monospace; font-size: 10px;
+		color: #94a3b8; line-height: 1.5;
+	}
+	.ap-empty-cta-btns { display: flex; gap: 8px; }
+	.ap-empty-cta-btns .ap-btn { flex: 1; padding: 8px 10px; font-size: 10px; }
 
-	/* Multi-wallet: section labels, wallet badges, add-wallet form */
-	.ap-dd-section-label {
-		font-family: 'Space Mono', monospace; font-size: 8px; font-weight: 700;
-		color: #475569; text-transform: uppercase; letter-spacing: 0.08em;
-		padding: 6px 16px 2px;
+	/* Send: recipient row — one bordered container holds both the input and
+	   the book icon. Input is borderless + flex-1 so the full address stays
+	   visible; icon is a plain button inside the same border. */
+	.ap-recipient-row {
+		display: flex; align-items: center;
+		background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
+		border-radius: 8px; transition: border-color 0.12s;
 	}
-	.ap-dd-wallet-row .ap-dd-item { padding-right: 4px; }
-	.ap-avatar-wallet { background: rgba(0,210,255,0.12); color: #00d2ff; }
-	.ap-dd-badge {
-		display: inline-block; margin-left: 6px;
-		font-family: 'Space Mono', monospace; font-size: 7px; font-weight: 700;
-		padding: 1px 5px; border-radius: 3px; text-transform: uppercase;
-		letter-spacing: 0.05em; vertical-align: middle;
+	.ap-recipient-row:focus-within { border-color: rgba(0,210,255,0.3); }
+	.ap-recipient-input {
+		flex: 1; min-width: 0;
+		background: transparent !important; border: none !important;
+		padding: 10px 12px;
 	}
-	.ap-dd-badge-primary { background: rgba(16,185,129,0.12); color: #10b981; }
-	.ap-dd-badge-imported { background: rgba(251,191,36,0.12); color: #fbbf24; }
-	.ap-dd-spinner {
-		display: inline-block; width: 10px; height: 10px; border-radius: 50%;
-		border: 1.5px solid rgba(255,255,255,0.1); border-top-color: #00d2ff;
-		animation: spin 0.8s linear infinite;
+	.ap-recipient-input:focus { border: none !important; }
+	.ap-book-btn {
+		width: 32px; height: 32px; padding: 0; margin-right: 4px; border-radius: 6px;
+		flex-shrink: 0; background: transparent; border: none;
+		color: #00d2ff; cursor: pointer;
+		display: flex; align-items: center; justify-content: center; transition: all 0.12s;
 	}
-	@keyframes spin { to { transform: rotate(360deg); } }
-	.ap-dd-wallet-actions { display: flex; gap: 4px; padding: 0 8px; }
-	.ap-dd-wallet-actions .ap-dd-add { flex: 1; justify-content: center; text-align: center; padding: 8px; border-top: none; border: 1px solid rgba(0,210,255,0.15); border-radius: 6px; margin-top: 4px; }
-	.ap-dd-form {
-		padding: 10px 16px; display: flex; flex-direction: column; gap: 8px;
-		background: rgba(0,210,255,0.03); border-top: 1px solid rgba(0,210,255,0.08);
-		border-bottom: 1px solid rgba(0,210,255,0.08);
+	.ap-book-btn:hover { background: rgba(0,210,255,0.12); }
+
+	/* Inset MAX pill on the Amount input — matches .ap-book-btn sizing so
+	   the two fields share a visual rhythm, with slightly different padding
+	   because the label is text not an icon. */
+	.ap-max-btn {
+		height: 26px; padding: 0 10px; margin-right: 6px; border-radius: 6px;
+		flex-shrink: 0; background: rgba(0,210,255,0.1); border: 1px solid rgba(0,210,255,0.25);
+		color: #00d2ff; cursor: pointer;
+		font-family: 'Space Mono', monospace; font-size: 10px; font-weight: 700;
+		letter-spacing: 0.05em;
+		display: flex; align-items: center; justify-content: center;
+		transition: all 0.12s;
 	}
-	.ap-dd-form-title {
-		font-family: 'Syne', sans-serif; font-size: 11px; font-weight: 700; color: #fff;
+	.ap-max-btn:hover { background: rgba(0,210,255,0.2); border-color: rgba(0,210,255,0.45); }
+	.ap-max-btn:active { background: rgba(0,210,255,0.3); }
+
+	.ap-book-search {
+		display: flex; align-items: center; gap: 8px;
+		padding: 8px 12px; margin: 12px 12px 0;
+		background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 8px;
+		color: #64748b;
 	}
-	.ap-dd-form-hint {
-		font-family: 'Space Mono', monospace; font-size: 9px; color: #64748b;
-		margin: 0; line-height: 1.5;
+	.ap-book-search:focus-within { border-color: rgba(0,210,255,0.3); color: #94a3b8; }
+	.ap-book-search-input {
+		flex: 1; background: transparent; border: none; outline: none;
+		color: #e2e8f0; font-family: 'Space Mono', monospace; font-size: 11px;
 	}
-	.ap-dd-form-btns { display: flex; gap: 8px; justify-content: flex-end; }
-	.ap-dd-textarea {
-		width: 100%; resize: vertical; font-family: 'Space Mono', monospace; font-size: 11px;
-		line-height: 1.5;
+	.ap-book-search-input::placeholder { color: #334155; }
+	.ap-book-search-clear {
+		width: 18px; height: 18px; padding: 0; border: none; border-radius: 50%;
+		background: rgba(255,255,255,0.06); color: #94a3b8;
+		font-size: 14px; line-height: 1; cursor: pointer; flex-shrink: 0;
 	}
-	.ap-dd-ack {
-		display: flex; align-items: flex-start; gap: 6px;
-		font-family: 'Space Mono', monospace; font-size: 9px; color: #94a3b8;
-		line-height: 1.4; cursor: pointer;
+	.ap-book-search-clear:hover { background: rgba(255,255,255,0.12); color: #fff; }
+	.ap-book-empty {
+		text-align: center; padding: 24px; font-size: 10px; color: #475569;
+		font-family: 'Space Mono', monospace; margin: 0;
 	}
-	.ap-dd-ack input { accent-color: #00d2ff; flex-shrink: 0; margin-top: 1px; }
-	.ap-dd-error {
-		font-family: 'Space Mono', monospace; font-size: 10px; color: #f87171;
-		margin: 0; padding: 4px 8px; background: rgba(248,113,113,0.06); border-radius: 4px;
-	}
-	.ap-dd-codes {
+
+	.ap-book-list {
 		display: flex; flex-direction: column; gap: 4px;
-		padding: 8px; background: rgba(16,185,129,0.06);
-		border: 1px solid rgba(16,185,129,0.15); border-radius: 6px;
+		flex: 1; overflow-y: auto; padding: 4px 12px 12px;
 	}
-	.ap-dd-code {
-		font-family: 'Space Mono', monospace; font-size: 11px; color: #10b981;
-		letter-spacing: 0.03em;
+	.ap-book-header {
+		font-family: 'Space Mono', monospace; font-size: 9px; color: #475569;
+		text-transform: uppercase; letter-spacing: 0.5px; padding: 6px 4px 2px;
 	}
+	.ap-book-item {
+		display: flex; align-items: center; gap: 10px; width: 100%;
+		padding: 9px 10px; border-radius: 9px;
+		background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05);
+		cursor: pointer; transition: all 0.12s; color: inherit; text-align: left;
+	}
+	.ap-book-item:hover { background: rgba(0,210,255,0.04); border-color: rgba(0,210,255,0.18); }
+	.ap-book-item.selected {
+		background: rgba(0,210,255,0.08); border-color: rgba(0,210,255,0.35);
+		box-shadow: 0 0 0 1px rgba(0,210,255,0.25);
+	}
+	.ap-book-avatar {
+		width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+		background: linear-gradient(135deg, rgba(0,210,255,0.18), rgba(58,123,213,0.18));
+		border: 1px solid rgba(0,210,255,0.25);
+		display: flex; align-items: center; justify-content: center;
+		font-family: 'Syne', sans-serif; font-size: 11px; font-weight: 800; color: #00d2ff;
+	}
+	.ap-book-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+	.ap-book-name { font-family: 'Syne', sans-serif; font-size: 12px; font-weight: 700; color: #e2e8f0; }
+	.ap-book-sub { font-family: 'Space Mono', monospace; font-size: 9px; color: #475569; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+	.ap-book-bal {
+		font-family: 'Rajdhani', sans-serif; font-size: 11px; color: #64748b;
+		font-variant-numeric: tabular-nums; flex-shrink: 0;
+	}
+
+	/* Send sheet — uses the same .ap-picker 80vh chrome as the confirm modal,
+	   with a scrollable body and a sticky footer button. */
+	.ap-send-body {
+		flex: 1; overflow-y: auto; padding: 16px;
+		display: flex; flex-direction: column; gap: 12px;
+	}
+	.ap-send-footer {
+		padding: 12px 16px 16px; border-top: 1px solid rgba(255,255,255,0.06);
+		flex-shrink: 0;
+	}
+
+	/* Send preview modal body — fills the 80vh picker chrome so the confirm
+	   buttons sit at the bottom of the sheet. */
+	.ap-preview-body {
+		flex: 1; overflow-y: auto; padding: 24px 16px 16px;
+		display: flex; flex-direction: column; gap: 16px;
+	}
+	/* Tappable amount button: background-less, fluid font.
+	   Font scales from `--char-count` so the full number always fits the
+	   container (no ellipsis) — Rajdhani tabular digit width ≈ 0.56em, so
+	   container_width / (chars * 0.56) = max font size that still fits. */
+	.ap-preview-amount {
+		display: flex; align-items: baseline; gap: 6px; justify-content: center;
+		max-width: 100%; padding: 4px 12px; margin: 0 auto;
+		background: none; border: none; cursor: pointer;
+		container-type: inline-size;
+		border-radius: 8px;
+		transition: background 0.15s;
+	}
+	.ap-preview-amount:hover { background: rgba(255,255,255,0.03); }
+	.ap-preview-amount:active { background: rgba(255,255,255,0.06); }
+	.ap-preview-num {
+		font-family: 'Rajdhani', sans-serif; font-weight: 700;
+		color: #f1f5f9; font-variant-numeric: tabular-nums;
+		font-size: clamp(14px, calc(92cqw / max(var(--char-count, 10), 5) / 0.56), 32px);
+		white-space: nowrap;
+	}
+	.ap-preview-sym {
+		font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700; color: #94a3b8;
+		flex-shrink: 0;
+	}
+	.ap-preview-usd {
+		text-align: center; font-family: 'Space Mono', monospace; font-size: 11px; color: #64748b;
+		margin-top: -8px;
+	}
+	.ap-preview-rows {
+		display: flex; flex-direction: column; gap: 8px;
+		padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.05);
+	}
+	.ap-preview-row {
+		display: flex; justify-content: space-between; align-items: center; gap: 8px;
+	}
+	.ap-preview-k { font-family: 'Space Mono', monospace; font-size: 10px; color: #64748b; }
+	.ap-preview-v {
+		font-family: 'Space Mono', monospace; font-size: 11px; color: #e2e8f0;
+		text-align: right; min-width: 0;
+	}
+	.ap-preview-tag {
+		display: inline-block; margin-right: 6px; padding: 1px 6px; border-radius: 4px;
+		background: rgba(0,210,255,0.12); color: #00d2ff; font-family: 'Syne', sans-serif;
+		font-size: 9px; font-weight: 700;
+	}
+	.ap-preview-btns {
+		display: flex; gap: 8px; padding: 12px 16px 16px;
+		border-top: 1px solid rgba(255,255,255,0.06); flex-shrink: 0;
+	}
+	.ap-preview-btns .ap-btn { flex: 1; }
 
 	/* Network */
 	.ap-net { display: flex; align-items: center; gap: 5px; padding: 0 16px 4px; font-size: 9px; color: #475569; font-family: 'Space Mono', monospace; }
 	.ap-net-dot { width: 5px; height: 5px; border-radius: 50%; background: #10b981; }
 
 	/* Balance */
-	.ap-bal { text-align: center; padding: 16px 16px 20px; }
+	.ap-bal {
+		text-align: center; padding: 16px 16px 20px;
+		container-type: inline-size;
+	}
 	.ap-bal-total {
-		display: block; font-family: 'Rajdhani', sans-serif; font-size: 44px;
+		display: block; font-family: 'Rajdhani', sans-serif;
+		/* Fluid: clamp against the container's inline size so meme portfolios
+		   (e.g. $73B of shitcoin) shrink to fit instead of overflowing. */
+		font-size: clamp(28px, 11cqw, 44px);
 		font-weight: 700; color: #fff; line-height: 1.1; font-variant-numeric: tabular-nums;
 		letter-spacing: -0.02em;
+		max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 	}
 	.ap-bal-loading { font-size: 24px; color: #475569; animation: blink 1s infinite; }
 	.ap-bal-equiv { font-size: 14px; color: #475569; margin-left: 6px; }
@@ -1407,6 +1640,8 @@
 	.ap-bal-native {
 		display: block; font-family: 'Rajdhani', sans-serif; font-size: 16px;
 		font-weight: 500; color: #94a3b8; margin-top: 6px; font-variant-numeric: tabular-nums;
+		max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+		padding: 0 8px;
 	}
 
 	/* Action buttons */
@@ -1458,9 +1693,29 @@
 	.ap-row-meta { flex: 1; min-width: 0; }
 	.ap-row-name { display: block; font-size: 16px; color: #fff; font-family: 'Syne', sans-serif; font-weight: 700; line-height: 1.3; }
 	.ap-row-sub { display: block; font-size: 12px; color: #64748b; font-family: 'Space Mono', monospace; margin-top: 2px; }
-	.ap-row-right { text-align: right; flex-shrink: 0; }
-	.ap-row-amt { display: block; font-size: 16px; color: #fff; font-family: 'Rajdhani', sans-serif; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.3; }
-	.ap-row-usd { display: block; font-size: 13px; color: #64748b; font-family: 'Rajdhani', sans-serif; font-weight: 500; font-variant-numeric: tabular-nums; margin-top: 2px; }
+	/* Right-hand column of a token row is a tap target that toggles
+	   full ↔ compact. Reset button-default styling; cap max-width so long
+	   numbers don't push the row into overflow; right-align the inner lines. */
+	.ap-row-right {
+		text-align: right; flex-shrink: 0;
+		background: none; border: none; padding: 4px 6px; margin: -4px -6px;
+		cursor: pointer; color: inherit; font-family: inherit;
+		display: flex; flex-direction: column; align-items: flex-end; gap: 2px;
+		max-width: 55%; min-width: 0; border-radius: 6px;
+		transition: background 0.12s;
+	}
+	.ap-row-right:hover { background: rgba(255,255,255,0.04); }
+	.ap-row-right:active { background: rgba(255,255,255,0.08); }
+	.ap-row-amt {
+		display: block; font-size: 16px; color: #fff; font-family: 'Rajdhani', sans-serif;
+		font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.3;
+		max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+	}
+	.ap-row-usd {
+		display: block; font-size: 13px; color: #64748b; font-family: 'Rajdhani', sans-serif;
+		font-weight: 500; font-variant-numeric: tabular-nums; margin-top: 2px;
+		max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+	}
 	.ap-empty { text-align: center; padding: 24px; font-size: 13px; color: #64748b; font-family: 'Space Mono', monospace; }
 
 	/* Import */
@@ -1518,7 +1773,6 @@
 	/* Send */
 	.ap-send-info { display: flex; justify-content: space-between; font-size: 10px; color: #374151; font-family: 'Space Mono', monospace; }
 	.ap-label { font-size: 9px; color: #475569; font-family: 'Space Mono', monospace; text-transform: uppercase; letter-spacing: 0.05em; }
-	.ap-link { background: none; border: none; color: #00d2ff; cursor: pointer; font-family: 'Space Mono', monospace; font-size: 10px; }
 
 	/* Security */
 	.ap-sec-warn {
@@ -1585,10 +1839,8 @@
 	.ap-picker {
 		background: #0d1117; border-top: 1px solid rgba(255,255,255,0.08);
 		border-radius: 16px 16px 0 0; width: 100%;
-		max-height: 70%; display: flex; flex-direction: column;
-		animation: slideUp 0.2s ease-out;
+		height: 80vh; max-height: 80%; display: flex; flex-direction: column;
 	}
-	@keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
 	.ap-picker-header {
 		display: flex; justify-content: space-between; align-items: center;
 		padding: 16px 16px 12px; border-bottom: 1px solid rgba(255,255,255,0.06);
@@ -1596,7 +1848,7 @@
 	.ap-picker-title { font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700; color: white; }
 	.ap-picker-close { background: none; border: none; color: rgba(255,255,255,0.4); cursor: pointer; padding: 4px; border-radius: 6px; }
 	.ap-picker-close:hover { color: white; background: rgba(255,255,255,0.06); }
-	.ap-picker-list { overflow-y: auto; padding: 8px; }
+	.ap-picker-list { overflow-y: auto; padding: 8px; flex: 1; }
 	.ap-picker-item {
 		display: flex; align-items: center; gap: 10px; width: 100%;
 		padding: 10px 8px; border-radius: 10px; cursor: pointer;
@@ -1620,16 +1872,6 @@
 	.ap-picker-usd { font-size: 10px; color: #374151; font-family: 'Rajdhani', sans-serif; font-variant-numeric: tabular-nums; }
 	.ap-send-estimate { font-family: 'Rajdhani', sans-serif; font-size: 13px; color: #475569; margin: -4px 0 4px; font-variant-numeric: tabular-nums; }
 
-	/* To input with book button */
-	.ap-to-wrap { position: relative; }
-	.ap-book-btn {
-		position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
-		width: 28px; height: 28px; border-radius: 6px;
-		border: none; background: rgba(255,255,255,0.05);
-		color: #475569; cursor: pointer; transition: all 0.15s;
-		display: flex; align-items: center; justify-content: center;
-	}
-	.ap-book-btn:hover { color: #00d2ff; background: rgba(0,210,255,0.1); }
 
 	/* Contact book modal */
 	.ap-book-overlay {

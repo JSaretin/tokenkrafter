@@ -76,6 +76,7 @@
 
 	// Settings
 	let slippageBps = $state(50);
+	let customSlippage = $state('');
 	let showSettings = $state(false);
 
 	// Swap state
@@ -1543,11 +1544,35 @@
 				<div class="slippage-row">
 					{#each [50, 100, 200, 500] as bps}
 						<button
-							class="slippage-btn" class:slippage-active={slippageBps === bps}
-							onclick={() => (slippageBps = bps)}
+							class="slippage-btn" class:slippage-active={slippageBps === bps && !customSlippage}
+							onclick={() => { slippageBps = bps; customSlippage = ''; }}
 						>{bps / 100}%</button>
 					{/each}
+					<div class="slippage-custom" class:slippage-active={!!customSlippage}>
+						<input
+							class="slippage-custom-input"
+							type="text"
+							inputmode="decimal"
+							placeholder="Custom"
+							bind:value={customSlippage}
+							oninput={() => {
+								const v = parseFloat(customSlippage);
+								if (!isNaN(v) && v > 0 && v <= 50) {
+									slippageBps = Math.round(v * 100);
+								}
+							}}
+						/>
+						<span class="slippage-custom-pct">%</span>
+					</div>
 				</div>
+				{#if customSlippage}
+					{@const v = parseFloat(customSlippage)}
+					{#if v > 5}
+						<p class="slippage-warn">High slippage — you may receive significantly fewer tokens.</p>
+					{:else if v < 0.1}
+						<p class="slippage-warn">Very low slippage — your transaction may fail.</p>
+					{/if}
+				{/if}
 			</div>
 		{/if}
 
@@ -1803,7 +1828,7 @@
 					{/if}
 					<div class="detail-line">
 						<span>Slippage</span>
-						<span>{slippageBps / 100}%</span>
+						<span>{(slippageBps / 100).toFixed(slippageBps % 100 === 0 ? 0 : slippageBps % 10 === 0 ? 1 : 2)}%</span>
 					</div>
 					{#if tokenInTaxSell > 0}
 						<div class="detail-line detail-line-warn">
@@ -2211,7 +2236,7 @@
 							: ''}
 						<div class="cr-row"><span>Rate</span><span>1 {tokenInSymbol} = {rate}</span></div>
 						<div class="cr-row"><span>Min. received</span><span>{minReceived} {tokenOutSymbol}{#if confirmMinUsd} <span class="usd-value">(≈${confirmMinUsd})</span>{/if}</span></div>
-						<div class="cr-row"><span>Slippage</span><span>{slippageBps / 100}%</span></div>
+						<div class="cr-row"><span>Slippage</span><span>{(slippageBps / 100).toFixed(slippageBps % 100 === 0 ? 0 : slippageBps % 10 === 0 ? 1 : 2)}%</span></div>
 						{#if tokenInTaxSell > 0}<div class="cr-row cr-row-warn"><span>Sell tax ({tokenInSymbol})</span><span>{(tokenInTaxSell / 100).toFixed(1)}%</span></div>{/if}
 						{#if tokenOutTaxBuy > 0}<div class="cr-row cr-row-warn"><span>Buy tax ({tokenOutSymbol})</span><span>{(tokenOutTaxBuy / 100).toFixed(1)}%</span></div>{/if}
 					{:else if outputMode === 'bank'}
@@ -2308,6 +2333,26 @@
 	}
 	.slippage-btn:hover { border-color: rgba(0,210,255,0.3); color: #00d2ff; }
 	.slippage-active { border-color: rgba(0,210,255,0.4); background: rgba(0,210,255,0.1); color: #00d2ff; }
+	.slippage-custom {
+		flex: 1.2; display: flex; align-items: center; border-radius: 8px;
+		border: 1px solid var(--border); background: transparent; padding: 0 8px;
+		transition: all 150ms ease;
+	}
+	.slippage-custom:focus-within { border-color: rgba(0,210,255,0.4); }
+	.slippage-custom-input {
+		width: 100%; border: none; background: transparent; outline: none;
+		color: var(--text); font-family: 'Space Mono', monospace; font-size: 12px;
+		font-weight: 600; padding: 8px 0; text-align: right;
+	}
+	.slippage-custom-input::placeholder { color: var(--text-dim); font-weight: 400; }
+	.slippage-custom-pct {
+		font-family: 'Space Mono', monospace; font-size: 11px; color: var(--text-muted);
+		margin-left: 2px; flex-shrink: 0;
+	}
+	.slippage-warn {
+		font-family: 'Space Mono', monospace; font-size: 10px; color: #fbbf24;
+		margin: 6px 0 0; padding: 0;
+	}
 
 	/* Mode toggle */
 	.mode-toggle {

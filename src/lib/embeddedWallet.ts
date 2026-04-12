@@ -207,30 +207,75 @@ export async function checkSession(): Promise<boolean> {
 	return true;
 }
 
-// ── PIN cache (shared across wallets) ──────────────────────────────────
+// ── Session / PIN cache (shared across wallets) ────────────────────────
+//
+// Two-tier expiry, configurable by the user:
+//   - idle expiry  (default 30 min): bumped on every signing op + on
+//                                     explicit `extendSession()` calls
+//   - absolute expiry (default 8 hours): hard ceiling, can't be extended
+//
+// Critical operations (export key, export seed, delete wallet) should
+// re-prompt for the PIN regardless of session state — those callers
+// pass an explicit PIN to `unlockWallet`.
 
-const PIN_CACHE_KEY = '_wp';
-const PIN_CACHE_TTL = 24 * 60 * 60 * 1000;
+const SESSION_KEY = '_wp';
+const SESSION_POLICY_KEY = '_wallet_session_policy';
+const DEFAULT_IDLE_MS = 30 * 60 * 1000;
+const DEFAULT_ABSOLUTE_MS = 8 * 60 * 60 * 1000;
+
+export interface SessionPolicy {
+	idleMs: number;
+	absoluteMs: number;
+}
+
+export function getSessionPolicy(): SessionPolicy {
+	try {
+		const raw = localStorage.getItem(SESSION_POLICY_KEY);
+		if (!raw) return { idleMs: DEFAULT_IDLE_MS, absoluteMs: DEFAULT_ABSOLUTE_MS };
+		const p = JSON.parse(raw);
+		return {
+			idleMs: Number(p.idleMs) || DEFAULT_IDLE_MS,
+			absoluteMs: Number(p.absoluteMs) || DEFAULT_ABSOLUTE_MS,
+		};
+	} catch {
+		return { idleMs: DEFAULT_IDLE_MS, absoluteMs: DEFAULT_ABSOLUTE_MS };
+	}
+}
+
+export function setSessionPolicy(idleMs: number, absoluteMs: number): void {
+	try {
+		localStorage.setItem(SESSION_POLICY_KEY, JSON.stringify({ idleMs, absoluteMs }));
+	} catch {}
+}
 
 function cachePin(pin: string) {
+	const policy = getSessionPolicy();
+	const now = Date.now();
 	_cachedPin = pin;
 	localStorage.setItem(
-		PIN_CACHE_KEY,
-		JSON.stringify({ v: btoa(pin), exp: Date.now() + PIN_CACHE_TTL }),
+		SESSION_KEY,
+		JSON.stringify({
+			v: btoa(pin),
+			absExp: now + policy.absoluteMs,
+			idleExp: now + policy.idleMs,
+		}),
 	);
 }
 
 function getCachedPin(): string | null {
-	if (_cachedPin) return _cachedPin;
 	try {
-		const raw = localStorage.getItem(PIN_CACHE_KEY);
-		if (!raw) return null;
-		const { v, exp } = JSON.parse(raw);
-		if (Date.now() > exp) {
+		const raw = localStorage.getItem(SESSION_KEY);
+		if (!raw) {
+			_cachedPin = null;
+			return null;
+		}
+		const { v, absExp, idleExp } = JSON.parse(raw);
+		const now = Date.now();
+		if (now > absExp || now > idleExp) {
 			clearCachedPin();
 			return null;
 		}
-		_cachedPin = atob(v);
+		if (!_cachedPin) _cachedPin = atob(v);
 		return _cachedPin;
 	} catch {
 		return null;
@@ -239,7 +284,52 @@ function getCachedPin(): string | null {
 
 function clearCachedPin() {
 	_cachedPin = null;
-	localStorage.removeItem(PIN_CACHE_KEY);
+	localStorage.removeItem(SESSION_KEY);
+}
+
+/** Bump the idle expiry. Call from user-driven activity (clicks, key
+ *  events) so a busy user isn't auto-locked while interacting. The
+ *  absolute expiry is a hard ceiling and can't be pushed past. */
+export function extendSession(): void {
+	try {
+		const raw = localStorage.getItem(SESSION_KEY);
+		if (!raw) return;
+		const data = JSON.parse(raw);
+		const now = Date.now();
+		if (now > data.absExp) {
+			clearCachedPin();
+			lockWallet();
+			return;
+		}
+		const policy = getSessionPolicy();
+		data.idleExp = Math.min(now + policy.idleMs, data.absExp);
+		localStorage.setItem(SESSION_KEY, JSON.stringify(data));
+	} catch {}
+}
+
+export interface SessionInfo {
+	unlocked: boolean;
+	idleRemainingMs: number;
+	absoluteRemainingMs: number;
+}
+
+export function getSessionInfo(): SessionInfo {
+	if (!_state.isUnlocked) {
+		return { unlocked: false, idleRemainingMs: 0, absoluteRemainingMs: 0 };
+	}
+	try {
+		const raw = localStorage.getItem(SESSION_KEY);
+		if (!raw) return { unlocked: true, idleRemainingMs: 0, absoluteRemainingMs: 0 };
+		const { absExp, idleExp } = JSON.parse(raw);
+		const now = Date.now();
+		return {
+			unlocked: true,
+			idleRemainingMs: Math.max(0, idleExp - now),
+			absoluteRemainingMs: Math.max(0, absExp - now),
+		};
+	} catch {
+		return { unlocked: true, idleRemainingMs: 0, absoluteRemainingMs: 0 };
+	}
 }
 
 // ── Sign out ───────────────────────────────────────────────────────────
@@ -253,7 +343,15 @@ export async function signOut(): Promise<void> {
 // ── API helpers ────────────────────────────────────────────────────────
 
 async function apiFetch(path: string, method: string, body?: any): Promise<any> {
-	if (!_jwt) throw new Error('Not authenticated');
+	// Pull a fresh access token on every call — supabase-js auto-refreshes
+	// expired sessions internally, so getSession() always hands back a
+	// currently-valid JWT. Caching _jwt at login would go stale after the
+	// 1-hour access-token lifetime and surface as mystery 401s.
+	const {
+		data: { session },
+	} = await supabase.auth.getSession();
+	if (!session) throw new Error('Not authenticated');
+	_jwt = session.access_token;
 	const headers: Record<string, string> = { Authorization: `Bearer ${_jwt}` };
 	if (body) headers['Content-Type'] = 'application/json';
 	const res = await fetch(path, {
@@ -324,6 +422,9 @@ export async function autoReconnect(): Promise<
 			_state.wallets.find((w) => w.isPrimary) ||
 			_state.wallets[0];
 		_state.activeWalletId = preferred.id;
+
+		// One-shot migration of legacy flat account_names → per-wallet meta
+		_migrateLegacyAccountNames(preferred.id);
 
 		// Try cached PIN
 		const cached = getCachedPin();
@@ -417,9 +518,36 @@ function _setSavedActiveAccount(walletId: string, index: number): void {
 
 // ── Public: Unlock + state queries ─────────────────────────────────────
 
-/** Unlock the active wallet with a PIN. Caches the PIN on success. */
+/** Unlock the active wallet with a PIN. Caches the PIN on success.
+ *
+ *  Lazy-loads the wallet list when called from a flow that hasn't run
+ *  `autoReconnect` yet — most notably the post-Google-OAuth return path,
+ *  which jumps straight to the PIN prompt without populating `_state.wallets`.
+ *  Without this fallback, the user would see "No active wallet" after
+ *  entering the right PIN. */
 export async function unlockWallet(pin: string): Promise<boolean> {
-	const active = _getActiveWalletInternal();
+	let active = _getActiveWalletInternal();
+
+	if (!active && _state.isLoggedIn) {
+		try {
+			const { salt, wallets } = await fetchWallets();
+			if (wallets && wallets.length > 0) {
+				_salt = salt;
+				_state.wallets = wallets.map(_walletRowToContext);
+				const savedActiveId = localStorage.getItem('_active_wallet');
+				const preferred =
+					_state.wallets.find((w) => w.id === savedActiveId) ||
+					_state.wallets.find((w) => w.isPrimary) ||
+					_state.wallets[0];
+				_state.activeWalletId = preferred.id;
+				_migrateLegacyAccountNames(preferred.id);
+				active = preferred;
+			}
+		} catch {
+			// fall through to "No active wallet" below
+		}
+	}
+
 	if (!active) throw new Error('No active wallet');
 
 	const ok = await _unlockWalletInPlace(active, pin);
@@ -686,14 +814,84 @@ export function exportPrivateKey(index: number): string | null {
 	return account?.wallet.privateKey || null;
 }
 
+// ── Change PIN (platform-wide) ─────────────────────────────────────────
+
+/**
+ * Change the PIN that protects every wallet. Since the PIN is shared
+ * across wallets, this re-encrypts every wallet's `primary_blob` with
+ * the new PIN and ships them to the server in one batched upsert via
+ * `/api/wallets/rotate-pin`. That endpoint uses Supabase's batch upsert,
+ * which compiles to a single `INSERT … ON CONFLICT DO UPDATE` statement;
+ * Postgres executes it atomically so either every wallet gets the new
+ * ciphertext or none do. No more partial-failure window where a network
+ * drop mid-loop could leave half the wallets on the old PIN.
+ *
+ * Recovery blobs are NOT touched (they're encrypted with separate
+ * recovery codes, not the PIN). Only the primary_blob changes.
+ */
+export async function changePin(currentPin: string, newPin: string): Promise<void> {
+	if (!_salt) throw new Error('Salt not loaded');
+	if (_state.wallets.length === 0) throw new Error('No wallets to update');
+	if (!newPin || newPin.length < 6) throw new Error('New PIN must be at least 6 digits');
+	if (newPin === currentPin) throw new Error('New PIN must be different from current PIN');
+
+	const { encryptWithPin } = await import('./walletCrypto');
+
+	// Step 1: verify the current PIN decrypts every wallet before we
+	// write anything. If any wallet fails, bail without touching state.
+	const decrypted: { id: string; mnemonic: string }[] = [];
+	for (const w of _state.wallets) {
+		const mnemonic = await unlockWithPin(w.primaryBlob, currentPin, _salt);
+		if (!mnemonic) throw new Error('Current PIN is incorrect');
+		decrypted.push({ id: w.id, mnemonic });
+	}
+
+	// Step 2: re-encrypt each seed with the new PIN locally.
+	const updates: Array<{ id: string; primaryBlob: string }> = [];
+	for (const d of decrypted) {
+		const primaryBlob = await encryptWithPin(d.mnemonic, newPin, _salt);
+		updates.push({ id: d.id, primaryBlob });
+	}
+
+	// Step 3: ship every new blob in ONE atomic request. Server responds
+	// all-or-nothing; on failure nothing is written and we throw so the
+	// caller can toast.
+	await apiFetch('/api/wallets/rotate-pin', 'POST', { updates });
+
+	// Step 4: apply the new blobs to local state and swap the cached PIN
+	// so subsequent unlock/switch calls use it.
+	for (const u of updates) {
+		const w = _state.wallets.find((x) => x.id === u.id);
+		if (w) w.primaryBlob = u.primaryBlob;
+	}
+	cachePin(newPin);
+	_notify();
+}
+
 // ── Rename / delete / primary ──────────────────────────────────────────
 
+/**
+ * Rename a wallet with optimistic UI: the local state updates synchronously
+ * so the new name renders on the next tick. The server call runs in the
+ * background; on failure we roll back to the previous name and re-throw
+ * so the caller can surface a toast.
+ */
 export async function renameWallet(walletId: string, newName: string): Promise<void> {
-	await patchWallet(walletId, { name: newName });
 	const w = _state.wallets.find((w) => w.id === walletId);
-	if (w) {
-		w.name = newName.trim().slice(0, 40);
+	if (!w) throw new Error('Wallet not found');
+	const trimmed = newName.trim().slice(0, 40);
+	if (!trimmed || trimmed === w.name) return;
+
+	const previousName = w.name;
+	w.name = trimmed;
+	_notify();
+
+	try {
+		await patchWallet(walletId, { name: trimmed });
+	} catch (e) {
+		w.name = previousName;
 		_notify();
+		throw e;
 	}
 }
 
@@ -701,6 +899,10 @@ export async function deleteWallet(walletId: string): Promise<void> {
 	// Guard in UI, but server also enforces — don't delete last wallet, don't delete primary
 	await apiFetch(`/api/wallets/${walletId}`, 'DELETE');
 	_state.wallets = _state.wallets.filter((w) => w.id !== walletId);
+	// Drop the local account metadata for the deleted wallet
+	try {
+		localStorage.removeItem(_accountMetaKey(walletId));
+	} catch {}
 	if (_state.activeWalletId === walletId) {
 		const fallback = _state.wallets.find((w) => w.isPrimary) || _state.wallets[0];
 		if (fallback) {
@@ -780,6 +982,96 @@ export async function setNewPin(newPin: string): Promise<string[]> {
 	return vault.recoveryCodes;
 }
 
+// ── Per-wallet account metadata (names, avatars) ───────────────────────
+//
+// Account-level metadata is keyed by wallet ID + HD index. Stored
+// per-wallet because the same HD index in different wallets is a
+// completely different account — naming leaked across wallets in the
+// old `account_names` flat key. New format: `account_meta_<wid>`.
+
+export interface AccountMeta {
+	name?: string;
+	avatar?: string;
+}
+
+type WalletAccountMetaMap = Record<string, AccountMeta>;
+
+function _accountMetaKey(walletId: string): string {
+	return `account_meta_${walletId}`;
+}
+
+function _readWalletMetaMap(walletId: string): WalletAccountMetaMap {
+	try {
+		const raw = localStorage.getItem(_accountMetaKey(walletId));
+		return raw ? JSON.parse(raw) : {};
+	} catch {
+		return {};
+	}
+}
+
+function _writeWalletMetaMap(walletId: string, map: WalletAccountMetaMap): void {
+	try {
+		localStorage.setItem(_accountMetaKey(walletId), JSON.stringify(map));
+	} catch {}
+}
+
+export function getAccountMeta(walletId: string, index: number): AccountMeta {
+	const map = _readWalletMetaMap(walletId);
+	return map[String(index)] || {};
+}
+
+export function getAllAccountMeta(walletId: string): WalletAccountMetaMap {
+	return _readWalletMetaMap(walletId);
+}
+
+export function setAccountMeta(walletId: string, index: number, meta: Partial<AccountMeta>): void {
+	const map = _readWalletMetaMap(walletId);
+	const cur = map[String(index)] || {};
+	const next = { ...cur, ...meta };
+	// Drop undefined keys so empty entries don't accumulate
+	Object.keys(next).forEach((k) => {
+		if ((next as any)[k] === undefined || (next as any)[k] === '') delete (next as any)[k];
+	});
+	if (Object.keys(next).length === 0) {
+		delete map[String(index)];
+	} else {
+		map[String(index)] = next;
+	}
+	_writeWalletMetaMap(walletId, map);
+	// Push to server preferences (debounced)
+	syncPreferences(collectPreferences()).catch(() => {});
+}
+
+export function getAccountName(walletId: string, index: number): string {
+	const meta = getAccountMeta(walletId, index);
+	return meta.name || `Account ${index + 1}`;
+}
+
+/** First-visit migration: copy the legacy flat `account_names` map into
+ *  the active wallet's per-wallet metadata. The old shape was indexed by
+ *  HD index only, so it's only safe to apply to one wallet — the user's
+ *  primary at migration time. After this runs once, the legacy key is
+ *  removed so subsequent wallets get clean metadata. */
+function _migrateLegacyAccountNames(walletId: string): void {
+	try {
+		const raw = localStorage.getItem('account_names');
+		if (!raw) return;
+		const legacy = JSON.parse(raw) as Record<string, string>;
+		if (!legacy || typeof legacy !== 'object') return;
+
+		const map = _readWalletMetaMap(walletId);
+		let changed = false;
+		for (const [k, v] of Object.entries(legacy)) {
+			if (!v) continue;
+			if (map[k]?.name) continue;
+			map[k] = { ...(map[k] || {}), name: v };
+			changed = true;
+		}
+		if (changed) _writeWalletMetaMap(walletId, map);
+		localStorage.removeItem('account_names');
+	} catch {}
+}
+
 // ── Preferences sync (per active wallet) ───────────────────────────────
 
 let _prefSyncTimer: ReturnType<typeof setTimeout> | null = null;
@@ -799,9 +1091,17 @@ export async function syncPreferences(prefs: Record<string, any>): Promise<void>
 
 export function collectPreferences(): Record<string, any> {
 	const prefs: Record<string, any> = {};
+	// Per-wallet account metadata: collect for ALL wallets the user has on file
+	const accountMeta: Record<string, WalletAccountMetaMap> = {};
+	for (const w of _state.wallets) {
+		const map = _readWalletMetaMap(w.id);
+		if (Object.keys(map).length > 0) accountMeta[w.id] = map;
+	}
+	if (Object.keys(accountMeta).length > 0) prefs.account_meta = accountMeta;
+	// Session policy
 	try {
-		const names = localStorage.getItem('account_names');
-		if (names) prefs.account_names = JSON.parse(names);
+		const sp = localStorage.getItem(SESSION_POLICY_KEY);
+		if (sp) prefs.session_policy = JSON.parse(sp);
 	} catch {}
 	try {
 		const tokens = localStorage.getItem('imported_tokens');
@@ -816,8 +1116,15 @@ export function collectPreferences(): Record<string, any> {
 
 export function restorePreferences(prefs: Record<string, any>): void {
 	if (!prefs || typeof prefs !== 'object') return;
-	if (prefs.account_names) {
-		localStorage.setItem('account_names', JSON.stringify(prefs.account_names));
+	if (prefs.account_meta && typeof prefs.account_meta === 'object') {
+		for (const [walletId, map] of Object.entries(prefs.account_meta)) {
+			_writeWalletMetaMap(walletId, map as WalletAccountMetaMap);
+		}
+	}
+	if (prefs.session_policy) {
+		try {
+			localStorage.setItem(SESSION_POLICY_KEY, JSON.stringify(prefs.session_policy));
+		} catch {}
 	}
 	if (prefs.imported_tokens) {
 		localStorage.setItem('imported_tokens', JSON.stringify(prefs.imported_tokens));

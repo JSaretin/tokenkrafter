@@ -23,6 +23,26 @@
 	type Step = 'choose' | 'google-loading' | 'pin-setup' | 'pin-enter' | 'recovery-codes' | 'forgot-pin' | 'new-pin';
 
 	let step = $state<Step>('choose');
+
+	// ── Step indicator helper ────────────────────────────────────────────
+	// The funnel maps every internal `step` to one of three labels the
+	// user actually understands. The unlock-only path (returning user) and
+	// the recovery path bypass the stepper entirely — there's nothing
+	// "step 1 of 3" about typing your PIN.
+	function getStepperPosition(s: Step): 0 | 1 | 2 | 3 {
+		// 0 = no stepper, 1..3 = active step
+		switch (s) {
+			case 'choose':
+				return 1;
+			case 'pin-setup':
+				return 2;
+			case 'recovery-codes':
+				return 3;
+			default:
+				return 0;
+		}
+	}
+	let stepperPos = $derived(getStepperPosition(step));
 	let pin = $state('');
 	let pinConfirm = $state('');
 	let recoveryCode = $state('');
@@ -70,7 +90,7 @@
 	}
 
 	async function handleCreateWallet() {
-		if (pin.length < 4) { error = 'PIN must be at least 4 digits'; return; }
+		if (pin.length < 6) { error = 'PIN must be at least 6 digits'; return; }
 		if (pin !== pinConfirm) { error = 'PINs do not match'; return; }
 
 		error = '';
@@ -94,7 +114,7 @@
 	let importAck = $state(false);
 
 	async function handleImportFirstWallet() {
-		if (pin.length < 4) { error = 'PIN must be at least 4 digits'; return; }
+		if (pin.length < 6) { error = 'PIN must be at least 6 digits'; return; }
 		if (pin !== pinConfirm) { error = 'PINs do not match'; return; }
 		if (!importMnemonic.trim()) { error = 'Enter your recovery phrase'; return; }
 		if (!importAck) { error = 'Acknowledge the warning'; return; }
@@ -163,7 +183,7 @@
 	}
 
 	async function handleSetNewPin() {
-		if (pin.length < 4) { error = 'PIN must be at least 4 digits'; return; }
+		if (pin.length < 6) { error = 'PIN must be at least 6 digits'; return; }
 		if (pin !== pinConfirm) { error = 'PINs do not match'; return; }
 
 		error = '';
@@ -196,7 +216,31 @@
 
 {#if open}
 	<div class="wm-overlay" onclick={close} role="presentation">
-		<div class="wm-modal" onclick={(e) => e.stopPropagation()} role="dialog">
+		<div class="wm-modal" onclick={(e) => e.stopPropagation()} role="dialog" tabindex="-1">
+
+			<!-- 3-step progress indicator: Method → Secure → Backup. Hidden on
+			     paths that don't fit the funnel (returning unlock, recovery). -->
+			{#if stepperPos > 0}
+				<div class="wm-stepper">
+					{#each ['Method', 'Secure', 'Backup'] as label, i}
+						{@const idx = i + 1}
+						{@const state = idx < stepperPos ? 'done' : idx === stepperPos ? 'active' : 'todo'}
+						<div class="wm-step wm-step-{state}">
+							<div class="wm-step-dot">
+								{#if state === 'done'}
+									<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+								{:else}
+									{idx}
+								{/if}
+							</div>
+							<span class="wm-step-label">{label}</span>
+						</div>
+						{#if idx < 3}
+							<div class="wm-step-line wm-step-line-{idx < stepperPos ? 'done' : 'todo'}"></div>
+						{/if}
+					{/each}
+				</div>
+			{/if}
 
 			{#if step === 'choose'}
 				<div class="wm-header">
@@ -235,12 +279,23 @@
 				</div>
 
 			{:else if step === 'pin-setup'}
-				<h2 class="wm-title">{isImporting ? 'Import Wallet' : 'Create Wallet PIN'}</h2>
+				<h2 class="wm-title">Secure your wallet</h2>
+
+				<!-- Explicit tabs replace the easy-to-miss inline toggle. -->
+				<div class="wm-mode-tabs">
+					<button class="wm-mode-tab" class:active={!isImporting} onclick={() => { isImporting = false; error = ''; }}>
+						Create new
+					</button>
+					<button class="wm-mode-tab" class:active={isImporting} onclick={() => { isImporting = true; error = ''; }}>
+						Import existing
+					</button>
+				</div>
+
 				<p class="wm-hint">
 					{#if isImporting}
 						Paste your 12 or 24 word recovery phrase. We'll encrypt it with your PIN locally — your seed never leaves this browser.
 					{:else}
-						This PIN encrypts your wallet. Only you know it — we can't recover it.
+						This PIN encrypts your new wallet. Only you know it — we can't recover it.
 					{/if}
 				</p>
 
@@ -248,7 +303,7 @@
 					<textarea class="wm-input wm-textarea" rows="3" placeholder="12 or 24 word recovery phrase" bind:value={importMnemonic} autocomplete="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true"></textarea>
 				{/if}
 
-				<input class="wm-input" type="tel" inputmode="numeric" autocomplete="one-time-code" data-lpignore="true" data-1p-ignore="true" style="-webkit-text-security: disc; text-security: disc;" placeholder="Enter PIN (4+ digits)" bind:value={pin} maxlength="8" />
+				<input class="wm-input" type="tel" inputmode="numeric" autocomplete="one-time-code" data-lpignore="true" data-1p-ignore="true" style="-webkit-text-security: disc; text-security: disc;" placeholder="Enter PIN (6+ digits)" bind:value={pin} maxlength="8" />
 				<input class="wm-input" type="tel" inputmode="numeric" autocomplete="one-time-code" data-lpignore="true" data-1p-ignore="true" style="-webkit-text-security: disc; text-security: disc;" placeholder="Confirm PIN" bind:value={pinConfirm} maxlength="8"
 					onkeydown={(e) => { if (e.key === 'Enter') { isImporting ? handleImportFirstWallet() : handleCreateWallet(); } }} />
 
@@ -270,10 +325,6 @@
 						{loading ? 'Creating...' : 'Create Wallet'}
 					</button>
 				{/if}
-
-				<button class="wm-btn-link" onclick={() => { isImporting = !isImporting; error = ''; }}>
-					{isImporting ? 'Create new wallet instead' : 'Import existing wallet'}
-				</button>
 
 			{:else if step === 'pin-enter'}
 				<h2 class="wm-title">Unlock Wallet</h2>
@@ -342,7 +393,7 @@
 				<h2 class="wm-title">Set New PIN</h2>
 				<p class="wm-hint">Recovery successful. Set a new PIN for your wallet.</p>
 
-				<input class="wm-input" type="tel" inputmode="numeric" autocomplete="one-time-code" data-lpignore="true" data-1p-ignore="true" style="-webkit-text-security: disc; text-security: disc;" placeholder="New PIN (4+ digits)" bind:value={pin} maxlength="8" />
+				<input class="wm-input" type="tel" inputmode="numeric" autocomplete="one-time-code" data-lpignore="true" data-1p-ignore="true" style="-webkit-text-security: disc; text-security: disc;" placeholder="New PIN (6+ digits)" bind:value={pin} maxlength="8" />
 				<input class="wm-input" type="tel" inputmode="numeric" autocomplete="one-time-code" data-lpignore="true" data-1p-ignore="true" style="-webkit-text-security: disc; text-security: disc;" placeholder="Confirm PIN" bind:value={pinConfirm} maxlength="8"
 					onkeydown={(e) => { if (e.key === 'Enter') handleSetNewPin(); }} />
 
@@ -358,6 +409,59 @@
 {/if}
 
 <style>
+	/* 3-step progress indicator */
+	.wm-stepper {
+		display: flex; align-items: center; gap: 4px;
+		padding: 0 4px 8px;
+	}
+	.wm-step { display: flex; align-items: center; gap: 6px; }
+	.wm-step-dot {
+		width: 22px; height: 22px; border-radius: 50%;
+		display: flex; align-items: center; justify-content: center;
+		font-family: 'Syne', sans-serif; font-size: 11px; font-weight: 800;
+		background: rgba(255,255,255,0.04); color: #475569;
+		border: 1px solid rgba(255,255,255,0.06);
+		transition: all 0.2s;
+	}
+	.wm-step-label {
+		font-family: 'Space Mono', monospace; font-size: 10px;
+		color: #475569; transition: color 0.2s;
+	}
+	.wm-step-active .wm-step-dot {
+		background: rgba(0,210,255,0.12); color: #00d2ff;
+		border-color: rgba(0,210,255,0.35);
+		box-shadow: 0 0 0 3px rgba(0,210,255,0.08);
+	}
+	.wm-step-active .wm-step-label { color: #00d2ff; font-weight: 700; }
+	.wm-step-done .wm-step-dot {
+		background: rgba(16,185,129,0.12); color: #10b981;
+		border-color: rgba(16,185,129,0.3);
+	}
+	.wm-step-done .wm-step-label { color: #10b981; }
+	.wm-step-line {
+		flex: 1; height: 2px; border-radius: 1px;
+		background: rgba(255,255,255,0.05); transition: background 0.2s;
+	}
+	.wm-step-line-done { background: rgba(16,185,129,0.3); }
+
+	/* Create / Import mode tabs (replaces inline link toggle) */
+	.wm-mode-tabs {
+		display: flex; gap: 4px; padding: 3px;
+		background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06);
+		border-radius: 10px;
+	}
+	.wm-mode-tab {
+		flex: 1; padding: 9px; border: none; background: transparent;
+		color: #64748b; cursor: pointer; border-radius: 7px;
+		font-family: 'Syne', sans-serif; font-size: 12px; font-weight: 700;
+		transition: all 0.12s;
+	}
+	.wm-mode-tab:hover { color: #94a3b8; }
+	.wm-mode-tab.active {
+		background: rgba(0,210,255,0.1); color: #00d2ff;
+		box-shadow: 0 0 0 1px rgba(0,210,255,0.2);
+	}
+
 	.wm-overlay {
 		position: fixed; inset: 0; z-index: 9999;
 		background: rgba(0,0,0,0.7); backdrop-filter: blur(4px);
