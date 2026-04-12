@@ -32,9 +32,12 @@ contract PartnerTaxableTokenImpl is TaxableTokenImpl {
         require(_transferTaxBps <= PARTNER_MAX_TRANSFER_TAX_BPS, "Transfer tax > 2%");
 
         // Per-field ceiling enforcement (inherited from TaxableTokenImpl state)
-        if (taxCeilingBuy > 0)      require(_buyTaxBps <= taxCeilingBuy, "Buy > ceiling");
-        if (taxCeilingSell > 0)     require(_sellTaxBps <= taxCeilingSell, "Sell > ceiling");
-        if (taxCeilingTransfer > 0) require(_transferTaxBps <= taxCeilingTransfer, "Transfer > ceiling");
+        // Uses the bool flag so 0/0/0 ceilings are still enforced
+        if (taxCeilingIsLocked) {
+            require(_buyTaxBps <= taxCeilingBuy, "Buy > ceiling");
+            require(_sellTaxBps <= taxCeilingSell, "Sell > ceiling");
+            require(_transferTaxBps <= taxCeilingTransfer, "Transfer > ceiling");
+        }
 
         buyTaxBps = _buyTaxBps;
         sellTaxBps = _sellTaxBps;

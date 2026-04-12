@@ -192,7 +192,12 @@ contract BasicTokenImpl is ERC20Upgradeable, OwnableUpgradeable {
 
     function setMaxWalletAmount(uint256 amount) external onlyOwner {
         if (tradingStartTime != type(uint256).max) {
-            require(amount == 0 || amount >= maxWalletAmount, "Can only relax after trading");
+            // Post-trading: can only relax (increase limit or disable).
+            // If no limit was set before trading (== 0), can't add one now.
+            require(
+                amount == 0 || (maxWalletAmount > 0 && amount >= maxWalletAmount),
+                "Can only relax after trading"
+            );
         }
         maxWalletAmount = amount;
         emit MaxWalletAmountUpdated(amount);
@@ -200,7 +205,10 @@ contract BasicTokenImpl is ERC20Upgradeable, OwnableUpgradeable {
 
     function setMaxTransactionAmount(uint256 amount) external onlyOwner {
         if (tradingStartTime != type(uint256).max) {
-            require(amount == 0 || amount >= maxTransactionAmount, "Can only relax after trading");
+            require(
+                amount == 0 || (maxTransactionAmount > 0 && amount >= maxTransactionAmount),
+                "Can only relax after trading"
+            );
         }
         maxTransactionAmount = amount;
         emit MaxTransactionAmountUpdated(amount);

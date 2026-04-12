@@ -67,6 +67,12 @@ contract TaxableTokenImpl is BasicTokenImpl {
     uint256 public taxCeilingSell;
     uint256 public taxCeilingTransfer;
 
+    /// @dev True once lockTaxCeiling() has been called. Independent of the
+    ///      ceiling values so a 0/0/0 ceiling is still enforced — without
+    ///      this flag, `if (taxCeilingBuy > 0)` would skip enforcement
+    ///      for zero-tax launches, letting the creator raise taxes later.
+    bool public taxCeilingIsLocked;
+
     uint256 public constant MAX_BUY_TAX_BPS = 400;       // 4%
     uint256 public constant MAX_SELL_TAX_BPS = 400;       // 4%
     uint256 public constant MAX_TRANSFER_TAX_BPS = 200;   // 2%
@@ -145,9 +151,13 @@ contract TaxableTokenImpl is BasicTokenImpl {
         require(_transferTaxBps <= MAX_TRANSFER_TAX_BPS, "Transfer tax > cap");
 
         // Per-field ceiling: once locked, creator can only lower (or match).
-        if (taxCeilingBuy > 0)      require(_buyTaxBps <= taxCeilingBuy, "Buy > ceiling");
-        if (taxCeilingSell > 0)     require(_sellTaxBps <= taxCeilingSell, "Sell > ceiling");
-        if (taxCeilingTransfer > 0) require(_transferTaxBps <= taxCeilingTransfer, "Transfer > ceiling");
+        // Uses the bool flag — NOT `ceiling > 0` — so 0/0/0 ceilings are
+        // still enforced (a zero-tax launch stays zero-tax forever).
+        if (taxCeilingIsLocked) {
+            require(_buyTaxBps <= taxCeilingBuy, "Buy > ceiling");
+            require(_sellTaxBps <= taxCeilingSell, "Sell > ceiling");
+            require(_transferTaxBps <= taxCeilingTransfer, "Transfer > ceiling");
+        }
 
         buyTaxBps = _buyTaxBps;
         sellTaxBps = _sellTaxBps;
@@ -173,6 +183,7 @@ contract TaxableTokenImpl is BasicTokenImpl {
         taxCeilingBuy = buyTaxBps;
         taxCeilingSell = sellTaxBps;
         taxCeilingTransfer = transferTaxBps;
+        taxCeilingIsLocked = true;
         emit TaxCeilingLocked(buyTaxBps, sellTaxBps, transferTaxBps);
     }
 
@@ -186,6 +197,7 @@ contract TaxableTokenImpl is BasicTokenImpl {
         taxCeilingBuy = 0;
         taxCeilingSell = 0;
         taxCeilingTransfer = 0;
+        taxCeilingIsLocked = false;
         emit TaxCeilingUnlocked();
     }
 
@@ -254,12 +266,11 @@ contract TaxableTokenImpl is BasicTokenImpl {
         require(delay <= MAX_TRADING_DELAY, "Delay > max");
 
         // Lock ceiling if not already locked (covers direct-listing path)
-        if (taxCeilingBuy == 0 && taxCeilingSell == 0 && taxCeilingTransfer == 0
-            && (buyTaxBps > 0 || sellTaxBps > 0 || transferTaxBps > 0))
-        {
+        if (!taxCeilingIsLocked) {
             taxCeilingBuy = buyTaxBps;
             taxCeilingSell = sellTaxBps;
             taxCeilingTransfer = transferTaxBps;
+            taxCeilingIsLocked = true;
             emit TaxCeilingLocked(buyTaxBps, sellTaxBps, transferTaxBps);
         }
 

@@ -551,7 +551,7 @@ contract TokenFactory is Ownable, ReentrancyGuard {
     /// @notice Converts accumulated tax tokens held by the factory to USDT
     ///         via the best DEX route. Callable by the factory owner or by a
     ///         registered token itself (during _update callbacks).
-    function processTax(address token) external {
+    function processTax(address token) external nonReentrant {
         if (msg.sender != owner()
             && !(msg.sender == token && tokenInfo[token].creator != address(0)))
             revert NotFactoryToken();
