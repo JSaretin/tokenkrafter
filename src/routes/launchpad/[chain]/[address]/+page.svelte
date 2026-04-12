@@ -255,6 +255,55 @@
 		return l ? progressPercent(l.totalBaseRaised, l.hardCap) : 0;
 	});
 	let paySymbol = $derived(buyPaymentMethod === 'native' ? (network?.native_coin || 'BNB') : buyPaymentMethod.toUpperCase());
+
+	// Live swap estimate: show how much BNB/USDC the user will actually spend
+	let swapEstimate = $state('');
+	let swapEstimateLoading = $state(false);
+	let _swapEstimateTimeout: ReturnType<typeof setTimeout> | null = null;
+
+	$effect(() => {
+		const method = buyPaymentMethod;
+		const amt = buyAmount;
+		const net = network;
+		const prov = signer?.provider ?? (net ? networkProviders.get(net.chain_id) : null);
+
+		if (_swapEstimateTimeout) clearTimeout(_swapEstimateTimeout);
+
+		if (method === 'usdt' || !amt || parseFloat(String(amt)) <= 0 || !net || !prov) {
+			swapEstimate = '';
+			swapEstimateLoading = false;
+			return;
+		}
+
+		swapEstimateLoading = true;
+		_swapEstimateTimeout = setTimeout(async () => {
+			try {
+				const routerAbi = [
+					'function getAmountsIn(uint256 amountOut, address[] calldata path) view returns (uint256[] memory amounts)',
+					'function WETH() view returns (address)'
+				];
+				const router = new ethers.Contract(net.dex_router, routerAbi, prov);
+				const usdtNeeded = ethers.parseUnits(String(amt), usdtDecimals);
+
+				if (method === 'native') {
+					const weth = await router.WETH();
+					const amounts = await router.getAmountsIn(usdtNeeded, [weth, net.usdt_address]);
+					const val = parseFloat(ethers.formatEther(amounts[0]));
+					swapEstimate = `\u2248 ${val < 0.0001 ? val.toExponential(2) : val.toFixed(4)} ${net.native_coin || 'BNB'}`;
+				} else {
+					// USDC
+					const dec = net.chain_id === 56 ? 18 : 6;
+					const amounts = await router.getAmountsIn(usdtNeeded, [net.usdc_address, net.usdt_address]);
+					const val = parseFloat(ethers.formatUnits(amounts[0], dec));
+					swapEstimate = `\u2248 ${val.toFixed(2)} USDC`;
+				}
+			} catch {
+				swapEstimate = '';
+			} finally {
+				swapEstimateLoading = false;
+			}
+		}, 400);
+	});
 	let softCapPct = $derived.by(() => {
 		const l = launch;
 		return l && l.hardCap > 0n ? Math.min(100, Number((l.softCap * 100n) / l.hardCap)) : 0;
@@ -521,6 +570,7 @@
 
 	onDestroy(() => {
 		if (refreshInterval) clearInterval(refreshInterval);
+		if (_swapEstimateTimeout) clearTimeout(_swapEstimateTimeout);
 		stopBalancePolling();
 	});
 
@@ -2070,6 +2120,12 @@
 								min="0"
 							/>
 						</div>
+
+						{#if swapEstimateLoading}
+							<div class="text-gray-500 text-[10px] font-mono mt-1 mb-2">Estimating {paySymbol} cost...</div>
+						{:else if swapEstimate}
+							<div class="text-cyan-400 text-[11px] font-mono mt-1 mb-2">{swapEstimate}</div>
+						{/if}
 
 						<!-- Payment method select -->
 						<div class="mb-3">

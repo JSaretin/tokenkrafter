@@ -12,6 +12,8 @@
 	import { TOKEN_READ_ABI, ERC20_DECIMALS_ABI, ROUTER_ABI_LITE } from '$lib/commonABIs';
 	import * as deployHelpers from './lib/deploy/helpers';
 	import { getBaseTokenAddress, getBaseDecimals, getBaseSymbol, feeCacheKey } from './lib/deploy/helpers';
+	import { SwapRouter } from '$lib/swapRouter.svelte';
+	import { findBestRoute, isCacheLoaded, getWeth } from '$lib/tradeLens';
 	import TokenForm from './lib/TokenForm.svelte';
 	import type { ListingConfig, ListingPairConfig, TokenFormData, PreviewState } from './lib/TokenForm.svelte';
 
@@ -486,58 +488,96 @@
 	);
 	let isNativePayment = $derived(selectedPayment?.address === ZERO_ADDRESS);
 	let selectedQuote = $derived(paymentQuotes[selectedPaymentIndex] ?? 0n);
-	// Fee displayed to user: quoteFee amountIn + 1% slippage buffer
-	let selectedFeeWithSlippage = $derived(selectedQuote > 0n ? selectedQuote * 101n / 100n : selectedFee);
+	// USDT direct: no swap, no slippage — show the exact fee.
+	// Non-USDT: add 1% buffer because the swap may cost slightly more
+	// than the quote by the time the tx lands. Excess is refunded.
+	let isDirectUsdt = $derived(
+		!!selectedPayment && !!tokenInfo &&
+		selectedPayment.address.toLowerCase() === tokenInfo.network?.usdt_address?.toLowerCase()
+	);
+	let selectedFeeWithSlippage = $derived(
+		isDirectUsdt ? selectedFee : (selectedQuote > 0n ? selectedQuote * 101n / 100n : selectedFee)
+	);
 	let selectedFeeDisplay = $derived(
 		selectedPayment && selectedFeeWithSlippage > 0n
-			? parseFloat(ethers.formatUnits(selectedFeeWithSlippage, selectedPayment.decimals)).toFixed(4)
+			? parseFloat(ethers.formatUnits(selectedFeeWithSlippage, selectedPayment.decimals)).toFixed(6)
 			: selectedFeeFormatted
 	);
 
-	/// Fetch balances + quoteFee for every payment option. Called when
-	/// the payment modal opens (or when tokenInfo/payment options change).
+	/// Fetch balances + fee quotes for every payment option.
+	/// Phase 1: instant quotes from TradeLens cache (no RPC) for snappy render.
+	/// Phase 2: on-chain validation via router.quoteFee (debounced, parallel).
 	async function loadPaymentQuotes() {
 		if (!tokenInfo || paymentOptions.length === 0) return;
 		quoteFeeLoading = true;
 		const net = tokenInfo.network;
-		const prov = getProviderForNetwork(net.chain_id) ?? new ethers.JsonRpcProvider(net.rpc);
+		const usdtAddr = net.usdt_address;
 
+		// ── Phase 1: TradeLens cache (instant, no RPC) ──
+		if (isCacheLoaded()) {
+			const weth = getWeth();
+			const cachedQuotes: bigint[] = [];
+			const cached = feeCache.get(feeCacheKey(net.chain_id, tokenInfo.isTaxable, tokenInfo.isMintable, tokenInfo.isPartner));
+			const usdtFee = cached ? (cached.creationFeeUsdt + (tokenInfo.launch?.enabled ? cached.launchFeeUsdt : 0n)) : 0n;
+
+			for (const opt of paymentOptions) {
+				if (usdtFee === 0n) { cachedQuotes.push(0n); continue; }
+				if (opt.address.toLowerCase() === usdtAddr.toLowerCase()) {
+					cachedQuotes.push(usdtFee);
+				} else {
+					try {
+						const resolvedIn = opt.address === ZERO_ADDRESS ? weth : opt.address;
+						const best = findBestRoute(resolvedIn, usdtAddr, usdtFee);
+						// findBestRoute gives amountOut for amountIn — we need the inverse
+						// (how much input to get usdtFee output). Use the ratio as approx.
+						if (best && best.amountOut > 0n) {
+							cachedQuotes.push((usdtFee * usdtFee) / best.amountOut);
+						} else {
+							cachedQuotes.push(0n);
+						}
+					} catch { cachedQuotes.push(0n); }
+				}
+			}
+			// Render instantly with cache data
+			paymentQuotes = cachedQuotes;
+			feeAmounts = cachedQuotes;
+		}
+
+		// ── Phase 2: on-chain validation (parallel, accurate) ──
+		const prov = getProviderForNetwork(net.chain_id) ?? new ethers.JsonRpcProvider(net.rpc);
 		try {
 			const typeKey = (tokenInfo.isPartner ? 4 : 0) | (tokenInfo.isTaxable ? 2 : 0) | (tokenInfo.isMintable ? 1 : 0);
 			const withLaunch = !!(tokenInfo.launch?.enabled);
 			const routerAddr = net.router_address;
-			const usdtAddr = net.usdt_address;
-
 			const router = new ethers.Contract(routerAddr, PLATFORM_ROUTER_ABI, prov);
-			const bals: bigint[] = [];
-			const quotes: bigint[] = [];
 
-			for (const opt of paymentOptions) {
-				// Balance
-				try {
-					if (opt.address === ZERO_ADDRESS) {
-						bals.push(userAddress ? await prov.getBalance(userAddress) : 0n);
-					} else {
-						const c = new ethers.Contract(opt.address, ERC20_ABI, prov);
-						bals.push(userAddress ? await c.balanceOf(userAddress) : 0n);
-					}
-				} catch { bals.push(0n); }
+			// Fire all balance + quote fetches in parallel
+			const results = await Promise.all(paymentOptions.map(async (opt) => {
+				const path = SwapRouter.buildFeePath(opt.address, usdtAddr);
+				const [bal, quote] = await Promise.all([
+					// Balance
+					(async () => {
+						if (!userAddress) return 0n;
+						try {
+							return opt.address === ZERO_ADDRESS
+								? await prov.getBalance(userAddress)
+								: await new ethers.Contract(opt.address, ERC20_ABI, prov).balanceOf(userAddress);
+						} catch { return 0n; }
+					})(),
+					// Quote via router.quoteFee
+					(async () => {
+						try {
+							const [, amountIn] = await router.quoteFee(typeKey, withLaunch, path);
+							return amountIn as bigint;
+						} catch { return 0n; }
+					})(),
+				]);
+				return { bal, quote };
+			}));
 
-				// Quote via router.quoteFee
-				try {
-					const path = opt.address === ZERO_ADDRESS
-						? [ZERO_ADDRESS, usdtAddr]
-						: opt.address.toLowerCase() === usdtAddr.toLowerCase()
-						? [usdtAddr]
-						: [opt.address, usdtAddr];
-					const [, amountIn] = await router.quoteFee(typeKey, withLaunch, path);
-					quotes.push(amountIn);
-				} catch { quotes.push(0n); }
-			}
-			paymentBalances = bals;
-			paymentQuotes = quotes;
-			// Also populate feeAmounts for backward compat with existing display
-			feeAmounts = quotes;
+			paymentBalances = results.map(r => r.bal);
+			paymentQuotes = results.map(r => r.quote);
+			feeAmounts = paymentQuotes;
 		} catch (e) {
 			console.warn('loadPaymentQuotes failed:', e);
 		} finally {
@@ -560,7 +600,7 @@
 		payImportBusy = true;
 		try {
 			const prov = getProviderForNetwork(net.chain_id) ?? new ethers.JsonRpcProvider(net.rpc);
-			// Resolve token info (gecko + on-chain fallback)
+			// Resolve token info via GeckoTerminal (fast) + on-chain fallback
 			const slug = net.symbol?.toLowerCase?.() || 'bsc';
 			let sym = '', name = '', decimals = 18;
 			try {
@@ -1702,7 +1742,16 @@
 							<span class="receipt-value">
 								{#if feeLoading}...
 								{:else}
-									{selectedFeeFormatted} {selectedPayment?.symbol}{#if tokenInfo.listing?.enabled}{#each (tokenInfo.listing.pairs || []).filter(p => Number(p.amount) > 0 && p.base === 'native') as pair} + {pair.amount} {tokenInfo.network.native_coin}{/each}{/if}
+									{@const payAddr = selectedPayment?.address?.toLowerCase() || ''}
+									{@const listPairs = tokenInfo.listing?.enabled ? (tokenInfo.listing.pairs || []).filter((p) => Number(p.amount) > 0) : []}
+									{@const mergedLpAmount = listPairs
+										.filter((p) => getBaseTokenAddress(tokenInfo.network, p.base).toLowerCase() === payAddr)
+										.reduce((sum, p) => sum + Number(p.amount), 0)}
+									{@const separatePairs = listPairs
+										.filter((p) => getBaseTokenAddress(tokenInfo.network, p.base).toLowerCase() !== payAddr)}
+									{@const feeNum = parseFloat(selectedFeeDisplay || '0')}
+									{@const total = feeNum + mergedLpAmount}
+									{parseFloat(total.toFixed(6))} {selectedPayment?.symbol}{#each separatePairs as pair}{@const sym = getBaseSymbol(tokenInfo.network, pair.base)} + {parseFloat(Number(pair.amount).toFixed(6))} {sym}{/each}
 								{/if}
 							</span>
 						</div>

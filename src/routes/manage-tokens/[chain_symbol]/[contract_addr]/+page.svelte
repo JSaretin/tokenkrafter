@@ -5,6 +5,7 @@
 	import { getContext, onMount, onDestroy } from 'svelte';
 	import { TOKEN_ABI, ROUTER_ABI, FACTORY_V2_ABI, PAIR_ABI, ERC20_ABI, FACTORY_ABI, ZERO_ADDRESS } from '$lib/tokenCrafter';
 	import { LAUNCHPAD_FACTORY_ABI } from '$lib/launchpad';
+	import { queryTradeLens, type TaxInfo } from '$lib/tradeLens';
 	import { t } from '$lib/i18n';
 	import { apiFetch } from '$lib/apiFetch';
 	import { friendlyError } from '$lib/errorDecoder';

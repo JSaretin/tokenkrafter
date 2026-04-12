@@ -118,6 +118,13 @@
 	}
 
 	async function connectWallet() {
+		// If the embedded wallet is already authenticated but just needs
+		// a PIN (session exists, signer is null), go straight to the PIN
+		// prompt instead of the full connect modal.
+		if (walletType === 'embedded' && userAddress && !signer && walletModalRef) {
+			walletModalRef.openAt('pin-enter');
+			return false;
+		}
 		showWalletModal = true;
 		return false;
 	}

@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { ethers } from 'ethers';
-	import { onMount } from 'svelte';
-	import { chainSlug } from '$lib/structure';
+	import { getContext, onMount, onDestroy } from 'svelte';
+	import { chainSlug, type SupportedNetwork } from '$lib/structure';
+	import { queryTradeLens } from '$lib/tradeLens';
 
 	let { data }: { data: any } = $props();
 	let tokens: any[] = data.tokens;
@@ -11,6 +12,75 @@
 	let tradeableOnly = $state(false);
 
 	const NOW = Date.now();
+
+	// ── Honeypot / tax badge detection (client-side, lazy) ──
+	let _getNetworks: () => SupportedNetwork[] = getContext('supportedNetworks');
+	let getNetworkProviders: () => Map<number, ethers.JsonRpcProvider> = getContext('networkProviders');
+
+	type TaxBadge = { honeypot: boolean; sellTaxBps: number };
+	let taxBadgeMap: Record<string, TaxBadge> = $state({});
+	const _taxSimulated = new Set<string>();
+	let _taxObserver: IntersectionObserver | null = null;
+
+	function taxBadgeKey(tok: any): string {
+		return `${tok.chain_id}:${tok.address?.toLowerCase()}`;
+	}
+
+	async function simulateTaxBatch(batch: any[]) {
+		const networks = _getNetworks();
+		const providers = getNetworkProviders();
+
+		// Group by chain
+		const byChain: Record<number, any[]> = {};
+		for (const t of batch) {
+			if (!byChain[t.chain_id]) byChain[t.chain_id] = [];
+			byChain[t.chain_id].push(t);
+		}
+
+		for (const [cidStr, toks] of Object.entries(byChain)) {
+			const cid = Number(cidStr);
+			const net = networks.find(n => n.chain_id === cid);
+			const provider = providers.get(cid);
+			if (!net || !provider) continue;
+
+			// Simulate one token at a time (each is a separate eth_call)
+			for (const tok of toks) {
+				const key = taxBadgeKey(tok);
+				if (_taxSimulated.has(key)) continue;
+				_taxSimulated.add(key);
+				try {
+					const result = await queryTradeLens(
+						provider, net.dex_router,
+						[tok.address], tok.address,
+						ethers.parseEther('0.001'),
+						ethers.ZeroAddress, cid
+					);
+					taxBadgeMap[key] = {
+						honeypot: !result.taxInfo.success || !result.taxInfo.canSell,
+						sellTaxBps: result.taxInfo.sellTaxBps,
+					};
+					taxBadgeMap = { ...taxBadgeMap };
+				} catch {
+					// Simulation failed — skip silently
+				}
+			}
+		}
+	}
+
+	function onCardVisible(entries: IntersectionObserverEntry[]) {
+		const pending: any[] = [];
+		for (const entry of entries) {
+			if (!entry.isIntersecting) continue;
+			const el = entry.target as HTMLElement;
+			const addr = el.dataset.tokenAddr;
+			const cid = Number(el.dataset.chainId);
+			if (!addr) continue;
+			const key = `${cid}:${addr.toLowerCase()}`;
+			if (_taxSimulated.has(key)) continue;
+			pending.push({ address: addr, chain_id: cid });
+		}
+		if (pending.length > 0) simulateTaxBatch(pending);
+	}
 
 	// GeckoTerminal market data — first 30 from SSR, rest filled client-side
 	const GECKO_NETWORKS: Record<number, string> = { 56: 'bsc', 1: 'eth', 8453: 'base', 42161: 'arbitrum', 137: 'polygon_pos' };
@@ -63,6 +133,15 @@
 	}
 
 	onMount(async () => {
+		// Set up IntersectionObserver for lazy honeypot/tax detection
+		if (typeof IntersectionObserver !== 'undefined') {
+			_taxObserver = new IntersectionObserver(onCardVisible, { rootMargin: '200px' });
+			// Observe after a tick so DOM is rendered
+			setTimeout(() => {
+				document.querySelectorAll('[data-token-addr]').forEach(el => _taxObserver?.observe(el));
+			}, 100);
+		}
+
 		// First 30 already loaded from SSR — fetch remaining batches
 		const remaining = tokens.slice(30);
 		if (remaining.length === 0) { geckoLoading = false; return; }
@@ -80,6 +159,21 @@
 			}
 		}
 		geckoLoading = false;
+	});
+
+	onDestroy(() => {
+		_taxObserver?.disconnect();
+	});
+
+	// Re-observe cards when the filtered list changes
+	$effect(() => {
+		// Read filtered to track reactivity
+		void filtered;
+		if (!_taxObserver) return;
+		// Wait a tick for DOM update
+		setTimeout(() => {
+			document.querySelectorAll('[data-token-addr]').forEach(el => _taxObserver?.observe(el));
+		}, 50);
 	});
 
 	let filtered = $derived.by(() => {
@@ -244,7 +338,8 @@
 				{@const color = typeColor(tok)}
 				{@const slug = chainSlug(tok.chain_id)}
 				{@const gecko = geckoLookup[tok.address?.toLowerCase()]}
-				<div class="token-card">
+				{@const taxBadge = taxBadgeMap[taxBadgeKey(tok)]}
+				<div class="token-card" data-token-addr={tok.address} data-chain-id={tok.chain_id}>
 					<!-- Header: clickable to detail page -->
 					<a href="/explore/{slug}/{tok.address}" class="tc-header">
 						{#if tok.logo_url}
@@ -266,6 +361,11 @@
 						</div>
 						<div class="tc-header-right">
 							<div class="tc-badges-row">
+								{#if taxBadge?.honeypot}
+									<span class="tc-badge tc-badge-honeypot">Honeypot</span>
+								{:else if taxBadge && taxBadge.sellTaxBps > 0}
+									<span class="tc-badge tc-badge-tax">{(taxBadge.sellTaxBps / 100).toFixed(0)}% tax</span>
+								{/if}
 								{#if tok.created_at && isNew(tok.created_at)}
 									<span class="tc-badge tc-badge-new">New</span>
 								{/if}
@@ -413,6 +513,8 @@
 	/* Badges row */
 	.tc-badges-row { display: flex; gap: 4px; align-items: center; justify-content: flex-end; }
 	.tc-badge-new { background: rgba(16,185,129,0.15); color: #10b981; }
+	.tc-badge-honeypot { background: rgba(239,68,68,0.15); color: #ef4444; }
+	.tc-badge-tax { background: rgba(245,158,11,0.12); color: #f59e0b; }
 
 	/* Header */
 	.tc-header { display: flex; align-items: center; gap: 10px; text-decoration: none; color: inherit; }
