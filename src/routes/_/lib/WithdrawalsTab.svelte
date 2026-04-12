@@ -261,8 +261,12 @@
 
 	let channels: any[] = [];
 
-	// Auto-load on mount
+	// Auto-load on mount (once)
+	let _mounted = false;
 	$effect(() => {
+		if (_mounted) return;
+		_mounted = true;
+
 		loadWithdrawals();
 
 		const withdrawalsChannel = supabase
