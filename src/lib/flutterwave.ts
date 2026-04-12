@@ -94,6 +94,20 @@ async function v4Fetch(path: string, options: RequestInit = {}): Promise<any> {
 // ═══════════════════════════════════════════════════════════════
 
 /**
+ * Get available wallet balance for a currency (v3 API)
+ */
+export async function getBalance(currency = 'NGN'): Promise<{ available: number; ledger: number }> {
+	const data = await v3Fetch(`/balances/${currency}`);
+	if (data.status === 'success' && data.data) {
+		return {
+			available: data.data.available_balance || 0,
+			ledger: data.data.ledger_balance || 0,
+		};
+	}
+	return { available: 0, ledger: 0 };
+}
+
+/**
  * Get all Nigerian banks (v3 API)
  */
 export async function getBanks(): Promise<{ code: string; name: string }[]> {
