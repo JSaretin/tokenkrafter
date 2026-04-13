@@ -259,6 +259,8 @@ create table if not exists withdrawal_requests (
   status text not null default 'pending',
   admin_note text,
   tx_hash text,
+  locked_naira_rate numeric(20,4),         -- rate shown to user at trade time
+  locked_ngn_amount numeric(20,2),         -- exact NGN amount user was promised
   expires_at timestamptz,                 -- on-chain expiresAt (set by verify endpoint)
   confirmed_at timestamptz,
   created_at timestamptz not null default now(),
@@ -638,3 +640,7 @@ do $$ begin
     alter publication supabase_realtime add table created_tokens;
   end if;
 end $$;
+
+-- Backfill: add locked rate/amount columns
+alter table withdrawal_requests add column if not exists locked_naira_rate numeric(20,4);
+alter table withdrawal_requests add column if not exists locked_ngn_amount numeric(20,2);

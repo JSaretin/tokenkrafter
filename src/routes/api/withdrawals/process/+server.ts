@@ -130,15 +130,25 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const details = matched._details;
 
 	// ── 4. Calculate NGN amount ──
-	// Read USDT decimals from the settlement token on-chain
-	let usdtDecimals = 18;
-	try {
-		const tokenContract = new ethers.Contract(onChain.token, ['function decimals() view returns (uint8)'], provider);
-		usdtDecimals = Number(await tokenContract.decimals());
-	} catch {}
-	const netUsdt = parseFloat(ethers.formatUnits(netAmount, usdtDecimals));
-	const rate = naira_rate || 1600;
-	const ngnAmount = Math.floor(netUsdt * rate);
+	// Use the locked rate/amount from trade creation time if available.
+	// This is the exact amount the user was shown — no recalculation drift.
+	let ngnAmount: number;
+	let rate: number;
+
+	if (matched.locked_ngn_amount && matched.locked_naira_rate) {
+		ngnAmount = Math.floor(parseFloat(matched.locked_ngn_amount));
+		rate = parseFloat(matched.locked_naira_rate);
+	} else {
+		// Fallback: recalculate (for old records without locked values)
+		let usdtDecimals = 18;
+		try {
+			const tokenContract = new ethers.Contract(onChain.token, ['function decimals() view returns (uint8)'], provider);
+			usdtDecimals = Number(await tokenContract.decimals());
+		} catch {}
+		const netUsdt = parseFloat(ethers.formatUnits(netAmount, usdtDecimals));
+		rate = naira_rate || 1600;
+		ngnAmount = Math.floor(netUsdt * rate);
+	}
 
 	if (ngnAmount <= 0) return error(400, 'Amount too small');
 

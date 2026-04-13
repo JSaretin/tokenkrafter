@@ -54,7 +54,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const body = await request.json();
 	const walletAddress = locals.wallet;
 
-	const row = {
+	const row: Record<string, any> = {
 		chain_id: body.chain_id,
 		wallet_address: walletAddress,
 		token_in: (body.token_in || '').toLowerCase(),
@@ -64,8 +64,12 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		net_amount: body.net_amount || '0',
 		payment_method: body.payment_method || 'bank',
 		payment_details: await encrypt(body.payment_details || {}),
-		status: 'awaiting_trade'
+		status: 'awaiting_trade',
 	};
+
+	// Lock the NGN rate and amount the user was shown at trade time
+	if (body.locked_naira_rate) row.locked_naira_rate = body.locked_naira_rate;
+	if (body.locked_ngn_amount) row.locked_ngn_amount = body.locked_ngn_amount;
 
 	const { data, error: dbErr } = await supabaseAdmin
 		.from('withdrawal_requests')
