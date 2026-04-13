@@ -9,8 +9,8 @@
 	let tokens: any[] = data.tokens;
 	let search = $state(page.url.searchParams.get('q') || '');
 	let sortBy = $state<'newest' | 'safu' | 'name'>('safu');
-	let filterType = $state<'all' | 'basic' | 'taxable' | 'mintable' | 'partner'>('all');
-	let tradeableOnly = $state(false);
+	let filterType = $state<'all' | 'tradeable' | 'new' | 'safu'>('all');
+	let tradeableOnly = $derived(filterType === 'tradeable');
 
 	const NOW = Date.now();
 
@@ -267,22 +267,18 @@
 	let filtered = $derived.by(() => {
 		let list = tokens;
 
-		// Tradeable filter — DB columns first (indexed by SAFU daemon),
-		// client-side SafuLens overlay for freshness, Gecko as fallback.
-		if (tradeableOnly) {
+		// Outcome-based filters
+		if (filterType === 'tradeable') {
 			list = list.filter(t => {
 				const s = safuMap[safuKey(t)];
 				return s?.hasLiquidity || t.has_liquidity || geckoLookup[t.address?.toLowerCase()]?.has_data;
 			});
-		}
-
-		// Type filter
-		if (filterType !== 'all') {
+		} else if (filterType === 'new') {
+			list = list.filter(t => t.created_at && isNew(t.created_at));
+		} else if (filterType === 'safu') {
 			list = list.filter(t => {
-				if (filterType === 'taxable') return t.is_taxable;
-				if (filterType === 'mintable') return t.is_mintable;
-				if (filterType === 'partner') return t.is_partner;
-				return !t.is_taxable && !t.is_mintable && !t.is_partner;
+				const s = safuMap[safuKey(t)];
+				return s?.ownerIsZero ?? t.owner_renounced ?? (s?.tradingEnabled ?? t.trading_enabled);
 			});
 		}
 
@@ -366,12 +362,12 @@
 	}
 
 	let typeCounts = $derived.by(() => {
-		const counts = { all: tokens.length, basic: 0, taxable: 0, mintable: 0, partner: 0 };
+		const counts = { all: tokens.length, tradeable: 0, new: 0, safu: 0 };
 		for (const t of tokens) {
-			if (t.is_partner) counts.partner++;
-			else if (t.is_taxable) counts.taxable++;
-			else if (t.is_mintable) counts.mintable++;
-			else counts.basic++;
+			const s = safuMap[safuKey(t)];
+			if (s?.hasLiquidity || t.has_liquidity || geckoLookup[t.address?.toLowerCase()]?.has_data) counts.tradeable++;
+			if (t.created_at && isNew(t.created_at)) counts.new++;
+			if (s?.ownerIsZero ?? t.owner_renounced ?? (s?.tradingEnabled ?? t.trading_enabled)) counts.safu++;
 		}
 		return counts;
 	});
@@ -386,7 +382,6 @@
 	$effect(() => {
 		void search;
 		void filterType;
-		void tradeableOnly;
 		void sortBy;
 		page_num = 1;
 	});
@@ -515,26 +510,25 @@
 	<!-- Filters -->
 	<div class="explore-controls">
 		<div class="filter-pills">
-			{#each [['all','All'],['basic','Basic'],['taxable','Taxable'],['mintable','Mintable'],['partner','Partner']] as [key, label]}
+			{#each [['all','All'],['tradeable','Tradeable'],['new','New'],['safu','SAFU']] as [key, label]}
 				<button
 					class="filter-pill"
 					class:filter-pill-active={filterType === key}
+					class:filter-pill-tradeable={filterType === key && key === 'tradeable'}
+					class:filter-pill-safu={filterType === key && key === 'safu'}
 					onclick={() => filterType = key as typeof filterType}
 				>
+					{#if key === 'tradeable'}
+						<span class="tradeable-dot" class:tradeable-dot-on={filterType === 'tradeable'}></span>
+					{/if}
 					{label}
-					<span class="filter-count">{typeCounts[key as keyof typeof typeCounts]}</span>
+					{#if typeCounts[key as keyof typeof typeCounts] > 0}
+						<span class="filter-count">{typeCounts[key as keyof typeof typeCounts]}</span>
+					{/if}
 				</button>
 			{/each}
 		</div>
 		<div class="explore-right-controls">
-			<button
-				class="filter-pill"
-				class:filter-pill-tradeable={tradeableOnly}
-				onclick={() => tradeableOnly = !tradeableOnly}
-			>
-				<span class="tradeable-dot" class:tradeable-dot-on={tradeableOnly}></span>
-				Tradeable
-			</button>
 			<select class="sort-select" bind:value={sortBy}>
 				<option value="safu">SAFU first</option>
 				<option value="newest">Newest</option>
@@ -708,6 +702,7 @@
 
 	.explore-right-controls { display: flex; align-items: center; gap: 8px; }
 	.filter-pill-tradeable { border-color: rgba(16,185,129,0.3); background: rgba(16,185,129,0.08); color: #10b981; }
+	.filter-pill-safu { border-color: rgba(16,185,129,0.3); background: rgba(16,185,129,0.08); color: #10b981; }
 	.tradeable-dot { width: 6px; height: 6px; border-radius: 50%; background: #374151; transition: all 0.15s; }
 	.tradeable-dot-on { background: #10b981; box-shadow: 0 0 6px rgba(16,185,129,0.5); }
 
