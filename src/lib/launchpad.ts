@@ -99,6 +99,8 @@ export const LAUNCH_INSTANCE_ABI = [
 	'function vestingInfo() view returns (uint256 total, uint256 claimed, uint256 claimable, uint256 nextClaimTimestamp)',
 	'function startTimestamp() view returns (uint256)',
 	'function refundStartTimestamp() view returns (uint256)',
+	'function totalBuyers() view returns (uint256)',
+	'function totalPurchases() view returns (uint256)',
 	'function getLaunchInfo() view returns (address token_, address creator_, uint8 curveType_, uint8 state_, uint256 softCap_, uint256 hardCap_, uint256 deadline_, uint256 totalBaseRaised_, uint256 tokensSold_, uint256 tokensForCurve_, uint256 tokensForLP_, uint256 creatorAllocationBps_, uint256 currentPrice_, address usdt_, uint256 startTimestamp_)',
 
 	// Events
@@ -166,11 +168,13 @@ export async function fetchLaunchInfo(
 	provider: ethers.Provider
 ): Promise<LaunchInfo> {
 	const instance = new ethers.Contract(launchAddress, LAUNCH_INSTANCE_ABI, provider);
-	const [info, totalTokensRequired, totalTokensDeposited, effectiveState] = await Promise.all([
+	const [info, totalTokensRequired, totalTokensDeposited, effectiveState, totalBuyers, totalPurchases] = await Promise.all([
 		instance.getLaunchInfo(),
 		instance.totalTokensRequired(),
 		instance.totalTokensDeposited(),
-		instance.effectiveState().catch(() => null)
+		instance.effectiveState().catch(() => null),
+		instance.totalBuyers().catch(() => 0n),
+		instance.totalPurchases().catch(() => 0n),
 	]);
 
 	return {
@@ -191,7 +195,9 @@ export async function fetchLaunchInfo(
 		usdtAddress: info.usdt_,
 		startTimestamp: info.startTimestamp_,
 		totalTokensRequired,
-		totalTokensDeposited
+		totalTokensDeposited,
+		totalBuyers: Number(totalBuyers),
+		totalPurchases: Number(totalPurchases),
 	};
 }
 
