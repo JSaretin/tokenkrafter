@@ -26,6 +26,8 @@ interface ITokenFactory {
     function usdt() external view returns (address);
     function authorizedRouter() external view returns (address);
     function platformWallet() external view returns (address);
+    function getDefaultPartnerBases() external view returns (address[] memory);
+    function MAX_DEFAULT_PARTNER_BASES() external view returns (uint256);
     function totalTokensCreated() external view returns (uint256);
     function getTokenByIndex(uint256 index) external view returns (address);
     function tokenInfo(address token) external view returns (
@@ -40,6 +42,31 @@ interface ILaunchpadFactory {
     function totalLaunches() external view returns (uint256);
     function launches(uint256 index) external view returns (address);
     function platformWallet() external view returns (address);
+    function dexRouter() external view returns (address);
+    function usdt() external view returns (address);
+    function authorizedRouter() external view returns (address);
+    function launchImplementation() external view returns (address);
+    function totalLaunchFeeEarnedUsdt() external view returns (uint256);
+}
+
+interface ITradeRouter {
+    struct RouterState {
+        address owner;
+        uint256 feeBps;
+        uint256 payoutTimeout;
+        address platformWallet;
+        uint256 totalEscrow;
+        uint256 pendingCount;
+        uint256 totalWithdrawals;
+        bool paused;
+        uint256 maxSlippageBps;
+        bool affiliateEnabled;
+        uint256 affiliateShareBps;
+        address[] admins;
+    }
+    function getState() external view returns (RouterState memory);
+    function minWithdrawUsdt() external view returns (uint256);
+    function platformEarnings(address token) external view returns (uint256);
 }
 
 interface ILaunchInstance {
@@ -83,6 +110,8 @@ contract AdminLens {
         uint8 usdtDecimals;
         address authorizedRouter;
         address platformWallet;
+        address[] partnerBases;
+        uint256 maxPartnerBases;
     }
 
     struct LaunchpadState {
@@ -91,6 +120,26 @@ contract AdminLens {
         uint256 totalFeeUsdt;
         uint256 launchFee;
         address platformWallet;
+        address dexRouter;
+        address usdt;
+        address authorizedRouter;
+        address launchImplementation;
+    }
+
+    struct TradeRouterState {
+        address owner;
+        uint256 feeBps;
+        uint256 payoutTimeout;
+        address platformWallet;
+        uint256 totalEscrow;
+        uint256 pendingCount;
+        uint256 totalWithdrawals;
+        bool paused;
+        uint256 maxSlippageBps;
+        bool affiliateEnabled;
+        uint256 affiliateShareBps;
+        uint256 minWithdrawUsdt;
+        uint256 platformEarningsUsdt;
     }
 
     struct TokenInfo {
@@ -131,11 +180,13 @@ contract AdminLens {
     constructor(
         address tokenFactory,
         address launchpadFactory,
+        address tradeRouter,
         uint256 recentTokenCount,
         uint256 recentLaunchCount
     ) {
         FactoryState memory fs;
         LaunchpadState memory ls;
+        TradeRouterState memory trs;
 
         // ── Factory state ──
         if (tokenFactory != address(0)) {
@@ -162,6 +213,8 @@ contract AdminLens {
             } catch {}
             try ITokenFactory(tokenFactory).authorizedRouter() returns (address r) { fs.authorizedRouter = r; } catch {}
             try ITokenFactory(tokenFactory).platformWallet() returns (address w) { fs.platformWallet = w; } catch {}
+            try ITokenFactory(tokenFactory).getDefaultPartnerBases() returns (address[] memory bases) { fs.partnerBases = bases; } catch {}
+            try ITokenFactory(tokenFactory).MAX_DEFAULT_PARTNER_BASES() returns (uint256 max) { fs.maxPartnerBases = max; } catch {}
         }
 
         // ── Launchpad state ──
@@ -175,6 +228,32 @@ contract AdminLens {
                 ls.launchFee = lf;
             } catch {}
             try ILaunchpadFactory(launchpadFactory).platformWallet() returns (address w) { ls.platformWallet = w; } catch {}
+            try ILaunchpadFactory(launchpadFactory).dexRouter() returns (address r) { ls.dexRouter = r; } catch {}
+            try ILaunchpadFactory(launchpadFactory).usdt() returns (address u) { ls.usdt = u; } catch {}
+            try ILaunchpadFactory(launchpadFactory).authorizedRouter() returns (address r) { ls.authorizedRouter = r; } catch {}
+            try ILaunchpadFactory(launchpadFactory).launchImplementation() returns (address i) { ls.launchImplementation = i; } catch {}
+        }
+
+        // ── Trade router state ──
+        if (tradeRouter != address(0)) {
+            try ITradeRouter(tradeRouter).getState() returns (ITradeRouter.RouterState memory rs) {
+                trs.owner = rs.owner;
+                trs.feeBps = rs.feeBps;
+                trs.payoutTimeout = rs.payoutTimeout;
+                trs.platformWallet = rs.platformWallet;
+                trs.totalEscrow = rs.totalEscrow;
+                trs.pendingCount = rs.pendingCount;
+                trs.totalWithdrawals = rs.totalWithdrawals;
+                trs.paused = rs.paused;
+                trs.maxSlippageBps = rs.maxSlippageBps;
+                trs.affiliateEnabled = rs.affiliateEnabled;
+                trs.affiliateShareBps = rs.affiliateShareBps;
+            } catch {}
+            try ITradeRouter(tradeRouter).minWithdrawUsdt() returns (uint256 m) { trs.minWithdrawUsdt = m; } catch {}
+            // Read platform earnings for the factory's USDT token
+            if (fs.usdt != address(0)) {
+                try ITradeRouter(tradeRouter).platformEarnings(fs.usdt) returns (uint256 e) { trs.platformEarningsUsdt = e; } catch {}
+            }
         }
 
         // ── Recent tokens (newest first) ──
@@ -210,7 +289,7 @@ contract AdminLens {
         }
 
         // ── Encode and return ──
-        bytes memory encoded = abi.encode(fs, ls, tokens, launches);
+        bytes memory encoded = abi.encode(fs, ls, trs, tokens, launches);
         assembly {
             return(add(encoded, 32), mload(encoded))
         }

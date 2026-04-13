@@ -930,6 +930,7 @@
 	onDisconnect={disconnectWallet}
 />
 
+{#if showAccountPanel}
 <AccountPanel
 	bind:open={showAccountPanel}
 	userAddress={userAddress || ''}
@@ -960,6 +961,7 @@
 		refreshBalancesNow();
 	}}
 />
+{/if}
 
 <style>
 	:global(*) { box-sizing: border-box; }

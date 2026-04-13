@@ -432,7 +432,7 @@
 		portfolioLoading = true;
 
 		try {
-			const provider = new ethers.JsonRpcProvider(rpcUrl);
+			const provider = new ethers.JsonRpcProvider(rpcUrl, chainId, { staticNetwork: true });
 			const tokenAddrs = importedTokens.map(t => t.address).filter(a => a);
 
 			const queryTokens = [...tokenAddrs];

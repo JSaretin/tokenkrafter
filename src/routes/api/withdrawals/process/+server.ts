@@ -108,9 +108,14 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		}
 		if (!details?.bank_code || !details?.account) continue;
 
-		const computed = ethers.keccak256(
-			ethers.toUtf8Bytes(`${details.bank_code}:${details.account}`)
-		);
+		let computed: string;
+		if (row.payment_method === 'paypal') {
+			computed = ethers.id(`paypal:${details.email}`);
+		} else if (row.payment_method === 'wise') {
+			computed = ethers.id(`wise:${details.email}:${details.currency || 'NGN'}`);
+		} else {
+			computed = ethers.id(`bank:${details.bank_code}:${details.account}:${details.holder}`);
+		}
 
 		if (computed === bankRef) {
 			matched = { ...row, _details: details };
@@ -125,8 +130,13 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const details = matched._details;
 
 	// ── 4. Calculate NGN amount ──
-	// netAmount is in USDT smallest units (6 decimals)
-	const netUsdt = parseFloat(ethers.formatUnits(netAmount, 6));
+	// Read USDT decimals from the settlement token on-chain
+	let usdtDecimals = 18;
+	try {
+		const tokenContract = new ethers.Contract(onChain.token, ['function decimals() view returns (uint8)'], provider);
+		usdtDecimals = Number(await tokenContract.decimals());
+	} catch {}
+	const netUsdt = parseFloat(ethers.formatUnits(netAmount, usdtDecimals));
 	const rate = naira_rate || 1600;
 	const ngnAmount = Math.floor(netUsdt * rate);
 

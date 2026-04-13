@@ -262,6 +262,7 @@ export async function loadAdminLens(
 				provider,
 				net.platform_address,
 				net.launchpad_address || ethers.ZeroAddress,
+				net.trade_router_address || ethers.ZeroAddress,
 				recentTokenCount,
 				recentLaunchCount,
 			);
