@@ -198,14 +198,14 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 	// ── 7. Initiate Flutterwave transfer ──
 	try {
-		const refHash = ethers.id(`TKR:${chain_id}:${withdraw_id}:${Date.now()}`).slice(2, 66);
-		const reference = `TKR-${refHash}`;
+		const refHash = ethers.id(`TKR:${chain_id}:${withdraw_id}:${Date.now()}`).slice(2, 42);
+		const reference = `TKR${refHash}`;
 
 		const result = await initiateTransfer({
 			accountNumber: details.account,
 			bankCode: details.bank_code,
 			amount: ngnAmount,
-			narration: `TKR-${refHash}`,
+			narration: `TKR${refHash}`,
 			reference,
 			accountName: details.holder,
 		});
