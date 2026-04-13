@@ -97,13 +97,9 @@
 	// 0=idle, 1=signing, 2=approving, 3=trading
 	let withdrawStep = $state(0);
 
-	// Exchange rates (with 0.3% spread for our rate)
+	// Exchange rates (spread already applied server-side in +page.server.ts)
 	let fiatRates: Record<string, number> = $state(serverData?.fiatRates || {});
-	let spreadBps = 30; // 0.3% spread
-	let ngnRate = $derived.by(() => {
-		const raw = fiatRates['NGN'] || 0;
-		return raw > 0 ? raw * (1 - spreadBps / 10000) : 0;
-	});
+	let ngnRate = $derived(fiatRates['NGN'] || 0);
 	// Use gross amount for NGN display (fee is hidden in the spread)
 	// USDT decimals for the selected network (BSC USDT = 18, ETH USDT = 6)
 	let usdtDecimals = $state(18);
