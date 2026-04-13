@@ -148,11 +148,11 @@
 				<p class="text-gray-400 font-mono text-sm mt-1 max-w-xl">{$t('home.statsTagline')}</p>
 			</div>
 			<div class="flex gap-3 shrink-0">
-				<a href="/create?launch=true" class="btn-primary text-sm px-5 py-2.5 no-underline">
-					{$t('home.startLaunch')} →
+				<a href="/create" class="btn-primary text-sm px-5 py-2.5 no-underline">
+					Create Token →
 				</a>
-				<a href="/create" class="btn-secondary text-sm px-5 py-2.5 no-underline">
-					{$t('home.tokenBasic')}
+				<a href="/create?launch=true" class="btn-secondary text-sm px-5 py-2.5 no-underline">
+					{$t('home.startLaunch')}
 				</a>
 			</div>
 		</div>

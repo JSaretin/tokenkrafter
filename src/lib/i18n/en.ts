@@ -73,9 +73,9 @@ export default {
 
 	// Homepage
 	'home.badge': 'Fair Token Launchpad',
-	'home.heroTitle1': 'Launch Tokens With',
+	'home.heroTitle1': 'Create, Launch & Trade Tokens With',
 	'home.heroTitle2': 'On-Chain Enforced Protection',
-	'home.heroSub': 'The only launchpad where creators can\'t change the rules after you buy. Every protection enforced by smart contract, not trust.',
+	'home.heroSub': 'Deploy tokens, raise with bonding curves, and sell to your bank — all on one platform. Every protection enforced by smart contract, not trust.',
 	'home.exploreLaunches': 'Explore Launches',
 	'home.startLaunch': 'Start a Launch',
 	'home.statFair': 'Fair',
