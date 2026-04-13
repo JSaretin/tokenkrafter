@@ -3,10 +3,11 @@
 	import { getContext, onMount, onDestroy } from 'svelte';
 	import { chainSlug, type SupportedNetwork } from '$lib/structure';
 	import { querySafuLens, type TokenSafu } from '$lib/safuLens';
+	import { page } from '$app/state';
 
 	let { data }: { data: any } = $props();
 	let tokens: any[] = data.tokens;
-	let search = $state('');
+	let search = $state(page.url.searchParams.get('q') || '');
 	let sortBy = $state<'newest' | 'safu' | 'name'>('safu');
 	let filterType = $state<'all' | 'basic' | 'taxable' | 'mintable' | 'partner'>('all');
 	let tradeableOnly = $state(false);
@@ -103,6 +104,37 @@
 	// Use $derived map so template reads are reactive
 	let geckoLookup = $derived(geckoMap);
 
+	// ── Trending tokens: top 8 by 24h volume with market data ──
+	let trending = $derived.by(() => {
+		return tokens
+			.map(t => {
+				const g = geckoMap[t.address?.toLowerCase()];
+				if (!g?.has_data || g.price_usd <= 0) return null;
+				const supply = parseFloat(ethers.formatUnits(data.supplyData?.[`${t.chain_id}:${t.address}`] || t.total_supply || '0', t.decimals || 18));
+				const mcap = supply * g.price_usd;
+				return { ...t, gecko: g, mcap };
+			})
+			.filter((t): t is NonNullable<typeof t> => t !== null && t.gecko.volume_24h > 0)
+			.sort((a, b) => b.gecko.volume_24h - a.gecko.volume_24h)
+			.slice(0, 8);
+	});
+
+	// ── Market cap helper for cards ──
+	function tokenMcap(tok: any): number {
+		const g = geckoLookup[tok.address?.toLowerCase()];
+		if (!g?.has_data || g.price_usd <= 0) return 0;
+		const supply = parseFloat(ethers.formatUnits(data.supplyData?.[`${tok.chain_id}:${tok.address}`] || tok.total_supply || '0', tok.decimals || 18));
+		return supply * g.price_usd;
+	}
+
+	function fmtMcap(val: number): string {
+		if (val <= 0) return '—';
+		if (val >= 1e9) return `$${(val / 1e9).toFixed(1)}B`;
+		if (val >= 1e6) return `$${(val / 1e6).toFixed(1)}M`;
+		if (val >= 1e3) return `$${(val / 1e3).toFixed(1)}K`;
+		return `$${val.toFixed(0)}`;
+	}
+
 	function fmtPrice(val: number): string {
 		if (val === 0) return '$0';
 		if (val >= 1) return `$${val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}`;
@@ -144,7 +176,53 @@
 		} catch {}
 	}
 
+	// ── Live Launches ──
+	let activeLaunches: any[] = $state([]);
+
+	async function fetchActiveLaunches() {
+		try {
+			const res = await fetch('/api/launches?status=active&limit=5');
+			if (!res.ok) return;
+			const json = await res.json();
+			activeLaunches = json?.launches || json?.data || json || [];
+			if (!Array.isArray(activeLaunches)) activeLaunches = [];
+		} catch {}
+	}
+
+	function launchProgress(l: any): number {
+		try {
+			const raised = parseFloat(ethers.formatUnits(l.total_base_raised || '0', l.usdt_decimals || 18));
+			const cap = parseFloat(ethers.formatUnits(l.hard_cap || '1', l.usdt_decimals || 18));
+			return cap > 0 ? Math.min((raised / cap) * 100, 100) : 0;
+		} catch { return 0; }
+	}
+
+	function fmtLaunchAmount(raw: string | undefined, decimals: number): string {
+		if (!raw || raw === '0') return '0';
+		try {
+			const n = parseFloat(ethers.formatUnits(raw, decimals));
+			if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
+			if (n >= 1e3) return `${(n / 1e3).toFixed(1)}K`;
+			return n.toFixed(2);
+		} catch { return '0'; }
+	}
+
+	function launchTimeRemaining(deadline: number): string {
+		const now = Math.floor(Date.now() / 1000);
+		const diff = deadline - now;
+		if (diff <= 0) return 'Ended';
+		const days = Math.floor(diff / 86400);
+		const hrs = Math.floor((diff % 86400) / 3600);
+		if (days > 0) return `${days}d ${hrs}h`;
+		const mins = Math.floor((diff % 3600) / 60);
+		if (hrs > 0) return `${hrs}h ${mins}m`;
+		return `${mins}m`;
+	}
+
 	onMount(async () => {
+		// Fetch active launches (fire-and-forget)
+		fetchActiveLaunches();
+
 		// Set up IntersectionObserver for lazy SafuLens badge detection
 		if (typeof IntersectionObserver !== 'undefined') {
 			_safuObserver = new IntersectionObserver(onCardVisible, { rootMargin: '200px' });
@@ -297,6 +375,22 @@
 		}
 		return counts;
 	});
+
+	// ── Pagination ──
+	let page_num = $state(1);
+	const PER_PAGE = 24;
+	let paged = $derived(filtered.slice(0, page_num * PER_PAGE));
+	let hasMore = $derived(filtered.length > page_num * PER_PAGE);
+
+	// Reset page when filters change
+	$effect(() => {
+		void search;
+		void filterType;
+		void tradeableOnly;
+		void sortBy;
+		page_num = 1;
+	});
+
 </script>
 
 <svelte:head>
@@ -305,17 +399,118 @@
 </svelte:head>
 
 <div class="explore">
-	<!-- Header -->
+	<!-- Hero stats bar -->
 	<div class="explore-header">
 		<div>
 			<h1 class="explore-title">Explore Tokens</h1>
-			<p class="explore-sub">{tokens.length} tokens on TokenKrafter</p>
+			<div class="explore-stats">
+				<span class="explore-stat"><strong>{tokens.length}</strong> tokens</span>
+				{#if trending.length > 0}
+					<span class="explore-stat-sep">·</span>
+					<span class="explore-stat"><strong>{trending.length}</strong> trading</span>
+				{/if}
+			</div>
 		</div>
-		<div class="explore-search">
-			<svg class="search-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-			<input class="search-input" type="text" placeholder="Search name, symbol, or address..." bind:value={search} />
+		<div class="explore-header-right">
+			<div class="explore-search">
+				<svg class="search-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+				<input class="search-input" type="text" placeholder="Search name, symbol, or address..." bind:value={search} />
+			</div>
+			<a href="/create" class="explore-create-btn">
+				<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+				Create
+			</a>
 		</div>
 	</div>
+
+	<!-- Trending — horizontal scroll of top tokens by volume -->
+	{#if trending.length > 0 && !search.trim()}
+		<div class="trending-section">
+			<div class="trending-header">
+				<span class="trending-dot"></span>
+				<span class="trending-label">Trending</span>
+			</div>
+			<div class="trending-scroll">
+				{#each trending as tok}
+					{@const slug = chainSlug(tok.chain_id)}
+					<a href="/explore/{slug}/{tok.address}" class="trending-card">
+						<div class="trending-top">
+							{#if tok.logo_url}
+								<img src={tok.logo_url} alt="" class="trending-logo" />
+							{:else}
+								<div class="trending-logo-fallback">{tok.symbol?.slice(0, 2)}</div>
+							{/if}
+							<div class="trending-identity">
+								<span class="trending-name">{tok.symbol || '???'}</span>
+								<span class="trending-chain">{chainName(tok.chain_id)}</span>
+							</div>
+							<div class="trending-price-col">
+								<span class="trending-price">{fmtPrice(tok.gecko.price_usd)}</span>
+								<span class="trending-change" class:up={tok.gecko.price_change_24h > 0} class:down={tok.gecko.price_change_24h < 0}>
+									{tok.gecko.price_change_24h > 0 ? '+' : ''}{tok.gecko.price_change_24h.toFixed(1)}%
+								</span>
+							</div>
+						</div>
+						<div class="trending-bottom">
+							<span class="trending-mcap">{fmtMcap(tok.mcap)} mcap</span>
+							<span class="trending-vol">{fmtVolume(tok.gecko.volume_24h)} vol</span>
+						</div>
+					</a>
+				{/each}
+			</div>
+		</div>
+	{/if}
+
+	<!-- Live Launches — active bonding curve sales -->
+	{#if activeLaunches.length > 0 && !search.trim()}
+		<div class="launches-section">
+			<div class="trending-header">
+				<span class="launches-dot"></span>
+				<span class="trending-label">Live Launches</span>
+			</div>
+			<div class="trending-scroll">
+				{#each activeLaunches as launch}
+					{@const slug = chainSlug(launch.chain_id)}
+					{@const decimals = launch.usdt_decimals || 18}
+					{@const progress = launchProgress(launch)}
+					{@const raised = fmtLaunchAmount(launch.total_base_raised, decimals)}
+					{@const cap = fmtLaunchAmount(launch.hard_cap, decimals)}
+					{@const timeLeft = launchTimeRemaining(launch.deadline)}
+					<a href="/launchpad/{slug}/{launch.address}" class="launch-card">
+						<div class="trending-top">
+							{#if launch.logo_url}
+								<img src={launch.logo_url} alt="" class="trending-logo" />
+							{:else}
+								<div class="trending-logo-fallback">{launch.token_symbol?.slice(0, 2) || '??'}</div>
+							{/if}
+							<div class="trending-identity">
+								<span class="trending-name">{launch.token_name || 'Unknown'}</span>
+								<span class="trending-chain">{launch.token_symbol}</span>
+							</div>
+							<div class="launch-time" class:launch-ended={timeLeft === 'Ended'}>
+								{timeLeft}
+							</div>
+						</div>
+						<div class="launch-progress-wrap">
+							<div class="launch-progress-bar">
+								<div class="launch-progress-fill" style="width:{progress}%"></div>
+							</div>
+							<div class="launch-progress-label">
+								<span>{raised} / {cap} USDT</span>
+								<span>{progress.toFixed(0)}%</span>
+							</div>
+						</div>
+						<div class="launch-buy-row">
+							{#if launch.is_partner}
+								<span class="tc-badge tc-badge-partner">Partner</span>
+							{/if}
+							<span class="launch-buy-cta">Buy</span>
+						</div>
+					</a>
+				{/each}
+			</div>
+		</div>
+	{/if}
 
 	<!-- Filters -->
 	<div class="explore-controls">
@@ -359,7 +554,7 @@
 		</div>
 	{:else}
 		<div class="token-grid">
-			{#each filtered as tok}
+			{#each paged as tok}
 				{@const color = typeColor(tok)}
 				{@const slug = chainSlug(tok.chain_id)}
 				{@const gecko = geckoLookup[tok.address?.toLowerCase()]}
@@ -367,11 +562,10 @@
 			{@const isRenounced = safu?.ownerIsZero ?? tok.owner_renounced}
 			{@const tradingOn = safu?.tradingEnabled ?? tok.trading_enabled}
 			{@const isSafu = isRenounced || tradingOn}
-			{@const hasOwner = !isRenounced}
-			{@const liq = gecko?.has_data ? gecko.volume_24h : 0}
-				<div class="token-card" data-token-addr={tok.address} data-chain-id={tok.chain_id}>
-					<!-- Header: clickable to detail page -->
-					<a href="/explore/{slug}/{tok.address}" class="tc-header">
+				{@const mcap = tokenMcap(tok)}
+				<a href="/explore/{slug}/{tok.address}" class="token-card" class:token-card-dim={!gecko?.has_data} data-token-addr={tok.address} data-chain-id={tok.chain_id}>
+					<!-- Row 1: Logo + identity + price -->
+					<div class="tc-header">
 						{#if tok.logo_url}
 							<img src={tok.logo_url} alt={tok.symbol} class="tc-logo" />
 						{:else}
@@ -389,98 +583,79 @@
 								{/if}
 							</div>
 						</div>
-						<div class="tc-header-right">
-							<div class="tc-badges-row">
-								{#if isSafu}
-									<span class="tc-badge tc-badge-safu">SAFU</span>
-								{/if}
-								{#if tok.is_taxable}
-									<span class="tc-badge tc-badge-tax">Taxable</span>
-								{/if}
-								{#if tok.is_mintable}
-									<span class="tc-badge tc-badge-mintable">Mintable</span>
-								{/if}
-								{#if tok.is_partner}
-									<span class="tc-badge tc-badge-partner">Partner</span>
-								{/if}
-								{#if hasOwner}
-									<span class="tc-badge tc-badge-ownable">Ownable</span>
-								{/if}
-								{#if tok.created_at && isNew(tok.created_at)}
-									<span class="tc-badge tc-badge-new">New</span>
-								{/if}
-							</div>
-							{#if gecko?.has_data && gecko.price_usd > 0}
-								<div class="tc-liq-row">
-									{#if liq < 1000 && liq > 0}
-										<span class="tc-liq-warn">Low liq</span>
-									{:else if liq >= 1000}
-										<span class="tc-liq">{fmtVolume(liq)} vol</span>
-									{/if}
-								</div>
-							{/if}
-							{#if gecko?.has_data}
+						{#if gecko?.has_data}
+							<div class="tc-header-right">
 								<span class="tc-price">{fmtPrice(gecko.price_usd)}</span>
 								{#if gecko.price_change_24h !== 0}
 									<span class="tc-change" class:tc-change-up={gecko.price_change_24h > 0} class:tc-change-down={gecko.price_change_24h < 0}>
 										{gecko.price_change_24h > 0 ? '+' : ''}{gecko.price_change_24h.toFixed(1)}%
 									</span>
 								{/if}
+							</div>
+						{/if}
+					</div>
+
+					<!-- Row 2: Badges (max 2) + market data -->
+					<div class="tc-row2">
+						<div class="tc-badges-row">
+							{#if isSafu}
+								<span class="tc-badge tc-badge-safu">SAFU</span>
+							{/if}
+							{#if tok.created_at && isNew(tok.created_at)}
+								<span class="tc-badge tc-badge-new">New</span>
+							{:else if tok.is_partner}
+								<span class="tc-badge tc-badge-partner">Partner</span>
 							{/if}
 						</div>
-					</a>
+						<div class="tc-market-data">
+							{#if mcap > 0}
+								<span class="tc-mcap">{fmtMcap(mcap)}</span>
+							{/if}
+							{#if gecko?.has_data && gecko.volume_24h > 0}
+								<span class="tc-vol">{fmtVolume(gecko.volume_24h)}</span>
+							{:else if !gecko?.has_data}
+								<span class="tc-unlisted">&mdash;</span>
+							{/if}
+						</div>
+					</div>
 
-					<!-- Description -->
-					{#if tok.description}
-						<p class="tc-desc">{tok.description.slice(0, 90)}{tok.description.length > 90 ? '...' : ''}</p>
-					{/if}
-
-					<!-- Stats -->
+					<!-- Row 3: Stats strip -->
 					<div class="tc-stats">
 						<div class="tc-stat">
 							<span class="tc-stat-label">Supply</span>
 							<span class="tc-stat-value">{fmtSupply(tok.total_supply, tok.decimals || 18)}</span>
 						</div>
-						{#if gecko?.has_data}
-							{#if gecko.volume_24h > 0}
-								<div class="tc-stat">
-									<span class="tc-stat-label">Volume 24h</span>
-									<span class="tc-stat-value">{fmtVolume(gecko.volume_24h)}</span>
-								</div>
-							{:else}
-								<div class="tc-stat">
-									<span class="tc-stat-label">Status</span>
-									<span class="tc-stat-value tc-listed">Listed</span>
-								</div>
-							{/if}
-						{:else}
-							<div class="tc-stat">
-								<span class="tc-stat-label">Status</span>
-								<span class="tc-stat-value tc-not-listed">Not Listed</span>
-							</div>
-						{/if}
 						<div class="tc-stat">
-							<span class="tc-stat-label">Created</span>
+							<span class="tc-stat-label">{mcap > 0 ? 'MCap' : 'Status'}</span>
+							<span class="tc-stat-value">{mcap > 0 ? fmtMcap(mcap) : (gecko?.has_data ? 'Listed' : '\u2014')}</span>
+						</div>
+						<div class="tc-stat">
+							<span class="tc-stat-label">Age</span>
 							<span class="tc-stat-value">{tok.created_at ? timeAgo(tok.created_at) : '—'}</span>
 						</div>
 					</div>
 
-					<!-- Actions -->
-					<div class="tc-actions">
-						{#if gecko?.has_data}
-							<a href="/trade?token={tok.address}" class="tc-action tc-action-trade">
+					<!-- Trade CTA (only when tradeable) -->
+					{#if gecko?.has_data}
+						<!-- svelte-ignore a11y_click_events_have_key_events -->
+						<!-- svelte-ignore a11y_no_static_element_interactions -->
+						<div class="tc-actions" onclick={(e) => { e.preventDefault(); e.stopPropagation(); window.location.href = `/trade?token=${tok.address}`; }}>
+							<span class="tc-action tc-action-trade" role="button" tabindex="0">
 								<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
 								Trade
-							</a>
-						{/if}
-						<a href="/explore/{slug}/{tok.address}" class="tc-action tc-action-view" class:tc-action-full={!gecko?.has_data}>
-							View
-							<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
-						</a>
-					</div>
-				</div>
+							</span>
+						</div>
+					{/if}
+				</a>
 			{/each}
 		</div>
+		{#if hasMore}
+			<div class="load-more-wrap">
+				<button class="load-more-btn" onclick={() => page_num++}>
+					Load more ({filtered.length - paged.length} remaining)
+				</button>
+			</div>
+		{/if}
 	{/if}
 </div>
 
@@ -489,8 +664,19 @@
 
 	/* Header */
 	.explore-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
+	.explore-header-right { display: flex; align-items: center; gap: 10px; }
 	.explore-title { font-family: 'Syne', sans-serif; font-size: 28px; font-weight: 800; color: var(--text-heading); margin: 0; }
-	.explore-sub { font-size: 12px; color: var(--text-dim); font-family: 'Space Mono', monospace; margin: 4px 0 0; }
+	.explore-stats { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-family: 'Space Mono', monospace; font-size: 12px; color: var(--text-dim); }
+	.explore-stats strong { color: var(--text-heading); }
+	.explore-stat-sep { color: var(--text-dim); opacity: 0.4; }
+	.explore-create-btn {
+		display: inline-flex; align-items: center; gap: 5px;
+		padding: 8px 16px; border-radius: 10px;
+		background: linear-gradient(135deg, #00d2ff, #3a7bd5); color: white;
+		font-family: 'Syne', sans-serif; font-size: 12px; font-weight: 700;
+		text-decoration: none; transition: all 0.15s; flex-shrink: 0;
+	}
+	.explore-create-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(0,210,255,0.3); }
 
 	.explore-search {
 		display: flex; align-items: center; gap: 8px;
@@ -652,10 +838,126 @@
 	.tc-not-listed { color: var(--text-dim); font-size: 11px; }
 	.tc-listed { color: #10b981; font-size: 11px; }
 
+	/* ── Trending Section ── */
+	.trending-section { margin-bottom: 20px; }
+	.trending-header {
+		display: flex; align-items: center; gap: 8px; margin-bottom: 10px;
+	}
+	.trending-dot {
+		width: 7px; height: 7px; border-radius: 50%;
+		background: #10b981; box-shadow: 0 0 8px rgba(16,185,129,0.6);
+		animation: pulse 2s ease-in-out infinite;
+	}
+	@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+	.trending-label { font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700; color: var(--text-heading); }
+	.trending-scroll {
+		display: flex; gap: 10px; overflow-x: auto; padding-bottom: 8px;
+		scrollbar-width: thin; scrollbar-color: var(--bg-surface-hover) transparent;
+	}
+	.trending-scroll::-webkit-scrollbar { height: 4px; }
+	.trending-scroll::-webkit-scrollbar-thumb { background: var(--bg-surface-hover); border-radius: 2px; }
+	.trending-card {
+		display: flex; flex-direction: column; gap: 8px;
+		min-width: 200px; max-width: 240px; padding: 12px 14px;
+		background: var(--bg-surface); border: 1px solid var(--border-subtle);
+		border-radius: 10px; text-decoration: none; color: inherit;
+		transition: all 0.15s; flex-shrink: 0;
+	}
+	.trending-card:hover { border-color: rgba(0,210,255,0.2); transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.15); }
+	.trending-top { display: flex; align-items: center; gap: 8px; }
+	.trending-logo { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; flex-shrink: 0; border: 1px solid var(--border); }
+	.trending-logo-fallback {
+		width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
+		display: flex; align-items: center; justify-content: center;
+		background: rgba(0,210,255,0.1); color: #00d2ff; border: 1px solid rgba(0,210,255,0.2);
+		font-size: 10px; font-weight: 800; font-family: 'Syne', sans-serif;
+	}
+	.trending-identity { flex: 1; min-width: 0; }
+	.trending-name { display: block; font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700; color: var(--text-heading); }
+	.trending-chain { font-family: 'Space Mono', monospace; font-size: 9px; color: var(--text-dim); }
+	.trending-price-col { text-align: right; flex-shrink: 0; }
+	.trending-price { display: block; font-family: 'Rajdhani', sans-serif; font-size: 14px; font-weight: 700; color: var(--text-heading); font-variant-numeric: tabular-nums; }
+	.trending-change { font-family: 'Rajdhani', sans-serif; font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
+	.trending-change.up { color: #10b981; }
+	.trending-change.down { color: #f87171; }
+	.trending-bottom { display: flex; justify-content: space-between; font-family: 'Space Mono', monospace; font-size: 9px; color: var(--text-dim); }
+
+	/* ── Tightened card: Row 2 (badges + market data) ── */
+	.tc-row2 { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+	.tc-market-data { display: flex; align-items: center; gap: 8px; }
+	.tc-mcap { font-family: 'Rajdhani', sans-serif; font-size: 12px; font-weight: 600; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+	.tc-vol { font-family: 'Space Mono', monospace; font-size: 9px; color: var(--text-dim); }
+	.tc-unlisted { font-family: 'Space Mono', monospace; font-size: 9px; color: var(--text-dim); }
+
+	/* Make the whole card an <a> — remove old action buttons row for unlisted tokens */
+	.token-card { text-decoration: none; color: inherit; cursor: pointer; }
+
+	/* ── Dim unlisted tokens ── */
+	.token-card-dim { opacity: 0.55; }
+	.token-card-dim:hover { opacity: 0.85; }
+
+	/* ── Live Launches Section ── */
+	.launches-section { margin-bottom: 20px; }
+	.launches-dot {
+		width: 7px; height: 7px; border-radius: 50%;
+		background: #00d2ff; box-shadow: 0 0 8px rgba(0,210,255,0.6);
+		animation: pulse 2s ease-in-out infinite;
+	}
+	.launch-card {
+		display: flex; flex-direction: column; gap: 8px;
+		min-width: 220px; max-width: 260px; padding: 12px 14px;
+		background: var(--bg-surface); border: 1px solid var(--border-subtle);
+		border-radius: 10px; text-decoration: none; color: inherit;
+		transition: all 0.15s; flex-shrink: 0;
+	}
+	.launch-card:hover { border-color: rgba(0,210,255,0.2); transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.15); }
+	.launch-time {
+		font-family: 'Space Mono', monospace; font-size: 10px; font-weight: 700;
+		color: #10b981; flex-shrink: 0; white-space: nowrap;
+	}
+	.launch-ended { color: #f87171; }
+	.launch-progress-wrap { display: flex; flex-direction: column; gap: 4px; }
+	.launch-progress-bar {
+		height: 5px; border-radius: 3px; background: var(--border-subtle); overflow: hidden;
+	}
+	.launch-progress-fill {
+		height: 100%; border-radius: 3px;
+		background: linear-gradient(90deg, #00d2ff, #10b981);
+		transition: width 0.3s ease;
+	}
+	.launch-progress-label {
+		display: flex; justify-content: space-between;
+		font-family: 'Space Mono', monospace; font-size: 9px; color: var(--text-dim);
+	}
+	.launch-buy-row {
+		display: flex; align-items: center; justify-content: space-between; gap: 6px;
+	}
+	.launch-buy-cta {
+		margin-left: auto;
+		font-family: 'Space Mono', monospace; font-size: 10px; font-weight: 700;
+		color: #00d2ff; padding: 3px 10px; border-radius: 6px;
+		background: rgba(0,210,255,0.1); border: 1px solid rgba(0,210,255,0.15);
+		transition: all 0.15s;
+	}
+	.launch-card:hover .launch-buy-cta { background: rgba(0,210,255,0.18); border-color: rgba(0,210,255,0.3); }
+
+	/* ── Load More ── */
+	.load-more-wrap { display: flex; justify-content: center; padding: 24px 0 8px; }
+	.load-more-btn {
+		padding: 10px 28px; border-radius: 10px; cursor: pointer;
+		background: var(--bg-surface); border: 1px solid var(--border);
+		color: var(--text-muted); font-family: 'Space Mono', monospace; font-size: 12px;
+		transition: all 0.15s;
+	}
+	.load-more-btn:hover { border-color: rgba(0,210,255,0.3); color: #00d2ff; background: rgba(0,210,255,0.04); }
+
 	@media (max-width: 500px) {
 		.explore-header { flex-direction: column; }
-		.explore-search { min-width: 0; width: 100%; }
+		.explore-header-right { width: 100%; }
+		.explore-search { min-width: 0; flex: 1; }
 		.explore-controls { flex-direction: column; align-items: flex-start; }
 		.token-grid { grid-template-columns: 1fr; }
+		.trending-card { min-width: 180px; }
+		.launch-card { min-width: 200px; }
 	}
 </style>
