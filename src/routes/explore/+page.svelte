@@ -278,7 +278,7 @@
 		} else if (filterType === 'safu') {
 			list = list.filter(t => {
 				const s = safuMap[safuKey(t)];
-				return s?.ownerIsZero ?? t.owner_renounced ?? (s?.tradingEnabled ?? t.trading_enabled);
+				return s?.isSafu ?? t.is_safu ?? false;
 			});
 		}
 
@@ -299,16 +299,12 @@
 			list = [...list].sort((a, b) => {
 				const sa = safuMap[safuKey(a)];
 				const sb = safuMap[safuKey(b)];
-				const renA = sa?.ownerIsZero ?? a.owner_renounced ?? false;
-				const renB = sb?.ownerIsZero ?? b.owner_renounced ?? false;
-				const tradeA = sa?.tradingEnabled ?? a.trading_enabled ?? false;
-				const tradeB = sb?.tradingEnabled ?? b.trading_enabled ?? false;
-				const safuA = renA || tradeA;
-				const safuB = renB || tradeB;
+				const safuA = sa?.isSafu ?? a.is_safu ?? false;
+				const safuB = sb?.isSafu ?? b.is_safu ?? false;
 				const liqA = sa?.hasLiquidity ?? a.has_liquidity ?? false;
 				const liqB = sb?.hasLiquidity ?? b.has_liquidity ?? false;
-				const scoreA = (safuA ? 4 : 0) + (liqA ? 2 : 0) + (renA ? 1 : 0);
-				const scoreB = (safuB ? 4 : 0) + (liqB ? 2 : 0) + (renB ? 1 : 0);
+				const scoreA = (safuA ? 4 : 0) + (liqA ? 2 : 0);
+				const scoreB = (safuB ? 4 : 0) + (liqB ? 2 : 0);
 				if (scoreA !== scoreB) return scoreB - scoreA;
 				return 0;
 			});
@@ -367,7 +363,7 @@
 			const s = safuMap[safuKey(t)];
 			if (s?.hasLiquidity || t.has_liquidity || geckoLookup[t.address?.toLowerCase()]?.has_data) counts.tradeable++;
 			if (t.created_at && isNew(t.created_at)) counts.new++;
-			if (s?.ownerIsZero ?? t.owner_renounced ?? (s?.tradingEnabled ?? t.trading_enabled)) counts.safu++;
+			if (s?.isSafu ?? t.is_safu) counts.safu++;
 		}
 		return counts;
 	});
@@ -553,11 +549,12 @@
 				{@const slug = chainSlug(tok.chain_id)}
 				{@const gecko = geckoLookup[tok.address?.toLowerCase()]}
 				{@const safu = safuMap[safuKey(tok)]}
-			{@const isRenounced = safu?.ownerIsZero ?? tok.owner_renounced}
-			{@const tradingOn = safu?.tradingEnabled ?? tok.trading_enabled}
-			{@const isSafu = isRenounced || tradingOn}
+			<!-- SAFU uses the full SafuLens composite: owner renounced + trading
+			     enabled + has liquidity + LP ≥99% burned + tax safe + mint safe.
+			     Falls back to DB is_safu when SafuLens hasn't queried yet. -->
+			{@const isSafu = safu?.isSafu ?? tok.is_safu ?? false}
 				{@const mcap = tokenMcap(tok)}
-				<a href="/explore/{slug}/{tok.address}" class="token-card" class:token-card-dim={!gecko?.has_data} data-token-addr={tok.address} data-chain-id={tok.chain_id}>
+				<a href="/explore/{slug}/{tok.address}" class="token-card" class:token-card-dim={!gecko?.has_data} class:token-card-active={gecko?.has_data && gecko.volume_24h > 0 && !isSafu} class:token-card-safu={isSafu} data-token-addr={tok.address} data-chain-id={tok.chain_id}>
 					<!-- Row 1: Logo + identity + price -->
 					<div class="tc-header">
 						{#if tok.logo_url}
@@ -572,6 +569,9 @@
 							<div class="tc-meta-row">
 								<span class="tc-symbol">{tok.symbol || '???'}</span>
 								<span class="tc-chain">{chainName(tok.chain_id)}</span>
+								{#if tok.created_at}
+									<span class="tc-age">{timeAgo(tok.created_at)}</span>
+								{/if}
 								{#if gecko?.has_data}
 									<span class="tc-live-dot"></span>
 								{/if}
@@ -617,7 +617,7 @@
 					{#if isSafu}
 						{@const taxLocked = safu?.taxCeilingLocked ?? tok.tax_ceiling_locked}
 						{@const lpBurned = safu?.lpBurned ?? tok.lp_burned}
-						{@const lpPct = safu?.lpBurnedPct ?? (tok.lp_burned_pct ? tok.lp_burned_pct * 100 : 0)}
+						{@const lpPct = safu?.lpBurnedPct ?? (tok.lp_burned_pct || 0)}
 						{@const renounced = safu?.ownerIsZero ?? tok.owner_renounced}
 						{@const trading = safu?.tradingEnabled ?? tok.trading_enabled}
 						{@const buyTax = safu?.buyTaxBps ?? 0}
@@ -782,11 +782,11 @@
 
 	/* Header */
 	.tc-header { display: flex; align-items: center; gap: 10px; text-decoration: none; color: inherit; }
-	.tc-logo { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; border: 2px solid var(--border); flex-shrink: 0; }
+	.tc-logo { width: 48px; height: 48px; border-radius: 50%; object-fit: cover; border: 2px solid var(--border); flex-shrink: 0; }
 	.tc-logo-fallback {
-		width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0;
+		width: 48px; height: 48px; border-radius: 50%; flex-shrink: 0;
 		display: flex; align-items: center; justify-content: center;
-		font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 800;
+		font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 800;
 	}
 	.tc-color-cyan { background: rgba(0,210,255,0.12); color: #00d2ff; border: 2px solid rgba(0,210,255,0.2); }
 	.tc-color-amber { background: rgba(245,158,11,0.12); color: #f59e0b; border: 2px solid rgba(245,158,11,0.2); }
@@ -798,6 +798,7 @@
 	.tc-meta-row { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
 	.tc-symbol { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text-dim); }
 	.tc-chain { font-family: 'Space Mono', monospace; font-size: 8px; color: var(--text-dim); padding: 1px 5px; border-radius: 4px; background: var(--bg-surface-input); }
+	.tc-age { font-family: 'Space Mono', monospace; font-size: 9px; color: var(--text-dim); opacity: 0.7; }
 
 	.tc-badge {
 		font-size: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
@@ -906,12 +907,16 @@
 	/* ── Tightened card: Row 2 (badges + market data) ── */
 	.tc-row2 { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
 	.tc-market-data { display: flex; align-items: center; gap: 8px; }
-	.tc-mcap { font-family: 'Rajdhani', sans-serif; font-size: 12px; font-weight: 600; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+	.tc-mcap { font-family: 'Rajdhani', sans-serif; font-size: 15px; font-weight: 700; color: var(--text-heading); font-variant-numeric: tabular-nums; }
 	.tc-vol { font-family: 'Space Mono', monospace; font-size: 9px; color: var(--text-dim); }
 	.tc-unlisted { font-family: 'Space Mono', monospace; font-size: 9px; color: var(--text-dim); }
 
 	/* Make the whole card an <a> — remove old action buttons row for unlisted tokens */
 	.token-card { text-decoration: none; color: inherit; cursor: pointer; }
+
+	/* ── Visual triage borders ── */
+	.token-card-active { border-left: 3px solid rgba(0,210,255,0.4); }
+	.token-card-safu { border-left: 3px solid rgba(16,185,129,0.4); }
 
 	/* ── Dim unlisted tokens ── */
 	.token-card-dim { opacity: 0.55; }

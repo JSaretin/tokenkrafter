@@ -208,7 +208,7 @@
 	// them is this partner-default-bases surface: these addresses are
 	// force-merged into `CreateTokenParams.bases` for every partner-variant
 	// token so the platform always has pools on the bases that drive its
-	// 1% partner fee revenue.
+	// 0.5% partner fee revenue.
 	async function doAddBase() {
 		if (!signer) return;
 		if (!ethers.isAddress(addBaseInput)) {
@@ -610,7 +610,7 @@
 	{#if openSections['bases']}
 		<div class="collapse-body">
 			<div class="card p-5 mb-3">
-				<p class="text-gray-500 text-xs mb-2">Force-merged into bases[] for partner-variant tokens so the platform always has pools on these bases (drives the 1% partner fee).</p>
+				<p class="text-gray-500 text-xs mb-2">Force-merged into bases[] for partner-variant tokens so the platform always has pools on these bases (drives the 0.5% partner fee).</p>
 				<div class="flex flex-col gap-1.5">
 					{#each partnerBases as base}
 						<div class="info-row"><span class="font-mono text-xs text-cyan-400">{base}</span></div>

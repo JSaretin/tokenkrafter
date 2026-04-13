@@ -189,7 +189,7 @@
 	<!-- Partner note -->
 	{#if isPartner && !isTaxable}
 		<div class="partner-note">
-			1% platform fee on buys/sells (fixed)
+			0.5% platform fee on buys/sells (fixed)
 		</div>
 	{/if}
 

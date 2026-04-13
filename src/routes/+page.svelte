@@ -691,7 +691,7 @@
 				<div class="cta-text">
 					<h2 class="syne text-xl sm:text-2xl font-bold text-white mb-2">Your token can be live in 60 seconds</h2>
 					<p class="text-gray-400 font-mono text-sm mb-1">No coding. No MetaMask required. Just connect with Google and launch.</p>
-					<p class="text-gray-600 font-mono text-xs">Token creation from $50 · Tax ceiling locked at launch · LP permanently burned</p>
+					<p class="text-gray-600 font-mono text-xs">Token creation from $10 · Tax ceiling locked at launch · LP permanently burned</p>
 				</div>
 				<div class="cta-actions">
 					<a href="/create?launch=true" class="btn-primary text-sm px-6 py-3 no-underline">
