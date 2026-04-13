@@ -325,7 +325,7 @@
 		if (!pricesLoaded) return true; // assume yes until we know
 		if (address === ZERO_ADDRESS) return true; // native always liquid
 		const cached = getCachedToken(address);
-		return cached ? cached.hasLiquidity : true; // unknown tokens pass through
+		return cached ? cached.hasLiquidity : false; // unknown tokens hidden after price load
 	}
 
 	let allTokens = $derived.by(() => {

@@ -7,6 +7,7 @@
 	import { friendlyError } from '$lib/errorDecoder';
 	import QrCode from '$lib/QrCode.svelte';
 	import { getKnownLogo } from '$lib/tokenLogo';
+	import TokenPickerModal, { type PickerToken } from '$lib/TokenPickerModal.svelte';
 	import { supabase } from '$lib/supabaseClient';
 	import { favorites, toggleFavorite } from '$lib/favorites';
 	import RecentTransactionsTicker from '$lib/RecentTransactionsTicker.svelte';
@@ -66,8 +67,9 @@
 	// Pre-populate badges from server
 	let badges: string[] = $state(serverData?.badges || []);
 	let buyAmount = $state(''); // always in USDT
-	let buyPaymentMethod: 'usdt' | 'usdc' | 'native' = $state('usdt');
+	let buyPaymentMethod: 'usdt' | 'usdc' | 'native' | 'custom' = $state('usdt');
 	let showPayPicker = $state(false);
+	let customPayToken: PickerToken | null = $state(null);
 	let preview: BuyPreview | null = $state(null);
 	let previewLoading = $state(false);
 	let isBuying = $state(false);
@@ -262,7 +264,29 @@
 		const l = launch;
 		return l ? progressPercent(l.totalBaseRaised, l.hardCap) : 0;
 	});
-	let paySymbol = $derived(buyPaymentMethod === 'native' ? (network?.native_coin || 'BNB') : buyPaymentMethod.toUpperCase());
+	let paySymbol = $derived(
+		buyPaymentMethod === 'native' ? (network?.native_coin || 'BNB') :
+		buyPaymentMethod === 'custom' && customPayToken ? customPayToken.symbol :
+		buyPaymentMethod.toUpperCase()
+	);
+	let payTokens = $derived.by((): PickerToken[] => {
+		if (!network) return [];
+		const nc = network.native_coin;
+		const tokens: PickerToken[] = [
+			{ address: network.usdt_address, symbol: 'USDT', name: 'Tether USD', decimals: usdtDecimals, logoUrl: getKnownLogo('USDT') },
+		];
+		if (network.usdc_address) {
+			tokens.push({ address: network.usdc_address, symbol: 'USDC', name: 'USD Coin', decimals: 18, logoUrl: getKnownLogo('USDC') });
+		}
+		tokens.push({ address: ethers.ZeroAddress, symbol: nc, name: `${nc} (auto-converted)`, decimals: 18, isNative: true, logoUrl: getKnownLogo(nc) });
+		const wrappedNative = new Set(['WBNB', 'WETH', 'WMATIC', 'WAVAX']);
+		for (const b of network.default_bases ?? []) {
+			if (!b.address || tokens.find(t => t.address.toLowerCase() === b.address.toLowerCase())) continue;
+			if (wrappedNative.has(b.symbol.toUpperCase())) continue; // native coin already listed
+			tokens.push({ address: b.address, symbol: b.symbol, name: b.name || b.symbol, decimals: 18, logoUrl: getKnownLogo(b.symbol) });
+		}
+		return tokens;
+	});
 
 	// Live swap estimate: show how much BNB/USDC the user will actually spend
 	let swapEstimate = $state('');
@@ -354,6 +378,7 @@
 
 	let paymentLabel = $derived(
 		buyPaymentMethod === 'native' ? (network?.native_coin ?? 'BNB') :
+		buyPaymentMethod === 'custom' && customPayToken ? customPayToken.symbol :
 		buyPaymentMethod === 'usdt' ? 'USDT' : 'USDC'
 	);
 
@@ -707,6 +732,7 @@
 		if (!network) return ZERO_ADDRESS;
 		if (buyPaymentMethod === 'usdt') return network.usdt_address;
 		if (buyPaymentMethod === 'usdc') return network.usdc_address;
+		if (buyPaymentMethod === 'custom' && customPayToken) return customPayToken.address;
 		return ZERO_ADDRESS; // native
 	}
 
@@ -766,6 +792,25 @@
 		if (balanceCheckInterval) {
 			clearInterval(balanceCheckInterval);
 			balanceCheckInterval = null;
+		}
+	}
+
+	function onPayTokenPick(token: PickerToken) {
+		if (!network) return;
+		const addr = token.address.toLowerCase();
+		if (addr === network.usdt_address.toLowerCase()) {
+			buyPaymentMethod = 'usdt';
+			customPayToken = null;
+		} else if (network.usdc_address && addr === network.usdc_address.toLowerCase()) {
+			buyPaymentMethod = 'usdc';
+			customPayToken = null;
+		} else if (token.isNative || addr === ethers.ZeroAddress) {
+			buyPaymentMethod = 'native';
+			customPayToken = null;
+		} else {
+			buyPaymentMethod = 'custom';
+			customPayToken = token;
+			paymentDecimals = token.decimals;
 		}
 	}
 
@@ -2338,46 +2383,20 @@
 								{/if}
 								<span class="pay-asset-name">{paySymbol}</span>
 								{#if buyPaymentMethod === 'native'}<span class="pay-asset-tag">auto-converted</span>{/if}
+								{#if buyPaymentMethod === 'custom'}<span class="pay-asset-tag">swap → USDT</span>{/if}
 								<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M6 9l6 6 6-6"/></svg>
 							</button>
 						</div>
 
-						{#if showPayPicker}
-							<!-- svelte-ignore a11y_no_static_element_interactions -->
-							<!-- svelte-ignore a11y_click_events_have_key_events -->
-							<div class="pay-picker-overlay" onclick={(e) => { if (e.target === e.currentTarget) showPayPicker = false; }}>
-								<div class="pay-picker">
-									<div class="pay-picker-header">
-										<span class="pay-picker-title">Pay with</span>
-										<button class="pay-picker-close" type="button" onclick={() => showPayPicker = false}>
-											<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-										</button>
-									</div>
-									<div class="pay-picker-list">
-										{#each [
-											{ key: 'usdt', symbol: 'USDT', name: 'Tether USD' },
-											{ key: 'usdc', symbol: 'USDC', name: 'USD Coin' },
-											{ key: 'native', symbol: nativeCoin, name: `${nativeCoin} (auto-converted)` },
-										] as opt}
-											<button class="pay-picker-item" class:active={buyPaymentMethod === opt.key} onclick={() => { buyPaymentMethod = opt.key as any; showPayPicker = false; }}>
-												{#if getKnownLogo(opt.symbol)}
-													<img src={getKnownLogo(opt.symbol)} alt="" class="pay-picker-logo" />
-												{:else}
-													<span class="pay-picker-letter">{opt.symbol.charAt(0)}</span>
-												{/if}
-												<div class="pay-picker-info">
-													<span class="pay-picker-symbol">{opt.symbol}</span>
-													<span class="pay-picker-name">{opt.name}</span>
-												</div>
-												{#if buyPaymentMethod === opt.key}
-													<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-												{/if}
-											</button>
-										{/each}
-									</div>
-								</div>
-							</div>
-						{/if}
+						<TokenPickerModal
+							bind:open={showPayPicker}
+							tokens={payTokens}
+							onPick={onPayTokenPick}
+							title="Pay with"
+							chainId={network.chain_id}
+							provider={signer?.provider ?? networkProviders.get(network.chain_id) ?? null}
+							userAddress={userAddress || ''}
+						/>
 
 						<!-- Preview -->
 						{#if preview && !previewLoading}
