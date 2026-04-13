@@ -85,6 +85,9 @@
 	let lockDurationAfterListing = $state(0n);
 	let vestingCliffSeconds = $state(0n);
 	let vestingDurationSeconds = $state(0n);
+	let creatorTotalTokens = $state(0n);
+	let creatorClaimed = $state(0n);
+	let graduationTimestamp = $state(0n);
 	// Platform wallet (read from LaunchpadFactory). Gates the stranded-USDT
 	// sweep button: after the audit L2 fix, `sweepStrandedUsdt()` is
 	// platform-only and will revert for any other caller.
@@ -246,6 +249,7 @@
 	let userBasePaid = $state(0n);
 	let userTokensBought = $state(0n);
 	let maxBuyPerWallet = $state(0n);
+	let minBuyUsdt = $state(0n);
 
 	// Balance check & deposit modal
 	let showDepositModal = $state(false);
@@ -427,17 +431,23 @@
 				tradingEnabled = true;
 			}
 
-			// Load trust signal data (vesting, lock duration)
+			// Load trust signal data (vesting, lock duration, creator claim state)
 			try {
 				const instance = new ethers.Contract(launchAddress, LAUNCH_INSTANCE_ABI, prov);
-				const [vc, vd, lda] = await Promise.all([
+				const [vc, vd, lda, ctt, cc, gt] = await Promise.all([
 					instance.vestingCliff(),
 					instance.vestingDuration(),
-					instance.lockDurationAfterListing()
+					instance.lockDurationAfterListing(),
+					instance.creatorTotalTokens(),
+					instance.creatorClaimed(),
+					instance.graduationTimestamp()
 				]);
 				vestingCliffSeconds = vc;
 				vestingDurationSeconds = vd;
 				lockDurationAfterListing = lda;
+				creatorTotalTokens = ctt;
+				creatorClaimed = cc;
+				graduationTimestamp = gt;
 			} catch {
 				vestingCliffSeconds = 0n;
 				vestingDurationSeconds = 0n;
@@ -541,14 +551,16 @@
 	async function loadUserPosition(provider: ethers.Provider) {
 		if (!userAddress) return;
 		const instance = new ethers.Contract(launchAddress, LAUNCH_INSTANCE_ABI, provider);
-		const [paid, bought, maxBuy] = await Promise.all([
+		const [paid, bought, maxBuy, minBuy] = await Promise.all([
 			instance.basePaid(userAddress),
 			instance.tokensBought(userAddress),
-			instance.maxBuyPerWallet()
+			instance.maxBuyPerWallet(),
+			instance.minBuyUsdt()
 		]);
 		userBasePaid = paid;
 		userTokensBought = bought;
 		maxBuyPerWallet = maxBuy;
+		minBuyUsdt = minBuy;
 	}
 
 	async function refreshData() {
@@ -1489,6 +1501,58 @@
 			</div>
 		{/if}
 
+		<!-- Creator vesting claim (graduated + creator has allocation) -->
+		{#if launch.state === 2 && isCreator && launch.creatorAllocationBps > 0n && vestingDurationSeconds > 0n && graduationTimestamp > 0n}
+			{@const elapsed = BigInt(Math.floor(tickNow / 1000)) - graduationTimestamp}
+			{@const pastCliff = elapsed >= vestingCliffSeconds}
+			{@const vestedTime = pastCliff ? elapsed - vestingCliffSeconds : 0n}
+			{@const totalVested = vestedTime >= vestingDurationSeconds ? creatorTotalTokens : (vestingDurationSeconds > 0n ? (creatorTotalTokens * vestedTime / vestingDurationSeconds) : 0n)}
+			{@const claimable = totalVested > creatorClaimed ? totalVested - creatorClaimed : 0n}
+			<div class="card p-5 mb-4" style="border-color: rgba(139,92,246,0.2);">
+				<div class="flex items-center justify-between mb-3">
+					<h3 class="syne font-bold text-white text-sm">Creator Vesting</h3>
+					<span class="text-purple-400 text-xs font-mono">{Math.round(Number(vestingDurationSeconds) / 86400)}d vest · {Math.round(Number(vestingCliffSeconds) / 86400)}d cliff</span>
+				</div>
+				<div class="detail-grid mb-3">
+					<div class="detail-row">
+						<span class="detail-label">Total allocation</span>
+						<span class="detail-value">{formatTokens(creatorTotalTokens || 0n, launch.tokenDecimals)} {launch.tokenSymbol}</span>
+					</div>
+					<div class="detail-row">
+						<span class="detail-label">Claimed</span>
+						<span class="detail-value">{formatTokens(creatorClaimed || 0n, launch.tokenDecimals)} {launch.tokenSymbol}</span>
+					</div>
+					<div class="detail-row">
+						<span class="detail-label">Claimable now</span>
+						<span class="detail-value text-purple-400">{pastCliff ? formatTokens(claimable > 0n ? claimable : 0n, launch.tokenDecimals) : 'Cliff not reached'} {pastCliff && claimable > 0n ? launch.tokenSymbol : ''}</span>
+					</div>
+				</div>
+				{#if pastCliff && claimable > 0n}
+					<button class="btn-primary text-xs px-4 py-2 w-full" onclick={async () => {
+						try {
+							const net = network;
+							if (!net) return;
+							const provider = networkProviders.get(net.chain_id);
+							if (!provider || !signer) { addFeedback({ message: 'Connect wallet first', type: 'error' }); return; }
+							const s = (signer as any).connect ? (signer as any).connect(provider) : signer;
+							const instance = new ethers.Contract(launch.address, ['function claimCreatorTokens()'], s);
+							addFeedback({ message: 'Claiming vested tokens...', type: 'info' });
+							const tx = await instance.claimCreatorTokens();
+							await tx.wait();
+							addFeedback({ message: 'Vested tokens claimed!', type: 'success' });
+							refreshData();
+						} catch (e: any) {
+							addFeedback({ message: e.shortMessage || e.message || 'Claim failed', type: 'error' });
+						}
+					}}>
+						Claim Vested Tokens
+					</button>
+				{:else if !pastCliff}
+					<p class="text-gray-500 text-xs font-mono text-center">Cliff ends in {Math.max(0, Math.round(Number(vestingCliffSeconds - elapsed) / 86400))} days</p>
+				{/if}
+			</div>
+		{/if}
+
 		<div class="page-grid">
 			<!-- Left: Token-focused content -->
 			<div class="left-col">
@@ -1675,11 +1739,11 @@
 					<h3 class="syne font-bold text-white mb-4">Launch Rules</h3>
 					<div class="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
 						<div class="rule-chip">
-							<span class="rule-chip-value text-emerald-400">0%</span>
+							<span class="rule-chip-value">1%</span>
 							<span class="rule-chip-label">Buy Fee</span>
 						</div>
 						<div class="rule-chip">
-							<span class="rule-chip-value">3%</span>
+							<span class="rule-chip-value">1%</span>
 							<span class="rule-chip-label">Graduation Fee</span>
 						</div>
 						<div class="rule-chip">
@@ -1690,6 +1754,12 @@
 							<span class="rule-chip-value">{network.symbol === 'BSC' ? 'PCS' : 'Uni'} V2</span>
 							<span class="rule-chip-label">DEX (LP Burned)</span>
 						</div>
+						{#if minBuyUsdt > 0n}
+							<div class="rule-chip">
+								<span class="rule-chip-value">{formatUsdt(minBuyUsdt, ud)}</span>
+								<span class="rule-chip-label">Min Buy</span>
+							</div>
+						{/if}
 					</div>
 
 					<div class="detail-grid">
@@ -2341,16 +2411,28 @@
 						</div>
 
 						{#if launch.state === 3 && userBasePaid > 0n}
-							<button
-								onclick={handleRefund}
-								disabled={isRefunding}
-								class="btn-danger w-full py-2.5 text-sm mt-4 cursor-pointer"
-							>
-								{isRefunding ? $t('lpd.processing') : `${$t('common.refund')} ${formatUsdt(userBasePaid, ud)}`}
-							</button>
-							<p class="text-gray-600 text-[10px] font-mono mt-2">
-								{$t('lpd.refundNotice')}
-							</p>
+							<div class="card p-4 mt-4 mb-2" style="border-color: rgba(239,68,68,0.2); background: rgba(239,68,68,0.04);">
+								<div class="detail-grid mb-3">
+									<div class="detail-row">
+										<span class="detail-label">Your USDT paid</span>
+										<span class="detail-value text-red-400">{formatUsdt(userBasePaid, ud)}</span>
+									</div>
+									<div class="detail-row">
+										<span class="detail-label">Tokens to return</span>
+										<span class="detail-value">{formatTokens(userTokensBought, launch.tokenDecimals)} {launch.tokenSymbol}</span>
+									</div>
+								</div>
+								<button
+									onclick={handleRefund}
+									disabled={isRefunding}
+									class="btn-danger w-full py-2.5 text-sm cursor-pointer"
+								>
+									{isRefunding ? $t('lpd.processing') : `${$t('common.refund')} ${formatUsdt(userBasePaid, ud)}`}
+								</button>
+								<p class="text-gray-600 text-[10px] font-mono mt-2">
+									Return your tokens to receive your USDT back pro-rata. Partial refunds supported.
+								</p>
+							</div>
 						{/if}
 					</div>
 				{/if}

@@ -115,6 +115,7 @@
 				<div class="rv-row"><span>Creator allocation</span><span>{launchCreatorAllocPct}%</span></div>
 				<div class="rv-row"><span>Vesting</span><span>{launchVestingDays} days</span></div>
 			{/if}
+			<div class="rv-note">Unsold tokens from the bonding curve and unused LP allocation are burned on graduation.</div>
 		</div>
 	{/if}
 
@@ -155,6 +156,7 @@
 	.rv-pool-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 	.rv-pool span:nth-child(2) { flex: 0; white-space: nowrap; color: var(--text); font-weight: 700; }
 	.rv-pool span:nth-child(3) { color: var(--text-dim); font-size: 10px; text-align: right; flex: 1; }
+	.rv-note { margin-top: 8px; padding: 8px 10px; border-radius: 8px; background: rgba(0,210,255,0.05); border: 1px solid rgba(0,210,255,0.12); color: rgba(0,210,255,0.7); font-size: 10px; font-family: 'Space Mono', monospace; line-height: 1.5; }
 	.rv-warn { margin-top: 8px; padding: 8px 10px; border-radius: 8px; background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.2); color: #fbbf24; font-size: 11px; font-family: 'Space Mono', monospace; line-height: 1.5; }
 	.rv-warn strong { color: #f59e0b; }
 	.rv-warn-strong { background: rgba(248,113,113,0.08); border-color: rgba(248,113,113,0.25); color: #fca5a5; font-weight: 600; }

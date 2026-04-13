@@ -38,7 +38,7 @@
 				<div class="info">
 					<span class="title">{f.title}{#if f.badge}<span class="badge">{f.badge}</span>{/if}</span>
 					<span class="desc">{f.desc}</span>
-					{#if f.key === 'partner' && isPartner}<span class="note">1% platform fee on trades</span>{/if}
+					{#if f.key === 'partner' && isPartner}<span class="note">0.5% platform fee on trades</span>{/if}
 				</div>
 				<span class="toggle" class:on={featureOn(f.key)}><span class="knob"></span></span>
 			</button>

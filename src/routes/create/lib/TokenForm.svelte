@@ -22,7 +22,7 @@
 		// The frontend converts this to native USDT decimals at call time.
 		minBuyUsdt: string;
 	};
-	export type ProtectionConfig = { maxWalletPct: string; maxTransactionPct: string; cooldownSeconds: string };
+	export type ProtectionConfig = { maxWalletPct: string; maxTransactionPct: string; cooldownSeconds: string; blacklistWindowSeconds: string };
 	export type TaxConfig = { buyTaxPct: string; sellTaxPct: string; transferTaxPct: string; wallets: { address: string; sharePct: string }[] };
 	export type TokenMetadata = { logoUrl: string; description: string; website: string; twitter: string; telegram: string };
 	export type TokenFormData = {
@@ -127,6 +127,7 @@
 	let maxWalletPct = $state('2');
 	let maxTransactionPct = $state('1');
 	let cooldownSeconds = $state('0');
+	let blacklistWindowSeconds = $state('0');
 
 	let launchTokensPct = $state(40);
 	let launchCurveType = $state(0);
@@ -239,6 +240,7 @@
 		maxWalletPct = '2';
 		maxTransactionPct = '1';
 		cooldownSeconds = '0';
+		blacklistWindowSeconds = '0';
 	}
 
 	// ── Derived ────────────────────────────────────────────
@@ -599,7 +601,7 @@
 				lockDurationAfterListing: String(Math.round(parseFloat(launchLockDurationMinutes || '0') * 60)),
 				minBuyUsdt: launchMinBuyUsdt,
 			},
-			protection: { maxWalletPct: protectionEnabled ? maxWalletPct : '0', maxTransactionPct: protectionEnabled ? maxTransactionPct : '0', cooldownSeconds: protectionEnabled ? cooldownSeconds : '0' },
+			protection: { maxWalletPct: protectionEnabled ? maxWalletPct : '0', maxTransactionPct: protectionEnabled ? maxTransactionPct : '0', cooldownSeconds: protectionEnabled ? cooldownSeconds : '0', blacklistWindowSeconds: protectionEnabled ? blacklistWindowSeconds : '0' },
 			tax: { buyTaxPct, sellTaxPct, transferTaxPct, wallets: validWallets },
 			metadata: (tokenLogoUrl || tokenDescription || tokenWebsite || tokenTwitter || tokenTelegram) ? {
 				logoUrl: tokenLogoUrl, description: tokenDescription,
@@ -774,7 +776,7 @@
 			{/if}
 
 		{:else if wizardStep === 'tax'}
-			<TaxStep bind:buyTaxPct bind:sellTaxPct bind:transferTaxPct bind:taxWallets bind:protectionEnabled bind:maxWalletPct bind:maxTransactionPct bind:cooldownSeconds />
+			<TaxStep bind:buyTaxPct bind:sellTaxPct bind:transferTaxPct bind:taxWallets bind:protectionEnabled bind:maxWalletPct bind:maxTransactionPct bind:cooldownSeconds bind:blacklistWindowSeconds {isPartner} />
 
 		{:else if wizardStep === 'launch'}
 			<div class="wz-section">

@@ -27,6 +27,7 @@
 		excludeLimitsAction = $bindable(true),
 		excludedCheckAddr = $bindable(''),
 		excludedCheckResult,
+		tradingDelay = $bindable(0),
 		onEnableTrading,
 		onSetMaxWallet,
 		onSetMaxTx,
@@ -52,6 +53,7 @@
 		excludeLimitsAction: boolean;
 		excludedCheckAddr: string;
 		excludedCheckResult: boolean | null;
+		tradingDelay: number;
 		onEnableTrading: () => void;
 		onSetMaxWallet: () => void;
 		onSetMaxTx: () => void;
@@ -149,6 +151,18 @@
 					<p class="text-gray-500 text-xs font-mono mb-3">
 						{$t('mt.enableTradingDesc')}
 					</p>
+					<div class="field-group mb-3">
+						<label class="label-text" for="trading-delay">Anti-snipe delay</label>
+						<select id="trading-delay" class="input-field" bind:value={tradingDelay}>
+							<option value={0}>None (immediate)</option>
+							<option value={300}>5 minutes</option>
+							<option value={1800}>30 minutes</option>
+							<option value={3600}>1 hour</option>
+							<option value={21600}>6 hours</option>
+							<option value={86400}>24 hours</option>
+						</select>
+						<span class="field-hint font-mono">Delays public DEX trading after enabling. Max 24 hours.</span>
+					</div>
 					<button
 						onclick={onEnableTrading}
 						disabled={actionLoading}

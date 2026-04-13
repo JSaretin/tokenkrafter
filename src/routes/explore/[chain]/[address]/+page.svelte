@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { ethers } from 'ethers';
-	import { onMount } from 'svelte';
+	import { onMount, getContext } from 'svelte';
 	import { supabase } from '$lib/supabaseClient';
 
 	let { data }: { data: any } = $props();
@@ -28,6 +28,9 @@
 	let telegram = $derived(dbData?.telegram || '');
 	let creator = $derived(dbData?.creator || '');
 	let isOnPlatform = $derived(!!dbData);
+	let getUserAddress: () => string | null = getContext('userAddress');
+	let userAddress = $derived(getUserAddress());
+	let isCreator = $derived(userAddress && creator && userAddress.toLowerCase() === creator.toLowerCase());
 	let createdAt = $derived(dbData?.created_at ? new Date(dbData.created_at).toLocaleDateString() : '');
 	let hasLiquidity = $derived(onChainData?.hasLiquidity || pools.some((p: any) => p.has_liquidity));
 	let activePools = $derived(pools.filter((p: any) => p.has_liquidity));
@@ -82,6 +85,13 @@
 	// ── Launch cross-link ──
 	let launchAddress = $state<string | null>(null);
 
+	// ── On-chain protection settings + tax distribution ──
+	let protMaxWallet = $state(0n);
+	let protMaxTx = $state(0n);
+	let protCooldown = $state(0n);
+	let protBlacklistWindow = $state(0n);
+	let taxDistribution = $state<{ addr: string; shareBps: number }[]>([]);
+
 	onMount(async () => {
 		// Fetch GeckoTerminal price data
 		const geckoNet = GECKO_NETS[chainInfo.id];
@@ -112,6 +122,46 @@
 				.maybeSingle();
 			if (launch) launchAddress = launch.address;
 		} catch {}
+
+		// Fetch on-chain protection settings + tax distribution (if platform token)
+		if (isOnPlatform && chainInfo.rpc) {
+			try {
+				const prov = new ethers.JsonRpcProvider(chainInfo.rpc);
+				const tok = new ethers.Contract(tokenAddress, [
+					'function maxWalletAmount() view returns (uint256)',
+					'function maxTransactionAmount() view returns (uint256)',
+					'function cooldownTime() view returns (uint256)',
+					'function blacklistWindow() view returns (uint256)',
+					'function tradingStartTime() view returns (uint256)',
+					'function taxWallets(uint256) view returns (address)',
+					'function taxSharesBps(uint256) view returns (uint16)',
+				], prov);
+				// Protection settings
+				const [mw, mt, cd, bw] = await Promise.all([
+					tok.maxWalletAmount().catch(() => 0n),
+					tok.maxTransactionAmount().catch(() => 0n),
+					tok.cooldownTime().catch(() => 0n),
+					tok.blacklistWindow().catch(() => 0n),
+				]);
+				protMaxWallet = mw;
+				protMaxTx = mt;
+				protCooldown = cd;
+				protBlacklistWindow = bw;
+				// Tax distribution (try to read up to 10 wallets)
+				const wallets: { addr: string; shareBps: number }[] = [];
+				for (let i = 0; i < 10; i++) {
+					try {
+						const [addr, share] = await Promise.all([
+							tok.taxWallets(i),
+							tok.taxSharesBps(i),
+						]);
+						if (addr === ethers.ZeroAddress) break;
+						wallets.push({ addr, shareBps: Number(share) });
+					} catch { break; }
+				}
+				taxDistribution = wallets;
+			} catch {}
+		}
 	});
 
 	function fmtSupply(val: string | number, dec: number): string {
@@ -352,6 +402,67 @@
 		</div>
 	{/if}
 
+	<!-- Protection settings (on-chain, dynamic) -->
+	{#if protMaxWallet > 0n || protMaxTx > 0n || protCooldown > 0n || protBlacklistWindow > 0n}
+		<div class="prot-panel">
+			<div class="prot-header">
+				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+				<span>Protection Settings</span>
+				<span class="prot-hint">Can only be relaxed, never tightened</span>
+			</div>
+			<div class="prot-grid">
+				{#if protMaxWallet > 0n}
+					<div class="prot-cell">
+						<span class="prot-label">Max Wallet</span>
+						<span class="prot-val">{fmtSupply(protMaxWallet.toString(), tokenDecimals)}</span>
+					</div>
+				{/if}
+				{#if protMaxTx > 0n}
+					<div class="prot-cell">
+						<span class="prot-label">Max Transaction</span>
+						<span class="prot-val">{fmtSupply(protMaxTx.toString(), tokenDecimals)}</span>
+					</div>
+				{/if}
+				{#if protCooldown > 0n}
+					<div class="prot-cell">
+						<span class="prot-label">Cooldown</span>
+						<span class="prot-val">{Number(protCooldown)}s</span>
+					</div>
+				{/if}
+				{#if protBlacklistWindow > 0n}
+					<div class="prot-cell">
+						<span class="prot-label">Blacklist Window</span>
+						<span class="prot-val">{Math.round(Number(protBlacklistWindow) / 3600)}h</span>
+					</div>
+				{/if}
+			</div>
+		</div>
+	{/if}
+
+	<!-- Tax distribution (on-chain, where taxes go) -->
+	{#if taxDistribution.length > 0}
+		<div class="prot-panel">
+			<div class="prot-header">
+				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+				<span>Tax Distribution</span>
+			</div>
+			<div class="tax-dist-list">
+				{#each taxDistribution as w, i}
+					<div class="tax-dist-row">
+						<span class="tax-dist-addr">{shortAddr(w.addr)}</span>
+						<span class="tax-dist-share">{(w.shareBps / 100).toFixed(1)}%</span>
+					</div>
+				{/each}
+				{#if taxDistribution.reduce((s, w) => s + w.shareBps, 0) < 10000}
+					<div class="tax-dist-row">
+						<span class="tax-dist-addr" style="color: var(--text-dim);">Burned (remainder)</span>
+						<span class="tax-dist-share" style="color: #f87171;">{((10000 - taxDistribution.reduce((s, w) => s + w.shareBps, 0)) / 100).toFixed(1)}%</span>
+					</div>
+				{/if}
+			</div>
+		</div>
+	{/if}
+
 	<!-- Action bar -->
 	<div class="actions">
 		{#if hasLiquidity}
@@ -372,6 +483,12 @@
 			<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
 			{copiedUrl ? 'Copied!' : 'Share'}
 		</button>
+		{#if isCreator && isOnPlatform}
+			<a href="/manage-tokens/{data.chainSlug}/{tokenAddress}" class="act act-manage">
+				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 15.5A3.5 3.5 0 1 0 12 8.5a3.5 3.5 0 0 0 0 7z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+				Manage
+			</a>
+		{/if}
 	</div>
 
 	<!-- Pools -->
@@ -676,6 +793,16 @@
 		box-shadow: 0 4px 20px rgba(0,210,255,0.15);
 		background: linear-gradient(135deg, rgba(0,210,255,0.18), rgba(16,185,129,0.18));
 	}
+	.act-manage {
+		background: linear-gradient(135deg, rgba(168,85,247,0.12), rgba(139,92,246,0.12));
+		border-color: rgba(168,85,247,0.2); color: #a855f7;
+		font-family: 'Syne', sans-serif; font-weight: 700; font-size: 12px;
+	}
+	.act-manage:hover {
+		transform: translateY(-1px);
+		box-shadow: 0 4px 20px rgba(168,85,247,0.15);
+		background: linear-gradient(135deg, rgba(168,85,247,0.18), rgba(139,92,246,0.18));
+	}
 
 	/* ── Sections ── */
 	.section { margin-bottom: 28px; }
@@ -769,4 +896,34 @@
 		.tax-cell:last-child { border-bottom: none; }
 		.contract-addr { font-size: 9px; }
 	}
+	/* ── Protection + Tax Distribution panels ── */
+	.prot-panel {
+		background: var(--bg-surface); border: 1px solid var(--border-subtle);
+		border-radius: 12px; padding: 16px; margin-bottom: 16px;
+	}
+	.prot-header {
+		display: flex; align-items: center; gap: 8px;
+		font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700;
+		color: var(--text-heading); margin-bottom: 12px;
+	}
+	.prot-header svg { color: #10b981; flex-shrink: 0; }
+	.prot-hint {
+		margin-left: auto; font-family: 'Space Mono', monospace;
+		font-size: 9px; color: var(--text-dim); font-weight: 400;
+	}
+	.prot-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+	.prot-cell {
+		padding: 10px 12px; border-radius: 8px;
+		background: var(--bg-surface-input); border: 1px solid var(--border-subtle);
+	}
+	.prot-label { display: block; font-size: 9px; color: var(--text-dim); font-family: 'Space Mono', monospace; text-transform: uppercase; letter-spacing: 0.04em; }
+	.prot-val { display: block; font-family: 'Rajdhani', sans-serif; font-size: 15px; font-weight: 600; color: var(--text); margin-top: 2px; }
+	.tax-dist-list { display: flex; flex-direction: column; gap: 6px; }
+	.tax-dist-row {
+		display: flex; justify-content: space-between; align-items: center;
+		padding: 8px 12px; border-radius: 8px;
+		background: var(--bg-surface-input); border: 1px solid var(--border-subtle);
+	}
+	.tax-dist-addr { font-family: 'Space Mono', monospace; font-size: 11px; color: var(--text-muted); }
+	.tax-dist-share { font-family: 'Rajdhani', sans-serif; font-size: 14px; font-weight: 600; color: var(--text); }
 </style>

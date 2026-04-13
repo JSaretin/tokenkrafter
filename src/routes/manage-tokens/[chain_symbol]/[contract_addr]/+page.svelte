@@ -80,6 +80,7 @@
 	let sellTaxPctInput = $state('');
 	let transferTaxPctInput = $state('');
 	let actionLoading = $state(false);
+	let tradingDelay = $state(0);
 
 	// Tax distribution
 	let taxWallets: { address: string; shareBps: string }[] = $state([]);
@@ -1217,10 +1218,7 @@
 		actionLoading = true;
 		try {
 			const contract = new ethers.Contract(contractAddress, TOKEN_ABI, s);
-			// Open trading immediately (0 delay). Anti-snipe windows are only
-			// useful at the moment of first listing — by the time someone
-			// reaches the manage-tokens page they're past that window.
-			const tx = await contract.enableTrading(0);
+			const tx = await contract.enableTrading(tradingDelay);
 			addFeedback({ message: 'Enabling trading...', type: 'info' });
 			await tx.wait();
 			addFeedback({ message: 'Trading enabled! Protections are now locked.', type: 'success' });
@@ -1601,6 +1599,7 @@
 					bind:excludeLimitsAction
 					bind:excludedCheckAddr
 					{excludedCheckResult}
+					bind:tradingDelay
 					onEnableTrading={doEnableTrading}
 					onSetMaxWallet={doSetMaxWallet}
 					onSetMaxTx={doSetMaxTx}

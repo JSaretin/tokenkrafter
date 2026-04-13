@@ -8,6 +8,8 @@
 		maxWalletPct = $bindable('2'),
 		maxTransactionPct = $bindable('1'),
 		cooldownSeconds = $bindable('0'),
+		blacklistWindowSeconds = $bindable('0'),
+		isPartner = false,
 	}: {
 		buyTaxPct: string;
 		sellTaxPct: string;
@@ -17,6 +19,8 @@
 		maxWalletPct: string;
 		maxTransactionPct: string;
 		cooldownSeconds: string;
+		blacklistWindowSeconds: string;
+		isPartner: boolean;
 	} = $props();
 
 	const num = (v: string) => parseFloat(v) || 0;
@@ -27,18 +31,22 @@
 	let hasValidWallet = $derived(taxWallets.some(w => w.address.trim() && /^0x[a-fA-F0-9]{40}$/.test(w.address.trim())));
 	let taxWithoutWallet = $derived(totalTax > 0 && !hasValidWallet);
 
-	// Per-tax limits (from contract). 4/4/2 for plain taxable. Partner-
-	// taxable tokens have 3.5/3.5/2 but the wizard doesn't differentiate
-	// at this step — the contract enforces the tighter cap at setTaxes time.
-	const MAX_BUY = 4;
-	const MAX_SELL = 4;
+	// Per-tax limits (from contract). Partner tokens allow up to 9%
+	// Contract-enforced hard caps (TaxableToken.sol / PartnerTaxableToken.sol):
+	//   Non-partner: MAX_BUY_TAX_BPS=400 (4%), MAX_SELL_TAX_BPS=400 (4%), MAX_TRANSFER_TAX_BPS=200 (2%)
+	//   Partner: PARTNER_MAX_BUY_TAX_BPS=350 (3.5%), PARTNER_MAX_SELL_TAX_BPS=350 (3.5%), PARTNER_MAX_TRANSFER_TAX_BPS=200 (2%)
+	// The tax ceiling then locks at whatever you SET, which can be <= these caps.
+	let MAX_BUY = $derived(isPartner ? 3.5 : 4);
+	let MAX_SELL = $derived(isPartner ? 3.5 : 4);
 	const MAX_TRANSFER = 2;
-	const MAX_TOTAL = 10;
+	let MAX_TOTAL = $derived(isPartner ? 9 : 10);
 	let buyOver = $derived(num(buyTaxPct) > MAX_BUY);
 	let sellOver = $derived(num(sellTaxPct) > MAX_SELL);
 	let transferOver = $derived(num(transferTaxPct) > MAX_TRANSFER);
 
-	const presets = [0, 1, 2, 3, 4];
+	// Presets match contract caps. Partner tokens cap at 3.5% so the
+	// highest preset is 3.5; non-partner cap at 4% so highest is 4.
+	let presets = $derived(isPartner ? [0, 0.5, 1, 2, 3.5] : [0, 1, 2, 3, 4]);
 
 	function addWallet() {
 		if (taxWallets.length < 10) taxWallets = [...taxWallets, { address: '', sharePct: '' }];
@@ -51,7 +59,7 @@
 <div class="tc">
 	<!-- Tax ceiling info -->
 	<div class="tc-info-box">
-		Tax rates are locked at launch. Once trading starts, you can only lower taxes — never raise them. If you set 0% now, your token will be tax-free forever.
+		Tax rates are permanently capped at these values once trading starts. You can lower them later but never raise them above what you set here. Setting 0% means tax-free forever.
 	</div>
 
 	<!-- Tax Rate Rows -->
@@ -182,6 +190,7 @@
 		</button>
 
 		{#if protectionEnabled}
+			<div class="tc-info-box tc-info-box-warn">These limits can only be relaxed after trading starts — never tightened. Choose carefully.</div>
 			<div class="tc-prot-grid">
 				<div class="tc-prot-field">
 					<label class="tc-prot-label" for="tc-mw">Max Wallet</label>
@@ -218,6 +227,19 @@
 					<span class="tc-prot-hint">Minimum time between transfers from the same address. Prevents rapid-fire trading.</span>
 				</div>
 			</div>
+
+			<!-- Blacklist Window -->
+			<div class="tc-prot-field" style="margin-top: 6px;">
+				<label class="tc-prot-label" for="tc-bl">Sniper Blacklist Window</label>
+				<select id="tc-bl" class="tc-prot-select" bind:value={blacklistWindowSeconds}>
+					<option value="0">Off</option>
+					<option value="3600">1 hour</option>
+					<option value="21600">6 hours</option>
+					<option value="86400">24 hours</option>
+					<option value="259200">72 hours</option>
+				</select>
+				<span class="tc-prot-hint">Allows blocking sniper bots for a limited window after trading starts. The window auto-expires — blacklisting is permanently disabled after it closes.</span>
+			</div>
 		{/if}
 	</div>
 </div>
@@ -225,6 +247,7 @@
 <style>
 	.tc { display: flex; flex-direction: column; gap: 16px; }
 	.tc-info-box { padding: 10px 12px; border-radius: 8px; background: rgba(0,210,255,0.05); border: 1px solid rgba(0,210,255,0.18); color: rgba(0,210,255,0.85); font-size: 11px; font-family: 'Space Mono', monospace; line-height: 1.55; }
+	.tc-info-box-warn { background: rgba(245,158,11,0.06); border-color: rgba(245,158,11,0.2); color: #fbbf24; }
 
 	/* ── Tax Rate Rows ── */
 	.tc-rates { display: flex; flex-direction: column; gap: 8px; }

@@ -1554,12 +1554,14 @@
 							bind:value={customSlippage}
 							oninput={() => {
 								const v = parseFloat(customSlippage);
-								if (!isNaN(v) && v > 0 && v <= 50) {
+								if (!isNaN(v) && v > 0 && v <= 20) {
 									slippageBps = Math.round(v * 100);
 								}
 							}}
+							max="20"
 						/>
 						<span class="slippage-custom-pct">%</span>
+						<span class="slippage-custom-hint" style="font-size: 10px; color: #888; margin-left: 4px;">Max: 20%</span>
 					</div>
 				</div>
 				{#if customSlippage}
@@ -1664,10 +1666,14 @@
 						{$t('trade.honeypot')}
 					</div>
 				{:else if tokenInHasTax || (tokenInTax && tokenInTax.transferTaxBps > 0)}
+					{@const totalTaxIn = (tokenInTaxSell + (tokenInTax?.transferTaxBps || 0)) / 100}
 					<div class="tax-badge">
 						<span class="tax-dot tax-dot-amber"></span>
 						Tax: {tokenInTaxBuy / 100}% buy / {tokenInTaxSell / 100}% sell{#if tokenInTax?.transferTaxBps} / {tokenInTax.transferTaxBps / 100}% transfer{/if}
 					</div>
+					{#if totalTaxIn > 0}
+						<p class="slippage-warn" style="margin-top: 4px;">&#x26A0; {totalTaxIn}% tax will be deducted from the output.</p>
+					{/if}
 				{/if}
 			</div>
 
@@ -1724,10 +1730,14 @@
 							{$t('trade.honeypot')}
 						</div>
 					{:else if tokenOutHasTax || (tokenOutTax && tokenOutTax.transferTaxBps > 0)}
+						{@const totalTaxOut = (tokenOutTaxBuy + (tokenOutTax?.transferTaxBps || 0)) / 100}
 						<div class="tax-badge">
 							<span class="tax-dot tax-dot-amber"></span>
 							Tax: {tokenOutTaxBuy / 100}% buy / {tokenOutTaxSell / 100}% sell{#if tokenOutTax?.transferTaxBps} / {tokenOutTax.transferTaxBps / 100}% transfer{/if}
 						</div>
+						{#if totalTaxOut > 0}
+							<p class="slippage-warn" style="margin-top: 4px;">&#x26A0; {totalTaxOut}% tax will be deducted from the output.</p>
+						{/if}
 					{/if}
 				</div>
 			{/if}
@@ -1799,9 +1809,9 @@
 					{/if}
 				</div>
 
-				<div class="bank-safety-pill">
+				<div class="bank-safety-pill" title="Your USDT is locked in a smart contract — not held by an admin. If the bank transfer isn't confirmed within the timeout, you can cancel and get your USDT back automatically.">
 					<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-					Escrowed on-chain{#if payoutTimeoutLoaded} &middot; Cancel if not processed in {payoutTimeoutMins}min{/if}
+					Escrowed on-chain — funds held by smart contract, not an admin{#if payoutTimeoutLoaded} &middot; Cancel after {payoutTimeoutMins}min timeout{/if}
 				</div>
 			{/if}
 
@@ -2243,7 +2253,7 @@
 							{#if ngnRate > 0}<div class="cr-row"><span>{$t('trade.rate')}</span><span>1 USD = ₦{ngnRate.toFixed(2)}</span></div>{/if}
 						{/if}
 						{#if payoutTimeoutLoaded}<div class="cr-row"><span>{$t('trade.processing2')}</span><span>Under {payoutTimeoutMins} min</span></div>{/if}
-						<div class="cr-row"><span>{$t('trade.safety')}</span><span>{$t('trade.cancelAnytime')}</span></div>
+						<div class="cr-row"><span>{$t('trade.safety')}</span><span>Cancel after timeout</span></div>
 					{/if}
 				</div>
 

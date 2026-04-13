@@ -250,18 +250,14 @@ contract TokenFactory is Ownable, ReentrancyGuard {
 
         uint8 _usdtDecimals = ERC20(usdt_).decimals();
 
-        // Additive pricing: basic = $50, each feature adds its own slice.
-        //   mint    = +$50
-        //   tax     = +$50
-        //   partner = +$100
-        creationFee[0] = 50 * 10 ** _usdtDecimals;
-        creationFee[1] = 100 * 10 ** _usdtDecimals;
-        creationFee[2] = 100 * 10 ** _usdtDecimals;
-        creationFee[3] = 150 * 10 ** _usdtDecimals;
-        creationFee[4] = 150 * 10 ** _usdtDecimals;
-        creationFee[5] = 200 * 10 ** _usdtDecimals;
-        creationFee[6] = 200 * 10 ** _usdtDecimals;
-        creationFee[7] = 250 * 10 ** _usdtDecimals;
+        creationFee[0] = 5 * 10 ** _usdtDecimals;     // Basic
+        creationFee[1] = 15 * 10 ** _usdtDecimals;    // Mintable
+        creationFee[2] = 15 * 10 ** _usdtDecimals;    // Taxable
+        creationFee[3] = 25 * 10 ** _usdtDecimals;    // Tax + Mint
+        creationFee[4] = 105 * 10 ** _usdtDecimals;   // Partner
+        creationFee[5] = 115 * 10 ** _usdtDecimals;   // Partner + Mint
+        creationFee[6] = 115 * 10 ** _usdtDecimals;   // Partner + Tax
+        creationFee[7] = 125 * 10 ** _usdtDecimals;   // Partner + Tax + Mint
 
         // Default referral split: 5% / 3% / 2%.
         referralPercents.push(500);
