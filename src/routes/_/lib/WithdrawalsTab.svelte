@@ -104,18 +104,49 @@
 		return records;
 	}
 
+	/** Read on-chain pending IDs and build a set for fast lookup. */
+	async function getOnChainPendingIds(): Promise<Map<number, Set<number>>> {
+		const result = new Map<number, Set<number>>();
+		for (const network of supportedNetworks) {
+			if (!network.trade_router_address) continue;
+			const provider = networkProviders.get(network.chain_id);
+			if (!provider) continue;
+			try {
+				const router = new ethers.Contract(network.trade_router_address, TRADE_ROUTER_ABI, provider);
+				const count = Number(await router.pendingCount());
+				const ids = new Set<number>();
+				for (let i = 0; i < count; i++) {
+					ids.add(Number(await router.pendingIds(i)));
+				}
+				result.set(network.chain_id, ids);
+			} catch {}
+		}
+		return result;
+	}
+
 	async function loadWithdrawals() {
 		withdrawalsLoading = true;
 		try {
 			if (withdrawFilter === 'pending' || withdrawFilter === 'timeout') {
+				// Read on-chain pending IDs first — source of truth
+				const onChainPending = await getOnChainPendingIds();
+
 				const res = await fetch('/api/withdrawals?status=pending');
 				if (res.ok) {
 					let data = await res.json();
+
+					// Only keep DB records that actually exist on-chain as pending
+					data = data.filter((w: any) => {
+						if (w.withdraw_id == null) return false;
+						const chainIds = onChainPending.get(w.chain_id);
+						return chainIds?.has(w.withdraw_id) ?? false;
+					});
+
 					data = await enrichWithOnChain(data);
 
 					const now = Math.floor(Date.now() / 1000);
 					pendingWithdrawals = data.filter((w: any) => {
-						if (!w._expiresAt) return true; // no on-chain data yet, show as pending
+						if (!w._expiresAt) return true;
 						return now < w._expiresAt;
 					});
 					timeoutWithdrawals = data.filter((w: any) => {

@@ -202,20 +202,8 @@ async function poll() {
 			return;
 		}
 
-		// 2. Check Flutterwave balance
-		const flwBal = await getFlutterwaveBalance();
-		if (flwBal < minFlwNgn) {
-			const alertKey = 'alert:low_flw:global';
-			if (!(await hasAlerted(alertKey))) {
-				await sendAlert(
-					'Low Flutterwave Balance',
-					`NGN wallet has ₦${flwBal.toLocaleString()}. Minimum: ₦${minFlwNgn.toLocaleString()}. Payouts paused.`,
-				);
-				await markAlerted(alertKey);
-			}
-			console.warn(`[SKIP] Flutterwave NGN balance too low: ₦${flwBal}`);
-			return;
-		}
+		// 2. Pre-fetch Flutterwave balance (checked per-withdrawal below)
+		let flwBal = await getFlutterwaveBalance();
 
 		// 3. Read pending withdrawals from chain
 		const count = Number(await router.pendingCount());
@@ -236,10 +224,12 @@ async function poll() {
 
 		for (const id of ids) {
 			// Check if this withdrawal has expired (user can cancel, we shouldn't process)
+			let netAmount = 0n;
 			try {
 				const w = await router.getWithdrawal(id);
 				const expiresAt = Number(w.expiresAt);
 				const now = Math.floor(Date.now() / 1000);
+				netAmount = w.netAmount;
 
 				if (expiresAt > 0 && now >= expiresAt) {
 					// Expired — skip, user can cancel or admin can refund
@@ -250,8 +240,24 @@ async function poll() {
 				continue;
 			}
 
+			// Per-withdrawal balance check — skip if can't afford, but don't block others
+			// Rough estimate: netAmount in USDT wei → NGN (assumes 18 decimals + ~1500 rate)
+			const estNgn = parseFloat(ethers.formatUnits(netAmount, 18)) * 1600;
+			if (flwBal < estNgn + 50) {
+				const alertKey = `alert:low_flw:${id}`;
+				if (!(await hasAlerted(alertKey))) {
+					await sendAlert('Low Flutterwave Balance', `Cannot process withdrawal #${id}: need ~₦${Math.ceil(estNgn).toLocaleString()}, have ₦${Math.floor(flwBal).toLocaleString()}`);
+					await markAlerted(alertKey);
+				}
+				skipped++;
+				continue;
+			}
+
 			const ok = await processWithdrawal(id);
-			if (ok) processed++;
+			if (ok) {
+				// Deduct from local balance tracker so next iteration has accurate estimate
+				flwBal -= estNgn;
+			}
 
 			// Small delay between processing to avoid rate limits
 			if (ids.length > 1) await Bun.sleep(2000);
