@@ -16,7 +16,6 @@
 
 	let tickNow = $state(Date.now());
 	let liveStatus = $state(withdrawal?.status || 'pending');
-	let liveNote = $state(withdrawal?.admin_note || '');
 
 	// Live countdown tick
 	const tickInterval = setInterval(() => { tickNow = Date.now(); }, 1000);
@@ -38,7 +37,6 @@
 			)) {
 				if (row.status !== liveStatus) {
 					liveStatus = row.status;
-					liveNote = row.admin_note || '';
 				}
 			}
 		})
@@ -67,10 +65,12 @@
 
 	// Derived
 	let createdAt = $derived(withdrawal?.created_at ? Math.floor(new Date(withdrawal.created_at).getTime() / 1000) : 0);
-	let elapsed = $derived(Math.floor(tickNow / 1000) - createdAt);
-	let timeoutSec = 300; // 5 min
-	let remaining = $derived(Math.max(0, timeoutSec - elapsed));
-	let progressPct = $derived(Math.min(100, (elapsed / timeoutSec) * 100));
+	let expiresAt = $derived(withdrawal?.expiresAt || withdrawal?.expires_at ? Math.floor(new Date(withdrawal.expires_at || 0).getTime() / 1000) || withdrawal.expiresAt : 0);
+	let totalDuration = $derived(expiresAt > createdAt ? expiresAt - createdAt : 600);
+	let nowSec = $derived(Math.floor(tickNow / 1000));
+	let remaining = $derived(expiresAt > 0 ? Math.max(0, expiresAt - nowSec) : Math.max(0, totalDuration - (nowSec - createdAt)));
+	let elapsed = $derived(nowSec - createdAt);
+	let progressPct = $derived(totalDuration > 0 ? Math.min(100, (elapsed / totalDuration) * 100) : 100);
 	let canCancel = $derived((liveStatus === 'pending' || liveStatus === 'timeout') && remaining <= 0);
 	let usdtAmount = $derived(parseFloat(withdrawal?.gross_amount || '0') / (10 ** usdtDecimals));
 	let ngnAmount = $derived(ngnRate > 0 && usdtAmount > 0 ? usdtAmount * ngnRate : 0);
@@ -137,11 +137,11 @@
 				<div class="status-fiat">≈ NGN {ngnAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
 			{/if}
 
-			<!-- Admin note -->
-			{#if liveNote}
+			<!-- Confirmed message (clean, no raw hashes) -->
+			{#if liveStatus === 'confirmed' || liveStatus === 'processing'}
 				<div class="admin-note">
 					<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
-					{liveNote}
+					{liveStatus === 'confirmed' ? 'Your withdrawal has been confirmed and payment is being sent to your account.' : 'Your withdrawal is being processed. You will receive your funds shortly.'}
 				</div>
 			{/if}
 
