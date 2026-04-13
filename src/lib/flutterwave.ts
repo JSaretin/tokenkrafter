@@ -1,16 +1,16 @@
 import { env } from '$env/dynamic/private';
 
 // ═══════════════════════════════════════════════════════════════
-// Flutterwave dual-API client
+// Flutterwave client — routes v3 calls through the payment-server
+// proxy (VPS with whitelisted IP) when PAYMENT_PROXY_URL is set.
+// Falls back to direct Flutterwave API when no proxy configured.
 //
-// v3 API (api.flutterwave.com/v3/) — uses FLWSECK key directly
-//   → Banks list, account resolve, transfers
-//
-// v4 API (developersandbox-api.flutterwave.com) — uses OAuth token
-//   → Virtual accounts, charges, customers
+// v4 API (virtual accounts, charges) still goes direct — those
+// endpoints aren't IP-whitelisted.
 // ═══════════════════════════════════════════════════════════════
 
 const V3_BASE = 'https://api.flutterwave.com/v3';
+const PROXY_URL = env.PAYMENT_PROXY_URL; // e.g. http://176.32.32.230:4100
 
 const IDP_URL = 'https://idp.flutterwave.com/realms/flutterwave/protocol/openid-connect/token';
 const isProd = env.NODE_ENV === 'production';
@@ -18,7 +18,7 @@ const V4_BASE = isProd
 	? 'https://f4bexperience.flutterwave.com'
 	: 'https://developersandbox-api.flutterwave.com';
 
-// ── v3 API (FLWSECK key) ──────────────────────────────────────
+// ── v3 API — proxied through VPS when available ──────────────
 
 function getV3Key(): string {
 	const key = env.FLUTTERWAVE_SECRET_KEY;
@@ -26,14 +26,34 @@ function getV3Key(): string {
 	return key;
 }
 
+function getProxySecret(): string {
+	const key = env.TX_CONFIRM_SECRET;
+	if (!key) throw new Error('TX_CONFIRM_SECRET required for payment proxy');
+	return key;
+}
+
 async function v3Fetch(path: string, options: RequestInit = {}): Promise<any> {
+	// Route through payment proxy if configured
+	if (PROXY_URL) {
+		const res = await fetch(`${PROXY_URL}${path}`, {
+			...options,
+			headers: {
+				Authorization: `Bearer ${getProxySecret()}`,
+				'Content-Type': 'application/json',
+				...options.headers,
+			},
+		});
+		return res.json();
+	}
+
+	// Direct fallback (dev / no IP whitelist)
 	const res = await fetch(`${V3_BASE}${path}`, {
 		...options,
 		headers: {
-			'Authorization': `Bearer ${getV3Key()}`,
+			Authorization: `Bearer ${getV3Key()}`,
 			'Content-Type': 'application/json',
-			...options.headers
-		}
+			...options.headers,
+		},
 	});
 	return res.json();
 }
