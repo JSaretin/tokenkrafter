@@ -53,6 +53,11 @@ contract BasicTokenImpl is ERC20Upgradeable, OwnableUpgradeable {
     mapping(address => bool) public isAuthorizedLauncher;
     address public tokenFactory;
 
+    /// @notice Number of unique addresses holding a non-zero balance.
+    uint256 public holderCount;
+    /// @notice Cumulative transfer volume (sum of all transfer amounts).
+    uint256 public totalVolume;
+
     // ── Events ──
     event PoolRegistered(address indexed pool, address indexed base);
     event TradingEnabled(uint256 startsAt);
@@ -306,12 +311,30 @@ contract BasicTokenImpl is ERC20Upgradeable, OwnableUpgradeable {
     }
 
     function _update(address from, address to, uint256 value) internal virtual override {
+        // Track new holders (recipient going from 0 → non-zero)
+        if (to != address(0) && balanceOf(to) == 0 && value > 0) {
+            unchecked { holderCount++; }
+        }
+
         if (from == address(0) || to == address(0)) {
             super._update(from, to, value);
+            // Track holder removal on burn (sender going to 0)
+            if (from != address(0) && balanceOf(from) == 0) {
+                unchecked { holderCount--; }
+            }
             return;
         }
+
         _checkProtections(from, to, value);
         super._update(from, to, value);
+
+        // Track holder removal (sender going to 0 after transfer)
+        if (balanceOf(from) == 0) {
+            unchecked { holderCount--; }
+        }
+
+        // Accumulate volume (only real transfers, not mint/burn)
+        unchecked { totalVolume += value; }
     }
 
     function withdrawToken(address token) external onlyOwner {

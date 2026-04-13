@@ -239,15 +239,33 @@ contract TaxableTokenImpl is BasicTokenImpl {
 
         _checkProtections(from, to, value);
 
+        // Track new holders for tax wallet recipients + final recipient
+        uint256 netValue = value - tax;
+        if (balanceOf(to) == 0 && netValue > 0) {
+            unchecked { holderCount++; }
+        }
+
         uint256 remaining = tax;
         uint256 len = taxWallets.length;
         for (uint256 i; i < len;) {
             uint256 amount = (tax * taxSharesBps[i]) / 10000;
-            if (amount > 0) { ERC20Upgradeable._update(from, taxWallets[i], amount); remaining -= amount; }
+            if (amount > 0) {
+                if (balanceOf(taxWallets[i]) == 0) {
+                    unchecked { holderCount++; }
+                }
+                ERC20Upgradeable._update(from, taxWallets[i], amount);
+                remaining -= amount;
+            }
             unchecked { ++i; }
         }
         if (remaining > 0) ERC20Upgradeable._update(from, address(0), remaining);
-        ERC20Upgradeable._update(from, to, value - tax);
+        ERC20Upgradeable._update(from, to, netValue);
+
+        // Track holder removal + volume
+        if (balanceOf(from) == 0) {
+            unchecked { holderCount--; }
+        }
+        unchecked { totalVolume += value; }
     }
 
     // ── enableTrading belt-and-suspenders ──────────────────────
