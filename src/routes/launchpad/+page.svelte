@@ -386,8 +386,14 @@
 		</div>
 	</div>
 
-	<!-- Stats bar (hide when all zeros) -->
-	{#if launches.length > 0}
+	<!-- Stats bar -->
+	{#if loading}
+		<div class="stats-bar mb-5">
+			<div class="stat-item"><span class="skeleton-line" style="width:30px;height:22px;border-radius:4px;"></span><span class="stat-label">{$t('lp.live')}</span></div>
+			<div class="stat-item"><span class="skeleton-line" style="width:30px;height:22px;border-radius:4px;"></span><span class="stat-label">{$t('lp.graduated')}</span></div>
+			<div class="stat-item"><span class="skeleton-line" style="width:70px;height:22px;border-radius:4px;"></span><span class="stat-label">{$t('lp.totalRaised')}</span></div>
+		</div>
+	{:else if launches.length > 0}
 		<div class="stats-bar mb-5">
 			<div class="stat-item">
 				<span class="stat-value">{liveCount}</span>
