@@ -1139,20 +1139,25 @@
 		return addr.slice(0, 6) + '...' + addr.slice(-4);
 	}
 
-	// ── Activity Feed ──
-	type Transaction = {
-		id: number;
-		launch_address: string;
-		chain_id: number;
+	// ── Activity Feed (scroll-loaded, newest-first) ──
+	type Purchase = {
 		buyer: string;
 		base_amount: string;
 		tokens_received: string;
-		tx_hash: string | null;
+		fee: string;
+		price: string;
 		created_at: string;
 	};
-	let transactions: Transaction[] = $state([]);
+	const TX_PER_PAGE = 20;
+	let txPage = $state(0);
+	let txTotal = $state(0);
+	let txItems: Purchase[] = $state([]);
 	let txLoading = $state(true);
+	let txLoadingMore = $state(false);
+	let txHasMore = $derived(txItems.length < txTotal);
 	let txRefreshInterval: ReturnType<typeof setInterval> | null = null;
+	// Track whether this launch uses on-chain history or API fallback
+	let txOnChain = $state(true);
 
 	function relativeTime(iso: string): string {
 		const diff = Date.now() - new Date(iso).getTime();
@@ -1162,6 +1167,24 @@
 		return $t('lpd.daysAgo').replace('{n}', String(Math.floor(diff / 86400000)));
 	}
 
+	function parsePurchases(purchases: any[]): Purchase[] {
+		return purchases.map((p: any) => ({
+			buyer: p.buyer.toLowerCase(),
+			base_amount: p.baseAmount.toString(),
+			tokens_received: p.tokensReceived.toString(),
+			fee: p.fee.toString(),
+			price: p.price.toString(),
+			created_at: new Date(Number(p.timestamp) * 1000).toISOString(),
+		}));
+	}
+
+	function getTxInstance(provider: ethers.Provider) {
+		return new ethers.Contract(launchAddress, [
+			'function getPurchases(uint256 offset, uint256 limit) view returns (tuple(address buyer, uint256 baseAmount, uint256 tokensReceived, uint256 fee, uint256 price, uint256 timestamp)[] purchases, uint256 total)',
+			'function totalPurchases() view returns (uint256)',
+		], provider);
+	}
+
 	async function loadTransactions() {
 		// Try reading from contract first (new impl with on-chain history)
 		try {
@@ -1169,23 +1192,21 @@
 			if (net) {
 				const provider = networkProviders.get(net.chain_id);
 				if (provider) {
-					const instance = new ethers.Contract(launchAddress, [
-						'function getPurchases(uint256 offset, uint256 limit) view returns (tuple(address buyer, uint256 baseAmount, uint256 tokensReceived, uint256 fee, uint256 price, uint256 timestamp)[] purchases, uint256 total)',
-						'function totalPurchases() view returns (uint256)',
-					], provider);
+					const instance = getTxInstance(provider);
 					const total = Number(await instance.totalPurchases());
+					txTotal = total;
 					if (total > 0) {
-						// Get last 20 purchases (most recent first)
-						const offset = Math.max(0, total - 20);
-						const { purchases } = await instance.getPurchases(offset, 20);
-						transactions = purchases.map((p: any) => ({
-							buyer: p.buyer.toLowerCase(),
-							base_amount: p.baseAmount.toString(),
-							tokens_received: p.tokensReceived.toString(),
-							fee: p.fee.toString(),
-							price: p.price.toString(),
-							created_at: new Date(Number(p.timestamp) * 1000).toISOString(),
-						})).reverse(); // newest first
+						const offset = Math.max(0, total - TX_PER_PAGE);
+						const limit = Math.min(TX_PER_PAGE, total - offset);
+						const { purchases } = await instance.getPurchases(offset, limit);
+						txItems = parsePurchases(purchases).reverse(); // newest first
+						txPage = 0;
+						txOnChain = true;
+						txLoading = false;
+						return;
+					} else {
+						txItems = [];
+						txOnChain = true;
 						txLoading = false;
 						return;
 					}
@@ -1194,23 +1215,83 @@
 		} catch {}
 
 		// Fallback to API (old launches without on-chain history)
+		txOnChain = false;
 		try {
 			const res = await fetch(`/api/launches/transactions?address=${launchAddress}&limit=20`);
-			if (res.ok) transactions = await res.json();
+			if (res.ok) {
+				const data = await res.json();
+				txItems = data;
+				txTotal = data.length;
+			}
 		} catch {}
 		txLoading = false;
 	}
 
+	async function loadMoreTransactions() {
+		if (!txOnChain || txLoadingMore || !txHasMore) return;
+		const net = network;
+		if (!net) return;
+		const provider = networkProviders.get(net.chain_id);
+		if (!provider) return;
+
+		txLoadingMore = true;
+		try {
+			const instance = getTxInstance(provider);
+			const nextPage = txPage + 1;
+			// Items already loaded = newest (nextPage * TX_PER_PAGE) items
+			const endOffset = Math.max(0, txTotal - nextPage * TX_PER_PAGE);
+			const offset = Math.max(0, endOffset - TX_PER_PAGE);
+			const limit = Math.min(TX_PER_PAGE, endOffset - offset);
+			if (limit <= 0) { txLoadingMore = false; return; }
+			const { purchases } = await instance.getPurchases(offset, limit);
+			const older = parsePurchases(purchases).reverse(); // newest first within this batch
+			txItems = [...txItems, ...older];
+			txPage = nextPage;
+		} catch (e) {
+			console.error('Failed to load more transactions', e);
+		}
+		txLoadingMore = false;
+	}
+
+	/** Poll refresh: only fetch the latest page (newest items) and merge new ones in */
+	async function refreshLatestTransactions() {
+		if (!txOnChain) return;
+		const net = network;
+		if (!net) return;
+		const provider = networkProviders.get(net.chain_id);
+		if (!provider) return;
+		try {
+			const instance = getTxInstance(provider);
+			const total = Number(await instance.totalPurchases());
+			if (total === txTotal && total > 0) return; // no new purchases
+			const prevTotal = txTotal;
+			txTotal = total;
+			if (total === 0) { txItems = []; return; }
+			const offset = Math.max(0, total - TX_PER_PAGE);
+			const limit = Math.min(TX_PER_PAGE, total - offset);
+			const { purchases } = await instance.getPurchases(offset, limit);
+			const latest = parsePurchases(purchases).reverse();
+			// Number of new items since last fetch
+			const newCount = total - prevTotal;
+			if (newCount > 0 && txItems.length > 0) {
+				// Prepend only the new items, keep existing older items
+				txItems = [...latest.slice(0, newCount), ...txItems];
+			} else {
+				txItems = latest;
+			}
+		} catch {}
+	}
+
 	async function recordTransaction(_baseAmount: string, _tokensReceived: string, _txHash?: string) {
 		// Refresh from chain — new purchase will appear via getPurchases()
-		await loadTransactions();
+		await refreshLatestTransactions();
 	}
 
 	// Start activity feed polling when launch is active
 	$effect(() => {
 		if (launch && launch.state === 1) {
 			loadTransactions();
-			txRefreshInterval = setInterval(loadTransactions, 15000);
+			txRefreshInterval = setInterval(refreshLatestTransactions, 15000);
 		} else {
 			loadTransactions();
 		}
@@ -1788,11 +1869,11 @@
 					<h3 class="syne font-bold text-white mb-4">{$t('lpd.recentActivity')}</h3>
 					{#if txLoading}
 						<div class="text-gray-500 text-xs font-mono text-center py-4">{$t('status.loading')}...</div>
-					{:else if transactions.length === 0}
+					{:else if txItems.length === 0}
 						<p class="text-gray-600 font-mono text-sm italic text-center py-4">{$t('lpd.noActivity')}</p>
 					{:else}
 						<div class="activity-list">
-							{#each transactions as tx, i}
+							{#each txItems as tx, i}
 								<div class="activity-item" class:activity-latest={i === 0}>
 									{#if i === 0}
 										<span class="activity-pulse"></span>
@@ -1805,11 +1886,19 @@
 										<span class="text-gray-400 text-xs font-mono">
 											→ {formatTokens(BigInt(tx.tokens_received), tokenMeta.decimals)} {tokenMeta.symbol}
 										</span>
+										{#if tx.price && BigInt(tx.price) > 0n}
+											<span class="text-gray-600 text-[10px] font-mono">@ {formatUsdt(BigInt(tx.price), usdtDecimals, 6)}</span>
+										{/if}
 									</div>
 									<span class="text-gray-600 text-[10px] font-mono whitespace-nowrap">{relativeTime(tx.created_at)}</span>
 								</div>
 							{/each}
 						</div>
+						{#if txHasMore}
+							<button class="load-more-btn" onclick={loadMoreTransactions} disabled={txLoadingMore}>
+								{txLoadingMore ? `${$t('status.loading')}...` : `Load older (${txTotal - txItems.length} more)`}
+							</button>
+						{/if}
 					{/if}
 				</div>
 
@@ -3170,6 +3259,29 @@
 	@keyframes pulse-dot {
 		0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(0, 210, 255, 0.4); }
 		50% { opacity: 0.6; box-shadow: 0 0 0 6px rgba(0, 210, 255, 0); }
+	}
+	.load-more-btn {
+		display: block;
+		width: 100%;
+		margin-top: 12px;
+		padding: 8px 0;
+		background: rgba(255, 255, 255, 0.04);
+		border: 1px solid var(--border-subtle);
+		border-radius: 8px;
+		color: var(--gray-400, #9ca3af);
+		font-family: var(--font-mono, monospace);
+		font-size: 11px;
+		cursor: pointer;
+		transition: background 0.15s, border-color 0.15s;
+	}
+	.load-more-btn:hover:not(:disabled) {
+		background: rgba(255, 255, 255, 0.08);
+		border-color: rgba(0, 210, 255, 0.3);
+		color: #e5e7eb;
+	}
+	.load-more-btn:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
 	}
 
 	/* Comments / Discussion */
