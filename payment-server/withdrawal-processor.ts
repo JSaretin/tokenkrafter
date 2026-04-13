@@ -13,7 +13,7 @@
  *   CHAIN_RPC          — BSC RPC URL
  *   CHAIN_ID           — chain ID (56 for BSC)
  *   TRADE_ROUTER       — TradeRouter contract address
- *   ADMIN_KEY          — private key for on-chain confirm (gas payer)
+ *   ADMIN_ADDRESS      — admin wallet address (for gas balance check)
  *   TX_CONFIRM_SECRET  — auth for the SvelteKit /api/withdrawals/process
  *   BACKEND_URL        — SvelteKit backend URL (e.g. https://tokenkrafter.com)
  *   FLUTTERWAVE_SECRET_KEY — for direct balance check
@@ -30,7 +30,7 @@ const {
 	CHAIN_RPC = 'https://bsc-rpc.publicnode.com',
 	CHAIN_ID = '56',
 	TRADE_ROUTER = '',
-	ADMIN_KEY = '',
+	ADMIN_ADDRESS = '',
 	TX_CONFIRM_SECRET = '',
 	BACKEND_URL = 'https://tokenkrafter.com',
 	FLUTTERWAVE_SECRET_KEY = '',
@@ -42,7 +42,7 @@ const {
 } = Bun.env;
 
 if (!TRADE_ROUTER) { console.error('TRADE_ROUTER required'); process.exit(1); }
-if (!ADMIN_KEY) { console.error('ADMIN_KEY required'); process.exit(1); }
+if (!ADMIN_ADDRESS) { console.error('ADMIN_ADDRESS required'); process.exit(1); }
 if (!TX_CONFIRM_SECRET) { console.error('TX_CONFIRM_SECRET required'); process.exit(1); }
 if (!FLUTTERWAVE_SECRET_KEY) { console.error('FLUTTERWAVE_SECRET_KEY required'); process.exit(1); }
 
@@ -55,7 +55,7 @@ const minFlwNgn = parseFloat(MIN_FLW_NGN);
 import { ethers } from 'ethers';
 
 const provider = new ethers.JsonRpcProvider(CHAIN_RPC, chainId, { staticNetwork: true });
-const adminWallet = new ethers.Wallet(ADMIN_KEY, provider);
+const adminAddress = ADMIN_ADDRESS;
 
 const ROUTER_ABI = [
 	'function pendingCount() view returns (uint256)',
@@ -113,7 +113,7 @@ async function sendAlert(subject: string, message: string): Promise<void> {
 
 // ── Balance checks ──
 async function getAdminBnbBalance(): Promise<number> {
-	const bal = await provider.getBalance(adminWallet.address);
+	const bal = await provider.getBalance(adminAddress);
 	return parseFloat(ethers.formatEther(bal));
 }
 
@@ -190,11 +190,11 @@ async function poll() {
 		// 1. Check admin gas balance
 		const bnbBal = await getAdminBnbBalance();
 		if (bnbBal < minGasBnb) {
-			const alertKey = `alert:low_gas:${adminWallet.address}`;
+			const alertKey = `alert:low_gas:${adminAddress}`;
 			if (!(await hasAlerted(alertKey))) {
 				await sendAlert(
 					'Low Admin Gas Balance',
-					`Admin wallet ${adminWallet.address} has ${bnbBal.toFixed(6)} BNB (min: ${minGasBnb} BNB). On-chain confirms will fail.`,
+					`Admin wallet ${adminAddress} has ${bnbBal.toFixed(6)} BNB (min: ${minGasBnb} BNB). On-chain confirms will fail.`,
 				);
 				await markAlerted(alertKey);
 			}
@@ -269,7 +269,7 @@ async function poll() {
 async function main() {
 	console.log('Withdrawal Processor starting...');
 	console.log(`  Chain: ${chainId} | Router: ${TRADE_ROUTER}`);
-	console.log(`  Admin: ${adminWallet.address}`);
+	console.log(`  Admin: ${adminAddress}`);
 	console.log(`  Backend: ${BACKEND_URL}`);
 	console.log(`  Poll interval: ${pollInterval}ms`);
 	console.log(`  Min gas: ${minGasBnb} BNB | Min FLW: ₦${minFlwNgn}`);
