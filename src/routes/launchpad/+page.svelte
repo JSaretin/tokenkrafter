@@ -372,7 +372,7 @@
 	<meta name="description" content={$t('lp.metaDesc')} />
 </svelte:head>
 
-<div class="page-wrap max-w-[1400px] mx-auto px-4 sm:px-6 py-8 {launches.length > 0 ? 'xl:grid xl:grid-cols-[1fr_320px] xl:gap-6' : ''}">
+<div class="page-wrap max-w-[1400px] mx-auto px-4 sm:px-6 py-8 xl:grid xl:grid-cols-[1fr_320px] xl:gap-6">
 	<div class="min-w-0">
 	<!-- Header row -->
 	<div class="flex flex-wrap items-end justify-between gap-4 mb-6">
@@ -476,8 +476,8 @@
 
 	<!-- Grid -->
 	{#if loading}
-		<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-			{#each Array(3) as _}
+		<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+			{#each Array(4) as _}
 				<div class="skeleton-card card p-0">
 					<!-- Badges bar -->
 					<div class="flex gap-2 px-4 pt-3 pb-1">
@@ -698,12 +698,10 @@
 		{/if}
 	{/if}
 	</div>
-	<!-- Market Flow sidebar (only show when there are launches) -->
-	{#if launches.length > 0}
-		<div class="lp-sidebar hidden xl:block">
-			<MarketFlow />
-		</div>
-	{/if}
+	<!-- Market Flow sidebar — always present on desktop so skeleton matches loaded layout -->
+	<div class="lp-sidebar hidden xl:block">
+		<MarketFlow />
+	</div>
 </div>
 
 <style>
