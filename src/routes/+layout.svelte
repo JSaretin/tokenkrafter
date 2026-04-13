@@ -525,10 +525,10 @@
 
 	// Primary nav — only the core pages users need
 	const navLinks: { href: string; key: import('$lib/i18n').TranslationKey }[] = [
+		{ href: '/explore', key: 'nav.explore' },
 		{ href: '/launchpad', key: 'nav.launchpad' },
 		{ href: '/trade', key: 'nav.trade' },
 		{ href: '/create', key: 'nav.createToken' },
-		{ href: '/explore', key: 'nav.explore' },
 	];
 
 	// Secondary nav — shown in mobile drawer and footer only
@@ -536,6 +536,14 @@
 		{ href: '/manage-tokens', key: 'nav.manageTokens' },
 		{ href: '/affiliate', key: 'nav.affiliate' },
 	];
+
+	// Nav search state
+	let navSearch = $state('');
+	function handleNavSearch(e: KeyboardEvent) {
+		if (e.key === 'Enter' && navSearch.trim()) {
+			window.location.href = `/explore?q=${encodeURIComponent(navSearch.trim())}`;
+		}
+	}
 
 	const socials = [
 		{ label: 'X', href: 'https://x.com/TokenKrafter', svg: '<path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>' },
@@ -673,14 +681,45 @@
 							: 'text-gray-400 hover:text-white hover:bg-white/5'}"
 					>{$t('nav.manageTokens')}</a>
 				{/if}
+				{#if isAdmin}
+					<a
+						href="/_"
+						class="nav-link px-3 py-1.5 rounded-md text-[13px] transition font-mono
+						{page.url.pathname.startsWith('/_')
+							? 'text-cyan-400 bg-cyan-400/10'
+							: 'text-gray-400 hover:text-white hover:bg-white/5'}"
+					>{$t('nav.admin')}</a>
+				{/if}
 			</div>
 
 			<!-- Right side: actions -->
 			<div class="flex items-center gap-2">
-				<a href="/create" onclick={() => createMode.set(null)} class="nav-cta nav-cta-desktop no-underline">
-					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-					Launch
-				</a>
+				<!-- Nav search -->
+				<div class="nav-search hidden md:flex">
+					<svg class="nav-search-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+					<input
+						type="text"
+						class="nav-search-input"
+						placeholder="Search tokens..."
+						bind:value={navSearch}
+						onkeydown={handleNavSearch}
+					/>
+				</div>
+
+				<!-- Theme toggle -->
+				<button
+					class="theme-toggle-nav"
+					onclick={toggleTheme}
+					title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+					aria-label="Toggle theme"
+				>
+					{#if theme === 'dark'}
+						<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+					{:else}
+						<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+					{/if}
+				</button>
+
 				<div class="lang-desktop"><LanguageSwitcher /></div>
 				{#if walletLoading}
 					<div class="wallet-btn wallet-skeleton"><span class="skeleton-bar"></span></div>
@@ -732,16 +771,6 @@
 
 			<!-- Nav links -->
 			<nav class="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-1">
-				<!-- Launch CTA in drawer -->
-				<a
-					href="/create"
-					onclick={() => { mobileMenuOpen = false; createMode.set(null); }}
-					class="nav-cta no-underline mb-3 justify-center"
-				>
-					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-					Launch
-				</a>
-
 				{#each navLinks as link}
 					<a
 						href={link.href}
@@ -765,6 +794,16 @@
 							: 'text-gray-500 hover:text-white hover:bg-white/5'}"
 					>{$t(link.key)}</a>
 				{/each}
+				{#if isAdmin}
+					<a
+						href="/_"
+						onclick={() => (mobileMenuOpen = false)}
+						class="mobile-nav-link px-4 py-2.5 rounded-lg text-xs transition font-mono flex items-center
+						{page.url.pathname.startsWith('/_')
+							? 'text-cyan-400 bg-cyan-400/10'
+							: 'text-gray-500 hover:text-white hover:bg-white/5'}"
+					>{$t('nav.admin')}</a>
+				{/if}
 			</nav>
 
 			<!-- Bottom actions -->
@@ -865,47 +904,20 @@
 
 			<div class="flex flex-col sm:flex-row items-center justify-between gap-4">
 				<p class="text-xs font-mono" style="color: var(--text-dim)">&copy; {new Date().getFullYear()} TokenKrafter. {$t('footer.allRightsReserved')}.</p>
-				<div class="flex items-center gap-4">
-					<button
-						onclick={toggleTheme}
-						class="theme-toggle"
-						title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-						aria-label="Toggle dark/light theme"
-					>
-						{#if theme === 'dark'}
-							<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
-						{:else}
-							<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-						{/if}
-						<span>{theme === 'dark' ? 'Light' : 'Dark'}</span>
-					</button>
-					<div class="flex items-center gap-3">
-						{#each socials as social}
-							<a
-								href={social.href}
-								target="_blank"
-								rel="noopener noreferrer"
-								class="footer-social-icon"
-								title={social.label}
-								aria-label={social.label}
-							><svg class="social-svg-sm" viewBox="0 0 24 24" fill="currentColor">{@html social.svg}</svg></a>
-						{/each}
-					</div>
-				</div>
 			</div>
 		</div>
 	</footer>
 	</div>
 
-	<!-- Mobile Bottom Tab Bar (Binance style) -->
+	<!-- Mobile Bottom Tab Bar -->
 	<div class="bottom-tabs">
-		<a href="/" class="bottom-tab" class:bottom-tab-active={page.url.pathname === '/'}>
-			<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>
-			<span>Home</span>
+		<a href="/explore" class="bottom-tab" class:bottom-tab-active={page.url.pathname.startsWith('/explore')}>
+			<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+			<span>Explore</span>
 		</a>
 		<a href="/launchpad" class="bottom-tab" class:bottom-tab-active={page.url.pathname.startsWith('/launchpad')}>
 			<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-			<span>Launch</span>
+			<span>Launchpad</span>
 		</a>
 		<a href="/trade" class="bottom-tab" class:bottom-tab-active={page.url.pathname.startsWith('/trade')}>
 			<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4"/></svg>
@@ -1006,12 +1018,37 @@
 	}
 	.nav-bar { background: var(--bg-nav); }
 	/* Desktop/mobile visibility */
-	.nav-cta-desktop, .lang-desktop, .wallet-desktop { display: none; }
+	.lang-desktop, .wallet-desktop { display: none; }
 	@media (min-width: 768px) {
-		.nav-cta-desktop { display: inline-flex; }
 		.lang-desktop { display: block; }
 		.wallet-desktop { display: block; }
 	}
+
+	/* Nav search */
+	.nav-search {
+		align-items: center; gap: 6px;
+		padding: 5px 10px; border-radius: 8px;
+		background: var(--bg-surface); border: 1px solid var(--border);
+		transition: border-color 0.15s;
+	}
+	.nav-search:focus-within { border-color: rgba(0,210,255,0.3); }
+	.nav-search-icon { color: var(--text-dim); flex-shrink: 0; }
+	.nav-search-input {
+		background: transparent; border: none; outline: none;
+		color: var(--text); font-family: 'Space Mono', monospace; font-size: 11px;
+		width: 120px; transition: width 0.2s;
+	}
+	.nav-search-input:focus { width: 180px; }
+	.nav-search-input::placeholder { color: var(--text-dim); }
+
+	/* Theme toggle in nav */
+	.theme-toggle-nav {
+		display: flex; align-items: center; justify-content: center;
+		width: 32px; height: 32px; border-radius: 8px;
+		background: transparent; border: 1px solid var(--border);
+		color: var(--text-dim); cursor: pointer; transition: all 0.15s;
+	}
+	.theme-toggle-nav:hover { border-color: rgba(0,210,255,0.3); color: #00d2ff; background: rgba(0,210,255,0.05); }
 
 	.wallet-btn {
 		display: inline-flex; align-items: center; gap: 6px;
@@ -1043,25 +1080,6 @@
 		width: 7px; height: 7px; border-radius: 50%; background: #10b981; flex-shrink: 0;
 	}
 	.wallet-dot-locked { background: #fbbf24; }
-	.nav-cta {
-		display: inline-flex;
-		align-items: center;
-		gap: 5px;
-		background: linear-gradient(135deg, #00d2ff, #3a7bd5);
-		color: white;
-		font-weight: 600;
-		padding: 6px 14px;
-		border-radius: 8px;
-		border: none;
-		cursor: pointer;
-		transition: all 0.2s;
-		font-family: 'Syne', sans-serif;
-		font-size: 13px;
-	}
-	.nav-cta:hover {
-		transform: translateY(-1px);
-		box-shadow: 0 4px 16px rgba(0, 210, 255, 0.3);
-	}
 	/* Offline Banner */
 	.offline-banner {
 		position: fixed; top: 0; left: 0; right: 0; z-index: 110;
@@ -1167,32 +1185,6 @@
 	.social-svg-sm {
 		width: 14px;
 		height: 14px;
-	}
-	.theme-toggle {
-		display: inline-flex;
-		align-items: center;
-		gap: 6px;
-		padding: 5px 12px;
-		border-radius: 8px;
-		border: 1px solid var(--border);
-		background: var(--bg-surface);
-		color: var(--text-muted);
-		font-family: 'Space Mono', monospace;
-		font-size: 12px;
-		cursor: pointer;
-		transition: all 0.2s;
-	}
-	.theme-toggle:hover {
-		border-color: rgba(0,210,255,0.3);
-		color: #00d2ff;
-		background: rgba(0,210,255,0.05);
-	}
-	.footer-social-icon {
-		color: var(--text-dim);
-		transition: color 0.2s;
-	}
-	.footer-social-icon:hover {
-		color: #00d2ff;
 	}
 
 	/* ─── Mobile Drawer ─── */

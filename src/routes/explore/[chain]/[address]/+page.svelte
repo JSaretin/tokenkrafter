@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { ethers } from 'ethers';
+	import { onMount } from 'svelte';
+	import { supabase } from '$lib/supabaseClient';
 
 	let { data }: { data: any } = $props();
 
@@ -30,6 +32,87 @@
 	let hasLiquidity = $derived(onChainData?.hasLiquidity || pools.some((p: any) => p.has_liquidity));
 	let activePools = $derived(pools.filter((p: any) => p.has_liquidity));
 	let allBurned = $derived(pools.length > 0 && pools.every((p: any) => p.lp_burned && p.lp_burned_pct >= 9900));
+
+	// ── GeckoTerminal market data (client-side fetch) ──
+	const GECKO_NETS: Record<number, string> = { 56: 'bsc', 1: 'eth', 8453: 'base', 42161: 'arbitrum', 137: 'polygon_pos' };
+	let price = $state(0);
+	let volume24h = $state(0);
+	let priceChange24h = $state(0);
+	let geckoLoading = $state(true);
+
+	let mcap = $derived(price > 0 ? price * parseFloat(ethers.formatUnits(totalSupply, tokenDecimals)) : 0);
+
+	function fmtPrice(v: number): string {
+		if (v === 0) return '—';
+		if (v >= 1) return `$${v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}`;
+		return `$${parseFloat(v.toPrecision(4))}`;
+	}
+
+	function fmtMcap(v: number): string {
+		if (v <= 0) return '—';
+		if (v >= 1e9) return `$${(v / 1e9).toFixed(2)}B`;
+		if (v >= 1e6) return `$${(v / 1e6).toFixed(2)}M`;
+		if (v >= 1e3) return `$${(v / 1e3).toFixed(1)}K`;
+		return `$${v.toFixed(0)}`;
+	}
+
+	function fmtVol(v: number): string {
+		if (v <= 0) return '—';
+		if (v >= 1e6) return `$${(v / 1e6).toFixed(1)}M`;
+		if (v >= 1e3) return `$${(v / 1e3).toFixed(1)}K`;
+		return `$${v.toFixed(0)}`;
+	}
+
+	// ── SAFU derived from dbData ──
+	let isSafu = $derived(!!dbData?.is_safu);
+	let ownerRenounced = $derived(!!dbData?.owner_renounced);
+	let tradingEnabled = $derived(!!dbData?.trading_enabled);
+	let taxCeilingLocked = $derived(!!dbData?.tax_ceiling_locked);
+
+	// Honeypot detection — ONLY for non-platform tokens. Platform-created
+	// tokens (EIP-1167 clones of verified implementations) can never be
+	// honeypots. When TradeLens simulation fails on a platform token it's
+	// because liquidity hasn't been added or trading isn't enabled yet —
+	// a status indicator, not a safety warning.
+	let simFailed = $derived(!!(taxInfo && (!taxInfo.canBuy || !taxInfo.canSell)));
+	let isHoneypot = $derived(simFailed && !isOnPlatform);
+	// Platform tokens that fail simulation: show neutral "not trading" status
+	let notTradingYet = $derived(simFailed && isOnPlatform && !hasLiquidity);
+
+	// ── Launch cross-link ──
+	let launchAddress = $state<string | null>(null);
+
+	onMount(async () => {
+		// Fetch GeckoTerminal price data
+		const geckoNet = GECKO_NETS[chainInfo.id];
+		if (geckoNet) {
+			try {
+				const res = await fetch(`https://api.geckoterminal.com/api/v2/networks/${geckoNet}/tokens/${tokenAddress}`);
+				if (res.ok) {
+					const json = await res.json();
+					const a = json?.data?.attributes;
+					if (a) {
+						price = parseFloat(a.price_usd || '0');
+						volume24h = parseFloat(a.volume_usd?.h24 || '0');
+						priceChange24h = parseFloat(a.price_change_percentage?.h24 || '0');
+					}
+				}
+			} catch {}
+		}
+		geckoLoading = false;
+
+		// Check if token has a launch instance
+		try {
+			const { data: launch } = await supabase
+				.from('launches')
+				.select('address, chain_id')
+				.eq('token_address', tokenAddress)
+				.eq('chain_id', chainInfo.id)
+				.limit(1)
+				.maybeSingle();
+			if (launch) launchAddress = launch.address;
+		} catch {}
+	});
 
 	function fmtSupply(val: string | number, dec: number): string {
 		const raw = String(val ?? '0');
@@ -99,7 +182,29 @@
 	<!-- Ambient glow -->
 	<div class="glow"></div>
 
-	<!-- Hero -->
+	<!-- ═══ HONEYPOT BANNER — only for non-platform tokens with failing simulation ═══ -->
+	{#if isHoneypot}
+		<div class="honeypot-banner">
+			<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+			<div class="honeypot-text">
+				<strong>Warning: Potential Honeypot</strong>
+				<span>
+					{#if !taxInfo?.canBuy && !taxInfo?.canSell}Cannot buy or sell{:else if !taxInfo?.canBuy}Cannot buy — {taxInfo?.buyError || 'reverts'}{:else}Cannot sell — {taxInfo?.sellError || 'honeypot'}{/if}
+				</span>
+			</div>
+		</div>
+	{:else if notTradingYet}
+		<!-- Platform token without liquidity — neutral status, not a warning -->
+		<div class="not-trading-banner">
+			<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+			<div class="not-trading-text">
+				<strong>Not trading yet</strong>
+				<span>This token hasn't been listed on a DEX. The creator can add liquidity from the <a href="/manage-tokens/{data.chainSlug}/{tokenAddress}">token management page</a>.</span>
+			</div>
+		</div>
+	{/if}
+
+	<!-- ═══ HERO ═══ -->
 	<header class="hero">
 		<div class="hero-left">
 			{#if logoUrl}
@@ -116,10 +221,43 @@
 					<span class="chain-pill">{chainInfo.name}</span>
 					{#if isOnPlatform}<span class="tk-pill">TokenKrafter</span>{/if}
 				</div>
+				<!-- Social links — moved to hero for visibility -->
+				{#if website || twitter || telegram}
+					<div class="hero-socials">
+						{#if website}
+							<a href={website.startsWith('http') ? website : `https://${website}`} target="_blank" rel="noopener" class="hero-social" title="Website">
+								<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+							</a>
+						{/if}
+						{#if twitter}
+							<a href={twitter.startsWith('http') ? twitter : `https://x.com/${twitter.replace('@', '')}`} target="_blank" rel="noopener" class="hero-social" title="Twitter">
+								<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+							</a>
+						{/if}
+						{#if telegram}
+							<a href={telegram.startsWith('http') ? telegram : `https://t.me/${telegram.replace('@', '')}`} target="_blank" rel="noopener" class="hero-social" title="Telegram">
+								<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>
+							</a>
+						{/if}
+					</div>
+				{/if}
 			</div>
 		</div>
 
 		<div class="hero-right">
+			<!-- Price display (from GeckoTerminal) -->
+			{#if price > 0}
+				<div class="hero-price">
+					<span class="hero-price-val">{fmtPrice(price)}</span>
+					{#if priceChange24h !== 0}
+						<span class="hero-price-change" class:up={priceChange24h > 0} class:down={priceChange24h < 0}>
+							{priceChange24h > 0 ? '+' : ''}{priceChange24h.toFixed(1)}%
+						</span>
+					{/if}
+				</div>
+			{:else if !geckoLoading}
+				<div class="status-off">No Price Data</div>
+			{/if}
 			{#if hasLiquidity}
 				<div class="status-live">
 					<span class="pulse"></span>
@@ -131,22 +269,41 @@
 		</div>
 	</header>
 
-	<!-- Feature badges -->
+	<!-- Feature badges + SAFU trust indicators -->
 	<div class="badges">
+		{#if isSafu}<span class="badge badge-safu">SAFU</span>{/if}
+		{#if ownerRenounced}<span class="badge badge-green">Renounced</span>{/if}
+		{#if taxCeilingLocked}<span class="badge badge-green">Tax Locked</span>{/if}
+		{#if allBurned}<span class="badge badge-green">LP Burned</span>{/if}
 		{#if dbData?.is_taxable}<span class="badge badge-amber">Taxable</span>{/if}
 		{#if dbData?.is_mintable}<span class="badge badge-red">Mintable</span>{/if}
 		{#if dbData?.is_partner}<span class="badge badge-purple">Partner</span>{/if}
-		{#if allBurned}<span class="badge badge-green">LP Burned</span>{/if}
-		{#if creator}
-			<button class="badge badge-addr" onclick={copyAddress}>
-				{copied ? 'Copied!' : shortAddr(tokenAddress)}
-				<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-			</button>
+		<button class="badge badge-addr" onclick={copyAddress}>
+			{copied ? 'Copied!' : shortAddr(tokenAddress)}
+			<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+		</button>
+		{#if launchAddress}
+			<a href="/launchpad/{data.chainSlug}/{launchAddress}" class="badge badge-launch">
+				<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+				Launch
+			</a>
 		{/if}
 	</div>
 
-	<!-- Stats strip -->
+	<!-- Stats strip — price/mcap/volume replace Decimals -->
 	<div class="stats-strip">
+		{#if price > 0}
+			<div class="s-cell">
+				<span class="s-label">Market Cap</span>
+				<span class="s-val">{fmtMcap(mcap)}</span>
+			</div>
+			<div class="s-divider"></div>
+			<div class="s-cell">
+				<span class="s-label">Volume 24h</span>
+				<span class="s-val">{fmtVol(volume24h)}</span>
+			</div>
+			<div class="s-divider"></div>
+		{/if}
 		<div class="s-cell">
 			<span class="s-label">Supply</span>
 			<span class="s-val">{fmtSupply(totalSupply, tokenDecimals)}</span>
@@ -155,11 +312,6 @@
 		<div class="s-cell">
 			<span class="s-label">Pools</span>
 			<span class="s-val">{activePools.length}<span class="s-sub">/{pools.length}</span></span>
-		</div>
-		<div class="s-divider"></div>
-		<div class="s-cell">
-			<span class="s-label">Decimals</span>
-			<span class="s-val">{tokenDecimals}</span>
 		</div>
 		{#if createdAt}
 			<div class="s-divider"></div>
@@ -191,10 +343,10 @@
 					<span class="tax-val" class:tax-free={taxInfo.transferTaxBps === 0}>{taxInfo.transferTaxBps === 0 ? 'Free' : `${(taxInfo.transferTaxBps / 100).toFixed(1)}%`}</span>
 				</div>
 			</div>
-			{#if !taxInfo.canBuy}
+			{#if !taxInfo.canBuy && !isHoneypot && !notTradingYet}
 				<div class="tax-warn">Cannot buy — {taxInfo.buyError || 'reverts'}</div>
 			{/if}
-			{#if !taxInfo.canSell}
+			{#if !taxInfo.canSell && !isHoneypot && !notTradingYet}
 				<div class="tax-warn">Cannot sell — {taxInfo.sellError || 'honeypot'}</div>
 			{/if}
 		</div>
@@ -269,51 +421,37 @@
 		</section>
 	{/if}
 
-	<!-- About -->
-	{#if description || website || twitter || telegram}
+	<!-- About (social links moved to hero — only description remains here) -->
+	{#if description}
 		<section class="section">
 			<h2 class="section-title">About</h2>
-			{#if description}
-				<p class="about-text">{description}</p>
-			{/if}
-			{#if website || twitter || telegram}
-				<div class="socials">
-					{#if website}
-						<a href={website.startsWith('http') ? website : `https://${website}`} target="_blank" rel="noopener" class="social-link">
-							<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-							Website
-						</a>
-					{/if}
-					{#if twitter}
-						<a href={twitter.startsWith('http') ? twitter : `https://x.com/${twitter.replace('@', '')}`} target="_blank" rel="noopener" class="social-link">
-							<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
-							Twitter
-						</a>
-					{/if}
-					{#if telegram}
-						<a href={telegram.startsWith('http') ? telegram : `https://t.me/${telegram.replace('@', '')}`} target="_blank" rel="noopener" class="social-link">
-							<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>
-							Telegram
-						</a>
-					{/if}
-				</div>
-			{/if}
+			<p class="about-text">{description}</p>
 		</section>
 	{/if}
 
-	<!-- Contract info -->
+	<!-- Contract info (Decimals moved here from stats strip) -->
 	<section class="section">
 		<h2 class="section-title">Contract</h2>
 		<div class="contract-bar" onclick={copyAddress} role="button" tabindex="0" onkeydown={(e) => { if (e.key === 'Enter') copyAddress(); }}>
 			<span class="contract-addr">{tokenAddress}</span>
 			<span class="contract-copy">{copied ? '✓ Copied' : 'Copy'}</span>
 		</div>
-		{#if creator}
+		<div class="contract-meta">
+			{#if creator}
+				<div class="creator-bar">
+					<span class="creator-label">Creator</span>
+					<a href="{chainInfo.explorer}/address/{creator}" target="_blank" rel="noopener" class="creator-link">{shortAddr(creator)}</a>
+				</div>
+			{/if}
 			<div class="creator-bar">
-				<span class="creator-label">Creator</span>
-				<a href="{chainInfo.explorer}/address/{creator}" target="_blank" rel="noopener" class="creator-link">{shortAddr(creator)}</a>
+				<span class="creator-label">Decimals</span>
+				<span class="creator-link" style="text-decoration:none;cursor:default;">{tokenDecimals}</span>
 			</div>
-		{/if}
+			<div class="creator-bar">
+				<span class="creator-label">Standard</span>
+				<span class="creator-link" style="text-decoration:none;cursor:default;">ERC-20</span>
+			</div>
+		</div>
 	</section>
 </div>
 
@@ -332,13 +470,52 @@
 		pointer-events: none; z-index: 0;
 	}
 
+	/* ── Honeypot Banner ── */
+	.honeypot-banner {
+		display: flex; align-items: center; gap: 12px;
+		padding: 12px 16px; margin-bottom: 16px; border-radius: 12px;
+		background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.25);
+		color: #f87171; position: relative; z-index: 1;
+	}
+	.honeypot-text { display: flex; flex-direction: column; gap: 2px; }
+	.honeypot-text strong { font-family: 'Syne', sans-serif; font-size: 13px; }
+	.honeypot-text span { font-family: 'Space Mono', monospace; font-size: 11px; color: #fca5a5; }
+
+	/* ── Not-trading banner (platform tokens without liquidity) ── */
+	.not-trading-banner {
+		display: flex; align-items: center; gap: 12px;
+		padding: 12px 16px; margin-bottom: 16px; border-radius: 12px;
+		background: rgba(0,210,255,0.04); border: 1px solid rgba(0,210,255,0.15);
+		color: var(--text-muted); position: relative; z-index: 1;
+	}
+	.not-trading-banner svg { color: #00d2ff; flex-shrink: 0; }
+	.not-trading-text { display: flex; flex-direction: column; gap: 2px; }
+	.not-trading-text strong { font-family: 'Syne', sans-serif; font-size: 13px; color: var(--text-heading); }
+	.not-trading-text span { font-family: 'Space Mono', monospace; font-size: 11px; line-height: 1.5; }
+	.not-trading-text a { color: #00d2ff; text-decoration: underline; }
+
 	/* ── Hero ── */
 	.hero {
 		display: flex; justify-content: space-between; align-items: flex-start;
 		gap: 16px; margin-bottom: 16px; position: relative; z-index: 1;
 	}
 	.hero-left { display: flex; align-items: center; gap: 16px; min-width: 0; }
-	.hero-right { flex-shrink: 0; }
+	.hero-right { flex-shrink: 0; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+
+	.hero-price { display: flex; flex-direction: column; align-items: flex-end; }
+	.hero-price-val { font-family: 'Rajdhani', sans-serif; font-size: 24px; font-weight: 700; color: var(--text-heading); font-variant-numeric: tabular-nums; line-height: 1.1; }
+	.hero-price-change { font-family: 'Rajdhani', sans-serif; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+	.hero-price-change.up { color: #10b981; }
+	.hero-price-change.down { color: #f87171; }
+
+	.hero-socials { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+	.hero-social {
+		width: 26px; height: 26px; border-radius: 6px;
+		display: flex; align-items: center; justify-content: center;
+		background: var(--bg-surface); border: 1px solid var(--border-subtle);
+		color: var(--text-dim); transition: all 0.15s; text-decoration: none;
+	}
+	.hero-social:hover { color: #00d2ff; border-color: rgba(0,210,255,0.3); background: rgba(0,210,255,0.06); }
 
 	.avatar {
 		width: 64px; height: 64px; border-radius: 16px; object-fit: cover;
@@ -418,6 +595,12 @@
 		font-size: 10px; font-weight: 400;
 	}
 	.badge-addr:hover { background: rgba(0,210,255,0.08); color: #00d2ff; }
+	.badge-safu { background: rgba(16,185,129,0.15); color: #10b981; border-color: rgba(16,185,129,0.3); font-weight: 800; }
+	.badge-launch {
+		background: rgba(0,210,255,0.06); color: #00d2ff; border-color: rgba(0,210,255,0.15);
+		display: flex; align-items: center; gap: 4px; text-decoration: none;
+	}
+	.badge-launch:hover { background: rgba(0,210,255,0.12); border-color: rgba(0,210,255,0.3); }
 
 	/* ── Stats strip ── */
 	.stats-strip {
@@ -543,17 +726,6 @@
 		font-family: 'Space Mono', monospace; font-size: 12px; line-height: 1.8;
 		color: var(--text-dim); margin: 0 0 12px;
 	}
-	.socials { display: flex; gap: 8px; flex-wrap: wrap; }
-	.social-link {
-		display: inline-flex; align-items: center; gap: 6px;
-		padding: 7px 14px; border-radius: 8px;
-		border: 1px solid var(--border-subtle);
-		background: var(--bg-surface);
-		color: var(--text-dim); font-family: 'Space Mono', monospace; font-size: 10px;
-		text-decoration: none; transition: all 0.15s;
-	}
-	.social-link:hover { color: #00d2ff; border-color: rgba(0,210,255,0.15); background: rgba(0,210,255,0.03); }
-
 	/* ── Contract ── */
 	.contract-bar {
 		display: flex; justify-content: space-between; align-items: center;
@@ -571,9 +743,10 @@
 		font-family: 'Space Mono', monospace; font-size: 10px; color: #00d2ff;
 		flex-shrink: 0;
 	}
+	.contract-meta { margin-top: 6px; }
 	.creator-bar {
 		display: flex; justify-content: space-between; align-items: center;
-		padding: 10px 16px; margin-top: 6px;
+		padding: 10px 16px;
 	}
 	.creator-label { font-family: 'Space Mono', monospace; font-size: 9px; color: var(--text-dim); text-transform: uppercase; }
 	.creator-link {

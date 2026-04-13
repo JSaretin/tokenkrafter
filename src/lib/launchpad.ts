@@ -47,7 +47,7 @@ export const LAUNCH_INSTANCE_ABI = [
 	'function depositTokens(uint256 amount) external',
 	'function withdrawPendingTokens() external',
 	'function graduate() external',
-	'function enableRefunds() external',
+	'function resolveState() external',
 	'function claimCreatorTokens() external',
 	// Replaces the old creatorWithdrawAfterRefund — incremental, callable
 	// any time during Refunding. Each call drains the contract's current
@@ -84,6 +84,7 @@ export const LAUNCH_INSTANCE_ABI = [
 	'function lockDurationAfterListing() view returns (uint256)',
 	'function minBuyUsdt() view returns (uint256)',
 	'function state() view returns (uint8)',
+	'function effectiveState() view returns (uint8)',
 	'function tokensSold() view returns (uint256)',
 	'function totalBaseRaised() view returns (uint256)',
 	'function totalTokensDeposited() view returns (uint256)',
@@ -165,10 +166,11 @@ export async function fetchLaunchInfo(
 	provider: ethers.Provider
 ): Promise<LaunchInfo> {
 	const instance = new ethers.Contract(launchAddress, LAUNCH_INSTANCE_ABI, provider);
-	const [info, totalTokensRequired, totalTokensDeposited] = await Promise.all([
+	const [info, totalTokensRequired, totalTokensDeposited, effectiveState] = await Promise.all([
 		instance.getLaunchInfo(),
 		instance.totalTokensRequired(),
-		instance.totalTokensDeposited()
+		instance.totalTokensDeposited(),
+		instance.effectiveState().catch(() => null)
 	]);
 
 	return {
@@ -176,7 +178,7 @@ export async function fetchLaunchInfo(
 		token: info.token_,
 		creator: info.creator_,
 		curveType: Number(info.curveType_) as CurveType,
-		state: Number(info.state_) as LaunchState,
+		state: (effectiveState != null ? Number(effectiveState) : Number(info.state_)) as LaunchState,
 		softCap: info.softCap_,
 		hardCap: info.hardCap_,
 		deadline: info.deadline_,

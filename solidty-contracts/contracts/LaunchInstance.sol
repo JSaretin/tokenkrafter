@@ -167,8 +167,6 @@ contract LaunchInstance is ReentrancyGuard {
     error NothingToClaim();
     error NoETH();
     error TransferFailed();
-    error DeadlineNotReached();
-    error SoftCapAlreadyReached();
     error InsufficientTokensOut();
     error LaunchNotStarted();
     error InvalidStartTimestamp();
@@ -641,6 +639,8 @@ contract LaunchInstance is ReentrancyGuard {
     /// @notice Graduate to DEX. Creator can call after soft cap, or auto on hard cap / sell-out.
     ///         After deadline, anyone can trigger graduation if soft cap was met (prevents fund lock).
     function graduate() external nonReentrant onlyActive {
+        _autoResolve();
+        if (state != LaunchState.Active) revert NotActive();
         if (totalBaseRaised < softCap) revert SoftCapNotReached();
         if (
             msg.sender != creator
@@ -720,25 +720,34 @@ contract LaunchInstance is ReentrancyGuard {
 
     // ── Refund ─────────────────────────────────────────────────
 
-    /// @notice Enable refunds if deadline passes without soft cap.
-    ///         Sends accumulated buy fees to platform (earned even on failed launches).
-    function enableRefunds() external {
-        if (state != LaunchState.Active) revert NotActive();
-        if (block.timestamp < deadline) revert DeadlineNotReached();
-        if (totalBaseRaised >= softCap) revert SoftCapAlreadyReached();
-        state = LaunchState.Refunding;
-        refundStartTimestamp = block.timestamp;
+    /// @dev Automatically transition to Refunding if the launch is Active,
+    ///      the deadline has passed, and soft cap was not reached. Called
+    ///      internally before any state-dependent operation so users never
+    ///      need to trigger a separate transaction.
+    function _autoResolve() internal {
+        if (
+            state == LaunchState.Active &&
+            block.timestamp >= deadline &&
+            totalBaseRaised < softCap
+        ) {
+            state = LaunchState.Refunding;
+            refundStartTimestamp = block.timestamp;
 
-        // Buy fees already sent to platform on each buy — no transfer needed here
+            // Unlock the tax ceiling so the creator can adjust rates and
+            // relaunch. This instance is an authorized launcher on the token,
+            // which is the only role permitted to unlock.
+            try ILaunchToken(address(token)).unlockTaxCeiling() {} catch {}
 
-        // Unlock the tax ceiling so the creator can adjust rates and
-        // relaunch. This instance is an authorized launcher on the token,
-        // which is the only role permitted to unlock. The call is wrapped
-        // in try/catch because non-taxable token variants won't have the
-        // function — and that's fine (no ceiling to unlock).
-        try ILaunchToken(address(token)).unlockTaxCeiling() {} catch {}
+            emit RefundingEnabled();
+        }
+    }
 
-        emit RefundingEnabled();
+    /// @notice Resolve the launch state. If the deadline has passed and soft
+    ///         cap was not reached, transitions to Refunding automatically.
+    ///         No-op if conditions aren't met. Anyone can call this, but it
+    ///         is also called internally by refund(), graduate(), and buy().
+    function resolveState() external {
+        _autoResolve();
     }
 
     /// @notice Claim a (possibly partial) refund during Refunding. The buyer
@@ -752,6 +761,7 @@ contract LaunchInstance is ReentrancyGuard {
     ///         grief vector because we never let a different address claim
     ///         someone else's entitlement.
     function refund(uint256 tokensToReturn) external nonReentrant {
+        _autoResolve();
         if (state != LaunchState.Refunding) revert NotRefunding();
         uint256 paid = basePaid[msg.sender];
         if (paid == 0) revert NothingToRefund();
@@ -800,6 +810,7 @@ contract LaunchInstance is ReentrancyGuard {
     ///         pattern which permanently locked tokens when even one buyer
     ///         abandoned their refund.
     function creatorWithdrawAvailable() external onlyCreator nonReentrant {
+        _autoResolve();
         if (state != LaunchState.Refunding) revert NotRefunding();
         uint256 available = token.balanceOf(address(this));
         if (available == 0) revert NoTokens();
@@ -871,6 +882,20 @@ contract LaunchInstance is ReentrancyGuard {
     }
 
     // ── View Functions ─────────────────────────────────────────
+
+    /// @notice Effective state — returns Refunding if the launch is technically
+    ///         Active but the deadline has passed without reaching soft cap.
+    ///         Use this in frontends instead of raw `state` for accurate display.
+    function effectiveState() public view returns (LaunchState) {
+        if (
+            state == LaunchState.Active &&
+            block.timestamp >= deadline &&
+            totalBaseRaised < softCap
+        ) {
+            return LaunchState.Refunding;
+        }
+        return state;
+    }
 
     /// @notice Current token price on the curve (cost for 1 full token).
     function getCurrentPrice() public view returns (uint256) {

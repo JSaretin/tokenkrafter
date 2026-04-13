@@ -245,7 +245,7 @@ describe("LaunchInstance", () => {
 
       // Fast-forward past deadline without hitting soft cap
       await time.increase(DURATION_DAYS * 24 * 3600 + 1);
-      await s.launch.enableRefunds();
+      await s.launch.resolveState();
       expect(await s.launch.state()).to.equal(3); // Refunding
 
       // Bob approves and refunds — this transfers his tokens BACK to the
@@ -288,7 +288,7 @@ describe("LaunchInstance", () => {
         );
 
       await time.increase(DURATION_DAYS * 24 * 3600 + 1);
-      await launch.enableRefunds();
+      await launch.resolveState();
       return { ...s, token, launch, launchAddress };
     }
 
@@ -431,7 +431,7 @@ describe("LaunchInstance", () => {
       await launch.connect(s.alice).depositTokens(req);
 
       await time.increase(DURATION_DAYS * 24 * 3600 + 1);
-      await launch.enableRefunds();
+      await launch.resolveState();
 
       await expect(
         launch.connect(s.platform).sweepStrandedUsdt()
@@ -448,7 +448,7 @@ describe("LaunchInstance", () => {
       await launch.connect(s.alice).depositTokens(req);
 
       await time.increase(DURATION_DAYS * 24 * 3600 + 1);
-      await launch.enableRefunds();
+      await launch.resolveState();
       await time.increase(90 * 24 * 3600 + 1);
 
       await expect(launch.connect(s.alice).sweepStrandedUsdt()).to.be.reverted;
@@ -475,7 +475,7 @@ describe("LaunchInstance", () => {
           0
         );
       await time.increase(DURATION_DAYS * 24 * 3600 + 1);
-      await launch.enableRefunds();
+      await launch.resolveState();
 
       // Bob never refunds — 90 days pass
       await time.increase(90 * 24 * 3600 + 1);

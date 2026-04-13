@@ -109,6 +109,25 @@
 		return Number((launch.tokensForLP * 100n) / total).toFixed(0);
 	}
 
+	/** Token distribution breakdown: curve% / lp% / creator%. The contract
+	 *  hardcodes 70% for curve; LP and creator share the remaining 30%. */
+	function distroLabel(launch: LaunchInfo): string {
+		const total = (launch as any).totalTokensRequired || (launch.tokensForCurve + launch.tokensForLP);
+		if (total === 0n) return '';
+		const curvePct = total > 0n ? Number((launch.tokensForCurve * 100n) / total) : 70;
+		const creatorPct = Number(launch.creatorAllocationBps) / 100;
+		const lpPct = Math.max(0, 100 - curvePct - creatorPct);
+		const parts = [`${curvePct}% curve`, `${lpPct.toFixed(0)}% LP`];
+		if (creatorPct > 0) parts.push(`${creatorPct.toFixed(0)}% creator`);
+		return parts.join(' · ');
+	}
+
+	function vestingLabel(launch: LaunchInfo): string {
+		const days = Number((launch as any).vestingDuration || 0n) / 86400;
+		if (days <= 0) return '';
+		return `${days}d vest`;
+	}
+
 	function countdownStr(deadline: bigint): string {
 		const ms = Number(deadline) * 1000 - tickNow;
 		if (ms <= 0) return 'Ended';
@@ -391,6 +410,34 @@
 		</div>
 	{/if}
 
+	<!-- Platform trust banner — contract-enforced guarantees -->
+	<div class="trust-banner mb-5">
+		<div class="trust-banner-inner">
+			<svg class="trust-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+			<div class="trust-items">
+				<span class="trust-item">
+					<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+					LP permanently burned
+				</span>
+				<span class="trust-sep">·</span>
+				<span class="trust-item">
+					<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+					Instant token delivery
+				</span>
+				<span class="trust-sep">·</span>
+				<span class="trust-item">
+					<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+					Refundable if soft cap not met
+				</span>
+				<span class="trust-sep">·</span>
+				<span class="trust-item">
+					<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+					Unsold tokens burned
+				</span>
+			</div>
+		</div>
+	</div>
+
 	<!-- Filters: tabs + search + sort on one row -->
 	<div class="lp-controls">
 		<div class="lp-controls-left">
@@ -503,14 +550,18 @@
 						<svg width="14" height="14" viewBox="0 0 24 24" fill={$favorites.includes(launch.address.toLowerCase()) ? '#00d2ff' : 'none'} stroke={$favorites.includes(launch.address.toLowerCase()) ? '#00d2ff' : 'currentColor'} stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
 					</button>
 
-					<!-- 1. Badges banner (top) -->
+					<!-- 1. Badges banner (top) — per-launch attributes only.
+					     Platform-wide guarantees (LP burned, refundable, unsold burn)
+					     are in the trust banner above the grid, not per-card. -->
 					<div class="card-badges-bar">
 						{#each ((launch as any).badges ?? []) as badge}
 							{#if BADGE_META[badge]}
 								<span class="badge-pill {BADGE_META[badge].cls}">{BADGE_META[badge].label}</span>
 							{/if}
 						{/each}
-						<span class="badge-pill badge-pill-lp">LP Burned</span>
+						{#if launch.state === 1}
+							<span class="badge-pill badge-pill-refundable">Refundable</span>
+						{/if}
 						{#if isHot(launch)}
 							<span class="badge-pill badge-list-hot">HOT</span>
 						{/if}
@@ -548,6 +599,16 @@
 					{#if (launch as any).description}
 						<div class="px-4 pb-2">
 							<p class="text-gray-400 text-xs font-mono leading-relaxed line-clamp-2">{(launch as any).description}</p>
+						</div>
+					{/if}
+
+					<!-- 3b. Token distribution — the trust row -->
+					{#if distroLabel(launch)}
+						<div class="card-distro">
+							<span class="distro-text">{distroLabel(launch)}</span>
+							{#if vestingLabel(launch)}
+								<span class="distro-vest">{vestingLabel(launch)}</span>
+							{/if}
 						</div>
 					{/if}
 
@@ -961,6 +1022,45 @@
 	.badge-list-blue { background: rgba(59, 130, 246, 0.08); color: #60a5fa; border-color: rgba(59, 130, 246, 0.2); }
 	.badge-list-orange { background: rgba(249, 115, 22, 0.08); color: #fb923c; border-color: rgba(249, 115, 22, 0.2); }
 	.badge-pill-lp { background: rgba(16, 185, 129, 0.08); color: #34d399; border-color: rgba(16, 185, 129, 0.2); }
+	.badge-pill-refundable { background: rgba(0,210,255,0.08); color: #22d3ee; border-color: rgba(0,210,255,0.2); }
+
+	/* ── Platform trust banner ── */
+	.trust-banner {
+		background: rgba(16,185,129,0.04);
+		border: 1px solid rgba(16,185,129,0.15);
+		border-radius: 10px; overflow: hidden;
+	}
+	.trust-banner-inner {
+		display: flex; align-items: center; gap: 10px;
+		padding: 10px 16px;
+	}
+	.trust-icon { color: #10b981; flex-shrink: 0; }
+	.trust-items {
+		display: flex; align-items: center; gap: 6px;
+		flex-wrap: wrap;
+		font-family: 'Space Mono', monospace; font-size: 11px; color: var(--text-muted);
+	}
+	.trust-item { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+	.trust-sep { color: var(--text-dim); opacity: 0.3; }
+	@media (max-width: 640px) {
+		.trust-banner-inner { flex-direction: column; align-items: flex-start; gap: 6px; }
+		.trust-items { gap: 4px; }
+		.trust-sep { display: none; }
+		.trust-item { font-size: 10px; }
+	}
+
+	/* ── Token distribution row on card ── */
+	.card-distro {
+		display: flex; align-items: center; justify-content: space-between; gap: 6px;
+		padding: 0 16px 6px;
+		font-family: 'Space Mono', monospace; font-size: 9px;
+	}
+	.distro-text { color: var(--text-dim); }
+	.distro-vest {
+		color: #10b981; font-weight: 600;
+		padding: 1px 6px; border-radius: 4px;
+		background: rgba(16,185,129,0.08);
+	}
 
 	/* Skeleton card pulse */
 	.skeleton-card { animation: skeletonPulse 1.5s ease-in-out infinite; }
