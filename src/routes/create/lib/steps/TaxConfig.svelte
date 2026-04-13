@@ -49,6 +49,11 @@
 </script>
 
 <div class="tc">
+	<!-- Tax ceiling info -->
+	<div class="tc-info-box">
+		Tax rates are locked at launch. Once trading starts, you can only lower taxes — never raise them. If you set 0% now, your token will be tax-free forever.
+	</div>
+
 	<!-- Tax Rate Rows -->
 	<div class="tc-rates">
 		<!-- Buy -->
@@ -188,6 +193,7 @@
 						<option value="5">5% of supply</option>
 						<option value="10">10% of supply</option>
 					</select>
+					<span class="tc-prot-hint">Limits how much any single wallet can hold. Can only be relaxed (increased) after trading starts.</span>
 				</div>
 				<div class="tc-prot-field">
 					<label class="tc-prot-label" for="tc-mt">Max Transaction</label>
@@ -199,6 +205,7 @@
 						<option value="3">3% of supply</option>
 						<option value="5">5% of supply</option>
 					</select>
+					<span class="tc-prot-hint">Limits single transfer size. Can only be relaxed after trading starts.</span>
 				</div>
 				<div class="tc-prot-field">
 					<label class="tc-prot-label" for="tc-cd">Cooldown</label>
@@ -208,6 +215,7 @@
 						<option value="60">1 minute</option>
 						<option value="300">5 minutes</option>
 					</select>
+					<span class="tc-prot-hint">Minimum time between transfers from the same address. Prevents rapid-fire trading.</span>
 				</div>
 			</div>
 		{/if}
@@ -216,6 +224,7 @@
 
 <style>
 	.tc { display: flex; flex-direction: column; gap: 16px; }
+	.tc-info-box { padding: 10px 12px; border-radius: 8px; background: rgba(0,210,255,0.05); border: 1px solid rgba(0,210,255,0.18); color: rgba(0,210,255,0.85); font-size: 11px; font-family: 'Space Mono', monospace; line-height: 1.55; }
 
 	/* ── Tax Rate Rows ── */
 	.tc-rates { display: flex; flex-direction: column; gap: 8px; }
@@ -364,6 +373,7 @@
 		background-repeat: no-repeat; background-position: right 10px center; padding-right: 24px;
 	}
 	.tc-prot-select option { background: var(--bg); }
+	.tc-prot-hint { font-size: 9px; color: var(--text-dim); font-family: 'Space Mono', monospace; line-height: 1.4; opacity: 0.7; }
 
 	@media (max-width: 640px) {
 		.tc-prot-grid { grid-template-columns: 1fr 1fr; }

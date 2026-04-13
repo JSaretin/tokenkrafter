@@ -1714,7 +1714,7 @@
 				<div class="modal-section fee-section">
 					<div class="receipt">
 						<div class="receipt-row">
-							<span class="receipt-label">Creation fee</span>
+							<span class="receipt-label">Creation fee (USDT)</span>
 							<span class="receipt-value">{feeLoading ? '...' : `$${feeUsdAmount}`}</span>
 						</div>
 
@@ -1755,6 +1755,7 @@
 							</span>
 						</div>
 					</div>
+						<p class="receipt-hint">Fee is denominated in USDT. Pay with any token — it's auto-converted.</p>
 
 					{#if !feeLoading && paymentOptions.length > 0}
 						<div class="pay-method-section mt-3">
@@ -2229,6 +2230,7 @@
 	.receipt-divider { height: 1px; background: var(--bg-surface-hover); margin: 6px 0; }
 	.receipt-total .receipt-label { color: var(--text-heading); font-weight: 700; }
 	.receipt-total .receipt-value { color: #00d2ff; font-size: 15px; font-weight: 700; }
+	.receipt-hint { font-size: 9px; color: var(--text-dim); font-family: 'Space Mono', monospace; margin-top: 6px; opacity: 0.7; }
 
 	.payment-summary {
 		padding: 10px 12px;

@@ -133,8 +133,8 @@
 </script>
 
 <svelte:head>
-	<title>TokenKrafter - Fair Launch Your Token With Bonding Curves</title>
-	<meta name="description" content="Launch your token with bonding curve pricing, soft/hard caps, anti-whale limits, and vesting. Fair, transparent token launches on BSC and more." />
+	<title>TokenKrafter - Launch Tokens With On-Chain Enforced Protection</title>
+	<meta name="description" content="The only launchpad where tax ceilings are locked, LP is permanently burned, and refunds are guaranteed. Every protection enforced by smart contract on BSC." />
 </svelte:head>
 
 <div class="page-wrap max-w-6xl mx-auto px-4 sm:px-6">
@@ -145,7 +145,7 @@
 				<h1 class="syne text-2xl sm:text-3xl font-bold text-white">
 					{$t('home.heroTitle1')} <span class="gradient-text">{$t('home.heroTitle2')}</span>
 				</h1>
-				<p class="text-gray-400 font-mono text-sm mt-1 max-w-lg">{$t('home.statsTagline')}</p>
+				<p class="text-gray-400 font-mono text-sm mt-1 max-w-xl">{$t('home.statsTagline')}</p>
 			</div>
 			<div class="flex gap-3 shrink-0">
 				<a href="/create?launch=true" class="btn-primary text-sm px-5 py-2.5 no-underline">
@@ -182,9 +182,71 @@
 		</div>
 	</section>
 
+	<!-- Trust Bar — On-chain guarantee badges -->
+	<section class="trust-bar mb-6">
+		<div class="trust-badge">
+			<span class="trust-badge-icon">
+				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+			</span>
+			<span class="trust-badge-text">Tax Ceiling Enforced</span>
+		</div>
+		<div class="trust-sep"></div>
+		<div class="trust-badge">
+			<span class="trust-badge-icon fire">
+				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/><path d="M8 12l3 3 5-5"/></svg>
+			</span>
+			<span class="trust-badge-text">100% LP Burned</span>
+		</div>
+		<div class="trust-sep"></div>
+		<div class="trust-badge">
+			<span class="trust-badge-icon refund">
+				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><line x1="12" y1="22" x2="12" y2="7"/></svg>
+			</span>
+			<span class="trust-badge-text">On-Chain Refunds</span>
+		</div>
+		<div class="trust-sep"></div>
+		<div class="trust-badge">
+			<span class="trust-badge-icon lock">
+				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+			</span>
+			<span class="trust-badge-text">Creator Vesting Lock</span>
+		</div>
+	</section>
+
 	<!-- RECENT TRANSACTIONS TICKER — Social proof -->
 	<section class="mb-6">
 		<RecentTransactionsTicker />
+	</section>
+
+	<!-- HOW IT WORKS — 3-step explainer for cold traffic -->
+	<section class="mb-10">
+		<h2 class="syne text-lg font-bold text-white mb-1">{$t('home.howItWorksTitle')}</h2>
+		<p class="text-gray-500 font-mono text-xs mb-5">{$t('home.howItWorksSub')}</p>
+		<div class="how-it-works">
+			<div class="hiw-step">
+				<div class="hiw-num hiw-num-cyan">1</div>
+				<div class="hiw-body">
+					<h3 class="hiw-title">{$t('home.step1Label')}</h3>
+					<p class="hiw-desc">{$t('home.step1Desc')}</p>
+				</div>
+			</div>
+			<div class="hiw-line"></div>
+			<div class="hiw-step">
+				<div class="hiw-num hiw-num-amber">2</div>
+				<div class="hiw-body">
+					<h3 class="hiw-title">{$t('home.step2Label')}</h3>
+					<p class="hiw-desc">{$t('home.step2Desc')}</p>
+				</div>
+			</div>
+			<div class="hiw-line"></div>
+			<div class="hiw-step">
+				<div class="hiw-num hiw-num-emerald">3</div>
+				<div class="hiw-body">
+					<h3 class="hiw-title">{$t('home.step3Label')}</h3>
+					<p class="hiw-desc">{$t('home.step3Desc')}</p>
+				</div>
+			</div>
+		</div>
 	</section>
 
 	<!-- LIVE LAUNCHES — The main content -->
@@ -312,7 +374,9 @@
 		{/if}
 	</section>
 
-	<!-- Featured Partners -->
+	<!-- Featured Partners (hidden entirely when empty — the dashed empty
+	     CTA looked like a placeholder bug, not an invitation) -->
+	{#if partnerLaunches.length > 0}
 	<section class="mb-10">
 		<div class="partner-section-header">
 			<div class="partner-section-glow"></div>
@@ -402,7 +466,7 @@
 				</div>
 				<h3 class="syne font-bold text-white mb-2">Launch as a Partner</h3>
 				<p class="text-gray-500 font-mono text-xs mb-4 max-w-md mx-auto">
-					Get featured here, auto-created DEX pools, verified badge, and priority support. 1% platform fee on trades.
+					Get featured here, auto-created DEX pools, verified badge, and priority support. 0.5% platform fee on trades.
 				</p>
 				<a href="/create?launch=true" class="btn-partner text-sm px-6 py-2.5 no-underline inline-block">
 					Create a Partner Launch →
@@ -410,6 +474,7 @@
 			</div>
 		{/if}
 	</section>
+	{/if}
 
 	<!-- Upcoming / Scheduled Launches -->
 	{#if scheduledLaunches.length > 0}
@@ -518,20 +583,124 @@
 		</section>
 	{/if}
 
-	<!-- Compact CTA Banner -->
+	<!-- WHY TOKENKRAFTER — What the smart contracts enforce -->
 	<section class="mb-10">
-		<div class="cta-banner card p-6 sm:p-8 flex flex-col sm:flex-row items-center justify-between gap-4">
-			<div>
-				<h2 class="syne text-xl sm:text-2xl font-bold text-white mb-1">{$t('home.ctaTitle')}</h2>
-				<p class="text-gray-400 font-mono text-sm">{$t('home.ctaDesc')}</p>
+		<h2 class="syne text-lg font-bold text-white mb-1">{$t('home.featuresTitle')}</h2>
+		<p class="text-gray-500 font-mono text-xs mb-5">{$t('home.featuresSub')}</p>
+		<div class="features-grid">
+			<!-- Investor protection — lead with trust -->
+			<div class="feature-card">
+				<div class="feature-icon-box emerald">
+					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+				</div>
+				<h3 class="feature-name">{$t('home.featureTaxCeiling')}</h3>
+				<p class="feature-desc">{$t('home.featureTaxCeilingDesc')}</p>
 			</div>
-			<div class="flex gap-3 shrink-0">
-				<a href="/create?launch=true" class="btn-primary text-sm px-6 py-2.5 no-underline">
-					{$t('home.ctaButton')} →
-				</a>
-				<a href="/create" class="btn-secondary text-sm px-5 py-2.5 no-underline">
-					{$t('home.featureTokenCreation')}
-				</a>
+			<div class="feature-card">
+				<div class="feature-icon-box orange">
+					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/><path d="M8 12l3 3 5-5"/></svg>
+				</div>
+				<h3 class="feature-name">{$t('home.featureLpBurn')}</h3>
+				<p class="feature-desc">{$t('home.featureLpBurnDesc')}</p>
+			</div>
+			<div class="feature-card">
+				<div class="feature-icon-box emerald">
+					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><line x1="12" y1="22" x2="12" y2="7"/></svg>
+				</div>
+				<h3 class="feature-name">{$t('home.featureRefunds')}</h3>
+				<p class="feature-desc">{$t('home.featureRefundsDesc')}</p>
+			</div>
+			<div class="feature-card">
+				<div class="feature-icon-box purple">
+					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+				</div>
+				<h3 class="feature-name">{$t('home.featureAntiSnipe')}</h3>
+				<p class="feature-desc">{$t('home.featureAntiSnipeDesc')}</p>
+			</div>
+			<div class="feature-card">
+				<div class="feature-icon-box orange">
+					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+				</div>
+				<h3 class="feature-name">{$t('home.featureAntiWhale')}</h3>
+				<p class="feature-desc">{$t('home.featureAntiWhaleDesc')}</p>
+			</div>
+			<div class="feature-card">
+				<div class="feature-icon-box cyan">
+					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+				</div>
+				<h3 class="feature-name">{$t('home.featureVesting')}</h3>
+				<p class="feature-desc">{$t('home.featureVestingDesc')}</p>
+			</div>
+			<!-- Off-ramp & referrals -->
+			<div class="feature-card">
+				<div class="feature-icon-box purple">
+					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+				</div>
+				<h3 class="feature-name">{$t('home.featureEscrow')}</h3>
+				<p class="feature-desc">{$t('home.featureEscrowDesc')}</p>
+			</div>
+			<div class="feature-card">
+				<div class="feature-icon-box cyan">
+					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
+				</div>
+				<h3 class="feature-name">{$t('home.featureAffiliate')}</h3>
+				<p class="feature-desc">{$t('home.featureAffiliateDesc')}</p>
+			</div>
+			<div class="feature-card">
+				<div class="feature-icon-box emerald">
+					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+				</div>
+				<h3 class="feature-name">{$t('home.featureRelaxOnly')}</h3>
+				<p class="feature-desc">{$t('home.featureRelaxOnlyDesc')}</p>
+			</div>
+			<div class="feature-card">
+				<div class="feature-icon-box orange">
+					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+				</div>
+				<h3 class="feature-name">{$t('home.featureBlacklistExpiry')}</h3>
+				<p class="feature-desc">{$t('home.featureBlacklistExpiryDesc')}</p>
+			</div>
+			<div class="feature-card">
+				<div class="feature-icon-box cyan">
+					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+				</div>
+				<h3 class="feature-name">{$t('home.featurePayAny')}</h3>
+				<p class="feature-desc">{$t('home.featurePayAnyDesc')}</p>
+			</div>
+			<div class="feature-card">
+				<div class="feature-icon-box purple">
+					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+				</div>
+				<h3 class="feature-name">{$t('home.featureSafuLens')}</h3>
+				<p class="feature-desc">{$t('home.featureSafuLensDesc')}</p>
+			</div>
+			<div class="feature-card">
+				<div class="feature-icon-box emerald">
+					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
+				</div>
+				<h3 class="feature-name">{$t('home.featurePlatformRescue')}</h3>
+				<p class="feature-desc">{$t('home.featurePlatformRescueDesc')}</p>
+			</div>
+		</div>
+	</section>
+
+	<!-- BOTTOM CTA — Specific, with pricing, for users who scrolled through everything -->
+	<section class="mb-10">
+		<div class="cta-banner card p-6 sm:p-8">
+			<div class="cta-inner">
+				<div class="cta-text">
+					<h2 class="syne text-xl sm:text-2xl font-bold text-white mb-2">Your token can be live in 60 seconds</h2>
+					<p class="text-gray-400 font-mono text-sm mb-1">No coding. No MetaMask required. Just connect with Google and launch.</p>
+					<p class="text-gray-600 font-mono text-xs">Token creation from $50 · Tax ceiling locked at launch · LP permanently burned</p>
+				</div>
+				<div class="cta-actions">
+					<a href="/create?launch=true" class="btn-primary text-sm px-6 py-3 no-underline">
+						Launch with Bonding Curve →
+					</a>
+					<a href="/create" class="btn-secondary text-sm px-5 py-2.5 no-underline">
+						Create Token Only
+					</a>
+				</div>
 			</div>
 		</div>
 	</section>
@@ -839,9 +1008,113 @@
 		box-shadow: 0 6px 28px rgba(139, 92, 246, 0.35);
 	}
 
-	/* CTA banner */
+	/* ── Trust Bar ── */
+	.trust-bar {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 16px;
+		flex-wrap: wrap;
+		padding: 14px 20px;
+		background: var(--bg-surface);
+		border: 1px solid var(--border-subtle);
+		border-radius: 12px;
+	}
+	.trust-badge {
+		display: inline-flex;
+		align-items: center;
+		gap: 8px;
+	}
+	.trust-badge-icon {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		color: #10b981;
+	}
+	.trust-badge-icon.fire { color: #f59e0b; }
+	.trust-badge-icon.refund { color: #00d2ff; }
+	.trust-badge-icon.lock { color: #a78bfa; }
+	.trust-badge-text {
+		font-family: 'Space Mono', monospace;
+		font-size: 11px;
+		font-weight: 700;
+		color: var(--text-secondary);
+		letter-spacing: 0.02em;
+	}
+	.trust-sep {
+		width: 1px;
+		height: 16px;
+		background: var(--border-subtle);
+		flex-shrink: 0;
+	}
+	@media (max-width: 640px) {
+		.trust-bar { gap: 10px; padding: 12px 14px; }
+		.trust-sep { display: none; }
+		.trust-badge-text { font-size: 10px; }
+	}
+
+	/* ── How It Works ── */
+	.how-it-works {
+		display: flex; align-items: stretch; gap: 0;
+		background: var(--bg-surface);
+		border: 1px solid var(--border);
+		border-radius: 14px; overflow: hidden;
+	}
+	.hiw-step {
+		flex: 1; display: flex; flex-direction: column; align-items: center;
+		gap: 10px; padding: 20px 16px; text-align: center;
+	}
+	.hiw-num {
+		width: 36px; height: 36px; border-radius: 50%;
+		display: flex; align-items: center; justify-content: center;
+		font-family: 'Syne', sans-serif; font-size: 15px; font-weight: 800;
+		flex-shrink: 0;
+	}
+	.hiw-num-cyan { background: rgba(0,210,255,0.1); color: #00d2ff; border: 1px solid rgba(0,210,255,0.2); }
+	.hiw-num-amber { background: rgba(245,158,11,0.1); color: #f59e0b; border: 1px solid rgba(245,158,11,0.2); }
+	.hiw-num-emerald { background: rgba(16,185,129,0.1); color: #10b981; border: 1px solid rgba(16,185,129,0.2); }
+	.hiw-body { flex: 1; }
+	.hiw-title { font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700; color: var(--text-heading); margin: 0 0 4px; }
+	.hiw-desc { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text-dim); line-height: 1.6; margin: 0; }
+	.hiw-line {
+		width: 1px; background: var(--border);
+		align-self: stretch; flex-shrink: 0;
+	}
+	@media (max-width: 640px) {
+		.how-it-works { flex-direction: column; }
+		.hiw-line { width: auto; height: 1px; }
+		.hiw-step { padding: 16px; flex-direction: row; text-align: left; gap: 14px; }
+	}
+
+	/* ── Feature Cards ── */
+	.features-grid {
+		display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+		gap: 12px;
+	}
+	.feature-card {
+		display: flex; flex-direction: column; gap: 8px;
+		padding: 18px; border-radius: 12px;
+		background: var(--bg-surface);
+		border: 1px solid var(--border-subtle);
+		transition: all 0.15s;
+	}
+	.feature-card:hover { border-color: rgba(0,210,255,0.15); }
+	.feature-name { font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700; color: var(--text-heading); margin: 0; }
+	.feature-desc { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text-dim); line-height: 1.6; margin: 0; }
+
+	/* ── CTA Banner ── */
 	.cta-banner {
 		background: rgba(0, 210, 255, 0.03);
 		border-color: rgba(0, 210, 255, 0.12);
+	}
+	.cta-inner {
+		display: flex; align-items: center; justify-content: space-between; gap: 20px;
+		flex-wrap: wrap;
+	}
+	.cta-text { flex: 1; min-width: 240px; }
+	.cta-actions { display: flex; gap: 10px; flex-shrink: 0; flex-wrap: wrap; }
+	@media (max-width: 640px) {
+		.cta-inner { flex-direction: column; align-items: stretch; text-align: center; }
+		.cta-actions { justify-content: center; }
 	}
 </style>

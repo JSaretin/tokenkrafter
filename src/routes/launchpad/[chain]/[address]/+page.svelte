@@ -81,8 +81,10 @@
 	let isSweeping = $state(false);
 	let reclaimableBalance = $state(0n);     // contract's current token balance during Refunding
 	let strandedUsdtBalance = $state(0n);    // contract's current USDT balance during Refunding
-	let refundStartTimestamp = $state(0n);   // timestamp when enableRefunds was called
+	let refundStartTimestamp = $state(0n);   // timestamp when refunding state began
 	let lockDurationAfterListing = $state(0n);
+	let vestingCliffSeconds = $state(0n);
+	let vestingDurationSeconds = $state(0n);
 	// Platform wallet (read from LaunchpadFactory). Gates the stranded-USDT
 	// sweep button: after the audit L2 fix, `sweepStrandedUsdt()` is
 	// platform-only and will revert for any other caller.
@@ -423,6 +425,22 @@
 				tradingEnabled = seconds !== SENTINEL;
 			} catch {
 				tradingEnabled = true;
+			}
+
+			// Load trust signal data (vesting, lock duration)
+			try {
+				const instance = new ethers.Contract(launchAddress, LAUNCH_INSTANCE_ABI, prov);
+				const [vc, vd, lda] = await Promise.all([
+					instance.vestingCliff(),
+					instance.vestingDuration(),
+					instance.lockDurationAfterListing()
+				]);
+				vestingCliffSeconds = vc;
+				vestingDurationSeconds = vd;
+				lockDurationAfterListing = lda;
+			} catch {
+				vestingCliffSeconds = 0n;
+				vestingDurationSeconds = 0n;
 			}
 
 			// For Pending launches, load the preflight status so we can
@@ -1023,19 +1041,6 @@
 		}
 	}
 
-	async function handleEnableRefunds() {
-		if (!signer) return;
-		try {
-			const instance = new ethers.Contract(launchAddress, LAUNCH_INSTANCE_ABI, signer);
-			addFeedback({ message: 'Enabling refunds...', type: 'info' });
-			const tx = await instance.enableRefunds();
-			await tx.wait();
-			addFeedback({ message: 'Refunds enabled!', type: 'success' });
-			await refreshData();
-		} catch (e: any) {
-			addFeedback({ message: friendlyError(e), type: 'error' });
-		}
-	}
 
 	// Creator reclaim during Refunding — drains the contract's current
 	// token balance to the creator. Refunds are USDT-out / tokens-in, so
@@ -1453,6 +1458,24 @@
 					</div>
 				</div>
 			</div>
+		</div>
+
+		<!-- Trust Signals -->
+		<div class="trust-signals mb-4">
+			<span class="trust-pill trust-green">LP Burns at Graduation</span>
+			{#if badges.includes('taxable')}
+				<span class="trust-pill trust-green">Tax Ceiling Locked</span>
+			{/if}
+			{#if maxBuyPerWallet > 0n}
+				<span class="trust-pill trust-cyan">Max Buy: {formatUsdt(maxBuyPerWallet, usdtDecimals)} USDT per wallet</span>
+			{/if}
+			{#if lockDurationAfterListing > 0n}
+				<span class="trust-pill trust-cyan">Anti-Snipe: {Number(lockDurationAfterListing) >= 3600 ? `${Math.round(Number(lockDurationAfterListing) / 3600)}h` : `${Math.round(Number(lockDurationAfterListing) / 60)}m`} trading delay</span>
+			{/if}
+			<span class="trust-pill trust-green">Refunds if soft cap missed</span>
+			{#if launch.creatorAllocationBps > 0n && (vestingCliffSeconds > 0n || vestingDurationSeconds > 0n)}
+				<span class="trust-pill trust-cyan">Creator vesting: {vestingCliffSeconds > 0n ? `${Math.round(Number(vestingCliffSeconds) / 86400)}d cliff` : ''}{vestingCliffSeconds > 0n && vestingDurationSeconds > 0n ? ' + ' : ''}{vestingDurationSeconds > 0n ? `${Math.round(Number(vestingDurationSeconds) / 86400)}d vest` : ''}</span>
+			{/if}
 		</div>
 
 		<!-- Graduation Celebration Banner -->
@@ -2291,22 +2314,6 @@
 					{/if}
 				{/if}
 
-				<!-- Enable Refunds -->
-				{#if launch.state === 1 && launch.totalBaseRaised < launch.softCap}
-					{@const deadlineMs = Number(launch.deadline) * 1000}
-					{#if Date.now() >= deadlineMs}
-						<div class="card p-4 mb-4 border-red-500/20">
-							<p class="text-red-300 text-xs font-mono mb-3">{$t('lpd.deadlinePassed')}</p>
-							<button
-								onclick={handleEnableRefunds}
-								class="btn-danger w-full py-2.5 text-sm cursor-pointer"
-							>
-								{$t('lpd.enableRefunds')}
-							</button>
-						</div>
-					{/if}
-				{/if}
-
 				<!-- User Position -->
 				{#if userAddress && (userBasePaid > 0n || userTokensBought > 0n)}
 					<div class="card p-6 mb-4">
@@ -2641,6 +2648,15 @@
 		padding: 2px 8px;
 		border-radius: 4px;
 	}
+	/* Trust signal pills */
+	.trust-signals { display: flex; flex-wrap: wrap; gap: 6px; }
+	.trust-pill {
+		font-size: 10px; font-family: 'Space Mono', monospace; font-weight: 600;
+		padding: 3px 10px; border-radius: 99px; white-space: nowrap;
+	}
+	.trust-green { background: rgba(16,185,129,0.12); color: #10b981; border: 1px solid rgba(16,185,129,0.25); }
+	.trust-cyan { background: rgba(0,210,255,0.1); color: #00d2ff; border: 1px solid rgba(0,210,255,0.2); }
+
 	.header-socials {
 		display: flex;
 		gap: 6px;

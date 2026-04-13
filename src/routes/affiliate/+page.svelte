@@ -278,6 +278,55 @@
 		</div>
 	</section>
 
+	<!-- Two Revenue Streams — the biggest gap in current messaging -->
+	<section class="section">
+		<div class="text-center mb-10">
+			<h2 class="syne text-3xl sm:text-4xl font-bold text-white">{$t('aff.twoStreamsTitle')}</h2>
+			<p class="text-gray-400 mt-3 font-mono text-sm">{$t('aff.twoStreamsSub')}</p>
+		</div>
+
+		<div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
+			<!-- Stream 1: Creation referrals -->
+			<div class="card p-6" style="border-color: rgba(0,210,255,0.15);">
+				<div class="feature-icon-box cyan mb-4">
+					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+				</div>
+				<h3 class="syne font-bold text-white text-lg mb-2">{$t('aff.stream1Title')}</h3>
+				<p class="text-sm text-gray-400 leading-relaxed font-mono mb-4">{$t('aff.stream1Desc')}</p>
+				<div class="flex gap-2 flex-wrap">
+					<span class="badge-cyan" style="font-size:11px;padding:4px 10px;border-radius:6px;">L1: 5%</span>
+					<span class="badge-cyan" style="font-size:11px;padding:4px 10px;border-radius:6px;">L2: 3%</span>
+					<span class="badge-cyan" style="font-size:11px;padding:4px 10px;border-radius:6px;">L3: 2%</span>
+				</div>
+			</div>
+
+			<!-- Stream 2: Trade affiliate (the missing one) -->
+			<div class="card p-6" style="border-color: rgba(16,185,129,0.15);">
+				<div class="feature-icon-box emerald mb-4">
+					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+				</div>
+				<h3 class="syne font-bold text-white text-lg mb-2">{$t('aff.stream2Title')}</h3>
+				<p class="text-sm text-gray-400 leading-relaxed font-mono mb-4">{$t('aff.stream2Desc')}</p>
+				<div class="flex gap-2 flex-wrap">
+					<span class="badge-emerald" style="font-size:11px;padding:4px 10px;border-radius:6px;">10% of fee</span>
+					<span class="badge-emerald" style="font-size:11px;padding:4px 10px;border-radius:6px;">Every trade</span>
+					<span class="badge-emerald" style="font-size:11px;padding:4px 10px;border-radius:6px;">Passive</span>
+				</div>
+			</div>
+		</div>
+
+		<div class="mt-5 card p-5" style="border-color: rgba(16,185,129,0.15);">
+			<div class="flex items-start gap-3">
+				<span class="text-emerald-400 text-lg mt-0.5">$</span>
+				<div>
+					<p class="text-sm text-gray-300 font-mono leading-relaxed">
+						<strong class="text-white">Sell to Bank (Off-Ramp)</strong> — You also earn when your referrals use the Sell to Bank feature — 10% of the platform fee on every off-ramp trade. This is passive income on top of creation and swap referrals.
+					</p>
+				</div>
+			</div>
+		</div>
+	</section>
+
 	<!-- Key Details -->
 	<section class="section">
 		<div class="text-center mb-10">

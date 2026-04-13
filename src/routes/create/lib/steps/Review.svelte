@@ -82,8 +82,8 @@
 				<div class="rv-row rv-sub"><span>{fmtAddr(w.address)}</span><span>{w.sharePct}%</span></div>
 			{/each}
 			{#if totalTax === 0 && (launchEnabled || listingEnabled)}
-				<div class="rv-warn">
-					Tax is set to 0%. Once your {launchEnabled ? 'launch' : 'listing'} is created, tax will be <strong>permanently locked at 0%</strong> — you will never be able to add tax to this token.
+				<div class="rv-warn rv-warn-strong">
+					&#9888; You're launching with 0% tax. This is permanent — you will never be able to add tax to this token after trading starts.
 				</div>
 			{/if}
 		</div>
@@ -157,4 +157,5 @@
 	.rv-pool span:nth-child(3) { color: var(--text-dim); font-size: 10px; text-align: right; flex: 1; }
 	.rv-warn { margin-top: 8px; padding: 8px 10px; border-radius: 8px; background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.2); color: #fbbf24; font-size: 11px; font-family: 'Space Mono', monospace; line-height: 1.5; }
 	.rv-warn strong { color: #f59e0b; }
+	.rv-warn-strong { background: rgba(248,113,113,0.08); border-color: rgba(248,113,113,0.25); color: #fca5a5; font-weight: 600; }
 </style>

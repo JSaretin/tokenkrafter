@@ -613,6 +613,28 @@
 						</div>
 					</div>
 
+					<!-- SAFU breakdown signals -->
+					{#if isSafu}
+						{@const taxLocked = safu?.taxCeilingLocked ?? tok.tax_ceiling_locked}
+						{@const lpBurned = safu?.lpBurned ?? tok.lp_burned}
+						{@const lpPct = safu?.lpBurnedPct ?? (tok.lp_burned_pct ? tok.lp_burned_pct * 100 : 0)}
+						{@const renounced = safu?.ownerIsZero ?? tok.owner_renounced}
+						{@const trading = safu?.tradingEnabled ?? tok.trading_enabled}
+						{@const buyTax = safu?.buyTaxBps ?? 0}
+						{@const sellTax = safu?.sellTaxBps ?? 0}
+						{@const hasLiq = safu?.hasLiquidity}
+						{#if taxLocked || lpBurned || renounced || trading || hasLiq}
+							<div class="tc-safu-signals">
+								{#if renounced}<span class="tc-safu-check">&#10003; Renounced</span>{/if}
+								{#if taxLocked}<span class="tc-safu-check">&#10003; Tax locked</span>{/if}
+								{#if lpBurned}<span class="tc-safu-check">&#10003; LP burned {lpPct > 0 ? `${Math.round(lpPct / 100)}%` : ''}</span>{/if}
+								{#if trading}<span class="tc-safu-check">&#10003; Trading on</span>{/if}
+								{#if hasLiq}<span class="tc-safu-check">&#10003; Liquidity</span>{/if}
+								{#if buyTax > 0 || sellTax > 0}<span class="tc-safu-check">&#10003; Tax {buyTax / 100}/{sellTax / 100}%</span>{/if}
+							</div>
+						{/if}
+					{/if}
+
 					<!-- Row 3: Stats strip -->
 					<div class="tc-stats">
 						<div class="tc-stat">
@@ -753,6 +775,10 @@
 	.tc-liq-row { display: flex; gap: 4px; margin-top: 2px; }
 	.tc-liq { font-family: 'Space Mono', monospace; font-size: 9px; color: var(--text-dim); }
 	.tc-liq-warn { font-family: 'Space Mono', monospace; font-size: 9px; color: #f59e0b; }
+
+	/* SAFU breakdown signals */
+	.tc-safu-signals { display: flex; flex-wrap: wrap; gap: 3px 6px; margin-top: -4px; }
+	.tc-safu-check { font-family: 'Space Mono', monospace; font-size: 8px; color: #10b981; white-space: nowrap; line-height: 1.2; }
 
 	/* Header */
 	.tc-header { display: flex; align-items: center; gap: 10px; text-decoration: none; color: inherit; }
