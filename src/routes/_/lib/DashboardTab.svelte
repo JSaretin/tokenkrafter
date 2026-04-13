@@ -317,7 +317,7 @@
 					<p class="text-gray-600 text-xs font-mono text-center py-6">No tokens created yet</p>
 				{:else}
 					{#each recentTokens.slice(0, 10) as token}
-						<a href="/manage-tokens/{chainSlug(token.chain_id ?? 56)}/{token.address}" class="activity-row">
+						<a href="/explore/{chainSlug(token.chain_id ?? 56)}/{token.address}" class="activity-row">
 							{#if token.logo_url}
 								<img src={token.logo_url} alt="" class="activity-logo" />
 							{:else}
