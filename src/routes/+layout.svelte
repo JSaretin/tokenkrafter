@@ -834,7 +834,7 @@
 		</div>
 	</div>
 
-	<div id="scroll-container" class="flex-1 md:overflow-y-auto overflow-x-hidden pb-16 md:pb-0">
+	<div id="scroll-container" class="flex-1 md:overflow-y-auto overflow-x-hidden pb-16 md:pb-0 pt-14 md:pt-0">
 	<main id="main-content" class="min-h-screen">
 		{#if isLoading}
 			<div class="flex items-center justify-center min-h-[80vh]">
@@ -1017,6 +1017,11 @@
 		border-radius: 50%;
 	}
 	.nav-bar { background: var(--bg-nav); }
+	/* On mobile, force fixed positioning so the nav never scrolls away.
+	   sticky can break when ancestor elements have overflow/transform. */
+	@media (max-width: 767px) {
+		.nav-bar { position: fixed !important; left: 0; right: 0; }
+	}
 	/* Desktop/mobile visibility */
 	.lang-desktop, .wallet-desktop { display: none; }
 	@media (min-width: 768px) {
