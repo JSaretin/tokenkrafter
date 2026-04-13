@@ -918,9 +918,9 @@
 	.token-card-active { border-left: 3px solid rgba(0,210,255,0.4); }
 	.token-card-safu { border-left: 3px solid rgba(16,185,129,0.4); }
 
-	/* ── Dim unlisted tokens ── */
-	.token-card-dim { opacity: 0.55; }
-	.token-card-dim:hover { opacity: 0.85; }
+	/* ── Subtle dim for unlisted tokens — only noticeable when mixed with listed ones ── */
+	.token-card-dim { opacity: 0.8; }
+	.token-card-dim:hover { opacity: 1; }
 
 	/* ── Live Launches Section ── */
 	.launches-section { margin-bottom: 20px; }
