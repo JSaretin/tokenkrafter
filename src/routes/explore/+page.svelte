@@ -623,7 +623,7 @@
 					<div class="tc-stats">
 						<div class="tc-stat">
 							<span class="tc-stat-label">Supply</span>
-							<span class="tc-stat-value">{fmtSupply(tok.total_supply, tok.decimals || 18)}</span>
+							<span class="tc-stat-value">{fmtSupply(data.supplyData?.[`${tok.chain_id}:${tok.address}`] || tok.total_supply, tok.decimals || 18)}</span>
 						</div>
 						<div class="tc-stat">
 							<span class="tc-stat-label">{mcap > 0 ? 'MCap' : 'Status'}</span>
