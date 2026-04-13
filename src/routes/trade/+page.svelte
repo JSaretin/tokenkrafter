@@ -113,15 +113,9 @@
 
 	let fiatEquivalent = $derived.by(() => {
 		if (!amountIn || ngnRate === 0 || outputMode !== 'bank') return '';
-		let usdtVal: number;
-		const isUsdt = selectedNetwork && tokenInAddr.toLowerCase() === selectedNetwork.usdt_address?.toLowerCase();
-		if (isUsdt) {
-			usdtVal = parseFloat(amountIn) || 0;
-		} else if (previewNet > 0n) {
-			usdtVal = parseFloat(ethers.formatUnits(previewNet, usdtDecimals));
-		} else {
-			return '';
-		}
+		// Always use previewNet (after fee) for NGN display — that's what the user actually receives
+		if (previewNet <= 0n) return '';
+		const usdtVal = parseFloat(ethers.formatUnits(previewNet, usdtDecimals));
 		const ngn = usdtVal * ngnRate;
 		return ngn > 0 ? `NGN ${ngn.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '';
 	});
@@ -889,8 +883,10 @@
 					usdtAmount = rawOut;
 				}
 
-				// Apply slippage tolerance — show worst-case output
-				usdtAmount = (usdtAmount * BigInt(10000 - slippageBps)) / 10000n;
+				// Apply slippage tolerance — show worst-case output (skip for direct USDT, no swap)
+				if (!isUsdt) {
+					usdtAmount = (usdtAmount * BigInt(10000 - slippageBps)) / 10000n;
+				}
 
 				const [fee, netAmt] = await router.previewDeposit(usdtAmount);
 				previewFee = fee;
