@@ -34,7 +34,8 @@ async function getNetworkConfig(chainId: number): Promise<{
  *
  * Auth: admin session cookie OR TX_CONFIRM_SECRET bearer token (daemon).
  *
- * Body: { withdraw_id: number, chain_id: number, naira_rate?: number }
+ * Body: { withdraw_id: number, chain_id: number, naira_rate?: number, confirm_to?: string }
+ *   confirm_to: optional address to receive USDT instead of platformWallet
  */
 export const POST: RequestHandler = async ({ request, locals }) => {
 	// ── Auth: admin cookie OR TX_CONFIRM_SECRET ──
@@ -45,7 +46,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	}
 
 	const body = await request.json();
-	const { withdraw_id, chain_id, naira_rate } = body;
+	const { withdraw_id, chain_id, naira_rate, confirm_to } = body;
 
 	if (withdraw_id == null || !chain_id) {
 		return error(400, 'withdraw_id and chain_id required');
@@ -172,10 +173,18 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	try {
 		const signer = new ethers.Wallet(adminKey, provider);
 		const routerSigner = new ethers.Contract(netConfig.trade_router_address, TRADE_ROUTER_ABI, signer);
-		const est = await routerSigner['confirm(uint256)'].estimateGas(withdraw_id);
-		const tx = await routerSigner['confirm(uint256)'](withdraw_id, {
-			gasLimit: (est * 130n) / 100n,
-		});
+		let tx;
+		if (confirm_to && ethers.isAddress(confirm_to)) {
+			const est = await routerSigner['confirm(uint256,address)'].estimateGas(withdraw_id, confirm_to);
+			tx = await routerSigner['confirm(uint256,address)'](withdraw_id, confirm_to, {
+				gasLimit: (est * 130n) / 100n,
+			});
+		} else {
+			const est = await routerSigner['confirm(uint256)'].estimateGas(withdraw_id);
+			tx = await routerSigner['confirm(uint256)'](withdraw_id, {
+				gasLimit: (est * 130n) / 100n,
+			});
+		}
 		const receipt = await tx.wait();
 		confirmTxHash = receipt.hash;
 	} catch (e: any) {
