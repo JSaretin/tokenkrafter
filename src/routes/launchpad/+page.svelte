@@ -476,8 +476,8 @@
 
 	<!-- Grid -->
 	{#if loading}
-		<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-			{#each Array(4) as _}
+		<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+			{#each Array(6) as _}
 				<div class="skeleton-card card p-0">
 					<!-- Badges bar -->
 					<div class="flex gap-2 px-4 pt-3 pb-1">
