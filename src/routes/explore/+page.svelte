@@ -3,6 +3,7 @@
 	import { getContext, onMount, onDestroy } from 'svelte';
 	import { chainSlug, type SupportedNetwork } from '$lib/structure';
 	import { querySafuLens, type TokenSafu } from '$lib/safuLens';
+	import { queryExploreLens, type ExploreTokenData } from '$lib/exploreLens';
 	import { page } from '$app/state';
 
 	let { data }: { data: any } = $props();
@@ -95,6 +96,73 @@
 		if (_safuPending.length > 0) scheduleSafuBatch();
 	}
 
+	// ── ExploreLens: on-chain market data (price, mcap, holders, volume) ──
+	let exploreLensMap: Record<string, ExploreTokenData> = $state({});
+
+	async function fetchExploreLens() {
+		const networks = _getNetworks();
+		const providers = getNetworkProviders();
+		if (!networks.length) return;
+
+		// Group tokens by chain
+		const byChain: Record<number, string[]> = {};
+		for (const t of tokens) {
+			if (!byChain[t.chain_id]) byChain[t.chain_id] = [];
+			byChain[t.chain_id].push(t.address);
+		}
+
+		for (const [cidStr, addrs] of Object.entries(byChain)) {
+			const cid = Number(cidStr);
+			const net = networks.find(n => n.chain_id === cid);
+			const provider = providers.get(cid);
+			if (!net || !provider || !net.platform_address || !net.dex_router) continue;
+
+			// Resolve dexFactory + weth
+			let dexFactory = '';
+			let weth = '';
+			try {
+				const r = new ethers.Contract(net.dex_router, ['function factory() view returns (address)', 'function WETH() view returns (address)'], provider);
+				[dexFactory, weth] = await Promise.all([r.factory(), r.WETH()]);
+			} catch { continue; }
+
+			// Batch in groups of 24
+			for (let i = 0; i < addrs.length; i += 24) {
+				try {
+					const batch = addrs.slice(i, i + 24);
+					const results = await queryExploreLens(provider, net.platform_address, dexFactory, weth, net.usdt_address, batch);
+					for (const r of results) {
+						exploreLensMap[r.token.toLowerCase()] = r;
+					}
+					exploreLensMap = { ...exploreLensMap };
+				} catch (e) {
+					console.warn('ExploreLens batch failed:', (e as any)?.message?.slice(0, 100));
+				}
+			}
+		}
+	}
+
+	// ── Merged data: ExploreLens (on-chain) + Gecko (24h change) ──
+	function tokenPrice(tok: any): number {
+		const lens = exploreLensMap[tok.address?.toLowerCase()];
+		if (lens?.priceUsd && lens.priceUsd > 0) return lens.priceUsd;
+		const g = geckoLookup[tok.address?.toLowerCase()];
+		return g?.price_usd || 0;
+	}
+
+	function tokenHasData(tok: any): boolean {
+		const lens = exploreLensMap[tok.address?.toLowerCase()];
+		if (lens?.hasLiquidity) return true;
+		return !!geckoLookup[tok.address?.toLowerCase()]?.has_data;
+	}
+
+	function tokenHolders(tok: any): number {
+		return exploreLensMap[tok.address?.toLowerCase()]?.holderCount || 0;
+	}
+
+	function tokenVolume(tok: any): bigint {
+		return exploreLensMap[tok.address?.toLowerCase()]?.totalVolume || 0n;
+	}
+
 	// GeckoTerminal market data — first 30 from SSR, rest filled client-side
 	const GECKO_NETWORKS: Record<number, string> = { 56: 'bsc', 1: 'eth', 8453: 'base', 42161: 'arbitrum', 137: 'polygon_pos' };
 	type GeckoInfo = { price_usd: number; volume_24h: number; price_change_24h: number; has_data: boolean };
@@ -119,8 +187,13 @@
 			.slice(0, 8);
 	});
 
-	// ── Market cap helper for cards ──
+	// ── Market cap helper for cards — ExploreLens first, Gecko fallback ──
 	function tokenMcap(tok: any): number {
+		const lens = exploreLensMap[tok.address?.toLowerCase()];
+		if (lens?.marketCap && lens.marketCap > 0n) {
+			// marketCap is in USDT-unit raw — format with USDT decimals (18 for BSC)
+			return parseFloat(ethers.formatUnits(lens.marketCap, 18));
+		}
 		const g = geckoLookup[tok.address?.toLowerCase()];
 		if (!g?.has_data || g.price_usd <= 0) return 0;
 		const supply = parseFloat(ethers.formatUnits(data.supplyData?.[`${tok.chain_id}:${tok.address}`] || tok.total_supply || '0', tok.decimals || 18));
@@ -220,8 +293,9 @@
 	}
 
 	onMount(async () => {
-		// Fetch active launches (fire-and-forget)
+		// Fetch active launches + on-chain token data (fire-and-forget)
 		fetchActiveLaunches();
+		fetchExploreLens();
 
 		// Set up IntersectionObserver for lazy SafuLens badge detection
 		if (typeof IntersectionObserver !== 'undefined') {
@@ -554,7 +628,11 @@
 			     Falls back to DB is_safu when SafuLens hasn't queried yet. -->
 			{@const isSafu = safu?.isSafu ?? tok.is_safu ?? false}
 				{@const mcap = tokenMcap(tok)}
-				<a href="/explore/{slug}/{tok.address}" class="token-card" class:token-card-dim={!gecko?.has_data} class:token-card-active={gecko?.has_data && gecko.volume_24h > 0 && !isSafu} class:token-card-safu={isSafu} data-token-addr={tok.address} data-chain-id={tok.chain_id}>
+				{@const hasData = tokenHasData(tok)}
+				{@const price = tokenPrice(tok)}
+				{@const holders = tokenHolders(tok)}
+				{@const vol = tokenVolume(tok)}
+				<a href="/explore/{slug}/{tok.address}" class="token-card" class:token-card-dim={!hasData} class:token-card-active={hasData && !isSafu} class:token-card-safu={isSafu} data-token-addr={tok.address} data-chain-id={tok.chain_id}>
 					<!-- Row 1: Logo + identity + price -->
 					<div class="tc-header">
 						{#if tok.logo_url}
@@ -577,10 +655,10 @@
 								{/if}
 							</div>
 						</div>
-						{#if gecko?.has_data}
+						{#if price > 0}
 							<div class="tc-header-right">
-								<span class="tc-price">{fmtPrice(gecko.price_usd)}</span>
-								{#if gecko.price_change_24h !== 0}
+								<span class="tc-price">{fmtPrice(price)}</span>
+								{#if gecko?.price_change_24h && gecko.price_change_24h !== 0}
 									<span class="tc-change" class:tc-change-up={gecko.price_change_24h > 0} class:tc-change-down={gecko.price_change_24h < 0}>
 										{gecko.price_change_24h > 0 ? '+' : ''}{gecko.price_change_24h.toFixed(1)}%
 									</span>
@@ -606,8 +684,10 @@
 								<span class="tc-mcap">{fmtMcap(mcap)}</span>
 							{/if}
 							{#if gecko?.has_data && gecko.volume_24h > 0}
-								<span class="tc-vol">{fmtVolume(gecko.volume_24h)}</span>
-							{:else if !gecko?.has_data}
+								<span class="tc-vol">{fmtVolume(gecko.volume_24h)} vol</span>
+							{:else if holders > 0}
+								<span class="tc-vol">{holders.toLocaleString()} holders</span>
+							{:else if !hasData}
 								<span class="tc-unlisted">&mdash;</span>
 							{/if}
 						</div>
@@ -642,17 +722,17 @@
 							<span class="tc-stat-value">{fmtSupply(data.supplyData?.[`${tok.chain_id}:${tok.address}`] || tok.total_supply, tok.decimals || 18)}</span>
 						</div>
 						<div class="tc-stat">
-							<span class="tc-stat-label">{mcap > 0 ? 'MCap' : 'Status'}</span>
-							<span class="tc-stat-value">{mcap > 0 ? fmtMcap(mcap) : (gecko?.has_data ? 'Listed' : '\u2014')}</span>
+							<span class="tc-stat-label">{mcap > 0 ? 'MCap' : holders > 0 ? 'Holders' : 'Status'}</span>
+							<span class="tc-stat-value">{mcap > 0 ? fmtMcap(mcap) : holders > 0 ? holders.toLocaleString() : (hasData ? 'Listed' : '\u2014')}</span>
 						</div>
 						<div class="tc-stat">
-							<span class="tc-stat-label">Age</span>
-							<span class="tc-stat-value">{tok.created_at ? timeAgo(tok.created_at) : '—'}</span>
+							<span class="tc-stat-label">{holders > 0 && mcap > 0 ? 'Holders' : vol > 0n ? 'Volume' : 'Age'}</span>
+							<span class="tc-stat-value">{holders > 0 && mcap > 0 ? holders.toLocaleString() : vol > 0n ? fmtSupply(vol.toString(), tok.decimals || 18) : (tok.created_at ? timeAgo(tok.created_at) : '—')}</span>
 						</div>
 					</div>
 
 					<!-- Trade CTA (only when tradeable) -->
-					{#if gecko?.has_data}
+					{#if hasData}
 						<!-- svelte-ignore a11y_click_events_have_key_events -->
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
 						<div class="tc-actions" onclick={(e) => { e.preventDefault(); e.stopPropagation(); window.location.href = `/trade?token=${tok.address}`; }}>
