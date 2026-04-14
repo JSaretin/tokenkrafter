@@ -733,12 +733,14 @@
 	}
 
 	function fmtBal(bal: bigint, dec: number): string {
+		if (bal === 0n) return '0';
 		const v = parseFloat(ethers.formatUnits(bal, dec));
-		if (v === 0) return '0';
 		if (v >= 1000) return v.toLocaleString(undefined, { maximumFractionDigits: 2 });
 		if (v >= 1) return v.toFixed(4);
 		if (v >= 0.0001) return v.toFixed(6);
-		return v.toExponential(2);
+		if (v >= 0.00000001) return v.toFixed(8).replace(/\.?0+$/, '');
+		// Truly dust amounts — show "< 0.00000001" instead of scientific notation
+		return '< 0.00000001';
 	}
 
 	function fmtUsd(val: number): string {

@@ -21,6 +21,8 @@
 		// Anti-dust floor per buy in whole-USDT units (e.g. "1" = 1 USDT).
 		// The frontend converts this to native USDT decimals at call time.
 		minBuyUsdt: string;
+		// Unix timestamp in seconds when launch opens. "0" = immediate.
+		startTimestamp: string;
 	};
 	export type ProtectionConfig = { maxWalletPct: string; maxTransactionPct: string; cooldownSeconds: string; blacklistWindowSeconds: string };
 	export type TaxConfig = { buyTaxPct: string; sellTaxPct: string; transferTaxPct: string; wallets: { address: string; sharePct: string }[] };
@@ -131,10 +133,19 @@
 	let launchProtectionEnabled = $state(true);
 
 	let launchTokensPct = $state(40);
+	let supplyNum = $derived(parseFloat((totalSupply || '').replace(/,/g, '')) || 0);
+	let launchTokenAmount = $derived(supplyNum > 0 ? (supplyNum * launchTokensPct) / 100 : 0);
+	function formatTokenAmount(n: number): string {
+		if (n === 0) return '0';
+		if (n >= 1e9) return (n / 1e9).toFixed(n % 1e9 === 0 ? 0 : 2) + 'B';
+		if (n >= 1e6) return (n / 1e6).toFixed(n % 1e6 === 0 ? 0 : 2) + 'M';
+		if (n >= 1e3) return (n / 1e3).toFixed(n % 1e3 === 0 ? 0 : 1) + 'K';
+		return n.toLocaleString();
+	}
 	let launchCurveType = $state(0);
 	let showCurveModal = $state(false);
-	let launchSoftCap = $state('5');
-	let launchHardCap = $state('50');
+	let launchSoftCap = $state('');
+	let launchHardCap = $state('');
 	let launchDurationDays = $state('30');
 	let launchMaxBuyPct = $state('2');
 	let launchCreatorAllocPct = $state('0');
@@ -144,6 +155,9 @@
 	let launchLockDurationMinutes = $state('60');
 	// Anti-dust floor per buy in whole USDT. Default 1 USDT.
 	let launchMinBuyUsdt = $state('1');
+	// Scheduled start — datetime-local string or "" for immediate.
+	// Converted to unix seconds at submit time.
+	let launchStartDateLocal = $state('');
 
 	let listingPoolPct = $state(80);
 	type ListingPair = { base: 'native' | 'usdt' | 'usdc'; amount: string };
@@ -432,6 +446,7 @@
 			buyTaxPct, sellTaxPct, transferTaxPct, taxWallets,
 			protectionEnabled, maxWalletPct, maxTransactionPct, cooldownSeconds,
 			launchProtectionEnabled, launchLockDurationMinutes, launchMinBuyUsdt,
+			launchStartDateLocal,
 			launchTokensPct, launchCurveType, launchSoftCap, launchHardCap,
 			launchDurationDays, launchMaxBuyPct, launchCreatorAllocPct, launchVestingDays,
 			listingPoolPct, listingPairs, listingPricePerToken, burnLp, wizardStep,
@@ -471,6 +486,7 @@
 		if (s.launchProtectionEnabled != null) launchProtectionEnabled = s.launchProtectionEnabled;
 		if (s.launchLockDurationMinutes) launchLockDurationMinutes = s.launchLockDurationMinutes;
 		if (s.launchMinBuyUsdt) launchMinBuyUsdt = s.launchMinBuyUsdt;
+		if (s.launchStartDateLocal) launchStartDateLocal = s.launchStartDateLocal;
 		if (s.launchTokensPct != null) launchTokensPct = s.launchTokensPct;
 		if (s.launchCurveType != null) launchCurveType = s.launchCurveType;
 		if (s.launchSoftCap) launchSoftCap = s.launchSoftCap;
@@ -549,16 +565,49 @@
 	});
 
 	let currentStepIdx = $derived(steps.findIndex(s => s.id === wizardStep));
+	// Track the farthest step the user has reached so they can jump back
+	// to any already-visited step via the stepper header.
+	let maxReachedStepIdx = $state(0);
+	// When user clicks a future step, we walk forward one step at a time,
+	// validating each step's form as we go. Lands on the target step if
+	// all pass, or on the first invalid step (browser auto-focuses it).
+	let targetStepIdx = $state<number | null>(null);
+	let wzFormEl: HTMLFormElement | undefined = $state();
 
 	function nextStep() {
 		const idx = currentStepIdx;
-		if (idx < steps.length - 1) wizardStep = steps[idx + 1].id;
-		else submit();
+		if (idx < steps.length - 1) {
+			wizardStep = steps[idx + 1].id;
+			if (idx + 1 > maxReachedStepIdx) maxReachedStepIdx = idx + 1;
+			// If we're walking toward a later target, keep going.
+			// setTimeout gives Svelte a tick to render the new step
+			// so requestSubmit validates the right fields.
+			if (targetStepIdx != null && idx + 1 < targetStepIdx) {
+				setTimeout(() => wzFormEl?.requestSubmit(), 0);
+			} else {
+				targetStepIdx = null;
+			}
+		} else {
+			targetStepIdx = null;
+			submit();
+		}
 	}
 
 	function prevStep() {
 		const idx = currentStepIdx;
 		if (idx > 0) wizardStep = steps[idx - 1].id;
+	}
+
+	function jumpToStep(i: number) {
+		if (i === currentStepIdx) return;
+		if (i < currentStepIdx) {
+			// Going back — no validation needed
+			wizardStep = steps[i].id;
+			return;
+		}
+		// Going forward — walk through each step, validating as we go
+		targetStepIdx = i;
+		wzFormEl?.requestSubmit();
 	}
 
 	// ── Submit ─────────────────────────────────────────────
@@ -608,6 +657,11 @@
 				// Convert minutes to seconds for the contract (contract caps at 24h = 1440 min).
 				lockDurationAfterListing: String(Math.round(parseFloat((launchProtectionEnabled ? launchLockDurationMinutes : '0') || '0') * 60)),
 				minBuyUsdt: launchProtectionEnabled ? launchMinBuyUsdt : '1',
+				// Convert datetime-local (browser local time) to unix seconds.
+				// Empty string → "0" = immediate start.
+				startTimestamp: launchStartDateLocal
+					? String(Math.floor(new Date(launchStartDateLocal).getTime() / 1000))
+					: '0',
 			},
 			protection: { maxWalletPct: protectionEnabled ? maxWalletPct : '0', maxTransactionPct: protectionEnabled ? maxTransactionPct : '0', cooldownSeconds: protectionEnabled ? cooldownSeconds : '0', blacklistWindowSeconds: protectionEnabled ? blacklistWindowSeconds : '0' },
 			tax: { buyTaxPct, sellTaxPct, transferTaxPct, wallets: validWallets },
@@ -668,7 +722,14 @@
 	<!-- Step indicator -->
 	<div class="wz-steps">
 		{#each steps as step, i}
-			<button class="wz-step" class:wz-step-done={i < currentStepIdx} class:wz-step-active={step.id === wizardStep} tabindex="-1" onclick={() => { if (i <= currentStepIdx) wizardStep = step.id; }}>
+			<button
+				class="wz-step"
+				class:wz-step-done={i < currentStepIdx}
+				class:wz-step-active={step.id === wizardStep}
+				class:wz-step-locked={i > maxReachedStepIdx}
+				tabindex="-1"
+				onclick={() => jumpToStep(i)}
+			>
 				<span class="wz-step-num">{i < currentStepIdx ? '✓' : i + 1}</span>
 				<span class="wz-step-label">{step.label}</span>
 			</button>
@@ -678,7 +739,11 @@
 		{/each}
 	</div>
 
-	<!-- Step content -->
+	<!-- Step content + nav wrapped in a form so native validation blocks
+	     Next when required fields are empty. The form submission handler
+	     calls nextStep() — failed validation auto-focuses the first invalid
+	     input, no manual checks or alerts needed. -->
+	<form bind:this={wzFormEl} onsubmit={(e) => { e.preventDefault(); nextStep(); }}>
 	<div class="wz-content">
 		{#if wizardStep === 'basics'}
 			{#if launchEnabled}
@@ -795,8 +860,13 @@
 			<div class="wz-section">
 				<h2 class="wz-title">Bonding Curve Launch</h2>
 				<div class="wz-field">
-					<label class="wz-label">Tokens for launch ({launchTokensPct}%)</label>
+					<label class="wz-label">
+						Tokens for launch ({launchTokensPct}%{#if launchTokenAmount > 0} — {formatTokenAmount(launchTokenAmount)} {symbol || 'tokens'}{/if})
+					</label>
 					<input type="range" class="wz-slider" min="20" max="90" step="5" bind:value={launchTokensPct} />
+					{#if launchTokenAmount > 0}
+						<span class="wz-field-hint">Remaining {formatTokenAmount(supplyNum - launchTokenAmount)} {symbol || 'tokens'} goes to: LP seeding (on graduation) + creator allocation (if any) + burn</span>
+					{/if}
 				</div>
 				<div class="wz-field">
 					<label class="wz-label">Curve type</label>
@@ -807,18 +877,31 @@
 					</button>
 				</div>
 				<div class="wz-row">
-					<div class="wz-field"><label class="wz-label">Soft cap ($)</label><input class="input-field" type="text" bind:value={launchSoftCap} /></div>
-					<div class="wz-field"><label class="wz-label">Hard cap ($)</label><input class="input-field" type="text" bind:value={launchHardCap} /></div>
+					<div class="wz-field"><label class="wz-label" for="launchSoftCap">Soft cap ($)</label><input id="launchSoftCap" class="input-field" type="number" min="1" step="any" required bind:value={launchSoftCap} placeholder="50,000" /></div>
+					<div class="wz-field"><label class="wz-label" for="launchHardCap">Hard cap ($)</label><input id="launchHardCap" class="input-field" type="number" min="1" step="any" required bind:value={launchHardCap} placeholder="100,000" /></div>
 				</div>
-				<div class="wz-field">
-					<label class="wz-label">Duration</label>
-					<select class="input-field" bind:value={launchDurationDays}>
-						<option value="7">7 days</option>
-						<option value="14">14 days</option>
-						<option value="30">30 days</option>
-						<option value="60">60 days</option>
-						<option value="90">90 days</option>
-					</select>
+				<div class="wz-row">
+					<div class="wz-field">
+						<label class="wz-label" for="launchDuration">Duration</label>
+						<select id="launchDuration" class="input-field" bind:value={launchDurationDays}>
+							<option value="7">7 days</option>
+							<option value="14">14 days</option>
+							<option value="30">30 days</option>
+							<option value="60">60 days</option>
+							<option value="90">90 days</option>
+						</select>
+					</div>
+					<div class="wz-field">
+						<label class="wz-label" for="launchStart">Start date (optional)</label>
+						<input
+							id="launchStart"
+							type="datetime-local"
+							class="input-field"
+							bind:value={launchStartDateLocal}
+							min={new Date(Date.now() + 60000).toISOString().slice(0, 16)}
+						/>
+						<span class="wz-field-hint">{launchStartDateLocal ? 'Launch opens at this local time' : 'Leave empty to start immediately after deploy'}</span>
+					</div>
 				</div>
 				<div class="wz-row">
 					<div class="wz-field">
@@ -950,14 +1033,15 @@
 	<!-- Navigation -->
 	<div class="wz-nav">
 		{#if currentStepIdx > 0}
-			<button class="wz-btn wz-btn-back" onclick={prevStep}>Back</button>
+			<button type="button" class="wz-btn wz-btn-back" onclick={prevStep}>Back</button>
 		{:else}
 			<div></div>
 		{/if}
-		<button class="wz-btn wz-btn-next" onclick={nextStep}>
+		<button type="submit" class="wz-btn wz-btn-next">
 			{wizardStep === 'review' ? (launchEnabled ? 'Deploy & Launch' : listingEnabled ? 'Deploy & List' : 'Deploy Token') : 'Next →'}
 		</button>
 	</div>
+	</form>
 </div>
 
 <!-- Curve Type Picker Modal -->
@@ -1064,6 +1148,7 @@
 	.wz-step-label { font-size: 9px; color: var(--text-dim); font-family: 'Space Mono', monospace; text-transform: uppercase; letter-spacing: 0.05em; white-space: nowrap; }
 	.wz-step-active .wz-step-label { color: #00d2ff; }
 	.wz-step-done .wz-step-label { color: #10b981; }
+	.wz-step-locked { cursor: not-allowed; opacity: 0.5; }
 	.wz-step-line { flex: 1; height: 2px; background: var(--bg-surface-hover); min-width: 20px; margin: 0 4px; margin-bottom: 16px; }
 	.wz-step-line-done { background: #10b981; }
 

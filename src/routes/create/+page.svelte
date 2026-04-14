@@ -71,6 +71,12 @@
 		_ignoreStoreUpdate = true;
 		createMode.set(m);
 		_ignoreStoreUpdate = false;
+		// Always wipe any stale draft when entering or leaving a mode —
+		// users expect a fresh form when they pick a mode from the
+		// selection screen, not leftover state from a previous session.
+		try { sessionStorage.removeItem('tk_create_form_draft'); } catch {}
+		previewState = null;
+		resetSignal++;
 		// Sync URL
 		const url = new URL(window.location.href);
 		if (m) {
@@ -80,9 +86,6 @@
 			url.searchParams.delete('launch');
 			url.searchParams.delete('token');
 			url.searchParams.delete('chain');
-			// Clear draft and preview on back to selection
-			try { sessionStorage.removeItem('tk_create_form_draft'); } catch {}
-			previewState = null;
 		}
 		history.replaceState({}, '', m ? url.toString() : url.pathname);
 	}
@@ -930,7 +933,7 @@
 					maxBuyBps: BigInt(tokenInfo.launch.maxBuyBps),
 					creatorAllocationBps: BigInt(tokenInfo.launch.creatorAllocationBps),
 					vestingDays: BigInt(tokenInfo.launch.vestingDays),
-					startTimestamp: 0n,
+					startTimestamp: BigInt(tokenInfo.launch.startTimestamp || '0'),
 					lockDurationAfterListing: BigInt(tokenInfo.launch.lockDurationAfterListing || '3600'),
 					minBuyUsdt: ethers.parseUnits(String(tokenInfo.launch.minBuyUsdt || '1'), usdtDec)
 				};
@@ -1006,7 +1009,7 @@
 					maxBuyBps: BigInt(tokenInfo.launch.maxBuyBps),
 					creatorAllocationBps: BigInt(tokenInfo.launch.creatorAllocationBps),
 					vestingDays: BigInt(tokenInfo.launch.vestingDays),
-					startTimestamp: 0n,
+					startTimestamp: BigInt(tokenInfo.launch.startTimestamp || '0'),
 					// Anti-snipe window after curve graduation — creator picks
 					// this in the wizard (already in seconds via lockDurationAfterListing).
 					// Default 3600 (1h) if wizard didn't set it.
@@ -1873,7 +1876,10 @@
 			<button class="sel-card sel-featured" onclick={() => selectMode('both')}>
 				<div class="sel-card-glow"></div>
 				<div class="sel-card-inner">
-					<div class="sel-tag">Recommended</div>
+					<div class="sel-tag">
+						<svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+						Recommended
+					</div>
 					<div class="sel-icon sel-icon-cyan">
 						<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
 					</div>
@@ -2370,6 +2376,7 @@
 
 	.sel-tag {
 		position: absolute; top: 10px; right: 12px; z-index: 2;
+		display: inline-flex; align-items: center; gap: 4px;
 		font-size: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
 		padding: 3px 8px; border-radius: 4px;
 		background: rgba(0,210,255,0.12); color: #00d2ff; font-family: 'Space Mono', monospace;

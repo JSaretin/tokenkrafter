@@ -50,6 +50,9 @@
 	<!-- Tax ceiling info -->
 	<div class="tc-info-box">
 		Tax rates are permanently capped at these values once trading starts. You can lower them later but never raise them above what you set here. Setting 0% means tax-free forever.
+		<div class="tc-limits-line">
+			Max allowed: <strong>Buy {MAX_BUY}%</strong> · <strong>Sell {MAX_SELL}%</strong> · <strong>Transfer {MAX_TRANSFER}%</strong> ({MAX_TOTAL}% combined){isPartner ? ' — partner tokens' : ''}
+		</div>
 	</div>
 
 	<!-- Tax Rate Rows -->
@@ -59,7 +62,7 @@
 			<div class="tc-rate-left">
 				<span class="tc-dot tc-dot-buy"></span>
 				<span class="tc-rate-name">Buy Tax</span>
-				{#if buyOver}<span class="tc-limit-warn">max {MAX_BUY}%</span>{/if}
+				<span class="tc-limit-hint" class:tc-limit-warn={buyOver}>max {MAX_BUY}%</span>
 			</div>
 			<div class="tc-rate-right">
 				<div class="tc-presets">
@@ -79,7 +82,7 @@
 			<div class="tc-rate-left">
 				<span class="tc-dot tc-dot-sell"></span>
 				<span class="tc-rate-name">Sell Tax</span>
-				{#if sellOver}<span class="tc-limit-warn">max {MAX_SELL}%</span>{/if}
+				<span class="tc-limit-hint" class:tc-limit-warn={sellOver}>max {MAX_SELL}%</span>
 			</div>
 			<div class="tc-rate-right">
 				<div class="tc-presets">
@@ -99,7 +102,7 @@
 			<div class="tc-rate-left">
 				<span class="tc-dot tc-dot-transfer"></span>
 				<span class="tc-rate-name">Transfer Tax</span>
-				{#if transferOver}<span class="tc-limit-warn">max {MAX_TRANSFER}%</span>{/if}
+				<span class="tc-limit-hint" class:tc-limit-warn={transferOver}>max {MAX_TRANSFER}%</span>
 			</div>
 			<div class="tc-rate-right">
 				<div class="tc-presets">
@@ -173,8 +176,10 @@
 
 <style>
 	.tc { display: flex; flex-direction: column; gap: 16px; }
-	.tc-info-box { padding: 10px 12px; border-radius: 8px; background: rgba(0,210,255,0.05); border: 1px solid rgba(0,210,255,0.18); color: rgba(0,210,255,0.85); font-size: 11px; font-family: 'Space Mono', monospace; line-height: 1.55; }
+	.tc-info-box { padding: 10px 12px; border-radius: 8px; background: rgba(248,113,113,0.06); border: 1px solid rgba(248,113,113,0.22); color: #fca5a5; font-size: 11px; font-family: 'Space Mono', monospace; line-height: 1.55; }
 	.tc-info-box-warn { background: rgba(245,158,11,0.06); border-color: rgba(245,158,11,0.2); color: #fbbf24; }
+	.tc-limits-line { margin-top: 6px; font-size: 10px; color: #fca5a5; opacity: 0.9; }
+	.tc-limits-line strong { color: #fecaca; font-weight: 700; }
 
 	/* ── Tax Rate Rows ── */
 	.tc-rates { display: flex; flex-direction: column; gap: 8px; }
@@ -278,7 +283,8 @@
 	.tc-rate-error { border-color: rgba(248,113,113,0.25); }
 	.tc-input-error { border-color: rgba(248,113,113,0.4); }
 	.tc-input-error .tc-rate-input { color: #f87171; }
-	.tc-limit-warn { font-size: 9px; color: #f87171; font-family: 'Space Mono', monospace; margin-left: auto; }
+	.tc-limit-hint { font-size: 9px; color: var(--text-dim); font-family: 'Space Mono', monospace; margin-left: auto; text-transform: uppercase; letter-spacing: 0.04em; }
+	.tc-limit-warn { color: #f87171; }
 
 	@media (max-width: 500px) {
 		.tc-wallet { flex-wrap: wrap; }

@@ -321,7 +321,7 @@
 					const weth = await router.WETH();
 					const amounts = await router.getAmountsIn(usdtNeeded, [weth, net.usdt_address]);
 					const val = parseFloat(ethers.formatEther(amounts[0]));
-					swapEstimate = `\u2248 ${val < 0.0001 ? val.toExponential(2) : val.toFixed(4)} ${net.native_coin || 'BNB'}`;
+					swapEstimate = `\u2248 ${val < 0.00000001 ? '< 0.00000001' : val < 0.0001 ? val.toFixed(8).replace(/\.?0+$/, '') : val.toFixed(4)} ${net.native_coin || 'BNB'}`;
 				} else {
 					// USDC
 					const dec = net.chain_id === 56 ? 18 : 6;
@@ -1746,8 +1746,6 @@
 							<button onclick={startEditing} class="empty-state-btn">
 								<span class="text-gray-500 text-sm">{$t('lpd.addDescription')}</span>
 							</button>
-						{:else}
-							<p class="text-gray-600 font-mono text-sm italic">{$t('lpd.noDescription')}</p>
 						{/if}
 
 						<!-- Video embed -->

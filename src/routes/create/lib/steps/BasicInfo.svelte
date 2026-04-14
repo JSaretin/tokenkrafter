@@ -294,7 +294,7 @@
 	{#if availableNetworks.length > 1}
 		<div class="field-group">
 			<label class="label" for="bi-network">Network</label>
-			<select id="bi-network" class="input-field" bind:value={chainId}>
+			<select id="bi-network" class="input-field" bind:value={chainId} required>
 				<option value={undefined} disabled>Select network</option>
 				{#each availableNetworks as n (n.chain_id)}
 					<option value={n.chain_id}>{n.name} ({n.native_coin})</option>
@@ -313,7 +313,7 @@
 	{:else}
 		<div class="field-group">
 			<label class="label" for="bi-addr">Token Address</label>
-			<input id="bi-addr" class="input-field" type="text" placeholder="0x..." bind:value={existingTokenAddress} />
+			<input id="bi-addr" class="input-field" type="text" placeholder="0x..." bind:value={existingTokenAddress} required pattern="^0x[a-fA-F0-9]{'{40}'}$" />
 			{#if loading}
 				<span class="hint accent">Fetching token info...</span>
 			{:else if fetchError}
@@ -404,18 +404,18 @@
 		<div class="name-symbol-row">
 			<div class="field-group" style="flex: 2;">
 				<label class="label" for="bi-name">Token Name</label>
-				<input id="bi-name" class="input-field" type="text" placeholder="e.g. My Token" bind:value={name} />
+				<input id="bi-name" class="input-field" type="text" placeholder="e.g. My Token" bind:value={name} required minlength="1" maxlength="50" />
 			</div>
 			<div class="field-group" style="flex: 1;">
 				<label class="label" for="bi-symbol">Symbol</label>
-				<input id="bi-symbol" class="input-field" type="text" placeholder="e.g. MTK" value={symbol} oninput={handleSymbolInput} maxlength="11" />
+				<input id="bi-symbol" class="input-field" type="text" placeholder="e.g. MTK" value={symbol} oninput={handleSymbolInput} required minlength="1" maxlength="11" />
 			</div>
 		</div>
 
 		<!-- Total Supply -->
 		<div class="field-group">
 			<label class="label" for="bi-supply">Total Supply</label>
-			<input id="bi-supply" class="input-field" type="number" placeholder="e.g. 1000000000" bind:value={totalSupply} min="1" />
+			<input id="bi-supply" class="input-field" type="number" placeholder="e.g. 1000000000" bind:value={totalSupply} min="1" required />
 			<div class="supply-quick">
 				{#each supplyPresets as p}
 					<button class="supply-pill" class:active={totalSupply === p.value} tabindex="-1" onclick={() => (totalSupply = p.value)}>{p.label}</button>

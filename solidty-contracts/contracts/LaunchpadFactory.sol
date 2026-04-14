@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/proxy/Clones.sol";
 
@@ -113,8 +114,10 @@ contract LaunchpadFactory is Ownable, ReentrancyGuard {
         dexRouter = dexRouter_;
         usdt = usdt_;
 
-        // Default launch fee: 0 (admin sets after deployment)
-        launchFee = 0;
+        // Default launch fee: $10 — small friction filter against spam launches.
+        // Admin can setLaunchFee() later. Denominated in USDT smallest units.
+        uint8 usdtDec = IERC20Metadata(usdt_).decimals();
+        launchFee = 10 * 10 ** usdtDec;
 
         // Default curve parameters
         curveDefaults = CurveDefaults({

@@ -224,7 +224,10 @@
 		<p class="text-gray-500 font-mono text-xs mb-5">{$t('home.howItWorksSub')}</p>
 		<div class="how-it-works">
 			<div class="hiw-step">
-				<div class="hiw-num hiw-num-cyan">1</div>
+				<div class="hiw-num hiw-num-cyan">
+					<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+					<span class="hiw-step-num">1</span>
+				</div>
 				<div class="hiw-body">
 					<h3 class="hiw-title">{$t('home.step1Label')}</h3>
 					<p class="hiw-desc">{$t('home.step1Desc')}</p>
@@ -232,7 +235,10 @@
 			</div>
 			<div class="hiw-line"></div>
 			<div class="hiw-step">
-				<div class="hiw-num hiw-num-amber">2</div>
+				<div class="hiw-num hiw-num-amber">
+					<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+					<span class="hiw-step-num">2</span>
+				</div>
 				<div class="hiw-body">
 					<h3 class="hiw-title">{$t('home.step2Label')}</h3>
 					<p class="hiw-desc">{$t('home.step2Desc')}</p>
@@ -240,7 +246,10 @@
 			</div>
 			<div class="hiw-line"></div>
 			<div class="hiw-step">
-				<div class="hiw-num hiw-num-emerald">3</div>
+				<div class="hiw-num hiw-num-emerald">
+					<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>
+					<span class="hiw-step-num">3</span>
+				</div>
 				<div class="hiw-body">
 					<h3 class="hiw-title">{$t('home.step3Label')}</h3>
 					<p class="hiw-desc">{$t('home.step3Desc')}</p>
@@ -1065,14 +1074,21 @@
 		gap: 10px; padding: 20px 16px; text-align: center;
 	}
 	.hiw-num {
-		width: 36px; height: 36px; border-radius: 50%;
+		position: relative;
+		width: 52px; height: 52px; border-radius: 50%;
 		display: flex; align-items: center; justify-content: center;
-		font-family: 'Syne', sans-serif; font-size: 15px; font-weight: 800;
 		flex-shrink: 0;
 	}
-	.hiw-num-cyan { background: rgba(0,210,255,0.1); color: #00d2ff; border: 1px solid rgba(0,210,255,0.2); }
-	.hiw-num-amber { background: rgba(245,158,11,0.1); color: #f59e0b; border: 1px solid rgba(245,158,11,0.2); }
-	.hiw-num-emerald { background: rgba(16,185,129,0.1); color: #10b981; border: 1px solid rgba(16,185,129,0.2); }
+	.hiw-num-cyan { background: rgba(0,210,255,0.1); color: #00d2ff; border: 1px solid rgba(0,210,255,0.25); }
+	.hiw-num-amber { background: rgba(245,158,11,0.1); color: #f59e0b; border: 1px solid rgba(245,158,11,0.25); }
+	.hiw-num-emerald { background: rgba(16,185,129,0.1); color: #10b981; border: 1px solid rgba(16,185,129,0.25); }
+	.hiw-step-num {
+		position: absolute; top: -6px; right: -6px;
+		min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
+		display: inline-flex; align-items: center; justify-content: center;
+		font-family: 'Syne', sans-serif; font-size: 10px; font-weight: 800;
+		background: var(--bg); color: currentColor; border: 1px solid currentColor;
+	}
 	.hiw-body { flex: 1; }
 	.hiw-title { font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700; color: var(--text-heading); margin: 0 0 4px; }
 	.hiw-desc { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text-dim); line-height: 1.6; margin: 0; }

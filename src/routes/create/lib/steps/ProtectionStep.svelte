@@ -15,8 +15,8 @@
 </script>
 
 <div class="ps">
-	<div class="ps-info-box">
-		Protect holders from whales and snipers. These limits apply to every transfer forever — they can only be relaxed (loosened) after trading starts, never tightened.
+	<div class="ps-info-box ps-info-box-warn">
+		Protection limits apply to every transfer forever. They can only be <strong>relaxed</strong> (loosened) after trading starts — never tightened. Choose carefully.
 	</div>
 
 	<div class="ps-section">
@@ -29,7 +29,6 @@
 		</button>
 
 		{#if protectionEnabled}
-			<div class="ps-info-box ps-info-box-warn">These limits can only be relaxed after trading starts — never tightened. Choose carefully.</div>
 			<div class="ps-prot-grid">
 				<div class="ps-prot-field">
 					<label class="ps-prot-label" for="ps-mw">Max Wallet</label>

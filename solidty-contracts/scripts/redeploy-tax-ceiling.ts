@@ -108,7 +108,7 @@ async function main() {
 
 	// Batch set all 8 impls + fees
 	const usdtDec = 18;
-	const fees: bigint[] = [5, 15, 15, 25, 105, 115, 115, 125].map(
+	const fees: bigint[] = [5, 10, 10, 15, 100, 120, 120, 150].map(
 		(f) => ethers.parseUnits(String(f), usdtDec)
 	);
 	process.stdout.write("  setImplementationsAndFees (batch)... ");

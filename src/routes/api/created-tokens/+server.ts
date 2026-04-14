@@ -60,6 +60,9 @@ export const POST: RequestHandler = async ({ request }) => {
 	// Optional metadata (from activity bot or other sources)
 	if (body.description) row.description = body.description;
 	if (body.logo_url) row.logo_url = body.logo_url;
+	if (body.website) row.website = body.website;
+	if (body.twitter) row.twitter = body.twitter;
+	if (body.telegram) row.telegram = body.telegram;
 
 	const { data, error: dbErr } = await supabaseAdmin
 		.from('created_tokens')
