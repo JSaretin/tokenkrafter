@@ -159,6 +159,14 @@ export async function checkAuthReturn(): Promise<boolean> {
 	if (sessionStorage.getItem('wallet_pending') !== 'true') return false;
 	sessionStorage.removeItem('wallet_pending');
 
+	// Supabase OAuth dumps tokens into the URL hash (#access_token=…).
+	// Strip it once we've captured the session so the URL bar stays clean.
+	if (window.location.hash) {
+		try {
+			history.replaceState(null, '', window.location.pathname + window.location.search);
+		} catch {}
+	}
+
 	let session = (await supabase.auth.getSession()).data.session;
 	if (!session) {
 		session = await new Promise((resolve) => {

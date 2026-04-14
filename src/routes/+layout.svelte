@@ -82,7 +82,6 @@
 	let provider: ethers.BrowserProvider | null = $state(null);
 	let signer: ethers.Signer | null = $state(null);
 	let userAddress: string | null = $state(null);
-	let isLoading = $state(true);
 	let mobileMenuOpen = $state(false);
 	let mobileMenuEl: HTMLElement | undefined = $state(undefined);
 	let hamburgerEl: HTMLElement | undefined = $state(undefined);
@@ -319,8 +318,6 @@
 	});
 
 	onMount(() => {
-		isLoading = false;
-
 		// Single source of truth: keep the layout's signer/userAddress runes in sync
 		// with the embedded-wallet module state. Every path that mutates _state
 		// (unlock, setActiveAccount, addAccount, lockWallet, signOut) goes through
@@ -875,16 +872,7 @@
 
 	<div id="scroll-container" class="flex-1 md:overflow-y-auto overflow-x-hidden pb-16 md:pb-0 pt-14 md:pt-0">
 	<main id="main-content" class="min-h-screen">
-		{#if isLoading}
-			<div class="flex items-center justify-center min-h-[80vh]">
-				<div class="flex flex-col items-center gap-4">
-					<div class="spinner w-12 h-12 rounded-full border-2 border-white/10 border-t-cyan-400"></div>
-					<p class="text-gray-500 text-sm font-mono">Initializing...</p>
-				</div>
-			</div>
-		{:else}
-			{@render children?.()}
-		{/if}
+		{@render children?.()}
 	</main>
 
 	<!-- Footer -->
