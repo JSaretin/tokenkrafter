@@ -25,7 +25,7 @@
 		onDisconnect: () => void;
 	} = $props();
 
-	type Step = 'choose' | 'google-loading' | 'pin-setup' | 'pin-enter' | 'recovery-codes' | 'forgot-pin' | 'new-pin';
+	type Step = 'choose' | 'google-loading' | 'completing-signin' | 'pin-setup' | 'pin-enter' | 'recovery-codes' | 'forgot-pin' | 'new-pin';
 
 	let step = $state<Step>('choose');
 
@@ -68,6 +68,16 @@
 	}
 
 	function close() {
+		// Don't let the user dismiss the modal while OAuth is still resolving.
+		// Completing sign-in is a transitional state that auto-advances to
+		// pin-enter or pin-setup once the backend finishes.
+		if (step === 'google-loading' || step === 'completing-signin') return;
+		open = false;
+		reset();
+	}
+
+	/** Force-close the modal — used when OAuth fails, bypasses the guard. */
+	export function forceClose() {
 		open = false;
 		reset();
 	}
@@ -78,6 +88,14 @@
 		step = s;
 		open = true;
 	}
+
+	// Whenever the modal closes (via parent unbinding `open`, the disconnect
+	// button, or any other path), reset internal step state so the next
+	// "Connect Wallet" click lands on the chooser instead of the previous
+	// step (e.g. pin-enter sticking around after disconnect).
+	$effect(() => {
+		if (!open) reset();
+	});
 
 	// ── Quick Wallet (Google) ──
 
@@ -302,6 +320,13 @@
 					<p class="wm-hint">{$t('wallet.redirectingGoogle')}</p>
 				</div>
 
+			{:else if step === 'completing-signin'}
+				<div class="wm-header"><h2 class="wm-title">{$t('wallet.signingIn')}</h2></div>
+				<div class="wm-center">
+					<div class="wm-spinner"></div>
+					<p class="wm-hint">Completing sign-in…</p>
+				</div>
+
 			{:else if step === 'pin-setup'}
 				<h2 class="wm-title">{$t('wallet.secureWallet')}</h2>
 
@@ -364,7 +389,6 @@
 				</button>
 				<div class="wm-links">
 					<button class="wm-btn-link" onclick={() => { error = ''; step = 'forgot-pin'; }}>{$t('wallet.forgotPin')}</button>
-					<button class="wm-btn-link" onclick={async () => { error = ''; step = 'google-loading'; await signInWithGoogle(true); }}>{$t('wallet.switchGoogle')}</button>
 					<button class="wm-btn-link wm-btn-link-danger" onclick={() => { onDisconnect(); open = false; }}>{$t('wallet.disconnect')}</button>
 				</div>
 

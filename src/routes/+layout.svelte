@@ -362,10 +362,9 @@
 			if (e.data?.type === 'online') isOffline = false;
 		});
 
-		// Mark OAuth-return early so the "Signing in..." state shows
-		// immediately (before any async work). checkAuthReturn() reads and
-		// clears the same sessionStorage key, but peeking it here lets us
-		// render feedback without racing.
+		// Mark OAuth-return early and open the "Signing in..." modal so
+		// the user sees continuous feedback (not the bare page with a
+		// disabled button) until the PIN prompt comes up.
 		try {
 			if (sessionStorage.getItem('wallet_pending') === 'true') {
 				oauthPending = true;
@@ -376,15 +375,35 @@
 		(async () => {
 			try {
 				// First check if returning from Google OAuth redirect
+				if (oauthPending && walletModalRef) {
+					// Show continuous spinner modal — seamless from the
+					// pre-redirect "Redirecting to Google..." screen.
+					walletModalRef.openAt('completing-signin');
+				}
+
 				const authReturned = await checkAuthReturn();
 				if (authReturned && walletModalRef) {
 					const exists = await hasVault();
+					if (exists) {
+						// Pre-populate userAddress from the already-fetched wallet
+						// state so the nav shows a connected (locked) indicator
+						// before the user even enters their PIN.
+						const state = getWalletState();
+						const active = state.wallets.find((w) => w.id === state.activeWalletId);
+						if (active?.defaultAddress) {
+							userAddress = active.defaultAddress;
+							walletType = 'embedded';
+						}
+					}
 					walletModalRef.openAt(exists ? 'pin-enter' : 'pin-setup');
 					oauthPending = false;
 					return;
 				}
 				// OAuth returned but no session — auth failed silently
-				if (oauthPending) oauthPending = false;
+				if (oauthPending) {
+					oauthPending = false;
+					walletModalRef?.forceClose?.();
+				}
 
 				// Try auto-reconnect (session + cached PIN = silent unlock)
 				const result = await autoReconnect();
@@ -741,12 +760,7 @@
 				</button>
 
 				<div class="lang-desktop"><LanguageSwitcher /></div>
-				{#if oauthPending}
-					<button class="wallet-btn wallet-btn-connect" disabled>
-						<span class="wallet-spinner"></span>
-						<span>Signing in...</span>
-					</button>
-				{:else if walletLoading}
+				{#if walletLoading || oauthPending}
 					<div class="wallet-btn wallet-skeleton"><span class="skeleton-bar"></span></div>
 				{:else if userAddress}
 					<button class="wallet-btn" onclick={() => {
@@ -837,12 +851,7 @@
 					<span class="text-xs font-mono uppercase tracking-wider" style="color: var(--text-dim)">Language</span>
 					<LanguageSwitcher />
 				</div>
-				{#if oauthPending}
-					<button class="wallet-btn wallet-btn-connect" disabled>
-						<span class="wallet-spinner"></span>
-						<span>Signing in...</span>
-					</button>
-				{:else if walletLoading}
+				{#if walletLoading || oauthPending}
 					<div class="wallet-btn wallet-skeleton"><span class="skeleton-bar"></span></div>
 				{:else if userAddress}
 					<button class="wallet-btn wallet-btn-sm" onclick={() => {

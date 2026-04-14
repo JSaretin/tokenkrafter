@@ -1163,7 +1163,6 @@ export default {
 	'wallet.unlocking': 'Unlocking...',
 	'wallet.unlock': 'Unlock',
 	'wallet.forgotPin': 'Forgot PIN?',
-	'wallet.switchGoogle': 'Switch Google account',
 	'wallet.disconnect': 'Disconnect wallet',
 	'wallet.recoveryCodes': 'Recovery Codes',
 	'wallet.recoveryCodesHint': "Save these codes somewhere safe. Each can unlock your wallet if you forget your PIN. They won't be shown again.",

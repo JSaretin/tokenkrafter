@@ -136,27 +136,21 @@ function _reset() {
 
 // ── Auth ───────────────────────────────────────────────────────────────
 
-export async function signInWithGoogle(forceAccountPicker = false): Promise<void> {
-	if (forceAccountPicker) {
-		await supabase.auth.signOut();
-		_reset();
-		clearCachedPin();
-		localStorage.removeItem('_active_wallet');
-	}
-
+export async function signInWithGoogle(): Promise<void> {
 	sessionStorage.setItem('wallet_return_to', window.location.pathname + window.location.search);
 	sessionStorage.setItem('wallet_pending', 'true');
 
-	const opts: any = {
-		redirectTo: window.location.origin + window.location.pathname + window.location.search,
-	};
-	if (forceAccountPicker) {
-		opts.queryParams = { prompt: 'select_account' };
-	}
-
+	// Always show the Google account picker. Without `prompt: 'select_account'`
+	// Google silently re-uses the last signed-in account, which makes the
+	// flow feel like a no-op and gives users no chance to pick a different
+	// account. Showing the picker every time is the correct UX — they see
+	// they're signing in with Google and can switch accounts on the spot.
 	const { error: authErr } = await supabase.auth.signInWithOAuth({
 		provider: 'google',
-		options: opts,
+		options: {
+			redirectTo: window.location.origin + window.location.pathname + window.location.search,
+			queryParams: { prompt: 'select_account' },
+		},
 	});
 	if (authErr) throw new Error(authErr.message);
 }
