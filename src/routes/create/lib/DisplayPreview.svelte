@@ -209,8 +209,6 @@
 		border: 1px solid var(--border);
 		border-radius: 16px;
 		padding: 20px;
-		position: sticky;
-		top: 80px;
 	}
 
 	.token-header {

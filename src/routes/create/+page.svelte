@@ -1986,7 +1986,16 @@
 <style>
 	.create-split { display: flex; gap: 28px; align-items: flex-start; }
 	.create-split > .form-wrapper { flex: 1; min-width: 0; max-width: none; }
-	.create-preview-col { width: 320px; flex-shrink: 0; position: sticky; top: 80px; }
+	.create-preview-col {
+		width: 320px; flex-shrink: 0;
+		position: sticky; top: 80px;
+		max-height: calc(100vh - 100px);
+		overflow-y: auto; overflow-x: hidden;
+		scrollbar-width: thin;
+		scrollbar-color: rgba(255,255,255,0.1) transparent;
+	}
+	.create-preview-col::-webkit-scrollbar { width: 4px; }
+	.create-preview-col::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
 	@media (max-width: 1000px) { .create-preview-col { display: none; } .create-split { display: block; } }
 
 	.page-grid {

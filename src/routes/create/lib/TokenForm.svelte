@@ -54,10 +54,10 @@
 	import { ethers } from 'ethers';
 	import { ROUTER_ABI_LITE } from '$lib/commonABIs';
 	import type { SupportedNetwork } from '$lib/structure';
-	import { BasicInfo, Features, TaxConfig as TaxStep, ListingConfig as ListingStep, Review } from './steps';
+	import { BasicInfo, Features, TaxConfig as TaxStep, ProtectionStep, ListingConfig as ListingStep, Review } from './steps';
 	import BondingCurveChart from '$lib/BondingCurveChart.svelte';
 
-	type WizardStep = 'mode' | 'basics' | 'features' | 'tax' | 'launch' | 'listing' | 'review';
+	type WizardStep = 'mode' | 'basics' | 'features' | 'tax' | 'protection' | 'launch' | 'listing' | 'review';
 	let wizardStep = $state<WizardStep>('basics');
 
 	// ── Props ──────────────────────────────────────────────
@@ -128,6 +128,7 @@
 	let maxTransactionPct = $state('1');
 	let cooldownSeconds = $state('0');
 	let blacklistWindowSeconds = $state('0');
+	let launchProtectionEnabled = $state(true);
 
 	let launchTokensPct = $state(40);
 	let launchCurveType = $state(0);
@@ -430,6 +431,7 @@
 			isMintable, isTaxable, isPartner, launchEnabled, listingEnabled,
 			buyTaxPct, sellTaxPct, transferTaxPct, taxWallets,
 			protectionEnabled, maxWalletPct, maxTransactionPct, cooldownSeconds,
+			launchProtectionEnabled, launchLockDurationMinutes, launchMinBuyUsdt,
 			launchTokensPct, launchCurveType, launchSoftCap, launchHardCap,
 			launchDurationDays, launchMaxBuyPct, launchCreatorAllocPct, launchVestingDays,
 			listingPoolPct, listingPairs, listingPricePerToken, burnLp, wizardStep,
@@ -466,6 +468,9 @@
 		if (s.maxWalletPct) maxWalletPct = s.maxWalletPct;
 		if (s.maxTransactionPct) maxTransactionPct = s.maxTransactionPct;
 		if (s.cooldownSeconds) cooldownSeconds = s.cooldownSeconds;
+		if (s.launchProtectionEnabled != null) launchProtectionEnabled = s.launchProtectionEnabled;
+		if (s.launchLockDurationMinutes) launchLockDurationMinutes = s.launchLockDurationMinutes;
+		if (s.launchMinBuyUsdt) launchMinBuyUsdt = s.launchMinBuyUsdt;
 		if (s.launchTokensPct != null) launchTokensPct = s.launchTokensPct;
 		if (s.launchCurveType != null) launchCurveType = s.launchCurveType;
 		if (s.launchSoftCap) launchSoftCap = s.launchSoftCap;
@@ -536,6 +541,7 @@
 		const s: { id: WizardStep; label: string }[] = [{ id: 'basics', label: 'Basics' }];
 		if (!isRealExistingToken) s.push({ id: 'features', label: 'Features' });
 		if (isTaxable && !isRealExistingToken) s.push({ id: 'tax', label: 'Tax' });
+		if (!isRealExistingToken) s.push({ id: 'protection', label: 'Protection' });
 		if (launchEnabled) s.push({ id: 'launch', label: 'Launch' });
 		if (listingEnabled && !launchEnabled) s.push({ id: 'listing', label: 'DEX Listing' });
 		s.push({ id: 'review', label: 'Review' });
@@ -595,11 +601,13 @@
 			launch: {
 				enabled: launchEnabled, tokensForLaunchPct: launchTokensPct,
 				curveType: launchCurveType, softCap: launchSoftCap, hardCap: launchHardCap,
-				durationDays: launchDurationDays, maxBuyBps: String(Math.round(parseFloat(launchMaxBuyPct || '0') * 100)),
+				durationDays: launchDurationDays,
+				// When protection disabled, use max 5% buy cap (contract min 0.5%, max 5%) and no anti-snipe
+				maxBuyBps: String(Math.round(parseFloat((launchProtectionEnabled ? launchMaxBuyPct : '5') || '0') * 100)),
 				creatorAllocationBps: String(Math.round(parseFloat(launchCreatorAllocPct || '0') * 100)), vestingDays: launchVestingDays,
 				// Convert minutes to seconds for the contract (contract caps at 24h = 1440 min).
-				lockDurationAfterListing: String(Math.round(parseFloat(launchLockDurationMinutes || '0') * 60)),
-				minBuyUsdt: launchMinBuyUsdt,
+				lockDurationAfterListing: String(Math.round(parseFloat((launchProtectionEnabled ? launchLockDurationMinutes : '0') || '0') * 60)),
+				minBuyUsdt: launchProtectionEnabled ? launchMinBuyUsdt : '1',
 			},
 			protection: { maxWalletPct: protectionEnabled ? maxWalletPct : '0', maxTransactionPct: protectionEnabled ? maxTransactionPct : '0', cooldownSeconds: protectionEnabled ? cooldownSeconds : '0', blacklistWindowSeconds: protectionEnabled ? blacklistWindowSeconds : '0' },
 			tax: { buyTaxPct, sellTaxPct, transferTaxPct, wallets: validWallets },
@@ -720,63 +728,68 @@
 		{:else if wizardStep === 'features'}
 			<Features bind:isMintable bind:isTaxable bind:isPartner />
 
-			<!-- Base-token pre-registration. Every checked base gets a pool
-			     created on the token at initialize() time, which means the
-			     pool-lock gate blocks anyone from trading it before the
-			     creator's real listing opens. Without this, a grifter can
-			     open e.g. the WBNB pair with a malicious initial price and
-			     drain it as soon as trading flips on. -->
-			{#if baseOptions.length > 0 || selectedNetwork}
-			<div class="wz-section" style="margin-top: 18px;">
-				<h3 class="wz-subtitle">Pool bases</h3>
-				<p class="wz-hint" style="margin-bottom: 10px;">
-					These are the DEX base tokens where pools will be pre-registered.
-					Keep all selected — it blocks grifters from opening a pair at a
-					bad price before you can list.
-				</p>
-				<div class="base-grid">
-					{#each baseOptions as b (b.address.toLowerCase())}
-						<label class="base-pill" class:base-pill-on={baseSelection[b.address.toLowerCase()]} title={b.name || b.symbol}>
-							<input
-								type="checkbox"
-								checked={!!baseSelection[b.address.toLowerCase()]}
-								onchange={() => toggleBase(b.address)}
-							/>
-							<span class="base-sym">{b.symbol}</span>
-							{#if b.custom}
-								<button
-									type="button"
-									class="base-remove"
-									onclick={(e) => { e.preventDefault(); removeCustomBase(b.address); }}
-									title="Remove"
-								>×</button>
-							{/if}
-						</label>
-					{/each}
+		{:else if wizardStep === 'tax'}
+			<TaxStep bind:buyTaxPct bind:sellTaxPct bind:transferTaxPct bind:taxWallets {isPartner} />
+
+		{:else if wizardStep === 'protection'}
+			<div class="wz-section">
+				<h2 class="wz-title">Protection</h2>
+				<p class="wz-hint">Anti-whale limits and pool pre-registration — permanent safeguards for your token.</p>
+				<ProtectionStep bind:protectionEnabled bind:maxWalletPct bind:maxTransactionPct bind:cooldownSeconds bind:blacklistWindowSeconds />
+
+				<!-- Base-token pre-registration. Every checked base gets a pool
+				     created on the token at initialize() time, which means the
+				     pool-lock gate blocks anyone from trading it before the
+				     creator's real listing opens. Without this, a grifter can
+				     open e.g. the WBNB pair with a malicious initial price and
+				     drain it as soon as trading flips on. -->
+				{#if baseOptions.length > 0 || selectedNetwork}
+				<div style="margin-top: 18px;">
+					<h3 class="wz-subtitle">Protect Liquidity Pool</h3>
+					<p class="wz-hint" style="margin-bottom: 10px;">
+						Pre-register DEX pools against these base tokens. Blocks grifters from opening a pair at a malicious price before you list.
+					</p>
+					<div class="base-grid">
+						{#each baseOptions as b (b.address.toLowerCase())}
+							<label class="base-pill" class:base-pill-on={baseSelection[b.address.toLowerCase()]} title={b.name || b.symbol}>
+								<input
+									type="checkbox"
+									checked={!!baseSelection[b.address.toLowerCase()]}
+									onchange={() => toggleBase(b.address)}
+								/>
+								<span class="base-sym">{b.symbol}</span>
+								{#if b.custom}
+									<button
+										type="button"
+										class="base-remove"
+										onclick={(e) => { e.preventDefault(); removeCustomBase(b.address); }}
+										title="Remove"
+									>×</button>
+								{/if}
+							</label>
+						{/each}
+					</div>
+					<div class="base-add-row">
+						<input
+							class="input-field base-add-addr"
+							type="text"
+							placeholder="0x… add custom base"
+							bind:value={newBaseAddress}
+							disabled={baseLookupBusy}
+						/>
+						<button
+							type="button"
+							class="base-add-btn"
+							onclick={addCustomBase}
+							disabled={!newBaseAddress.trim() || baseLookupBusy}
+						>{baseLookupBusy ? '…' : 'Add'}</button>
+					</div>
+					{#if baseLookupError}
+						<p class="base-error">{baseLookupError}</p>
+					{/if}
 				</div>
-				<div class="base-add-row">
-					<input
-						class="input-field base-add-addr"
-						type="text"
-						placeholder="0x… add custom base"
-						bind:value={newBaseAddress}
-						disabled={baseLookupBusy}
-					/>
-					<button
-						type="button"
-						class="base-add-btn"
-						onclick={addCustomBase}
-						disabled={!newBaseAddress.trim() || baseLookupBusy}
-					>{baseLookupBusy ? '…' : 'Add'}</button>
-				</div>
-				{#if baseLookupError}
-					<p class="base-error">{baseLookupError}</p>
 				{/if}
 			</div>
-			{/if}
-
-		{:else if wizardStep === 'tax'}
-			<TaxStep bind:buyTaxPct bind:sellTaxPct bind:transferTaxPct bind:taxWallets bind:protectionEnabled bind:maxWalletPct bind:maxTransactionPct bind:cooldownSeconds bind:blacklistWindowSeconds {isPartner} />
 
 		{:else if wizardStep === 'launch'}
 			<div class="wz-section">
@@ -797,39 +810,26 @@
 					<div class="wz-field"><label class="wz-label">Soft cap ($)</label><input class="input-field" type="text" bind:value={launchSoftCap} /></div>
 					<div class="wz-field"><label class="wz-label">Hard cap ($)</label><input class="input-field" type="text" bind:value={launchHardCap} /></div>
 				</div>
-				<div class="wz-row">
-					<div class="wz-field">
-						<label class="wz-label">Duration</label>
-						<select class="input-field" bind:value={launchDurationDays}>
-							<option value="7">7 days</option>
-							<option value="14">14 days</option>
-							<option value="30">30 days</option>
-							<option value="60">60 days</option>
-							<option value="90">90 days</option>
-						</select>
-					</div>
-					<div class="wz-field">
-						<label class="wz-label">Max buy per wallet</label>
-						<select class="input-field" bind:value={launchMaxBuyPct}>
-							<option value="0.5">0.5%</option>
-							<option value="1">1%</option>
-							<option value="2">2%</option>
-							<option value="3">3%</option>
-							<option value="5">5%</option>
-						</select>
-						<span class="wz-field-hint">Max % of hard cap one wallet can buy</span>
-					</div>
+				<div class="wz-field">
+					<label class="wz-label">Duration</label>
+					<select class="input-field" bind:value={launchDurationDays}>
+						<option value="7">7 days</option>
+						<option value="14">14 days</option>
+						<option value="30">30 days</option>
+						<option value="60">60 days</option>
+						<option value="90">90 days</option>
+					</select>
 				</div>
 				<div class="wz-row">
 					<div class="wz-field">
 						<label class="wz-label">Creator allocation</label>
 						<select class="input-field" bind:value={launchCreatorAllocPct}>
 							<option value="0">None</option>
-							<option value="1">1%</option>
-							<option value="2">2%</option>
-							<option value="3">3%</option>
-							<option value="5">5%</option>
-							<option value="10">10%</option>
+							<option value="1">1% of supply</option>
+							<option value="2">2% of supply</option>
+							<option value="3">3% of supply</option>
+							<option value="5">5% of supply</option>
+							<option value="10">10% of supply</option>
 						</select>
 						<span class="wz-field-hint">Tokens reserved for you (vested)</span>
 					</div>
@@ -847,48 +847,52 @@
 					</div>
 				</div>
 
-				<!-- Post-graduation safety floor -->
-				<div class="wz-row">
-					<div class="wz-field">
-						<label class="wz-label" for="launchLockDurationMinutes">Anti-snipe delay (minutes)</label>
-						<select id="launchLockDurationMinutes" class="input-field" bind:value={launchLockDurationMinutes}>
-							<option value="0">None (open immediately)</option>
-							<option value="5">5 min</option>
-							<option value="15">15 min</option>
-							<option value="30">30 min</option>
-							<option value="60">1 hour</option>
-							<option value="240">4 hours</option>
-							<option value="720">12 hours</option>
-							<option value="1440">24 hours (max)</option>
-						</select>
-						<span class="wz-field-hint">How long DEX trading stays locked after graduation — blocks snipers from front-running the listing block. Note: holders cannot trade or refund during this window. Pick the shortest window that still meaningfully discourages snipe bots.</span>
-					</div>
-					<div class="wz-field">
-						<label class="wz-label" for="launchMinBuyUsdt">Min buy (USDT)</label>
-						<input id="launchMinBuyUsdt" class="input-field" type="text" bind:value={launchMinBuyUsdt} placeholder="1" />
-						<span class="wz-field-hint">Anti-dust floor per buy. Prevents spam with sub-cent transactions. Must be &gt; 0 and ≤ soft cap.</span>
-					</div>
-				</div>
-
-				<!-- Anti-whale protection -->
-				<div class="wz-toggle-card" class:wz-toggle-on={protectionEnabled}>
+				<!-- Launchpad anti-whale protection -->
+				<div class="wz-toggle-card" class:wz-toggle-on={launchProtectionEnabled}>
 					<label class="wz-toggle-row">
 						<div>
-							<span class="wz-toggle-title">Anti-Whale Protection</span>
-							<span class="wz-toggle-desc">Limit max wallet & transaction size</span>
+							<span class="wz-toggle-title">Launchpad Anti-Whale Protection</span>
+							<span class="wz-toggle-desc">Applies during the bonding curve only</span>
 						</div>
-						<div class="wz-switch" class:wz-switch-on={protectionEnabled}>
+						<div class="wz-switch" class:wz-switch-on={launchProtectionEnabled}>
 							<div class="wz-switch-thumb"></div>
 						</div>
-						<input type="checkbox" bind:checked={protectionEnabled} class="sr-only" />
+						<input type="checkbox" bind:checked={launchProtectionEnabled} class="sr-only" />
 					</label>
-					{#if protectionEnabled}
+					{#if launchProtectionEnabled}
 						<div class="wz-toggle-body">
 							<div class="wz-row">
-								<div class="wz-field"><label class="wz-label">Max wallet (%)</label><input class="input-field" type="text" bind:value={maxWalletPct} placeholder="2" /></div>
-								<div class="wz-field"><label class="wz-label">Max transaction (%)</label><input class="input-field" type="text" bind:value={maxTransactionPct} placeholder="1" /></div>
+								<div class="wz-field">
+									<label class="wz-label">Max buy per wallet</label>
+									<select class="input-field" bind:value={launchMaxBuyPct}>
+										<option value="0.5">0.5% of hard cap</option>
+										<option value="1">1% of hard cap</option>
+										<option value="2">2% of hard cap</option>
+										<option value="3">3% of hard cap</option>
+										<option value="5">5% of hard cap</option>
+									</select>
+									<span class="wz-field-hint">One wallet can't buy more than this share of the total raise</span>
+								</div>
+								<div class="wz-field">
+									<label class="wz-label" for="launchMinBuyUsdt">Min buy (USDT)</label>
+									<input id="launchMinBuyUsdt" class="input-field" type="text" bind:value={launchMinBuyUsdt} placeholder="1" />
+									<span class="wz-field-hint">Anti-dust floor per buy. Must be &gt; 0 and ≤ soft cap.</span>
+								</div>
 							</div>
-							<div class="wz-field"><label class="wz-label">Cooldown (seconds)</label><input class="input-field" type="text" bind:value={cooldownSeconds} placeholder="0" /></div>
+							<div class="wz-field">
+								<label class="wz-label" for="launchLockDurationMinutes">Anti-snipe delay (minutes)</label>
+								<select id="launchLockDurationMinutes" class="input-field" bind:value={launchLockDurationMinutes}>
+									<option value="0">None (open immediately)</option>
+									<option value="5">5 min</option>
+									<option value="15">15 min</option>
+									<option value="30">30 min</option>
+									<option value="60">1 hour</option>
+									<option value="240">4 hours</option>
+									<option value="720">12 hours</option>
+									<option value="1440">24 hours (max)</option>
+								</select>
+								<span class="wz-field-hint">How long DEX trading stays locked after graduation — blocks snipers from front-running the listing block.</span>
+							</div>
 						</div>
 					{/if}
 				</div>
