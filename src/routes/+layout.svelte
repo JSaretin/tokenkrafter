@@ -24,6 +24,11 @@
 	let showWalletModal = $state(false);
 	let showAccountPanel = $state(false);
 	let walletLoading = $state(true);
+	// True while we're resolving a Google OAuth redirect. Separate from
+	// walletLoading because we want to keep showing "Signing in..." until
+	// the PIN modal pops — the user is still in the auth flow even after
+	// the page reloads from Google's redirect.
+	let oauthPending = $state(false);
 	let walletModalRef: WalletModal | undefined = $state();
 	let nativeBalance = $state(0n);
 	let nativePriceUsd = $state(0);
@@ -129,9 +134,11 @@
 		return false;
 	}
 
-	// Clear wallet loading if PIN modal is dismissed without connecting
+	// Clear wallet loading if PIN modal is dismissed without connecting.
+	// Skip this during OAuth return — we want to keep the loading state
+	// until the PIN modal actually opens (or auth times out).
 	$effect(() => {
-		if (!showWalletModal && walletLoading && !userAddress) {
+		if (!showWalletModal && walletLoading && !userAddress && !oauthPending) {
 			walletLoading = false;
 		}
 	});
@@ -355,6 +362,16 @@
 			if (e.data?.type === 'online') isOffline = false;
 		});
 
+		// Mark OAuth-return early so the "Signing in..." state shows
+		// immediately (before any async work). checkAuthReturn() reads and
+		// clears the same sessionStorage key, but peeking it here lets us
+		// render feedback without racing.
+		try {
+			if (sessionStorage.getItem('wallet_pending') === 'true') {
+				oauthPending = true;
+			}
+		} catch {}
+
 		// Auto-reconnect wallet on page load
 		(async () => {
 			try {
@@ -363,8 +380,11 @@
 				if (authReturned && walletModalRef) {
 					const exists = await hasVault();
 					walletModalRef.openAt(exists ? 'pin-enter' : 'pin-setup');
+					oauthPending = false;
 					return;
 				}
+				// OAuth returned but no session — auth failed silently
+				if (oauthPending) oauthPending = false;
 
 				// Try auto-reconnect (session + cached PIN = silent unlock)
 				const result = await autoReconnect();
@@ -721,7 +741,12 @@
 				</button>
 
 				<div class="lang-desktop"><LanguageSwitcher /></div>
-				{#if walletLoading}
+				{#if oauthPending}
+					<button class="wallet-btn wallet-btn-connect" disabled>
+						<span class="wallet-spinner"></span>
+						<span>Signing in...</span>
+					</button>
+				{:else if walletLoading}
 					<div class="wallet-btn wallet-skeleton"><span class="skeleton-bar"></span></div>
 				{:else if userAddress}
 					<button class="wallet-btn" onclick={() => {
@@ -812,7 +837,12 @@
 					<span class="text-xs font-mono uppercase tracking-wider" style="color: var(--text-dim)">Language</span>
 					<LanguageSwitcher />
 				</div>
-				{#if walletLoading}
+				{#if oauthPending}
+					<button class="wallet-btn wallet-btn-connect" disabled>
+						<span class="wallet-spinner"></span>
+						<span>Signing in...</span>
+					</button>
+				{:else if walletLoading}
 					<div class="wallet-btn wallet-skeleton"><span class="skeleton-bar"></span></div>
 				{:else if userAddress}
 					<button class="wallet-btn wallet-btn-sm" onclick={() => {
@@ -1075,6 +1105,11 @@
 	.show-mobile { display: none; }
 	@media (max-width: 640px) { .hide-mobile { display: none; } .show-mobile { display: inline; } }
 	.wallet-skeleton { width: 100px; cursor: default; }
+	.wallet-spinner {
+		width: 12px; height: 12px; border: 2px solid rgba(255,255,255,0.3);
+		border-top-color: #fff; border-radius: 50%;
+		animation: spin 0.7s linear infinite; flex-shrink: 0;
+	}
 	.skeleton-bar {
 		display: block; width: 100%; height: 10px; border-radius: 4px;
 		background: linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.06) 50%, rgba(255,255,255,0.03) 75%);
