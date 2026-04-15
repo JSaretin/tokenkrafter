@@ -172,9 +172,32 @@
 		geckoLoading = false;
 	});
 
+	// Live "updated Xs ago" indicator. Stamped on mount; re-stamped if tokens
+	// ever get prepended by a realtime handler (none wired today, but kept
+	// ready). `_now` ticks so the derived string stays fresh without re-render
+	// of the whole tree.
+	let lastUpdateTime = $state(Date.now());
+	let _now = $state(Date.now());
+	let _liveTimer: ReturnType<typeof setInterval> | null = null;
+
+	$effect(() => {
+		_liveTimer = setInterval(() => { _now = Date.now(); }, 1000);
+		return () => { if (_liveTimer) clearInterval(_liveTimer); };
+	});
+
+	let liveAgo = $derived.by(() => {
+		const secs = Math.max(0, Math.floor((_now - lastUpdateTime) / 1000));
+		if (secs < 5) return 'just now';
+		if (secs < 60) return `${secs}s ago`;
+		const mins = Math.floor(secs / 60);
+		if (mins < 60) return `${mins}m ago`;
+		return `${Math.floor(mins / 60)}h ago`;
+	});
+
 	onDestroy(() => {
 		_safuObserver?.disconnect();
 		if (_safuTimer) clearTimeout(_safuTimer);
+		if (_liveTimer) clearInterval(_liveTimer);
 	});
 
 	// Re-observe cards when the filtered list changes
@@ -244,6 +267,9 @@
 
 		return list;
 	});
+
+	let isFiltering = $derived(search.trim() !== '' || filterType !== 'all' || tradeableOnly);
+	let displayCount = $derived(isFiltering ? filtered.length : tokens.length);
 
 	function fmtSupply(raw: string | undefined, dec: number): string {
 		if (!raw || raw === '0') return '—';
@@ -317,7 +343,14 @@
 	<div class="explore-header">
 		<div>
 			<h1 class="explore-title">Explore Tokens</h1>
-			<p class="explore-sub">{tokens.length} tokens on TokenKrafter</p>
+			<p class="explore-sub">
+				{displayCount} {displayCount === 1 ? 'token' : 'tokens'}
+				{isFiltering ? 'match' : 'on TokenKrafter'}
+				<span class="live-chip" title="Auto-refreshes with new tokens">
+					<span class="live-dot"></span>
+					live · {liveAgo}
+				</span>
+			</p>
 		</div>
 		<div class="explore-search">
 			<svg class="search-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -494,7 +527,22 @@
 	/* Header */
 	.explore-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
 	.explore-title { font-family: 'Syne', sans-serif; font-size: 28px; font-weight: 800; color: #fff; margin: 0; }
-	.explore-sub { font-size: 12px; color: #475569; font-family: 'Space Mono', monospace; margin: 4px 0 0; }
+	.explore-sub { font-size: 12px; color: #475569; font-family: 'Space Mono', monospace; margin: 4px 0 0; display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+	.live-chip {
+		display: inline-flex; align-items: center; gap: 5px;
+		padding: 2px 8px; border-radius: 999px;
+		background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.25);
+		color: #10b981; font-size: 10px;
+	}
+	.live-dot {
+		width: 6px; height: 6px; border-radius: 50%; background: #10b981;
+		box-shadow: 0 0 6px rgba(16,185,129,0.6);
+		animation: live-pulse 2s ease-in-out infinite;
+	}
+	@keyframes live-pulse {
+		0%, 100% { opacity: 1; transform: scale(1); }
+		50% { opacity: 0.5; transform: scale(0.85); }
+	}
 
 	.explore-search {
 		display: flex; align-items: center; gap: 8px;
