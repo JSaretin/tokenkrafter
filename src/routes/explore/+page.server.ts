@@ -30,7 +30,7 @@ export const load: PageServerLoad = async ({ setHeaders }) => {
 
 	// Fetch GeckoTerminal prices + live on-chain supply for the first 30 tokens
 	// in parallel so the above-the-fold cards render instantly on SSR.
-	const geckoData: Record<string, { price_usd: number; volume_24h: number; price_change_24h: number; has_data: boolean }> = {};
+	const geckoData: Record<string, { price_usd: number; volume_24h: number; price_change_24h: number; has_data: boolean; spark: number[] }> = {};
 	const supplyData: Record<string, string> = {};
 
 	if (tokens.length > 0) {
@@ -58,11 +58,23 @@ export const load: PageServerLoad = async ({ setHeaders }) => {
 					if (!a) continue;
 					const addr = (item.id || '').split('_').pop()?.toLowerCase();
 					if (!addr) continue;
+					const p = parseFloat(a.price_usd || '0');
+					const pc = a.price_change_percentage || {};
+					// Build a 7-point price series from multi-timeframe % changes.
+					// Each pct is "change from T minutes ago to now", so price(T) = current / (1 + pct/100).
+					const steps = ['h24', 'h6', 'h1', 'm30', 'm15', 'm5'] as const;
+					const spark: number[] = [];
+					for (const k of steps) {
+						const v = parseFloat(pc[k] || '0');
+						spark.push(p / (1 + v / 100));
+					}
+					spark.push(p);
 					geckoData[addr] = {
-						price_usd: parseFloat(a.price_usd || '0'),
+						price_usd: p,
 						volume_24h: parseFloat(a.volume_usd?.h24 || '0'),
-						price_change_24h: parseFloat(a.price_change_percentage?.h24 || '0'),
-						has_data: a.price_usd != null && parseFloat(a.price_usd) > 0,
+						price_change_24h: parseFloat(pc.h24 || '0'),
+						has_data: a.price_usd != null && p > 0,
+						spark,
 					};
 				}
 			} catch {}

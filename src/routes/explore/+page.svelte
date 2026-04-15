@@ -166,7 +166,28 @@
 
 	// GeckoTerminal market data — first 30 from SSR, rest filled client-side
 	const GECKO_NETWORKS: Record<number, string> = { 56: 'bsc', 1: 'eth', 8453: 'base', 42161: 'arbitrum', 137: 'polygon_pos' };
-	type GeckoInfo = { price_usd: number; volume_24h: number; price_change_24h: number; has_data: boolean };
+	type GeckoInfo = { price_usd: number; volume_24h: number; price_change_24h: number; has_data: boolean; spark: number[] };
+
+	function buildSpark(a: any, price: number): number[] {
+		const pc = a?.price_change_percentage || {};
+		const steps = ['h24', 'h6', 'h1', 'm30', 'm15', 'm5'] as const;
+		const s: number[] = [];
+		for (const k of steps) {
+			const v = parseFloat(pc[k] || '0');
+			s.push(price / (1 + v / 100));
+		}
+		s.push(price);
+		return s;
+	}
+
+	function sparkPath(pts: number[], w: number, h: number): string {
+		if (!pts || pts.length < 2) return '';
+		const min = Math.min(...pts);
+		const max = Math.max(...pts);
+		const range = max - min || 1;
+		const step = w / (pts.length - 1);
+		return pts.map((v, i) => `${i === 0 ? 'M' : 'L'}${(i * step).toFixed(1)},${(h - ((v - min) / range) * h).toFixed(1)}`).join(' ');
+	}
 	let geckoMap: Record<string, GeckoInfo> = $state(data.geckoData || {});
 	let geckoLoading = $state(tokens.length > 30);
 
@@ -174,7 +195,7 @@
 	let geckoLookup = $derived(geckoMap);
 
 	// ── Trending tokens: top 8 by 24h volume with market data ──
-	let trending = $derived.by(() => {
+	let withMarket = $derived.by(() => {
 		return tokens
 			.map(t => {
 				const g = geckoMap[t.address?.toLowerCase()];
@@ -183,9 +204,23 @@
 				const mcap = supply * g.price_usd;
 				return { ...t, gecko: g, mcap };
 			})
-			.filter((t): t is NonNullable<typeof t> => t !== null && t.gecko.volume_24h > 0)
+			.filter((t): t is NonNullable<typeof t> => t !== null);
+	});
+
+	let trending = $derived(
+		withMarket
+			.filter(t => t.gecko.volume_24h > 0)
 			.sort((a, b) => b.gecko.volume_24h - a.gecko.volume_24h)
-			.slice(0, 8);
+			.slice(0, 8)
+	);
+
+	// Top Gainers: positive 24h change, minimum volume to filter noise,
+	// sorted by % change desc. Falls back to any positive change if volume
+	// data is thin.
+	let gainers = $derived.by(() => {
+		const withVol = withMarket.filter(t => t.gecko.price_change_24h > 0 && t.gecko.volume_24h > 100);
+		const base = withVol.length > 0 ? withVol : withMarket.filter(t => t.gecko.price_change_24h > 0);
+		return [...base].sort((a, b) => b.gecko.price_change_24h - a.gecko.price_change_24h).slice(0, 6);
 	});
 
 	// ── Market cap helper for cards — ExploreLens first, Gecko fallback ──
@@ -242,11 +277,13 @@
 				if (!a) continue;
 				const addr = (item.id || '').split('_').pop()?.toLowerCase();
 				if (!addr) continue;
+				const p = parseFloat(a.price_usd || '0');
 				geckoMap[addr] = {
-					price_usd: parseFloat(a.price_usd || '0'),
+					price_usd: p,
 					volume_24h: parseFloat(a.volume_usd?.h24 || '0'),
 					price_change_24h: parseFloat(a.price_change_percentage?.h24 || '0'),
-					has_data: a.price_usd != null && parseFloat(a.price_usd) > 0,
+					has_data: a.price_usd != null && p > 0,
+					spark: buildSpark(a, p),
 				};
 			}
 			// Trigger reactivity
@@ -576,6 +613,54 @@
 								</span>
 							</div>
 						</div>
+						{#if tok.gecko.spark && tok.gecko.spark.length > 1}
+							<svg class="sparkline" viewBox="0 0 80 22" preserveAspectRatio="none" aria-hidden="true">
+								<path d={sparkPath(tok.gecko.spark, 80, 22)} fill="none" stroke-width="1.5"
+									stroke={tok.gecko.price_change_24h >= 0 ? '#10b981' : '#f87171'} />
+							</svg>
+						{/if}
+						<div class="trending-bottom">
+							<span class="trending-mcap">{fmtMcap(tok.mcap)} mcap</span>
+							<span class="trending-vol">{fmtVolume(tok.gecko.volume_24h)} vol</span>
+						</div>
+					</a>
+				{/each}
+			</div>
+		</div>
+	{/if}
+
+	<!-- Top Gainers — tokens with biggest positive 24h move -->
+	{#if gainers.length > 0 && !search.trim()}
+		<div class="trending-section">
+			<div class="trending-header">
+				<span class="gainers-dot"></span>
+				<span class="trending-label">Top Gainers</span>
+				<span class="trending-sub">24h</span>
+			</div>
+			<div class="trending-scroll">
+				{#each gainers as tok}
+					{@const slug = chainSlug(tok.chain_id)}
+					<a href="/explore/{slug}/{tok.address}" class="trending-card">
+						<div class="trending-top">
+							{#if tok.logo_url}
+								<img src={tok.logo_url} alt="" class="trending-logo" />
+							{:else}
+								<div class="trending-logo-fallback">{tok.symbol?.slice(0, 2)}</div>
+							{/if}
+							<div class="trending-identity">
+								<span class="trending-name">{tok.symbol || '???'}</span>
+								<span class="trending-chain">{chainName(tok.chain_id)}</span>
+							</div>
+							<div class="trending-price-col">
+								<span class="trending-price">{fmtPrice(tok.gecko.price_usd)}</span>
+								<span class="trending-change up">+{tok.gecko.price_change_24h.toFixed(1)}%</span>
+							</div>
+						</div>
+						{#if tok.gecko.spark && tok.gecko.spark.length > 1}
+							<svg class="sparkline" viewBox="0 0 80 22" preserveAspectRatio="none" aria-hidden="true">
+								<path d={sparkPath(tok.gecko.spark, 80, 22)} fill="none" stroke-width="1.5" stroke="#10b981" />
+							</svg>
+						{/if}
 						<div class="trending-bottom">
 							<span class="trending-mcap">{fmtMcap(tok.mcap)} mcap</span>
 							<span class="trending-vol">{fmtVolume(tok.gecko.volume_24h)} vol</span>
@@ -722,6 +807,12 @@
 									<span class="tc-change" class:tc-change-up={gecko.price_change_24h > 0} class:tc-change-down={gecko.price_change_24h < 0}>
 										{gecko.price_change_24h > 0 ? '+' : ''}{gecko.price_change_24h.toFixed(1)}%
 									</span>
+								{/if}
+								{#if gecko?.spark && gecko.spark.length > 1}
+									<svg class="tc-spark" viewBox="0 0 64 18" preserveAspectRatio="none" aria-hidden="true">
+										<path d={sparkPath(gecko.spark, 64, 18)} fill="none" stroke-width="1.4"
+											stroke={gecko.price_change_24h >= 0 ? '#10b981' : '#f87171'} />
+									</svg>
 								{/if}
 							{:else}
 								<span class="tc-status-pill">{hasData ? 'Listed' : 'Pre-launch'}</span>
@@ -1056,6 +1147,25 @@
 	.trending-change.up { color: #10b981; }
 	.trending-change.down { color: #f87171; }
 	.trending-bottom { display: flex; justify-content: space-between; font-family: 'Space Mono', monospace; font-size: 9px; color: var(--text-dim); }
+
+	/* Sparklines */
+	.sparkline { width: 100%; height: 22px; display: block; opacity: 0.85; }
+	.tc-spark { width: 64px; height: 18px; margin-top: 2px; opacity: 0.85; }
+
+	.tc-status-pill {
+		font-family: 'Space Mono', monospace; font-size: 9px; font-weight: 700;
+		padding: 3px 8px; border-radius: 99px;
+		background: var(--bg-surface-input); color: var(--text-dim);
+		text-transform: uppercase; letter-spacing: 0.05em;
+	}
+
+	/* Gainers header dot */
+	.gainers-dot {
+		width: 7px; height: 7px; border-radius: 50%;
+		background: #f59e0b; box-shadow: 0 0 8px rgba(245,158,11,0.6);
+		animation: pulse 2s ease-in-out infinite;
+	}
+	.trending-sub { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text-dim); margin-left: 2px; }
 
 	/* ── Tightened card: Row 2 (badges + market data) ── */
 	.tc-row2 { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
