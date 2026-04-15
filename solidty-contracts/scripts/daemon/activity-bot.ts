@@ -1,190 +1,200 @@
 /**
- * TokenKrafter Activity Bot — Multi-wallet token creation
+ * TokenKrafter Activity Bot — Standalone Edition
  *
- * Creates real tokens on BSC from rotating derived wallets so
- * on-chain activity looks organic (different creator addresses).
+ * Clones real trending tokens from GeckoTerminal (all networks) and
+ * creates them on BSC via the PlatformRouter. Multi-wallet rotation
+ * for organic on-chain activity.
  *
- * Master wallet (factory owner) scatters BNB to derived wallets
- * and withdraws factory fees back when balances run low.
+ * Payment flow (USDT-only):
+ *   1. You send BNB + USDT to wallet[0] (the "treasurer")
+ *   2. Treasurer scatters BNB (gas) + USDT (fees) to wallets [1..N]
+ *   3. Bot wallet approves USDT to PlatformRouter, calls createTokenOnly
+ *      with FeePayment.path=[USDT, USDT] so no swap happens
+ *   4. Factory collects USDT fee → platform wallet (you)
+ *   5. You manually withdraw USDT earnings → send back to treasurer
  *
- * Usage:
- *   BOT_MNEMONIC="..." npx hardhat run scripts/daemon/activity-bot.ts --network bsc
- *
- * Environment:
- *   BOT_MNEMONIC        — 12/24-word mnemonic to derive bot wallets from
- *   WALLET_COUNT         — Number of derived wallets (default: 10)
- *   SPEED                — burst | normal | slow (default: normal)
- *   MIN_BALANCE_BNB      — Refund wallet when BNB drops below this (default: 0.02)
- *   FUND_AMOUNT_BNB      — Amount to send when refunding a wallet (default: 0.05)
- *   OWNER_KEY            — Factory owner private key for withdrawing fees & funding
+ * Env vars:
+ *   RPC_URL              — BSC RPC (default bsc-dataseed)
+ *   CHAIN_ID             — 56
+ *   BOT_MNEMONIC         — 12/24-word mnemonic for derived bot wallets
+ *                          Wallet[0] is the treasurer (scatterer)
+ *   WALLET_COUNT         — Number of derived wallets (default 50)
+ *   SPEED                — burst | normal | slow (default slow)
+ *   MIN_BNB_BAL          — BNB refund threshold (default 0.003, ~$1.8)
+ *   FUND_BNB             — BNB amount when topping up (default 0.01, ~$6)
+ *   MIN_USDT_BAL         — USDT refund threshold (default 30)
+ *   FUND_USDT            — USDT amount when topping up (default 75)
+ *   API_BASE_URL         — https://tokenkrafter.com
+ *   SYNC_SECRET          — Auth for /api/created-tokens
+ *   STATE_FILE           — Path to persistence file
+ *   TRENDING_REFRESH_HRS — Re-fetch trending every N hours (default 6)
  */
 
-import { ethers } from 'hardhat';
+import { ethers } from 'ethers';
 import * as fs from 'fs';
 import * as path from 'path';
 
-// ── Load .env ──
-const envPath = path.resolve(__dirname, '../../../.env');
-if (fs.existsSync(envPath)) {
-	for (const line of fs.readFileSync(envPath, 'utf-8').split('\n')) {
-		const m = line.match(/^([^#=]+)=(.*)$/);
-		if (m && !process.env[m[1].trim()]) process.env[m[1].trim()] = m[2].trim().replace(/^["']|["']$/g, '');
-	}
-}
+// ── Config ──
+const RPC_URL = process.env.RPC_URL || 'https://bsc-dataseed.binance.org/';
+const CHAIN_ID = parseInt(process.env.CHAIN_ID || '56');
+const WALLET_COUNT = parseInt(process.env.WALLET_COUNT || '50', 10);
+const MIN_BNB_BAL = ethers.parseEther(process.env.MIN_BNB_BAL || '0.003');
+const FUND_BNB = ethers.parseEther(process.env.FUND_BNB || '0.01');
+const MIN_USDT_BAL = ethers.parseUnits(process.env.MIN_USDT_BAL || '30', 18);
+const FUND_USDT = ethers.parseUnits(process.env.FUND_USDT || '75', 18);
+const API_BASE = process.env.API_BASE_URL || 'https://tokenkrafter.com';
+const SYNC_SECRET = process.env.SYNC_SECRET || '';
+const STATE_FILE = process.env.STATE_FILE || path.resolve(import.meta.dirname || __dirname, 'activity-bot-state.json');
+const TRENDING_REFRESH_MS = parseInt(process.env.TRENDING_REFRESH_HRS || '6') * 3600 * 1000;
+const SPEED = process.env.SPEED || 'slow';
 
-const SPEED = process.env.SPEED || 'normal';
-const WALLET_COUNT = parseInt(process.env.WALLET_COUNT || '10', 10);
-const MIN_BALANCE = ethers.parseEther(process.env.MIN_BALANCE_BNB || '0.02');
-const FUND_AMOUNT = ethers.parseEther(process.env.FUND_AMOUNT_BNB || '0.05');
-
-// ── Speed configs (seconds between actions) ──
 const SPEEDS: Record<string, { tokenMin: number; tokenMax: number; desc: string }> = {
-	burst:  { tokenMin: 60,    tokenMax: 300,    desc: '1-5 min between tokens' },
-	normal: { tokenMin: 600,   tokenMax: 3600,   desc: '10-60 min between tokens' },
-	slow:   { tokenMin: 3600,  tokenMax: 14400,  desc: '1-4 hours between tokens' },
+	burst: { tokenMin: 60, tokenMax: 300, desc: '1-5 min' },
+	normal: { tokenMin: 600, tokenMax: 3600, desc: '10-60 min' },
+	slow: { tokenMin: 3600, tokenMax: 14400, desc: '1-4 hours' },
 };
-
-// ── Token name pools ──
-const PREFIXES = [
-	// Nigerian culture
-	'Naija', 'Lagos', 'Abuja', 'Eko', 'Owambe', 'Gidi', 'Wahala', 'Chop',
-	'Suya', 'Jollof', 'Amala', 'Pepper', 'Ankara', 'Nolly', 'Afro',
-	'Hustle', 'Danfo', 'Agege', 'Bukka', 'Shayo', 'Palm', 'Oga',
-	// Web3/DeFi
-	'Moon', 'Yield', 'Stake', 'Degen', 'Alpha', 'Based', 'Mega',
-	'Turbo', 'Hyper', 'Ultra', 'Quantum', 'Nova', 'Blaze', 'Surge',
-	'Flux', 'Pulse', 'Apex', 'Zenith', 'Peak', 'Core', 'Prime',
-	// Meme
-	'Baby', 'Mini', 'Super', 'King', 'Lucky', 'Rich', 'Diamond',
-	'Rocket', 'Power', 'Magic', 'Gold', 'Gem', 'Star', 'Fire',
-];
-
-const SUFFIXES = [
-	'Token', 'Coin', 'Finance', 'Pay', 'Cash', 'Chain', 'Swap',
-	'DAO', 'Protocol', 'Network', 'Labs', 'Hub', 'Bridge', 'Verse',
-	'World', 'City', 'Club', 'Gang', 'Army', 'Nation', 'Empire',
-	'', '', '', '', // often no suffix
-];
 
 const pick = <T>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
 const randInt = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
-
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
-
-/** Generate token via Claude API — realistic meme token names */
-async function generateTokenAI(): Promise<{ name: string; symbol: string; supply: bigint; typeKey: number; description?: string } | null> {
-	if (!ANTHROPIC_API_KEY) return null;
-
-	try {
-		const res = await fetch('https://api.anthropic.com/v1/messages', {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json',
-				'x-api-key': ANTHROPIC_API_KEY,
-				'anthropic-version': '2023-06-01',
-			},
-			body: JSON.stringify({
-				model: 'claude-haiku-4-5-20251001',
-				max_tokens: 200,
-				messages: [{
-					role: 'user',
-					content: `Generate a realistic BSC meme/utility token. Return ONLY valid JSON, no markdown:
-{"name": "Token Name", "symbol": "TKN", "supply": "1000000000", "type": "basic", "description": "One sentence about the token"}
-
-Rules:
-- Name: creative, catchy, could be real. Mix of meme, DeFi, gaming, AI, culture themes
-- Symbol: 3-5 uppercase letters derived from the name
-- Supply: realistic (1M to 1T)
-- Type: one of "basic", "mintable", "taxable", "partner" (weighted toward basic/partner)
-- Description: one sentence, what the token does
-- Be diverse — don't repeat common patterns. Think like a real crypto degen launching today.`
-				}]
-			})
-		});
-
-		if (!res.ok) return null;
-		const data = await res.json();
-		const text = data.content?.[0]?.text?.trim();
-		if (!text) return null;
-
-		// Extract JSON from response
-		const jsonMatch = text.match(/\{[\s\S]*\}/);
-		if (!jsonMatch) return null;
-		const parsed = JSON.parse(jsonMatch[0]);
-
-		const typeMap: Record<string, number> = {
-			basic: 0, mintable: 1, taxable: 2, 'tax+mint': 3,
-			partner: 4, 'partner+mint': 5, 'partner+tax': 6, 'partner+tax+mint': 7,
-		};
-
-		return {
-			name: parsed.name || 'AI Token',
-			symbol: (parsed.symbol || 'AIT').toUpperCase().slice(0, 5),
-			supply: BigInt(parsed.supply || '1000000000'),
-			typeKey: typeMap[parsed.type] ?? 0,
-			description: parsed.description,
-		};
-	} catch (e) {
-		console.log(`  ⚠️ AI generation failed: ${(e as any).message?.slice(0, 60)}`);
-		return null;
-	}
-}
-
-/** Fallback: generate token from hardcoded pools */
-function generateTokenLocal(): { name: string; symbol: string; supply: bigint; typeKey: number } {
-	const prefix = pick(PREFIXES);
-	const suffix = pick(SUFFIXES);
-	const name = suffix ? `${prefix} ${suffix}` : prefix;
-
-	let symbol = prefix.toUpperCase().slice(0, randInt(3, 5));
-	if (suffix && Math.random() > 0.5) {
-		symbol = (prefix.slice(0, 2) + suffix.slice(0, 2)).toUpperCase();
-	}
-
-	const supplyTiers = [
-		1_000_000n, 10_000_000n, 100_000_000n,
-		1_000_000_000n, 10_000_000_000n, 1_000_000_000_000n,
-	];
-	const supply = pick(supplyTiers) * BigInt(randInt(1, 9));
-
-	const typeWeights = [30, 10, 15, 5, 20, 5, 10, 5];
-	const totalWeight = typeWeights.reduce((a, b) => a + b, 0);
-	let roll = randInt(1, totalWeight);
-	let typeKey = 0;
-	for (let i = 0; i < typeWeights.length; i++) {
-		roll -= typeWeights[i];
-		if (roll <= 0) { typeKey = i; break; }
-	}
-
-	return { name, symbol, supply, typeKey };
-}
-
-/** Generate token — tries AI first, falls back to local */
-async function generateToken(): Promise<{ name: string; symbol: string; supply: bigint; typeKey: number; description?: string }> {
-	const aiToken = await generateTokenAI();
-	if (aiToken) {
-		console.log(`    🤖 AI generated: ${aiToken.name} ($${aiToken.symbol})`);
-		return aiToken;
-	}
-	return generateTokenLocal();
-}
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 // ── ABIs ──
-const TOKEN_FACTORY_ABI = [
-	// CreateTokenParams struct: name, symbol, totalSupply, decimals, isTaxable,
-	// isMintable, isPartner, paymentToken. The factory passes dexFactory and
-	// bases[] internally to the token's initialize, so the struct shape stays
-	// stable across the contract refactor.
-	'function createToken(tuple(string name, string symbol, uint256 totalSupply, uint8 decimals, bool isTaxable, bool isMintable, bool isPartner, address paymentToken) p, address referral) external payable returns (address)',
-	'function creationFee(uint8 tokenType) view returns (uint256)',
-	'function convertFee(uint256 feeUsdt, address paymentToken) view returns (uint256)',
-	'function totalTokensCreated() view returns (uint256)',
-	'function owner() view returns (address)',
-	'function withdrawFees(address token) external',
+const PLATFORM_ROUTER_ABI = [
+	'function createTokenOnly(tuple(string name, string symbol, uint256 totalSupply, uint8 decimals, bool isTaxable, bool isMintable, bool isPartner, address[] bases) p, tuple(uint256 maxWalletAmount, uint256 maxTransactionAmount, uint256 cooldownSeconds) protection, tuple(uint256 buyTaxBps, uint256 sellTaxBps, uint256 transferTaxBps, address[] taxWallets, uint16[] taxSharesBps) tax, tuple(address[] path, uint256 maxAmountIn) fee, address referral) external payable returns (address)',
+	'event TokenCreated(address indexed creator, address indexed token)',
 ];
 
-// ── Derive wallets from mnemonic ──
-function deriveWallets(mnemonic: string, count: number, provider: any): ethers.Wallet[] {
+const TOKEN_FACTORY_ABI = [
+	'function creationFee(uint8 tokenType) view returns (uint256)',
+	'function owner() view returns (address)',
+	'function withdrawFees(address token) external',
+	'event TokenCreated(address indexed creator, address indexed tokenAddress, uint8 tokenType, string name, string symbol, uint256 totalSupply, uint8 decimals)',
+];
+
+const ERC20_ABI = [
+	'function balanceOf(address) view returns (uint256)',
+	'function approve(address spender, uint256 amount) returns (bool)',
+	'function allowance(address owner, address spender) view returns (uint256)',
+	'function transfer(address to, uint256 amount) returns (bool)',
+	'function decimals() view returns (uint8)',
+];
+
+// ── State persistence ──
+interface State {
+	clonedTokens: string[];
+	trendingCache: CachedToken[];
+	trendingFetchedAt: number;
+	tokensCreated: number;
+}
+
+interface CachedToken {
+	key: string;
+	network: string;
+	address: string;
+	name: string;
+	symbol: string;
+	decimals: number;
+	totalSupplyRaw: string;
+	image_url: string;
+	description: string;
+	twitter: string;
+	telegram: string;
+	website: string;
+}
+
+function loadState(): State {
+	try {
+		if (fs.existsSync(STATE_FILE)) {
+			return JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
+		}
+	} catch {}
+	return { clonedTokens: [], trendingCache: [], trendingFetchedAt: 0, tokensCreated: 0 };
+}
+
+function saveState(s: State) {
+	fs.writeFileSync(STATE_FILE, JSON.stringify(s, null, 2));
+}
+
+// ── GeckoTerminal ──
+const GCT_BASE = 'https://api.geckoterminal.com/api/v2';
+
+async function gctGet(p: string): Promise<any> {
+	const res = await fetch(`${GCT_BASE}${p}`, {
+		headers: { Accept: 'application/json;version=20230203' },
+	});
+	if (!res.ok) throw new Error(`GCT ${res.status} on ${p}`);
+	return res.json();
+}
+
+async function fetchTrending(): Promise<CachedToken[]> {
+	console.log('  🔍 Fetching trending pools across all networks...');
+	const trending = await gctGet('/networks/trending_pools?include=base_token');
+	const pools = trending.data || [];
+	const included = trending.included || [];
+
+	const tokenMap = new Map<string, any>();
+	for (const it of included) {
+		if (it.type === 'token') tokenMap.set(`${it.id}`, it.attributes);
+	}
+
+	const results: CachedToken[] = [];
+	for (const pool of pools) {
+		try {
+			const baseTokenId = pool.relationships?.base_token?.data?.id;
+			if (!baseTokenId) continue;
+			const network = baseTokenId.split('_')[0];
+			const address = baseTokenId.split('_').slice(1).join('_');
+			const basics = tokenMap.get(baseTokenId);
+			if (!basics) continue;
+
+			await sleep(2100);
+			const base = await gctGet(`/networks/${network}/tokens/${address}`).catch(() => null);
+			await sleep(2100);
+			const info = await gctGet(`/networks/${network}/tokens/${address}/info`).catch(() => null);
+
+			const baseAttrs = base?.data?.attributes || {};
+			const infoAttrs = info?.data?.attributes || {};
+			const totalSupplyRaw = baseAttrs.total_supply;
+			if (!totalSupplyRaw || totalSupplyRaw === '0') continue;
+
+			results.push({
+				key: baseTokenId,
+				network,
+				address,
+				name: basics.name || 'Unknown',
+				symbol: (basics.symbol || 'TKN').toUpperCase().slice(0, 10),
+				decimals: basics.decimals ?? 18,
+				totalSupplyRaw: String(totalSupplyRaw).split('.')[0],
+				image_url: basics.image_url || '',
+				description: infoAttrs.description || '',
+				twitter: infoAttrs.twitter_handle ? `https://x.com/${infoAttrs.twitter_handle}` : '',
+				telegram: infoAttrs.telegram_handle ? `https://t.me/${infoAttrs.telegram_handle}` : '',
+				website: (infoAttrs.websites && infoAttrs.websites[0]) || '',
+			});
+		} catch (e: any) {
+			console.log(`    ⚠️  Skip pool: ${e.message?.slice(0, 60)}`);
+		}
+	}
+
+	console.log(`  ✓ Cached ${results.length} trending tokens`);
+	return results;
+}
+
+// ── Type weighting (no partner — reserved for real users) ──
+function pickTokenType(): number {
+	// 0=basic, 1=mintable, 2=taxable, 3=tax+mint
+	const weights = [50, 20, 20, 10];
+	const total = weights.reduce((a, b) => a + b, 0);
+	let roll = randInt(1, total);
+	for (let i = 0; i < weights.length; i++) {
+		roll -= weights[i];
+		if (roll <= 0) return i;
+	}
+	return 0;
+}
+
+// ── Derive wallets ──
+function deriveWallets(mnemonic: string, count: number, provider: ethers.Provider): ethers.Wallet[] {
 	const hdNode = ethers.HDNodeWallet.fromMnemonic(
 		ethers.Mnemonic.fromPhrase(mnemonic),
 		"m/44'/60'/0'/0"
@@ -197,327 +207,295 @@ function deriveWallets(mnemonic: string, count: number, provider: any): ethers.W
 	return wallets;
 }
 
-async function main() {
-	const provider = ethers.provider;
-	const network = await provider.getNetwork();
-	const chainId = Number(network.chainId);
-	const speed = SPEEDS[SPEED] || SPEEDS.normal;
-
-	// ── Validate mnemonic ──
-	const mnemonic = process.env.BOT_MNEMONIC;
-	if (!mnemonic) {
-		console.error('❌ BOT_MNEMONIC is required. Generate one with:');
-		console.error('   node -e "console.log(require(\'ethers\').Wallet.createRandom().mnemonic.phrase)"');
-		return;
+// ── Fund wallet with BNB + USDT from treasurer (wallet[0]) ──
+async function fundIfLow(
+	treasurer: ethers.Wallet,
+	wallet: ethers.Wallet,
+	usdt: ethers.Contract,
+	provider: ethers.Provider
+): Promise<{ bnb: boolean; usdt: boolean }> {
+	// Treasurer funding itself is a no-op
+	if (wallet.address.toLowerCase() === treasurer.address.toLowerCase()) {
+		return { bnb: true, usdt: true };
 	}
 
-	// ── Load deployment ──
-	const deployFile = chainId === 56 ? 'bsc' : chainId === 97 ? 'bscTestnet' : 'localhost';
-	let deployment: any;
-	try {
-		deployment = JSON.parse(fs.readFileSync(path.resolve(__dirname, `../../deployments/${deployFile}.json`), 'utf-8'));
-	} catch {
-		console.error('❌ No deployment file found for chain', chainId);
-		return;
-	}
+	const [bnbBal, usdtBal] = await Promise.all([
+		provider.getBalance(wallet.address),
+		usdt.balanceOf(wallet.address),
+	]);
+	const needBnb = bnbBal < MIN_BNB_BAL;
+	const needUsdt = usdtBal < MIN_USDT_BAL;
 
-	// ── Owner signer (for fee withdrawal & funding) ──
-	const ownerKey = process.env.OWNER_KEY || process.env.DEPLOYER_PRIVATE_KEY;
-	if (!ownerKey) {
-		console.error('❌ OWNER_KEY or DEPLOYER_PRIVATE_KEY is required (factory owner, funds the wallets)');
-		return;
-	}
-	const owner = new ethers.Wallet(ownerKey, provider);
-
-	// ── Derive bot wallets ──
-	const wallets = deriveWallets(mnemonic, WALLET_COUNT, provider);
-
-	// ── Check factory ownership ──
-	const factory = new ethers.Contract(deployment.TokenFactory, TOKEN_FACTORY_ABI, owner);
-	const factoryOwner = await factory.owner();
-	const canWithdraw = factoryOwner.toLowerCase() === owner.address.toLowerCase();
-
-	// ── Print balances ──
-	const ownerBalance = await provider.getBalance(owner.address);
-	const walletBalances = await Promise.all(wallets.map(w => provider.getBalance(w.address)));
-
-	console.log(`
-╔═══════════════════════════════════════════════════╗
-║         TokenKrafter Activity Bot v2              ║
-║         Multi-Wallet Mode                         ║
-╚═══════════════════════════════════════════════════╝
-  Chain:          ${chainId} (${deployFile})
-  Speed:          ${SPEED} — ${speed.desc}
-  Factory:        ${deployment.TokenFactory}
-  Owner:          ${owner.address}
-  Owner balance:  ${ethers.formatEther(ownerBalance)} BNB
-  Can withdraw:   ${canWithdraw ? '✅ yes' : '❌ no (owner: ' + factoryOwner.slice(0, 10) + '...)'}
-  Tokens so far:  ${await factory.totalTokensCreated()}
-
-  Bot Wallets (${WALLET_COUNT}):
-${wallets.map((w, i) => `    [${i}] ${w.address}  ${ethers.formatEther(walletBalances[i])} BNB`).join('\n')}
-
-  Min balance:    ${ethers.formatEther(MIN_BALANCE)} BNB
-  Fund amount:    ${ethers.formatEther(FUND_AMOUNT)} BNB
-
-  Press Ctrl+C to stop
-`);
-
-	// ── Initial funding: top up any wallet below minimum ──
-	await fundWallets(owner, wallets, provider);
-
-	let running = true;
-	let tokensCreated = 0;
-	let totalGasSpent = 0n;
-
-	process.on('SIGINT', () => { running = false; console.log('\n⏹  Shutting down...'); });
-	process.on('SIGTERM', () => { running = false; });
-
-	while (running) {
-		try {
-			// ── Pick a random wallet ──
-			const walletIdx = randInt(0, wallets.length - 1);
-			const wallet = wallets[walletIdx];
-			const walletBal = await provider.getBalance(wallet.address);
-
-			// ── Fund if low ──
-			if (walletBal < MIN_BALANCE) {
-				console.log(`\n  💰 Wallet [${walletIdx}] low (${ethers.formatEther(walletBal)} BNB). Funding...`);
-				const funded = await fundSingle(owner, wallet.address, provider, canWithdraw ? factory : null);
-				if (!funded) {
-					console.log(`  ⚠️  Could not fund wallet [${walletIdx}]. Trying another...`);
-					// Try to pick a funded wallet instead
-					const funded_wallet = await pickFundedWallet(wallets, provider);
-					if (!funded_wallet) {
-						console.log(`  ❌ All wallets underfunded. Waiting 60s...`);
-						await sleep(60000, () => running);
-						continue;
-					}
-					// Use the funded wallet this round
-					await createToken(funded_wallet.wallet, funded_wallet.idx, factory, provider, deployment);
-					tokensCreated++;
-					continue;
-				}
-			}
-
-			// ── Create token ──
-			const result = await createToken(wallet, walletIdx, factory, provider, deployment);
-			if (result) {
-				totalGasSpent += result.gasCost;
-				tokensCreated++;
-				console.log(`    Total: ${tokensCreated} tokens | Gas spent: ${ethers.formatEther(totalGasSpent)} BNB`);
-			}
-
-		} catch (e: any) {
-			console.error(`  ❌ Error: ${e.message?.slice(0, 80)}`);
+	if (needBnb) {
+		const treasurerBnb = await provider.getBalance(treasurer.address);
+		if (treasurerBnb < FUND_BNB + ethers.parseEther('0.002')) {
+			console.log(`  ❌ Treasurer BNB low (${ethers.formatEther(treasurerBnb)}) — top up wallet[0] at ${treasurer.address}`);
+			return { bnb: false, usdt: false };
 		}
-
-		// ── Random delay ──
-		const delaySec = randInt(speed.tokenMin, speed.tokenMax);
-		console.log(`  ⏳ Next token in ~${(delaySec / 60).toFixed(1)} min`);
-		await sleep(delaySec * 1000, () => running);
+		try {
+			const tx = await treasurer.sendTransaction({ to: wallet.address, value: FUND_BNB });
+			await tx.wait();
+			console.log(`  💧 Scattered ${ethers.formatEther(FUND_BNB)} BNB → ${wallet.address.slice(0, 10)}...`);
+		} catch (e: any) {
+			console.log(`  ❌ BNB scatter failed: ${e.shortMessage || e.message?.slice(0, 60)}`);
+			return { bnb: false, usdt: false };
+		}
 	}
 
-	console.log(`\n✅ Bot stopped. Created ${tokensCreated} tokens. Total gas: ${ethers.formatEther(totalGasSpent)} BNB`);
+	if (needUsdt) {
+		const usdtAsTreasurer = usdt.connect(treasurer) as ethers.Contract;
+		const treasurerUsdt = await usdt.balanceOf(treasurer.address);
+		if (treasurerUsdt < FUND_USDT) {
+			console.log(`  ❌ Treasurer USDT low (${ethers.formatUnits(treasurerUsdt, 18)}) — top up wallet[0] at ${treasurer.address}`);
+			return { bnb: true, usdt: false };
+		}
+		try {
+			const tx = await usdtAsTreasurer.transfer(wallet.address, FUND_USDT);
+			await tx.wait();
+			console.log(`  💧 Scattered ${ethers.formatUnits(FUND_USDT, 18)} USDT → ${wallet.address.slice(0, 10)}...`);
+		} catch (e: any) {
+			console.log(`  ❌ USDT scatter failed: ${e.shortMessage || e.message?.slice(0, 60)}`);
+			return { bnb: true, usdt: false };
+		}
+	}
+
+	return { bnb: true, usdt: true };
 }
 
-// ── Create a token from a specific wallet ──
-async function createToken(
+// ── Create clone via PlatformRouter ──
+async function createClone(
 	wallet: ethers.Wallet,
 	walletIdx: number,
+	router: ethers.Contract,
 	factory: ethers.Contract,
-	provider: any,
-	deployment: any
-): Promise<{ gasCost: bigint } | null> {
-	const token = await generateToken();
-	const typeLabels = ['Basic', 'Mintable', 'Taxable', 'Tax+Mint', 'Partner', 'Partner+Mint', 'Partner+Tax', 'Partner+Tax+Mint'];
-	const label = typeLabels[token.typeKey] || 'Basic';
-	const supplyStr = ethers.formatUnits(token.supply * 10n ** 18n, 18);
+	usdt: ethers.Contract,
+	usdtAddr: string,
+	routerAddr: string,
+	src: CachedToken
+): Promise<string | null> {
+	const typeKey = pickTokenType();
+	const typeLabels = ['Basic', 'Mintable', 'Taxable', 'Tax+Mint'];
+	const label = typeLabels[typeKey];
 
-	console.log(`\n  [${new Date().toLocaleTimeString()}] Wallet [${walletIdx}] ${wallet.address.slice(0, 10)}...`);
-	console.log(`    Creating: ${token.name} ($${token.symbol}) | ${label} | Supply: ${Number(supplyStr).toLocaleString()}`);
+	console.log(`\n  [${new Date().toLocaleTimeString()}] Wallet [${walletIdx}] cloning ${src.network}:${src.name} ($${src.symbol})`);
+	console.log(`    Type: ${label} | Decimals: ${src.decimals} | Supply: ${src.totalSupplyRaw}`);
 
 	try {
-		const factoryAsWallet = factory.connect(wallet);
+		const feeUsdt = await factory.creationFee(typeKey);
+		const maxAmountIn = (feeUsdt * 101n) / 100n; // 1% buffer
 
-		// Get creation fee
-		const feeUsdt = await factory.creationFee(token.typeKey);
-		let feeNative = 0n;
-
-		if (feeUsdt > 0n) {
-			try {
-				feeNative = await factory.convertFee(feeUsdt, ethers.ZeroAddress);
-			} catch {
-				feeNative = ethers.parseEther('0.01');
-			}
-			feeNative = feeNative * 11n / 10n; // 10% buffer
+		// Approve USDT → router
+		const usdtAsWallet = usdt.connect(wallet) as ethers.Contract;
+		const allowance: bigint = await usdt.allowance(wallet.address, routerAddr);
+		if (allowance < maxAmountIn) {
+			// Approve max to avoid repeated approvals
+			const approveTx = await usdtAsWallet.approve(routerAddr, ethers.MaxUint256);
+			await approveTx.wait();
 		}
 
-		// Decompose typeKey bitfield (partner=4, taxable=2, mintable=1)
-		// back into the three boolean flags the struct expects.
+		const routerAsWallet = router.connect(wallet) as ethers.Contract;
+
 		const params = {
-			name: token.name,
-			symbol: token.symbol,
-			totalSupply: token.supply * 10n ** 18n,
-			decimals: 18,
-			isTaxable: (token.typeKey & 2) !== 0,
-			isMintable: (token.typeKey & 1) !== 0,
-			isPartner: (token.typeKey & 4) !== 0,
-			paymentToken: ethers.ZeroAddress,
+			name: src.name,
+			symbol: src.symbol,
+			totalSupply: BigInt(src.totalSupplyRaw),
+			decimals: src.decimals,
+			isTaxable: (typeKey & 2) !== 0,
+			isMintable: (typeKey & 1) !== 0,
+			isPartner: false,
+			bases: [] as string[], // empty — accept factory defaults
 		};
 
-		const gasEstimate = await factoryAsWallet.createToken.estimateGas(
-			params, ethers.ZeroAddress,
-			{ value: feeNative }
-		);
+		// Empty protection + tax params (bot tokens stay plain)
+		const protection = { maxWalletAmount: 0n, maxTransactionAmount: 0n, cooldownSeconds: 0n };
+		const tax = {
+			buyTaxBps: 0n,
+			sellTaxBps: 0n,
+			transferTaxBps: 0n,
+			taxWallets: [] as string[],
+			taxSharesBps: [] as number[],
+		};
+		// FeePayment: path=[USDT, USDT] signals direct USDT payment (no swap)
+		const fee = { path: [usdtAddr, usdtAddr], maxAmountIn };
 
-		const tx = await factoryAsWallet.createToken(
-			params, ethers.ZeroAddress,
-			{ value: feeNative, gasLimit: gasEstimate * 12n / 10n }
+		const gasEstimate = await routerAsWallet.createTokenOnly.estimateGas(
+			params, protection, tax, fee, ethers.ZeroAddress
 		);
-
+		const tx = await routerAsWallet.createTokenOnly(
+			params, protection, tax, fee, ethers.ZeroAddress,
+			{ gasLimit: (gasEstimate * 12n) / 10n }
+		);
 		const receipt = await tx.wait();
-		const gasCost = receipt!.gasUsed * receipt!.gasPrice;
 
-		// Parse token address from event
 		let tokenAddr = '';
-		try {
-			const iface = new ethers.Interface([
-				'event TokenCreated(address indexed creator, address indexed tokenAddress, uint8 tokenType, string name, string symbol, uint256 totalSupply, uint8 decimals)'
-			]);
-			for (const log of receipt!.logs) {
-				try {
-					const parsed = iface.parseLog({ topics: [...log.topics], data: log.data });
-					if (parsed?.name === 'TokenCreated') { tokenAddr = parsed.args[1]; break; }
-				} catch {}
-			}
-		} catch {}
-
-		console.log(`    ✅ Created! Token: ${tokenAddr.slice(0, 10)}...`);
-		console.log(`    Gas: ${ethers.formatEther(gasCost)} BNB | Fee: ${ethers.formatEther(feeNative)} BNB`);
-
-		// Save description to DB if AI-generated
-		if (token.description && tokenAddr) {
-			const API_BASE = process.env.API_BASE_URL || 'https://tokenkrafter.com';
-			const SYNC_SECRET = process.env.SYNC_SECRET || '';
+		const iface = new ethers.Interface(TOKEN_FACTORY_ABI);
+		for (const log of receipt!.logs) {
 			try {
-				await fetch(`${API_BASE}/api/created-tokens`, {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SYNC_SECRET}` },
-					body: JSON.stringify({
-						address: tokenAddr.toLowerCase(),
-						chain_id: 56,
-						creator: wallet.address.toLowerCase(),
-						name: token.name,
-						symbol: token.symbol,
-						total_supply: (token.supply * 10n ** 18n).toString(),
-						decimals: 18,
-						is_mintable: (token.typeKey & 1) !== 0,
-						is_taxable: (token.typeKey & 2) !== 0,
-						is_partner: (token.typeKey & 4) !== 0,
-						type_key: token.typeKey,
-						description: token.description,
-					})
-				});
+				const parsed = iface.parseLog({ topics: [...log.topics], data: log.data });
+				if (parsed?.name === 'TokenCreated') {
+					tokenAddr = parsed.args[1];
+					break;
+				}
 			} catch {}
 		}
 
-		return { gasCost };
+		const gasCost = receipt!.gasUsed * receipt!.gasPrice;
+		console.log(`    ✅ ${tokenAddr.slice(0, 10)}... | Gas: ${ethers.formatEther(gasCost)} BNB | Fee: ${ethers.formatUnits(feeUsdt, 18)} USDT`);
+
+		if (tokenAddr && SYNC_SECRET) {
+			try {
+				const res = await fetch(`${API_BASE}/api/created-tokens`, {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+						Authorization: `Bearer ${SYNC_SECRET}`,
+					},
+					body: JSON.stringify({
+						address: tokenAddr.toLowerCase(),
+						chain_id: CHAIN_ID,
+						creator: wallet.address.toLowerCase(),
+						name: src.name,
+						symbol: src.symbol,
+						total_supply: params.totalSupply.toString(),
+						decimals: src.decimals,
+						is_mintable: params.isMintable,
+						is_taxable: params.isTaxable,
+						is_partner: false,
+						description: src.description,
+						logo_url: src.image_url,
+						website: src.website,
+						twitter: src.twitter,
+						telegram: src.telegram,
+					}),
+				});
+				if (!res.ok) console.log(`    ⚠️  Metadata POST ${res.status}`);
+			} catch (e: any) {
+				console.log(`    ⚠️  Metadata POST error: ${e.message?.slice(0, 60)}`);
+			}
+		}
+
+		return tokenAddr;
 	} catch (e: any) {
-		console.log(`    ❌ Failed: ${e.shortMessage || e.message?.slice(0, 80)}`);
+		console.log(`    ❌ Failed: ${e.shortMessage || e.message?.slice(0, 100)}`);
 		return null;
 	}
 }
 
-// ── Fund a single wallet from owner ──
-async function fundSingle(
-	owner: ethers.Wallet,
-	to: string,
-	provider: any,
-	factory: ethers.Contract | null
-): Promise<boolean> {
-	const ownerBal = await provider.getBalance(owner.address);
+// ── Main ──
+async function main() {
+	const mnemonic = process.env.BOT_MNEMONIC;
+	if (!mnemonic) { console.error('❌ BOT_MNEMONIC required'); process.exit(1); }
 
-	// If owner is low, try withdrawing factory fees first
-	if (ownerBal < FUND_AMOUNT * 2n && factory) {
-		console.log(`  💰 Owner low too. Withdrawing factory fees...`);
-		try {
-			const tx = await factory.withdrawFees(ethers.ZeroAddress);
-			await tx.wait();
-			const newBal = await provider.getBalance(owner.address);
-			console.log(`  ✅ Withdrew fees. Owner balance: ${ethers.formatEther(newBal)} BNB`);
-		} catch (e: any) {
-			console.log(`  ⚠️  Fee withdrawal failed: ${e.shortMessage || e.message?.slice(0, 60)}`);
-		}
-	}
-
-	// Check again
-	const bal = await provider.getBalance(owner.address);
-	if (bal < FUND_AMOUNT + ethers.parseEther('0.005')) {
-		console.log(`  ❌ Owner balance too low to fund (${ethers.formatEther(bal)} BNB)`);
-		return false;
-	}
-
+	// Load config from backend (DB-managed addresses + RPC)
+	let factoryAddr = '', routerAddr = '', usdtAddr = '', rpcUrl = RPC_URL;
 	try {
-		const tx = await owner.sendTransaction({ to, value: FUND_AMOUNT });
-		await tx.wait();
-		console.log(`  ✅ Sent ${ethers.formatEther(FUND_AMOUNT)} BNB → ${to.slice(0, 10)}...`);
-		return true;
+		const res = await fetch(`${API_BASE}/api/config?keys=networks`);
+		const { networks } = await res.json();
+		const net = (networks || []).find((n: any) => Number(n.chain_id) === CHAIN_ID);
+		factoryAddr = net?.platform_address;
+		routerAddr = net?.router_address;
+		usdtAddr = net?.usdt_address;
+		if (net?.rpc) rpcUrl = net.rpc;
 	} catch (e: any) {
-		console.log(`  ❌ Fund tx failed: ${e.shortMessage || e.message?.slice(0, 60)}`);
-		return false;
+		console.error(`❌ Config fetch failed: ${e.message}`);
+		process.exit(1);
 	}
-}
-
-// ── Fund all wallets that are below minimum ──
-async function fundWallets(owner: ethers.Wallet, wallets: ethers.Wallet[], provider: any) {
-	const balances = await Promise.all(wallets.map(w => provider.getBalance(w.address)));
-	const needFunding = wallets.filter((_, i) => balances[i] < MIN_BALANCE);
-
-	if (needFunding.length === 0) {
-		console.log('  ✅ All wallets funded');
-		return;
+	if (!factoryAddr || !routerAddr || !usdtAddr) {
+		console.error('❌ Missing factory/router/usdt address');
+		process.exit(1);
 	}
 
-	console.log(`\n  💰 Funding ${needFunding.length} wallet(s)...`);
-	for (const w of needFunding) {
-		const ownerBal = await provider.getBalance(owner.address);
-		if (ownerBal < FUND_AMOUNT + ethers.parseEther('0.005')) {
-			console.log(`  ⚠️  Owner out of funds. Remaining wallets unfunded.`);
-			break;
-		}
+	const provider = new ethers.JsonRpcProvider(rpcUrl, CHAIN_ID, { staticNetwork: true });
+	const wallets = deriveWallets(mnemonic, WALLET_COUNT, provider);
+	const treasurer = wallets[0]; // wallet[0] holds the pooled funds, scatters to others
+	const speed = SPEEDS[SPEED] || SPEEDS.slow;
+
+	const factory = new ethers.Contract(factoryAddr, TOKEN_FACTORY_ABI, provider);
+	const router = new ethers.Contract(routerAddr, PLATFORM_ROUTER_ABI, provider);
+	const usdt = new ethers.Contract(usdtAddr, ERC20_ABI, provider);
+
+	const [treasurerBnb, treasurerUsdt] = await Promise.all([
+		provider.getBalance(treasurer.address),
+		usdt.balanceOf(treasurer.address),
+	]);
+
+	console.log(`
+╔════════════════════════════════════════════════╗
+║      TokenKrafter Activity Bot (Standalone)    ║
+╚════════════════════════════════════════════════╝
+  Chain:          ${CHAIN_ID}
+  RPC:            ${rpcUrl}
+  Factory:        ${factoryAddr}
+  Router:         ${routerAddr}
+  USDT:           ${usdtAddr}
+  Treasurer[0]:   ${treasurer.address}
+  Treasurer BNB:  ${ethers.formatEther(treasurerBnb)}
+  Treasurer USDT: ${ethers.formatUnits(treasurerUsdt, 18)}
+  Wallets:        ${WALLET_COUNT}
+  Speed:          ${SPEED} (${speed.desc})
+  State:          ${STATE_FILE}
+`);
+
+	const state = loadState();
+	const clonedSet = new Set(state.clonedTokens);
+	let running = true;
+	process.on('SIGINT', () => { running = false; console.log('\n⏹  Stopping...'); });
+	process.on('SIGTERM', () => { running = false; });
+
+	while (running) {
 		try {
-			const tx = await owner.sendTransaction({ to: w.address, value: FUND_AMOUNT });
-			await tx.wait();
-			console.log(`    ✅ ${w.address.slice(0, 10)}... funded`);
+			// Refresh trending
+			if (Date.now() - state.trendingFetchedAt > TRENDING_REFRESH_MS || state.trendingCache.length === 0) {
+				try {
+					state.trendingCache = await fetchTrending();
+					state.trendingFetchedAt = Date.now();
+					saveState(state);
+				} catch (e: any) {
+					console.log(`  ⚠️  Trending fetch failed: ${e.message?.slice(0, 80)}`);
+					if (state.trendingCache.length === 0) {
+						console.log('  ❌ No cache, sleeping 10min...');
+						await sleep(10 * 60 * 1000);
+						continue;
+					}
+				}
+			}
+
+			const candidates = state.trendingCache.filter(t => !clonedSet.has(t.key));
+			if (candidates.length === 0) {
+				console.log('  ℹ️  All cached tokens cloned. Waiting 30min for refresh...');
+				await sleep(30 * 60 * 1000);
+				continue;
+			}
+			const source = pick(candidates);
+
+			// Pick random wallet, fund if low
+			const walletIdx = randInt(0, wallets.length - 1);
+			const wallet = wallets[walletIdx];
+			const funded = await fundIfLow(treasurer, wallet, usdt, provider);
+			if (!funded.bnb || !funded.usdt) {
+				console.log(`  ⚠️  Wallet [${walletIdx}] not fundable, sleeping 60s...`);
+				await sleep(60 * 1000);
+				continue;
+			}
+
+			const tokenAddr = await createClone(wallet, walletIdx, router, factory, usdt, usdtAddr, routerAddr, source);
+			if (tokenAddr) {
+				clonedSet.add(source.key);
+				state.clonedTokens = Array.from(clonedSet);
+				state.tokensCreated++;
+				saveState(state);
+				console.log(`    Total: ${state.tokensCreated}`);
+			}
 		} catch (e: any) {
-			console.log(`    ❌ ${w.address.slice(0, 10)}... failed: ${e.shortMessage || e.message?.slice(0, 60)}`);
+			console.error(`  ❌ Loop error: ${e.message?.slice(0, 100)}`);
 		}
-	}
-}
 
-// ── Pick a wallet that has enough balance ──
-async function pickFundedWallet(wallets: ethers.Wallet[], provider: any): Promise<{ wallet: ethers.Wallet; idx: number } | null> {
-	// Shuffle to avoid always picking the same one
-	const indices = Array.from({ length: wallets.length }, (_, i) => i);
-	for (let i = indices.length - 1; i > 0; i--) {
-		const j = randInt(0, i);
-		[indices[i], indices[j]] = [indices[j], indices[i]];
+		const delaySec = randInt(speed.tokenMin, speed.tokenMax);
+		console.log(`  ⏳ Next in ~${(delaySec / 60).toFixed(1)} min`);
+		for (let i = 0; i < delaySec && running; i += 5) await sleep(5000);
 	}
 
-	for (const idx of indices) {
-		const bal = await provider.getBalance(wallets[idx].address);
-		if (bal >= MIN_BALANCE) return { wallet: wallets[idx], idx };
-	}
-	return null;
-}
-
-// ── Interruptible sleep ──
-async function sleep(ms: number, isRunning: () => boolean) {
-	const end = Date.now() + ms;
-	while (isRunning() && Date.now() < end) {
-		await new Promise(r => setTimeout(r, 5000));
-	}
+	console.log(`\n✅ Stopped. Total: ${state.tokensCreated} tokens cloned.`);
 }
 
 main().catch(e => { console.error('Fatal:', e); process.exit(1); });

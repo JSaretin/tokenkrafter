@@ -288,12 +288,18 @@ async function main() {
   ).wait();
   console.log("✓");
 
-  // Add deployer as admin on TradeRouter so the off-ramp daemon can confirm
-  // withdrawals using ADMIN_KEY (which is the deployer key in our setup).
-  // If a separate admin key is used in production, override here.
-  // process.stdout.write("  TradeRouter.addAdmin(deployer)... ");
-  // await (await tradeRouter.addAdmin(deployer.address)).wait();
-  // console.log("✓");
+  // Add the off-ramp daemon's wallet as TradeRouter admin so it can call
+  // confirm() / refund() on user withdrawals. ADMIN_ADDRESS (or derived
+  // from ADMIN_KEY in the project root .env) is required for off-ramp to
+  // work — without it only the deployer can confirm.
+  const adminAddr = process.env.ADMIN_ADDRESS;
+  if (adminAddr && ethers.isAddress(adminAddr) && adminAddr.toLowerCase() !== deployer.address.toLowerCase()) {
+    process.stdout.write(`  TradeRouter.addAdmin(${adminAddr})... `);
+    await (await tradeRouter.addAdmin(adminAddr)).wait();
+    console.log("✓");
+  } else {
+    console.log("  TradeRouter.addAdmin: skipped (ADMIN_ADDRESS env not set)");
+  }
 
   // ── Save deployment ──
   // Archive old addresses under _Old keys so we can roll back if needed.

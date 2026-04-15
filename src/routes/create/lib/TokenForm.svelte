@@ -338,6 +338,40 @@
 	);
 	let getNetworkProviders: () => Map<number, ethers.JsonRpcProvider> = getContext('networkProviders');
 
+	// For the "launch existing token" flow, BasicInfo isn't rendered (it's
+	// replaced by a slim address-only form). We still need name/symbol/
+	// decimals/totalSupply populated so the review modal and parseUnits
+	// calls work — fetch them here whenever the user pastes a valid address.
+	let _existingFetchTimeout: ReturnType<typeof setTimeout> | null = null;
+	$effect(() => {
+		if (_existingFetchTimeout) clearTimeout(_existingFetchTimeout);
+		const addr = existingTokenAddress;
+		const net = selectedNetwork;
+		if (!useExistingToken || !addr || !/^0x[a-fA-F0-9]{40}$/.test(addr) || !net) return;
+		_existingFetchTimeout = setTimeout(async () => {
+			try {
+				const provider = getNetworkProviders?.()?.get(net.chain_id);
+				if (!provider) return;
+				const token = new ethers.Contract(addr, [
+					'function name() view returns (string)',
+					'function symbol() view returns (string)',
+					'function decimals() view returns (uint8)',
+					'function totalSupply() view returns (uint256)',
+				], provider);
+				const [n, s, d, supply] = await Promise.all([
+					token.name().catch(() => ''),
+					token.symbol().catch(() => ''),
+					token.decimals().catch(() => 18),
+					token.totalSupply().catch(() => 0n),
+				]);
+				if (n) name = n;
+				if (s) symbol = s;
+				decimals = Number(d);
+				totalSupply = ethers.formatUnits(supply, Number(d));
+			} catch {}
+		}, 500);
+	});
+
 	// BNB price for listing preview
 	let bnbPriceUsd = $state(0);
 	$effect(() => {

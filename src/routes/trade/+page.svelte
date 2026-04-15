@@ -75,10 +75,32 @@
 	let noLiquidity = $state(false);
 	let swapRoute = $state<SwapRoute | null>(null);
 
-	// Settings
+	// Settings — slippage persists across reloads so users keep their
+	// preferred tolerance instead of resetting to 0.5% every session.
+	const SLIPPAGE_KEY = 'trade_slippage_bps';
+	const CUSTOM_SLIP_KEY = 'trade_custom_slippage';
 	let slippageBps = $state(50);
 	let customSlippage = $state('');
 	let showSettings = $state(false);
+
+	if (typeof localStorage !== 'undefined') {
+		try {
+			const savedBps = localStorage.getItem(SLIPPAGE_KEY);
+			if (savedBps) {
+				const n = parseInt(savedBps);
+				if (n > 0 && n <= 5000) slippageBps = n;
+			}
+			const savedCustom = localStorage.getItem(CUSTOM_SLIP_KEY);
+			if (savedCustom) customSlippage = savedCustom;
+		} catch {}
+	}
+	$effect(() => {
+		if (typeof localStorage === 'undefined') return;
+		try {
+			localStorage.setItem(SLIPPAGE_KEY, String(slippageBps));
+			localStorage.setItem(CUSTOM_SLIP_KEY, customSlippage);
+		} catch {}
+	});
 
 	// Swap state
 	let isSwapping = $state(false);

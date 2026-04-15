@@ -820,11 +820,24 @@
 			// For existing tokens, totalSupply is formatted (e.g. "1000000.0"), parse it back to wei
 			// For new tokens, totalSupply is a raw integer (e.g. "1000000"), contract scales internally
 			const isExisting = !!tokenInfo.existingTokenAddress;
+
+			// Guard against empty/unset totalSupply — happens when the user
+			// advances the wizard before the on-chain fetch for an existing
+			// token completes. ethers.parseUnits('', ...) would throw
+			// "invalid FixedNumber string value" — fail fast with a clearer msg.
+			const supplyStr = String(tokenInfo.totalSupply ?? '').trim();
+			if (!supplyStr || supplyStr === '0' || !Number.isFinite(Number(supplyStr))) {
+				addFeedback({ message: 'Token info still loading — wait a moment and try again.', type: 'error' });
+				step = 'review';
+				isCreating = false;
+				return;
+			}
+
 			const totalSupplyRaw = isExisting
 				? 0n // not used for existing token contract calls
-				: BigInt(Math.floor(Number(tokenInfo.totalSupply)));
+				: BigInt(Math.floor(Number(supplyStr)));
 			const totalSupplyWei = isExisting
-				? ethers.parseUnits(tokenInfo.totalSupply, tokenInfo.decimals)
+				? ethers.parseUnits(supplyStr, tokenInfo.decimals)
 				: totalSupplyRaw * (10n ** BigInt(tokenInfo.decimals));
 
 			// Build FeePayment struct. Router validates path[last] == USDT.

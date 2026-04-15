@@ -26,12 +26,14 @@ echo "  Rebuilding daemon bundles..."
 echo "═══════════════════════════════════════════════"
 
 cd "$CONTRACTS"
-bun build scripts/daemon/chain-indexer-standalone.ts \
+bun build scripts/daemon/chain-indexer.ts \
 	--outfile dist/tk-indexer.mjs --target node --minify
-bun build scripts/daemon/activity-bot-standalone.ts \
+bun build scripts/daemon/activity-bot.ts \
 	--outfile dist/tk-activity.mjs --target node --minify
 bun build scripts/daemon/rate-updater.ts \
 	--outfile dist/rate-updater.mjs --target node --minify
+bun build scripts/daemon/safu-indexer.ts \
+	--outfile dist/tk-safu.mjs --target node --minify
 
 echo
 echo "═══════════════════════════════════════════════"
@@ -41,18 +43,19 @@ echo "════════════════════════�
 $SCP "$CONTRACTS/dist/tk-indexer.mjs" "${VPS_USER}@${VPS_HOST}:~/tk-indexer.mjs"
 $SCP "$CONTRACTS/dist/tk-activity.mjs" "${VPS_USER}@${VPS_HOST}:~/tk-activity.mjs"
 $SCP "$CONTRACTS/dist/rate-updater.mjs" "${VPS_USER}@${VPS_HOST}:~/rate-updater.mjs"
+$SCP "$CONTRACTS/dist/tk-safu.mjs" "${VPS_USER}@${VPS_HOST}:~/tk-safu.mjs"
 
 echo
 echo "═══════════════════════════════════════════════"
 echo "  Restarting services..."
 echo "═══════════════════════════════════════════════"
 
-$SSH "systemctl restart tk-indexer tk-activity tk-rates 2>/dev/null || true"
+$SSH "systemctl restart tk-indexer tk-activity tk-rates tk-safu 2>/dev/null || true"
 sleep 3
 
 echo
 echo "  Status check:"
-$SSH "for s in tk-indexer tk-activity tk-rates; do
+$SSH "for s in tk-indexer tk-activity tk-rates tk-safu; do
 	echo
 	echo \"── \$s ──\"
 	systemctl status \$s --no-pager 2>/dev/null | head -6 || echo '(service not configured)'

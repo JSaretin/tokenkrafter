@@ -4,10 +4,11 @@
 	import { chainSlug, type SupportedNetwork } from '$lib/structure';
 	import { querySafuLens, type TokenSafu } from '$lib/safuLens';
 	import { queryExploreLens, type ExploreTokenData } from '$lib/exploreLens';
+	import { supabase } from '$lib/supabaseClient';
 	import { page } from '$app/state';
 
 	let { data }: { data: any } = $props();
-	let tokens: any[] = data.tokens;
+	let tokens: any[] = $state(data.tokens);
 	let search = $state(page.url.searchParams.get('q') || '');
 	let sortBy = $state<'newest' | 'safu' | 'name'>('safu');
 	let filterType = $state<'all' | 'tradeable' | 'new' | 'safu'>('all');
@@ -211,9 +212,13 @@
 	function fmtPrice(val: number): string {
 		if (val === 0) return '$0';
 		if (val >= 1) return `$${val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}`;
-		// Show full precision for small prices (as returned by GCT)
-		const s = val.toPrecision(7);
-		return `$${parseFloat(s)}`;
+		// For sub-$1 prices, compute how many decimals are needed to show
+		// 4 significant digits, then render via toFixed() to avoid
+		// scientific notation for very small numbers.
+		const absVal = Math.abs(val);
+		const magnitude = Math.floor(Math.log10(absVal));
+		const decimals = Math.min(20, Math.max(2, 4 - magnitude - 1));
+		return `$${val.toFixed(decimals).replace(/0+$/, '').replace(/\.$/, '')}`;
 	}
 
 	function fmtVolume(val: number): string {
@@ -292,6 +297,21 @@
 		return `${mins}m`;
 	}
 
+	// Realtime subscription — prepend newly indexed tokens without a reload.
+	// We only trust rows where the daemon has actually confirmed the token
+	// on-chain. Creators can pre-save a row via /api/token-metadata before
+	// the daemon indexes it (to attach logo/description early), but those
+	// pre-saves ship with name='Pending', symbol='???', total_supply='0'.
+	// We reject those until the daemon overwrites them with real chain data.
+	let _tokensChannel: any = null;
+	function isDaemonVerified(t: any): boolean {
+		if (!t) return false;
+		if (!t.name || t.name === 'Pending') return false;
+		if (!t.symbol || t.symbol === '???') return false;
+		if (!t.total_supply || t.total_supply === '0') return false;
+		return true;
+	}
+
 	onMount(async () => {
 		// Fetch active launches + on-chain token data (fire-and-forget)
 		fetchActiveLaunches();
@@ -304,6 +324,45 @@
 				document.querySelectorAll('[data-token-addr]').forEach(el => _safuObserver?.observe(el));
 			}, 100);
 		}
+
+		// Subscribe to daemon-verified tokens being indexed or updated.
+		_tokensChannel = supabase
+			.channel('explore-tokens')
+			.on('postgres_changes', {
+				event: 'INSERT',
+				schema: 'public',
+				table: 'created_tokens',
+			}, (payload: any) => {
+				const t = payload.new;
+				if (!isDaemonVerified(t)) return;
+				if (tokens.some(x => x.address?.toLowerCase() === t.address.toLowerCase())) return;
+				tokens = [t, ...tokens];
+				setTimeout(() => {
+					document.querySelectorAll('[data-token-addr]').forEach(el => _safuObserver?.observe(el));
+				}, 50);
+			})
+			.on('postgres_changes', {
+				event: 'UPDATE',
+				schema: 'public',
+				table: 'created_tokens',
+			}, (payload: any) => {
+				const t = payload.new;
+				if (!t?.address) return;
+				const idx = tokens.findIndex(x => x.address?.toLowerCase() === t.address.toLowerCase());
+				if (idx >= 0) {
+					// Merge in updated fields — SAFU badges, logo, description, etc.
+					tokens[idx] = { ...tokens[idx], ...t };
+					tokens = tokens;
+				} else if (isDaemonVerified(t)) {
+					// First time seeing this one AND daemon has verified it
+					// (e.g., daemon just overwrote a user's pre-save) — show it.
+					tokens = [t, ...tokens];
+					setTimeout(() => {
+						document.querySelectorAll('[data-token-addr]').forEach(el => _safuObserver?.observe(el));
+					}, 50);
+				}
+			})
+			.subscribe();
 
 		// First 30 already loaded from SSR — fetch remaining batches
 		const remaining = tokens.slice(30);
@@ -327,6 +386,7 @@
 	onDestroy(() => {
 		_safuObserver?.disconnect();
 		if (_safuTimer) clearTimeout(_safuTimer);
+		if (_tokensChannel) supabase.removeChannel(_tokensChannel);
 	});
 
 	// Re-observe cards when the filtered list changes

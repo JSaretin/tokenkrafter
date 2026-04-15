@@ -48,7 +48,10 @@
 	function fmtPrice(v: number): string {
 		if (v === 0) return '—';
 		if (v >= 1) return `$${v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}`;
-		return `$${parseFloat(v.toPrecision(4))}`;
+		const absVal = Math.abs(v);
+		const magnitude = Math.floor(Math.log10(absVal));
+		const decimals = Math.min(20, Math.max(2, 4 - magnitude - 1));
+		return `$${v.toFixed(decimals).replace(/0+$/, '').replace(/\.$/, '')}`;
 	}
 
 	function fmtMcap(v: number): string {

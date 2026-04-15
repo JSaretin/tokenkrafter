@@ -11,7 +11,7 @@
  * for real-time event capture (token creations, buys, withdrawals).
  *
  * Usage:
- *   bun scripts/daemon/safu-indexer-standalone.ts
+ *   bun scripts/daemon/safu-indexer.ts
  *
  * Environment:
  *   RPC_URL          — BSC RPC (default: https://bsc-dataseed.binance.org/)
@@ -216,16 +216,17 @@ async function updateSafuBatch(chainId: number, results: SafuResult[]): Promise<
 
 // ── Main loop ────────────────────────────────────────────
 async function main() {
-	const provider = new ethers.JsonRpcProvider(RPC_URL, CHAIN_ID, { staticNetwork: true });
 	const bytecode = await loadSafuBytecode();
 
 	console.log(`\n🛡️  SAFU Indexer starting on chain ${CHAIN_ID}`);
-	console.log(`   RPC: ${RPC_URL}`);
 	console.log(`   API: ${API_BASE}`);
 	console.log(`   Sweep interval: ${SWEEP_INTERVAL / 1000}s`);
 	console.log(`   Batch size: ${BATCH_SIZE}`);
 
 	const config = await fetchNetworkConfig(CHAIN_ID);
+	const rpcUrl = (config as any).rpc || RPC_URL;
+	console.log(`   RPC: ${rpcUrl}`);
+	const provider = new ethers.JsonRpcProvider(rpcUrl, CHAIN_ID, { staticNetwork: true });
 	console.log(`   TokenFactory: ${config.platform_address}`);
 
 	// Resolve DEX factory + WETH from the router
