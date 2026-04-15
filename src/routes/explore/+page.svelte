@@ -711,20 +711,22 @@
 									<span class="tc-age">{timeAgo(tok.created_at)}</span>
 								{/if}
 								{#if gecko?.has_data}
-									<span class="tc-live-dot"></span>
+									<span class="tc-live-dot" title="Live DEX data"></span>
 								{/if}
 							</div>
 						</div>
-						{#if price > 0}
-							<div class="tc-header-right">
+						<div class="tc-header-right">
+							{#if price > 0}
 								<span class="tc-price">{fmtPrice(price)}</span>
 								{#if gecko?.price_change_24h && gecko.price_change_24h !== 0}
 									<span class="tc-change" class:tc-change-up={gecko.price_change_24h > 0} class:tc-change-down={gecko.price_change_24h < 0}>
 										{gecko.price_change_24h > 0 ? '+' : ''}{gecko.price_change_24h.toFixed(1)}%
 									</span>
 								{/if}
-							</div>
-						{/if}
+							{:else}
+								<span class="tc-status-pill">{hasData ? 'Listed' : 'Pre-launch'}</span>
+							{/if}
+						</div>
 					</div>
 
 					<!-- Row 2: Badges (max 2) + market data -->
@@ -741,14 +743,10 @@
 						</div>
 						<div class="tc-market-data">
 							{#if mcap > 0}
-								<span class="tc-mcap">{fmtMcap(mcap)}</span>
+								<span class="tc-mcap">{fmtMcap(mcap)} mcap</span>
 							{/if}
 							{#if gecko?.has_data && gecko.volume_24h > 0}
 								<span class="tc-vol">{fmtVolume(gecko.volume_24h)} vol</span>
-							{:else if holders > 0}
-								<span class="tc-vol">{holders.toLocaleString()} holders</span>
-							{:else if !hasData}
-								<span class="tc-unlisted">&mdash;</span>
 							{/if}
 						</div>
 					</div>
@@ -775,33 +773,44 @@
 						{/if}
 					{/if}
 
-					<!-- Row 3: Stats strip -->
+					<!-- Row 3: Stats strip — always fixed 3 columns (Supply | MCap | Holders) -->
 					<div class="tc-stats">
 						<div class="tc-stat">
 							<span class="tc-stat-label">Supply</span>
 							<span class="tc-stat-value">{fmtSupply(data.supplyData?.[`${tok.chain_id}:${tok.address}`] || tok.total_supply, tok.decimals || 18)}</span>
 						</div>
 						<div class="tc-stat">
-							<span class="tc-stat-label">{mcap > 0 ? 'MCap' : holders > 0 ? 'Holders' : 'Status'}</span>
-							<span class="tc-stat-value">{mcap > 0 ? fmtMcap(mcap) : holders > 0 ? holders.toLocaleString() : (hasData ? 'Listed' : '\u2014')}</span>
+							<span class="tc-stat-label">Market cap</span>
+							<span class="tc-stat-value" class:tc-stat-dim={mcap <= 0}>
+								{mcap > 0 ? fmtMcap(mcap) : 'Not listed'}
+							</span>
 						</div>
 						<div class="tc-stat">
-							<span class="tc-stat-label">{holders > 0 && mcap > 0 ? 'Holders' : vol > 0n ? 'Volume' : 'Age'}</span>
-							<span class="tc-stat-value">{holders > 0 && mcap > 0 ? holders.toLocaleString() : vol > 0n ? fmtSupply(vol.toString(), tok.decimals || 18) : (tok.created_at ? timeAgo(tok.created_at) : '—')}</span>
+							<span class="tc-stat-label">Holders</span>
+							<span class="tc-stat-value" class:tc-stat-dim={!holders}>
+								{holders > 0 ? holders.toLocaleString() : '0'}
+							</span>
 						</div>
 					</div>
 
-					<!-- Trade CTA (only when tradeable) -->
-					{#if hasData}
-						<!-- svelte-ignore a11y_click_events_have_key_events -->
-						<!-- svelte-ignore a11y_no_static_element_interactions -->
-						<div class="tc-actions" onclick={(e) => { e.preventDefault(); e.stopPropagation(); window.location.href = `/trade?token=${tok.address}`; }}>
+					<!-- Action — always visible so card heights match. Text reflects state. -->
+					<!-- svelte-ignore a11y_click_events_have_key_events -->
+					<!-- svelte-ignore a11y_no_static_element_interactions -->
+					<div class="tc-actions" onclick={(e) => {
+						if (hasData) { e.preventDefault(); e.stopPropagation(); window.location.href = `/trade?token=${tok.address}`; }
+					}}>
+						{#if hasData}
 							<span class="tc-action tc-action-trade" role="button" tabindex="0">
 								<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
 								Trade
 							</span>
-						</div>
-					{/if}
+						{:else}
+							<span class="tc-action tc-action-view">
+								<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+								View details
+							</span>
+						{/if}
+					</div>
 				</a>
 			{/each}
 		</div>
@@ -895,11 +904,15 @@
 
 	.token-card {
 		display: flex; flex-direction: column; gap: 10px;
-		padding: 16px; border-radius: 12px;
+		padding: 16px; border-radius: 12px; min-height: 230px;
 		background: var(--bg-surface); border: 1px solid var(--border-subtle);
 		transition: all 0.15s;
 	}
-	.token-card:hover { border-color: rgba(0,210,255,0.15); box-shadow: 0 4px 20px rgba(0,0,0,0.15); }
+	.token-card:hover { border-color: rgba(0,210,255,0.25); box-shadow: 0 6px 24px rgba(0,0,0,0.2); transform: translateY(-2px); }
+	.token-card-safu { border-color: rgba(16,185,129,0.25); }
+	.token-card-safu:hover { border-color: rgba(16,185,129,0.5); box-shadow: 0 6px 24px rgba(16,185,129,0.12); }
+	.token-card-dim { opacity: 0.85; }
+	.token-card-dim:hover { opacity: 1; }
 
 	/* Badges row */
 	.tc-badges-row { display: flex; gap: 4px; align-items: center; justify-content: flex-end; }
@@ -934,7 +947,7 @@
 	.tc-color-emerald { background: rgba(16,185,129,0.12); color: #10b981; border: 2px solid rgba(16,185,129,0.2); }
 
 	.tc-identity { flex: 1; min-width: 0; }
-	.tc-name { display: block; font-family: 'Syne', sans-serif; font-size: 15px; font-weight: 700; color: var(--text-heading); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+	.tc-name { display: block; font-family: 'Syne', sans-serif; font-size: 17px; font-weight: 800; color: var(--text-heading); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: -0.01em; }
 	.tc-meta-row { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
 	.tc-symbol { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text-dim); }
 	.tc-chain { font-family: 'Space Mono', monospace; font-size: 8px; color: var(--text-dim); padding: 1px 5px; border-radius: 4px; background: var(--bg-surface-input); }
