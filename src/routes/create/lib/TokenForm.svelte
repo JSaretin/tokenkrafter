@@ -411,8 +411,11 @@
 	let tokensForPool = $derived(Number(totalSupply) * (listingPoolPct / 100));
 	let autoPrice = $derived.by(() => tokensForPool > 0 && totalLiquidityUsd > 0 ? totalLiquidityUsd / tokensForPool : 0);
 
-	// Only set useExistingToken if explicitly launching an existing token (URL param)
-	if (deployMode === 'launch' && initialData?.existingTokenAddress) { useExistingToken = true; }
+	// Launch mode always targets an existing token — default the sub-path so the
+	// address field is shown first. URL param with `token=` also flows through here.
+	$effect(() => {
+		if (deployMode === 'launch' && !useExistingToken) { useExistingToken = true; }
+	});
 
 	// ── Initial data ───────────────────────────────────────
 	if (initialData) {
@@ -596,9 +599,12 @@
 
 	// ── Step navigation ────────────────────────────────────
 	// Real existing token: user wants to launch/list an already-deployed token.
-	// Set via URL param (?token=0x...) OR via the "Launch existing token" toggle
-	// in the basics step when deployMode is 'launch' or 'both'.
-	let isRealExistingToken = $derived(useExistingToken && !!existingTokenAddress);
+	// Requires the launch toggle on AND a syntactically valid address — without
+	// the isAddress check, the existing-token submit branch fires with an
+	// undefined address and silently no-ops.
+	let isRealExistingToken = $derived(
+		useExistingToken && !!existingTokenAddress && ethers.isAddress(existingTokenAddress)
+	);
 
 	let steps = $derived.by(() => {
 		const s: { id: WizardStep; label: string }[] = [{ id: 'basics', label: 'Basics' }];
@@ -623,12 +629,17 @@
 
 	function nextStep() {
 		const idx = currentStepIdx;
+		if (wizardStep === 'basics' && useExistingToken && !isRealExistingToken) {
+			addFeedback({ message: 'Enter a valid token address to continue', type: 'error' });
+			return;
+		}
+		if ((wizardStep === 'launch' || wizardStep === 'review') && minBuyExceedsMaxBuy) {
+			addFeedback({ message: `Min buy ($${launchMinBuyUsdt}) exceeds max buy per wallet ($${launchMaxBuyUsdt.toFixed(2)}).`, type: 'error' });
+			return;
+		}
 		if (idx < steps.length - 1) {
 			wizardStep = steps[idx + 1].id;
 			if (idx + 1 > maxReachedStepIdx) maxReachedStepIdx = idx + 1;
-			// If we're walking toward a later target, keep going.
-			// setTimeout gives Svelte a tick to render the new step
-			// so requestSubmit validates the right fields.
 			if (targetStepIdx != null && idx + 1 < targetStepIdx) {
 				setTimeout(() => wzFormEl?.requestSubmit(), 0);
 			} else {
@@ -663,6 +674,11 @@
 		if (!network) { addFeedback({ message: 'Please select a network', type: 'error' }); return; }
 		if (!useExistingToken && (!name.trim() || !symbol.trim())) { addFeedback({ message: 'Token name and symbol are required', type: 'error' }); return; }
 		if (!useExistingToken && (!totalSupply || Number(totalSupply) <= 0)) { addFeedback({ message: 'Total supply must be greater than 0', type: 'error' }); return; }
+		if (useExistingToken && !isRealExistingToken) { addFeedback({ message: 'Enter a valid token address', type: 'error' }); return; }
+		if (minBuyExceedsMaxBuy) {
+			addFeedback({ message: `Min buy ($${launchMinBuyUsdt}) exceeds max buy per wallet ($${launchMaxBuyUsdt.toFixed(2)}). Lower the min buy or raise the hard cap / max wallet %.`, type: 'error' });
+			return;
+		}
 		const validWallets = taxWallets.filter(w => w.address.trim() && /^0x[a-fA-F0-9]{40}$/.test(w.address.trim()));
 		const totalTokensForListing = listingPairs.reduce((sum, p) => {
 			if (totalLiquidityUsd <= 0 || tokensForPool <= 0) return sum;
@@ -1092,8 +1108,12 @@
 		{:else}
 			<div></div>
 		{/if}
-		<button type="submit" class="wz-btn wz-btn-next">
-			{wizardStep === 'review' ? (launchEnabled ? 'Deploy & Launch' : listingEnabled ? 'Deploy & List' : 'Deploy Token') : 'Next →'}
+		<button
+			type="submit"
+			class="wz-btn wz-btn-next"
+			disabled={(wizardStep === 'launch' || wizardStep === 'review') && minBuyExceedsMaxBuy}
+		>
+			{wizardStep === 'review' ? (launchEnabled ? (isRealExistingToken ? 'Continue to Payment' : 'Deploy & Launch') : listingEnabled ? 'Deploy & List' : 'Deploy Token') : 'Next →'}
 		</button>
 	</div>
 	</form>
@@ -1282,7 +1302,10 @@
 	.wz-btn-back { background: var(--bg-surface-hover); color: var(--text-dim); }
 	.wz-btn-back:hover { background: var(--bg-surface-hover); color: var(--text); }
 	.wz-btn-next { background: linear-gradient(135deg, #00d2ff, #3a7bd5); color: white; }
-	.wz-btn-next:hover { transform: translateY(-1px); box-shadow: 0 6px 28px rgba(0,210,255,0.3); }
+	.wz-btn-next:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 28px rgba(0,210,255,0.3); }
+	.wz-btn:disabled { opacity: 0.4; cursor: not-allowed; filter: grayscale(0.4); }
+	.wz-warn-box { margin-top: 16px; padding: 12px 14px; border-radius: 10px; background: rgba(251, 191, 36, 0.08); border: 1px solid rgba(251, 191, 36, 0.35); color: #fcd34d; font-size: 13px; line-height: 1.5; }
+	.wz-warn-box strong { display: block; color: #fde68a; margin-bottom: 4px; font-family: 'Syne', sans-serif; }
 
 	/* Curve picker button */
 	.curve-pick-btn {
