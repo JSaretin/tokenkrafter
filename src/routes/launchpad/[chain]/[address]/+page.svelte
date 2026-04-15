@@ -2249,8 +2249,12 @@
 					</div>
 				{/if}
 
-				<!-- Enable Trading Banner -->
-				{#if !tradingEnabled && launch.state === 1 && userAddress?.toLowerCase() === launch.creator.toLowerCase()}
+				<!-- Enable Trading Banner — only shown AFTER graduation (state 2),
+				     not during an active curve. During the curve, the launch
+				     instance is excluded from limits + authorized launcher, so
+				     it can transfer tokens to buyers regardless of the token's
+				     tradingEnabled flag. Trading gets auto-enabled on graduation. -->
+				{#if !tradingEnabled && launch.state === 2 && userAddress?.toLowerCase() === launch.creator.toLowerCase()}
 					<div class="card p-4 mb-4 border border-red-500/20">
 						<h3 class="syne font-bold text-red-400 mb-2 text-sm">{$t('lpd.enableTradingTitle')}</h3>
 						<p class="text-gray-400 text-xs font-mono mb-2">
@@ -2267,7 +2271,7 @@
 							{isEnablingTrading ? $t('lpd.enabling') : $t('lpd.enableTrading')}
 						</button>
 					</div>
-				{:else if !tradingEnabled && launch.state === 1}
+				{:else if !tradingEnabled && launch.state === 2}
 					<div class="card p-4 mb-4 border border-red-500/20">
 						<p class="text-red-400 text-xs font-mono">
 							{$t('lpd.tradingNotEnabled')}

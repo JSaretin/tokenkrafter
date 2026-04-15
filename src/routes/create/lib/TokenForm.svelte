@@ -135,6 +135,19 @@
 	let launchTokensPct = $state(40);
 	let supplyNum = $derived(parseFloat((totalSupply || '').replace(/,/g, '')) || 0);
 	let launchTokenAmount = $derived(supplyNum > 0 ? (supplyNum * launchTokensPct) / 100 : 0);
+	// Max buy per wallet in USDT = hardCap * maxBuyPct / 100. If the creator
+	// sets a min buy higher than this, no one can actually buy (first buy
+	// would exceed the wallet cap immediately). Surface the warning live.
+	let launchHardCapNum = $derived(parseFloat(launchHardCap) || 0);
+	let launchMinBuyNum = $derived(parseFloat(launchMinBuyUsdt) || 0);
+	let launchMaxBuyUsdt = $derived(
+		launchHardCapNum > 0 && launchProtectionEnabled
+			? (launchHardCapNum * parseFloat(launchMaxBuyPct || '0')) / 100
+			: 0
+	);
+	let minBuyExceedsMaxBuy = $derived(
+		launchMaxBuyUsdt > 0 && launchMinBuyNum > 0 && launchMinBuyNum > launchMaxBuyUsdt
+	);
 	function formatTokenAmount(n: number): string {
 		if (n === 0) return '0';
 		if (n >= 1e9) return (n / 1e9).toFixed(n % 1e9 === 0 ? 0 : 2) + 'B';
@@ -988,7 +1001,10 @@
 										<option value="3">3% of hard cap</option>
 										<option value="5">5% of hard cap</option>
 									</select>
-									<span class="wz-field-hint">One wallet can't buy more than this share of the total raise</span>
+									<span class="wz-field-hint">
+										One wallet can't buy more than this share of the total raise
+										{#if launchMaxBuyUsdt > 0} — ${launchMaxBuyUsdt.toLocaleString(undefined, { maximumFractionDigits: 2 })} at your hard cap{/if}
+									</span>
 								</div>
 								<div class="wz-field">
 									<label class="wz-label" for="launchMinBuyUsdt">Min buy (USDT)</label>
@@ -996,6 +1012,11 @@
 									<span class="wz-field-hint">Anti-dust floor per buy. Must be &gt; 0 and ≤ soft cap.</span>
 								</div>
 							</div>
+							{#if minBuyExceedsMaxBuy}
+								<div class="wz-warn-box">
+									⚠ Your min buy (${launchMinBuyNum}) exceeds the max-wallet allowance (${launchMaxBuyUsdt.toLocaleString(undefined, { maximumFractionDigits: 2 })}) — no one will be able to buy. Either lower min buy, raise hard cap, or increase max-buy %.
+								</div>
+							{/if}
 							<div class="wz-field">
 								<label class="wz-label" for="launchLockDurationMinutes">Anti-snipe delay (minutes)</label>
 								<select id="launchLockDurationMinutes" class="input-field" bind:value={launchLockDurationMinutes}>
@@ -1203,6 +1224,11 @@
 	.wz-radio-active { border-color: rgba(0,210,255,0.4); color: #00d2ff; background: rgba(0,210,255,0.08); }
 
 	.wz-field-hint { display: block; font-size: 10px; color: var(--text-dim); font-family: 'Space Mono', monospace; margin-top: 3px; }
+	.wz-warn-box {
+		margin-top: 8px; padding: 8px 10px; border-radius: 6px;
+		background: rgba(248,113,113,0.08); border: 1px solid rgba(248,113,113,0.25);
+		color: #fca5a5; font-size: 11px; font-family: 'Space Mono', monospace; line-height: 1.5;
+	}
 	.wz-subtitle { font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700; color: var(--text); margin: 0 0 6px; }
 	.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
 

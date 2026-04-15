@@ -317,10 +317,15 @@ contract LaunchInstance is ReentrancyGuard {
         if (startTimestamp_ != 0 && startTimestamp_ <= block.timestamp) revert InvalidStartTimestamp();
         // Mirror the token's MAX_TRADING_DELAY cap (24 hours).
         if (lockDurationAfterListing_ > 24 hours) revert InvalidDuration();
-        // minBuyUsdt must be > 0 (otherwise no anti-dust floor) and <= softCap
+        // minBuyUsdt must be > 0 (otherwise no anti-dust floor), <= softCap
         // (otherwise a single buy could skip past the soft cap with one tx,
-        // and no realistic creator wants a minimum higher than their softCap).
-        if (minBuyUsdt_ == 0 || minBuyUsdt_ > softCap_) revert InvalidMinBuy();
+        // and no realistic creator wants a minimum higher than their softCap),
+        // and <= maxBuyPerWallet (otherwise the first buy instantly exceeds
+        // the per-wallet cap and the launch is unreachable — nobody can buy).
+        uint256 maxBuyPerWallet_ = (hardCap_ * maxBuyBps_) / BPS;
+        if (minBuyUsdt_ == 0 || minBuyUsdt_ > softCap_ || minBuyUsdt_ > maxBuyPerWallet_) {
+            revert InvalidMinBuy();
+        }
 
         factory = payable(msg.sender);
         creator = creator_;
