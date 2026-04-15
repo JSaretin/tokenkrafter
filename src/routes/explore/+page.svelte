@@ -293,6 +293,12 @@
 
 	// ── Live Launches ──
 	let activeLaunches: any[] = $state([]);
+	let activeLaunchAddrs = $derived(new Set(
+		activeLaunches.map(l => (l.token_address || l.address || '').toLowerCase()).filter(Boolean)
+	));
+	function isOnLaunchpad(tok: any): boolean {
+		return activeLaunchAddrs.has(tok.address?.toLowerCase());
+	}
 
 	async function fetchActiveLaunches() {
 		try {
@@ -374,6 +380,7 @@
 				if (!isDaemonVerified(t)) return;
 				if (tokens.some(x => x.address?.toLowerCase() === t.address.toLowerCase())) return;
 				tokens = [t, ...tokens];
+				lastUpdateTime = Date.now();
 				setTimeout(() => {
 					document.querySelectorAll('[data-token-addr]').forEach(el => _safuObserver?.observe(el));
 				}, 50);
@@ -390,6 +397,7 @@
 					// Merge in updated fields — SAFU badges, logo, description, etc.
 					tokens[idx] = { ...tokens[idx], ...t };
 					tokens = tokens;
+					lastUpdateTime = Date.now();
 				} else if (isDaemonVerified(t)) {
 					// First time seeing this one AND daemon has verified it
 					// (e.g., daemon just overwrote a user's pre-save) — show it.
@@ -420,10 +428,33 @@
 		geckoLoading = false;
 	});
 
+	// Live "updated Xs ago" indicator. Stamped on mount; re-stamped if tokens
+	// ever get prepended by a realtime handler (none wired today, but kept
+	// ready). `_now` ticks so the derived string stays fresh without re-render
+	// of the whole tree.
+	let lastUpdateTime = $state(Date.now());
+	let _now = $state(Date.now());
+	let _liveTimer: ReturnType<typeof setInterval> | null = null;
+
+	$effect(() => {
+		_liveTimer = setInterval(() => { _now = Date.now(); }, 1000);
+		return () => { if (_liveTimer) clearInterval(_liveTimer); };
+	});
+
+	let liveAgo = $derived.by(() => {
+		const secs = Math.max(0, Math.floor((_now - lastUpdateTime) / 1000));
+		if (secs < 5) return 'just now';
+		if (secs < 60) return `${secs}s ago`;
+		const mins = Math.floor(secs / 60);
+		if (mins < 60) return `${mins}m ago`;
+		return `${Math.floor(mins / 60)}h ago`;
+	});
+
 	onDestroy(() => {
 		_safuObserver?.disconnect();
 		if (_safuTimer) clearTimeout(_safuTimer);
 		if (_tokensChannel) supabase.removeChannel(_tokensChannel);
+		if (_liveTimer) clearInterval(_liveTimer);
 	});
 
 	// Re-observe cards when the filtered list changes
@@ -486,6 +517,9 @@
 
 		return list;
 	});
+
+	let isFiltering = $derived(search.trim() !== '' || filterType !== 'all' || tradeableOnly);
+	let displayCount = $derived(isFiltering ? filtered.length : tokens.length);
 
 	function fmtSupply(raw: string | undefined, dec: number): string {
 		if (!raw || raw === '0') return '—';
@@ -566,11 +600,16 @@
 		<div>
 			<h1 class="explore-title">Explore Tokens</h1>
 			<div class="explore-stats">
-				<span class="explore-stat"><strong>{tokens.length}</strong> tokens</span>
-				{#if trending.length > 0}
+				<span class="explore-stat"><strong>{displayCount}</strong> {displayCount === 1 ? 'token' : 'tokens'}{isFiltering ? ' match' : ''}</span>
+				{#if trending.length > 0 && !isFiltering}
 					<span class="explore-stat-sep">·</span>
 					<span class="explore-stat"><strong>{trending.length}</strong> trading</span>
 				{/if}
+				<span class="explore-stat-sep">·</span>
+				<span class="live-chip" title="Auto-refreshes with new tokens">
+					<span class="live-dot"></span>
+					live · {liveAgo}
+				</span>
 			</div>
 		</div>
 		<div class="explore-header-right">
@@ -815,7 +854,9 @@
 									</svg>
 								{/if}
 							{:else}
-								<span class="tc-status-pill">{hasData ? 'Listed' : 'Pre-launch'}</span>
+								<span class="tc-status-pill" class:tc-status-live={isOnLaunchpad(tok)}>
+								{hasData ? 'Listed' : isOnLaunchpad(tok) ? 'Live launch' : 'Pre-launch'}
+							</span>
 							{/if}
 						</div>
 					</div>
@@ -925,9 +966,24 @@
 	.explore-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
 	.explore-header-right { display: flex; align-items: center; gap: 10px; }
 	.explore-title { font-family: 'Syne', sans-serif; font-size: 28px; font-weight: 800; color: var(--text-heading); margin: 0; }
-	.explore-stats { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-family: 'Space Mono', monospace; font-size: 12px; color: var(--text-dim); }
+	.explore-stats { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-family: 'Space Mono', monospace; font-size: 12px; color: var(--text-dim); flex-wrap: wrap; }
 	.explore-stats strong { color: var(--text-heading); }
 	.explore-stat-sep { color: var(--text-dim); opacity: 0.4; }
+	.live-chip {
+		display: inline-flex; align-items: center; gap: 5px;
+		padding: 2px 8px; border-radius: 999px;
+		background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.25);
+		color: #10b981; font-size: 10px;
+	}
+	.live-dot {
+		width: 6px; height: 6px; border-radius: 50%; background: #10b981;
+		box-shadow: 0 0 6px rgba(16,185,129,0.6);
+		animation: live-pulse 2s ease-in-out infinite;
+	}
+	@keyframes live-pulse {
+		0%, 100% { opacity: 1; transform: scale(1); }
+		50% { opacity: 0.5; transform: scale(0.85); }
+	}
 	.explore-create-btn {
 		display: inline-flex; align-items: center; gap: 5px;
 		padding: 8px 16px; border-radius: 10px;
@@ -1170,6 +1226,10 @@
 		padding: 3px 8px; border-radius: 99px;
 		background: var(--bg-surface-input); color: var(--text-dim);
 		text-transform: uppercase; letter-spacing: 0.05em;
+	}
+	.tc-status-live {
+		background: rgba(0,210,255,0.12); color: #00d2ff;
+		border: 1px solid rgba(0,210,255,0.25);
 	}
 
 	/* Gainers header dot */
