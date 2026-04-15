@@ -1492,6 +1492,16 @@
 
 	let noGas = $derived(!!userAddress && !tokenInIsNative && !hasGas && !!tokenInAddr && !!amountIn);
 
+	// Off-ramp floor: gross USDT output (before fee) must clear the router's
+	// minWithdrawUsdt. Gate the submit button so users can't attempt a payout
+	// that the contract will revert on.
+	let belowMinWithdraw = $derived(
+		outputMode === 'bank' &&
+		minWithdrawUsdt > 0n &&
+		(previewFee + previewNet) > 0n &&
+		(previewFee + previewNet) < minWithdrawUsdt
+	);
+
 	let buttonLabel = $derived.by(() => {
 		if (isSwapping) return $t('trade.processing');
 		if (!tokenInAddr) return $t('trade.selectToken');
@@ -1500,6 +1510,10 @@
 		if (noGas) return $t('trade.insufficientGas').replace('{symbol}', selectedNetwork?.native_coin || 'gas');
 		if (noLiquidity && outputMode === 'token') return $t('trade.insufficientLiquidity');
 		if (outputMode === 'bank') {
+			if (belowMinWithdraw) {
+				const min = parseFloat(ethers.formatUnits(minWithdrawUsdt, usdtDecimals)).toFixed(2);
+				return `Minimum withdrawal is ${min} USDT`;
+			}
 			if (paymentMethod === 'bank' && (!bankResolved || !bankAccount || !bankCode)) return $t('trade.verifyBank');
 			if (paymentMethod === 'paypal' && !paypalEmail) return 'Enter PayPal email';
 			if (paymentMethod === 'wise' && !wiseEmail) return 'Enter Wise email';
@@ -1516,6 +1530,7 @@
 		insufficientBalance || noGas ||
 		(outputMode === 'token' && (!tokenOutAddr || noLiquidity)) ||
 		(outputMode === 'bank' && (
+			belowMinWithdraw ||
 			(paymentMethod === 'bank' && (!bankResolved || !bankAccount || !bankCode)) ||
 			(paymentMethod === 'paypal' && !paypalEmail) ||
 			(paymentMethod === 'wise' && !wiseEmail)
