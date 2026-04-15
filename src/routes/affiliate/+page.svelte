@@ -64,13 +64,33 @@
 
 	async function copyLink() {
 		if (!referralLink) return;
+		// Try modern clipboard API first, fall back to legacy execCommand
+		// for insecure contexts / older browsers where it throws silently.
+		let ok = false;
 		try {
-			await navigator.clipboard.writeText(referralLink);
+			if (navigator.clipboard?.writeText) {
+				await navigator.clipboard.writeText(referralLink);
+				ok = true;
+			}
+		} catch {}
+		if (!ok) {
+			try {
+				const ta = document.createElement('textarea');
+				ta.value = referralLink;
+				ta.style.position = 'fixed';
+				ta.style.opacity = '0';
+				document.body.appendChild(ta);
+				ta.select();
+				ok = document.execCommand('copy');
+				document.body.removeChild(ta);
+			} catch {}
+		}
+		if (ok) {
 			copied = true;
-			addFeedback({ message: 'Referral link copied!', type: 'success' });
-			setTimeout(() => (copied = false), 2000);
-		} catch {
-			addFeedback({ message: 'Failed to copy link.', type: 'error' });
+			addFeedback?.({ message: 'Copied!', type: 'success' });
+			setTimeout(() => (copied = false), 1500);
+		} else {
+			addFeedback?.({ message: 'Failed to copy link.', type: 'error' });
 		}
 	}
 

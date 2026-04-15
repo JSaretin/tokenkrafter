@@ -29,3 +29,4 @@ solidty-contracts/cache
 solidty-contracts/typechain-types
 strategy/
 daemon-state.json
+.claude/
