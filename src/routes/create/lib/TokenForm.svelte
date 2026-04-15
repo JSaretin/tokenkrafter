@@ -721,10 +721,15 @@
 				lockDurationAfterListing: String(Math.round(parseFloat((launchProtectionEnabled ? launchLockDurationMinutes : '0') || '0') * 60)),
 				minBuyUsdt: launchProtectionEnabled ? launchMinBuyUsdt : '1',
 				// Convert datetime-local (browser local time) to unix seconds.
-				// Empty string → "0" = immediate start.
-				startTimestamp: launchStartDateLocal
-					? String(Math.floor(new Date(launchStartDateLocal).getTime() / 1000))
-					: '0',
+				// Empty string OR a past datetime → "0" = immediate start.
+				// Using "0" instead of a stale past stamp avoids the contract
+				// rejecting it as an already-expired start window.
+				startTimestamp: (() => {
+					if (!launchStartDateLocal) return '0';
+					const ts = Math.floor(new Date(launchStartDateLocal).getTime() / 1000);
+					const now = Math.floor(Date.now() / 1000);
+					return ts > now ? String(ts) : '0';
+				})(),
 			},
 			protection: { maxWalletPct: protectionEnabled ? maxWalletPct : '0', maxTransactionPct: protectionEnabled ? maxTransactionPct : '0', cooldownSeconds: protectionEnabled ? cooldownSeconds : '0', blacklistWindowSeconds: protectionEnabled ? blacklistWindowSeconds : '0' },
 			tax: { buyTaxPct, sellTaxPct, transferTaxPct, wallets: validWallets },
