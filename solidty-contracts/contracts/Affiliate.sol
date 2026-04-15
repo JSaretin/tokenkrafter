@@ -51,6 +51,12 @@ contract Affiliate is Ownable, ReentrancyGuard {
     mapping(address => Stats) public stats;
     mapping(address => bool) public authorized;
 
+    /// @notice Sum of all referrers' unclaimed pending balances. Used as the
+    ///         minimum USDT this contract must hold so admin can rescue any
+    ///         excess (donations, mis-sends, deprecated tokens) without ever
+    ///         being able to touch funds owed to affiliates.
+    uint256 public totalPending;
+
     uint256 public shareBps = 2500;           // 25% of reported platform fee
     uint256 public minClaim;                  // default: 1 USDT (set in constructor)
 
@@ -60,6 +66,7 @@ contract Affiliate is Ownable, ReentrancyGuard {
     event AuthorizedReporter(address indexed reporter, bool enabled);
     event ShareUpdated(uint256 bps);
     event MinClaimUpdated(uint256 minClaim);
+    event Rescued(address indexed token, address indexed to, uint256 amount);
 
     error NotAuthorized();
     error SelfReferral();
@@ -67,6 +74,8 @@ contract Affiliate is Ownable, ReentrancyGuard {
     error BelowMinClaim();
     error NothingToClaim();
     error ZeroReferrer();
+    error WouldUnderpayAffiliates();
+    error ZeroAddress();
 
     constructor(address usdt_, address admin) Ownable(admin) {
         usdt = IERC20(usdt_);
@@ -124,6 +133,7 @@ contract Affiliate is Ownable, ReentrancyGuard {
         Stats storage s = stats[r];
         s.pending += cut;
         s.totalEarned += cut;
+        totalPending += cut;
         unchecked {
             s.actionCount += 1;
             s.lastActionAt = uint64(block.timestamp);
@@ -142,6 +152,7 @@ contract Affiliate is Ownable, ReentrancyGuard {
         if (amt < minClaim) revert BelowMinClaim();
 
         s.pending = 0;
+        totalPending -= amt;
         usdt.safeTransfer(msg.sender, amt);
         emit Claimed(msg.sender, amt);
     }
@@ -185,6 +196,35 @@ contract Affiliate is Ownable, ReentrancyGuard {
         minClaim = amount;
         emit MinClaimUpdated(amount);
     }
+
+    /**
+     * @notice Recover tokens (or native gas coin) accidentally sent to this
+     *         contract — donations, mis-sends, deprecated reward tokens, etc.
+     * @dev    For USDT, the rescuable amount is hard-capped to the contract's
+     *         balance MINUS `totalPending`, so admin can never touch funds
+     *         owed to affiliates. Pass `address(0)` as `token` to rescue the
+     *         native coin (e.g. BNB on BSC) — useful if someone accidentally
+     *         sends gas coin via a low-level call.
+     */
+    function rescue(address token, address to, uint256 amount) external onlyOwner nonReentrant {
+        if (to == address(0)) revert ZeroAddress();
+
+        if (token == address(usdt)) {
+            uint256 bal = usdt.balanceOf(address(this));
+            uint256 free = bal > totalPending ? bal - totalPending : 0;
+            if (amount > free) revert WouldUnderpayAffiliates();
+            usdt.safeTransfer(to, amount);
+        } else if (token == address(0)) {
+            (bool ok, ) = to.call{value: amount}("");
+            require(ok, "native send failed");
+        } else {
+            IERC20(token).safeTransfer(to, amount);
+        }
+
+        emit Rescued(token, to, amount);
+    }
+
+    receive() external payable {}
 
     // ── Internal ────────────────────────────────────────────
 
