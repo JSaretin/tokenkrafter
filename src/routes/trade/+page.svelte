@@ -95,6 +95,12 @@
 	// 0=idle, 1=signing, 2=approving, 3=trading
 	let withdrawStep = $state(0);
 
+	// NGN rate lock — captured at confirm time so the processing modal
+	// shows the same NGN figure as the confirmation screen (no rate drift
+	// between screens, per audit #5/#28).
+	let lockedNgnRate = $state(0);
+	let lockedNgnAmount = $state(0);
+
 	// Exchange rates (with 0.3% spread for our rate)
 	let fiatRates: Record<string, number> = $state(serverData?.fiatRates || {});
 	let spreadBps = 30; // 0.3% spread
@@ -2252,7 +2258,19 @@
 				<button
 					class="swap-btn" class:swap-btn-bank={outputMode === 'bank'}
 					style="margin: 0; width: 100%;"
-					onclick={async () => { await handleSwap(); }}
+					onclick={async () => {
+						// Freeze the NGN rate shown at confirm time so the processing
+						// modal displays the same figure (audit #5/#28).
+						if (outputMode === 'bank' && ngnRate > 0) {
+							lockedNgnRate = ngnRate;
+							let usdtVal = 0;
+							const isUsdt = selectedNetwork && tokenInAddr.toLowerCase() === selectedNetwork.usdt_address?.toLowerCase();
+							if (isUsdt) usdtVal = parseFloat(amountIn) || 0;
+							else if (previewNet > 0n) usdtVal = parseFloat(ethers.formatUnits(previewNet, usdtDecimals));
+							lockedNgnAmount = usdtVal * ngnRate;
+						}
+						await handleSwap();
+					}}
 				>
 					{outputMode === 'bank' ? $t('trade.confirmWithdrawal') : $t('trade.confirmSwap')}
 				</button>
@@ -2267,8 +2285,11 @@
 	<WithdrawalStatusModal
 		withdrawal={activeWithdrawal}
 		{usdtDecimals}
-		onclose={() => { activeWithdrawal = null; }}
-		oncancel={async (id) => { await handleCancel(id); activeWithdrawal = null; }}
+		lockedNgnRate={lockedNgnRate}
+		lockedNgnAmount={lockedNgnAmount}
+		explorerUrl={selectedNetwork?.explorer_url || ''}
+		onclose={() => { activeWithdrawal = null; lockedNgnRate = 0; lockedNgnAmount = 0; }}
+		oncancel={async (id) => { await handleCancel(id); activeWithdrawal = null; lockedNgnRate = 0; lockedNgnAmount = 0; }}
 	/>
 {/if}
 

@@ -109,10 +109,45 @@
 	// Total portfolio in native coin equivalent
 	let totalNativeEquiv = $derived(nativePriceUsd > 0 ? totalUsd / nativePriceUsd : 0);
 
+	// Pinned stablecoin addresses (always shown, even with zero balance)
+	let pinnedStableAddrs = $derived.by(() => {
+		const set = new Set<string>();
+		if (usdtAddress) set.add(usdtAddress.toLowerCase());
+		if (usdcAddress) set.add(usdcAddress.toLowerCase());
+		return set;
+	});
+
+	// Pinned stablecoin rows — rendered right after native coin, always visible
+	let pinnedStables = $derived.by(() => {
+		const rows: { address: string; symbol: string; name: string; balance: bigint; decimals: number; priceUsd?: number; logoUrl?: string; _bal: number; _usd: number }[] = [];
+		const addEntry = (addr: string, symbol: string, name: string) => {
+			if (!addr) return;
+			const lower = addr.toLowerCase();
+			const match = [...tokens, ...importedTokens].find(t => t.address.toLowerCase() === lower);
+			const decimals = match?.decimals ?? 18;
+			const balance = match?.balance ?? 0n;
+			const priceUsd = match?.priceUsd ?? 1; // stablecoins peg ≈ $1
+			const bal = parseFloat(ethers.formatUnits(balance, decimals));
+			rows.push({
+				address: lower,
+				symbol: match?.symbol || symbol,
+				name: match?.name || name,
+				balance, decimals, priceUsd,
+				logoUrl: (match as any)?.logoUrl || '',
+				_bal: bal,
+				_usd: bal * priceUsd,
+			});
+		};
+		addEntry(usdtAddress, 'USDT', 'Tether USD');
+		addEntry(usdcAddress, 'USDC', 'USD Coin');
+		return rows;
+	});
+
 	// All displayable tokens sorted by USD value (highest first, hide zero balance)
+	// Excludes pinned stablecoins — those are rendered separately at the top.
 	let sortedTokens = $derived.by(() => {
 		const all = [...tokens, ...importedTokens]
-			.filter(t => t.balance > 0n)
+			.filter(t => t.balance > 0n && !pinnedStableAddrs.has(t.address.toLowerCase()))
 			.map(t => {
 				const bal = parseFloat(ethers.formatUnits(t.balance, t.decimals));
 				const usd = t.priceUsd ? bal * t.priceUsd : 0;
@@ -356,9 +391,33 @@
 		} catch {}
 	}
 
+	// Auto-pin stablecoins (USDT / USDC) so they always show up in the asset
+	// list and are queried for balances by the TradeLens pass. Uses network
+	// config addresses passed in as props.
+	function autoPinStablecoins() {
+		let changed = false;
+		const pin = (addr: string, symbol: string, name: string) => {
+			if (!addr) return;
+			const lower = addr.toLowerCase();
+			if (importedTokens.some(t => t.address.toLowerCase() === lower)) return;
+			importedTokens.push({
+				address: lower,
+				symbol, name,
+				decimals: 18, // BSC USDT/USDC are both 18; refreshTokenBalances re-queries anyway
+				balance: 0n,
+				logoUrl: '',
+			});
+			changed = true;
+		};
+		pin(usdtAddress, 'USDT', 'Tether USD');
+		pin(usdcAddress, 'USDC', 'USD Coin');
+		if (changed) importedTokens = [...importedTokens];
+	}
+
 	// Refresh balances + auto-import when address changes
 	$effect(() => {
 		if (!userAddress) return;
+		autoPinStablecoins();
 		autoImportCreatedTokens();
 		if (importedTokens.length === 0) return;
 		refreshTokenBalances();
@@ -973,6 +1032,28 @@
 						<span class="ap-row-usd">{nativeCompact ? fmtCompactUsd(nativeUsd) : fmtUsd(nativeUsd)}</span>
 					</button>
 				</div>
+
+				<!-- Pinned stablecoins (always visible, even with zero balance) -->
+				{#each pinnedStables as tok}
+					{@const logo = getTokenLogo(tok as any) || getKnownLogo(tok.symbol)}
+					{@const rowKey = tok.address}
+					{@const isCompact = compactRows.has(rowKey)}
+					<div class="ap-row">
+						{#if logo}
+							<img src={logo} alt={tok.symbol} class="ap-row-logo" />
+						{:else}
+							<div class="ap-row-icon">{tok.symbol.charAt(0)}</div>
+						{/if}
+						<div class="ap-row-meta">
+							<span class="ap-row-name">{tok.symbol}</span>
+							<span class="ap-row-sub">{tok.name}</span>
+						</div>
+						<button class="ap-row-right" type="button" onclick={() => toggleRowCompact(rowKey)} title={isCompact ? 'Tap to expand' : 'Tap to shrink'}>
+							<span class="ap-row-amt">{isCompact ? fmtCompactAmount(tok._bal) : fmtBal(tok.balance, tok.decimals)}</span>
+							<span class="ap-row-usd">{tok._usd > 0 ? (isCompact ? fmtCompactUsd(tok._usd) : fmtUsd(tok._usd)) : ''}</span>
+						</button>
+					</div>
+				{/each}
 
 				<!-- Tokens sorted by USD value -->
 				{#each sortedTokens as tok}
