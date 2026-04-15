@@ -198,13 +198,11 @@ contract Affiliate is Ownable, ReentrancyGuard {
     }
 
     /**
-     * @notice Recover tokens (or native gas coin) accidentally sent to this
-     *         contract — donations, mis-sends, deprecated reward tokens, etc.
+     * @notice Recover ERC20 tokens accidentally sent to this contract —
+     *         donations, mis-sends, deprecated reward tokens, etc.
      * @dev    For USDT, the rescuable amount is hard-capped to the contract's
      *         balance MINUS `totalPending`, so admin can never touch funds
-     *         owed to affiliates. Pass `address(0)` as `token` to rescue the
-     *         native coin (e.g. BNB on BSC) — useful if someone accidentally
-     *         sends gas coin via a low-level call.
+     *         owed to affiliates.
      */
     function rescue(address token, address to, uint256 amount) external onlyOwner nonReentrant {
         if (to == address(0)) revert ZeroAddress();
@@ -214,17 +212,12 @@ contract Affiliate is Ownable, ReentrancyGuard {
             uint256 free = bal > totalPending ? bal - totalPending : 0;
             if (amount > free) revert WouldUnderpayAffiliates();
             usdt.safeTransfer(to, amount);
-        } else if (token == address(0)) {
-            (bool ok, ) = to.call{value: amount}("");
-            require(ok, "native send failed");
         } else {
             IERC20(token).safeTransfer(to, amount);
         }
 
         emit Rescued(token, to, amount);
     }
-
-    receive() external payable {}
 
     // ── Internal ────────────────────────────────────────────
 
