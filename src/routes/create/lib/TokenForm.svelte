@@ -974,22 +974,20 @@
 							<option value="1">1% of supply</option>
 							<option value="2">2% of supply</option>
 							<option value="3">3% of supply</option>
-							<option value="5">5% of supply</option>
-							<option value="10">10% of supply</option>
+							<option value="4">4% of supply</option>
+							<option value="5">5% of supply (max)</option>
 						</select>
-						<span class="wz-field-hint">Tokens reserved for you (vested)</span>
+						<span class="wz-field-hint">Tokens reserved for you (vested). Contract caps at 5%.</span>
 					</div>
 					<div class="wz-field">
 						<label class="wz-label">Vesting period</label>
 						<select class="input-field" bind:value={launchVestingDays}>
 							<option value="0">No vesting</option>
-							<option value="7">7 days</option>
-							<option value="14">14 days</option>
 							<option value="30">30 days</option>
 							<option value="60">60 days</option>
 							<option value="90">90 days</option>
 						</select>
-						<span class="wz-field-hint">Lock period for creator tokens</span>
+						<span class="wz-field-hint">Lock period for creator tokens (7-day cliff before any vest starts).</span>
 					</div>
 				</div>
 
