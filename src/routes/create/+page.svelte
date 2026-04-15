@@ -35,6 +35,9 @@
 	let chainFromUrl = $derived(page.url.searchParams.get('chain') || '');
 
 	// Resolve mode from URL params on mount
+	// Also auto-restore last-used mode from localStorage (tk_last_create_mode)
+	// so repeat users skip the chooser. A "Change mode" link is rendered in the
+	// wizard header to switch back.
 	$effect(() => {
 		if (mode !== null) return;
 		let resolved: IntentMode | null = null;
@@ -45,6 +48,13 @@
 			resolved = modeFromUrl;
 		} else if (launchFromUrl) {
 			resolved = 'both';
+		} else {
+			try {
+				const saved = typeof localStorage !== 'undefined' ? localStorage.getItem('tk_last_create_mode') : null;
+				if (saved === 'token' || saved === 'launch' || saved === 'both' || saved === 'list') {
+					resolved = saved;
+				}
+			} catch {}
 		}
 		if (resolved) {
 			mode = resolved;
@@ -71,12 +81,15 @@
 		_ignoreStoreUpdate = true;
 		createMode.set(m);
 		_ignoreStoreUpdate = false;
-		// Always wipe any stale draft when entering or leaving a mode —
-		// users expect a fresh form when they pick a mode from the
-		// selection screen, not leftover state from a previous session.
 		try { sessionStorage.removeItem('tk_create_form_draft'); } catch {}
 		previewState = null;
 		resetSignal++;
+		// Remember last chosen mode so repeat users skip the chooser. Clearing
+		// (m=null) leaves the previous choice intact so "Change mode" returns
+		// them to the chooser without wiping their preference.
+		if (m) {
+			try { localStorage.setItem('tk_last_create_mode', m); } catch {}
+		}
 		// Sync URL
 		const url = new URL(window.location.href);
 		if (m) {
@@ -1609,7 +1622,7 @@
 					{/if}
 
 					<div class="flex gap-3 justify-center">
-						<a href="/manage-tokens" class="btn-primary text-sm px-5 py-2.5 no-underline">
+						<a href={deployedTokenAddress ? `/manage-tokens?just_created=${deployedTokenAddress}&chain=${tokenInfo.network.chain_id}` : '/manage-tokens'} class="btn-primary text-sm px-5 py-2.5 no-underline">
 							{$t('ct.manageTokens')} ->
 						</a>
 						<button onclick={closePreview} class="btn-secondary text-sm px-5 py-2.5 cursor-pointer">
@@ -1967,9 +1980,9 @@
 		<!-- ═══════ TOKEN CREATION WIZARD ═══════ -->
 		<div class="create-split">
 			<div class="form-wrapper">
-				<button class="back-link" onclick={() => selectMode(null)}>
+				<button class="back-link" onclick={() => selectMode(null)} title="Change create mode">
 					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-					{$t('ci.backToSelection')}
+					Change mode
 				</button>
 				<div class="form-header">
 					<span class="badge badge-cyan">{mode === 'token' ? $t('ci.titleToken') : mode === 'launch' ? $t('ci.titleLaunch') : mode === 'list' ? 'Create & List' : $t('ci.titleBoth')}</span>

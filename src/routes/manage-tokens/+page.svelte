@@ -1,8 +1,10 @@
 <script lang="ts">
 	import { ethers } from 'ethers';
 	import { getContext } from 'svelte';
+	import { page } from '$app/stores';
 	import { chainSlug, type SupportedNetworks } from '$lib/structure';
 	import { FACTORY_ABI } from '$lib/tokenCrafter';
+	import { supabase } from '$lib/supabaseClient';
 	import { t } from '$lib/i18n';
 
 	let getUserAddress: () => string | null = getContext('userAddress');
@@ -35,6 +37,35 @@
 	let isLoading = $state(true);
 	let search = $state('');
 
+	// Optimistic "just created" placeholder — the daemon may not have indexed
+	// the token yet when the user lands here from the deploy success modal.
+	// Read ?just_created=0x... (with optional ?chain=56) and render a
+	// placeholder card until the real row arrives via the realtime subscription.
+	let justCreatedAddress = $derived(($page.url.searchParams.get('just_created') || '').toLowerCase());
+	let justCreatedChainId = $derived(parseInt($page.url.searchParams.get('chain') || '0') || 0);
+	let justCreatedResolved = $state(false);
+
+	let placeholderToken = $derived.by<TokenItem | null>(() => {
+		if (!justCreatedAddress || justCreatedResolved) return null;
+		// Hide placeholder once the real row appears in `tokens`
+		if (tokens.find(t => t.address === justCreatedAddress && (!justCreatedChainId || t.chain_id === justCreatedChainId))) return null;
+		const net = supportedNetworks.find((n: any) => n.chain_id === justCreatedChainId) || supportedNetworks[0];
+		return {
+			address: justCreatedAddress,
+			chain_id: net?.chain_id ?? justCreatedChainId,
+			chain_symbol: net ? chainSlug(net.chain_id) : '',
+			network_name: net?.name ?? 'Unknown',
+			name: 'Indexing...',
+			symbol: '···',
+			decimals: 18,
+			total_supply: '0',
+			creator: userAddress || '',
+			is_mintable: false,
+			is_taxable: false,
+			is_partner: false,
+		};
+	});
+
 	function fmtSupply(raw: string | undefined, dec: number): string {
 		if (!raw || raw === '0') return '—';
 		try {
@@ -48,10 +79,16 @@
 		} catch { return '—'; }
 	}
 
+	// Merge optimistic placeholder (if any) into the displayed list so the user
+	// sees their newly-deployed token immediately after redirect from Create.
+	let displayTokens = $derived.by(() => {
+		return placeholderToken ? [placeholderToken, ...tokens] : tokens;
+	});
+
 	let filtered = $derived.by(() => {
-		if (!search.trim()) return tokens;
+		if (!search.trim()) return displayTokens;
 		const q = search.toLowerCase();
-		return tokens.filter(t =>
+		return displayTokens.filter(t =>
 			t.name?.toLowerCase().includes(q) ||
 			t.symbol?.toLowerCase().includes(q) ||
 			t.address?.toLowerCase().includes(q)
@@ -159,6 +196,69 @@
 		} else if (!userAddress) {
 			isLoading = false;
 		}
+	});
+
+	// Realtime subscription: swap the optimistic placeholder for the real
+	// row as soon as the daemon writes it into `created_tokens`.
+	// Pattern mirrors the platform-realtime channel in src/lib/realtime.svelte.ts.
+	let _tokensChannel: any = null;
+	$effect(() => {
+		if (!userAddress) return;
+		const addr = userAddress.toLowerCase();
+		try {
+			_tokensChannel = supabase
+				.channel(`created-tokens-${addr}`)
+				.on(
+					'postgres_changes',
+					{ event: 'INSERT', schema: 'public', table: 'created_tokens', filter: `creator=eq.${addr}` },
+					(payload: any) => {
+						const r = payload.new;
+						const newTok: TokenItem = {
+							address: (r.address || '').toLowerCase(),
+							chain_id: r.chain_id,
+							chain_symbol: chainSlug(r.chain_id),
+							network_name: supportedNetworks.find((n: any) => n.chain_id === r.chain_id)?.name || chainSlug(r.chain_id).toUpperCase(),
+							name: r.name || 'Unknown',
+							symbol: r.symbol || '???',
+							decimals: r.decimals || 18,
+							total_supply: r.total_supply || '0',
+							creator: r.creator || '',
+							logo_url: r.logo_url,
+							description: r.description,
+							is_mintable: r.is_mintable || false,
+							is_taxable: r.is_taxable || false,
+							is_partner: r.is_partner || false,
+							created_at: r.created_at,
+						};
+						// If the inserted token was our placeholder, mark resolved and prepend;
+						// otherwise just prepend if not already present.
+						if (justCreatedAddress && newTok.address === justCreatedAddress) {
+							justCreatedResolved = true;
+						}
+						if (!tokens.find(t => t.address === newTok.address && t.chain_id === newTok.chain_id)) {
+							tokens = [newTok, ...tokens];
+						}
+					}
+				)
+				.on(
+					'postgres_changes',
+					{ event: 'UPDATE', schema: 'public', table: 'created_tokens', filter: `creator=eq.${addr}` },
+					(payload: any) => {
+						const r = payload.new;
+						const a = (r.address || '').toLowerCase();
+						tokens = tokens.map(t => (t.address === a && t.chain_id === r.chain_id)
+							? { ...t, name: r.name || t.name, symbol: r.symbol || t.symbol, total_supply: r.total_supply || t.total_supply, logo_url: r.logo_url ?? t.logo_url, description: r.description ?? t.description, is_mintable: r.is_mintable ?? t.is_mintable, is_taxable: r.is_taxable ?? t.is_taxable, is_partner: r.is_partner ?? t.is_partner, created_at: r.created_at ?? t.created_at }
+							: t);
+					}
+				)
+				.subscribe();
+		} catch {}
+		return () => {
+			if (_tokensChannel) {
+				try { supabase.removeChannel(_tokensChannel); } catch {}
+				_tokensChannel = null;
+			}
+		};
 	});
 
 	async function handleConnect() {

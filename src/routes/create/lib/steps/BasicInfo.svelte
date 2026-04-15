@@ -432,12 +432,21 @@
 			<input id="bi-decimals" class="input-field small-input" type="number" bind:value={decimals} min="0" max="18" />
 		</div>
 
-		<!-- About (collapsible) -->
-		<button type="button" class="meta-toggle" onclick={() => showMetadata = !showMetadata}>
-			<span class="meta-toggle-label">About this token</span>
-			<span class="meta-toggle-hint">Description, website, socials</span>
-			<svg class="meta-toggle-chev" class:meta-open={showMetadata} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
-		</button>
+		<!-- About (collapsible) — dashed card so users read it as "optional but valuable" -->
+		<p class="meta-inline-hint">Adding a description, logo, and links makes your token show up well on Explore.</p>
+		<div class="meta-card" class:meta-card-open={showMetadata}>
+			<button class="meta-toggle" onclick={() => showMetadata = !showMetadata} type="button" aria-expanded={showMetadata}>
+				<span class="meta-toggle-label">About this token <span class="meta-optional">optional</span></span>
+				<svg class="meta-toggle-chev" class:meta-open={showMetadata} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+			</button>
+
+			{#if !showMetadata}
+				<div class="meta-chips">
+					<span class="meta-chip">📝 Description</span>
+					<span class="meta-chip">🖼 Logo</span>
+					<span class="meta-chip">🔗 Links</span>
+				</div>
+			{/if}
 
 		{#if showMetadata}
 			<div class="meta-fields">
@@ -461,6 +470,7 @@
 				</div>
 			</div>
 		{/if}
+		</div>
 	{/if}
 </div>
 
@@ -587,19 +597,43 @@
 	.toggle-track.active .toggle-thumb { transform: translateX(1rem); background: var(--toggle-thumb); }
 
 	/* Metadata */
+	.meta-inline-hint {
+		font-family: 'Space Mono', monospace; font-size: 0.72rem; line-height: 1.4;
+		color: rgba(255,255,255,0.45); margin: 0.25rem 0 0.15rem;
+	}
+	.meta-card {
+		border: 1px dashed rgba(0,210,255,0.22);
+		border-radius: 12px;
+		background: rgba(0,210,255,0.025);
+		padding: 10px 12px;
+		transition: border-color 0.15s, background 0.15s;
+	}
+	.meta-card:hover { border-color: rgba(0,210,255,0.35); }
+	.meta-card-open { background: rgba(0,210,255,0.04); border-style: solid; border-color: rgba(0,210,255,0.2); }
 	.meta-toggle {
 		display: flex; align-items: center; gap: 8px; width: 100%;
-		padding: 10px 14px; border-radius: 10px;
-		background: var(--bg-surface); border: 1px solid var(--border-subtle);
+		padding: 4px 2px; background: transparent; border: none;
 		cursor: pointer; font-family: inherit; color: inherit; text-align: left;
-		transition: border-color 0.15s;
 	}
-	.meta-toggle:hover { border-color: rgba(0,210,255,0.15); }
-	.meta-toggle-label { font-family: 'Syne', sans-serif; font-size: 0.8rem; font-weight: 600; color: var(--text); }
-	.meta-toggle-hint { font-size: 0.65rem; color: var(--text-dim); font-family: 'Space Mono', monospace; flex: 1; }
+	.meta-toggle-label { font-family: 'Syne', sans-serif; font-size: 0.82rem; font-weight: 600; color: var(--text); flex: 1; display: inline-flex; align-items: center; gap: 8px; }
+	.meta-optional {
+		font-family: 'Space Mono', monospace; font-size: 0.6rem; font-weight: 400;
+		color: rgba(0,210,255,0.7); background: rgba(0,210,255,0.08);
+		padding: 2px 7px; border-radius: 99px; text-transform: uppercase; letter-spacing: 0.05em;
+	}
 	.meta-toggle-chev { color: var(--placeholder); transition: transform 0.15s; flex-shrink: 0; }
 	.meta-toggle-chev.meta-open { transform: rotate(180deg); }
-	.meta-fields { display: flex; flex-direction: column; gap: 0.75rem; padding-top: 0.25rem; }
+	.meta-chips {
+		display: flex; flex-wrap: wrap; gap: 6px;
+		margin-top: 8px;
+	}
+	.meta-chip {
+		font-family: 'Space Mono', monospace; font-size: 0.65rem;
+		padding: 3px 9px; border-radius: 99px;
+		background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
+		color: rgba(255,255,255,0.55);
+	}
+	.meta-fields { display: flex; flex-direction: column; gap: 0.75rem; padding-top: 0.75rem; margin-top: 0.5rem; border-top: 1px dashed rgba(255,255,255,0.06); }
 	.meta-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
 	.name-symbol-row { display: flex; gap: 0.75rem; }
 	@media (max-width: 500px) { .name-symbol-row { flex-direction: column; } }
