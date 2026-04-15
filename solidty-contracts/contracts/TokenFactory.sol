@@ -21,6 +21,10 @@ interface ILaunchpadFee {
     function launchFee() external view returns (uint256);
 }
 
+interface IAffiliateReporter {
+    function report(address user, address ref, uint256 platformFee) external;
+}
+
 // =============================================================
 // TOKEN FACTORY
 // =============================================================
@@ -211,6 +215,18 @@ contract TokenFactory is Ownable, ReentrancyGuard {
     // =============================================================
 
     address public authorizedRouter;
+
+    /// @notice Shared platform Affiliate contract. address(0) leaves the
+    ///         legacy multi-level referral path active. Setting this address
+    ///         additionally credits the new Affiliate on every creation fee.
+    address public affiliate;
+    event AffiliateUpdated(address indexed previous, address indexed current);
+
+    /// @notice Owner-only. Points at the (new) Affiliate contract.
+    function setAffiliate(address aff) external onlyOwner {
+        emit AffiliateUpdated(affiliate, aff);
+        affiliate = aff;
+    }
     address public platformWallet;
 
     // =============================================================
@@ -281,6 +297,19 @@ contract TokenFactory is Ownable, ReentrancyGuard {
     function _collectFee(uint256 amount) internal {
         if (amount == 0) return;
         IERC20(usdt).safeTransferFrom(msg.sender, address(this), amount);
+    }
+
+    /// @dev Credits the shared Affiliate contract for this fee. No-op if no
+    ///      Affiliate is set. try/catch wrap so a paused Affiliate never
+    ///      bricks token creation. Lazy-init the USDT approval the first
+    ///      time we need to reach a given Affiliate address.
+    function _reportAffiliate(address user, address ref, uint256 fee) internal {
+        address aff = affiliate;
+        if (aff == address(0) || fee == 0) return;
+        if (IERC20(usdt).allowance(address(this), aff) < fee) {
+            IERC20(usdt).forceApprove(aff, type(uint256).max);
+        }
+        try IAffiliateReporter(aff).report(user, ref, fee) {} catch {}
     }
 
     /// @dev Builds the final bases[] passed to the token's initialize().
@@ -473,6 +502,7 @@ contract TokenFactory is Ownable, ReentrancyGuard {
         uint256 fee = creationFee[typeKey];
         _collectFee(fee);
         _processReferral(msg.sender, referral, fee);
+        _reportAffiliate(msg.sender, referral, fee);
         _recordStats(typeKey, fee);
 
         bytes32 salt = _computeSalt(msg.sender);
@@ -497,6 +527,7 @@ contract TokenFactory is Ownable, ReentrancyGuard {
         uint256 fee = creationFee[typeKey];
         _collectFee(fee);
         _processReferral(creator, referral, fee);
+        _reportAffiliate(creator, referral, fee);
         _recordStats(typeKey, fee);
 
         bytes32 salt = _computeSalt(creator);
@@ -524,6 +555,7 @@ contract TokenFactory is Ownable, ReentrancyGuard {
         uint256 fee = creationFee[typeKey];
         _collectFee(fee);
         _processReferral(creator, referral, fee);
+        _reportAffiliate(creator, referral, fee);
         _recordStats(typeKey, fee);
 
         bytes32 salt = _computeSalt(creator);

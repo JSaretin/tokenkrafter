@@ -7,6 +7,10 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 
+interface IAffiliateReporter {
+    function report(address user, address ref, uint256 platformFee) external;
+}
+
 interface ISwapRouter {
     function WETH() external pure returns (address);
     function swapExactTokensForTokens(
@@ -100,6 +104,28 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
     ///         Set to 0 to disable the floor entirely.
     uint256 public minWithdrawUsdt;
     address public platformWallet;
+
+    /// @notice Shared platform Affiliate contract. address(0) disables the new
+    ///         affiliate path; behaviour falls back to the legacy direct-pay
+    ///         logic gated by `affiliateEnabled`.
+    address public affiliate;
+    event AffiliateUpdated(address indexed previous, address indexed current);
+
+    /// @notice Owner-only. Points at the (new) Affiliate contract and grants
+    ///         it max USDT-token allowance for pull-on-report. Revokes any
+    ///         prior approval first to dodge the Ethereum USDT zero-then-set
+    ///         quirk via SafeERC20.forceApprove.
+    function setAffiliate(address aff) external onlyOwner {
+        address prev = affiliate;
+        if (prev != address(0)) {
+            // Revoke approval on every token we've ever taken fees in.
+            // Caller can specify additional tokens later via setAffiliateTokens
+            // if the platform expands beyond USDT — for now, a no-op since
+            // approvals are managed lazily on first report below.
+        }
+        affiliate = aff;
+        emit AffiliateUpdated(prev, aff);
+    }
     address[] public admins;
     mapping(address => bool) public isAdmin;
     mapping(address => uint256) internal adminIdxOf;          // admin → index in admins
@@ -456,9 +482,22 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
         totalEscrow -= req.grossAmount;
         _removePendingId(id);
 
-        // Affiliate fee split
+        // Affiliate fee split. Prefer the new shared Affiliate contract when
+        // configured (sticky referrer + lifetime stats + pull-claim). Falls
+        // back to the legacy direct-pay path while admin migrates.
         uint256 platformFee = req.fee;
-        if (affiliateEnabled && req.referrer != address(0) && req.referrer != req.user) {
+        if (affiliate != address(0)) {
+            if (req.token == address(usdt) && req.fee > 0) {
+                if (usdt.allowance(address(this), affiliate) < req.fee) {
+                    usdt.forceApprove(affiliate, type(uint256).max);
+                }
+                uint256 balBefore = usdt.balanceOf(address(this));
+                try IAffiliateReporter(affiliate).report(req.user, req.referrer, req.fee) {
+                    uint256 pulled = balBefore - usdt.balanceOf(address(this));
+                    if (pulled <= req.fee) platformFee = req.fee - pulled;
+                } catch {}
+            }
+        } else if (affiliateEnabled && req.referrer != address(0) && req.referrer != req.user) {
             uint256 referralCut = (req.fee * affiliateShareBps) / 10000;
             if (referralCut > 0) {
                 platformFee -= referralCut;

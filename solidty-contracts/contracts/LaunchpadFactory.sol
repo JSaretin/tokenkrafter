@@ -96,6 +96,18 @@ contract LaunchpadFactory is Ownable, ReentrancyGuard {
 
     address public authorizedRouter;
 
+    /// @notice Shared Affiliate contract reporters across the platform write
+    ///         to. address(0) disables affiliate accrual on launch buys.
+    address public affiliate;
+    event AffiliateUpdated(address indexed previous, address indexed current);
+
+    /// @notice Owner-only. Points launches at a (new) Affiliate contract.
+    ///         Per-launch instances read this dynamically at fee time.
+    function setAffiliate(address aff) external onlyOwner {
+        emit AffiliateUpdated(affiliate, aff);
+        affiliate = aff;
+    }
+
     // ── Constructor ────────────────────────────────────────────
 
     constructor(

@@ -14,8 +14,13 @@ import "./shared/DexInterfaces.sol";
 
 interface ILaunchpadFactory {
     function platformWallet() external view returns (address);
+    function affiliate() external view returns (address);
     function recordGraduation(address launch_) external;
     function clearTokenLaunch(address token_) external;
+}
+
+interface IAffiliateReporter {
+    function report(address user, address ref, uint256 platformFee) external;
 }
 
 interface ILaunchToken {
@@ -492,12 +497,40 @@ contract LaunchInstance is ReentrancyGuard {
     /// @param amountIn     Amount of path[0] to spend (must equal msg.value for native)
     /// @param minUsdtOut   Minimum USDT to receive from the swap (slippage protection)
     /// @param minTokensOut Minimum launch tokens to receive from the curve
+    /// @notice Buy with no referrer. Delegates to {buy} with `ref = address(0)`.
     function buy(
         address[] calldata path,
         uint256 amountIn,
         uint256 minUsdtOut,
         uint256 minTokensOut
-    ) external payable nonReentrant onlyActive {
+    ) external payable {
+        // Forward to the referrer-aware variant. Solidity doesn't let us
+        // call the overload on `this` without re-entering nonReentrant,
+        // so we duplicate the entrypoint via a thin wrapper that delegates
+        // by setting ref=address(0) inline. Cheaper than an external self-call.
+        _buyWithRef(path, amountIn, minUsdtOut, minTokensOut, address(0));
+    }
+
+    /// @notice Buy with an attributed referrer. The referrer earns a share of
+    ///         the buy fee via the platform Affiliate contract (sticky after
+    ///         first non-zero `ref` ever supplied for `msg.sender`).
+    function buy(
+        address[] calldata path,
+        uint256 amountIn,
+        uint256 minUsdtOut,
+        uint256 minTokensOut,
+        address ref
+    ) external payable {
+        _buyWithRef(path, amountIn, minUsdtOut, minTokensOut, ref);
+    }
+
+    function _buyWithRef(
+        address[] calldata path,
+        uint256 amountIn,
+        uint256 minUsdtOut,
+        uint256 minTokensOut,
+        address ref
+    ) internal nonReentrant onlyActive {
         if (amountIn == 0) revert ZeroAmount();
         if (path.length < 2) revert InvalidPath();
         if (path[path.length - 1] != address(usdt)) revert PathMustEndAtUsdt();
@@ -553,12 +586,12 @@ contract LaunchInstance is ReentrancyGuard {
             }
         }
 
-        _processBuy(msg.sender, usdtAmount, minTokensOut);
+        _processBuy(msg.sender, usdtAmount, minTokensOut, ref);
     }
 
     /// @dev Internal buy logic. All amounts are in USDT after conversion.
     ///      1% buy fee taken before curve math. Refunds return basePaid (net after fee).
-    function _processBuy(address buyer, uint256 usdtAmount, uint256 minTokensOut) internal {
+    function _processBuy(address buyer, uint256 usdtAmount, uint256 minTokensOut, address ref) internal {
         // Anti-dust floor: reject buys below the creator-set minimum so an
         // attacker can't flood `_purchases` with near-zero entries.
         if (usdtAmount < minBuyUsdt) revert BelowMinBuy();
@@ -569,7 +602,26 @@ contract LaunchInstance is ReentrancyGuard {
         totalBuyFeesCollected += buyFee;
         if (buyFee > 0) {
             address _platformWallet = ILaunchpadFactory(factory).platformWallet();
-            usdt.safeTransfer(_platformWallet, buyFee);
+            address aff = ILaunchpadFactory(factory).affiliate();
+            uint256 platformShare = buyFee;
+
+            // Affiliate accrual — pull cut from this contract's USDT balance
+            // first, then forward the remainder to platformWallet. Lazy-init
+            // the approval so a fresh launch self-configures on first buy.
+            // try/catch wrapping ensures a paused or buggy Affiliate never
+            // bricks buys.
+            if (aff != address(0)) {
+                if (usdt.allowance(address(this), aff) < buyFee) {
+                    usdt.forceApprove(aff, type(uint256).max);
+                }
+                uint256 balBefore = usdt.balanceOf(address(this));
+                try IAffiliateReporter(aff).report(buyer, ref, buyFee) {
+                    uint256 pulled = balBefore - usdt.balanceOf(address(this));
+                    if (pulled <= buyFee) platformShare = buyFee - pulled;
+                } catch {}
+            }
+
+            if (platformShare > 0) usdt.safeTransfer(_platformWallet, platformShare);
         }
 
         // Calculate tokens from curve
