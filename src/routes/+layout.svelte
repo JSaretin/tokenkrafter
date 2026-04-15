@@ -687,13 +687,11 @@
 
 	<!-- Navbar -->
 	<nav class="nav-bar sticky top-0 z-50 flex-shrink-0 border-b backdrop-blur-xl" style="border-color: var(--border-subtle)">
-		<div class="max-w-7xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-3">
-			<!-- Logo -->
-			<a href="/" class="flex items-center gap-2 flex-shrink-0 group">
-				<div class="w-7 h-7 rounded-lg bg-gradient-to-br from-cyan-400 to-blue-600 flex items-center justify-center group-hover:shadow-lg group-hover:shadow-cyan-500/30 transition">
-					<span class="text-black font-bold text-[10px]">TK</span>
-				</div>
-				<span class="syne font-bold text-base hidden sm:block tracking-tight">TokenKrafter</span>
+		<div class="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-3">
+			<!-- Logo: icon-only on mobile, wide lockup on tablet+ -->
+			<a href="/" class="flex items-center flex-shrink-0 group" aria-label="TokenKrafter">
+				<img src="/brand/icon.svg" alt="" class="w-11 h-11 sm:hidden transition group-hover:drop-shadow-[0_0_8px_rgba(0,188,212,0.5)]" />
+				<img src="/brand/logo-wide.svg" alt="TokenKrafter" class="hidden sm:block nav-logo-wide transition group-hover:drop-shadow-[0_0_10px_rgba(0,188,212,0.5)]" />
 			</a>
 
 			<!-- Center nav links -->
@@ -881,11 +879,8 @@
 			<div class="grid grid-cols-1 sm:grid-cols-3 gap-10 sm:gap-8">
 				<!-- Brand -->
 				<div>
-					<a href="/" class="flex items-center gap-2 mb-4 group">
-						<div class="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-400 to-blue-600 flex items-center justify-center group-hover:shadow-lg group-hover:shadow-cyan-500/30 transition">
-							<span class="text-black font-bold text-xs">TK</span>
-						</div>
-						<span class="syne font-bold text-lg tracking-tight">TokenKrafter</span>
+					<a href="/" class="inline-flex items-center mb-4 group" aria-label="TokenKrafter">
+						<img src="/brand/logo-wide.svg" alt="TokenKrafter" class="footer-logo-wide transition group-hover:drop-shadow-[0_0_10px_rgba(0,188,212,0.5)]" />
 					</a>
 					<p class="text-sm text-gray-500 font-mono leading-relaxed max-w-xs">
 						{$t('footer.tagline')}
@@ -1044,6 +1039,8 @@
 		border-radius: 50%;
 	}
 	.nav-bar { background: var(--bg-nav); }
+	.nav-logo-wide { height: 56px; width: auto; display: block; }
+	.footer-logo-wide { height: 64px; width: auto; display: block; }
 	/* On mobile, force fixed positioning so the nav never scrolls away.
 	   sticky can break when ancestor elements have overflow/transform. */
 	@media (max-width: 767px) {
