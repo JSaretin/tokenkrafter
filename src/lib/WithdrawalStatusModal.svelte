@@ -6,16 +6,24 @@
 		withdrawal,
 		onclose,
 		oncancel,
-		usdtDecimals = 18
+		usdtDecimals = 18,
+		lockedNgnRate = 0,
+		lockedNgnAmount = 0,
+		explorerUrl = ''
 	}: {
 		withdrawal: any;
 		onclose: () => void;
 		oncancel?: (id: number) => void;
 		usdtDecimals?: number;
+		lockedNgnRate?: number;
+		lockedNgnAmount?: number;
+		explorerUrl?: string;
 	} = $props();
 
 	let tickNow = $state(Date.now());
 	let liveStatus = $state(withdrawal?.status || 'pending');
+	let liveNote = $state(withdrawal?.admin_note || '');
+	let confirmedAt = $state<string | null>(withdrawal?.confirmed_at || null);
 
 	// Live countdown tick
 	const tickInterval = setInterval(() => { tickNow = Date.now(); }, 1000);
@@ -37,31 +45,56 @@
 			)) {
 				if (row.status !== liveStatus) {
 					liveStatus = row.status;
+					liveNote = row.admin_note || '';
+					if (row.confirmed_at) confirmedAt = row.confirmed_at;
 				}
 			}
 		})
 		.subscribe();
 
-	// No polling needed — daemon writes to DB, Supabase Realtime pushes to us
+	// Fallback poll every 5s in case Realtime misses an update — stops once
+	// we reach a terminal state (confirmed/cancelled) so we don't hammer the API.
+	const pollInterval = setInterval(async () => {
+		if (liveStatus === 'confirmed' || liveStatus === 'cancelled') return;
+		try {
+			const res = await fetch('/api/withdrawals?limit=10', { credentials: 'include' });
+			if (!res.ok) return;
+			const rows = await res.json();
+			const match = rows?.find?.((r: any) =>
+				r.id === withdrawal?.id ||
+				(r.withdraw_id === withdrawal?.withdraw_id && r.chain_id === withdrawal?.chain_id)
+			);
+			if (match && match.status !== liveStatus) {
+				liveStatus = match.status;
+				liveNote = match.admin_note || liveNote;
+				if (match.confirmed_at) confirmedAt = match.confirmed_at;
+			}
+		} catch {}
+	}, 5000);
 
 	onDestroy(() => {
 		clearInterval(tickInterval);
+		clearInterval(pollInterval);
 		supabase.removeChannel(channel);
 	});
 
-	// Fetch NGN rate
-	let ngnRate = $state(0);
+	// Fetch NGN rate only as a fallback — if the caller locked a rate at
+	// confirm time (audit #5/#28), we use that instead so the confirmation
+	// screen and processing modal show the same NGN figure.
+	let fetchedNgnRate = $state(0);
 	$effect(() => {
+		if (lockedNgnRate > 0) return; // no need to fetch
 		(async () => {
 			try {
 				const res = await fetch('/api/rates?currencies=NGN');
 				if (res.ok) {
 					const data = await res.json();
-					if (data.rates?.NGN) ngnRate = data.rates.NGN * 0.997; // 0.3% spread
+					if (data.rates?.NGN) fetchedNgnRate = data.rates.NGN * 0.997; // 0.3% spread
 				}
 			} catch {}
 		})();
 	});
+	let ngnRate = $derived(lockedNgnRate > 0 ? lockedNgnRate : fetchedNgnRate);
 
 	// Derived
 	let createdAt = $derived(withdrawal?.created_at ? Math.floor(new Date(withdrawal.created_at).getTime() / 1000) : 0);
@@ -73,8 +106,22 @@
 	let progressPct = $derived(totalDuration > 0 ? Math.min(100, (elapsed / totalDuration) * 100) : 100);
 	let canCancel = $derived((liveStatus === 'pending' || liveStatus === 'timeout') && remaining <= 0);
 	let usdtAmount = $derived(parseFloat(withdrawal?.gross_amount || '0') / (10 ** usdtDecimals));
-	let ngnAmount = $derived(ngnRate > 0 && usdtAmount > 0 ? usdtAmount * ngnRate : 0);
+	// Prefer the amount locked at confirm time; otherwise compute live.
+	let ngnAmount = $derived(
+		lockedNgnAmount > 0
+			? lockedNgnAmount
+			: (ngnRate > 0 && usdtAmount > 0 ? usdtAmount * ngnRate : 0)
+	);
 	let details = $derived(withdrawal?.payment_details || {});
+	let bankLabel = $derived(details?.bank_name || details?.bank_code || details?.email || 'your account');
+	let txExplorerLink = $derived(
+		withdrawal?.tx_hash && explorerUrl
+			? `${explorerUrl.replace(/\/$/, '')}/tx/${withdrawal.tx_hash}`
+			: ''
+	);
+	let confirmedAtDisplay = $derived(
+		confirmedAt ? new Date(confirmedAt).toLocaleString() : ''
+	);
 
 	let statusConfig = $derived.by(() => {
 		switch (liveStatus) {
@@ -210,6 +257,25 @@
 						Cancel & Return Funds
 					</button>
 				{/if}
+
+				{#if liveStatus === 'confirmed'}
+					<div class="success-card">
+						<div class="success-row">
+							<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+							<span>Payment sent to {bankLabel}</span>
+						</div>
+						{#if confirmedAtDisplay}
+							<div class="success-sub">{confirmedAtDisplay}</div>
+						{/if}
+						{#if txExplorerLink}
+							<a class="success-tx" href={txExplorerLink} target="_blank" rel="noopener noreferrer">
+								View transaction
+								<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+							</a>
+						{/if}
+					</div>
+					<button class="done-btn" onclick={onclose}>Done</button>
+				{/if}
 			{/if}
 		</div>
 	</div>
@@ -330,6 +396,26 @@
 		transition: all 200ms;
 	}
 	.cancel-action-btn:hover { background: rgba(239,68,68,0.2); }
+
+	.success-card {
+		background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.25);
+		border-radius: 12px; padding: 12px; margin-bottom: 12px;
+		display: flex; flex-direction: column; gap: 6px;
+	}
+	.success-row {
+		display: flex; align-items: center; gap: 8px;
+		font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700; color: #10b981;
+	}
+	.success-sub {
+		font-family: 'Space Mono', monospace; font-size: 11px; color: var(--text-muted);
+		padding-left: 24px;
+	}
+	.success-tx {
+		display: inline-flex; align-items: center; gap: 4px;
+		font-family: 'Space Mono', monospace; font-size: 11px;
+		color: #00d2ff; text-decoration: none; padding-left: 24px;
+	}
+	.success-tx:hover { text-decoration: underline; }
 
 	.done-btn {
 		width: 100%; padding: 14px; border-radius: 12px; border: none;
