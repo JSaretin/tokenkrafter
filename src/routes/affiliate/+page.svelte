@@ -203,6 +203,58 @@
 </svelte:head>
 
 <div class="page-wrap max-w-6xl mx-auto px-4 sm:px-6">
+	{#if userAddress}
+		<!-- Connected-user dashboard summary (shown ABOVE marketing copy so
+		     it's the first thing a returning affiliate sees). The fuller
+		     stats/claim UI still lives further down in the page. -->
+		<section class="section-top">
+			<div class="card p-6">
+				<div class="flex items-start justify-between gap-3 flex-wrap mb-4">
+					<div>
+						<div class="text-[10px] font-mono uppercase tracking-widest text-emerald-400">Your affiliate dashboard</div>
+						<h2 class="syne text-xl font-bold text-white mt-1">Welcome back</h2>
+					</div>
+					<a href="#affiliate-full-dashboard" class="text-xs font-mono text-cyan-400 hover:underline">View full stats →</a>
+				</div>
+
+				<!-- Referral link (no backend required) -->
+				<div class="label-text mb-2">Your referral link</div>
+				<div class="flex gap-2 items-stretch mb-4">
+					<div class="ref-link-box flex-1 flex items-center px-4 py-3 rounded-lg overflow-hidden" style="background: var(--bg-surface-input); border: 1px solid var(--border-input)">
+						<span class="text-sm font-mono truncate" style="color: var(--text)">{referralLink}</span>
+					</div>
+					<button onclick={copyLink} class="btn-primary text-sm px-5 flex-shrink-0 cursor-pointer">
+						{copied ? $t('aff.copied') : $t('aff.copy')}
+					</button>
+				</div>
+
+				<!-- Summary stats — wired to on-chain stats loaded by loadStats(). -->
+				<!-- TODO: if an HTTP stats endpoint is added (e.g. /api/referral/stats),
+				     wire "paid vs pending" counts here. The contract gives total earned +
+				     pending USDT; number-of-referrals = totalReferred. -->
+				<div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+					<div class="summary-stat">
+						<div class="summary-label">Referrals</div>
+						<div class="summary-value">{loading ? '—' : totalReferred.toString()}</div>
+					</div>
+					<div class="summary-stat">
+						<div class="summary-label">Total earned</div>
+						<div class="summary-value text-emerald-400">{loading ? '—' : `${formatAmount(totalEarnedUsdt, usdtDecimals)} ${usdtSymbol}`}</div>
+					</div>
+					<div class="summary-stat">
+						<div class="summary-label">Pending</div>
+						<div class="summary-value text-amber-400">{loading ? '—' : `${formatAmount(pendingUsdt, usdtDecimals)} ${usdtSymbol}`}</div>
+					</div>
+					<div class="summary-stat">
+						<div class="summary-label">Paid</div>
+						<!-- Paid = total earned − pending (no dedicated endpoint yet). -->
+						<div class="summary-value">{loading ? '—' : `${formatAmount(totalEarnedUsdt - pendingUsdt > 0n ? totalEarnedUsdt - pendingUsdt : 0n, usdtDecimals)} ${usdtSymbol}`}</div>
+					</div>
+				</div>
+			</div>
+		</section>
+	{/if}
+
 	<!-- Hero -->
 	<section class="hero-section">
 		<div class="max-w-4xl mx-auto text-center">
@@ -301,7 +353,7 @@
 	</section>
 
 	<!-- Your Referral Dashboard -->
-	<section class="section">
+	<section id="affiliate-full-dashboard" class="section">
 		<div class="text-center mb-10">
 			<h2 class="syne text-3xl sm:text-4xl font-bold text-white">{$t('aff.dashTitle')}</h2>
 			<p class="text-gray-400 mt-3 font-mono text-sm">{$t('aff.dashSub')}</p>
@@ -532,6 +584,20 @@
 
 	.ref-link-box {
 		min-width: 0;
+	}
+
+	.section-top { padding-top: 1.25rem; padding-bottom: 0.5rem; }
+	.summary-stat {
+		padding: 10px 12px; border-radius: 10px;
+		background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05);
+	}
+	.summary-label {
+		font-family: 'Space Mono', monospace; font-size: 9px;
+		color: rgba(255,255,255,0.35); text-transform: uppercase; letter-spacing: 0.06em;
+	}
+	.summary-value {
+		font-family: 'Syne', sans-serif; font-size: 1.05rem; font-weight: 700;
+		color: #fff; margin-top: 2px;
 	}
 
 	/* Page-specific CTA colors */
