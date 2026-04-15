@@ -135,9 +135,10 @@
 							address: lower, chain_id: net.chain_id,
 							chain_symbol: net.symbol.toLowerCase(),
 							network_name: net.name,
-							name: 'Pending...', symbol: '???', decimals: 18,
+							name: 'Indexing...', symbol: '???', decimals: 18,
 							total_supply: '0',
 							creator: userAddress!,
+							description: 'Confirming on-chain — usually under a minute',
 							is_mintable: false, is_taxable: false, is_partner: false,
 						}];
 					}
