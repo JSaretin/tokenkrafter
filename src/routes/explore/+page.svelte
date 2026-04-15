@@ -1041,8 +1041,9 @@
 	.tc-color-purple { background: rgba(139,92,246,0.12); color: #a78bfa; border: 2px solid rgba(139,92,246,0.2); }
 	.tc-color-emerald { background: rgba(16,185,129,0.12); color: #10b981; border: 2px solid rgba(16,185,129,0.2); }
 
-	.tc-identity { flex: 1; min-width: 0; }
-	.tc-name { display: block; font-family: 'Syne', sans-serif; font-size: 17px; font-weight: 800; color: var(--text-heading); letter-spacing: -0.01em; overflow-wrap: anywhere; line-height: 1.2; }
+	.tc-identity { flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+	.tc-identity::-webkit-scrollbar { display: none; }
+	.tc-name { display: block; font-family: 'Syne', sans-serif; font-size: 17px; font-weight: 800; color: var(--text-heading); letter-spacing: -0.01em; white-space: nowrap; line-height: 1.2; }
 	.tc-meta-row { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
 	.tc-symbol { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text-dim); }
 	.tc-chain { font-family: 'Space Mono', monospace; font-size: 8px; color: var(--text-dim); padding: 1px 5px; border-radius: 4px; background: var(--bg-surface-input); }
