@@ -244,6 +244,7 @@
 	let userBasePaid = $state(0n);
 	let userTokensBought = $state(0n);
 	let maxBuyPerWallet = $state(0n);
+	let minBuyUsdt = $state(0n);
 
 	// Balance check & deposit modal
 	let showDepositModal = $state(false);
@@ -337,6 +338,20 @@
 	});
 
 	let atMaxBuy = $derived(maxBuyPerWallet > 0n && remainingBuyUsdt === 0n);
+
+	// Below-min-buy validation. Contract reverts with BelowMinBuy() if amount
+	// is under minBuyUsdt. Surface this pre-flight so the button can disable
+	// and the user sees *why* instead of the click silently no-op'ing.
+	let belowMinBuy = $derived.by(() => {
+		if (minBuyUsdt === 0n) return false;
+		if (!buyAmount || parseFloat(String(buyAmount)) <= 0) return false;
+		const buyUsdtWei = BigInt(Math.floor(parseFloat(String(buyAmount)) * (10 ** usdtDecimals)));
+		return buyUsdtWei < minBuyUsdt;
+	});
+	let minBuyLabel = $derived.by(() => {
+		if (minBuyUsdt === 0n) return '';
+		return ethers.formatUnits(minBuyUsdt, usdtDecimals).replace(/\.?0+$/, '');
+	});
 
 	let allocationPct = $derived.by(() => {
 		if (maxBuyPerWallet === 0n) return 0;
@@ -485,6 +500,13 @@
 
 			if (userAddress) {
 				await loadUserPosition(prov);
+			} else {
+				// Load minBuy floor even without a connected user so the
+				// UI can validate amounts & disable the buy button.
+				try {
+					const instance = new ethers.Contract(launchAddress, LAUNCH_INSTANCE_ABI, prov);
+					minBuyUsdt = await instance.minBuyUsdt();
+				} catch { minBuyUsdt = 0n; }
 			}
 
 			// Metadata already loaded from SSR — only fetch if empty
@@ -523,14 +545,16 @@
 	async function loadUserPosition(provider: ethers.Provider) {
 		if (!userAddress) return;
 		const instance = new ethers.Contract(launchAddress, LAUNCH_INSTANCE_ABI, provider);
-		const [paid, bought, maxBuy] = await Promise.all([
+		const [paid, bought, maxBuy, minBuy] = await Promise.all([
 			instance.basePaid(userAddress),
 			instance.tokensBought(userAddress),
-			instance.maxBuyPerWallet()
+			instance.maxBuyPerWallet(),
+			instance.minBuyUsdt().catch(() => 0n)
 		]);
 		userBasePaid = paid;
 		userTokensBought = bought;
 		maxBuyPerWallet = maxBuy;
+		minBuyUsdt = minBuy;
 	}
 
 	async function refreshData() {
@@ -2019,7 +2043,11 @@
 							disabled={isEnablingTrading}
 							class="btn-primary w-full py-2.5 text-sm cursor-pointer"
 						>
-							{isEnablingTrading ? $t('lpd.enabling') : $t('lpd.enableTrading')}
+							{#if isEnablingTrading}
+								<span class="spinner-inline"></span> {$t('lpd.enabling')}
+							{:else}
+								{$t('lpd.enableTrading')}
+							{/if}
 						</button>
 					</div>
 				{:else if !tradingEnabled && launch.state === 1}
@@ -2249,16 +2277,26 @@
 							</div>
 						{/if}
 
+						{#if belowMinBuy}
+							<div class="exceed-warning mb-3">
+								<span class="text-red-400 text-xs font-mono">
+									Below minimum buy (${minBuyLabel})
+								</span>
+							</div>
+						{/if}
+
 						{#if userAddress}
 							<button
 								onclick={handleBuy}
-								disabled={isBuying || !buyAmount || parseFloat(String(buyAmount)) <= 0 || exceedsMaxBuy || atMaxBuy}
+								disabled={isBuying || !buyAmount || parseFloat(String(buyAmount)) <= 0 || exceedsMaxBuy || atMaxBuy || belowMinBuy}
 								class="btn-primary w-full py-3 text-sm cursor-pointer"
 							>
 								{#if atMaxBuy}
 									{$t('lpd.maxBuyReached')}
 								{:else if exceedsMaxBuy}
 									{$t('lpd.exceedsMaxBuyBtn')}
+								{:else if belowMinBuy}
+									Below minimum buy (${minBuyLabel})
 								{:else}
 									{isBuying ? $t('lpd.buying') : `${$t('lpd.buyWith')} ${paymentLabel}`}
 								{/if}
