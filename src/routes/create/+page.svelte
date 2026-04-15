@@ -1845,9 +1845,20 @@
 					{/if}
 				</div>
 
+				{@const _minBuy = tokenInfo.launch?.enabled ? parseFloat(String(tokenInfo.launch.minBuyUsdt || '0')) : 0}
+				{@const _maxBuyPerWalletUsd = tokenInfo.launch?.enabled
+					? parseFloat(String(tokenInfo.launch.hardCap || '0')) * (parseFloat(String(tokenInfo.launch.maxBuyBps || '0')) / 10000)
+					: 0}
+				{@const _minBuyExceedsMaxBuy = tokenInfo.launch?.enabled && _minBuy > 0 && _maxBuyPerWalletUsd > 0 && _minBuy > _maxBuyPerWalletUsd}
+				{#if _minBuyExceedsMaxBuy}
+					<div class="wz-warn-box" style="margin: 8px 0 12px;">
+						<strong>Min buy exceeds max buy per wallet.</strong>
+						With hard cap ${tokenInfo.launch.hardCap} × max wallet {(parseFloat(String(tokenInfo.launch.maxBuyBps)) / 100).toFixed(2)}% = ${_maxBuyPerWalletUsd.toFixed(2)} max buy, but min buy is ${tokenInfo.launch.minBuyUsdt}. Go back and fix the launch config.
+					</div>
+				{/if}
 				<button
 					onclick={confirmAndDeploy}
-					disabled={feeLoading || paymentOptions.length === 0}
+					disabled={feeLoading || paymentOptions.length === 0 || _minBuyExceedsMaxBuy}
 					class="create-btn w-full syne cursor-pointer"
 				>
 					{feeLoading ? $t('ct.calculatingFee') : tokenInfo.existingTokenAddress ? 'Create Launch' : tokenInfo.listing?.enabled ? $t('ct.deployAndList') : tokenInfo.launch?.enabled ? 'Deploy & Launch' : $t('ct.confirmDeploy')}
@@ -2255,6 +2266,9 @@
 		box-shadow: 0 8px 32px rgba(0,210,255,0.3);
 	}
 	.create-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+	.wz-warn-box { padding: 12px 14px; border-radius: 10px; background: rgba(251, 191, 36, 0.08); border: 1px solid rgba(251, 191, 36, 0.35); color: #fcd34d; font-size: 13px; line-height: 1.5; }
+	.wz-warn-box strong { display: block; color: #fde68a; margin-bottom: 4px; font-family: 'Syne', sans-serif; }
 
 	.insufficient-box {
 		padding: 14px;

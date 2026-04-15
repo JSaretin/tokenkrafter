@@ -342,8 +342,11 @@
 	let tokensForPool = $derived(Number(totalSupply) * (listingPoolPct / 100));
 	let autoPrice = $derived.by(() => tokensForPool > 0 && totalLiquidityUsd > 0 ? totalLiquidityUsd / tokensForPool : 0);
 
-	// Only set useExistingToken if explicitly launching an existing token (URL param)
-	if (deployMode === 'launch' && initialData?.existingTokenAddress) { useExistingToken = true; }
+	// Launch mode always targets an existing token — default the sub-path so the
+	// address field is shown first. URL param with `token=` also flows through here.
+	$effect(() => {
+		if (deployMode === 'launch' && !useExistingToken) { useExistingToken = true; }
+	});
 
 	// ── Initial data ───────────────────────────────────────
 	if (initialData) {
@@ -522,7 +525,23 @@
 	// Clone mode: user toggled "clone" on BasicInfo step. They're creating a NEW token
 	// with pre-filled data. Even if they later enable launch/list, it's still a new token.
 	// Real existing token: only when entering via Launch flow with a pre-set token address.
-	let isRealExistingToken = $derived(useExistingToken && !!initialData?.existingTokenAddress);
+	let isRealExistingToken = $derived(
+		useExistingToken && !!existingTokenAddress && ethers.isAddress(existingTokenAddress)
+	);
+
+	// A launch is misconfigured if the per-wallet max buy (hardCap × maxBuyBps)
+	// is smaller than the min buy floor — no wallet could ever place a valid buy.
+	let maxBuyPerWalletUsd = $derived.by(() => {
+		const hc = parseFloat(launchHardCap || '0');
+		const pct = parseFloat(launchMaxBuyPct || '0');
+		if (!hc || !pct) return 0;
+		return hc * (pct / 100);
+	});
+	let minBuyExceedsMaxBuy = $derived.by(() => {
+		if (!launchEnabled) return false;
+		const minBuy = parseFloat(launchMinBuyUsdt || '0');
+		return minBuy > 0 && maxBuyPerWalletUsd > 0 && minBuy > maxBuyPerWalletUsd;
+	});
 
 	let steps = $derived.by(() => {
 		const s: { id: WizardStep; label: string }[] = [{ id: 'basics', label: 'Basics' }];
@@ -538,6 +557,14 @@
 
 	function nextStep() {
 		const idx = currentStepIdx;
+		if (wizardStep === 'basics' && useExistingToken && !isRealExistingToken) {
+			addFeedback({ message: 'Enter a valid token address to continue', type: 'error' });
+			return;
+		}
+		if ((wizardStep === 'launch' || wizardStep === 'review') && minBuyExceedsMaxBuy) {
+			addFeedback({ message: `Min buy ($${launchMinBuyUsdt}) exceeds max buy per wallet ($${maxBuyPerWalletUsd.toFixed(2)}).`, type: 'error' });
+			return;
+		}
 		if (idx < steps.length - 1) wizardStep = steps[idx + 1].id;
 		else submit();
 	}
@@ -553,6 +580,11 @@
 		if (!network) { addFeedback({ message: 'Please select a network', type: 'error' }); return; }
 		if (!useExistingToken && (!name.trim() || !symbol.trim())) { addFeedback({ message: 'Token name and symbol are required', type: 'error' }); return; }
 		if (!useExistingToken && (!totalSupply || Number(totalSupply) <= 0)) { addFeedback({ message: 'Total supply must be greater than 0', type: 'error' }); return; }
+		if (useExistingToken && !isRealExistingToken) { addFeedback({ message: 'Enter a valid token address', type: 'error' }); return; }
+		if (minBuyExceedsMaxBuy) {
+			addFeedback({ message: `Min buy ($${launchMinBuyUsdt}) exceeds max buy per wallet ($${maxBuyPerWalletUsd.toFixed(2)}). Lower the min buy or raise the hard cap / max wallet %.`, type: 'error' });
+			return;
+		}
 		const validWallets = taxWallets.filter(w => w.address.trim() && /^0x[a-fA-F0-9]{40}$/.test(w.address.trim()));
 		const totalTokensForListing = listingPairs.reduce((sum, p) => {
 			if (totalLiquidityUsd <= 0 || tokensForPool <= 0) return sum;
@@ -819,6 +851,13 @@
 					</div>
 				</div>
 
+				{#if minBuyExceedsMaxBuy}
+					<div class="wz-warn-box">
+						<strong>Min buy exceeds max buy per wallet.</strong>
+						With hard cap ${launchHardCap} × max wallet {launchMaxBuyPct}% = ${maxBuyPerWalletUsd.toFixed(2)} max buy, but min buy is ${launchMinBuyUsdt}. No wallet could place a valid buy. Lower the min buy or raise the hard cap / max wallet %.
+					</div>
+				{/if}
+
 				<!-- Anti-whale protection -->
 				<div class="wz-toggle-card" class:wz-toggle-on={protectionEnabled}>
 					<label class="wz-toggle-row">
@@ -882,8 +921,12 @@
 		{:else}
 			<div></div>
 		{/if}
-		<button class="wz-btn wz-btn-next" onclick={nextStep}>
-			{wizardStep === 'review' ? (launchEnabled ? 'Deploy & Launch' : listingEnabled ? 'Deploy & List' : 'Deploy Token') : 'Next →'}
+		<button
+			class="wz-btn wz-btn-next"
+			onclick={nextStep}
+			disabled={(wizardStep === 'launch' || wizardStep === 'review') && minBuyExceedsMaxBuy}
+		>
+			{wizardStep === 'review' ? (launchEnabled ? (isRealExistingToken ? 'Continue to Payment' : 'Deploy & Launch') : listingEnabled ? 'Deploy & List' : 'Deploy Token') : 'Next →'}
 		</button>
 	</div>
 </div>
@@ -1024,7 +1067,10 @@
 	.wz-btn-back { background: rgba(255,255,255,0.05); color: #64748b; }
 	.wz-btn-back:hover { background: rgba(255,255,255,0.08); color: #e2e8f0; }
 	.wz-btn-next { background: linear-gradient(135deg, #00d2ff, #3a7bd5); color: white; }
-	.wz-btn-next:hover { transform: translateY(-1px); box-shadow: 0 6px 28px rgba(0,210,255,0.3); }
+	.wz-btn-next:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 28px rgba(0,210,255,0.3); }
+	.wz-btn:disabled { opacity: 0.4; cursor: not-allowed; filter: grayscale(0.4); }
+	.wz-warn-box { margin-top: 16px; padding: 12px 14px; border-radius: 10px; background: rgba(251, 191, 36, 0.08); border: 1px solid rgba(251, 191, 36, 0.35); color: #fcd34d; font-size: 13px; line-height: 1.5; }
+	.wz-warn-box strong { display: block; color: #fde68a; margin-bottom: 4px; font-family: 'Syne', sans-serif; }
 
 	/* Curve picker button */
 	.curve-pick-btn {
