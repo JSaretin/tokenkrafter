@@ -422,7 +422,7 @@ export default {
 	// -- Launchpad list (lp.)
 	'lp.title': 'Launchpad',
 	'lp.metaDesc': 'Discover and invest in new token launches on bonding curves. Buy early, earn from price discovery, and auto-graduate to DEX liquidity.',
-	'lp.subtitle': 'Bonding curve token launches',
+	'lp.subtitle': 'Fair, refundable fundraises for new tokens',
 	'lp.createLaunch': 'Create Launch',
 	'lp.createToken': 'Create Token',
 	'lp.live': 'Live',
@@ -568,7 +568,7 @@ export default {
 	'lpd.editInfo': 'Edit info',
 	'lpd.addInfo': '+ Add info',
 	'lpd.addDescription': 'Add a description, links, and badges to attract buyers',
-	'lpd.noDescription': 'No description provided yet.',
+	'lpd.noDescription': "Creator hasn't added a description yet.",
 	'lpd.watchVideo': 'Watch Video',
 	'lpd.tokenomics': 'Tokenomics',
 	'lpd.curveSale': 'Curve Sale',
