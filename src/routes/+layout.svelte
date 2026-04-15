@@ -1039,7 +1039,7 @@
 		border-radius: 50%;
 	}
 	.nav-bar { background: var(--bg-nav); }
-	.nav-logo-wide { height: 56px; width: auto; display: block; }
+	.nav-logo-wide { height: 56px; width: auto; }
 	.footer-logo-wide { height: 64px; width: auto; display: block; }
 	/* On mobile, force fixed positioning so the nav never scrolls away.
 	   sticky can break when ancestor elements have overflow/transform. */
