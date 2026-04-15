@@ -1001,6 +1001,7 @@
 		padding: 16px; border-radius: 12px; min-height: 230px;
 		background: var(--bg-surface); border: 1px solid var(--border-subtle);
 		transition: all 0.15s;
+		overflow: hidden; min-width: 0;
 	}
 	.token-card:hover { border-color: rgba(0,210,255,0.25); box-shadow: 0 6px 24px rgba(0,0,0,0.2); transform: translateY(-2px); }
 	.token-card-safu { border-color: rgba(16,185,129,0.25); }
@@ -1028,7 +1029,7 @@
 	.tc-safu-check { font-family: 'Space Mono', monospace; font-size: 8px; color: #10b981; white-space: nowrap; line-height: 1.2; }
 
 	/* Header */
-	.tc-header { display: flex; align-items: center; gap: 10px; text-decoration: none; color: inherit; }
+	.tc-header { display: flex; align-items: center; gap: 10px; text-decoration: none; color: inherit; min-width: 0; }
 	.tc-logo { width: 48px; height: 48px; border-radius: 50%; object-fit: cover; border: 2px solid var(--border); flex-shrink: 0; }
 	.tc-logo-fallback {
 		width: 48px; height: 48px; border-radius: 50%; flex-shrink: 0;
@@ -1251,5 +1252,13 @@
 		.token-grid { grid-template-columns: 1fr; }
 		.trending-card { min-width: 180px; }
 		.launch-card { min-width: 200px; }
+		.tc-name { font-size: 14px; }
+		.tc-price { font-size: 13px; }
+		.tc-logo, .tc-logo-fallback { width: 38px; height: 38px; }
+		.tc-spark { width: 48px; }
+		.token-card { padding: 12px; }
+		.tc-stats { overflow: hidden; }
+		.tc-stat { padding: 6px 6px; min-width: 0; }
+		.tc-stat-value { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 	}
 </style>
