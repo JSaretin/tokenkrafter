@@ -788,9 +788,9 @@
 							</div>
 						{/if}
 						<div class="tc-identity">
-							<span class="tc-name">{tok.name || 'Unknown'}</span>
+							<span class="tc-symbol-lg">{tok.symbol || '???'}</span>
+							<span class="tc-name-sm">{tok.name || 'Unknown'}</span>
 							<div class="tc-meta-row">
-								<span class="tc-symbol">{tok.symbol || '???'}</span>
 								<span class="tc-chain">{chainName(tok.chain_id)}</span>
 								{#if tok.created_at}
 									<span class="tc-age">{timeAgo(tok.created_at)}</span>
@@ -1042,15 +1042,18 @@
 	.tc-color-emerald { background: rgba(16,185,129,0.12); color: #10b981; border: 2px solid rgba(16,185,129,0.2); }
 
 	.tc-identity { flex: 1; min-width: 0; }
-	.tc-name {
-		display: -webkit-box; -webkit-box-orient: vertical;
-		-webkit-line-clamp: 2; line-clamp: 2;
-		font-family: 'Syne', sans-serif; font-size: 16px; font-weight: 800;
-		color: var(--text-heading); letter-spacing: -0.01em; line-height: 1.25;
-		overflow: hidden; overflow-wrap: anywhere; word-break: break-word;
+	.tc-symbol-lg {
+		display: block;
+		font-family: 'Syne', sans-serif; font-size: 18px; font-weight: 800;
+		color: var(--text-heading); letter-spacing: -0.01em; line-height: 1.1;
+	}
+	.tc-name-sm {
+		display: block;
+		font-family: 'Space Mono', monospace; font-size: 11px;
+		color: var(--text-dim); line-height: 1.3; margin-top: 2px;
+		overflow-wrap: anywhere; word-break: break-word;
 	}
 	.tc-meta-row { display: flex; align-items: center; gap: 6px; margin-top: 4px; flex-wrap: wrap; }
-	.tc-symbol { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text-dim); }
 	.tc-chain { font-family: 'Space Mono', monospace; font-size: 8px; color: var(--text-dim); padding: 1px 5px; border-radius: 4px; background: var(--bg-surface-input); }
 	.tc-age { font-family: 'Space Mono', monospace; font-size: 9px; color: var(--text-dim); opacity: 0.7; }
 
