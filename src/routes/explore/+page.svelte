@@ -1029,10 +1029,10 @@
 	.tc-safu-check { font-family: 'Space Mono', monospace; font-size: 8px; color: #10b981; white-space: nowrap; line-height: 1.2; }
 
 	/* Header */
-	.tc-header { display: flex; align-items: center; gap: 10px; text-decoration: none; color: inherit; min-width: 0; }
-	.tc-logo { width: 48px; height: 48px; border-radius: 50%; object-fit: cover; border: 2px solid var(--border); flex-shrink: 0; }
+	.tc-header { display: flex; align-items: flex-start; gap: 12px; text-decoration: none; color: inherit; min-width: 0; }
+	.tc-logo { width: 46px; height: 46px; border-radius: 12px; object-fit: cover; border: 1px solid var(--border); flex-shrink: 0; }
 	.tc-logo-fallback {
-		width: 48px; height: 48px; border-radius: 50%; flex-shrink: 0;
+		width: 46px; height: 46px; border-radius: 12px; flex-shrink: 0;
 		display: flex; align-items: center; justify-content: center;
 		font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 800;
 	}
@@ -1041,10 +1041,15 @@
 	.tc-color-purple { background: rgba(139,92,246,0.12); color: #a78bfa; border: 2px solid rgba(139,92,246,0.2); }
 	.tc-color-emerald { background: rgba(16,185,129,0.12); color: #10b981; border: 2px solid rgba(16,185,129,0.2); }
 
-	.tc-identity { flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; }
-	.tc-identity::-webkit-scrollbar { display: none; }
-	.tc-name { display: block; font-family: 'Syne', sans-serif; font-size: 17px; font-weight: 800; color: var(--text-heading); letter-spacing: -0.01em; white-space: nowrap; line-height: 1.2; }
-	.tc-meta-row { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
+	.tc-identity { flex: 1; min-width: 0; }
+	.tc-name {
+		display: -webkit-box; -webkit-box-orient: vertical;
+		-webkit-line-clamp: 2; line-clamp: 2;
+		font-family: 'Syne', sans-serif; font-size: 16px; font-weight: 800;
+		color: var(--text-heading); letter-spacing: -0.01em; line-height: 1.25;
+		overflow: hidden; overflow-wrap: anywhere; word-break: break-word;
+	}
+	.tc-meta-row { display: flex; align-items: center; gap: 6px; margin-top: 4px; flex-wrap: wrap; }
 	.tc-symbol { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text-dim); }
 	.tc-chain { font-family: 'Space Mono', monospace; font-size: 8px; color: var(--text-dim); padding: 1px 5px; border-radius: 4px; background: var(--bg-surface-input); }
 	.tc-age { font-family: 'Space Mono', monospace; font-size: 9px; color: var(--text-dim); opacity: 0.7; }
