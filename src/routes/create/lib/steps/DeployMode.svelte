@@ -15,7 +15,7 @@
 	</div>
 
 	<div class="intent-grid">
-		<button class="intent-card" class:active={deployMode === 'token'} onclick={() => deployMode = 'token'}>
+		<button type="button" class="intent-card" class:active={deployMode === 'token'} onclick={() => deployMode = 'token'}>
 			<div class="intent-icon cyan">
 				<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v12M6 12h12"/></svg>
 			</div>
@@ -23,7 +23,7 @@
 			<p class="text-gray-400 font-mono text-[11px] leading-snug">{$t('ci.createTokenSub')}</p>
 		</button>
 
-		<button class="intent-card featured" class:active={deployMode === 'both'} onclick={() => deployMode = 'both'}>
+		<button type="button" class="intent-card featured" class:active={deployMode === 'both'} onclick={() => deployMode = 'both'}>
 			<span class="badge badge-cyan badge-top">{$t('ci.recommended')}</span>
 			<div class="intent-icon cyan">
 				<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
@@ -32,7 +32,7 @@
 			<p class="text-gray-500 font-mono text-[11px] leading-snug">{$t('ci.createAndLaunchSub')}</p>
 		</button>
 
-		<button class="intent-card" class:active={deployMode === 'list'} onclick={() => deployMode = 'list'}>
+		<button type="button" class="intent-card" class:active={deployMode === 'list'} onclick={() => deployMode = 'list'}>
 			<div class="intent-icon amber">
 				<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
 			</div>
@@ -40,7 +40,7 @@
 			<p class="text-gray-400 font-mono text-[11px] leading-snug">Create token and add liquidity to DEX instantly.</p>
 		</button>
 
-		<button class="intent-card" class:active={deployMode === 'launch'} onclick={() => deployMode = 'launch'}>
+		<button type="button" class="intent-card" class:active={deployMode === 'launch'} onclick={() => deployMode = 'launch'}>
 			<div class="intent-icon emerald">
 				<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="M12 15l-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg>
 			</div>

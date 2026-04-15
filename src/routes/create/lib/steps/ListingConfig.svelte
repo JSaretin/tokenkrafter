@@ -112,7 +112,7 @@
 					<option value="usdc">USDC</option>
 				</select>
 				{#if pairs.length > 1}
-					<button class="lc-pair-rm" tabindex="-1" onclick={() => removePair(i)}>×</button>
+					<button type="button" class="lc-pair-rm" tabindex="-1" onclick={() => removePair(i)}>×</button>
 				{/if}
 			</div>
 			<div class="lc-pair-input-row">
@@ -135,7 +135,7 @@
 	{/each}
 
 	{#if pairs.length < 3}
-		<button class="lc-add" tabindex="-1" onclick={addPair}>+ Add pair ({pairs.length}/3)</button>
+		<button type="button" class="lc-add" tabindex="-1" onclick={addPair}>+ Add pair ({pairs.length}/3)</button>
 	{/if}
 </div>
 
@@ -175,7 +175,7 @@
 {/if}
 
 <!-- Advanced -->
-<button class="lc-advanced" tabindex="-1" onclick={() => advanced = !advanced}>
+<button type="button" class="lc-advanced" tabindex="-1" onclick={() => advanced = !advanced}>
 	{advanced ? '▾ Hide' : '▸ Advanced'} — set price manually
 </button>
 {#if advanced}

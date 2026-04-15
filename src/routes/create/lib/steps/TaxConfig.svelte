@@ -67,7 +67,7 @@
 			<div class="tc-rate-right">
 				<div class="tc-presets">
 					{#each presets as p}
-						<button class="tc-preset" class:active={num(buyTaxPct) === p} onclick={() => buyTaxPct = String(p)}>{p}%</button>
+						<button type="button" class="tc-preset" class:active={num(buyTaxPct) === p} onclick={() => buyTaxPct = String(p)}>{p}%</button>
 					{/each}
 				</div>
 				<div class="tc-rate-input-wrap" class:tc-input-error={buyOver}>
@@ -87,7 +87,7 @@
 			<div class="tc-rate-right">
 				<div class="tc-presets">
 					{#each presets as p}
-						<button class="tc-preset" class:active={num(sellTaxPct) === p} onclick={() => sellTaxPct = String(p)}>{p}%</button>
+						<button type="button" class="tc-preset" class:active={num(sellTaxPct) === p} onclick={() => sellTaxPct = String(p)}>{p}%</button>
 					{/each}
 				</div>
 				<div class="tc-rate-input-wrap" class:tc-input-error={sellOver}>
@@ -107,7 +107,7 @@
 			<div class="tc-rate-right">
 				<div class="tc-presets">
 					{#each presets.filter(p => p <= MAX_TRANSFER) as p}
-						<button class="tc-preset" class:active={num(transferTaxPct) === p} onclick={() => transferTaxPct = String(p)}>{p}%</button>
+						<button type="button" class="tc-preset" class:active={num(transferTaxPct) === p} onclick={() => transferTaxPct = String(p)}>{p}%</button>
 					{/each}
 				</div>
 				<div class="tc-rate-input-wrap" class:tc-input-error={transferOver}>
@@ -148,7 +148,7 @@
 						<span class="tc-wallet-pct-sign">%</span>
 					</div>
 					{#if taxWallets.length > 1}
-						<button class="tc-wallet-rm" onclick={() => removeWallet(i)}>
+						<button type="button" class="tc-wallet-rm" onclick={() => removeWallet(i)}>
 							<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
 						</button>
 					{/if}
@@ -156,7 +156,7 @@
 			{/each}
 			<div class="tc-wallet-footer">
 				{#if taxWallets.length < 10}
-					<button class="tc-wallet-add" onclick={addWallet}>+ Add wallet</button>
+					<button type="button" class="tc-wallet-add" onclick={addWallet}>+ Add wallet</button>
 				{/if}
 				{#if totalShares > 100}
 					<span class="tc-wallet-warn">Shares total {totalShares}% — max 100%</span>

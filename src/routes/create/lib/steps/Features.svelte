@@ -33,7 +33,7 @@
 	<h3 class="heading">Features</h3>
 	<div class="cards">
 		{#each features as f}
-			<button class="card" class:on={featureOn(f.key)} onclick={() => toggleFeature(f.key)}>
+			<button type="button" class="card" class:on={featureOn(f.key)} onclick={() => toggleFeature(f.key)}>
 				<span class="icon">{f.icon}</span>
 				<div class="info">
 					<span class="title">{f.title}{#if f.badge}<span class="badge">{f.badge}</span>{/if}</span>

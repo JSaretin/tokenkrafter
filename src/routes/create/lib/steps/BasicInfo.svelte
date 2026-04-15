@@ -418,7 +418,7 @@
 			<input id="bi-supply" class="input-field" type="number" placeholder="e.g. 1000000000" bind:value={totalSupply} min="1" required />
 			<div class="supply-quick">
 				{#each supplyPresets as p}
-					<button class="supply-pill" class:active={totalSupply === p.value} tabindex="-1" onclick={() => (totalSupply = p.value)}>{p.label}</button>
+					<button type="button" class="supply-pill" class:active={totalSupply === p.value} tabindex="-1" onclick={() => (totalSupply = p.value)}>{p.label}</button>
 				{/each}
 			</div>
 			{#if formattedSupply()}
@@ -433,7 +433,7 @@
 		</div>
 
 		<!-- About (collapsible) -->
-		<button class="meta-toggle" onclick={() => showMetadata = !showMetadata}>
+		<button type="button" class="meta-toggle" onclick={() => showMetadata = !showMetadata}>
 			<span class="meta-toggle-label">About this token</span>
 			<span class="meta-toggle-hint">Description, website, socials</span>
 			<svg class="meta-toggle-chev" class:meta-open={showMetadata} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>

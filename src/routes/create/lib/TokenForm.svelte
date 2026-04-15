@@ -785,7 +785,7 @@
 	<!-- Step indicator -->
 	<div class="wz-steps">
 		{#each steps as step, i}
-			<button
+			<button type="button"
 				class="wz-step"
 				class:wz-step-done={i < currentStepIdx}
 				class:wz-step-active={step.id === wizardStep}
@@ -812,10 +812,10 @@
 			{#if launchEnabled}
 				<!-- New / Existing tab switcher -->
 				<div class="token-src-tabs">
-					<button class="token-src-tab" class:token-src-active={!useExistingToken} onclick={() => { useExistingToken = false; existingTokenAddress = ''; }}>
+					<button type="button" class="token-src-tab" class:token-src-active={!useExistingToken} onclick={() => { useExistingToken = false; existingTokenAddress = ''; }}>
 						Create new token
 					</button>
-					<button class="token-src-tab" class:token-src-active={useExistingToken} onclick={() => useExistingToken = true}>
+					<button type="button" class="token-src-tab" class:token-src-active={useExistingToken} onclick={() => useExistingToken = true}>
 						Use existing token
 					</button>
 				</div>
@@ -1127,7 +1127,7 @@
 		<div class="curve-modal" onclick={(e) => e.stopPropagation()} role="dialog" aria-label="Choose curve type" tabindex="-1">
 			<div class="curve-modal-header">
 				<h3 class="curve-modal-title">Choose Curve Type</h3>
-				<button class="curve-modal-close" aria-label="Close" onclick={() => showCurveModal = false}>
+				<button type="button" class="curve-modal-close" aria-label="Close" onclick={() => showCurveModal = false}>
 					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
 				</button>
 			</div>
@@ -1139,7 +1139,7 @@
 
 				<div class="curve-modal-options">
 					{#each CURVE_LABELS as label, i}
-						<button
+						<button type="button"
 							class="curve-option"
 							class:curve-option-active={launchCurveType === i}
 							onclick={() => launchCurveType = i}
@@ -1163,7 +1163,7 @@
 				</div>
 			</div>
 
-			<button class="curve-modal-done" onclick={() => showCurveModal = false}>
+			<button type="button" class="curve-modal-done" onclick={() => showCurveModal = false}>
 				Done
 			</button>
 		</div>

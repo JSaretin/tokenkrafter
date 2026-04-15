@@ -20,7 +20,7 @@
 	</div>
 
 	<div class="ps-section">
-		<button class="ps-toggle" class:ps-toggle-on={protectionEnabled} onclick={() => protectionEnabled = !protectionEnabled}>
+		<button type="button" class="ps-toggle" class:ps-toggle-on={protectionEnabled} onclick={() => protectionEnabled = !protectionEnabled}>
 			<div>
 				<span class="ps-toggle-title">Anti-Whale Protection</span>
 				<span class="ps-toggle-desc">Limit max wallet & transaction size</span>
