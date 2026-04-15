@@ -274,6 +274,29 @@
 				.limit(100);
 			if (!rows || rows.length === 0) return false;
 			const mapped = rows.map(dbRowToLaunch).filter(Boolean) as (LaunchInfo & { network: SupportedNetwork })[];
+
+			// Fill missing launch logos with the underlying token's logo —
+			// creators often set one or the other; buyers expect a picture.
+			const missingLogoAddrs = mapped
+				.filter(l => !(l as any).logoUrl && l.token)
+				.map(l => l.token.toLowerCase());
+			if (missingLogoAddrs.length > 0) {
+				const { data: tokenRows } = await supabase
+					.from('created_tokens')
+					.select('address, logo_url')
+					.in('address', missingLogoAddrs);
+				const logoByAddr = new Map<string, string>();
+				for (const t of tokenRows || []) {
+					if (t.logo_url) logoByAddr.set(t.address.toLowerCase(), t.logo_url);
+				}
+				for (const l of mapped) {
+					if (!(l as any).logoUrl) {
+						const fallback = logoByAddr.get(l.token?.toLowerCase());
+						if (fallback) (l as any).logoUrl = fallback;
+					}
+				}
+			}
+
 			mapped.sort((a, b) => Number(b.deadline - a.deadline));
 			launches = mapped;
 			return true;

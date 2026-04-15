@@ -1703,7 +1703,8 @@
 		<div class="page-grid">
 			<!-- Left: Token-focused content -->
 			<div class="left-col">
-				<!-- About / Inline Editor -->
+				<!-- About / Inline Editor — hidden for non-creators when there's nothing to show -->
+				{#if isEditing || metadata.description || metadata.video_url || isCreator}
 				<div class="card p-6 mb-4">
 					{#if isEditing}
 						<!-- Inline edit mode -->
@@ -1795,6 +1796,7 @@
 						{/if}
 					{/if}
 				</div>
+				{/if}
 
 				<!-- Tokenomics -->
 				<div class="card p-6 mb-4">
