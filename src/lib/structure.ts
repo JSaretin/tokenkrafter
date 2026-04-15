@@ -11,6 +11,7 @@ export interface SupportedNetwork {
 	dex_router: string;
 	trade_router_address: string;
 	rpc: string;
+	ws_rpc?: string;             // optional websocket endpoint — daemons subscribe via WS when set
 	explorer_url?: string;       // e.g. "https://bscscan.com"
 	gecko_network?: string;      // e.g. "bsc" for GeckoTerminal API
 	/**

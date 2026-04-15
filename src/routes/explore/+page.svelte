@@ -824,7 +824,10 @@
 					<div class="tc-row2">
 						<div class="tc-badges-row">
 							{#if isSafu}
-								<span class="tc-badge tc-badge-safu">SAFU</span>
+								<span
+									class="tc-badge tc-badge-safu"
+									title="SAFU — passes all on-chain safety checks:&#10;• Trading enabled + liquidity has reserves&#10;• LP ≥99% burned to 0xdEaD&#10;• Tax ceiling locked (or token is non-taxable)&#10;• Not mintable, or owner renounced"
+								>SAFU</span>
 							{/if}
 							{#if tok.created_at && isNew(tok.created_at)}
 								<span class="tc-badge tc-badge-new">New</span>

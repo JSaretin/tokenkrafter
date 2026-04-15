@@ -226,75 +226,38 @@ export async function checkSession(): Promise<boolean> {
 
 // ── Session / PIN cache (shared across wallets) ────────────────────────
 //
-// Two-tier expiry, configurable by the user:
-//   - idle expiry  (default 30 min): bumped on every signing op + on
-//                                     explicit `extendSession()` calls
-//   - absolute expiry (default 8 hours): hard ceiling, can't be extended
-//
-// Critical operations (export key, export seed, delete wallet) should
-// re-prompt for the PIN regardless of session state — those callers
-// pass an explicit PIN to `unlockWallet`.
+// PIN stays cached until the user explicitly locks the wallet, signs out,
+// or closes the tab (sessionStorage clears). No idle/absolute auto-lock —
+// users said the timeout was disrupting multi-step flows. Critical ops
+// (export key/seed, delete wallet) still re-prompt for the PIN regardless
+// of cache state by passing an explicit PIN to `unlockWallet`.
 
 const SESSION_KEY = '_wp';
-const SESSION_POLICY_KEY = '_wallet_session_policy';
-const DEFAULT_IDLE_MS = 30 * 60 * 1000;
-const DEFAULT_ABSOLUTE_MS = 8 * 60 * 60 * 1000;
 
 export interface SessionPolicy {
 	idleMs: number;
 	absoluteMs: number;
 }
 
+// Kept for backwards compatibility with callers that still reference these,
+// but they are now no-ops — the wallet does not auto-lock.
 export function getSessionPolicy(): SessionPolicy {
-	const clampIdle = (v: number) => Math.max(60_000, Math.min(v, 28_800_000));
-	const clampAbsolute = (v: number) => Math.max(300_000, Math.min(v, 86_400_000));
-	try {
-		const raw = localStorage.getItem(SESSION_POLICY_KEY);
-		if (!raw) return { idleMs: DEFAULT_IDLE_MS, absoluteMs: DEFAULT_ABSOLUTE_MS };
-		const p = JSON.parse(raw);
-		return {
-			idleMs: clampIdle(Number(p.idleMs) || DEFAULT_IDLE_MS),
-			absoluteMs: clampAbsolute(Number(p.absoluteMs) || DEFAULT_ABSOLUTE_MS),
-		};
-	} catch {
-		return { idleMs: DEFAULT_IDLE_MS, absoluteMs: DEFAULT_ABSOLUTE_MS };
-	}
+	return { idleMs: Infinity, absoluteMs: Infinity };
 }
-
-export function setSessionPolicy(idleMs: number, absoluteMs: number): void {
-	try {
-		localStorage.setItem(SESSION_POLICY_KEY, JSON.stringify({ idleMs, absoluteMs }));
-	} catch {}
-}
+export function setSessionPolicy(_idleMs: number, _absoluteMs: number): void {}
 
 function cachePin(pin: string) {
-	const policy = getSessionPolicy();
-	const now = Date.now();
 	_cachedPin = pin;
-	localStorage.setItem(
-		SESSION_KEY,
-		JSON.stringify({
-			v: btoa(pin),
-			absExp: now + policy.absoluteMs,
-			idleExp: now + policy.idleMs,
-		}),
-	);
+	try { localStorage.setItem(SESSION_KEY, JSON.stringify({ v: btoa(pin) })); } catch {}
 }
 
 function getCachedPin(): string | null {
+	if (_cachedPin) return _cachedPin;
 	try {
 		const raw = localStorage.getItem(SESSION_KEY);
-		if (!raw) {
-			_cachedPin = null;
-			return null;
-		}
-		const { v, absExp, idleExp } = JSON.parse(raw);
-		const now = Date.now();
-		if (now > absExp || now > idleExp) {
-			clearCachedPin();
-			return null;
-		}
-		if (!_cachedPin) _cachedPin = atob(v);
+		if (!raw) return null;
+		const { v } = JSON.parse(raw);
+		_cachedPin = atob(v);
 		return _cachedPin;
 	} catch {
 		return null;
@@ -306,25 +269,7 @@ function clearCachedPin() {
 	localStorage.removeItem(SESSION_KEY);
 }
 
-/** Bump the idle expiry. Call from user-driven activity (clicks, key
- *  events) so a busy user isn't auto-locked while interacting. The
- *  absolute expiry is a hard ceiling and can't be pushed past. */
-export function extendSession(): void {
-	try {
-		const raw = localStorage.getItem(SESSION_KEY);
-		if (!raw) return;
-		const data = JSON.parse(raw);
-		const now = Date.now();
-		if (now > data.absExp) {
-			clearCachedPin();
-			lockWallet();
-			return;
-		}
-		const policy = getSessionPolicy();
-		data.idleExp = Math.min(now + policy.idleMs, data.absExp);
-		localStorage.setItem(SESSION_KEY, JSON.stringify(data));
-	} catch {}
-}
+export function extendSession(): void {}
 
 export interface SessionInfo {
 	unlocked: boolean;
@@ -333,22 +278,11 @@ export interface SessionInfo {
 }
 
 export function getSessionInfo(): SessionInfo {
-	if (!_state.isUnlocked) {
-		return { unlocked: false, idleRemainingMs: 0, absoluteRemainingMs: 0 };
-	}
-	try {
-		const raw = localStorage.getItem(SESSION_KEY);
-		if (!raw) return { unlocked: true, idleRemainingMs: 0, absoluteRemainingMs: 0 };
-		const { absExp, idleExp } = JSON.parse(raw);
-		const now = Date.now();
-		return {
-			unlocked: true,
-			idleRemainingMs: Math.max(0, idleExp - now),
-			absoluteRemainingMs: Math.max(0, absExp - now),
-		};
-	} catch {
-		return { unlocked: true, idleRemainingMs: 0, absoluteRemainingMs: 0 };
-	}
+	return {
+		unlocked: _state.isUnlocked,
+		idleRemainingMs: Infinity,
+		absoluteRemainingMs: Infinity,
+	};
 }
 
 // ── Sign out ───────────────────────────────────────────────────────────

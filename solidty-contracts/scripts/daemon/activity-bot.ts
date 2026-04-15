@@ -33,6 +33,7 @@
 import { ethers } from 'ethers';
 import * as fs from 'fs';
 import * as path from 'path';
+import { createManagedProvider } from './lib/provider';
 
 // ── Config ──
 const RPC_URL = process.env.RPC_URL || 'https://bsc-dataseed.binance.org/';
@@ -396,6 +397,7 @@ async function main() {
 		routerAddr = net?.router_address;
 		usdtAddr = net?.usdt_address;
 		if (net?.rpc) rpcUrl = net.rpc;
+		var wsRpc: string | undefined = net?.ws_rpc;
 	} catch (e: any) {
 		console.error(`❌ Config fetch failed: ${e.message}`);
 		process.exit(1);
@@ -405,7 +407,8 @@ async function main() {
 		process.exit(1);
 	}
 
-	const provider = new ethers.JsonRpcProvider(rpcUrl, CHAIN_ID, { staticNetwork: true });
+	const managed = createManagedProvider({ chainId: CHAIN_ID, httpRpc: rpcUrl, wsRpc });
+	const provider = managed.getProvider();
 	const wallets = deriveWallets(mnemonic, WALLET_COUNT, provider);
 	const treasurer = wallets[0]; // wallet[0] holds the pooled funds, scatters to others
 	const speed = SPEEDS[SPEED] || SPEEDS.slow;

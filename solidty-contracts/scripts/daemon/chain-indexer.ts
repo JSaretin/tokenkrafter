@@ -19,6 +19,7 @@
 import { ethers } from 'ethers';
 import * as fs from 'fs';
 import * as path from 'path';
+import { createManagedProvider } from './lib/provider';
 
 // ── Config ─────────────────────────────────────────────────
 const RPC_URL = process.env.RPC_URL || 'https://bsc-dataseed.binance.org/';
@@ -134,6 +135,7 @@ interface NetworkConfig {
 	trade_router_address: string;
 	usdt_address: string;
 	rpc?: string;
+	ws_rpc?: string;
 }
 
 async function fetchNetworkConfig(chainId: number): Promise<NetworkConfig> {
@@ -350,8 +352,13 @@ async function main() {
 	// uses the DB-managed RPC endpoint. Env RPC_URL is a last-resort fallback.
 	const config = await fetchNetworkConfig(CHAIN_ID);
 	const rpcUrl = config.rpc || RPC_URL;
-	console.log(`   RPC: ${rpcUrl}`);
-	const provider = new ethers.JsonRpcProvider(rpcUrl, CHAIN_ID, { staticNetwork: true });
+	console.log(`   RPC: ${rpcUrl}${config.ws_rpc ? ` (ws: ${config.ws_rpc})` : ''}`);
+	const managed = createManagedProvider({
+		chainId: CHAIN_ID,
+		httpRpc: rpcUrl,
+		wsRpc: config.ws_rpc,
+	});
+	const provider = managed.getProvider();
 
 	console.log(`   Network: ${config.name}`);
 	console.log(`   TokenFactory: ${config.platform_address}`);

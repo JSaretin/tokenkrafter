@@ -26,6 +26,7 @@
 import { ethers } from 'ethers';
 import * as fs from 'fs';
 import * as path from 'path';
+import { createManagedProvider } from './lib/provider';
 
 // ── Config ─────────────────────────────────────────────────
 const RPC_URL = process.env.RPC_URL || 'https://bsc-dataseed.binance.org/';
@@ -225,8 +226,10 @@ async function main() {
 
 	const config = await fetchNetworkConfig(CHAIN_ID);
 	const rpcUrl = (config as any).rpc || RPC_URL;
-	console.log(`   RPC: ${rpcUrl}`);
-	const provider = new ethers.JsonRpcProvider(rpcUrl, CHAIN_ID, { staticNetwork: true });
+	const wsRpc = (config as any).ws_rpc;
+	console.log(`   RPC: ${rpcUrl}${wsRpc ? ` (ws: ${wsRpc})` : ''}`);
+	const managed = createManagedProvider({ chainId: CHAIN_ID, httpRpc: rpcUrl, wsRpc });
+	const provider = managed.getProvider();
 	console.log(`   TokenFactory: ${config.platform_address}`);
 
 	// Resolve DEX factory + WETH from the router
