@@ -574,7 +574,7 @@
 
 	/* Header */
 	.explore-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
-	.explore-title { font-family: 'Syne', sans-serif; font-size: 28px; font-weight: 800; color: #fff; margin: 0; }
+	.explore-title { font-family: 'Syne', sans-serif; font-size: 28px; font-weight: 800; color: var(--text-heading); margin: 0; }
 	.explore-sub { font-size: 12px; color: #475569; font-family: 'Space Mono', monospace; margin: 4px 0 0; }
 
 	.explore-search {
@@ -732,7 +732,7 @@
 	.tc-color-emerald { background: rgba(16,185,129,0.12); color: #10b981; border: 2px solid rgba(16,185,129,0.2); }
 
 	.tc-identity { flex: 1; min-width: 0; }
-	.tc-name { display: block; font-family: 'Syne', sans-serif; font-size: 15px; font-weight: 700; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+	.tc-name { display: block; font-family: 'Syne', sans-serif; font-size: 15px; font-weight: 700; color: var(--text-heading); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 	.tc-meta-row { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
 	.tc-symbol { font-family: 'Space Mono', monospace; font-size: 10px; color: #475569; }
 	.tc-chain { font-family: 'Space Mono', monospace; font-size: 8px; color: #374151; padding: 1px 5px; border-radius: 4px; background: rgba(255,255,255,0.04); }
@@ -748,7 +748,7 @@
 
 	/* Header right (badge + price) */
 	.tc-header-right { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; flex-shrink: 0; }
-	.tc-price { font-family: 'Rajdhani', sans-serif; font-size: 15px; font-weight: 700; color: #fff; font-variant-numeric: tabular-nums; line-height: 1; }
+	.tc-price { font-family: 'Rajdhani', sans-serif; font-size: 15px; font-weight: 700; color: var(--text-heading); font-variant-numeric: tabular-nums; line-height: 1; }
 	.tc-change { font-family: 'Rajdhani', sans-serif; font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1; }
 	.tc-change-up { color: #10b981; }
 	.tc-change-down { color: #f87171; }

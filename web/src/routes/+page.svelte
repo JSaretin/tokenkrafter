@@ -642,13 +642,6 @@
 					<h3 class="feature-name">{$t('home.featureRefunds')}</h3>
 					<p class="feature-desc">{$t('home.featureRefundsDesc')}</p>
 				</div>
-				<div class="feature-card">
-					<div class="feature-icon-box emerald">
-						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-					</div>
-					<h3 class="feature-name">{$t('home.featureRelaxOnly')}</h3>
-					<p class="feature-desc">{$t('home.featureRelaxOnlyDesc')}</p>
-				</div>
 			</div>
 		</div>
 
@@ -675,10 +668,10 @@
 				</div>
 				<div class="feature-card">
 					<div class="feature-icon-box amber">
-						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
 					</div>
-					<h3 class="feature-name">{$t('home.featureBlacklistExpiry')}</h3>
-					<p class="feature-desc">{$t('home.featureBlacklistExpiryDesc')}</p>
+					<h3 class="feature-name">{$t('home.featureRelaxOnly')}</h3>
+					<p class="feature-desc">{$t('home.featureRelaxOnlyDesc')}</p>
 				</div>
 			</div>
 		</div>
@@ -1246,8 +1239,14 @@
 
 	/* ── Feature Cards ── */
 	.features-grid {
-		display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+		display: grid; grid-template-columns: repeat(3, 1fr);
 		gap: 12px;
+	}
+	@media (max-width: 768px) {
+		.features-grid { grid-template-columns: repeat(2, 1fr); }
+	}
+	@media (max-width: 480px) {
+		.features-grid { grid-template-columns: 1fr; }
 	}
 	.feature-card {
 		display: flex; flex-direction: column; gap: 8px;

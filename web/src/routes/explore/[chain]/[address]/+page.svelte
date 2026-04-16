@@ -370,7 +370,7 @@
 		<div class="s-divider"></div>
 		<div class="s-cell">
 			<span class="s-label">Pools</span>
-			<span class="s-val">{activePools.length}<span class="s-sub">/{pools.length}</span></span>
+			<span class="s-val" title="{activePools.length} active of {pools.length} total pools">{activePools.length}<span class="s-sub">/{pools.length}</span></span>
 		</div>
 		{#if createdAt}
 			<div class="s-divider"></div>
@@ -391,11 +391,11 @@
 			<div class="tax-grid">
 				<div class="tax-cell">
 					<span class="tax-label">Buy</span>
-					<span class="tax-val">{(taxInfo.buyTaxBps / 100).toFixed(1)}%</span>
+					<span class="tax-val" class:tax-zero={taxInfo.buyTaxBps === 0}>{(taxInfo.buyTaxBps / 100).toFixed(1)}%</span>
 				</div>
 				<div class="tax-cell">
 					<span class="tax-label">Sell</span>
-					<span class="tax-val">{(taxInfo.sellTaxBps / 100).toFixed(1)}%</span>
+					<span class="tax-val" class:tax-zero={taxInfo.sellTaxBps === 0}>{(taxInfo.sellTaxBps / 100).toFixed(1)}%</span>
 				</div>
 				<div class="tax-cell">
 					<span class="tax-label">Transfer</span>
@@ -558,9 +558,12 @@
 	<!-- Contract info (Decimals moved here from stats strip) -->
 	<section class="section">
 		<h2 class="section-title">Contract</h2>
-		<div class="contract-bar" onclick={copyAddress} role="button" tabindex="0" onkeydown={(e) => { if (e.key === 'Enter') copyAddress(); }}>
+		<div class="contract-bar">
 			<span class="contract-addr">{tokenAddress}</span>
-			<span class="contract-copy">{copied ? '✓ Copied' : 'Copy'}</span>
+			<span class="contract-actions">
+				<button class="contract-btn" onclick={copyAddress}>{copied ? '✓ Copied' : 'Copy'}</button>
+				<a class="contract-btn" href="{chainInfo.explorer}/address/{tokenAddress}" target="_blank" rel="noopener">Explorer</a>
+			</span>
 		</div>
 		<div class="contract-meta">
 			{#if creator}
@@ -683,14 +686,15 @@
 	}
 
 	.status-live {
-		display: flex; align-items: center; gap: 8px;
-		font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700;
-		color: #10b981; padding: 8px 16px; border-radius: 10px;
+		display: flex; align-items: center; gap: 6px;
+		font-family: 'Space Mono', monospace; font-size: 10px; font-weight: 700;
+		color: #10b981; padding: 5px 12px; border-radius: 6px;
 		background: rgba(16,185,129,0.06); border: 1px solid rgba(16,185,129,0.12);
+		text-transform: uppercase; letter-spacing: 0.04em;
 	}
 	.pulse {
-		width: 8px; height: 8px; border-radius: 50%; background: #10b981;
-		box-shadow: 0 0 8px #10b981;
+		width: 6px; height: 6px; border-radius: 50%; background: #10b981;
+		box-shadow: 0 0 6px #10b981;
 		animation: pulse-glow 2s ease-in-out infinite;
 	}
 	@keyframes pulse-glow {
@@ -774,6 +778,7 @@
 		font-family: 'Rajdhani', sans-serif; font-size: 20px; font-weight: 700;
 		color: #f59e0b; font-variant-numeric: tabular-nums;
 	}
+	.tax-zero { color: #10b981; }
 	.tax-free { color: #10b981; }
 	.tax-warn {
 		padding: 8px 16px; border-top: 1px solid rgba(239,68,68,0.1);
@@ -834,14 +839,16 @@
 	}
 	@keyframes pool-in { from { opacity: 0; transform: translateY(8px); } }
 	.pool:hover { border-color: rgba(0,210,255,0.15); background: rgba(0,210,255,0.02); }
-	.pool-empty { opacity: 0.5; }
+	.pool-empty { opacity: 0.4; padding: 10px 16px; }
+	.pool-empty .pool-reserves { display: none; }
+	.pool-empty .pool-top { margin-bottom: 0; }
 	.pool-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
 	.pool-pair { font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700; color: var(--text); }
 	.pool-lp {
 		font-family: 'Space Mono', monospace; font-size: 10px; font-weight: 700;
 		padding: 3px 8px; border-radius: 5px;
 	}
-	.lp-burned { color: #10b981; background: rgba(16,185,129,0.08); }
+	.lp-burned { color: #10b981; background: rgba(16,185,129,0.12); border: 1px solid rgba(16,185,129,0.2); font-weight: 800; }
 	.lp-held { color: #f59e0b; background: rgba(245,158,11,0.06); }
 	.lp-empty { color: var(--text-dim); background: var(--bg-surface); }
 
@@ -867,18 +874,19 @@
 		display: flex; justify-content: space-between; align-items: center;
 		padding: 14px 16px; border-radius: 10px;
 		border: 1px solid var(--border-subtle);
-		background: var(--bg-surface);
-		cursor: pointer; transition: all 0.15s;
+		background: var(--bg-surface); gap: 12px;
 	}
-	.contract-bar:hover { border-color: rgba(0,210,255,0.15); background: rgba(0,210,255,0.02); }
 	.contract-addr {
 		font-family: 'Space Mono', monospace; font-size: 11px; color: var(--text-dim);
 		overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 	}
-	.contract-copy {
+	.contract-actions { display: flex; gap: 8px; flex-shrink: 0; }
+	.contract-btn {
 		font-family: 'Space Mono', monospace; font-size: 10px; color: #00d2ff;
-		flex-shrink: 0;
+		background: none; border: none; cursor: pointer; padding: 2px 0;
+		text-decoration: none; transition: opacity 0.15s;
 	}
+	.contract-btn:hover { opacity: 0.7; }
 	.contract-meta { margin-top: 6px; }
 	.creator-bar {
 		display: flex; justify-content: space-between; align-items: center;
