@@ -2006,47 +2006,54 @@
 					/>
 				</div>
 
-				<!-- Sale Rules & Contract Info -->
-				<div class="card p-6 mb-4">
-					<h3 class="syne font-bold text-white mb-4">Launch Rules</h3>
-					<div class="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
-						<div class="rule-chip">
-							<span class="rule-chip-value">1%</span>
-							<span class="rule-chip-label">Buy Fee</span>
+				<!-- Sale Parameters & Contracts -->
+				<div class="card sale-params mb-4">
+					<h3 class="sale-params-title">Sale Details</h3>
+
+					<div class="sale-grid">
+						<div class="sale-item">
+							<span class="sale-item-label">Buy fee</span>
+							<span class="sale-item-val">1%</span>
 						</div>
-						<div class="rule-chip">
-							<span class="rule-chip-value">1%</span>
-							<span class="rule-chip-label">Graduation Fee</span>
+						<div class="sale-item">
+							<span class="sale-item-label">Graduation fee</span>
+							<span class="sale-item-val">1%</span>
 						</div>
-						<div class="rule-chip">
-							<span class="rule-chip-value">{maxBuyPerWallet > 0n ? formatUsdt(maxBuyPerWallet, ud) : 'None'}</span>
-							<span class="rule-chip-label">Max Buy ({maxBuyPct}%)</span>
-						</div>
-						<div class="rule-chip">
-							<span class="rule-chip-value">{network.symbol === 'BSC' ? 'PCS' : 'Uni'} V2</span>
-							<span class="rule-chip-label">DEX (LP Burned)</span>
-						</div>
-						{#if minBuyUsdt > 0n}
-							<div class="rule-chip">
-								<span class="rule-chip-value">{formatUsdt(minBuyUsdt, ud)}</span>
-								<span class="rule-chip-label">Min Buy</span>
+						{#if maxBuyPerWallet > 0n}
+							<div class="sale-item">
+								<span class="sale-item-label">Max per wallet</span>
+								<span class="sale-item-val">{formatUsdt(maxBuyPerWallet, ud)} <span class="sale-item-dim">({maxBuyPct}%)</span></span>
 							</div>
 						{/if}
+						{#if minBuyUsdt > 0n}
+							<div class="sale-item">
+								<span class="sale-item-label">Min buy</span>
+								<span class="sale-item-val">{formatUsdt(minBuyUsdt, ud)}</span>
+							</div>
+						{/if}
+						<div class="sale-item">
+							<span class="sale-item-label">DEX</span>
+							<span class="sale-item-val">{network?.symbol === 'BSC' ? 'PancakeSwap' : 'Uniswap'} V2</span>
+						</div>
+						<div class="sale-item">
+							<span class="sale-item-label">LP at graduation</span>
+							<span class="sale-item-val sale-item-green">Burned permanently</span>
+						</div>
 					</div>
 
-					<div class="detail-grid">
-						<div class="detail-row">
-							<span class="detail-label">Token</span>
-							<span class="detail-value addr-value text-cyan-400">{launch.token}</span>
-						</div>
-						<div class="detail-row">
-							<span class="detail-label">Launch</span>
-							<span class="detail-value addr-value">{launch.address}</span>
-						</div>
-						<div class="detail-row">
-							<span class="detail-label">Creator</span>
-							<span class="detail-value addr-value">{launch.creator}</span>
-						</div>
+					<div class="sale-contracts">
+						<span class="sale-contracts-label">Contracts</span>
+						{#each [['Token', launch.token], ['Launch', launch.address], ['Creator', launch.creator]] as [label, addr]}
+							<div class="sale-addr-row">
+								<span>{label}</span>
+								<div class="sale-addr-group">
+									<a href="{network?.explorer_url || ''}/address/{addr}" target="_blank" rel="noopener noreferrer" class="sale-addr">{addr}</a>
+									<button class="copy-addr-btn" title="Copy address" onclick={() => { navigator.clipboard.writeText(addr); addFeedback({ message: 'Copied!', type: 'success' }); }}>
+										<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+									</button>
+								</div>
+							</div>
+						{/each}
 					</div>
 				</div>
 
@@ -2275,7 +2282,7 @@
 						<div class="progress-track">
 							<div class="progress-fill progress-purple" style="width: {tokenProgress}%"></div>
 						</div>
-						<div class="text-right text-[10px] text-gray-500 font-mono mt-1">{tokenProgress}% {$t('lpd.tokensSold')}</div>
+						<div class="text-right text-[10px] text-gray-400 font-mono mt-1">{tokenProgress}% {$t('lpd.tokensSold')}</div>
 					</div>
 
 					<!-- Buyer stats -->
@@ -2285,7 +2292,7 @@
 								<div class="flex items-center gap-1.5">
 									<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#00d2ff" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
 									<span class="text-cyan-400 font-bold">{launch.totalBuyers}</span>
-									<span class="text-gray-500">buyer{launch.totalBuyers !== 1 ? 's' : ''}</span>
+									<span class="text-gray-400">buyer{launch.totalBuyers !== 1 ? 's' : ''}</span>
 								</div>
 							{/if}
 							{#if launch.totalPurchases > 0}
@@ -3059,16 +3066,18 @@
 	/* Progress bar with soft cap marker */
 	.lp-progress-wrap { position: relative; }
 	.lp-sc-marker {
-		position: absolute; top: -2px; transform: translateX(-50%);
-		display: flex; flex-direction: column; align-items: center;
+		position: absolute; top: -4px; transform: translateX(-50%);
+		display: flex; flex-direction: column; align-items: center; z-index: 2;
 	}
 	.lp-sc-line {
-		width: 2px; height: 12px;
+		width: 2px; height: 24px;
 		background: #f59e0b; border-radius: 1px;
+		box-shadow: 0 0 6px rgba(245, 158, 11, 0.4);
 	}
 	.lp-sc-label {
-		font-size: 8px; color: #f59e0b; font-family: 'Space Mono', monospace;
-		font-weight: 700; margin-top: 1px;
+		font-size: 9px; color: #f59e0b; font-family: 'Space Mono', monospace;
+		font-weight: 700; margin-top: 2px; background: var(--bg, #0f172a);
+		padding: 1px 4px; border-radius: 3px; border: 1px solid rgba(245, 158, 11, 0.3);
 	}
 
 	/* Override progress bar height for detail view */
@@ -3078,6 +3087,8 @@
 	}
 	.progress-fill {
 		border-radius: 4px;
+		min-width: 4px;
+		transition: width 0.3s ease;
 	}
 
 	.status-cyan { color: #00d2ff; }
@@ -3240,28 +3251,58 @@
 		white-space: nowrap;
 	}
 
-	/* Rule chips */
-	.rule-chip {
-		text-align: center;
-		padding: 8px;
-		border-radius: 8px;
-		background: var(--bg-surface-hover);
-		border: 1px solid var(--border-subtle);
+	/* Sale Details */
+	.sale-params { padding: 18px 20px; }
+	.sale-params-title {
+		font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 800;
+		color: var(--text-heading); margin-bottom: 12px;
 	}
-	.rule-chip-value {
-		display: block;
-		font-size: 13px;
-		font-weight: 700;
+	.sale-grid {
+		display: grid; grid-template-columns: 1fr 1fr; gap: 1px;
+		background: var(--border-subtle); border-radius: 10px; overflow: hidden;
+		margin-bottom: 16px;
+	}
+	.sale-item {
+		padding: 10px 12px; background: var(--bg-surface);
+	}
+	.sale-item-label {
+		display: block; font-family: 'Rajdhani', sans-serif; font-size: 10px;
+		color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.03em;
+		margin-bottom: 2px;
+	}
+	.sale-item-val {
+		font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700;
 		color: var(--text-heading);
-		font-family: 'Space Mono', monospace;
 	}
-	.rule-chip-label {
-		display: block;
-		font-size: 9px;
-		color: var(--text-muted);
-		font-family: 'Space Mono', monospace;
-		margin-top: 2px;
+	.sale-item-dim { font-size: 10px; color: var(--text-dim); font-weight: 400; }
+	.sale-item-green { color: #10b981; }
+
+	.sale-contracts {
+		border-top: 1px solid var(--border-subtle); padding-top: 12px;
 	}
+	.sale-contracts-label {
+		display: block; font-family: 'Rajdhani', sans-serif; font-size: 10px;
+		color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.03em;
+		margin-bottom: 8px;
+	}
+	.sale-addr-row {
+		display: flex; justify-content: space-between; align-items: center;
+		padding: 4px 0;
+		font-family: 'Rajdhani', sans-serif; font-size: 11px;
+	}
+	.sale-addr-row span { color: var(--text-dim); }
+	.sale-addr {
+		color: var(--text-muted); text-decoration: none;
+		max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+		font-family: 'Space Mono', monospace; font-size: 10px;
+	}
+	.sale-addr:hover { color: #00d2ff; }
+	.sale-addr-group { display: flex; align-items: center; gap: 6px; }
+	.copy-addr-btn {
+		background: none; border: none; cursor: pointer; padding: 2px;
+		color: var(--text-dim); opacity: 0.5; transition: opacity 0.15s;
+	}
+	.copy-addr-btn:hover { opacity: 1; color: #00d2ff; }
 
 	/* Your Bag */
 	.pos-card { padding: 20px; }
@@ -3507,8 +3548,10 @@
 
 	/* Progress bar large variant */
 	.progress-track-lg {
-		height: 12px;
-		border-radius: 6px;
+		height: 16px;
+		border-radius: 8px;
+		background: var(--bg-surface-input, rgba(255,255,255,0.06));
+		border: 1px solid var(--border-subtle, rgba(255,255,255,0.05));
 	}
 
 	/* Sale info divider */
@@ -3602,7 +3645,7 @@
 	}
 	.activity-stat-label {
 		font-family: 'Rajdhani', sans-serif; font-size: 10px;
-		color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.03em;
+		color: var(--text-muted, #94a3b8); text-transform: uppercase; letter-spacing: 0.03em;
 	}
 	.activity-stat-divider { width: 1px; height: 24px; background: var(--border-subtle); }
 
