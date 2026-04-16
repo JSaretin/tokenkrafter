@@ -33,6 +33,7 @@
 		CURVE_TYPES
 	} from '$lib/launchpad';
 	import Chart from '$lib/Chart.svelte';
+	import LaunchCountdown from '$lib/LaunchCountdown.svelte';
 	import BondingCurveChart from '$lib/BondingCurveChart.svelte';
 	import PriceProgressChart from '$lib/PriceProgressChart.svelte';
 
@@ -2221,8 +2222,8 @@
 										<div class="activity-card-hero">
 											<span class="activity-tok">{fmtTok}</span> <span class="activity-tok-sym">{tokenMeta.symbol}</span> <span class="activity-sep">·</span> <span class="activity-usd">${usdtVal < 0.01 ? '<0.01' : usdtVal.toFixed(2)}</span>
 										</div>
-										{#if priceDiffPct > 5}
-											<div class="activity-price-ctx">bought {priceDiffPct.toFixed(0)}% below current price</div>
+										{#if priceDiffPct > 10}
+											<div class="activity-price-ctx">bought {priceDiffPct > 999 ? (priceDiffPct / 100).toFixed(0) + 'x' : priceDiffPct.toFixed(0) + '%'} below current price</div>
 										{/if}
 									</div>
 								</div>
@@ -2336,38 +2337,12 @@
 				<!-- Countdown Timer -->
 				{#if countdown && launch.state === 1}
 					<div class="card p-5 mb-4" style={isScheduled ? 'border-color: rgba(245, 158, 11, 0.2)' : ''}>
-						<div class="text-center mb-3">
-							<span class="{isScheduled ? 'text-amber-400' : 'text-gray-400'} text-xs font-mono uppercase tracking-wider">
-								{#if isScheduled}
-									Sale Starts In
-								{:else}
-									{countdown.ended ? $t('lpd.saleEnded') : $t('lpd.saleEndsIn')}
-								{/if}
-							</span>
-						</div>
-						{#if !countdown.ended}
-							{@const numClass = isScheduled ? 'countdown-num countdown-num-amber' : 'countdown-num'}
-							<div class="countdown-grid">
-								<div class="countdown-box">
-									<span class={numClass}>{String(countdown.days).padStart(2, '0')}</span>
-									<span class="countdown-label">{$t('lpd.days')}</span>
-								</div>
-								<div class="countdown-box">
-									<span class={numClass}>{String(countdown.hours).padStart(2, '0')}</span>
-									<span class="countdown-label">{$t('lpd.hours')}</span>
-								</div>
-								<div class="countdown-box">
-									<span class={numClass}>{String(countdown.minutes).padStart(2, '0')}</span>
-									<span class="countdown-label">{$t('lpd.min')}</span>
-								</div>
-								<div class="countdown-box">
-									<span class={numClass}>{String(countdown.seconds).padStart(2, '0')}</span>
-									<span class="countdown-label">{$t('lpd.sec')}</span>
-								</div>
-							</div>
-						{:else}
-							<div class="text-center text-red-400 text-sm font-mono">{$t('lpd.deadlineReached')}</div>
-						{/if}
+						<LaunchCountdown
+							deadline={Number(launch.deadline)}
+							size="lg"
+							variant={isScheduled ? 'amber' : 'cyan'}
+							label={isScheduled ? 'Sale Starts In' : $t('lpd.saleEndsIn')}
+						/>
 					</div>
 				{/if}
 
