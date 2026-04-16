@@ -55,16 +55,19 @@ const {
 	TELEGRAM_CHANNEL_ID = '',
 } = Bun.env;
 
-if (!TRADE_ROUTER) { console.error('TRADE_ROUTER required'); process.exit(1); }
-if (!ADMIN_ADDRESS) { console.error('ADMIN_ADDRESS required'); process.exit(1); }
+// TRADE_ROUTER + ADMIN_ADDRESS can come from env OR DB config (resolved at boot).
+// Only fatal-exit if neither source provides them after resolveFromConfig().
+
 if (!TX_CONFIRM_SECRET) { console.error('TX_CONFIRM_SECRET required'); process.exit(1); }
 if (!FLUTTERWAVE_SECRET_KEY) { console.error('FLUTTERWAVE_SECRET_KEY required'); process.exit(1); }
 
 // ── Fetch private daemon_rpc from backend config (MEV-protected writes) ──
 let resolvedRpc = CHAIN_RPC;
 let resolvedWsRpc = CHAIN_WS_RPC;
+let resolvedTradeRouter = TRADE_ROUTER;
+let resolvedAdminAddress = ADMIN_ADDRESS;
 
-async function resolveRpcFromConfig() {
+async function resolveFromConfig() {
 	try {
 		const res = await fetch(`${BACKEND_URL}/api/config?keys=networks`, {
 			headers: { Authorization: `Bearer ${TX_CONFIRM_SECRET}` },
@@ -72,12 +75,20 @@ async function resolveRpcFromConfig() {
 		if (!res.ok) return;
 		const { networks } = await res.json();
 		const net = (networks || []).find((n: any) => Number(n.chain_id) === parseInt(CHAIN_ID));
-		if (!net?.daemon_rpc) return;
-		const dr = net.daemon_rpc as string;
+		if (!net) return;
+
+		// Contract addresses from DB — single source of truth
+		if (net.trade_router_address) {
+			resolvedTradeRouter = net.trade_router_address;
+			console.log(`  TradeRouter: ${resolvedTradeRouter}`);
+		}
+
+		// RPC from DB
+		const dr = net.daemon_rpc as string || '';
 		if (dr.startsWith('wss://') || dr.startsWith('ws://')) {
 			resolvedWsRpc = dr;
 			console.log(`  Using daemon WS RPC: ${dr.slice(0, 40)}…`);
-		} else {
+		} else if (dr) {
 			resolvedRpc = dr;
 			console.log(`  Using daemon HTTP RPC: ${dr.slice(0, 40)}…`);
 		}
@@ -90,7 +101,8 @@ const chainId = parseInt(CHAIN_ID);
 const pollInterval = parseInt(POLL_INTERVAL_MS);
 const minGasBnb = parseFloat(MIN_GAS_BNB);
 const minFlwNgn = parseFloat(MIN_FLW_NGN);
-const adminAddress = ADMIN_ADDRESS;
+// adminAddress can come from env or DB; resolveFromConfig may override.
+let adminAddress = ADMIN_ADDRESS;
 
 // ── ABI ──
 const ROUTER_ABI = [
@@ -310,11 +322,11 @@ function subscribeEvents() {
 	const iface = new ethers.Interface(ROUTER_ABI);
 
 	const requestedFilter = {
-		address: TRADE_ROUTER,
+		address: resolvedTradeRouter,
 		topics: [ethers.id('WithdrawRequested(uint256,address,address,uint256,uint256,uint256,bytes32,address,uint256)')],
 	};
 	const cancelledFilter = {
-		address: TRADE_ROUTER,
+		address: resolvedTradeRouter,
 		topics: [ethers.id('WithdrawCancelled(uint256,address,uint256)')],
 	};
 
@@ -357,19 +369,25 @@ function subscribeEvents() {
 		} catch {}
 	});
 
-	console.log(`[WS] subscribed to WithdrawRequested + WithdrawCancelled on ${TRADE_ROUTER.slice(0, 10)}…`);
+	console.log(`[WS] subscribed to WithdrawRequested + WithdrawCancelled on ${resolvedTradeRouter.slice(0, 10)}…`);
 }
 
 // ── Safety-net polling loop ──
 async function poll() {
 	try {
 		const { bnbOk, flwBal } = await checkBalances();
-		if (!bnbOk) return;
+		if (!bnbOk) {
+			console.log('[POLL] skipped — admin BNB too low');
+			return;
+		}
 
-		const router = new ethers.Contract(TRADE_ROUTER, ROUTER_ABI, getProvider());
+		const router = new ethers.Contract(resolvedTradeRouter, ROUTER_ABI, getProvider());
 		const { result: pending, total } = await router.getPendingWithdrawals(0, 200);
 		const count = Number(total);
-		if (count === 0) return;
+		if (count === 0) {
+			console.log('[POLL] 0 pending');
+			return;
+		}
 
 		// Resolve IDs (getPendingWithdrawals returns structs, need pendingIds for the actual ID)
 		const ids = await Promise.all(
@@ -417,12 +435,14 @@ async function poll() {
 // ── Start ──
 async function main() {
 	console.log('Withdrawal Processor starting...');
-	console.log(`  Chain: ${chainId} | Router: ${TRADE_ROUTER}`);
+	console.log(`  Chain: ${chainId} | Router: ${resolvedTradeRouter}`);
 	console.log(`  Admin: ${adminAddress}`);
 	console.log(`  Backend: ${BACKEND_URL}`);
 
-	// Fetch daemon_rpc from DB config (MEV-protected, private key)
-	await resolveRpcFromConfig();
+	// Fetch daemon_rpc + contract addresses from DB config
+	await resolveFromConfig();
+
+	if (!resolvedTradeRouter) { console.error('TRADE_ROUTER not set (env or DB)'); process.exit(1); }
 
 	console.log(`  RPC: ${resolvedRpc}${resolvedWsRpc ? ` (ws: ${resolvedWsRpc.slice(0, 40)}…)` : ''}`);
 	console.log(`  Poll interval: ${pollInterval / 1000}s`);

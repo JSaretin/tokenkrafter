@@ -1,0 +1,48 @@
+services:
+  ws-indexer:
+    build: ./daemons
+    command: bun run ws-indexer.ts
+    env_file: .envs/indexer.env
+    restart: always
+    depends_on: [redis]
+    volumes:
+      - indexer-data:/app/data
+
+  safu:
+    build: ./daemons
+    command: bun run safu-indexer.ts
+    env_file: .envs/indexer.env
+    restart: always
+    volumes:
+      - .envs/SafuLens.json:/app/SafuLens.json:ro
+
+  rates:
+    build: ./daemons
+    command: bun run rate-updater.ts
+    env_file: .envs/indexer.env
+    restart: always
+
+  payment:
+    build: ./payment-server
+    command: bun run index.ts
+    env_file: .envs/payment.env
+    restart: always
+    ports:
+      - "4100:4100"
+
+  processor:
+    build: ./payment-server
+    command: bun run withdrawal-processor.ts
+    env_file: .envs/processor.env
+    restart: always
+    depends_on: [redis]
+
+  redis:
+    image: redis:7-alpine
+    restart: always
+    volumes:
+      - redis-data:/data
+
+volumes:
+  indexer-data:
+  redis-data:
