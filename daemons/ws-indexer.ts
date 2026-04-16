@@ -46,6 +46,7 @@
 
 import { ethers } from 'ethers';
 import { Database } from 'bun:sqlite';
+import * as fs from 'fs';
 import * as path from 'path';
 import { createManagedProvider, type ManagedProvider } from './lib/provider';
 
@@ -199,6 +200,7 @@ interface NetworkConfig {
 	launchpad_address: string;
 	trade_router_address?: string;
 	usdt_address: string;
+	dex_router: string;
 	rpc?: string;
 	ws_rpc?: string;
 }
@@ -212,6 +214,88 @@ async function fetchNetworkConfig(chainId: number): Promise<NetworkConfig> {
 	return match;
 }
 
+// ── SafuLens single-token check ───────────────────────────
+// Reuses the same bytecode + eth_call pattern as safu-indexer but
+// for one token at a time, triggered on creation/graduation events.
+
+let safuBytecode = '';
+
+function loadSafuBytecode(): string {
+	if (safuBytecode) return safuBytecode;
+
+	const envPath = process.env.SAFU_BYTECODE;
+	if (envPath && fs.existsSync(envPath)) {
+		const json = JSON.parse(fs.readFileSync(envPath, 'utf-8'));
+		safuBytecode = json.bytecode || json;
+		return safuBytecode;
+	}
+
+	const candidates = [
+		path.resolve(import.meta.dirname || __dirname, '../solidty-contracts/artifacts/contracts/simulators/SafuLens.sol/SafuLens.json'),
+		path.resolve(import.meta.dirname || __dirname, 'SafuLens.json'),
+	];
+	for (const p of candidates) {
+		try {
+			const json = JSON.parse(fs.readFileSync(p, 'utf-8'));
+			safuBytecode = json.bytecode;
+			console.log(`   SafuLens loaded from: ${p}`);
+			return safuBytecode;
+		} catch {}
+	}
+
+	console.warn('   ⚠️  SafuLens bytecode not found — on-create SAFU checks disabled');
+	return '';
+}
+
+async function recheckSafu(
+	provider: ethers.Provider,
+	bytecode: string,
+	tokenFactory: string,
+	dexFactory: string,
+	weth: string,
+	usdt: string,
+	chainId: number,
+	tokenAddr: string,
+): Promise<void> {
+	if (!bytecode) return;
+
+	try {
+		const abiCoder = ethers.AbiCoder.defaultAbiCoder();
+		const args = abiCoder.encode(
+			['address', 'address', 'address', 'address', 'address[]'],
+			[tokenFactory, dexFactory, weth, usdt, [tokenAddr]],
+		);
+		const raw = await provider.call({ data: bytecode + args.slice(2), gasLimit: 50_000_000 });
+		if (!raw || raw === '0x') return;
+
+		const decoded = abiCoder.decode(
+			['tuple(address token, bool isMintable, bool isTaxable, bool isPartner, address owner, bool ownerIsZero, bool taxCeilingLocked, uint256 buyTaxBps, uint256 sellTaxBps, uint256 transferTaxBps, bool tradingEnabled, bool hasLiquidity, bool lpBurned, uint256 lpBurnedPct, bool isSafu)[]'],
+			raw,
+		);
+		const s = (decoded[0] as any[])[0];
+		if (!s) return;
+
+		await apiPost('/api/created-tokens/safu', {
+			tokens: [{
+				address: s.token.toLowerCase(),
+				chain_id: chainId,
+				is_safu: s.isSafu,
+				has_liquidity: s.hasLiquidity,
+				lp_burned: s.lpBurned,
+				lp_burned_pct: Number(s.lpBurnedPct),
+				tax_ceiling_locked: s.taxCeilingLocked,
+				owner_renounced: s.ownerIsZero,
+				trading_enabled: s.tradingEnabled,
+				buy_tax_bps: Number(s.buyTaxBps),
+				sell_tax_bps: Number(s.sellTaxBps),
+			}],
+		});
+		console.log(`  🛡️  safu set ${tokenAddr.slice(0, 10)}… → ${s.isSafu ? 'SAFU' : 'not safu'}`);
+	} catch (e: any) {
+		console.error(`    ✗ safu recheck ${tokenAddr.slice(0, 10)}: ${e.message?.slice(0, 80)}`);
+	}
+}
+
 // ── Shared context ────────────────────────────────────────
 interface Ctx {
 	chainId: number;
@@ -221,6 +305,9 @@ interface Ctx {
 	provider: () => ethers.Provider;
 	config: NetworkConfig;
 	usdtDecimals: number;
+	dexFactory: string;
+	weth: string;
+	safuBytecode: string;
 	subscribeLaunch: (addr: string) => void;
 }
 
@@ -451,6 +538,9 @@ function makeDispatcher(ctx: Ctx) {
 				});
 				console.log(`  🪙  ${p.args.symbol} (${token.slice(0, 10)}…) block ${log.blockNumber}`);
 
+				// Immediate SAFU check — sets baseline badges on creation
+				recheckSafu(ctx.provider(), ctx.safuBytecode, ctx.config.platform_address, ctx.dexFactory, ctx.weth, ctx.config.usdt_address, ctx.chainId, token);
+
 			} else if (src === addr.launchpad) {
 				const p = lpIface.parseLog({ topics: [...log.topics], data: log.data });
 				if (p?.name !== 'LaunchCreated') return;
@@ -468,6 +558,9 @@ function makeDispatcher(ctx: Ctx) {
 				} catch (e: any) {
 					console.error(`    ✗ launch enrich ${launch.slice(0, 10)}: ${e.message?.slice(0, 80)}`);
 				}
+				// SAFU check for the launched token
+				const launchToken = (p.args.token as string).toLowerCase();
+				recheckSafu(ctx.provider(), ctx.safuBytecode, ctx.config.platform_address, ctx.dexFactory, ctx.weth, ctx.config.usdt_address, ctx.chainId, launchToken);
 				console.log(`  🚀 Launch ${launch.slice(0, 10)}…`);
 
 			} else if (ctx.watchedLaunches.has(src)) {
@@ -493,6 +586,12 @@ function makeDispatcher(ctx: Ctx) {
 						if (data.state > 1) {
 							ctx.watchedLaunches.delete(src);
 							removeWatchedLaunch(ctx.db, src);
+						}
+
+						// Graduated = token just got DEX liquidity + LP burned.
+						// SAFU status changes meaningfully at this point.
+						if (p.name === 'Graduated') {
+							recheckSafu(ctx.provider(), ctx.safuBytecode, ctx.config.platform_address, ctx.dexFactory, ctx.weth, ctx.config.usdt_address, ctx.chainId, data.token_address);
 						}
 					} catch (e: any) {
 						console.error(`    ✗ launch refresh ${src.slice(0, 10)}: ${e.message?.slice(0, 80)}`);
@@ -610,6 +709,43 @@ async function main() {
 	const isFreshBoot = state.lastTokenCount === 0 && state.lastLaunchCount === 0;
 
 	let managed!: ManagedProvider;
+	let dispatch: (log: ethers.Log) => Promise<void>;
+
+	managed = createManagedProvider({
+		chainId: CHAIN_ID,
+		httpRpc: rpcUrl,
+		wsRpc: config.ws_rpc,
+		onReconnect: () => {
+			if (!dispatch) return; // not ready yet
+			console.log('  🔁 WS reconnected — resubscribing');
+			try { managed.getProvider().removeAllListeners(); } catch {}
+			subscribeAll(ctx, managed, dispatch);
+		},
+	});
+
+	// Resolve DEX factory + WETH (needed for SafuLens)
+	let dexFactory = '', weth = '';
+	if (config.dex_router) {
+		try {
+			const dexRouterC = new ethers.Contract(config.dex_router, [
+				'function factory() view returns (address)',
+				'function WETH() view returns (address)',
+			], managed.getProvider());
+			[dexFactory, weth] = await Promise.all([dexRouterC.factory(), dexRouterC.WETH()]);
+			console.log(`   DEX Factory: ${dexFactory}`);
+		} catch (e: any) {
+			console.warn(`   ⚠️  DEX resolve failed: ${e.message?.slice(0, 60)}`);
+		}
+	}
+
+	// Load SafuLens bytecode for on-create SAFU checks
+	const safuBc = loadSafuBytecode();
+
+	let usdtDecimals = 18;
+	try {
+		const c = new ethers.Contract(config.usdt_address, ['function decimals() view returns (uint8)'], managed.getProvider());
+		usdtDecimals = Number(await c.decimals());
+	} catch {}
 
 	const ctx: Ctx = {
 		chainId: CHAIN_ID,
@@ -618,11 +754,14 @@ async function main() {
 		watchedLaunches,
 		provider: () => managed.getProvider(),
 		config,
-		usdtDecimals: 18,
+		usdtDecimals,
+		dexFactory,
+		weth,
+		safuBytecode: safuBc,
 		subscribeLaunch: (addr: string) => {
 			try {
 				managed.getProvider().on({ address: addr } as any, (log: ethers.Log) => {
-					dispatch(log);
+					if (dispatch) dispatch(log);
 				});
 			} catch (e: any) {
 				console.error(`    ✗ sub launch ${addr.slice(0, 10)}: ${e.message?.slice(0, 60)}`);
@@ -630,23 +769,7 @@ async function main() {
 		},
 	};
 
-	managed = createManagedProvider({
-		chainId: CHAIN_ID,
-		httpRpc: rpcUrl,
-		wsRpc: config.ws_rpc,
-		onReconnect: () => {
-			console.log('  🔁 WS reconnected — resubscribing');
-			try { managed.getProvider().removeAllListeners(); } catch {}
-			subscribeAll(ctx, managed, dispatch);
-		},
-	});
-
-	try {
-		const c = new ethers.Contract(config.usdt_address, ['function decimals() view returns (uint8)'], managed.getProvider());
-		ctx.usdtDecimals = Number(await c.decimals());
-	} catch {}
-
-	const dispatch = makeDispatcher(ctx);
+	dispatch = makeDispatcher(ctx);
 
 	// WS goes live immediately
 	subscribeAll(ctx, managed, dispatch);
