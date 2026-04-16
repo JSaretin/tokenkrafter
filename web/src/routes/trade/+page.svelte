@@ -1224,15 +1224,21 @@
 				}
 				const receipt = await tx.wait();
 
-				// Verify on-chain (still part of step 3 visually)
+				// Parse WithdrawRequested event for withdraw_id + expiresAt
 				let withdrawId = 0;
+				let onChainFee = previewFee;
+				let onChainNet = previewNet;
+				let onChainExpiresAt = 0;
 				try {
 					const iface = new ethers.Interface(TRADE_ROUTER_ABI);
 					for (const log of receipt?.logs || []) {
 						try {
 							const parsed = iface.parseLog({ topics: [...log.topics], data: log.data });
 							if (parsed?.name === 'WithdrawRequested') {
-								withdrawId = Number(parsed.args[0]);
+								withdrawId = Number(parsed.args.id);
+								onChainFee = parsed.args.fee;
+								onChainNet = parsed.args.netAmount;
+								onChainExpiresAt = Number(parsed.args.expiresAt);
 								break;
 							}
 						} catch {}
@@ -1253,10 +1259,6 @@
 
 				withdrawStep = 4; // all done
 				showConfirmModal = false;
-				// Reset form
-				amountIn = '';
-				previewFee = 0n;
-				previewNet = 0n;
 
 				activeWithdrawal = {
 					id: preData.id,
@@ -1264,14 +1266,20 @@
 					chain_id: selectedNetwork.chain_id,
 					wallet_address: userAddress,
 					status: 'pending',
-					net_amount: previewNet.toString(),
-					fee: previewFee.toString(),
+					net_amount: onChainNet.toString(),
+					fee: onChainFee.toString(),
 					gross_amount: usdtGross.toString(),
 					payment_method: paymentMethod,
 					payment_details: paymentDetails,
 					tx_hash: receipt?.hash,
-					created_at: new Date().toISOString()
+					created_at: new Date().toISOString(),
+					expiresAt: onChainExpiresAt,
 				};
+
+				// Reset form after capturing values
+				amountIn = '';
+				previewFee = 0n;
+				previewNet = 0n;
 			} else {
 				// ── Direct swap via PancakeSwap (no TradeRouter intermediary) ──
 				const dexRouterAddr = selectedNetwork.dex_router;
@@ -2347,11 +2355,12 @@
 						// modal displays the same figure (audit #5/#28).
 						if (outputMode === 'bank' && ngnRate > 0) {
 							lockedNgnRate = ngnRate;
-							let usdtVal = 0;
-							const isUsdt = selectedNetwork && tokenInAddr.toLowerCase() === selectedNetwork.usdt_address?.toLowerCase();
-							if (isUsdt) usdtVal = parseFloat(amountIn) || 0;
-							else if (previewNet > 0n) usdtVal = parseFloat(ethers.formatUnits(previewNet, usdtDecimals));
-							lockedNgnAmount = usdtVal * ngnRate;
+							// Use NET amount (after fee) — matches the "You receive" line
+							// on the confirm screen. Gross would overstate what the user gets.
+							const netVal = previewNet > 0n
+								? parseFloat(ethers.formatUnits(previewNet, usdtDecimals))
+								: 0;
+							lockedNgnAmount = netVal * ngnRate;
 						}
 						await handleSwap();
 					}}
