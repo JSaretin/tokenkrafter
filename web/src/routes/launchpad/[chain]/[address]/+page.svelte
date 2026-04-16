@@ -1719,21 +1719,14 @@
 			</div>
 		</div>
 
-		<!-- Launch Rules -->
+		<!-- Launch-specific rules (per-launch settings, not platform-wide guarantees) -->
+		{#if badges.includes('taxable') || maxBuyPerWallet > 0n || lockDurationAfterListing > 0n || (launch.creatorAllocationBps > 0n && (vestingCliffSeconds > 0n || vestingDurationSeconds > 0n))}
 		<div class="rules-card mb-4">
 			<div class="rules-header">
 				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-				<span class="rules-title">Launch Rules</span>
+				<span class="rules-title">Launch Settings</span>
 			</div>
 			<div class="rules-list">
-				<div class="rules-item rules-enforced">
-					<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>
-					<span>Liquidity permanently burned at graduation</span>
-				</div>
-				<div class="rules-item rules-enforced">
-					<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>
-					<span>Full refund if soft cap not reached</span>
-				</div>
 				{#if badges.includes('taxable')}
 					<div class="rules-item rules-enforced">
 						<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>
@@ -1760,6 +1753,7 @@
 				{/if}
 			</div>
 		</div>
+		{/if}
 
 		<!-- Graduation Celebration Banner -->
 		{#if launch.state === 2 && !graduationDismissed}
@@ -2181,6 +2175,23 @@
 							{/each}
 						</div>
 					{/if}
+				</div>
+				<!-- FAQ -->
+				<div class="card p-6 mb-4">
+					<h3 class="syne font-bold mb-4" style="color: var(--text-heading)">{$t('lpd.faqTitle')}</h3>
+					{#each [
+						{ q: $t('lpd.faqCurveQ'), a: $t('lpd.faqCurveA') },
+						{ q: $t('lpd.faqHardCapQ'), a: $t('lpd.faqHardCapA') },
+						{ q: $t('lpd.faqSoftCapQ'), a: $t('lpd.faqSoftCapA') },
+						{ q: $t('lpd.faqSafeQ'), a: $t('lpd.faqSafeA') },
+						{ q: $t('lpd.faqFeeQ'), a: $t('lpd.faqFeeA') },
+						{ q: $t('lpd.faqCreatorQ'), a: $t('lpd.faqCreatorA') },
+					] as faq, i}
+						<details class="faq-item" class:faq-first={i === 0}>
+							<summary class="faq-q">{faq.q}</summary>
+							<p class="faq-a">{faq.a}</p>
+						</details>
+					{/each}
 				</div>
 			</div>
 
@@ -3754,6 +3765,45 @@
 	.load-more-btn:disabled {
 		opacity: 0.5;
 		cursor: not-allowed;
+	}
+
+	/* FAQ */
+	.faq-item {
+		border-top: 1px solid var(--divider);
+		padding: 0;
+	}
+	.faq-first { border-top: none; }
+	.faq-q {
+		padding: 12px 0;
+		font-family: 'Syne', sans-serif;
+		font-size: 13px;
+		font-weight: 600;
+		color: var(--text-heading);
+		cursor: pointer;
+		list-style: none;
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+	}
+	.faq-q::after {
+		content: '+';
+		font-size: 16px;
+		color: var(--text-dim);
+		flex-shrink: 0;
+		transition: transform 0.2s;
+	}
+	details[open] .faq-q::after {
+		content: '−';
+		color: #00d2ff;
+	}
+	.faq-q::-webkit-details-marker { display: none; }
+	.faq-a {
+		font-family: 'Space Mono', monospace;
+		font-size: 11px;
+		color: var(--text-muted);
+		line-height: 1.6;
+		padding: 0 0 14px;
+		margin: 0;
 	}
 
 	/* Comments / Discussion */

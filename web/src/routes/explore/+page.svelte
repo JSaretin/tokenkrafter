@@ -2,6 +2,7 @@
 	import { ethers } from 'ethers';
 	import { getContext, onMount, onDestroy } from 'svelte';
 	import { chainSlug, type SupportedNetwork } from '$lib/structure';
+	import { progressPercent } from '$lib/launchpad';
 	import { querySafuLens, type TokenSafu } from '$lib/safuLens';
 	import LaunchProgressBar from '$lib/LaunchProgressBar.svelte';
 
@@ -368,7 +369,9 @@
 					{@const raised = parseFloat(ethers.formatUnits(launch.total_base_raised || '0', decimals))}
 					{@const cap = parseFloat(ethers.formatUnits(launch.hard_cap || '1', decimals))}
 					{@const sc = parseFloat(ethers.formatUnits(launch.soft_cap || '0', decimals))}
-					{@const progress = cap > 0 ? Math.min((raised / cap) * 100, 100) : 0}
+					{@const raisedBig = BigInt(launch.total_base_raised || '0')}
+				{@const capBig = BigInt(launch.hard_cap || '1')}
+				{@const progress = progressPercent(raisedBig, capBig)}
 					{@const scPct = cap > 0 ? Math.min(100, (sc / cap) * 100) : 0}
 					<a href="/launchpad/{slug}/{launch.address}" class="launch-card">
 						<div class="launch-card-top">

@@ -17,7 +17,7 @@
 <div class="lp-bar lp-bar-{size}">
 	{#if raised || hardCap}
 		<div class="lp-bar-header">
-			<span class="lp-bar-raised">Raised {progress}%</span>
+			<span class="lp-bar-raised">Raised {progress < 1 && progress > 0 ? progress.toFixed(1) : Math.round(progress)}%</span>
 			{#if hardCap}
 				<span class="lp-bar-cap">{hardCap}</span>
 			{/if}

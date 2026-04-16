@@ -277,6 +277,11 @@
 					<span class="sym">{tokenSymbol}</span>
 					<span class="chain-pill">{chainInfo.name}</span>
 					{#if isOnPlatform}<span class="tk-pill">TokenKrafter</span>{/if}
+					{#if creator}
+						<a href="{chainInfo.explorer}/address/{creator}" target="_blank" rel="noopener" class="creator-pill" title={creator}>
+							{shortAddr(creator)}
+						</a>
+					{/if}
 				</div>
 				<!-- Social links — moved to hero for visibility -->
 				{#if website || twitter || telegram}
@@ -684,6 +689,14 @@
 		font-family: 'Space Mono', monospace; font-weight: 700;
 		border: 1px solid rgba(0,210,255,0.1);
 	}
+	.creator-pill {
+		font-size: 9px; padding: 2px 8px; border-radius: 4px;
+		background: var(--bg-surface); color: var(--text-dim);
+		font-family: 'Space Mono', monospace;
+		border: 1px solid var(--border-subtle);
+		text-decoration: none; transition: all 0.15s;
+	}
+	.creator-pill:hover { color: #00d2ff; border-color: rgba(0,210,255,0.2); }
 
 	.status-live {
 		display: flex; align-items: center; gap: 6px;

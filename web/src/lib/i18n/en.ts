@@ -700,6 +700,21 @@ export default {
 	'lpd.connectToComment': 'Connect wallet to comment',
 	'lpd.commentTooLong': 'Comment must be 500 characters or less.',
 
+	// Launch FAQ
+	'lpd.faqTitle': 'Frequently Asked Questions',
+	'lpd.faqCurveQ': 'How does the bonding curve work?',
+	'lpd.faqCurveA': 'The token price increases along a mathematical curve as more tokens are sold. Early buyers get a lower price. The curve type (linear, quadratic, etc.) determines how fast the price rises.',
+	'lpd.faqHardCapQ': 'What happens when the hard cap is reached?',
+	'lpd.faqHardCapA': 'The launch "graduates" — liquidity is automatically added to PancakeSwap, LP tokens are burned permanently, and the token becomes freely tradeable on the DEX.',
+	'lpd.faqSoftCapQ': 'What if the soft cap isn\'t reached?',
+	'lpd.faqSoftCapA': 'If the deadline passes without reaching the soft cap, the launch enters refund mode. All buyers can return their tokens and get their USDT back — no losses.',
+	'lpd.faqSafeQ': 'Is my investment safe?',
+	'lpd.faqSafeA': 'All funds are held by the smart contract, not by an admin. LP is burned permanently at graduation so liquidity can never be removed. If the launch fails, you get a full refund.',
+	'lpd.faqFeeQ': 'What is the buy fee?',
+	'lpd.faqFeeA': 'A 1% platform fee is taken on each purchase. This fee goes to the platform and is non-refundable.',
+	'lpd.faqCreatorQ': 'Can the creator withdraw funds early?',
+	'lpd.faqCreatorA': 'No. The creator cannot access raised funds until graduation. If the launch fails, funds are returned to buyers, not the creator.',
+
 	// Token management pages
 	'mt.pageTitle': 'My Tokens',
 	'mt.metaDesc': 'Manage your deployed tokens. Mint, burn, configure taxes, add DEX liquidity, and set up anti-whale protection.',
