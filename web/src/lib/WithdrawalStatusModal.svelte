@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
 	import { supabase } from '$lib/supabaseClient';
+	import { apiFetch } from '$lib/apiFetch';
 
 	let {
 		withdrawal,
@@ -121,8 +122,32 @@
 			? lockedNgnAmount
 			: (ngnRate > 0 && netAmount > 0 ? netAmount * ngnRate : 0)
 	);
-	let details = $derived(withdrawal?.payment_details || {});
+	// Payment details — may be empty if user hasn't authed yet.
+	// fetchedDetails overrides once the user signs + we load from DB.
+	let fetchedDetails = $state<any>(null);
+	let detailsLoading = $state(false);
+	let details = $derived(fetchedDetails || withdrawal?.payment_details || {});
+	let hasDetails = $derived(!!(details.bank_name || details.bank_code || details.account || details.holder || details.email));
 	let bankLabel = $derived(details?.bank_name || details?.bank_code || details?.email || 'your account');
+
+	async function loadPaymentDetails() {
+		if (detailsLoading || hasDetails) return;
+		detailsLoading = true;
+		try {
+			// apiFetch auto-signs on 401 — prompts user wallet signature
+			const res = await apiFetch(`/api/withdrawals?limit=50`);
+			if (!res.ok) { detailsLoading = false; return; }
+			const rows = await res.json();
+			const match = rows?.find?.((r: any) =>
+				(r.withdraw_id === withdrawal?.withdraw_id && r.chain_id === withdrawal?.chain_id) ||
+				r.id === withdrawal?.id
+			);
+			if (match?.payment_details) {
+				fetchedDetails = match.payment_details;
+			}
+		} catch {}
+		detailsLoading = false;
+	}
 	let refId = $derived(withdrawal?.withdraw_id ? `#${withdrawal.withdraw_id}` : '');
 	let txExplorerLink = $derived(
 		withdrawal?.tx_hash && explorerUrl
@@ -205,7 +230,14 @@
 						{:else}
 							<div class="receipt-row">
 								<span>Paid to</span>
-								<span class="receipt-dim">On-chain withdrawal</span>
+								<button class="receipt-fetch-btn" onclick={loadPaymentDetails} disabled={detailsLoading}>
+									{#if detailsLoading}
+										Verifying...
+									{:else}
+										View payment info
+										<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+									{/if}
+								</button>
 							</div>
 						{/if}
 						{#if feeAmount > 0}
@@ -348,27 +380,42 @@
 							<span>{refId}</span>
 						</div>
 					{/if}
-					{#if details.bank_name || details.bank_code}
+					{#if hasDetails}
+						{#if details.bank_name || details.bank_code}
+							<div class="detail-row">
+								<span>Bank</span>
+								<span>{details.bank_name || details.bank_code}</span>
+							</div>
+						{/if}
+						{#if details.account}
+							<div class="detail-row">
+								<span>Account</span>
+								<span>{details.account}</span>
+							</div>
+						{/if}
+						{#if details.holder}
+							<div class="detail-row detail-row-highlight">
+								<span>Recipient</span>
+								<span>{details.holder}</span>
+							</div>
+						{/if}
+						{#if details.email}
+							<div class="detail-row">
+								<span>Email</span>
+								<span>{details.email}</span>
+							</div>
+						{/if}
+					{:else}
 						<div class="detail-row">
-							<span>Bank</span>
-							<span>{details.bank_name || details.bank_code}</span>
-						</div>
-					{/if}
-					{#if details.account}
-						<div class="detail-row">
-							<span>Account</span>
-							<span>{details.account}</span>
-						</div>
-					{/if}
-					{#if details.holder}
-						<div class="detail-row detail-row-highlight">
-							<span>Recipient</span>
-							<span>{details.holder}</span>
-						</div>
-					{:else if details.email}
-						<div class="detail-row">
-							<span>Email</span>
-							<span>{details.email}</span>
+							<span>Paid to</span>
+							<button class="detail-fetch-btn" onclick={loadPaymentDetails} disabled={detailsLoading}>
+								{#if detailsLoading}
+									Verifying...
+								{:else}
+									View payment info
+									<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+								{/if}
+							</button>
 						</div>
 					{/if}
 					{#if feeAmount > 0}
@@ -518,7 +565,14 @@
 	.receipt-row span:last-child { color: var(--text); }
 	.receipt-status { color: #10b981 !important; font-weight: 700; }
 	.receipt-highlight { color: #10b981 !important; font-weight: 700; }
-	.receipt-dim { color: var(--text-dim) !important; font-style: italic; }
+	.receipt-fetch-btn, .detail-fetch-btn {
+		display: inline-flex; align-items: center; gap: 4px;
+		background: none; border: none; padding: 0; cursor: pointer;
+		font-family: 'Rajdhani', sans-serif; font-size: 12px; font-weight: 700;
+		color: #00d2ff; transition: opacity 150ms;
+	}
+	.receipt-fetch-btn:hover, .detail-fetch-btn:hover { opacity: 0.8; }
+	.receipt-fetch-btn:disabled, .detail-fetch-btn:disabled { opacity: 0.5; cursor: default; }
 	.receipt-link {
 		display: inline-flex; align-items: center; gap: 3px;
 		color: #00d2ff; text-decoration: none; font-family: 'Space Mono', monospace; font-size: 12px;

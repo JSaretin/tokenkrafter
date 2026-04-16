@@ -2180,25 +2180,21 @@
 					{/if}
 				</div>
 				<!-- FAQ — dynamic based on token type -->
+				{#if true}
 				{@const isPlatformToken = !!tokenTrust}
 				{@const isTaxable = tokenTrust?.is_taxable}
 				{@const isMintable = tokenTrust?.is_mintable && !tokenTrust?.owner_renounced}
 				{@const isExternal = !tokenTrust}
 				{@const faqs = [
-					// Core bonding curve questions (always shown)
 					{ q: $t('lpd.faqCurveQ'), a: $t('lpd.faqCurveA') },
 					{ q: $t('lpd.faqHardCapQ'), a: $t('lpd.faqHardCapA') },
 					{ q: $t('lpd.faqSoftCapQ'), a: $t('lpd.faqSoftCapA') },
 					{ q: $t('lpd.faqSafeQ'), a: $t('lpd.faqSafeA') },
 					{ q: $t('lpd.faqFeeQ'), a: $t('lpd.faqFeeA') },
 					{ q: $t('lpd.faqCreatorQ'), a: $t('lpd.faqCreatorA') },
-					// Taxable tokens
 					...(isTaxable ? [{ q: $t('lpd.faqTaxQ'), a: $t('lpd.faqTaxA') }] : []),
-					// Mintable tokens
 					...(isMintable ? [{ q: $t('lpd.faqMintQ'), a: $t('lpd.faqMintA') }] : []),
-					// External (non-platform) tokens
 					...(isExternal ? [{ q: $t('lpd.faqExternalQ'), a: $t('lpd.faqExternalA') }] : []),
-					// Platform tokens
 					...(isPlatformToken ? [{ q: $t('lpd.faqAuditedQ'), a: $t('lpd.faqAuditedA') }] : []),
 				]}
 				<div class="card p-6 mb-4">
@@ -2210,6 +2206,7 @@
 						</details>
 					{/each}
 				</div>
+				{/if}
 			</div>
 
 			<!-- Right: Actions & Progress -->
