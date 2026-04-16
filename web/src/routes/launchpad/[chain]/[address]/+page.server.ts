@@ -22,18 +22,30 @@ export const load: PageServerLoad = async ({ params, setHeaders }) => {
 		.eq('chain_id', chainId)
 		.single();
 
-	// Fetch badges
-	const { data: badges } = await supabaseAdmin
-		.from('badges')
-		.select('badge_type')
-		.eq('launch_address', launchAddress)
-		.eq('chain_id', chainId);
+	// Fetch badges + token trust signals in parallel
+	const tokenAddress = launch?.token_address?.toLowerCase();
+	const [badgesResult, tokenResult] = await Promise.all([
+		supabaseAdmin
+			.from('badges')
+			.select('badge_type')
+			.eq('launch_address', launchAddress)
+			.eq('chain_id', chainId),
+		tokenAddress
+			? supabaseAdmin
+				.from('created_tokens')
+				.select('is_safu, is_kyc, has_liquidity, lp_burned, lp_burned_pct, tax_ceiling_locked, owner_renounced, trading_enabled, buy_tax_bps, sell_tax_bps, is_taxable, is_mintable, is_partner')
+				.eq('address', tokenAddress)
+				.eq('chain_id', chainId)
+				.single()
+			: Promise.resolve({ data: null }),
+	]);
 
 	return {
 		chainSlug,
 		chainId,
 		launchAddress,
 		launch,
-		badges: badges?.map(b => b.badge_type) || [],
+		badges: badgesResult.data?.map(b => b.badge_type) || [],
+		tokenTrust: tokenResult.data || null,
 	};
 };

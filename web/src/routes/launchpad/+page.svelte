@@ -275,24 +275,28 @@
 			if (!rows || rows.length === 0) return false;
 			const mapped = rows.map(dbRowToLaunch).filter(Boolean) as (LaunchInfo & { network: SupportedNetwork })[];
 
-			// Fill missing launch logos with the underlying token's logo —
-			// creators often set one or the other; buyers expect a picture.
-			const missingLogoAddrs = mapped
-				.filter(l => !(l as any).logoUrl && l.token)
-				.map(l => l.token.toLowerCase());
-			if (missingLogoAddrs.length > 0) {
+			// Fetch token logos + trust signals for all launches in one query
+			const tokenAddrs = mapped.map(l => l.token?.toLowerCase()).filter(Boolean);
+			if (tokenAddrs.length > 0) {
 				const { data: tokenRows } = await supabase
 					.from('created_tokens')
-					.select('address, logo_url')
-					.in('address', missingLogoAddrs);
-				const logoByAddr = new Map<string, string>();
+					.select('address, logo_url, is_safu, is_kyc, lp_burned, tax_ceiling_locked, owner_renounced')
+					.in('address', tokenAddrs);
+				const tokenByAddr = new Map<string, any>();
 				for (const t of tokenRows || []) {
-					if (t.logo_url) logoByAddr.set(t.address.toLowerCase(), t.logo_url);
+					tokenByAddr.set(t.address.toLowerCase(), t);
 				}
 				for (const l of mapped) {
-					if (!(l as any).logoUrl) {
-						const fallback = logoByAddr.get(l.token?.toLowerCase());
-						if (fallback) (l as any).logoUrl = fallback;
+					const t = tokenByAddr.get(l.token?.toLowerCase());
+					if (t) {
+						if (!(l as any).logoUrl && t.logo_url) (l as any).logoUrl = t.logo_url;
+						(l as any).tokenTrust = {
+							is_safu: t.is_safu,
+							is_kyc: t.is_kyc,
+							lp_burned: t.lp_burned,
+							tax_ceiling_locked: t.tax_ceiling_locked,
+							owner_renounced: t.owner_renounced,
+						};
 					}
 				}
 			}
@@ -588,8 +592,11 @@
 								<span class="badge-pill {BADGE_META[badge].cls}">{BADGE_META[badge].label}</span>
 							{/if}
 						{/each}
-						{#if launch.state === 1}
-							<span class="badge-pill badge-pill-refundable">Refundable</span>
+						{#if (launch as any).tokenTrust?.is_safu}
+							<span class="badge-pill badge-pill-safu">SAFU</span>
+						{/if}
+						{#if (launch as any).tokenTrust?.is_kyc}
+							<span class="badge-pill badge-pill-kyc">KYC</span>
 						{/if}
 						{#if isHot(launch)}
 							<span class="badge-pill badge-list-hot">HOT</span>
@@ -1049,7 +1056,8 @@
 	.badge-list-blue { background: rgba(59, 130, 246, 0.08); color: #60a5fa; border-color: rgba(59, 130, 246, 0.2); }
 	.badge-list-orange { background: rgba(249, 115, 22, 0.08); color: #fb923c; border-color: rgba(249, 115, 22, 0.2); }
 	.badge-pill-lp { background: rgba(16, 185, 129, 0.08); color: #34d399; border-color: rgba(16, 185, 129, 0.2); }
-	.badge-pill-refundable { background: rgba(0,210,255,0.08); color: #22d3ee; border-color: rgba(0,210,255,0.2); }
+	.badge-pill-safu { background: rgba(16,185,129,0.15); color: #10b981; font-weight: 800; border-color: rgba(16,185,129,0.3); }
+	.badge-pill-kyc { background: rgba(59,130,246,0.12); color: #60a5fa; font-weight: 800; border-color: rgba(59,130,246,0.25); }
 
 	/* ── Platform trust banner ── */
 	.trust-banner {
@@ -1137,14 +1145,20 @@
 		bottom: calc(100% + 8px);
 		left: 50%;
 		transform: translateX(-50%);
-		background: var(--bg-surface);
-		border: 1px solid var(--bg-surface-hover);
+		background: var(--bg, #fff);
+		backdrop-filter: blur(12px);
+		border: 1px solid var(--border, #e2e8f0);
 		border-radius: 8px;
 		padding: 10px 14px;
 		min-width: 220px;
 		z-index: 50;
-		box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+		box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
 		pointer-events: none;
+	}
+	:global(.dark) .card-tooltip {
+		background: #1e293b;
+		border-color: #334155;
+		box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
 	}
 	.card-tooltip::after {
 		content: '';

@@ -69,6 +69,7 @@
 
 	// Pre-populate badges from server
 	let badges: string[] = $state(serverData?.badges || []);
+	let tokenTrust: any = $state(serverData?.tokenTrust || null);
 	let buyAmount = $state(''); // always in USDT
 	let buyPaymentMethod: 'usdt' | 'usdc' | 'native' | 'custom' = $state('usdt');
 	let showPayPicker = $state(false);
@@ -1644,6 +1645,21 @@
 									</span>
 								{/if}
 							{/each}
+							{#if tokenTrust?.is_safu}
+								<span class="launch-badge badge-safu" title="SAFU — passes all on-chain safety checks">SAFU</span>
+							{/if}
+							{#if tokenTrust?.is_kyc}
+								<span class="launch-badge badge-kyc" title="Creator identity verified">KYC</span>
+							{/if}
+							{#if tokenTrust?.lp_burned}
+								<span class="launch-badge badge-lp" title="LP burned">LP Burned</span>
+							{/if}
+							{#if tokenTrust?.tax_ceiling_locked}
+								<span class="launch-badge badge-locked" title="Tax ceiling locked">Tax Locked</span>
+							{/if}
+							{#if tokenTrust?.owner_renounced}
+								<span class="launch-badge badge-renounced" title="Ownership renounced">Renounced</span>
+							{/if}
 							<!-- Favorite + Share buttons -->
 							<button
 								class="detail-fav-btn"
@@ -3195,6 +3211,11 @@
 	.badge-purple { background: rgba(139, 92, 246, 0.12); color: #a78bfa; border: 1px solid rgba(139, 92, 246, 0.25); }
 	.badge-amber { background: rgba(245, 158, 11, 0.12); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.25); }
 	.badge-blue { background: rgba(59, 130, 246, 0.12); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.25); }
+	.badge-safu { background: rgba(16, 185, 129, 0.2); color: #10b981; font-weight: 800; border: 1px solid rgba(16, 185, 129, 0.3); }
+	.badge-kyc { background: rgba(59, 130, 246, 0.15); color: #60a5fa; font-weight: 800; border: 1px solid rgba(59, 130, 246, 0.3); }
+	.badge-lp { background: rgba(59, 130, 246, 0.12); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.2); }
+	.badge-locked { background: rgba(139, 92, 246, 0.12); color: #a78bfa; border: 1px solid rgba(139, 92, 246, 0.2); }
+	.badge-renounced { background: rgba(16, 185, 129, 0.12); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.2); }
 	.badge-orange { background: rgba(249, 115, 22, 0.12); color: #fb923c; border: 1px solid rgba(249, 115, 22, 0.25); }
 
 	/* Video embed */
