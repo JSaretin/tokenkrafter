@@ -2034,27 +2034,59 @@
 					{#if txLoading}
 						<div class="text-gray-500 text-xs font-mono text-center py-4">{$t('status.loading')}...</div>
 					{:else if txItems.length === 0}
-						<p class="text-gray-600 font-mono text-sm italic text-center py-4">{$t('lpd.noActivity')}</p>
+						<div class="activity-empty">
+							<div class="activity-empty-icon">
+								<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+							</div>
+							<p>No buys yet</p>
+							<span>Be the first — early buyers get the lowest price</span>
+						</div>
 					{:else}
+						{@const totalBuyers = new Set(txItems.map(t => t.buyer)).size}
+						{@const totalVol = txItems.reduce((sum, t) => sum + parseFloat(ethers.formatUnits(BigInt(t.base_amount), usdtDecimals)), 0)}
+						<div class="activity-stats">
+							<div class="activity-stat">
+								<span class="activity-stat-val">{txTotal}</span>
+								<span class="activity-stat-label">buys</span>
+							</div>
+							<div class="activity-stat-divider"></div>
+							<div class="activity-stat">
+								<span class="activity-stat-val">{totalBuyers}</span>
+								<span class="activity-stat-label">buyers</span>
+							</div>
+							<div class="activity-stat-divider"></div>
+							<div class="activity-stat">
+								<span class="activity-stat-val">${totalVol >= 1000 ? (totalVol / 1000).toFixed(1) + 'K' : totalVol.toFixed(0)}</span>
+								<span class="activity-stat-label">volume</span>
+							</div>
+						</div>
 						<div class="activity-list">
 							{#each txItems as tx, i}
-								<div class="activity-item" class:activity-latest={i === 0}>
-									{#if i === 0}
-										<span class="activity-pulse"></span>
-									{/if}
-									<div class="activity-content">
-										<span class="text-cyan-400 text-xs font-mono font-semibold">{shortAddr(tx.buyer)}</span>
-										<span class="text-gray-500 text-xs font-mono">
-											{$t('lpd.bought')} {formatUsdt(BigInt(tx.base_amount), usdtDecimals)}
-										</span>
-										<span class="text-gray-400 text-xs font-mono">
-											→ {formatTokens(BigInt(tx.tokens_received), tokenMeta.decimals)} {tokenMeta.symbol}
-										</span>
-										{#if tx.price && BigInt(tx.price) > 0n}
-											<span class="text-gray-600 text-[10px] font-mono">@ {formatUsdt(BigInt(tx.price), usdtDecimals, 6)}</span>
+								{@const usdtVal = parseFloat(ethers.formatUnits(BigInt(tx.base_amount), usdtDecimals))}
+								{@const tokVal = parseFloat(ethers.formatUnits(BigInt(tx.tokens_received), tokenMeta.decimals))}
+								{@const isWhale = usdtVal >= 100}
+								{@const isSelf = tx.buyer === userAddress?.toLowerCase()}
+								<div class="activity-row" class:activity-latest={i === 0} class:activity-whale={isWhale} class:activity-self={isSelf}>
+									<div class="activity-left">
+										{#if i === 0}
+											<span class="activity-live-dot"></span>
+										{:else}
+											<span class="activity-dot"></span>
+										{/if}
+										{#if i < txItems.length - 1}
+											<span class="activity-line"></span>
 										{/if}
 									</div>
-									<span class="text-gray-600 text-[10px] font-mono whitespace-nowrap">{relativeTime(tx.created_at)}</span>
+									<div class="activity-card">
+										<div class="activity-card-top">
+											<span class="activity-addr">{isSelf ? 'You' : shortAddr(tx.buyer)}</span>
+											<span class="activity-amount">{isWhale ? '🐋 ' : ''}${usdtVal < 0.01 ? '<0.01' : usdtVal.toFixed(2)}</span>
+										</div>
+										<div class="activity-card-bottom">
+											<span class="activity-tokens">{tokVal > 1000000 ? (tokVal / 1000000).toFixed(1) + 'M' : tokVal > 1000 ? (tokVal / 1000).toFixed(1) + 'K' : tokVal.toFixed(0)} {tokenMeta.symbol}</span>
+											<span class="activity-time">{relativeTime(tx.created_at)}</span>
+										</div>
+									</div>
 								</div>
 							{/each}
 						</div>
@@ -2843,6 +2875,9 @@
 		grid-template-columns: 1fr;
 		gap: 24px;
 	}
+	@media (max-width: 1023px) {
+		.right-col { order: -1; }
+	}
 	@media (min-width: 1024px) {
 		.page-grid {
 			grid-template-columns: 1fr 400px;
@@ -3383,47 +3418,94 @@
 	}
 
 	/* Activity Feed */
-	.activity-list {
-		display: flex;
-		flex-direction: column;
-		gap: 0;
+	/* Activity — empty state */
+	.activity-empty { text-align: center; padding: 28px 16px; }
+	.activity-empty-icon {
+		width: 48px; height: 48px; border-radius: 50%; margin: 0 auto 10px;
+		background: var(--bg-surface); display: flex;
+		align-items: center; justify-content: center;
+		color: var(--text-dim); opacity: 0.5;
 	}
-	.activity-item {
-		display: flex;
-		align-items: center;
-		gap: 10px;
-		padding: 10px 0;
+	.activity-empty p { font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700; color: var(--text-muted); margin: 0 0 4px; }
+	.activity-empty span { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text-dim); }
+
+	/* Activity — summary stats bar */
+	.activity-stats {
+		display: flex; align-items: center; justify-content: center; gap: 16px;
+		padding: 10px 0 14px; margin-bottom: 4px;
 		border-bottom: 1px solid var(--border-subtle);
-		position: relative;
 	}
-	.activity-item:last-child {
-		border-bottom: none;
+	.activity-stat { display: flex; flex-direction: column; align-items: center; gap: 1px; }
+	.activity-stat-val {
+		font-family: 'Syne', sans-serif; font-size: 15px; font-weight: 800;
+		color: var(--text-heading);
 	}
-	.activity-content {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 6px;
-		align-items: center;
-		flex: 1;
-		min-width: 0;
+	.activity-stat-label {
+		font-family: 'Space Mono', monospace; font-size: 9px;
+		color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em;
 	}
-	.activity-latest {
-		background: rgba(0, 210, 255, 0.03);
-		margin: 0 -24px;
-		padding: 10px 24px;
-		border-radius: 8px;
+	.activity-stat-divider { width: 1px; height: 24px; background: var(--border-subtle); }
+
+	/* Activity — timeline */
+	.activity-list { display: flex; flex-direction: column; gap: 0; padding-top: 8px; }
+
+	.activity-row {
+		display: flex; gap: 12px; min-height: 52px;
 	}
-	.activity-pulse {
-		width: 6px;
-		height: 6px;
-		border-radius: 50%;
-		background: #00d2ff;
-		flex-shrink: 0;
+	.activity-left {
+		display: flex; flex-direction: column; align-items: center;
+		width: 12px; flex-shrink: 0; padding-top: 6px;
+	}
+	.activity-dot {
+		width: 8px; height: 8px; border-radius: 50%;
+		background: var(--border); flex-shrink: 0;
+	}
+	.activity-live-dot {
+		width: 8px; height: 8px; border-radius: 50%;
+		background: #00d2ff; flex-shrink: 0;
 		animation: pulse-dot 2s ease-in-out infinite;
 	}
 	@keyframes pulse-dot {
-		0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(0, 210, 255, 0.4); }
-		50% { opacity: 0.6; box-shadow: 0 0 0 6px rgba(0, 210, 255, 0); }
+		0%, 100% { box-shadow: 0 0 0 0 rgba(0, 210, 255, 0.4); }
+		50% { box-shadow: 0 0 0 6px rgba(0, 210, 255, 0); }
+	}
+	.activity-line {
+		width: 1.5px; flex: 1; background: var(--border-subtle);
+		margin: 3px 0;
+	}
+	.activity-latest .activity-line { background: rgba(0,210,255,0.2); }
+
+	.activity-card {
+		flex: 1; min-width: 0; padding-bottom: 10px;
+	}
+	.activity-card-top {
+		display: flex; align-items: center; justify-content: space-between;
+		gap: 8px;
+	}
+	.activity-addr {
+		font-family: 'Space Mono', monospace; font-size: 11px;
+		color: var(--text-muted); font-weight: 600;
+	}
+	.activity-self .activity-addr { color: #00d2ff; }
+	.activity-latest .activity-addr { color: var(--text-heading); }
+
+	.activity-amount {
+		font-family: 'Syne', sans-serif; font-size: 13px;
+		font-weight: 800; color: #10b981; white-space: nowrap;
+	}
+	.activity-whale .activity-amount { color: #f59e0b; font-size: 14px; }
+
+	.activity-card-bottom {
+		display: flex; align-items: center; justify-content: space-between;
+		gap: 8px; margin-top: 2px;
+	}
+	.activity-tokens {
+		font-family: 'Space Mono', monospace; font-size: 10px;
+		color: var(--text-dim);
+	}
+	.activity-time {
+		font-family: 'Space Mono', monospace; font-size: 9px;
+		color: var(--text-dim); white-space: nowrap;
 	}
 	.load-more-btn {
 		display: block;
