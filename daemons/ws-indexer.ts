@@ -87,6 +87,12 @@ const LAUNCH_INSTANCE_ABI = [
 	'function totalTokensDeposited() view returns (uint256)',
 ];
 
+const TRADE_ROUTER_ABI = [
+	'event WithdrawRequested(uint256 indexed id, address indexed user, address token, uint256 grossAmount, uint256 fee, uint256 netAmount, bytes32 bankRef, address referrer, uint256 expiresAt)',
+	'event WithdrawConfirmed(uint256 indexed id, address indexed admin, address indexed to, uint256 netAmount, uint256 grossAmount, uint256 fee, address token)',
+	'event WithdrawCancelled(uint256 indexed id, address indexed user, uint256 refundedAmount)',
+];
+
 const TAXABLE_TOKEN_EVENT_ABI = [
 	'event TaxesUpdated(uint256 buyTaxBps, uint256 sellTaxBps, uint256 transferTaxBps)',
 	'event TaxCeilingLocked(uint256 buyCeiling, uint256 sellCeiling, uint256 transferCeiling)',
@@ -404,12 +410,14 @@ function makeDispatcher(ctx: Ctx) {
 	const tfIface = new ethers.Interface(TOKEN_FACTORY_ABI);
 	const lpIface = new ethers.Interface(LAUNCHPAD_FACTORY_ABI);
 	const liIface = new ethers.Interface(LAUNCH_INSTANCE_ABI);
+	const trIface = new ethers.Interface(TRADE_ROUTER_ABI);
 	const taxIface = new ethers.Interface(TAXABLE_TOKEN_EVENT_ABI);
 	const basicIface = new ethers.Interface(BASIC_TOKEN_EVENT_ABI);
 
 	const addr = {
 		factory: ctx.config.platform_address.toLowerCase(),
 		launchpad: ctx.config.launchpad_address.toLowerCase(),
+		tradeRouter: (ctx.config.trade_router_address || '').toLowerCase(),
 	};
 
 	return async (log: ethers.Log) => {
@@ -492,6 +500,40 @@ function makeDispatcher(ctx: Ctx) {
 				}
 				console.log(`    📈 ${p.name} on ${src.slice(0, 10)}…`);
 
+			} else if (addr.tradeRouter && src === addr.tradeRouter) {
+				const p = trIface.parseLog({ topics: [...log.topics], data: log.data });
+				if (!p) return;
+
+				if (p.name === 'WithdrawRequested') {
+					await apiPost('/api/withdrawals/verify', {
+						withdraw_id: Number(p.args.id),
+						chain_id: ctx.chainId,
+						wallet_address: (p.args.user as string).toLowerCase(),
+						gross_amount: p.args.grossAmount.toString(),
+						fee: p.args.fee.toString(),
+						net_amount: p.args.netAmount.toString(),
+						bank_ref: p.args.bankRef,
+						referrer: (p.args.referrer as string).toLowerCase(),
+						expires_at: Number(p.args.expiresAt),
+						status: 0,
+					});
+					console.log(`  💰 Withdrawal #${p.args.id} from ${(p.args.user as string).slice(0, 10)}…`);
+				} else if (p.name === 'WithdrawConfirmed') {
+					await apiPost('/api/withdrawals/sync-status', {
+						withdraw_id: Number(p.args.id),
+						chain_id: ctx.chainId,
+						status: 'confirmed',
+					});
+					console.log(`  ✅ Withdrawal #${p.args.id} confirmed`);
+				} else if (p.name === 'WithdrawCancelled') {
+					await apiPost('/api/withdrawals/sync-status', {
+						withdraw_id: Number(p.args.id),
+						chain_id: ctx.chainId,
+						status: 'cancelled',
+					});
+					console.log(`  ❌ Withdrawal #${p.args.id} cancelled`);
+				}
+
 			} else if (ctx.knownTokens.has(src)) {
 				let p = taxIface.parseLog({ topics: [...log.topics], data: log.data });
 				if (!p) p = basicIface.parseLog({ topics: [...log.topics], data: log.data });
@@ -520,6 +562,15 @@ function subscribeAll(ctx: Ctx, managed: ManagedProvider, dispatch: (log: ethers
 		{ address: ctx.config.platform_address, topics: [ethers.id('TokenCreated(address,address,uint8,string,string,uint256,uint8,uint256,address)')] },
 		{ address: ctx.config.launchpad_address, topics: [ethers.id('LaunchCreated(address,address,address,uint8,uint256,uint256,uint256,uint256,uint256)')] },
 	];
+
+	// TradeRouter withdrawal events
+	if (ctx.config.trade_router_address) {
+		filters.push(
+			{ address: ctx.config.trade_router_address, topics: [ethers.id('WithdrawRequested(uint256,address,address,uint256,uint256,uint256,bytes32,address,uint256)')] },
+			{ address: ctx.config.trade_router_address, topics: [ethers.id('WithdrawConfirmed(uint256,address,address,uint256,uint256,uint256,address)')] },
+			{ address: ctx.config.trade_router_address, topics: [ethers.id('WithdrawCancelled(uint256,address,uint256)')] },
+		);
+	}
 
 	for (const addr of ctx.watchedLaunches) {
 		filters.push({ address: addr });

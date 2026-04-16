@@ -1,16 +1,25 @@
 /**
- * Withdrawal Processor Daemon
+ * Withdrawal Processor Daemon — hybrid WS + polling
  *
- * Polls the TradeRouter contract for pending withdrawals and processes
- * them: confirms on-chain + sends fiat via the SvelteKit backend.
+ * Processes pending withdrawals: confirms on-chain + sends fiat via
+ * the SvelteKit backend.
  *
- * Runs on the same VPS as the payment proxy so it calls the backend
- * locally (no external network hop for Flutterwave).
+ * Hot path (WS):
+ *   WithdrawRequested event → immediate processing attempt.
+ *   WithdrawCancelled event → remove from processing queue.
+ *   All data needed (id, netAmount, expiresAt) comes from the event
+ *   payload — zero follow-up RPC calls.
+ *
+ * Safety net (polling):
+ *   Every POLL_INTERVAL, reads pendingCount + getPendingWithdrawals
+ *   to catch anything the WS missed (reconnect gaps, etc.).
+ *   Interval is stretched from 30s to 300s since WS handles the hot path.
  *
  * Caches alerts in Redis so admins aren't spammed for the same issue.
  *
  * Env:
- *   CHAIN_RPC          — BSC RPC URL
+ *   CHAIN_RPC          — BSC HTTP RPC URL
+ *   CHAIN_WS_RPC       — BSC WebSocket RPC URL (optional, enables WS mode)
  *   CHAIN_ID           — chain ID (56 for BSC)
  *   TRADE_ROUTER       — TradeRouter contract address
  *   ADMIN_ADDRESS      — admin wallet address (for gas balance check)
@@ -21,13 +30,15 @@
  *   MIN_GAS_BNB        — minimum admin BNB balance (default 0.005)
  *   MIN_FLW_NGN        — minimum Flutterwave NGN balance (default 1000)
  *   ALERT_WEBHOOK      — optional webhook URL for low-balance alerts
- *   POLL_INTERVAL_MS   — polling interval (default 30000)
+ *   POLL_INTERVAL_MS   — safety-net polling interval (default 300000 = 5 min)
  */
 
 import { createClient, type RedisClientType } from 'redis';
+import { ethers } from 'ethers';
 
 const {
 	CHAIN_RPC = 'https://bsc-rpc.publicnode.com',
+	CHAIN_WS_RPC = '',
 	CHAIN_ID = '56',
 	TRADE_ROUTER = '',
 	ADMIN_ADDRESS = '',
@@ -38,7 +49,7 @@ const {
 	MIN_GAS_BNB = '0.005',
 	MIN_FLW_NGN = '1000',
 	ALERT_WEBHOOK = '',
-	POLL_INTERVAL_MS = '30000',
+	POLL_INTERVAL_MS = '300000',
 } = Bun.env;
 
 if (!TRADE_ROUTER) { console.error('TRADE_ROUTER required'); process.exit(1); }
@@ -50,20 +61,63 @@ const chainId = parseInt(CHAIN_ID);
 const pollInterval = parseInt(POLL_INTERVAL_MS);
 const minGasBnb = parseFloat(MIN_GAS_BNB);
 const minFlwNgn = parseFloat(MIN_FLW_NGN);
-
-// ── Minimal ethers (import only what we need) ──
-import { ethers } from 'ethers';
-
-const provider = new ethers.JsonRpcProvider(CHAIN_RPC, chainId, { staticNetwork: true });
 const adminAddress = ADMIN_ADDRESS;
 
+// ── ABI ──
 const ROUTER_ABI = [
+	'event WithdrawRequested(uint256 indexed id, address indexed user, address token, uint256 grossAmount, uint256 fee, uint256 netAmount, bytes32 bankRef, address referrer, uint256 expiresAt)',
+	'event WithdrawCancelled(uint256 indexed id, address indexed user, uint256 refundedAmount)',
 	'function pendingCount() view returns (uint256)',
 	'function pendingIds(uint256) view returns (uint256)',
-	'function getWithdrawal(uint256 id) view returns (tuple(address user, address token, uint256 grossAmount, uint256 fee, uint256 netAmount, uint256 createdAt, uint256 expiresAt, uint8 status, bytes32 bankRef, address referrer))',
+	'function getPendingWithdrawals(uint256 offset, uint256 limit) view returns (tuple(address user, address token, uint256 grossAmount, uint256 fee, uint256 netAmount, uint256 createdAt, uint256 expiresAt, uint8 status, bytes32 bankRef, address referrer)[] result, uint256 total)',
 ];
 
-const router = new ethers.Contract(TRADE_ROUTER, ROUTER_ABI, provider);
+// ── Provider (WS primary, HTTP fallback) ──
+let httpProvider: ethers.JsonRpcProvider;
+let wsProvider: ethers.WebSocketProvider | null = null;
+let wsClosed = false;
+let wsReconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+function initHttp() {
+	httpProvider = new ethers.JsonRpcProvider(CHAIN_RPC, chainId, { staticNetwork: true });
+}
+
+function connectWs() {
+	if (wsClosed || !CHAIN_WS_RPC) return;
+	try {
+		wsProvider = new ethers.WebSocketProvider(CHAIN_WS_RPC, chainId, { staticNetwork: true });
+		const sock = (wsProvider as any).websocket;
+		if (sock && typeof sock.on === 'function') {
+			sock.on('close', () => {
+				if (wsClosed) return;
+				console.warn('[WS] dropped — reconnecting in 3s');
+				wsProvider = null;
+				scheduleWsReconnect();
+			});
+			sock.on('error', (err: any) => {
+				console.warn(`[WS] error: ${err?.message?.slice(0, 60)}`);
+			});
+		}
+		console.log(`[WS] connected: ${CHAIN_WS_RPC}`);
+		subscribeEvents();
+	} catch (e: any) {
+		console.warn(`[WS] connect failed: ${e.message?.slice(0, 80)} — using HTTP only`);
+		wsProvider = null;
+		scheduleWsReconnect();
+	}
+}
+
+function scheduleWsReconnect() {
+	if (wsClosed || wsReconnectTimer) return;
+	wsReconnectTimer = setTimeout(() => {
+		wsReconnectTimer = null;
+		connectWs();
+	}, 3000);
+}
+
+function getProvider(): ethers.Provider {
+	return wsProvider ?? httpProvider;
+}
 
 // ── Redis ──
 let redis: RedisClientType;
@@ -72,10 +126,9 @@ async function initRedis() {
 	redis = createClient({ url: REDIS_URL });
 	redis.on('error', (err) => console.error('Redis error:', err.message));
 	await redis.connect();
-	console.log('Redis connected');
+	console.log('[Redis] connected');
 }
 
-// Alert cache keys expire after 24h — so alerts re-fire daily at most
 const ALERT_TTL = 86400;
 
 async function hasAlerted(key: string): Promise<boolean> {
@@ -102,7 +155,6 @@ async function sendAlert(subject: string, message: string): Promise<void> {
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({
 				content: `**${subject}**\n${message}`,
-				// Discord webhook format — also works for many other services
 				text: `${subject}: ${message}`,
 			}),
 		});
@@ -113,7 +165,7 @@ async function sendAlert(subject: string, message: string): Promise<void> {
 
 // ── Balance checks ──
 async function getAdminBnbBalance(): Promise<number> {
-	const bal = await provider.getBalance(adminAddress);
+	const bal = await getProvider().getBalance(adminAddress);
 	return parseFloat(ethers.formatEther(bal));
 }
 
@@ -129,16 +181,32 @@ async function getFlutterwaveBalance(): Promise<number> {
 	}
 }
 
+// ── Pre-flight checks (shared by WS handler + poll) ──
+async function checkBalances(): Promise<{ bnbOk: boolean; flwBal: number }> {
+	const bnbBal = await getAdminBnbBalance();
+	if (bnbBal < minGasBnb) {
+		const alertKey = `alert:low_gas:${adminAddress}`;
+		if (!(await hasAlerted(alertKey))) {
+			await sendAlert(
+				'Low Admin Gas Balance',
+				`Admin wallet ${adminAddress} has ${bnbBal.toFixed(6)} BNB (min: ${minGasBnb} BNB). On-chain confirms will fail.`,
+			);
+			await markAlerted(alertKey);
+		}
+		return { bnbOk: false, flwBal: 0 };
+	}
+	const flwBal = await getFlutterwaveBalance();
+	return { bnbOk: true, flwBal };
+}
+
 // ── Process a single withdrawal ──
 async function processWithdrawal(withdrawId: number): Promise<boolean> {
 	const key = `processing:${chainId}:${withdrawId}`;
 
-	// Check if already being processed
 	if (await redis.exists(key)) {
 		return false;
 	}
 
-	// Lock for 5 minutes (prevents duplicate processing)
 	await redis.set(key, Date.now().toString(), { EX: 300 });
 
 	try {
@@ -158,14 +226,12 @@ async function processWithdrawal(withdrawId: number): Promise<boolean> {
 
 		if (data.success) {
 			console.log(`[OK] Withdrawal #${withdrawId} processed: NGN ${data.ngn_amount}, tx: ${data.confirm_tx}`);
-			// Clear any previous low-balance alerts for this withdrawal
 			await clearAlert(`alert:low_flw:${withdrawId}`);
 			await redis.del(key);
 			return true;
 		} else {
 			console.error(`[FAIL] Withdrawal #${withdrawId}: ${data.error}`);
 
-			// If it's a balance issue, don't retry immediately
 			if (data.error?.includes('Insufficient Flutterwave')) {
 				const alertKey = `alert:low_flw:${withdrawId}`;
 				if (!(await hasAlerted(alertKey))) {
@@ -184,87 +250,135 @@ async function processWithdrawal(withdrawId: number): Promise<boolean> {
 	}
 }
 
-// ── Main polling loop ──
+// ── Process with balance + expiry checks ──
+async function tryProcess(id: number, netAmount: bigint, expiresAt: number, flwBal: number): Promise<{ ok: boolean; flwSpent: number }> {
+	const now = Math.floor(Date.now() / 1000);
+	if (expiresAt > 0 && now >= expiresAt) {
+		return { ok: false, flwSpent: 0 };
+	}
+
+	const estNgn = parseFloat(ethers.formatUnits(netAmount, 18)) * 1600;
+	if (flwBal < estNgn + 50) {
+		const alertKey = `alert:low_flw:${id}`;
+		if (!(await hasAlerted(alertKey))) {
+			await sendAlert('Low Flutterwave Balance', `Cannot process withdrawal #${id}: need ~₦${Math.ceil(estNgn).toLocaleString()}, have ₦${Math.floor(flwBal).toLocaleString()}`);
+			await markAlerted(alertKey);
+		}
+		return { ok: false, flwSpent: 0 };
+	}
+
+	const ok = await processWithdrawal(id);
+	return { ok, flwSpent: ok ? estNgn : 0 };
+}
+
+// ── WS event handlers ──
+const cancelledIds = new Set<number>();
+
+function subscribeEvents() {
+	if (!wsProvider) return;
+
+	const iface = new ethers.Interface(ROUTER_ABI);
+
+	const requestedFilter = {
+		address: TRADE_ROUTER,
+		topics: [ethers.id('WithdrawRequested(uint256,address,address,uint256,uint256,uint256,bytes32,address,uint256)')],
+	};
+	const cancelledFilter = {
+		address: TRADE_ROUTER,
+		topics: [ethers.id('WithdrawCancelled(uint256,address,uint256)')],
+	};
+
+	wsProvider.on(requestedFilter, async (log: ethers.Log) => {
+		try {
+			const parsed = iface.parseLog({ topics: [...log.topics], data: log.data });
+			if (!parsed || parsed.name !== 'WithdrawRequested') return;
+
+			const id = Number(parsed.args.id);
+			const netAmount = parsed.args.netAmount as bigint;
+			const expiresAt = Number(parsed.args.expiresAt);
+
+			console.log(`[WS] WithdrawRequested #${id} — ${ethers.formatUnits(netAmount, 18)} USDT`);
+
+			const { bnbOk, flwBal } = await checkBalances();
+			if (!bnbOk) {
+				console.warn(`[WS] skipping #${id} — admin gas low`);
+				return;
+			}
+
+			const { ok } = await tryProcess(id, netAmount, expiresAt, flwBal);
+			if (ok) console.log(`[WS] #${id} processed instantly`);
+		} catch (e: any) {
+			console.error(`[WS] WithdrawRequested handler: ${e.message?.slice(0, 80)}`);
+		}
+	});
+
+	wsProvider.on(cancelledFilter, (log: ethers.Log) => {
+		try {
+			const parsed = iface.parseLog({ topics: [...log.topics], data: log.data });
+			if (!parsed || parsed.name !== 'WithdrawCancelled') return;
+
+			const id = Number(parsed.args.id);
+			cancelledIds.add(id);
+			// Trim to prevent unbounded growth
+			if (cancelledIds.size > 1000) {
+				const first = cancelledIds.values().next().value;
+				if (first !== undefined) cancelledIds.delete(first);
+			}
+			console.log(`[WS] WithdrawCancelled #${id} — skipping in future polls`);
+		} catch {}
+	});
+
+	console.log(`[WS] subscribed to WithdrawRequested + WithdrawCancelled on ${TRADE_ROUTER.slice(0, 10)}…`);
+}
+
+// ── Safety-net polling loop ──
 async function poll() {
 	try {
-		// 1. Check admin gas balance
-		const bnbBal = await getAdminBnbBalance();
-		if (bnbBal < minGasBnb) {
-			const alertKey = `alert:low_gas:${adminAddress}`;
-			if (!(await hasAlerted(alertKey))) {
-				await sendAlert(
-					'Low Admin Gas Balance',
-					`Admin wallet ${adminAddress} has ${bnbBal.toFixed(6)} BNB (min: ${minGasBnb} BNB). On-chain confirms will fail.`,
-				);
-				await markAlerted(alertKey);
-			}
-			console.warn(`[SKIP] Admin BNB balance too low: ${bnbBal.toFixed(6)}`);
-			return;
-		}
+		const { bnbOk, flwBal } = await checkBalances();
+		if (!bnbOk) return;
 
-		// 2. Pre-fetch Flutterwave balance (checked per-withdrawal below)
-		let flwBal = await getFlutterwaveBalance();
-
-		// 3. Read pending withdrawals from chain
-		const count = Number(await router.pendingCount());
+		const router = new ethers.Contract(TRADE_ROUTER, ROUTER_ABI, getProvider());
+		const { result: pending, total } = await router.getPendingWithdrawals(0, 200);
+		const count = Number(total);
 		if (count === 0) return;
+
+		// Resolve IDs (getPendingWithdrawals returns structs, need pendingIds for the actual ID)
+		const ids = await Promise.all(
+			Array.from({ length: count }, (_, i) => router.pendingIds(i).then(Number))
+		);
 
 		console.log(`[POLL] ${count} pending withdrawal(s)`);
 
-		// Read all pending IDs
-		const ids: number[] = [];
-		for (let i = 0; i < count; i++) {
-			const id = Number(await router.pendingIds(i));
-			ids.push(id);
-		}
-
-		// Process each
 		let processed = 0;
 		let skipped = 0;
+		let runningFlw = flwBal;
 
-		for (const id of ids) {
-			// Check if this withdrawal has expired (user can cancel, we shouldn't process)
-			let netAmount = 0n;
-			try {
-				const w = await router.getWithdrawal(id);
-				const expiresAt = Number(w.expiresAt);
-				const now = Math.floor(Date.now() / 1000);
-				netAmount = w.netAmount;
+		for (let i = 0; i < count; i++) {
+			const id = ids[i];
+			const w = pending[i];
 
-				if (expiresAt > 0 && now >= expiresAt) {
-					// Expired — skip, user can cancel or admin can refund
-					skipped++;
-					continue;
-				}
-			} catch {
-				continue;
-			}
-
-			// Per-withdrawal balance check — skip if can't afford, but don't block others
-			// Rough estimate: netAmount in USDT wei → NGN (assumes 18 decimals + ~1500 rate)
-			const estNgn = parseFloat(ethers.formatUnits(netAmount, 18)) * 1600;
-			if (flwBal < estNgn + 50) {
-				const alertKey = `alert:low_flw:${id}`;
-				if (!(await hasAlerted(alertKey))) {
-					await sendAlert('Low Flutterwave Balance', `Cannot process withdrawal #${id}: need ~₦${Math.ceil(estNgn).toLocaleString()}, have ₦${Math.floor(flwBal).toLocaleString()}`);
-					await markAlerted(alertKey);
-				}
+			// Skip if WS already told us this was cancelled
+			if (cancelledIds.has(id)) {
 				skipped++;
 				continue;
 			}
 
-			const ok = await processWithdrawal(id);
+			const netAmount = w.netAmount as bigint;
+			const expiresAt = Number(w.expiresAt);
+
+			const { ok, flwSpent } = await tryProcess(id, netAmount, expiresAt, runningFlw);
 			if (ok) {
-				// Deduct from local balance tracker so next iteration has accurate estimate
-				flwBal -= estNgn;
+				processed++;
+				runningFlw -= flwSpent;
+			} else {
+				skipped++;
 			}
 
-			// Small delay between processing to avoid rate limits
-			if (ids.length > 1) await Bun.sleep(2000);
+			if (count > 1) await Bun.sleep(2000);
 		}
 
 		if (processed > 0 || skipped > 0) {
-			console.log(`[DONE] Processed: ${processed}, Skipped (expired): ${skipped}, Remaining: ${count - processed - skipped}`);
+			console.log(`[POLL] Processed: ${processed}, Skipped: ${skipped}, Remaining: ${count - processed - skipped}`);
 		}
 	} catch (e: any) {
 		console.error('[POLL ERROR]', e.message);
@@ -277,15 +391,21 @@ async function main() {
 	console.log(`  Chain: ${chainId} | Router: ${TRADE_ROUTER}`);
 	console.log(`  Admin: ${adminAddress}`);
 	console.log(`  Backend: ${BACKEND_URL}`);
-	console.log(`  Poll interval: ${pollInterval}ms`);
+	console.log(`  WS RPC: ${CHAIN_WS_RPC || '(none — HTTP-only mode)'}`);
+	console.log(`  Poll interval: ${pollInterval / 1000}s`);
 	console.log(`  Min gas: ${minGasBnb} BNB | Min FLW: ₦${minFlwNgn}`);
 
+	initHttp();
 	await initRedis();
 
-	// Initial poll
+	if (CHAIN_WS_RPC) {
+		connectWs();
+	}
+
+	// Initial poll to catch anything already pending
 	await poll();
 
-	// Recurring poll
+	// Safety-net recurring poll
 	setInterval(poll, pollInterval);
 }
 
