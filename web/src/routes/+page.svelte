@@ -7,6 +7,7 @@
 	import RecentTransactionsTicker from '$lib/RecentTransactionsTicker.svelte';
 	import LaunchProgressBar from '$lib/LaunchProgressBar.svelte';
 	import LaunchCountdown from '$lib/LaunchCountdown.svelte';
+	import TokenLogo from '$lib/TokenLogo.svelte';
 
 	let { data: serverData }: { data: any } = $props();
 

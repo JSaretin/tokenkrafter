@@ -86,7 +86,7 @@
 					</div>`;
 				},
 			},
-			grid: { top: 30, right: 16, bottom: 36, left: 52 },
+			grid: { top: 30, right: 8, bottom: 32, left: 38 },
 			xAxis: {
 				type: 'value',
 				name: 'Tokens Sold',
