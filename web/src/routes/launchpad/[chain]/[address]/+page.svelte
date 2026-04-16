@@ -2000,34 +2000,42 @@
 				<div class="card sale-params mb-4">
 					<h3 class="sale-params-title">Sale Details</h3>
 
-					<div class="sale-grid">
-						<div class="sale-item">
-							<span class="sale-item-label">Buy fee</span>
-							<span class="sale-item-val">1%</span>
+					<!-- Trust highlights — the things buyers care about most -->
+					<div class="sale-highlights">
+						<div class="sale-highlight sale-highlight-green">
+							<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/><path d="M8 12l3 3 5-5"/></svg>
+							<span>LP burned permanently at graduation</span>
 						</div>
-						<div class="sale-item">
-							<span class="sale-item-label">Graduation fee</span>
-							<span class="sale-item-val">1%</span>
+						<div class="sale-highlight">
+							<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><line x1="12" y1="22" x2="12" y2="7"/></svg>
+							<span>Full refund if soft cap not reached</span>
+						</div>
+					</div>
+
+					<div class="sale-rows">
+						<div class="sale-row">
+							<span class="sale-row-label">Buy fee</span>
+							<span class="sale-row-val">1% <span class="sale-row-hint">per purchase</span></span>
+						</div>
+						<div class="sale-row">
+							<span class="sale-row-label">Graduation fee</span>
+							<span class="sale-row-val">1% <span class="sale-row-hint">of final raise</span></span>
 						</div>
 						{#if maxBuyPerWallet > 0n}
-							<div class="sale-item">
-								<span class="sale-item-label">Max per wallet</span>
-								<span class="sale-item-val">{formatUsdt(maxBuyPerWallet, ud)} <span class="sale-item-dim">({maxBuyPct}%)</span></span>
+							<div class="sale-row">
+								<span class="sale-row-label">Max per wallet</span>
+								<span class="sale-row-val">{formatUsdt(maxBuyPerWallet, ud)} <span class="sale-row-hint">({maxBuyPct}%)</span></span>
 							</div>
 						{/if}
 						{#if minBuyUsdt > 0n}
-							<div class="sale-item">
-								<span class="sale-item-label">Min buy</span>
-								<span class="sale-item-val">{formatUsdt(minBuyUsdt, ud)}</span>
+							<div class="sale-row">
+								<span class="sale-row-label">Min buy</span>
+								<span class="sale-row-val">{formatUsdt(minBuyUsdt, ud)}</span>
 							</div>
 						{/if}
-						<div class="sale-item">
-							<span class="sale-item-label">DEX</span>
-							<span class="sale-item-val">{network?.symbol === 'BSC' ? 'PancakeSwap' : 'Uniswap'} V2</span>
-						</div>
-						<div class="sale-item">
-							<span class="sale-item-label">LP at graduation</span>
-							<span class="sale-item-val sale-item-green">Burned permanently</span>
+						<div class="sale-row">
+							<span class="sale-row-label">DEX at graduation</span>
+							<span class="sale-row-val">{network?.symbol === 'BSC' ? 'PancakeSwap' : 'Uniswap'} V2</span>
 						</div>
 					</div>
 
@@ -2103,7 +2111,7 @@
 									</div>
 									<div class="activity-card">
 										<div class="activity-card-top">
-											<span class="activity-addr">{isSelf ? 'You' : shortAddr(tx.buyer)}</span>
+											<a href="{network?.explorer_url || ''}/address/{tx.buyer}" target="_blank" rel="noopener noreferrer" class="activity-addr">{isSelf ? 'You' : shortAddr(tx.buyer)}</a>
 											<span class="activity-time">{relativeTime(tx.created_at)}</span>
 										</div>
 										<div class="activity-card-hero">
@@ -3247,25 +3255,41 @@
 		font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 800;
 		color: var(--text-heading); margin-bottom: 12px;
 	}
-	.sale-grid {
-		display: grid; grid-template-columns: 1fr 1fr; gap: 1px;
-		background: var(--border-subtle); border-radius: 10px; overflow: hidden;
-		margin-bottom: 16px;
+	.sale-highlights {
+		display: flex; flex-direction: column; gap: 6px;
+		margin-bottom: 14px;
 	}
-	.sale-item {
-		padding: 10px 12px; background: var(--bg-surface);
+	.sale-highlight {
+		display: flex; align-items: center; gap: 8px;
+		padding: 8px 12px; border-radius: 8px;
+		background: rgba(0, 210, 255, 0.04);
+		border: 1px solid rgba(0, 210, 255, 0.08);
+		font-family: 'Space Mono', monospace; font-size: 11px;
+		color: var(--text-muted);
 	}
-	.sale-item-label {
-		display: block; font-family: 'Rajdhani', sans-serif; font-size: 10px;
-		color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.03em;
-		margin-bottom: 2px;
+	.sale-highlight svg { color: #00d2ff; flex-shrink: 0; }
+	.sale-highlight-green {
+		background: rgba(16, 185, 129, 0.06);
+		border-color: rgba(16, 185, 129, 0.12);
 	}
-	.sale-item-val {
+	.sale-highlight-green svg { color: #10b981; }
+	.sale-highlight-green span { color: #10b981; font-weight: 600; }
+	.sale-rows { margin-bottom: 14px; }
+	.sale-row {
+		display: flex; justify-content: space-between; align-items: center;
+		padding: 8px 0;
+		border-bottom: 1px solid var(--border-subtle);
+	}
+	.sale-row:last-child { border-bottom: none; }
+	.sale-row-label {
+		font-family: 'Space Mono', monospace; font-size: 11px;
+		color: var(--text-dim);
+	}
+	.sale-row-val {
 		font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700;
 		color: var(--text-heading);
 	}
-	.sale-item-dim { font-size: 10px; color: var(--text-dim); font-weight: 400; }
-	.sale-item-green { color: #10b981; }
+	.sale-row-hint { font-size: 10px; color: var(--text-dim); font-weight: 400; }
 
 	.sale-contracts {
 		border-top: 1px solid var(--border-subtle); padding-top: 12px;
@@ -3675,7 +3699,9 @@
 		display: flex; align-items: center; justify-content: space-between;
 		gap: 8px; margin-bottom: 2px;
 	}
-	.activity-addr {
+	.activity-addr { text-decoration: none; }
+	.activity-addr:hover { color: #00d2ff; }
+	a.activity-addr {
 		font-family: 'Rajdhani', sans-serif; font-size: 12px;
 		color: var(--text-muted); font-weight: 600;
 	}

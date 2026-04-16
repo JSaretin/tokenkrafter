@@ -5,6 +5,7 @@
 	import { t } from '$lib/i18n';
 	import { supabase } from '$lib/supabaseClient';
 	import RecentTransactionsTicker from '$lib/RecentTransactionsTicker.svelte';
+	import LaunchProgressBar from '$lib/LaunchProgressBar.svelte';
 
 	let { data: serverData }: { data: any } = $props();
 
@@ -328,7 +329,9 @@
 					{@const ud = launch.usdt_decimals ?? 18}
 					{@const raised = BigInt(launch.total_base_raised || '0')}
 					{@const hardCap = BigInt(launch.hard_cap || '0')}
+					{@const softCap = BigInt(launch.soft_cap || '0')}
 					{@const progress = progressPercent(raised, hardCap)}
+					{@const scPct = hardCap > 0n ? Math.min(100, Number((softCap * 100n) / hardCap)) : 0}
 					{@const deadline = Number(launch.deadline || 0)}
 					{@const hot = isHot(launch)}
 					<a href="/launchpad/{chainSlug(launch.chain_id)}/{launch.address}" class="launch-card card p-0 block no-underline group">
@@ -389,16 +392,13 @@
 
 						<!-- Progress -->
 						<div class="hp-progress-section">
-							<div class="flex justify-between items-baseline mb-2">
-								<span class="text-white text-xs font-mono font-semibold">Raised {progress}%</span>
-								<span class="text-gray-500 text-[10px] font-mono">{formatUsdt(hardCap, ud)}</span>
-							</div>
-							<div class="progress-track hp-progress-track">
-								<div class="progress-fill progress-cyan" style="width: {progress}%"></div>
-							</div>
-							<div class="flex justify-between mt-1.5">
-								<span class="text-gray-600 text-[10px] font-mono">{formatUsdt(raised, ud)} / {formatUsdt(hardCap, ud)}</span>
-							</div>
+							<LaunchProgressBar
+								{progress}
+								softCapPct={scPct}
+								raised={formatUsdt(raised, ud)}
+								hardCap={formatUsdt(hardCap, ud)}
+								size="md"
+							/>
 						</div>
 					</a>
 				{/each}

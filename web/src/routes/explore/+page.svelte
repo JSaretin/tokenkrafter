@@ -3,6 +3,7 @@
 	import { getContext, onMount, onDestroy } from 'svelte';
 	import { chainSlug, type SupportedNetwork } from '$lib/structure';
 	import { querySafuLens, type TokenSafu } from '$lib/safuLens';
+	import LaunchProgressBar from '$lib/LaunchProgressBar.svelte';
 
 	let { data }: { data: any } = $props();
 	let tokens: any[] = data.tokens;
@@ -366,7 +367,9 @@
 					{@const decimals = launch.usdt_decimals || 18}
 					{@const raised = parseFloat(ethers.formatUnits(launch.total_base_raised || '0', decimals))}
 					{@const cap = parseFloat(ethers.formatUnits(launch.hard_cap || '1', decimals))}
+					{@const sc = parseFloat(ethers.formatUnits(launch.soft_cap || '0', decimals))}
 					{@const progress = cap > 0 ? Math.min((raised / cap) * 100, 100) : 0}
+					{@const scPct = cap > 0 ? Math.min(100, (sc / cap) * 100) : 0}
 					<a href="/launchpad/{slug}/{launch.address}" class="launch-card">
 						<div class="launch-card-top">
 							{#if launch.logo_url}
@@ -394,15 +397,13 @@
 								</div>
 							{/if}
 						{/if}
-						<div class="launch-progress-wrap">
-							<div class="launch-progress-bar">
-								<div class="launch-progress-fill" style="width:{Math.max(progress > 0 ? 1 : 0, progress)}%"></div>
-							</div>
-							<div class="launch-progress-label">
-								<span>${raised.toFixed(2)} / ${cap.toFixed(2)}</span>
-								<span>{progress.toFixed(0)}%</span>
-							</div>
-						</div>
+						<LaunchProgressBar
+							{progress}
+							softCapPct={scPct}
+							raised="${raised.toFixed(2)}"
+							hardCap="${cap.toFixed(2)}"
+							size="sm"
+						/>
 						<span class="launch-buy-cta">Buy Now</span>
 					</a>
 				{/each}
