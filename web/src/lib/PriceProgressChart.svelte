@@ -29,7 +29,6 @@
 		height?: string;
 	} = $props();
 
-	const CURVE_LABELS = ['Linear', 'Square Root', 'Quadratic', 'Exponential'];
 	const STEPS = 100;
 
 	function curveFn(x: number, type: number): number {
@@ -86,17 +85,22 @@
 		const raisedNum = Number(totalBaseRaised) / (10 ** usdtDecimals);
 
 		// Derive max price from current price + progress
-		const maxPrice = curPriceNum > 0 && progressFrac > 0
-			? curPriceNum / (curveFn(progressFrac, curveType) / maxCurveY)
-			: hardCapNum / totalTokens * 2;
+		const curveFracAtProgress = curveFn(progressFrac, curveType) / maxCurveY;
+		let maxPrice: number;
+		if (curPriceNum > 0 && curveFracAtProgress > 1e-12) {
+			maxPrice = curPriceNum / curveFracAtProgress;
+		} else if (totalTokens > 0) {
+			maxPrice = hardCapNum / totalTokens * 2;
+		} else {
+			maxPrice = 1;
+		}
+		if (!Number.isFinite(maxPrice) || maxPrice <= 0) maxPrice = 1;
 
-		// Derive total USDT at 100% from the integral
+		// Total raised at 100% = hardCap (the contract enforces this)
 		const integralAt1 = curveIntegral(1, curveType);
-		const totalUsdtAt100 = raisedNum > 0 && progressFrac > 0
-			? raisedNum / (curveIntegral(progressFrac, curveType) / integralAt1)
-			: hardCapNum;
+		const totalUsdtAt100 = hardCapNum > 0 ? hardCapNum : 100;
 
-		// Y axis scales to fit the full curve so users see the complete trajectory
+		// Y axis scales to fit the full curve
 		const yMaxPrice = maxPrice * 1.1;
 		const yMaxRaised = totalUsdtAt100 * 1.1;
 
@@ -327,17 +331,7 @@
 					z: 7,
 				}] : []),
 			],
-			graphic: [{
-				type: 'text',
-				left: 'center',
-				top: 6,
-				style: {
-					text: `${CURVE_LABELS[curveType]}${progressFrac > 0 ? ` · ${(progressFrac * 100).toFixed(1)}% tokens sold` : ''}`,
-					fill: '#94a3b8',
-					fontSize: 11,
-					fontFamily: "'Rajdhani', sans-serif",
-				},
-			}],
+			graphic: [],
 		} as any;
 	});
 </script>

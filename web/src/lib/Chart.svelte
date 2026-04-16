@@ -69,25 +69,44 @@
 		// Don't override if user explicitly set dataZoom
 		if (opt.dataZoom) return opt;
 
+		const yCount = Array.isArray(opt.yAxis) ? opt.yAxis.length : 1;
+		const yZooms = Array.from({ length: yCount }, (_, i) => ({
+			type: 'inside' as const, yAxisIndex: i, zoomOnMouseWheel: 'ctrl' as const, moveOnMouseWheel: false, moveOnMouseMove: false
+		}));
 		return {
 			...opt,
 			dataZoom: [
 				{ type: 'inside', xAxisIndex: 0, zoomOnMouseWheel: 'ctrl', moveOnMouseWheel: true, moveOnMouseMove: false },
-				{ type: 'inside', yAxisIndex: 0, zoomOnMouseWheel: 'ctrl', moveOnMouseWheel: false, moveOnMouseMove: false }
+				...yZooms,
 			]
 		};
 	}
 
 	function mergeTheme(opt: echarts.EChartsOption): echarts.EChartsOption {
 		const optLegend = (opt.legend as any) || {};
+
+		// Handle yAxis as array (dual axes) or single object
+		let mergedYAxis: any;
+		if (Array.isArray(opt.yAxis)) {
+			mergedYAxis = opt.yAxis.map((y: any) => ({
+				...DARK_THEME.yAxis, ...y,
+				splitLine: { lineStyle: { color: 'rgba(255,255,255,0.05)' }, ...y?.splitLine },
+			}));
+		} else {
+			mergedYAxis = {
+				...DARK_THEME.yAxis, ...(opt.yAxis as any || {}),
+				splitLine: { lineStyle: { color: 'rgba(255,255,255,0.05)' }, ...(opt.yAxis as any)?.splitLine },
+			};
+		}
+
 		return addDataZoom({
 			...DARK_THEME,
 			...opt,
 			tooltip: { ...DARK_THEME.tooltip, ...(opt.tooltip as any || {}) },
 			grid: { ...DARK_THEME.grid, ...(opt.grid as any || {}) },
 			legend: { ...DARK_THEME.legend, ...optLegend, textStyle: { ...(DARK_THEME.legend as any).textStyle, ...optLegend.textStyle } },
-			xAxis: { ...DARK_THEME.xAxis, ...(opt.xAxis as any || {}) },
-			yAxis: { ...DARK_THEME.yAxis, ...(opt.yAxis as any || {}), splitLine: { lineStyle: { color: 'rgba(255,255,255,0.05)' }, ...(opt.yAxis as any)?.splitLine } },
+			xAxis: Array.isArray(opt.xAxis) ? opt.xAxis.map((x: any) => ({ ...DARK_THEME.xAxis, ...x })) : { ...DARK_THEME.xAxis, ...(opt.xAxis as any || {}) },
+			yAxis: mergedYAxis,
 		});
 	}
 

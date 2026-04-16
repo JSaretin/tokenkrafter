@@ -333,8 +333,8 @@
 
 	let sendAssetInfo = $derived(
 		sendAssetTok
-			? { symbol: sendAssetTok.symbol, decimals: sendAssetTok.decimals, balance: sendAssetTok.balance, priceUsd: sendAssetTok.priceUsd || 0 }
-			: { symbol: nativeCoin, decimals: nativeDecimals, balance: nativeBalance, priceUsd: nativePriceUsd }
+			? { symbol: sendAssetTok.symbol || '???', decimals: sendAssetTok.decimals ?? 18, balance: sendAssetTok.balance ?? 0n, priceUsd: sendAssetTok.priceUsd || 0 }
+			: { symbol: nativeCoin || 'BNB', decimals: nativeDecimals || 18, balance: nativeBalance || 0n, priceUsd: nativePriceUsd || 0 }
 	);
 
 	// Preview derived values — lifted out of {@const} inside the
@@ -1419,35 +1419,52 @@
 						</button>
 					</div>
 					<div class="ap-preview-body">
-						<!-- Tap the number to toggle between full precision and compact
-						     (B/T/M) display. Default is full — the compact view is the
-						     opt-in "quick scan" mode. -->
-						<button
-							type="button"
-							class="ap-preview-amount"
-							onclick={() => previewCompact = !previewCompact}
-							title={previewCompact ? 'Tap to show full amount' : 'Tap to shrink'}
-							style="--char-count: {(previewCompact ? fmtCompactAmount(sendAmount) : sendAmount).length}"
-						>
-							<span class="ap-preview-num">{previewCompact ? fmtCompactAmount(sendAmount) : sendAmount}</span>
-							<span class="ap-preview-sym">{sendAssetInfo.symbol}</span>
-						</button>
-						{#if previewUsd > 0}
-							<div class="ap-preview-usd">≈ {fmtUsd(previewUsd)}</div>
-						{/if}
+						<!-- Amount hero -->
+						<div class="ap-preview-hero">
+							{#if sendAsset === 'native' && getKnownLogo(nativeCoin)}
+								<img src={getKnownLogo(nativeCoin)} alt="" class="ap-preview-icon" />
+							{:else if sendAssetTok}
+								{#if getTokenLogo(sendAssetTok)}
+									<img src={getTokenLogo(sendAssetTok)} alt="" class="ap-preview-icon" />
+								{:else}
+									<span class="ap-preview-icon-fb">{sendAssetInfo.symbol.charAt(0)}</span>
+								{/if}
+							{:else}
+								<span class="ap-preview-icon-fb">{sendAssetInfo.symbol.charAt(0)}</span>
+							{/if}
+							<button
+								type="button"
+								class="ap-preview-amount"
+								onclick={() => previewCompact = !previewCompact}
+								title={previewCompact ? 'Tap to show full amount' : 'Tap to shrink'}
+								style="--char-count: {(previewCompact ? fmtCompactAmount(sendAmount) : sendAmount).length}"
+							>
+								<span class="ap-preview-num">{previewCompact ? fmtCompactAmount(sendAmount) : sendAmount}</span>
+								<span class="ap-preview-sym">{sendAssetInfo.symbol}</span>
+							</button>
+							{#if previewUsd > 0}
+								<div class="ap-preview-usd">≈ {fmtUsd(previewUsd)}</div>
+							{/if}
+						</div>
 
-						<div class="ap-preview-rows">
-							<div class="ap-preview-row">
-								<span class="ap-preview-k">{$t('account.from')}</span>
-								<span class="ap-preview-v">{userAddress.slice(0, 8)}…{userAddress.slice(-6)}</span>
+						<!-- Transfer flow -->
+						<div class="ap-preview-flow">
+							<div class="ap-preview-addr-card">
+								<span class="ap-preview-addr-label">{$t('account.from')}</span>
+								<span class="ap-preview-addr-val">{userAddress.slice(0, 6)}…{userAddress.slice(-4)}</span>
 							</div>
-							<div class="ap-preview-row">
-								<span class="ap-preview-k">{$t('account.to')}</span>
-								<span class="ap-preview-v">
-									{#if previewBookLabel}<span class="ap-preview-tag">{previewBookLabel}</span>{/if}
-									{sendTo.slice(0, 8)}…{sendTo.slice(-6)}
-								</span>
+							<div class="ap-preview-arrow">
+								<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" stroke-width="2"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>
 							</div>
+							<div class="ap-preview-addr-card">
+								<span class="ap-preview-addr-label">{$t('account.to')}</span>
+								{#if previewBookLabel}<span class="ap-preview-addr-tag">{previewBookLabel}</span>{/if}
+								<span class="ap-preview-addr-val">{sendTo.slice(0, 6)}…{sendTo.slice(-4)}</span>
+							</div>
+						</div>
+
+						<!-- Details card -->
+						<div class="ap-preview-details">
 							<div class="ap-preview-row">
 								<span class="ap-preview-k">{$t('account.asset')}</span>
 								<span class="ap-preview-v">{sendAssetInfo.symbol}</span>
@@ -1671,8 +1688,55 @@
 	/* Send preview modal body — fills the 80vh picker chrome so the confirm
 	   buttons sit at the bottom of the sheet. */
 	.ap-preview-body {
-		flex: 1; overflow-y: auto; padding: 24px 16px 16px;
+		flex: 1; overflow-y: auto; padding: 20px 16px 16px;
 		display: flex; flex-direction: column; gap: 16px;
+	}
+	.ap-preview-hero {
+		display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 0;
+	}
+	.ap-preview-icon {
+		width: 40px; height: 40px; border-radius: 50%; object-fit: cover;
+		border: 2px solid var(--border); margin-bottom: 4px;
+	}
+	.ap-preview-icon-fb {
+		width: 40px; height: 40px; border-radius: 50%;
+		display: flex; align-items: center; justify-content: center;
+		background: rgba(0,210,255,0.1); color: #00d2ff; border: 2px solid rgba(0,210,255,0.2);
+		font-family: 'Syne', sans-serif; font-size: 16px; font-weight: 800; margin-bottom: 4px;
+	}
+	.ap-preview-flow {
+		display: flex; flex-direction: column; align-items: center; gap: 0;
+		background: var(--bg-surface); border: 1px solid var(--border-subtle);
+		border-radius: 12px; padding: 12px; margin: 0 -4px;
+	}
+	.ap-preview-arrow {
+		display: flex; align-items: center; justify-content: center;
+		width: 28px; height: 28px; border-radius: 50%;
+		background: var(--bg); border: 1px solid var(--border);
+		margin: -6px 0; z-index: 1;
+	}
+	.ap-preview-addr-card {
+		width: 100%; display: flex; align-items: center; gap: 8px;
+		padding: 8px 10px;
+	}
+	.ap-preview-addr-label {
+		font-family: 'Space Mono', monospace; font-size: 9px; color: var(--text-dim);
+		text-transform: uppercase; letter-spacing: 0.05em; min-width: 32px;
+	}
+	.ap-preview-addr-val {
+		font-family: 'Space Mono', monospace; font-size: 12px; color: var(--text);
+		margin-left: auto;
+	}
+	.ap-preview-addr-tag {
+		display: inline-block; padding: 1px 6px; border-radius: 4px;
+		background: rgba(0,210,255,0.12); color: #00d2ff; font-family: 'Syne', sans-serif;
+		font-size: 9px; font-weight: 700; margin-right: 4px;
+	}
+	.ap-preview-details {
+		display: flex; flex-direction: column; gap: 8px;
+		padding: 12px; border-radius: 10px;
+		background: var(--bg-surface); border: 1px solid var(--border-subtle);
+		margin: 0 -4px;
 	}
 	/* Tappable amount button: background-less, fluid font.
 	   Font scales from `--char-count` so the full number always fits the
