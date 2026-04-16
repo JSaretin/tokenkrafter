@@ -98,12 +98,13 @@
 
 	// Derived
 	let createdAt = $derived(withdrawal?.created_at ? Math.floor(new Date(withdrawal.created_at).getTime() / 1000) : 0);
-	let expiresAt = $derived(withdrawal?.expiresAt || withdrawal?.expires_at ? Math.floor(new Date(withdrawal.expires_at || 0).getTime() / 1000) || withdrawal.expiresAt : 0);
+	// expiresAt comes as a unix timestamp (seconds) from on-chain data
+	let expiresAt = $derived(Number(withdrawal?.expiresAt || withdrawal?.expires_at || 0));
 	let totalDuration = $derived(expiresAt > createdAt ? expiresAt - createdAt : 600);
 	let nowSec = $derived(Math.floor(tickNow / 1000));
 	let remaining = $derived(expiresAt > 0 ? Math.max(0, expiresAt - nowSec) : Math.max(0, totalDuration - (nowSec - createdAt)));
 	let elapsed = $derived(nowSec - createdAt);
-	let progressPct = $derived(totalDuration > 0 ? Math.min(100, (elapsed / totalDuration) * 100) : 100);
+	let progressPct = $derived(totalDuration > 0 ? Math.max(0, (remaining / totalDuration) * 100) : 0);
 	let canCancel = $derived((liveStatus === 'pending' || liveStatus === 'timeout') && remaining <= 0);
 	let grossAmount = $derived(parseFloat(withdrawal?.gross_amount || '0') / (10 ** usdtDecimals));
 	let feeAmount = $derived(parseFloat(withdrawal?.fee || '0') / (10 ** usdtDecimals));
@@ -221,17 +222,13 @@
 					<div class="status-label" style="color: {statusConfig.color};">{statusConfig.label}</div>
 				{/if}
 
-				{#if liveStatus === 'pending'}
+				{#if liveStatus === 'pending' && remaining > 0}
 					<div class="countdown-timer">
-						{#if remaining > 0}
-							<span class="timer-digits">{Math.floor(remaining / 60)}:{String(remaining % 60).padStart(2, '0')}</span>
-						{:else}
-							<span class="timer-expired">0:00</span>
-						{/if}
+						<span class="timer-digits">{Math.floor(remaining / 60)}:{String(remaining % 60).padStart(2, '0')}</span>
 					</div>
 					<div class="countdown-bar-wrap">
 						<div class="countdown-bar">
-							<div class="countdown-fill" style="width: {progressPct}%; background: {remaining > 0 ? 'linear-gradient(90deg, #f59e0b, #d97706)' : 'linear-gradient(90deg, #f87171, #dc2626)'}"></div>
+							<div class="countdown-fill" style="width: {progressPct}%; background: linear-gradient(90deg, #f59e0b, #d97706)"></div>
 						</div>
 					</div>
 				{/if}

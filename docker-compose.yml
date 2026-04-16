@@ -1,7 +1,7 @@
 services:
   ws-indexer:
     build: ./daemons
-    command: bun run ws-indexer.ts
+    command: bun ws-indexer.mjs
     env_file: .envs/indexer.env
     restart: always
     depends_on: [redis]
@@ -10,7 +10,7 @@ services:
 
   safu:
     build: ./daemons
-    command: bun run safu-indexer.ts
+    command: bun safu-indexer.mjs
     env_file: .envs/indexer.env
     restart: always
     volumes:
@@ -18,13 +18,13 @@ services:
 
   rates:
     build: ./daemons
-    command: bun run rate-updater.ts
+    command: bun rate-updater.mjs
     env_file: .envs/indexer.env
     restart: always
 
   payment:
     build: ./payment-server
-    command: bun run index.ts
+    command: bun payment.mjs
     env_file: .envs/payment.env
     restart: always
     ports:
@@ -32,7 +32,7 @@ services:
 
   processor:
     build: ./payment-server
-    command: bun run withdrawal-processor.ts
+    command: bun processor.mjs
     env_file: .envs/processor.env
     restart: always
     depends_on: [redis]
