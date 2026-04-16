@@ -6,6 +6,13 @@
 
 	let { data }: { data: any } = $props();
 	let tokens: any[] = data.tokens;
+	let activeLaunches: any[] = data.activeLaunches || [];
+	let activeLaunchAddrs = $derived(new Set(
+		activeLaunches.map((l: any) => (l.token_address || '').toLowerCase()).filter(Boolean)
+	));
+	function isOnLaunchpad(tok: any): boolean {
+		return activeLaunchAddrs.has(tok.address?.toLowerCase());
+	}
 	let search = $state('');
 	let sortBy = $state<'newest' | 'safu' | 'name'>('safu');
 	let filterType = $state<'all' | 'basic' | 'taxable' | 'mintable' | 'partner'>('all');
@@ -325,6 +332,51 @@
 		</div>
 	</div>
 
+	<!-- Live Launches -->
+	{#if activeLaunches.length > 0 && !search.trim()}
+		<div class="launches-section">
+			<div class="launches-header">
+				<span class="launches-dot"></span>
+				<span class="launches-label">Live Launches</span>
+			</div>
+			<div class="launches-scroll">
+				{#each activeLaunches as launch}
+					{@const slug = launch.chain_id === 56 ? 'bsc' : 'eth'}
+					{@const decimals = launch.usdt_decimals || 18}
+					{@const raised = parseFloat(ethers.formatUnits(launch.total_base_raised || '0', decimals))}
+					{@const cap = parseFloat(ethers.formatUnits(launch.hard_cap || '1', decimals))}
+					{@const progress = cap > 0 ? Math.min((raised / cap) * 100, 100) : 0}
+					<a href="/launchpad/{slug}/{launch.address}" class="launch-card">
+						<div class="launch-card-top">
+							{#if launch.logo_url}
+								<img src={launch.logo_url} alt="" class="launch-logo" />
+							{:else}
+								<div class="launch-logo-fallback">{(launch.token_symbol || '??').slice(0, 2)}</div>
+							{/if}
+							<div class="launch-identity">
+								<span class="launch-name">{launch.token_name || 'Unknown'}</span>
+								<span class="launch-symbol">{launch.token_symbol || '???'}</span>
+							</div>
+							{#if launch.is_partner}
+								<span class="tc-badge tc-badge-partner" style="font-size:7px">Partner</span>
+							{/if}
+						</div>
+						<div class="launch-progress-wrap">
+							<div class="launch-progress-bar">
+								<div class="launch-progress-fill" style="width:{Math.max(progress > 0 ? 1 : 0, progress)}%"></div>
+							</div>
+							<div class="launch-progress-label">
+								<span>${raised.toFixed(2)} / ${cap.toFixed(2)}</span>
+								<span>{progress.toFixed(0)}%</span>
+							</div>
+						</div>
+						<span class="launch-buy-cta">Buy</span>
+					</a>
+				{/each}
+			</div>
+		</div>
+	{/if}
+
 	<!-- Filters -->
 	<div class="explore-controls">
 		<div class="filter-pills">
@@ -421,7 +473,11 @@
 								{#if tok.created_at && isNew(tok.created_at)}
 									<span class="tc-badge tc-badge-new">New</span>
 								{/if}
-								<!-- TODO: If token has an active launch (needs join to launches table), show amber "Pre-launch" pill + price from launch curve here -->
+								{#if isOnLaunchpad(tok)}
+									<span class="tc-badge tc-badge-live-launch">Live Launch</span>
+								{:else if !gecko?.has_data}
+									<span class="tc-badge tc-badge-prelaunch">Pre-launch</span>
+								{/if}
 								<span class="tc-badge tc-badge-{color}">{tokenType(tok)}</span>
 							</div>
 							{#if gecko?.has_data}
@@ -512,6 +568,34 @@
 	.search-input::placeholder { color: #1e293b; }
 
 	/* Controls */
+	/* Live Launches */
+	.launches-section { margin-bottom: 20px; }
+	.launches-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+	.launches-dot { width: 7px; height: 7px; border-radius: 50%; background: #00d2ff; box-shadow: 0 0 8px rgba(0,210,255,0.6); animation: pulse 2s ease-in-out infinite; }
+	@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+	.launches-label { font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700; color: var(--text-heading); }
+	.launches-scroll { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 8px; scrollbar-width: thin; }
+	.launch-card {
+		display: flex; flex-direction: column; gap: 8px;
+		min-width: 220px; max-width: 260px; padding: 12px 14px;
+		background: var(--bg-surface); border: 1px solid var(--border-subtle);
+		border-radius: 10px; text-decoration: none; color: inherit;
+		transition: all 0.15s; flex-shrink: 0;
+	}
+	.launch-card:hover { border-color: rgba(0,210,255,0.2); transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.15); }
+	.launch-card-top { display: flex; align-items: center; gap: 8px; }
+	.launch-logo { width: 28px; height: 28px; border-radius: 8px; object-fit: cover; flex-shrink: 0; border: 1px solid var(--border); }
+	.launch-logo-fallback { width: 28px; height: 28px; border-radius: 8px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,210,255,0.1); color: #00d2ff; border: 1px solid rgba(0,210,255,0.2); font-size: 10px; font-weight: 800; }
+	.launch-identity { flex: 1; min-width: 0; }
+	.launch-name { display: block; font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700; color: var(--text-heading); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+	.launch-symbol { font-family: 'Space Mono', monospace; font-size: 9px; color: var(--text-dim); }
+	.launch-progress-wrap { display: flex; flex-direction: column; gap: 4px; }
+	.launch-progress-bar { height: 6px; border-radius: 3px; background: var(--border-subtle); overflow: hidden; border: 1px solid var(--border-subtle, rgba(255,255,255,0.06)); }
+	.launch-progress-fill { height: 100%; border-radius: 3px; background: linear-gradient(90deg, #00d2ff, #10b981); min-width: 3px; }
+	.launch-progress-label { display: flex; justify-content: space-between; font-family: 'Space Mono', monospace; font-size: 9px; color: var(--text-dim); }
+	.launch-buy-cta { margin-left: auto; font-family: 'Space Mono', monospace; font-size: 10px; font-weight: 700; color: #00d2ff; padding: 3px 10px; border-radius: 6px; background: rgba(0,210,255,0.1); border: 1px solid rgba(0,210,255,0.15); }
+	.launch-card:hover .launch-buy-cta { background: rgba(0,210,255,0.18); border-color: rgba(0,210,255,0.3); }
+
 	.explore-controls { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
 	.filter-pills { display: flex; gap: 6px; flex-wrap: wrap; }
 	.filter-pill {
@@ -567,6 +651,8 @@
 	.tc-badges-row { display: flex; gap: 4px; align-items: center; justify-content: flex-end; overflow: hidden; white-space: nowrap; max-height: 22px; }
 	.tc-badge-new { background: rgba(16,185,129,0.15); color: #10b981; }
 	.tc-badge-safu { background: rgba(16,185,129,0.2); color: #10b981; font-weight: 800; border: 1px solid rgba(16,185,129,0.3); }
+	.tc-badge-live-launch { background: rgba(0,210,255,0.12); color: #00d2ff; border: 1px solid rgba(0,210,255,0.25); font-weight: 700; }
+	.tc-badge-prelaunch { background: rgba(245,158,11,0.1); color: #f59e0b; border: 1px solid rgba(245,158,11,0.2); }
 	.tc-badge-lp { background: rgba(59,130,246,0.12); color: #60a5fa; }
 	.tc-badge-renounced { background: rgba(16,185,129,0.12); color: #34d399; }
 	.tc-badge-locked { background: rgba(139,92,246,0.12); color: #a78bfa; }
