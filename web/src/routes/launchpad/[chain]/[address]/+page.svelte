@@ -31,6 +31,7 @@
 		timeRemaining,
 		CURVE_TYPES
 	} from '$lib/launchpad';
+	import Chart from '$lib/Chart.svelte';
 	import BondingCurveChart from '$lib/BondingCurveChart.svelte';
 	import PriceProgressChart from '$lib/PriceProgressChart.svelte';
 
@@ -1933,38 +1934,26 @@
 					{@const creatorPct = Number(launch.creatorAllocationBps) / 100}
 					{@const remainPct = Math.max(0, 100 - curvePct - lpPct)}
 
-					<!-- Allocation bar -->
-					<div class="alloc-bar mb-4">
-						{#if curvePct > 0}
-							<div class="alloc-segment alloc-cyan" style="width: {curvePct}%" title="Curve: {curvePct}%"></div>
-						{/if}
-						{#if lpPct > 0}
-							<div class="alloc-segment alloc-purple" style="width: {lpPct}%" title="Liquidity: {lpPct}%"></div>
-						{/if}
-						{#if remainPct > 0}
-							<div class="alloc-segment alloc-amber" style="width: {remainPct}%" title="Creator: {remainPct}%"></div>
-						{/if}
-					</div>
-
-					<div class="alloc-legend mb-5">
-						<div class="legend-item">
-							<span class="legend-dot bg-cyan-400"></span>
-							<span class="legend-label">{$t('lpd.curveSale')}</span>
-							<span class="legend-value">{curvePct}%</span>
-						</div>
-						<div class="legend-item">
-							<span class="legend-dot bg-purple-400"></span>
-							<span class="legend-label">{$t('lpd.liquidityPool')}</span>
-							<span class="legend-value">{lpPct}%</span>
-						</div>
-						{#if remainPct > 0}
-							<div class="legend-item">
-								<span class="legend-dot bg-amber-400"></span>
-								<span class="legend-label">{$t('lpd.creatorLabel')}</span>
-								<span class="legend-value">{remainPct}%</span>
-							</div>
-						{/if}
-					</div>
+					<!-- Pie chart -->
+					{@const pieData = [
+						{ value: curvePct, name: $t('lpd.curveSale'), itemStyle: { color: '#22d3ee' } },
+						{ value: lpPct, name: $t('lpd.liquidityPool'), itemStyle: { color: '#a78bfa' } },
+						...(remainPct > 0 ? [{ value: remainPct, name: $t('lpd.creatorLabel'), itemStyle: { color: '#fbbf24' } }] : []),
+					]}
+					<Chart option={{
+						tooltip: { trigger: 'item', formatter: '{b}: {d}%' },
+						legend: { bottom: 0, left: 'center', itemWidth: 10, itemHeight: 10, itemGap: 16 },
+						series: [{
+							type: 'pie',
+							radius: ['45%', '75%'],
+							center: ['50%', '45%'],
+							avoidLabelOverlap: true,
+							itemStyle: { borderRadius: 4, borderColor: 'transparent', borderWidth: 2 },
+							label: { show: true, formatter: '{d}%', fontSize: 11, fontFamily: "'Rajdhani', sans-serif", fontWeight: 600 },
+							labelLine: { length: 8, length2: 8 },
+							data: pieData,
+						}],
+					}} height="220px" />
 
 					<div class="detail-grid">
 						<div class="detail-row">
