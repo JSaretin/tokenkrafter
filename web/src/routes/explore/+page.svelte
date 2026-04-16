@@ -430,6 +430,7 @@
 			{@const isTaxLocked = safu?.taxCeilingLocked ?? tok.tax_ceiling_locked}
 			{@const sellTax = safu?.sellTaxBps ?? tok.sell_tax_bps ?? 0}
 			{@const isMintableRisk = (safu ? safu.isMintable && !safu.ownerIsZero : tok.is_mintable && !tok.owner_renounced)}
+			{@const buyTax = safu?.buyTaxBps ?? tok.buy_tax_bps ?? 0}
 				<div class="token-card" data-token-addr={tok.address} data-chain-id={tok.chain_id}>
 					<!-- Header: clickable to detail page -->
 					<a href="/explore/{slug}/{tok.address}" class="tc-header">
@@ -451,7 +452,6 @@
 							</div>
 						</div>
 						<div class="tc-header-right">
-							{@const buyTax = safu?.buyTaxBps ?? tok.buy_tax_bps ?? 0}
 							<div class="tc-badges-row">
 								{#if isSafu}
 									<span class="tc-badge tc-badge-safu" title="SAFU — all safety checks passed:&#10;• LP ≥99% burned&#10;• Tax ceiling locked (or non-taxable)&#10;• Trading enabled + liquidity&#10;• Not mintable, or owner renounced">SAFU</span>
