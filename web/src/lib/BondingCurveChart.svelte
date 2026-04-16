@@ -49,9 +49,16 @@
 		return {
 			tooltip: {
 				trigger: 'axis',
+				axisPointer: { type: 'cross', label: { show: false }, crossStyle: { color: 'rgba(0,210,255,0.2)' } },
 				formatter: (params: any) => {
-					const p = Array.isArray(params) ? params[0] : params;
-					return `Sold: ${p.data[0].toFixed(0)}%<br/>Price: ${p.data[1].toFixed(1)}%`;
+					const arr = Array.isArray(params) ? params : [params];
+					const p = arr.find((a: any) => a.seriesIndex === 1) || arr[0];
+					if (!p?.data) return '';
+					return `<div style="font-family:Rajdhani,sans-serif">
+						<div style="font-weight:700;margin-bottom:4px">${CURVE_LABELS[curveType]}</div>
+						<div>Tokens sold: <b>${p.data[0].toFixed(1)}%</b></div>
+						<div>Price level: <b>${p.data[1].toFixed(1)}%</b></div>
+					</div>`;
 				},
 			},
 			grid: { top: 30, right: 16, bottom: 32, left: 48 },
@@ -117,8 +124,16 @@
 				...(clampedProgress > 0 ? [{
 					type: 'scatter',
 					data: [[pFrac * 100, markerY]],
-					symbolSize: 10,
-					itemStyle: { color: '#00d2ff', borderColor: '#fff', borderWidth: 2 },
+					symbolSize: 12,
+					itemStyle: { color: '#00d2ff', borderColor: '#fff', borderWidth: 2, shadowColor: 'rgba(0,210,255,0.5)', shadowBlur: 8 },
+					tooltip: {
+						trigger: 'item',
+						formatter: () => `<div style="font-family:Rajdhani,sans-serif">
+							<div style="font-weight:700">Current Position</div>
+							<div>Sold: <b>${clampedProgress.toFixed(1)}%</b></div>
+							<div>Price: <b>${markerY.toFixed(1)}%</b></div>
+						</div>`,
+					},
 					z: 3,
 					_fixed: true,
 				}] : []),
