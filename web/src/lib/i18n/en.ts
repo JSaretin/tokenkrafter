@@ -715,6 +715,15 @@ export default {
 	'lpd.faqCreatorQ': 'Can the creator withdraw funds early?',
 	'lpd.faqCreatorA': 'No. The creator cannot access raised funds until graduation. If the launch fails, funds are returned to buyers, not the creator.',
 
+	'lpd.faqTaxQ': 'This token has a buy/sell tax. How does it work?',
+	'lpd.faqTaxA': 'A percentage of each buy and sell is deducted as tax. The tax rate is set by the creator and may be capped by the tax ceiling (if locked). Tax applies after graduation when the token trades on the DEX — not during the bonding curve sale.',
+	'lpd.faqMintQ': 'This token is mintable. What does that mean?',
+	'lpd.faqMintA': 'The token owner can create new tokens, increasing the total supply. This can dilute existing holders. Check if the owner has renounced ownership — if so, no new tokens can be minted.',
+	'lpd.faqExternalQ': 'This token was not created on TokenKrafter. Is it safe?',
+	'lpd.faqExternalA': 'This token was deployed independently and brought to the launchpad by its creator. TokenKrafter has not audited its contract code. Do your own research before investing — check the contract on BSCScan, verify the creator, and look for red flags like hidden mint functions or proxy contracts.',
+	'lpd.faqAuditedQ': 'Is this token\'s contract audited?',
+	'lpd.faqAuditedA': 'This token was created via TokenKrafter\'s audited smart contract templates. The contract code is identical to all other tokens of the same type on the platform. The creator cannot modify the core contract logic — only configure parameters (name, supply, tax rates) within the bounds set at creation.',
+
 	// Token management pages
 	'mt.pageTitle': 'My Tokens',
 	'mt.metaDesc': 'Manage your deployed tokens. Mint, burn, configure taxes, add DEX liquidity, and set up anti-whale protection.',
