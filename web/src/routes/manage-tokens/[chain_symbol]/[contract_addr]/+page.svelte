@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { chainSlug, type SupportedNetworks, type SupportedNetwork, type PaymentOption } from '$lib/structure';
+	import { shortAddr } from '$lib/formatters';
 	import type { WsProviderManager, EventSubscription } from '$lib/wsProvider';
 	import { transferFilter } from '$lib/wsProvider';
 	import { ethers } from 'ethers';
@@ -1377,9 +1378,6 @@
 		}
 	}
 
-	function shortAddr(addr: string) {
-		return addr.slice(0, 8) + '...' + addr.slice(-6);
-	}
 
 	const tabs = [
 		{ id: 'overview', labelKey: 'mt.tabOverview', icon: 'O' },

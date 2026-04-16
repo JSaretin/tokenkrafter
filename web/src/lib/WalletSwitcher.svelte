@@ -33,6 +33,7 @@
 		type WalletState,
 	} from './embeddedWallet';
 	import { friendlyError } from './errorDecoder';
+	import { shortAddr } from '$lib/formatters';
 	import { t } from '$lib/i18n';
 
 	let {
@@ -448,10 +449,6 @@
 		return `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 	}
 
-	function shortAddr(a: string): string {
-		if (!a) return '';
-		return a.slice(0, 6) + '…' + a.slice(-4);
-	}
 
 	function toggleExpanded(id: string) {
 		expandedWallets = { ...expandedWallets, [id]: !expandedWallets[id] };

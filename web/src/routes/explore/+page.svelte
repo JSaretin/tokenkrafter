@@ -6,6 +6,7 @@
 	import { querySafuLens, type TokenSafu } from '$lib/safuLens';
 	import LaunchProgressBar from '$lib/LaunchProgressBar.svelte';
 	import LaunchCountdown from '$lib/LaunchCountdown.svelte';
+	import TokenLogo from '$lib/TokenLogo.svelte';
 
 	let { data }: { data: any } = $props();
 	let tokens: any[] = data.tokens;
@@ -356,11 +357,7 @@
 					{@const scPct = cap > 0 ? Math.min(100, (sc / cap) * 100) : 0}
 					<a href="/launchpad/{slug}/{launch.address}" class="launch-card">
 						<div class="launch-card-top">
-							{#if launch.logo_url}
-								<img src={launch.logo_url} alt="" class="launch-logo" />
-							{:else}
-								<div class="launch-logo-fallback">{(launch.token_symbol || '??').slice(0, 2)}</div>
-							{/if}
+							<TokenLogo logoUrl={launch.logo_url} symbol={launch.token_symbol} address={launch.token_address || launch.address} size={28} />
 							<div class="launch-identity">
 								<span class="launch-name">{launch.token_name || 'Unknown'}</span>
 								<span class="launch-symbol">{launch.token_symbol || '???'}</span>
@@ -443,13 +440,7 @@
 				<div class="token-card" data-token-addr={tok.address} data-chain-id={tok.chain_id}>
 					<!-- Header: clickable to detail page -->
 					<a href="/explore/{slug}/{tok.address}" class="tc-header">
-						{#if tok.logo_url}
-							<img src={tok.logo_url} alt={tok.symbol} class="tc-logo" />
-						{:else}
-							<div class="tc-logo-fallback tc-color-{color}">
-								<span>{tok.symbol?.slice(0, 2).toUpperCase() || '??'}</span>
-							</div>
-						{/if}
+						<TokenLogo logoUrl={tok.logo_url} symbol={tok.symbol} address={tok.address} chainId={tok.chain_id} size={36} />
 						<div class="tc-identity">
 							<span class="tc-name">{tok.name || 'Unknown'}</span>
 							<div class="tc-meta-row">

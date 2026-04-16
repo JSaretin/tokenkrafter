@@ -1,11 +1,13 @@
 <script lang="ts">
 	import { ethers } from 'ethers';
 	import { getContext } from 'svelte';
+	import { shortAddr } from '$lib/formatters';
 	import { page } from '$app/stores';
 	import { chainSlug, type SupportedNetworks } from '$lib/structure';
 	import { FACTORY_ABI } from '$lib/tokenCrafter';
 	import { supabase } from '$lib/supabaseClient';
 	import { t } from '$lib/i18n';
+	import TokenLogo from '$lib/TokenLogo.svelte';
 
 	let getUserAddress: () => string | null = getContext('userAddress');
 	let connectWallet: () => Promise<boolean> = getContext('connectWallet');
@@ -123,9 +125,6 @@
 		return new Date(dateStr).toLocaleDateString();
 	}
 
-	function shortAddr(addr: string) {
-		return addr.slice(0, 6) + '...' + addr.slice(-4);
-	}
 
 	async function loadTokens() {
 		if (!userAddress) return;
@@ -329,11 +328,7 @@
 				<a href="/manage-tokens/{tok.chain_symbol}/{tok.address}" class="token-card">
 					<!-- Header -->
 					<div class="tc-header">
-						{#if tok.logo_url}
-							<img src={tok.logo_url} alt={tok.symbol} class="tc-logo" />
-						{:else}
-							<div class="tc-logo-fallback tc-color-{typeColor(tok)}">{tok.symbol?.charAt(0) || '?'}</div>
-						{/if}
+						<TokenLogo logoUrl={tok.logo_url} symbol={tok.symbol} address={tok.address} chainId={tok.chain_id} size={36} />
 						<div class="tc-identity">
 							<span class="tc-name">{tok.name}</span>
 							<span class="tc-symbol">${tok.symbol}</span>

@@ -579,13 +579,7 @@
 					{@const raised = BigInt(launch.total_base_raised || '0')}
 					<a href="/launchpad/{chainSlug(launch.chain_id)}/{launch.address}" class="graduated-card card p-4 block no-underline group">
 						<div class="flex items-center gap-3">
-							{#if launch.logo_url}
-								<img src={launch.logo_url} alt="" class="launch-logo-sm card-logo-adapt" />
-							{:else}
-								<div class="launch-logo-sm launch-logo-placeholder launch-logo-graduated">
-									{(launch.token_symbol || '?').charAt(0)}
-								</div>
-							{/if}
+							<TokenLogo logoUrl={launch.logo_url} symbol={launch.token_symbol} address={launch.token_address || launch.address} size={32} />
 							<div class="flex-1 min-w-0">
 								<span class="syne font-bold text-white text-sm group-hover:text-emerald-300 transition truncate block">{launch.token_name || 'Unknown'}</span>
 								<span class="text-gray-500 text-xs font-mono">{launch.token_symbol} · {formatUsdt(raised, ud)} {$t('home.raised')}</span>

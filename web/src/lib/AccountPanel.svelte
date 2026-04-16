@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { ethers } from 'ethers';
+	import { shortAddr } from '$lib/formatters';
 	import { fly, fade } from 'svelte/transition';
 	import {
 		getWalletState,
@@ -877,10 +878,6 @@
 		return '$' + fmtCompactAmount(val);
 	}
 
-	function shortAddr(addr: string): string {
-		if (!addr || addr.length < 12) return addr || '';
-		return addr.slice(0, 8) + '...' + addr.slice(-6);
-	}
 
 	// ── Actions ──
 	function handleSwitchAccount(idx: number) {

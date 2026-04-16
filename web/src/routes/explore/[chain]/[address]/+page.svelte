@@ -2,6 +2,7 @@
 	import { ethers } from 'ethers';
 	import { onMount, getContext } from 'svelte';
 	import { supabase } from '$lib/supabaseClient';
+	import { shortAddr } from '$lib/formatters';
 
 	let { data }: { data: any } = $props();
 
@@ -184,10 +185,6 @@
 		return n.toLocaleString();
 	}
 
-	function shortAddr(addr: string): string {
-		if (!addr || addr.length < 12) return addr || '';
-		return addr.slice(0, 6) + '...' + addr.slice(-4);
-	}
 
 	function copyAddress() {
 		navigator.clipboard.writeText(tokenAddress);

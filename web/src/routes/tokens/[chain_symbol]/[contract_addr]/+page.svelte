@@ -2,6 +2,7 @@
 	import { page } from '$app/state';
 	import type { SupportedNetworks, TokenInfo } from '$lib/structure';
 	import { ethers } from 'ethers';
+	import { shortAddr } from '$lib/formatters';
 	import { getContext, onMount } from 'svelte';
 	import { friendlyError } from '$lib/errorDecoder';
 
@@ -257,9 +258,6 @@
 		} finally { actionLoading = false; }
 	}
 
-	function shortAddr(addr: string) {
-		return addr.slice(0, 8) + '...' + addr.slice(-6);
-	}
 
 	const tabs = [
 		{ id: 'overview', label: 'Overview', icon: '◎' },

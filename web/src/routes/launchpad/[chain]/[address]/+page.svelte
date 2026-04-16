@@ -2,6 +2,7 @@
 	import { ethers } from 'ethers';
 	import { getContext, onDestroy } from 'svelte';
 	import { page } from '$app/state';
+	import { shortAddr } from '$lib/formatters';
 	import { t } from '$lib/i18n';
 	import { apiFetch } from '$lib/apiFetch';
 	import { friendlyError } from '$lib/errorDecoder';
@@ -1277,9 +1278,6 @@
 	);
 	let sweepAvailable = $derived(sweepWindowOpen && isPlatformWallet && strandedUsdtBalance > 0n);
 
-	function shortAddr(addr: string) {
-		return addr.slice(0, 6) + '...' + addr.slice(-4);
-	}
 
 	// ── Activity Feed (scroll-loaded, newest-first) ──
 	type Purchase = {

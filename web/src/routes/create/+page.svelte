@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { ethers } from 'ethers';
 	import { t } from '$lib/i18n';
+	import { shortAddr } from '$lib/formatters';
 	import { pushPreferences } from '$lib/embeddedWallet';
 	import { getContext, onDestroy } from 'svelte';
 	import { page } from '$app/state';
@@ -1567,9 +1568,6 @@
 		stopBalancePolling();
 	}
 
-	function shortAddr(addr: string) {
-		return addr.slice(0, 10) + '...' + addr.slice(-8);
-	}
 
 	let deploySteps = $derived(() => {
 		const steps = [
@@ -2026,7 +2024,14 @@
 					<span>Launch Existing</span>
 				</div>
 				<div class="sel-compare-row">
-					<span>Bonding curve</span>
+					<span>Token created</span>
+					<span class="sel-check">&#10003;</span>
+					<span class="sel-check">&#10003;</span>
+					<span class="sel-check">&#10003;</span>
+					<span class="sel-dash">Already deployed</span>
+				</div>
+				<div class="sel-compare-row">
+					<span>Bonding curve fundraise</span>
 					<span class="sel-check">&#10003;</span>
 					<span class="sel-dash">—</span>
 					<span class="sel-dash">—</span>
@@ -2035,37 +2040,72 @@
 				<div class="sel-compare-row">
 					<span>DEX liquidity</span>
 					<span class="sel-note">Auto at graduation</span>
-					<span class="sel-note">Instant</span>
-					<span class="sel-dash">—</span>
+					<span class="sel-note">Instant (same tx)</span>
+					<span class="sel-dash">Manual later</span>
 					<span class="sel-note">Auto at graduation</span>
 				</div>
 				<div class="sel-compare-row">
-					<span>LP permanently burned</span>
+					<span>LP burned</span>
+					<span class="sel-note">Always (at graduation)</span>
+					<span class="sel-note">Optional</span>
+					<span class="sel-dash">—</span>
+					<span class="sel-note">Always (at graduation)</span>
+				</div>
+				<div class="sel-compare-row">
+					<span>Multi-pool LP</span>
+					<span class="sel-dash">—</span>
 					<span class="sel-check">&#10003;</span>
+					<span class="sel-dash">—</span>
+					<span class="sel-dash">—</span>
+				</div>
+				<div class="sel-compare-row">
+					<span>Set your own price</span>
+					<span class="sel-dash">Curve-driven</span>
 					<span class="sel-check">&#10003;</span>
+					<span class="sel-dash">—</span>
+					<span class="sel-dash">Curve-driven</span>
+				</div>
+				<div class="sel-compare-row">
+					<span>Refundable if soft cap missed</span>
+					<span class="sel-check">&#10003;</span>
+					<span class="sel-dash">—</span>
 					<span class="sel-dash">—</span>
 					<span class="sel-check">&#10003;</span>
 				</div>
 				<div class="sel-compare-row">
-					<span>Anti-whale protection</span>
+					<span>Unsold tokens burned</span>
 					<span class="sel-check">&#10003;</span>
 					<span class="sel-dash">—</span>
 					<span class="sel-dash">—</span>
 					<span class="sel-check">&#10003;</span>
 				</div>
 				<div class="sel-compare-row">
-					<span>Refundable if missed</span>
+					<span>Creator vesting</span>
+					<span class="sel-note">Configurable</span>
+					<span class="sel-dash">—</span>
+					<span class="sel-dash">—</span>
+					<span class="sel-note">Configurable</span>
+				</div>
+				<div class="sel-compare-row">
+					<span>Anti-snipe trading delay</span>
+					<span class="sel-note">At graduation</span>
+					<span class="sel-note">Configurable</span>
+					<span class="sel-dash">Immediate</span>
+					<span class="sel-note">At graduation</span>
+				</div>
+				<div class="sel-compare-row">
+					<span>Max wallet / max tx / cooldown</span>
 					<span class="sel-check">&#10003;</span>
-					<span class="sel-dash">—</span>
-					<span class="sel-dash">—</span>
+					<span class="sel-check">&#10003;</span>
+					<span class="sel-check">&#10003;</span>
 					<span class="sel-check">&#10003;</span>
 				</div>
 				<div class="sel-compare-row">
-					<span>Needs existing token</span>
-					<span class="sel-dash">—</span>
-					<span class="sel-dash">—</span>
-					<span class="sel-dash">—</span>
-					<span class="sel-check sel-check-amber">Required</span>
+					<span>Tax ceiling locked</span>
+					<span class="sel-check">&#10003;</span>
+					<span class="sel-check">&#10003;</span>
+					<span class="sel-check">&#10003;</span>
+					<span class="sel-check">&#10003;</span>
 				</div>
 			</div>
 		</div>
