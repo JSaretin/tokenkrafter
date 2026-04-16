@@ -186,40 +186,22 @@ async function clearAlert(key: string): Promise<void> {
 }
 
 // ── Alerts ──
-async function sendAlert(subject: string, message: string): Promise<void> {
+async function sendAlert(subject: string, message: string, type: string = 'system'): Promise<void> {
 	console.warn(`[ALERT] ${subject}: ${message}`);
 
-	// Telegram bot notification
-	if (TELEGRAM_BOT_TOKEN && TELEGRAM_CHANNEL_ID) {
-		try {
-			await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					chat_id: TELEGRAM_CHANNEL_ID,
-					text: `⚠️ *${subject}*\n${message}`,
-					parse_mode: 'Markdown',
-				}),
-			});
-		} catch (e: any) {
-			console.error('Telegram alert failed:', e.message);
-		}
-	}
-
-	// Generic webhook fallback
-	if (ALERT_WEBHOOK) {
-		try {
-			await fetch(ALERT_WEBHOOK, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					content: `**${subject}**\n${message}`,
-					text: `${subject}: ${message}`,
-				}),
-			});
-		} catch (e: any) {
-			console.error('Alert webhook failed:', e.message);
-		}
+	// Route through /api/alert — centralized fanout to Telegram, email, etc.
+	// This avoids direct Telegram calls from the VPS (which may be blocked).
+	try {
+		await fetch(`${BACKEND_URL}/api/alert`, {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+				Authorization: `Bearer ${TX_CONFIRM_SECRET}`,
+			},
+			body: JSON.stringify({ type, title: subject, message }),
+		});
+	} catch (e: any) {
+		console.error('Alert API failed:', e.message?.slice(0, 80));
 	}
 }
 
@@ -291,7 +273,7 @@ async function processWithdrawal(withdrawId: number): Promise<boolean> {
 				`💰 $${data.usdt_amount || '?'} → NGN ${Number(data.ngn_amount || 0).toLocaleString()}`,
 				`🏦 ${data.bank_name || '?'} — ${data.account_name || '?'}`,
 				data.confirm_tx ? `🔗 tx: ${data.confirm_tx}` : '',
-			].filter(Boolean).join('\n'));
+			].filter(Boolean).join('\n'), 'payment');
 			await clearAlert(`alert:low_flw:${withdrawId}`);
 			await redis.del(key);
 			return true;
