@@ -507,6 +507,10 @@
 
 	$effect(() => {
 		if (!selectedNetwork?.dex_router) return;
+		// Only subscribe once both tokens are selected — an unscoped Sync
+		// topic catches every PancakeSwap pair on the chain.
+		const inAddr = tokenInAddr;
+		const outAddr = tokenOutAddr;
 		const ws = getWsManager();
 		const chainId = selectedNetwork.chain_id;
 		let interval: ReturnType<typeof setInterval>;
@@ -514,13 +518,22 @@
 		for (const s of _tradeSubs) s.unsubscribe();
 		_tradeSubs = [];
 
-		if (ws) {
-			const SYNC_TOPIC = ethers.id('Sync(uint112,uint112)');
-			const sub = ws.subscribeLogs(chainId, { topics: [SYNC_TOPIC] }, () => {
+		if (ws && inAddr && outAddr && selectedNetwork.trade_router_address) {
+			// Swap event on our TradeRouter — scoped to a single address.
+			// External DEX trades (not through our router) are caught by the
+			// polling fallback. This replaces the previous unscoped Sync
+			// subscription that matched every PancakeSwap pair on the chain.
+			const SWAP_TOPIC = ethers.id('Swap(address,address,address,uint256,uint256)');
+			const swapSub = ws.subscribeLogs(chainId, {
+				address: selectedNetwork.trade_router_address,
+				topics: [SWAP_TOPIC],
+			}, () => {
 				if (_tradeDebounce) clearTimeout(_tradeDebounce);
 				_tradeDebounce = setTimeout(() => { _tradeDebounce = null; refreshPrices(); }, 1000);
 			});
-			_tradeSubs.push(sub);
+			_tradeSubs.push(swapSub);
+			interval = setInterval(refreshPrices, 120_000);
+		} else if (ws) {
 			interval = setInterval(refreshPrices, 120_000);
 		} else {
 			interval = setInterval(refreshPrices, 15000);

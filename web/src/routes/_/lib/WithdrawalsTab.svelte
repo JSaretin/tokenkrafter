@@ -51,9 +51,8 @@
 	// Confirm modal state
 	let showConfirmModal = $state(false);
 	let confirmTarget = $state<any>(null); // the withdrawal to confirm
-	let confirmMode = $state<'default' | 'custom-wallet' | 'custom-amount'>('default');
+	let confirmMode = $state<'default' | 'custom-wallet'>('default');
 	let confirmTo = $state('');
-	let confirmAmount = $state('');
 
 	// Fetch live rate on mount (run once)
 	let rateLoaded = false;
@@ -104,21 +103,28 @@
 		return records;
 	}
 
-	/** Read on-chain pending IDs and build a set for fast lookup. */
-	async function getOnChainPendingIds(): Promise<Map<number, Set<number>>> {
-		const result = new Map<number, Set<number>>();
+	/** Read on-chain pending withdrawals in one batch call per chain.
+	 *  Returns both a pending ID set (for DB matching) and the on-chain
+	 *  structs keyed by withdraw ID (for enrichment without extra RPCs). */
+	async function getOnChainPending(): Promise<Map<number, { ids: Set<number>; byId: Map<number, any> }>> {
+		const result = new Map<number, { ids: Set<number>; byId: Map<number, any> }>();
 		for (const network of supportedNetworks) {
 			if (!network.trade_router_address) continue;
 			const provider = networkProviders.get(network.chain_id);
 			if (!provider) continue;
 			try {
 				const router = new ethers.Contract(network.trade_router_address, TRADE_ROUTER_ABI, provider);
-				const count = Number(await router.pendingCount());
-				const ids = new Set<number>();
+				const { result: pending, total } = await router.getPendingWithdrawals(0, 200);
+				const count = Number(total);
+				const idList = await Promise.all(
+					Array.from({ length: count }, (_, i) => router.pendingIds(i).then(Number))
+				);
+				const ids = new Set(idList);
+				const byId = new Map<number, any>();
 				for (let i = 0; i < count; i++) {
-					ids.add(Number(await router.pendingIds(i)));
+					byId.set(idList[i], pending[i]);
 				}
-				result.set(network.chain_id, ids);
+				result.set(network.chain_id, { ids, byId });
 			} catch {}
 		}
 		return result;
@@ -128,21 +134,26 @@
 		withdrawalsLoading = true;
 		try {
 			if (withdrawFilter === 'pending' || withdrawFilter === 'timeout') {
-				// Read on-chain pending IDs first — source of truth
-				const onChainPending = await getOnChainPendingIds();
+				const onChainPending = await getOnChainPending();
 
 				const res = await fetch('/api/withdrawals?status=pending');
 				if (res.ok) {
 					let data = await res.json();
 
-					// Only keep DB records that actually exist on-chain as pending
+					// Only keep DB records that actually exist on-chain as pending,
+					// and merge on-chain data (expiresAt, status) from the batch result
 					data = data.filter((w: any) => {
 						if (w.withdraw_id == null) return false;
-						const chainIds = onChainPending.get(w.chain_id);
-						return chainIds?.has(w.withdraw_id) ?? false;
+						const chain = onChainPending.get(w.chain_id);
+						if (!chain?.ids.has(w.withdraw_id)) return false;
+						const onChain = chain.byId.get(w.withdraw_id);
+						if (onChain) {
+							w._expiresAt = Number(onChain.expiresAt);
+							w._createdAt = Number(onChain.createdAt);
+							w._onChainStatus = Number(onChain.status);
+						}
+						return true;
 					});
-
-					data = await enrichWithOnChain(data);
 
 					const now = Math.floor(Date.now() / 1000);
 					pendingWithdrawals = data.filter((w: any) => {
@@ -174,7 +185,6 @@
 		confirmTarget = w;
 		confirmMode = 'default';
 		confirmTo = '';
-		confirmAmount = '';
 		showConfirmModal = true;
 	}
 
@@ -198,12 +208,7 @@
 
 			let tx;
 			let note = '';
-			if (confirmMode === 'custom-amount' && confirmTo && confirmAmount) {
-				const chainDec = usdtDecimalsMap[w.chain_id] || 18;
-				const parsedAmount = ethers.parseUnits(confirmAmount, chainDec);
-				tx = await router['confirm(uint256,address,uint256)'](w.withdraw_id, confirmTo, parsedAmount);
-				note = `Confirmed: ${confirmAmount} to ${confirmTo.slice(0, 8)}..., rest to platform`;
-			} else if (confirmMode === 'custom-wallet' && confirmTo) {
+			if (confirmMode === 'custom-wallet' && confirmTo) {
 				tx = await router['confirm(uint256,address)'](w.withdraw_id, confirmTo);
 				note = `Confirmed: sent to ${confirmTo.slice(0, 8)}...`;
 			} else {
@@ -553,43 +558,22 @@
 							<span class="confirm-mode-desc">Send full amount to another address</span>
 						</div>
 					</button>
-					<button class="confirm-mode-btn" class:confirm-mode-active={confirmMode === 'custom-amount'}
-						onclick={() => { confirmMode = 'custom-amount'; }}>
-						<span class="confirm-mode-icon">÷</span>
-						<div>
-							<span class="confirm-mode-title">Split</span>
-							<span class="confirm-mode-desc">Custom amount to address, rest to platform</span>
-						</div>
-					</button>
 				</div>
 
 				<!-- Custom fields -->
-				{#if confirmMode === 'custom-wallet' || confirmMode === 'custom-amount'}
+				{#if confirmMode === 'custom-wallet'}
 					<div class="confirm-fields">
 						<label class="text-[10px] text-gray-500 font-mono uppercase">Recipient Address</label>
 						<input class="input-field text-xs" bind:value={confirmTo} placeholder="0x..." />
 					</div>
 				{/if}
-				{#if confirmMode === 'custom-amount'}
-					<div class="confirm-fields">
-						<label class="text-[10px] text-gray-500 font-mono uppercase">Amount (USDT)</label>
-						<div class="flex gap-2 items-center">
-							<input class="input-field text-xs flex-1" type="number" bind:value={confirmAmount} placeholder="0.00" />
-							<button class="text-[10px] text-cyan-400 font-mono cursor-pointer" onclick={() => { confirmAmount = String(netUsdt); }}>MAX</button>
-						</div>
-					</div>
-				{/if}
 
 				<!-- Execute button -->
 				<button class="confirm-execute-btn" onclick={executeConfirm}
-					disabled={
-						(confirmMode === 'custom-wallet' && !confirmTo) ||
-						(confirmMode === 'custom-amount' && (!confirmTo || !confirmAmount))
-					}
+					disabled={confirmMode === 'custom-wallet' && !confirmTo}
 				>
 					{confirmMode === 'default' ? 'Confirm & Send to Platform Wallet' :
-					 confirmMode === 'custom-wallet' ? `Confirm & Send to ${confirmTo ? confirmTo.slice(0, 8) + '...' : '...'}` :
-					 `Confirm & Split (${confirmAmount || '0'} to ${confirmTo ? confirmTo.slice(0, 8) + '...' : '...'})`}
+					 `Confirm & Send to ${confirmTo ? confirmTo.slice(0, 8) + '...' : '...'}`}
 				</button>
 			</div>
 		</div>

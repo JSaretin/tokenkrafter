@@ -63,24 +63,25 @@ if (!SYNC_SECRET) console.warn('⚠️  No SYNC_SECRET — API writes may be rej
 
 // ── ABIs ──────────────────────────────────────────────────
 const TOKEN_FACTORY_ABI = [
-	'event TokenCreated(address indexed creator, address indexed tokenAddress, uint8 tokenType, string name, string symbol, uint256 totalSupply, uint8 decimals)',
+	'event TokenCreated(address indexed creator, address indexed tokenAddress, uint8 tokenType, string name, string symbol, uint256 totalSupply, uint8 decimals, uint256 fee, address referrer)',
 	'function totalTokensCreated() view returns (uint256)',
 	'function getTokensInfo(uint256 offset, uint256 limit) view returns (tuple(address tokenAddress, string name, string symbol, uint8 decimals, uint256 totalSupply, address creator, bool isMintable, bool isTaxable, bool isPartnership)[] views, uint256 total)',
 ];
 
 const LAUNCHPAD_FACTORY_ABI = [
-	'event LaunchCreated(address indexed launch, address indexed token, address indexed creator, uint8 curveType, uint256 softCap, uint256 hardCap, uint256 totalTokens)',
+	'event LaunchCreated(address indexed launch, address indexed token, address indexed creator, uint8 curveType, uint256 softCap, uint256 hardCap, uint256 totalTokens, uint256 param1, uint256 param2)',
 	'function totalLaunches() view returns (uint256)',
 	'function getLaunches(uint256 offset, uint256 limit) view returns (address[] r, uint256 total)',
 ];
 
 const LAUNCH_INSTANCE_ABI = [
-	'event TokenBought(address indexed buyer, uint256 tokenAmount, uint256 basePaid, uint256 newPrice)',
-	'event Graduated(address indexed dexPair, uint256 baseToLP, uint256 tokensToLP, uint256 platformBaseFee, uint256 platformTokenFee)',
-	'event Refunded(address indexed buyer, uint256 baseAmount)',
-	'event CreatorClaimed(address indexed creator, uint256 amount)',
-	'event RefundingEnabled()',
-	'event LaunchActivated()',
+	'event TokenBought(address indexed buyer, uint256 tokenAmount, uint256 basePaid, uint256 fee, uint256 newPrice, uint256 totalBaseRaised, uint256 totalTokensSold, uint256 remainingTokens, uint256 buyerCount)',
+	'event Graduated(address indexed dexPair, uint256 baseToLP, uint256 tokensToLP, uint256 platformBaseFee, uint256 platformTokenFee, uint256 finalTotalRaised, uint256 finalTokensSold, uint256 totalBuyers)',
+	'event Refunded(address indexed buyer, uint256 baseAmount, uint256 tokensReturned)',
+	'event CreatorClaimed(address indexed creator, uint256 amount, uint256 totalClaimed, uint256 totalVested)',
+	'event RefundingEnabled(address indexed token, uint256 totalRaised, uint256 softCap)',
+	'event LaunchActivated(address indexed token, uint256 deadline, uint256 softCap, uint256 hardCap, uint256 tokensForCurve)',
+	'event TokensDeposited(address indexed creator, uint256 amount, uint256 totalDeposited, uint256 totalRequired)',
 	'function getLaunchInfo() view returns (address token_, address creator_, uint8 curveType_, uint8 state_, uint256 softCap_, uint256 hardCap_, uint256 deadline_, uint256 totalBaseRaised_, uint256 tokensSold_, uint256 tokensForCurve_, uint256 tokensForLP_, uint256 creatorAllocationBps_, uint256 currentPrice_, address usdt_, uint256 startTimestamp_)',
 	'function totalTokensRequired() view returns (uint256)',
 	'function totalTokensDeposited() view returns (uint256)',
@@ -436,7 +437,7 @@ function makeDispatcher(ctx: Ctx) {
 					total_supply: (p.args.totalSupply as bigint).toString(),
 					is_mintable: (tokenType & 1) !== 0,
 					is_taxable: (tokenType & 2) !== 0,
-					is_partner: tokenType === 4,
+					is_partner: (tokenType & 4) !== 0,
 					block_number: log.blockNumber,
 					tx_hash: log.transactionHash,
 				});
@@ -465,17 +466,29 @@ function makeDispatcher(ctx: Ctx) {
 				const p = liIface.parseLog({ topics: [...log.topics], data: log.data });
 				if (!p) return;
 
-				// Any launch event → refresh its state in the backend
-				try {
-					const data = await enrichLaunch(ctx.provider(), src, ctx.chainId, ctx.usdtDecimals);
-					await apiPost('/api/launches', data);
+				// TokenBought carries full state inline — patch directly without
+				// an eth_call. For terminal events (Graduated, RefundingEnabled)
+				// do a full enrichLaunch to get the final snapshot.
+				if (p.name === 'TokenBought') {
+					await apiPost('/api/launches', {
+						address: src,
+						chain_id: ctx.chainId,
+						total_base_raised: p.args.totalBaseRaised.toString(),
+						tokens_sold: p.args.totalTokensSold.toString(),
+						current_price: p.args.newPrice.toString(),
+					});
+				} else {
+					try {
+						const data = await enrichLaunch(ctx.provider(), src, ctx.chainId, ctx.usdtDecimals);
+						await apiPost('/api/launches', data);
 
-					if (data.state > 1) {
-						ctx.watchedLaunches.delete(src);
-						removeWatchedLaunch(ctx.db, src);
+						if (data.state > 1) {
+							ctx.watchedLaunches.delete(src);
+							removeWatchedLaunch(ctx.db, src);
+						}
+					} catch (e: any) {
+						console.error(`    ✗ launch refresh ${src.slice(0, 10)}: ${e.message?.slice(0, 80)}`);
 					}
-				} catch (e: any) {
-					console.error(`    ✗ launch refresh ${src.slice(0, 10)}: ${e.message?.slice(0, 80)}`);
 				}
 				console.log(`    📈 ${p.name} on ${src.slice(0, 10)}…`);
 
@@ -504,8 +517,8 @@ function subscribeAll(ctx: Ctx, managed: ManagedProvider, dispatch: (log: ethers
 	const p = managed.getProvider();
 
 	const filters: ethers.EventFilter[] = [
-		{ address: ctx.config.platform_address, topics: [ethers.id('TokenCreated(address,address,uint8,string,string,uint256,uint8)')] },
-		{ address: ctx.config.launchpad_address, topics: [ethers.id('LaunchCreated(address,address,address,uint8,uint256,uint256,uint256)')] },
+		{ address: ctx.config.platform_address, topics: [ethers.id('TokenCreated(address,address,uint8,string,string,uint256,uint8,uint256,address)')] },
+		{ address: ctx.config.launchpad_address, topics: [ethers.id('LaunchCreated(address,address,address,uint8,uint256,uint256,uint256,uint256,uint256)')] },
 	];
 
 	for (const addr of ctx.watchedLaunches) {

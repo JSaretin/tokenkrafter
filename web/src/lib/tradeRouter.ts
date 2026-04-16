@@ -36,6 +36,8 @@ export const TRADE_ROUTER_ABI = [
 	'function totalEscrow() view returns (uint256)',
 	'function platformEarnings(address token) view returns (uint256)',
 	'function pendingCount() view returns (uint256)',
+	'function pendingIds(uint256) view returns (uint256)',
+	'function getPendingWithdrawals(uint256 offset, uint256 limit) view returns (tuple(address user, address token, uint256 grossAmount, uint256 fee, uint256 netAmount, uint256 createdAt, uint256 expiresAt, uint8 status, bytes32 bankRef, address referrer)[] result, uint256 total)',
 	'function totalWithdrawals() view returns (uint256)',
 	'function getAdmins() view returns (address[])',
 	'function getState() view returns (tuple(address owner, uint256 feeBps, uint256 payoutTimeout, address platformWallet, uint256 totalEscrow, uint256 pendingCount, uint256 totalWithdrawals, bool paused, uint256 maxSlippageBps, bool affiliateEnabled, uint256 affiliateShareBps, address[] admins))',

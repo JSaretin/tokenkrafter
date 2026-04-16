@@ -642,23 +642,25 @@
 		}
 	});
 
-	// WS event-driven refresh for active launches, with polling fallback
+	// WS event-driven refresh for Pending + Active launches, with polling fallback
 	$effect(() => {
-		if (!launch || launch.state !== 1) return;
+		if (!launch || launch.state > 1) return; // only Pending (0) and Active (1)
 		const ws = getWsManager();
 		const chainId = network?.chain_id ?? targetChainId;
 
-		// Clean up previous subscriptions
 		for (const s of _wsSubs) s.unsubscribe();
 		_wsSubs = [];
 
 		if (ws) {
-			const TOKEN_BOUGHT_TOPIC = ethers.id('TokenBought(address,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256)');
 			const STATE_TOPICS = [
+				ethers.id('LaunchActivated(address,uint256,uint256,uint256,uint256)'),
 				ethers.id('Graduated(address,uint256,uint256,uint256,uint256,uint256,uint256,uint256)'),
 				ethers.id('RefundingEnabled(address,uint256,uint256)'),
 			];
 
+			// TokenBought only fires on Active launches, but subscribing
+			// early is harmless and avoids a re-subscribe on activation.
+			const TOKEN_BOUGHT_TOPIC = ethers.id('TokenBought(address,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256)');
 			const buySub = ws.subscribeLogs(chainId, {
 				address: launchAddress,
 				topics: [TOKEN_BOUGHT_TOPIC],
@@ -676,7 +678,6 @@
 				_wsSubs.push(sub);
 			}
 
-			// Slow safety-net poll with WS active
 			refreshInterval = setInterval(refreshData, 120_000);
 		} else {
 			refreshInterval = setInterval(refreshData, 15000);
