@@ -16,4 +16,8 @@ interface IAffiliate {
      *                    already subtracted by the reporter.
      */
     function report(address user, address ref, uint256 platformFee) external;
+
+    /// @notice Whitelist/de-whitelist a reporter. Callable by owner or
+    ///         authorized factory.
+    function setAuthorized(address reporter, bool enabled) external;
 }

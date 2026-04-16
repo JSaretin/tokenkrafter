@@ -9,6 +9,7 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/proxy/Clones.sol";
 
 import "./LaunchInstance.sol";
+import "./shared/IAffiliate.sol";
 
 // IUniswapV2Router02 and IOwnable are imported from LaunchInstance.sol
 
@@ -221,6 +222,12 @@ contract LaunchpadFactory is Ownable, ReentrancyGuard {
         launches.push(launch);
         creatorLaunches[creator_].push(launch);
         tokenToLaunch[token_] = launch;
+
+        // Auto-whitelist the new clone on the Affiliate contract so its
+        // buy() calls to report() are accepted. No-op if affiliate unset.
+        if (affiliate != address(0)) {
+            try IAffiliate(affiliate).setAuthorized(cloneAddr, true) {} catch {}
+        }
 
         uint256 day = block.timestamp / 1 days;
         dailyLaunchStats[day].created += 1;

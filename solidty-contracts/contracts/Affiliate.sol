@@ -50,6 +50,7 @@ contract Affiliate is Ownable, ReentrancyGuard {
     mapping(address => address) public referrerOf;
     mapping(address => Stats) public stats;
     mapping(address => bool) public authorized;
+    mapping(address => bool) public authorizedFactory;
 
     /// @notice Sum of all referrers' unclaimed pending balances. Used as the
     ///         minimum USDT this contract must hold so admin can rescue any
@@ -181,9 +182,21 @@ contract Affiliate is Ownable, ReentrancyGuard {
 
     // ── Admin ───────────────────────────────────────────────
 
-    function setAuthorized(address reporter, bool enabled) external onlyOwner {
+    /// @notice Whitelist a reporter. Callable by the contract owner (for
+    ///         long-lived contracts like TradeRouter, TokenFactory) OR by an
+    ///         authorized factory (for per-clone reporters like LaunchInstance).
+    function setAuthorized(address reporter, bool enabled) external {
+        if (msg.sender != owner() && !authorizedFactory[msg.sender]) revert NotAuthorized();
         authorized[reporter] = enabled;
         emit AuthorizedReporter(reporter, enabled);
+    }
+
+    /// @notice Owner-only. Grant/revoke a factory the right to whitelist its
+    ///         own clones via {setAuthorized}. This lets LaunchpadFactory
+    ///         auto-whitelist each new LaunchInstance at creation time without
+    ///         requiring a separate owner tx per launch.
+    function setAuthorizedFactory(address factory, bool enabled) external onlyOwner {
+        authorizedFactory[factory] = enabled;
     }
 
     function setShareBps(uint256 bps) external onlyOwner {
