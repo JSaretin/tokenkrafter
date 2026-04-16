@@ -2,15 +2,12 @@ import { ethers } from 'ethers';
 
 /**
  * Create a provider that prefers a WebSocket endpoint if one is configured,
- * otherwise falls back to HTTP. WS gives lower-latency reads and persistent
- * connections (no per-call handshake), at the cost of needing to reconnect
- * when the upstream drops the socket.
+ * otherwise falls back to HTTP.
  *
- * The returned object exposes `provider` (whichever transport is active) and
- * `close()` for graceful shutdown. WS reconnect is handled internally — if
- * the socket dies, we open a new one and swap it in. Callers that hold a
- * reference to `current.provider` should re-read it after a reconnect, OR
- * use the `getProvider()` accessor which always returns the live provider.
+ * Uses bun's native globalThis.WebSocket via a factory function passed to
+ * ethers — this bypasses ethers' internal `ws` npm package import which
+ * goes through bun's broken node:http polyfill (throws "Unexpected server
+ * response: 101" on the upgrade handshake).
  */
 export interface ManagedProvider {
 	getProvider(): ethers.Provider;
@@ -40,20 +37,31 @@ export function createManagedProvider(opts: {
 	function connect() {
 		if (closed) return;
 		try {
-			const ws = new ethers.WebSocketProvider(wsRpc!, chainId, { staticNetwork: true });
-			current = ws;
+			// Factory function: returns bun's native WebSocket, NOT the `ws`
+			// npm package. Bun's native WebSocket handles the HTTP 101 upgrade
+			// correctly; ethers' default path goes through `ws` → node:http
+			// which bun's polyfill breaks.
+			const provider = new ethers.WebSocketProvider(
+				() => new WebSocket(wsRpc!) as any,
+				chainId,
+				{ staticNetwork: true },
+			);
+			current = provider;
 
-			const sock = (ws as any).websocket;
-			if (sock && typeof sock.on === 'function') {
-				sock.on('close', () => {
-					if (closed) return;
-					console.warn(`   ⚠️  WS dropped — reconnecting in 3s`);
-					scheduleReconnect();
-				});
-				sock.on('error', (err: any) => {
-					console.warn(`   ⚠️  WS error: ${err?.message?.slice(0, 60)}`);
-				});
-			}
+			// Detect close via the underlying socket. ethers v6 exposes
+			// .websocket which is the raw WebSocket instance.
+			const sock = provider.websocket;
+			sock.addEventListener('close', () => {
+				if (closed) return;
+				console.warn(`   ⚠️  WS dropped — reconnecting in 3s`);
+				scheduleReconnect();
+			});
+			sock.addEventListener('error', (evt: any) => {
+				if (closed) return;
+				const msg = evt?.message || evt?.error?.message || 'unknown';
+				console.warn(`   ⚠️  WS error: ${String(msg).slice(0, 60)}`);
+			});
+
 			console.log(`   ✓ WebSocket connected: ${wsRpc}`);
 		} catch (e: any) {
 			console.warn(`   ⚠️  WS connect failed: ${e.message?.slice(0, 80)} — falling back to HTTP`);
@@ -66,6 +74,7 @@ export function createManagedProvider(opts: {
 		if (closed || reconnectTimer) return;
 		reconnectTimer = setTimeout(() => {
 			reconnectTimer = null;
+			try { (current as any).destroy?.(); } catch {}
 			connect();
 			onReconnect?.();
 		}, 3000);

@@ -35,6 +35,7 @@
 
 import { createClient, type RedisClientType } from 'redis';
 import { ethers } from 'ethers';
+// Uses globalThis.WebSocket (bun native), not the ws npm package
 
 const {
 	CHAIN_RPC = 'https://bsc-rpc.publicnode.com',
@@ -113,20 +114,21 @@ function initHttp() {
 function connectWs() {
 	if (wsClosed || !resolvedWsRpc) return;
 	try {
-		wsProvider = new ethers.WebSocketProvider(resolvedWsRpc, chainId, { staticNetwork: true });
-		const sock = (wsProvider as any).websocket;
-		if (sock && typeof sock.on === 'function') {
-			sock.on('close', () => {
-				if (wsClosed) return;
-				console.warn('[WS] dropped — reconnecting in 3s');
-				wsProvider = null;
-				scheduleWsReconnect();
-			});
-			sock.on('error', (err: any) => {
-				console.warn(`[WS] error: ${err?.message?.slice(0, 60)}`);
-			});
-		}
-		console.log(`[WS] connected: ${CHAIN_WS_RPC}`);
+		wsProvider = new ethers.WebSocketProvider(
+			() => new WebSocket(resolvedWsRpc) as any,
+			chainId,
+			{ staticNetwork: true },
+		);
+		wsProvider.websocket.addEventListener('close', () => {
+			if (wsClosed) return;
+			console.warn('[WS] dropped — reconnecting in 3s');
+			wsProvider = null;
+			scheduleWsReconnect();
+		});
+		wsProvider.websocket.addEventListener('error', (evt: any) => {
+			console.warn(`[WS] error: ${(evt?.message || evt?.error?.message || 'unknown').toString().slice(0, 60)}`);
+		});
+		console.log(`[WS] connected: ${resolvedWsRpc?.slice(0, 40)}…`);
 		subscribeEvents();
 	} catch (e: any) {
 		console.warn(`[WS] connect failed: ${e.message?.slice(0, 80)} — using HTTP only`);
