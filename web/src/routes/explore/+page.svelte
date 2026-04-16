@@ -5,6 +5,7 @@
 	import { progressPercent } from '$lib/launchpad';
 	import { querySafuLens, type TokenSafu } from '$lib/safuLens';
 	import LaunchProgressBar from '$lib/LaunchProgressBar.svelte';
+	import LaunchCountdown from '$lib/LaunchCountdown.svelte';
 
 	let { data }: { data: any } = $props();
 	let tokens: any[] = data.tokens;
@@ -22,21 +23,6 @@
 
 	const NOW = Date.now();
 
-	// Live countdown tick for launch cards
-	let tickNow = $state(Date.now());
-	let _tickInterval: ReturnType<typeof setInterval> | null = null;
-
-	function countdownParts(deadline: number): { d: number; h: number; m: number; s: number; ended: boolean } {
-		const ms = deadline * 1000 - tickNow;
-		if (ms <= 0) return { d: 0, h: 0, m: 0, s: 0, ended: true };
-		return {
-			d: Math.floor(ms / 86400000),
-			h: Math.floor((ms % 86400000) / 3600000),
-			m: Math.floor((ms % 3600000) / 60000),
-			s: Math.floor((ms % 60000) / 1000),
-			ended: false,
-		};
-	}
 
 	// ── SAFU badge detection (client-side, lazy, batched via SafuLens) ──
 	let _getNetworks: () => SupportedNetwork[] = getContext('supportedNetworks');
@@ -170,10 +156,6 @@
 	}
 
 	onMount(async () => {
-		if (activeLaunches.length > 0) {
-			_tickInterval = setInterval(() => { tickNow = Date.now(); }, 1000);
-		}
-
 		// Set up IntersectionObserver for lazy SafuLens badge detection
 		if (typeof IntersectionObserver !== 'undefined') {
 			_safuObserver = new IntersectionObserver(onCardVisible, { rootMargin: '200px' });
@@ -204,7 +186,6 @@
 	onDestroy(() => {
 		_safuObserver?.disconnect();
 		if (_safuTimer) clearTimeout(_safuTimer);
-		if (_tickInterval) clearInterval(_tickInterval);
 	});
 
 	// Re-observe cards when the filtered list changes
@@ -388,17 +369,8 @@
 								<span class="tc-badge tc-badge-partner" style="font-size:7px">Partner</span>
 							{/if}
 						</div>
-						<!-- Mini countdown -->
 						{#if launch.deadline}
-							{@const cd = countdownParts(Number(launch.deadline))}
-							{#if !cd.ended}
-								<div class="launch-cd-row">
-									<div class="launch-cd-box"><span class="launch-cd-num">{String(cd.d).padStart(2, '0')}</span><span class="launch-cd-unit">d</span></div>
-									<div class="launch-cd-box"><span class="launch-cd-num">{String(cd.h).padStart(2, '0')}</span><span class="launch-cd-unit">h</span></div>
-									<div class="launch-cd-box"><span class="launch-cd-num">{String(cd.m).padStart(2, '0')}</span><span class="launch-cd-unit">m</span></div>
-									<div class="launch-cd-box"><span class="launch-cd-num">{String(cd.s).padStart(2, '0')}</span><span class="launch-cd-unit">s</span></div>
-								</div>
-							{/if}
+							<LaunchCountdown deadline={Number(launch.deadline)} size="sm" label="" />
 						{/if}
 						<LaunchProgressBar
 							{progress}
@@ -651,15 +623,6 @@
 	.launch-name { display: block; font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700; color: var(--text-heading); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 	.launch-symbol { font-family: 'Space Mono', monospace; font-size: 9px; color: var(--text-dim); }
 	.launch-progress-wrap { display: flex; flex-direction: column; gap: 4px; }
-	.launch-cd-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; }
-	.launch-cd-box {
-		display: flex; align-items: baseline; justify-content: center; gap: 1px;
-		padding: 4px 2px; border-radius: 5px;
-		background: linear-gradient(135deg, rgba(0, 210, 255, 0.06), rgba(139, 92, 246, 0.06));
-		border: 1px solid rgba(0, 210, 255, 0.08);
-	}
-	.launch-cd-num { font-family: 'Space Mono', monospace; font-size: 12px; font-weight: 700; color: var(--text-heading); line-height: 1; }
-	.launch-cd-unit { font-family: 'Space Mono', monospace; font-size: 7px; color: var(--text-dim); }
 	.launch-progress-bar { height: 8px; border-radius: 4px; background: var(--border-subtle); overflow: hidden; border: 1px solid var(--border-subtle, rgba(255,255,255,0.06)); }
 	.launch-progress-fill { height: 100%; border-radius: 4px; background: linear-gradient(90deg, #00d2ff, #10b981); min-width: 3px; }
 	.launch-progress-label { display: flex; justify-content: space-between; font-family: 'Space Mono', monospace; font-size: 9px; color: var(--text-dim); }

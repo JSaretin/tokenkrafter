@@ -6,6 +6,7 @@
 	import { supabase } from '$lib/supabaseClient';
 	import RecentTransactionsTicker from '$lib/RecentTransactionsTicker.svelte';
 	import LaunchProgressBar from '$lib/LaunchProgressBar.svelte';
+	import LaunchCountdown from '$lib/LaunchCountdown.svelte';
 
 	let { data: serverData }: { data: any } = $props();
 
@@ -374,20 +375,11 @@
 							</div>
 						{/if}
 
-						<!-- Countdown grid -->
+						<!-- Countdown -->
 						{#if deadline > 0}
-							{@const cd = countdownParts(deadline)}
-							{#if !cd.ended}
-								<div class="hp-cd-section">
-									<span class="hp-cd-label {countdownColor(deadline)}">Sale ends in</span>
-									<div class="hp-cd-grid">
-										<div class="hp-cd-box"><span class="hp-cd-num">{String(cd.d).padStart(2, '0')}</span><span class="hp-cd-unit">Days</span></div>
-										<div class="hp-cd-box"><span class="hp-cd-num">{String(cd.h).padStart(2, '0')}</span><span class="hp-cd-unit">Hrs</span></div>
-										<div class="hp-cd-box"><span class="hp-cd-num">{String(cd.m).padStart(2, '0')}</span><span class="hp-cd-unit">Min</span></div>
-										<div class="hp-cd-box"><span class="hp-cd-num">{String(cd.s).padStart(2, '0')}</span><span class="hp-cd-unit">Sec</span></div>
-									</div>
-								</div>
-							{/if}
+							<div class="hp-cd-section">
+								<LaunchCountdown deadline={deadline} size="md" />
+							</div>
 						{/if}
 
 						<!-- Progress -->
@@ -920,28 +912,7 @@
 		border-bottom: 1px solid var(--border-subtle);
 	}
 
-	/* Countdown grid on home cards */
 	.hp-cd-section { padding: 0 16px 10px; }
-	.hp-cd-label {
-		display: block; text-align: center; margin-bottom: 6px;
-		font-family: 'Space Mono', monospace; font-size: 9px;
-		text-transform: uppercase; letter-spacing: 0.06em;
-	}
-	.hp-cd-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
-	.hp-cd-box {
-		display: flex; flex-direction: column; align-items: center; gap: 2px;
-		padding: 6px 2px; border-radius: 8px;
-		background: linear-gradient(135deg, rgba(0, 210, 255, 0.06), rgba(139, 92, 246, 0.06));
-		border: 1px solid rgba(0, 210, 255, 0.1);
-	}
-	.hp-cd-num {
-		font-family: 'Space Mono', monospace; font-size: 16px; font-weight: 700;
-		color: var(--text-heading); line-height: 1;
-	}
-	.hp-cd-unit {
-		font-family: 'Space Mono', monospace; font-size: 7px;
-		text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-dim);
-	}
 
 	/* Progress section on home cards */
 	.hp-progress-section {

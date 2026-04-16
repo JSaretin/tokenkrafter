@@ -86,11 +86,13 @@
 		try { sessionStorage.removeItem('tk_create_form_draft'); } catch {}
 		previewState = null;
 		resetSignal++;
-		// Remember last chosen mode so repeat users skip the chooser. Clearing
-		// (m=null) leaves the previous choice intact so "Change mode" returns
-		// them to the chooser without wiping their preference.
+		// Remember last chosen mode so repeat users skip the chooser.
+		// When clearing (m=null via "Change mode"), also remove the saved
+		// preference so the $effect doesn't auto-restore it.
 		if (m) {
 			try { localStorage.setItem('tk_last_create_mode', m); } catch {}
+		} else {
+			try { localStorage.removeItem('tk_last_create_mode'); } catch {}
 		}
 		// Sync URL
 		const url = new URL(window.location.href);

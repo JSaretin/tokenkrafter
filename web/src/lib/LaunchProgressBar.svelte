@@ -106,7 +106,7 @@
 
 	.lp-bar-footer {
 		display: flex; justify-content: space-between;
-		margin-top: 4px;
+		margin-top: 4px; margin-bottom: 4px;
 		font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text-dim);
 	}
 </style>
