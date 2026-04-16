@@ -328,7 +328,7 @@
 	let sendAssetTok = $derived.by(() => {
 		if (sendAsset === 'native') return null;
 		const target = sendAsset.toLowerCase();
-		return [...tokens, ...importedTokens].find((t) => t.address.toLowerCase() === target) || null;
+		return [...tokens, ...importedTokens, ...pinnedStables].find((t) => t.address?.toLowerCase() === target) || null;
 	});
 
 	let sendAssetInfo = $derived(
