@@ -291,8 +291,8 @@
 		} catch {}
 	}
 
-	// ── Live Launches ──
-	let activeLaunches: any[] = $state([]);
+	// ── Live Launches (SSR-seeded, refreshed client-side) ──
+	let activeLaunches: any[] = $state(data.activeLaunches || []);
 	let activeLaunchAddrs = $derived(new Set(
 		activeLaunches.map(l => (l.token_address || l.address || '').toLowerCase()).filter(Boolean)
 	));
@@ -435,16 +435,10 @@
 	let lastUpdateTime = $state(Date.now());
 	let _now = $state(Date.now());
 	let _liveTimer: ReturnType<typeof setInterval> | null = null;
-	let _lensTimer: ReturnType<typeof setInterval> | null = null;
 
 	$effect(() => {
 		_liveTimer = setInterval(() => { _now = Date.now(); }, 1000);
-		// Refresh on-chain market data (price, mcap, holders) every 60s
-		_lensTimer = setInterval(() => { fetchExploreLens(); lastUpdateTime = Date.now(); }, 60_000);
-		return () => {
-			if (_liveTimer) clearInterval(_liveTimer);
-			if (_lensTimer) clearInterval(_lensTimer);
-		};
+		return () => { if (_liveTimer) clearInterval(_liveTimer); };
 	});
 
 	let liveAgo = $derived.by(() => {
@@ -461,7 +455,6 @@
 		if (_safuTimer) clearTimeout(_safuTimer);
 		if (_tokensChannel) supabase.removeChannel(_tokensChannel);
 		if (_liveTimer) clearInterval(_liveTimer);
-		if (_lensTimer) clearInterval(_lensTimer);
 	});
 
 	// Re-observe cards when the filtered list changes

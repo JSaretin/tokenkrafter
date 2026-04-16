@@ -10,8 +10,8 @@ const SUPPLY_ABI = ['function totalSupply() view returns (uint256)'];
 export const load: PageServerLoad = async ({ setHeaders }) => {
 	setHeaders({ 'cache-control': 'public, max-age=30, s-maxage=60' });
 
-	// Load DB rows and network config in parallel.
-	const [tokensResult, networks] = await Promise.all([
+	// Load DB rows, network config, and active launches in parallel.
+	const [tokensResult, networks, launchesResult] = await Promise.all([
 		supabaseAdmin
 			.from('created_tokens')
 			.select('address, chain_id, name, symbol, decimals, creator, is_taxable, is_mintable, is_partner, total_supply, logo_url, description, created_at, is_safu, has_liquidity, lp_burned, lp_burned_pct, tax_ceiling_locked, owner_renounced, trading_enabled, buy_tax_bps, sell_tax_bps, is_kyc')
@@ -20,6 +20,12 @@ export const load: PageServerLoad = async ({ setHeaders }) => {
 			.order('created_at', { ascending: false })
 			.limit(200),
 		getNetworks(),
+		supabaseAdmin
+			.from('launches')
+			.select('*')
+			.eq('state', 1)
+			.order('created_at', { ascending: false })
+			.limit(5),
 	]);
 
 	const tokens = tokensResult.data || [];
@@ -99,5 +105,7 @@ export const load: PageServerLoad = async ({ setHeaders }) => {
 		await Promise.all([...geckoFetches, ...supplyFetches]);
 	}
 
-	return { tokens, geckoData, supplyData };
+	const activeLaunches = launchesResult.data || [];
+
+	return { tokens, geckoData, supplyData, activeLaunches };
 };

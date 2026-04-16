@@ -131,7 +131,11 @@ export async function getBalance(currency = 'NGN'): Promise<{ available: number;
  * Get all Nigerian banks (v3 API)
  */
 export async function getBanks(): Promise<{ code: string; name: string }[]> {
-	const data = await v3Fetch('/banks/NG');
+	// Direct call — bank list is a public read, no IP whitelist needed.
+	const res = await fetch(`${V3_BASE}/banks/NG`, {
+		headers: { Authorization: `Bearer ${getV3Key()}` },
+	});
+	const data = await res.json();
 	if (data.status === 'success' && Array.isArray(data.data)) {
 		return data.data.map((b: any) => ({ code: b.code, name: b.name }));
 	}
