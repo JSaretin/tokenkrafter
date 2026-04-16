@@ -2,12 +2,12 @@
 	let {
 		deadline = 0,
 		label = 'Sale ends in',
-		size = 'md' as 'sm' | 'md' | 'lg',
+		size = 'md' as 'sm' | 'md' | 'lg' | 'inline',
 		variant = 'cyan' as 'cyan' | 'amber',
 	}: {
 		deadline: number;
 		label?: string;
-		size?: 'sm' | 'md' | 'lg';
+		size?: 'sm' | 'md' | 'lg' | 'inline';
 		variant?: 'cyan' | 'amber';
 	} = $props();
 
@@ -31,29 +31,35 @@
 </script>
 
 {#if !ended}
-	<div class="lcd lcd-{size} lcd-{variant}">
-		{#if label}
-			<span class="lcd-label" class:lcd-urgent={urgent} class:lcd-warning={warning}>{label}</span>
-		{/if}
-		<div class="lcd-grid">
-			<div class="lcd-box">
-				<span class="lcd-num">{pad(d)}</span>
-				<span class="lcd-unit">{size === 'sm' ? 'd' : 'Days'}</span>
-			</div>
-			<div class="lcd-box">
-				<span class="lcd-num">{pad(h)}</span>
-				<span class="lcd-unit">{size === 'sm' ? 'h' : 'Hrs'}</span>
-			</div>
-			<div class="lcd-box">
-				<span class="lcd-num">{pad(m)}</span>
-				<span class="lcd-unit">{size === 'sm' ? 'm' : 'Min'}</span>
-			</div>
-			<div class="lcd-box">
-				<span class="lcd-num">{pad(s)}</span>
-				<span class="lcd-unit">{size === 'sm' ? 's' : 'Sec'}</span>
+	{#if size === 'inline'}
+		<span class="lcd-inline lcd-{variant}" class:lcd-urgent={urgent} class:lcd-warning={warning}>
+			{d > 0 ? `${pad(d)}d ` : ''}{pad(h)}:{pad(m)}:{pad(s)}
+		</span>
+	{:else}
+		<div class="lcd lcd-{size} lcd-{variant}">
+			{#if label}
+				<span class="lcd-label" class:lcd-urgent={urgent} class:lcd-warning={warning}>{label}</span>
+			{/if}
+			<div class="lcd-grid">
+				<div class="lcd-box">
+					<span class="lcd-num">{pad(d)}</span>
+					<span class="lcd-unit">{size === 'sm' ? 'd' : 'Days'}</span>
+				</div>
+				<div class="lcd-box">
+					<span class="lcd-num">{pad(h)}</span>
+					<span class="lcd-unit">{size === 'sm' ? 'h' : 'Hrs'}</span>
+				</div>
+				<div class="lcd-box">
+					<span class="lcd-num">{pad(m)}</span>
+					<span class="lcd-unit">{size === 'sm' ? 'm' : 'Min'}</span>
+				</div>
+				<div class="lcd-box">
+					<span class="lcd-num">{pad(s)}</span>
+					<span class="lcd-unit">{size === 'sm' ? 's' : 'Sec'}</span>
+				</div>
 			</div>
 		</div>
-	</div>
+	{/if}
 {/if}
 
 <style>
@@ -117,6 +123,16 @@
 	.lcd-lg .lcd-box { padding: 10px 4px; gap: 4px; }
 	.lcd-lg .lcd-num { font-size: 28px; }
 	.lcd-lg .lcd-unit { font-size: 9px; }
+
+	/* ── Inline (single line for cards) ── */
+	.lcd-inline {
+		font-family: 'Rajdhani', sans-serif; font-weight: 700;
+		font-variant-numeric: tabular-nums; white-space: nowrap;
+	}
+	.lcd-inline.lcd-cyan { color: #00d2ff; }
+	.lcd-inline.lcd-amber { color: #f59e0b; }
+	.lcd-inline.lcd-warning { color: #fbbf24; }
+	.lcd-inline.lcd-urgent { color: #f87171; }
 
 	@keyframes urgentPulse {
 		0%, 100% { opacity: 1; }

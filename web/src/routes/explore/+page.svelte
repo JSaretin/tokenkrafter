@@ -377,7 +377,7 @@
 							{/if}
 						</div>
 						{#if launch.deadline}
-							<LaunchCountdown deadline={Number(launch.deadline)} size="sm" label="" />
+							<LaunchCountdown deadline={Number(launch.deadline)} size="inline" />
 						{/if}
 						<LaunchProgressBar
 							{progress}

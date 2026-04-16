@@ -373,7 +373,7 @@
 						<!-- Countdown -->
 						{#if deadline > 0}
 							<div class="hp-cd-section">
-								<LaunchCountdown deadline={deadline} size="md" />
+								<LaunchCountdown deadline={deadline} size="inline" />
 							</div>
 						{/if}
 
