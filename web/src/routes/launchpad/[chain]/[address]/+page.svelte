@@ -126,15 +126,15 @@
 	} : {});
 
 	// Badge display config
-	const BADGE_META: Record<string, { label: string; color: string }> = {
-		audit: { label: 'Audit', color: 'cyan' },
-		kyc: { label: 'KYC', color: 'emerald' },
-		partner: { label: 'Partner', color: 'purple' },
-		doxxed: { label: 'Doxxed', color: 'amber' },
-		safu: { label: 'SAFU', color: 'blue' },
-		mintable: { label: 'Mintable', color: 'orange' },
-		taxable: { label: 'Taxable', color: 'amber' },
-		renounced: { label: 'No Owner', color: 'emerald' }
+	const BADGE_META: Record<string, { label: string; color: string; tooltip: string }> = {
+		audit: { label: 'Audit', color: 'cyan', tooltip: 'Audited — contract code has been reviewed by a third-party auditor' },
+		kyc: { label: 'KYC', color: 'emerald', tooltip: 'KYC — creator identity has been verified' },
+		partner: { label: 'Partner', color: 'purple', tooltip: 'Partner — launched through a verified TokenKrafter partner' },
+		doxxed: { label: 'Doxxed', color: 'amber', tooltip: 'Doxxed — creator has publicly revealed their identity' },
+		safu: { label: 'SAFU', color: 'blue', tooltip: 'SAFU — passes all on-chain safety checks' },
+		mintable: { label: 'Mintable', color: 'orange', tooltip: 'Mintable — token supply can be increased by owner' },
+		taxable: { label: 'Taxable', color: 'amber', tooltip: 'Taxable — buy/sell transactions include a tax fee' },
+		renounced: { label: 'No Owner', color: 'emerald', tooltip: 'Renounced — contract ownership has been permanently given up' }
 	};
 
 	// Inline editing
@@ -1630,7 +1630,7 @@
 						{/if}
 					</div>
 					<div>
-						<div class="flex items-center gap-3 flex-wrap">
+						<div class="flex items-center gap-3 flex-wrap badge-row">
 							<h1 class="syne text-2xl sm:text-3xl font-bold text-white leading-tight">
 								{launch.tokenName || 'Unknown Token'}
 							</h1>
@@ -1641,7 +1641,7 @@
 							<!-- Badges -->
 							{#each badges as badge}
 								{#if BADGE_META[badge]}
-									<span class="launch-badge badge-{BADGE_META[badge].color}">
+									<span class="launch-badge badge-{BADGE_META[badge].color}" title={BADGE_META[badge].tooltip}>
 										{BADGE_META[badge].label}
 									</span>
 								{/if}
@@ -3903,5 +3903,71 @@
 		border-radius: 3px;
 		background: linear-gradient(90deg, #00d2ff, #3a7bd5);
 		transition: width 0.3s ease;
+	}
+
+	/* Fix 1: Light-mode card visibility */
+	:global(:root.light) .card {
+		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 0 0 1px rgba(0, 0, 0, 0.04);
+	}
+	:global(:root.light) .position-stat,
+	:global(:root.light) .rule-chip,
+	:global(:root.light) .countdown-box {
+		background: rgba(0, 0, 0, 0.025);
+		border-color: rgba(0, 0, 0, 0.08);
+	}
+	:global(:root.light) .max-buy-info,
+	:global(:root.light) .remaining-buy-indicator {
+		background: rgba(0, 0, 0, 0.02);
+		border-color: rgba(0, 0, 0, 0.08);
+	}
+	:global(:root.light) .preview-box {
+		background: rgba(0, 150, 200, 0.04);
+		border-color: rgba(0, 150, 200, 0.12);
+	}
+	:global(:root.light) .launch-badge {
+		box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.06);
+	}
+	:global(:root.light) .header-tag {
+		background: rgba(0, 0, 0, 0.03);
+		border-color: rgba(0, 0, 0, 0.08);
+		color: var(--text-muted);
+	}
+	:global(:root.light) .countdown-box {
+		background: linear-gradient(135deg, rgba(0, 150, 200, 0.06), rgba(100, 60, 200, 0.06));
+		border-color: rgba(0, 150, 200, 0.12);
+	}
+	:global(:root.light) .countdown-num {
+		color: var(--text-heading);
+	}
+
+	/* Fix 3: Bag amount + symbol pairing */
+	.bag-amount {
+		display: inline;
+		font-family: 'Space Mono', monospace;
+	}
+	.bag-symbol {
+		font-size: 0.75em;
+		opacity: 0.6;
+		font-weight: 600;
+	}
+
+	/* Fix 5: Mobile badge wrapping + countdown scaling */
+	.badge-row {
+		flex-wrap: wrap;
+		gap: 6px;
+	}
+	@media (max-width: 500px) {
+		.badge-row {
+			gap: 4px;
+		}
+		.countdown-box {
+			padding: 6px 2px;
+		}
+		.countdown-num {
+			font-size: 16px;
+		}
+		.countdown-label {
+			font-size: 7px;
+		}
 	}
 </style>
