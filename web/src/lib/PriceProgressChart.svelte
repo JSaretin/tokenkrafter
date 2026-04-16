@@ -6,6 +6,7 @@
 		tokensForCurve = 0n,
 		tokensSold = 0n,
 		currentPrice = 0n,
+		softCap = 0n,
 		hardCap = 0n,
 		tokenDecimals = 18,
 		usdtDecimals = 18,
@@ -15,6 +16,7 @@
 		tokensForCurve?: bigint;
 		tokensSold?: bigint;
 		currentPrice?: bigint;
+		softCap?: bigint;
 		hardCap?: bigint;
 		tokenDecimals?: number;
 		usdtDecimals?: number;
@@ -168,7 +170,29 @@
 					z: 3,
 					_fixed: true,
 				}] : []),
-				// Current position marker
+				// Soft cap marker (orange dot on the curve)
+				...(softCap > 0n && hardCap > 0n ? (() => {
+					const scFrac = Math.min(1, Number(softCap) / Number(hardCap));
+					const scY = (curveFn(scFrac, curveType) / maxY) * 100;
+					const scTokens = scFrac * totalTokens;
+					return [{
+						type: 'scatter',
+						data: [[scTokens, scY]],
+						symbolSize: 8,
+						itemStyle: { color: '#f59e0b', borderColor: '#fff', borderWidth: 1.5 },
+						tooltip: {
+							trigger: 'item',
+							formatter: () => `<div style="font-family:Rajdhani,sans-serif">
+								<div style="font-weight:700;color:#f59e0b">Soft Cap</div>
+								<div>${formatNum(softCap, usdtDecimals)} USDT</div>
+								<div>${(scFrac * 100).toFixed(0)}% of hard cap</div>
+							</div>`,
+						},
+						z: 3,
+						_fixed: true,
+					}];
+				})() : []),
+			// Current position marker
 				...(progressFrac > 0 ? [{
 					type: 'scatter',
 					data: [[sold, markerY]],

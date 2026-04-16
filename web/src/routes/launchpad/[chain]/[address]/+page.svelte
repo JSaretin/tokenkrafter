@@ -1989,6 +1989,7 @@
 						tokensForCurve={launch.tokensForCurve}
 						tokensSold={launch.tokensSold}
 						currentPrice={launch.currentPrice}
+						softCap={launch.softCap}
 						hardCap={launch.hardCap}
 						tokenDecimals={tokenMeta.decimals}
 						usdtDecimals={ud}
