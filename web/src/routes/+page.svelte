@@ -148,10 +148,10 @@
 				<p class="syne text-gray-400 text-sm font-light mt-1 max-w-xl">{$t('home.statsTagline')}</p>
 			</div>
 			<div class="flex gap-3 shrink-0">
-				<a href="/create" class="btn-primary text-sm px-5 py-2.5 no-underline">
+				<a href="/create" class="btn-primary text-sm px-6 py-2.5 no-underline font-bold">
 					Create Token →
 				</a>
-				<a href="/create?launch=true" class="btn-secondary text-sm px-5 py-2.5 no-underline">
+				<a href="/create?launch=true" class="btn-secondary text-sm px-4 py-2 no-underline opacity-75">
 					{$t('home.startLaunch')}
 				</a>
 			</div>
@@ -175,9 +175,19 @@
 				<span class="stat-chip-value">{graduatedCount}</span>
 				<span class="stat-chip-label">Graduated</span>
 			</div>
+			{#if totalRaised > 100n * (10n ** 18n)}
+				<div class="stat-chip">
+					<span class="stat-chip-value">{formatUsdt(totalRaised)}</span>
+					<span class="stat-chip-label">Total Raised</span>
+				</div>
+			{/if}
 			<div class="stat-chip">
-				<span class="stat-chip-value">{formatUsdt(totalRaised)}</span>
-				<span class="stat-chip-label">Total Raised</span>
+				<span class="stat-chip-value">$5</span>
+				<span class="stat-chip-label">to create</span>
+			</div>
+			<div class="stat-chip">
+				<span class="stat-chip-value">60s</span>
+				<span class="stat-chip-label">to live</span>
 			</div>
 		</div>
 	</section>
@@ -352,7 +362,7 @@
 										{#if launch.buyer_count != null}
 											<span class="launch-trust-badge launch-trust-buyers">{launch.buyer_count} buyers</span>
 										{/if}
-										<span class="text-gray-600 text-[10px] font-mono ml-auto">{CURVE_TYPES[launch.curve_type] ?? 'Linear'}</span>
+										<span class="text-gray-600 text-[10px] font-mono ml-auto" title="Bonding curve: {CURVE_TYPES[launch.curve_type] ?? 'Linear'}">{CURVE_TYPES[launch.curve_type] ?? 'Linear'}</span>
 									</div>
 								</div>
 							</div>
@@ -540,7 +550,7 @@
 									<div class="flex items-center gap-1.5">
 										<span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
 										<span class="text-xs font-mono text-amber-400">Scheduled</span>
-										<span class="text-gray-600 text-[10px] font-mono ml-auto">{CURVE_TYPES[launch.curve_type] ?? 'Linear'}</span>
+										<span class="text-gray-600 text-[10px] font-mono ml-auto" title="Bonding curve: {CURVE_TYPES[launch.curve_type] ?? 'Linear'}">{CURVE_TYPES[launch.curve_type] ?? 'Linear'}</span>
 									</div>
 								</div>
 							</div>
@@ -602,100 +612,136 @@
 	<!-- WHY TOKENKRAFTER — What the smart contracts enforce -->
 	<section class="mb-10">
 		<h2 class="syne text-lg font-bold text-white mb-1">{$t('home.featuresTitle')}</h2>
-		<p class="text-gray-500 font-mono text-xs mb-5">{$t('home.featuresSub')}</p>
-		<div class="features-grid">
-			<!-- Investor protection — lead with trust -->
-			<div class="feature-card">
-				<div class="feature-icon-box emerald">
-					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-				</div>
-				<h3 class="feature-name">{$t('home.featureTaxCeiling')}</h3>
-				<p class="feature-desc">{$t('home.featureTaxCeilingDesc')}</p>
+		<p class="text-gray-500 font-mono text-xs mb-6">{$t('home.featuresSub')}</p>
+
+		<!-- Investor Protection -->
+		<div class="feature-cluster">
+			<div class="feature-cluster-header">
+				<span class="feature-cluster-dot emerald"></span>
+				<span class="feature-cluster-label">Investor Protection</span>
 			</div>
-			<div class="feature-card">
-				<div class="feature-icon-box orange">
-					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/><path d="M8 12l3 3 5-5"/></svg>
+			<div class="features-grid">
+				<div class="feature-card">
+					<div class="feature-icon-box emerald">
+						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+					</div>
+					<h3 class="feature-name">{$t('home.featureTaxCeiling')}</h3>
+					<p class="feature-desc">{$t('home.featureTaxCeilingDesc')}</p>
 				</div>
-				<h3 class="feature-name">{$t('home.featureLpBurn')}</h3>
-				<p class="feature-desc">{$t('home.featureLpBurnDesc')}</p>
+				<div class="feature-card">
+					<div class="feature-icon-box emerald">
+						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/><path d="M8 12l3 3 5-5"/></svg>
+					</div>
+					<h3 class="feature-name">{$t('home.featureLpBurn')}</h3>
+					<p class="feature-desc">{$t('home.featureLpBurnDesc')}</p>
+				</div>
+				<div class="feature-card">
+					<div class="feature-icon-box emerald">
+						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><line x1="12" y1="22" x2="12" y2="7"/></svg>
+					</div>
+					<h3 class="feature-name">{$t('home.featureRefunds')}</h3>
+					<p class="feature-desc">{$t('home.featureRefundsDesc')}</p>
+				</div>
+				<div class="feature-card">
+					<div class="feature-icon-box emerald">
+						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+					</div>
+					<h3 class="feature-name">{$t('home.featureRelaxOnly')}</h3>
+					<p class="feature-desc">{$t('home.featureRelaxOnlyDesc')}</p>
+				</div>
 			</div>
-			<div class="feature-card">
-				<div class="feature-icon-box emerald">
-					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><line x1="12" y1="22" x2="12" y2="7"/></svg>
-				</div>
-				<h3 class="feature-name">{$t('home.featureRefunds')}</h3>
-				<p class="feature-desc">{$t('home.featureRefundsDesc')}</p>
+		</div>
+
+		<!-- Anti-Abuse -->
+		<div class="feature-cluster">
+			<div class="feature-cluster-header">
+				<span class="feature-cluster-dot amber"></span>
+				<span class="feature-cluster-label">Anti-Abuse</span>
 			</div>
-			<div class="feature-card">
-				<div class="feature-icon-box purple">
-					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+			<div class="features-grid">
+				<div class="feature-card">
+					<div class="feature-icon-box amber">
+						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+					</div>
+					<h3 class="feature-name">{$t('home.featureAntiSnipe')}</h3>
+					<p class="feature-desc">{$t('home.featureAntiSnipeDesc')}</p>
 				</div>
-				<h3 class="feature-name">{$t('home.featureAntiSnipe')}</h3>
-				<p class="feature-desc">{$t('home.featureAntiSnipeDesc')}</p>
+				<div class="feature-card">
+					<div class="feature-icon-box amber">
+						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+					</div>
+					<h3 class="feature-name">{$t('home.featureAntiWhale')}</h3>
+					<p class="feature-desc">{$t('home.featureAntiWhaleDesc')}</p>
+				</div>
+				<div class="feature-card">
+					<div class="feature-icon-box amber">
+						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+					</div>
+					<h3 class="feature-name">{$t('home.featureBlacklistExpiry')}</h3>
+					<p class="feature-desc">{$t('home.featureBlacklistExpiryDesc')}</p>
+				</div>
 			</div>
-			<div class="feature-card">
-				<div class="feature-icon-box orange">
-					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-				</div>
-				<h3 class="feature-name">{$t('home.featureAntiWhale')}</h3>
-				<p class="feature-desc">{$t('home.featureAntiWhaleDesc')}</p>
+		</div>
+
+		<!-- Liquidity & Creator Controls -->
+		<div class="feature-cluster">
+			<div class="feature-cluster-header">
+				<span class="feature-cluster-dot cyan"></span>
+				<span class="feature-cluster-label">Liquidity & Creator Controls</span>
 			</div>
-			<div class="feature-card">
-				<div class="feature-icon-box cyan">
-					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+			<div class="features-grid">
+				<div class="feature-card">
+					<div class="feature-icon-box cyan">
+						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+					</div>
+					<h3 class="feature-name">{$t('home.featureVesting')}</h3>
+					<p class="feature-desc">{$t('home.featureVestingDesc')}</p>
 				</div>
-				<h3 class="feature-name">{$t('home.featureVesting')}</h3>
-				<p class="feature-desc">{$t('home.featureVestingDesc')}</p>
+				<div class="feature-card">
+					<div class="feature-icon-box cyan">
+						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+					</div>
+					<h3 class="feature-name">{$t('home.featurePayAny')}</h3>
+					<p class="feature-desc">{$t('home.featurePayAnyDesc')}</p>
+				</div>
+				<div class="feature-card">
+					<div class="feature-icon-box cyan">
+						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+					</div>
+					<h3 class="feature-name">{$t('home.featureSafuLens')}</h3>
+					<p class="feature-desc">{$t('home.featureSafuLensDesc')}</p>
+				</div>
 			</div>
-			<!-- Off-ramp & referrals -->
-			<div class="feature-card">
-				<div class="feature-icon-box purple">
-					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
-				</div>
-				<h3 class="feature-name">{$t('home.featureEscrow')}</h3>
-				<p class="feature-desc">{$t('home.featureEscrowDesc')}</p>
+		</div>
+
+		<!-- Platform Guarantees -->
+		<div class="feature-cluster">
+			<div class="feature-cluster-header">
+				<span class="feature-cluster-dot purple"></span>
+				<span class="feature-cluster-label">Platform Guarantees</span>
 			</div>
-			<div class="feature-card">
-				<div class="feature-icon-box cyan">
-					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
+			<div class="features-grid">
+				<div class="feature-card">
+					<div class="feature-icon-box purple">
+						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+					</div>
+					<h3 class="feature-name">{$t('home.featureEscrow')}</h3>
+					<p class="feature-desc">{$t('home.featureEscrowDesc')}</p>
 				</div>
-				<h3 class="feature-name">{$t('home.featureAffiliate')}</h3>
-				<p class="feature-desc">{$t('home.featureAffiliateDesc')}</p>
-			</div>
-			<div class="feature-card">
-				<div class="feature-icon-box emerald">
-					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+				<div class="feature-card">
+					<div class="feature-icon-box purple">
+						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
+					</div>
+					<h3 class="feature-name">{$t('home.featureAffiliate')}</h3>
+					<p class="feature-desc">{$t('home.featureAffiliateDesc')}</p>
 				</div>
-				<h3 class="feature-name">{$t('home.featureRelaxOnly')}</h3>
-				<p class="feature-desc">{$t('home.featureRelaxOnlyDesc')}</p>
-			</div>
-			<div class="feature-card">
-				<div class="feature-icon-box orange">
-					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+				<div class="feature-card">
+					<div class="feature-icon-box purple">
+						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
+					</div>
+					<h3 class="feature-name">{$t('home.featurePlatformRescue')}</h3>
+					<p class="feature-desc">{$t('home.featurePlatformRescueDesc')}</p>
 				</div>
-				<h3 class="feature-name">{$t('home.featureBlacklistExpiry')}</h3>
-				<p class="feature-desc">{$t('home.featureBlacklistExpiryDesc')}</p>
-			</div>
-			<div class="feature-card">
-				<div class="feature-icon-box cyan">
-					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
-				</div>
-				<h3 class="feature-name">{$t('home.featurePayAny')}</h3>
-				<p class="feature-desc">{$t('home.featurePayAnyDesc')}</p>
-			</div>
-			<div class="feature-card">
-				<div class="feature-icon-box purple">
-					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-				</div>
-				<h3 class="feature-name">{$t('home.featureSafuLens')}</h3>
-				<p class="feature-desc">{$t('home.featureSafuLensDesc')}</p>
-			</div>
-			<div class="feature-card">
-				<div class="feature-icon-box emerald">
-					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
-				</div>
-				<h3 class="feature-name">{$t('home.featurePlatformRescue')}</h3>
-				<p class="feature-desc">{$t('home.featurePlatformRescueDesc')}</p>
 			</div>
 		</div>
 	</section>
@@ -710,10 +756,10 @@
 					<p class="text-gray-600 font-mono text-xs">Token creation from $5 · Tax ceiling locked at launch · LP permanently burned</p>
 				</div>
 				<div class="cta-actions">
-					<a href="/create?launch=true" class="btn-primary text-sm px-6 py-3 no-underline">
+					<a href="/create?launch=true" class="btn-primary text-base px-8 py-3.5 no-underline font-bold">
 						Launch with Bonding Curve →
 					</a>
-					<a href="/create" class="btn-secondary text-sm px-5 py-2.5 no-underline">
+					<a href="/create" class="btn-secondary text-sm px-5 py-2.5 no-underline opacity-75">
 						Create Token Only
 					</a>
 				</div>
@@ -1077,7 +1123,7 @@
 		font-family: 'Space Mono', monospace;
 		font-size: 11px;
 		font-weight: 700;
-		color: var(--text-secondary);
+		color: var(--text);
 		letter-spacing: 0.02em;
 	}
 	.trust-sep {
@@ -1123,13 +1169,40 @@
 	.hiw-title { font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700; color: var(--text-heading); margin: 0 0 4px; }
 	.hiw-desc { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text-dim); line-height: 1.6; margin: 0; }
 	.hiw-line {
-		width: 1px; background: var(--border);
-		align-self: stretch; flex-shrink: 0;
+		width: 24px; height: 2px; flex-shrink: 0;
+		align-self: center;
+		background: repeating-linear-gradient(90deg, var(--text-dim) 0, var(--text-dim) 4px, transparent 4px, transparent 8px);
+		opacity: 0.4;
 	}
 	@media (max-width: 640px) {
 		.how-it-works { flex-direction: column; }
-		.hiw-line { width: auto; height: 1px; }
+		.hiw-line {
+			width: 2px; height: 20px; align-self: center;
+			background: repeating-linear-gradient(180deg, var(--text-dim) 0, var(--text-dim) 4px, transparent 4px, transparent 8px);
+		}
 		.hiw-step { padding: 16px; flex-direction: row; text-align: left; gap: 14px; }
+	}
+
+	/* ── Feature Clusters ── */
+	.feature-cluster { margin-bottom: 20px; }
+	.feature-cluster:last-child { margin-bottom: 0; }
+	.feature-cluster-header {
+		display: flex; align-items: center; gap: 8px;
+		margin-bottom: 10px;
+	}
+	.feature-cluster-dot {
+		width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+	}
+	.feature-cluster-dot.emerald { background: #10b981; }
+	.feature-cluster-dot.amber { background: #f59e0b; }
+	.feature-cluster-dot.cyan { background: #00d2ff; }
+	.feature-cluster-dot.purple { background: #a78bfa; }
+	.feature-cluster-label {
+		font-family: 'Space Mono', monospace;
+		font-size: 11px; font-weight: 700;
+		color: var(--text-secondary);
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
 	}
 
 	/* ── Feature Cards ── */

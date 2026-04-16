@@ -341,6 +341,11 @@ select.input-field option { background: var(--select-bg); color: var(--text); }
   color: #10b981;
   border: 1px solid rgba(16,185,129,0.2);
 }
+.feature-icon-box.amber {
+  background: rgba(245,158,11,0.1);
+  color: #f59e0b;
+  border: 1px solid rgba(245,158,11,0.2);
+}
 .feature-icon-box.purple {
   background: rgba(139,92,246,0.1);
   color: #a78bfa;

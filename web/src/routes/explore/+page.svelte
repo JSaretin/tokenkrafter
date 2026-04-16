@@ -454,24 +454,47 @@
 						<div class="tc-header-right">
 							<div class="tc-badges-row">
 								{#if isSafu}
-									<span class="tc-badge tc-badge-safu" title="SAFU — all safety checks passed:&#10;• LP ≥99% burned&#10;• Tax ceiling locked (or non-taxable)&#10;• Trading enabled + liquidity&#10;• Not mintable, or owner renounced">SAFU</span>
+									<span class="badge-tip">
+										<span class="tc-badge tc-badge-safu">SAFU</span>
+										<span class="badge-tip-content">
+											<strong>SAFU — All safety checks passed</strong>
+											<span>LP ≥99% burned</span>
+											<span>Tax ceiling locked (or non-taxable)</span>
+											<span>Trading enabled + liquidity</span>
+											<span>Not mintable, or owner renounced</span>
+										</span>
+									</span>
 								{/if}
 								{#if tok.is_kyc}
-									<span class="tc-badge tc-badge-kyc" title="Creator identity verified via KYC/AMA">KYC</span>
+									<span class="badge-tip">
+										<span class="tc-badge tc-badge-kyc">KYC</span>
+										<span class="badge-tip-content"><strong>Creator identity verified</strong><span>Confirmed via AMA or KYC process</span></span>
+									</span>
 								{/if}
 								{#if tok.is_taxable}
-									<span class="tc-badge tc-badge-tax" title="Buy {(buyTax / 100).toFixed(1)}% · Sell {(sellTax / 100).toFixed(1)}%{isTaxLocked ? ' · Tax ceiling locked' : ''}">Taxable</span>
+									<span class="badge-tip">
+										<span class="tc-badge tc-badge-tax">Taxable</span>
+										<span class="badge-tip-content">
+											<strong>Token has buy/sell tax</strong>
+											<span>Buy: {(buyTax / 100).toFixed(1)}%</span>
+											<span>Sell: {(sellTax / 100).toFixed(1)}%</span>
+											{#if isTaxLocked}<span class="badge-tip-good">Tax ceiling locked</span>{/if}
+										</span>
+									</span>
 								{/if}
 								{#if isMintableRisk}
-									<span class="tc-badge tc-badge-mintable" title="Owner can increase token supply. Ownership not renounced.">Mintable</span>
+									<span class="badge-tip">
+										<span class="tc-badge tc-badge-mintable">Mintable</span>
+										<span class="badge-tip-content"><strong>Supply can increase</strong><span>Owner can mint new tokens. Ownership not renounced.</span></span>
+									</span>
 								{/if}
 								{#if isOnLaunchpad(tok)}
-									<span class="tc-badge tc-badge-live-launch" title="Active bonding curve sale">Live Launch</span>
+									<span class="tc-badge tc-badge-live-launch">Live Launch</span>
 								{:else if !gecko?.has_data && !isOnLaunchpad(tok)}
-									<span class="tc-badge tc-badge-prelaunch" title="Not yet listed on DEX">Pre-launch</span>
+									<span class="tc-badge tc-badge-prelaunch">Pre-launch</span>
 								{/if}
 								{#if tok.created_at && isNew(tok.created_at)}
-									<span class="tc-badge tc-badge-new" title="Created less than 24 hours ago">New</span>
+									<span class="tc-badge tc-badge-new">New</span>
 								{/if}
 							</div>
 							{#if gecko?.has_data}
@@ -647,6 +670,32 @@
 	.tc-badge-safu { background: rgba(16,185,129,0.2); color: #10b981; font-weight: 800; border: 1px solid rgba(16,185,129,0.3); }
 	.tc-badge-live-launch { background: rgba(0,210,255,0.12); color: #00d2ff; border: 1px solid rgba(0,210,255,0.25); font-weight: 700; }
 	.tc-badge-prelaunch { background: rgba(245,158,11,0.1); color: #f59e0b; border: 1px solid rgba(245,158,11,0.2); }
+
+	/* Styled badge tooltip popover */
+	.badge-tip { position: relative; display: inline-flex; }
+	.badge-tip-content {
+		display: none; position: absolute; bottom: calc(100% + 8px); left: 50%;
+		transform: translateX(-50%); z-index: 50; pointer-events: none;
+		background: var(--bg, #0f172a); border: 1px solid var(--border, #1e293b);
+		border-radius: 8px; padding: 8px 12px; min-width: 180px; max-width: 240px;
+		box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+		flex-direction: column; gap: 3px;
+		font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text-muted);
+		line-height: 1.4; white-space: normal;
+	}
+	.badge-tip-content::after {
+		content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
+		border: 5px solid transparent; border-top-color: var(--border, #1e293b);
+	}
+	.badge-tip-content strong {
+		font-size: 11px; color: var(--text-heading); font-weight: 700; margin-bottom: 2px;
+	}
+	.badge-tip-good { color: #10b981; }
+	.badge-tip:hover .badge-tip-content { display: flex; }
+	:global(.light) .badge-tip-content {
+		background: #fff; border-color: #e2e8f0; box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+	}
+	:global(.light) .badge-tip-content::after { border-top-color: #e2e8f0; }
 	.tc-badge-lp { background: rgba(59,130,246,0.12); color: #60a5fa; }
 	.tc-badge-renounced { background: rgba(16,185,129,0.12); color: #34d399; }
 	.tc-badge-locked { background: rgba(139,92,246,0.12); color: #a78bfa; }
