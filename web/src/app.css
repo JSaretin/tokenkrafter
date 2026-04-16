@@ -400,13 +400,71 @@ select.input-field option { background: var(--select-bg); color: var(--text); }
 .progress-fill {
   height: 100%;
   border-radius: 5px;
-  transition: width 0.3s ease;
-  box-shadow: 0 0 8px currentColor;
+  transition: width 0.8s cubic-bezier(0.22, 1, 0.36, 1);
+  position: relative;
+  overflow: hidden;
+  background-size: 20px 100%;
+  animation: progressStripes 0.6s linear infinite;
 }
-.progress-cyan { background: linear-gradient(90deg, #00d2ff, #3a7bd5); }
-.progress-amber { background: linear-gradient(90deg, #f59e0b, #d97706); }
-.progress-purple { background: linear-gradient(90deg, #8b5cf6, #a78bfa); }
-.progress-red { background: linear-gradient(90deg, #ef4444, #f87171); }
+.progress-fill::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    -45deg,
+    transparent,
+    transparent 4px,
+    rgba(255,255,255,0.08) 4px,
+    rgba(255,255,255,0.08) 8px
+  );
+  animation: progressStripes 0.6s linear infinite;
+}
+.progress-fill::before {
+  content: '';
+  position: absolute;
+  top: -1px; bottom: -1px; right: -2px;
+  width: 14px;
+  border-radius: 50%;
+  background: white;
+  box-shadow:
+    0 0 8px currentColor,
+    0 0 20px currentColor,
+    0 0 40px currentColor;
+  opacity: 0.9;
+  animation: progressGlow 1s ease-in-out infinite;
+}
+@keyframes progressStripes {
+  0% { background-position: 0 0; }
+  100% { background-position: 20px 0; }
+}
+@keyframes progressGlow {
+  0%, 100% {
+    opacity: 0.7;
+    transform: scale(0.8);
+    box-shadow: 0 0 6px currentColor, 0 0 14px currentColor;
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.2);
+    box-shadow: 0 0 10px currentColor, 0 0 24px currentColor, 0 0 48px currentColor;
+  }
+}
+.progress-cyan {
+  background: linear-gradient(90deg, #00b4d8, #00d2ff, #48cae4);
+  box-shadow: 0 0 12px rgba(0,210,255,0.4), 0 2px 8px rgba(0,210,255,0.2);
+}
+.progress-amber {
+  background: linear-gradient(90deg, #e67e00, #f59e0b, #fbbf24);
+  box-shadow: 0 0 12px rgba(245,158,11,0.4), 0 2px 8px rgba(245,158,11,0.2);
+}
+.progress-purple {
+  background: linear-gradient(90deg, #7c3aed, #8b5cf6, #a78bfa);
+  box-shadow: 0 0 12px rgba(139,92,246,0.4), 0 2px 8px rgba(139,92,246,0.2);
+}
+.progress-red {
+  background: linear-gradient(90deg, #dc2626, #ef4444, #f87171);
+  box-shadow: 0 0 12px rgba(239,68,68,0.4), 0 2px 8px rgba(239,68,68,0.2);
+}
 
 /* ─── Spinner ─── */
 .spinner {

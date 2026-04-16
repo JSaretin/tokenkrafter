@@ -2085,7 +2085,12 @@
 
 				<!-- Activity Feed -->
 				<div class="card p-6 mb-4">
-					<h3 class="syne font-bold text-white mb-4">{$t('lpd.recentActivity')}</h3>
+					<div class="activity-header">
+						<h3 class="syne font-bold text-white">{$t('lpd.recentActivity')}</h3>
+						{#if launch.state === 1}
+							<span class="activity-live-indicator"><span class="activity-live-pulse"></span>LIVE</span>
+						{/if}
+					</div>
 					{#if txLoading}
 						<div class="text-gray-500 text-xs font-mono text-center py-4">{$t('status.loading')}...</div>
 					{:else if txItems.length === 0}
@@ -2098,7 +2103,7 @@
 						</div>
 					{:else}
 						{@const totalBuyers = new Set(txItems.map(t => t.buyer)).size}
-						{@const totalVol = txItems.reduce((sum, t) => sum + parseFloat(ethers.formatUnits(BigInt(t.base_amount), usdtDecimals)), 0)}
+						{@const totalVol = txItems.reduce((sum, t) => sum + parseFloat(ethers.formatUnits(BigInt(t.base_amount) + BigInt(t.fee || '0'), usdtDecimals)), 0)}
 						{@const recentBuys = txItems.filter(t => {
 							const ts = typeof t.created_at === 'number' ? t.created_at * 1000 : new Date(t.created_at).getTime();
 							return Date.now() - ts < 300000;
@@ -2148,15 +2153,50 @@
 								{/if}
 							{/if}
 						</div>
+						{#if true}
+						{@const topBuyerAddr = txItems.reduce((max, tx) => {
+							const v = parseFloat(ethers.formatUnits(BigInt(tx.base_amount), usdtDecimals));
+							return v > max.v ? { addr: tx.buyer, v } : max;
+						}, { addr: '', v: 0 }).addr}
+						{@const firstBuyerAddr = txItems.length > 0 ? txItems[txItems.length - 1].buyer : ''}
+						{@const curPriceForCtx = launch ? Number(launch.currentPrice) / (10 ** usdtDecimals) : 0}
+						{@const buyerCounts = txItems.reduce((m, tx) => { m[tx.buyer] = (m[tx.buyer] || 0) + 1; return m; }, {} as Record<string, number>)}
+						{@const softCapNum = launch ? Number(launch.softCap) / (10 ** usdtDecimals) : 0}
+						{@const hardCapNum2 = launch ? Number(launch.hardCap) / (10 ** usdtDecimals) : 0}
 						<div class="activity-list">
 							{#each txItems as tx, i}
-								{@const usdtVal = parseFloat(ethers.formatUnits(BigInt(tx.base_amount), usdtDecimals))}
+								{@const usdtVal = parseFloat(ethers.formatUnits(BigInt(tx.base_amount) + BigInt(tx.fee || '0'), usdtDecimals))}
 								{@const tokVal = parseFloat(ethers.formatUnits(BigInt(tx.tokens_received), tokenMeta.decimals))}
 								{@const isWhale = usdtVal >= 100}
 								{@const isSelf = tx.buyer === userAddress?.toLowerCase()}
-								<div class="activity-row" class:activity-latest={i === 0} class:activity-whale={isWhale} class:activity-self={isSelf}>
+								{@const txTs = typeof tx.created_at === 'number' ? tx.created_at * 1000 : new Date(tx.created_at).getTime()}
+								{@const ageMs = Date.now() - txTs}
+								{@const isLive = ageMs < 300000}
+								{@const fmtTok = tokVal > 1000000 ? (tokVal / 1000000).toFixed(1) + 'M' : tokVal > 1000 ? (tokVal / 1000).toFixed(1) + 'K' : tokVal.toFixed(0)}
+								{@const isTopBuyer = tx.buyer === topBuyerAddr && usdtVal >= 10}
+								{@const isFirstBuyer = tx.buyer === firstBuyerAddr && i === txItems.length - 1}
+								{@const isRepeat = (buyerCounts[tx.buyer] || 0) > 1}
+								{@const txPrice = tokVal > 0 ? usdtVal / tokVal : 0}
+								{@const priceDiffPct = curPriceForCtx > 0 && txPrice > 0 ? ((curPriceForCtx - txPrice) / txPrice * 100) : 0}
+
+								<!-- Milestone markers (inserted between rows) -->
+								{#if i > 0}
+									{@const runningRaised = txItems.slice(0, i).reduce((s, t) => s + parseFloat(ethers.formatUnits(BigInt(t.base_amount), usdtDecimals)), 0)}
+									{@const prevRaised = txItems.slice(0, i - 1).reduce((s, t) => s + parseFloat(ethers.formatUnits(BigInt(t.base_amount), usdtDecimals)), 0)}
+									{#if softCapNum > 0 && prevRaised < softCapNum && runningRaised >= softCapNum}
+										<div class="activity-milestone milestone-sc">🎯 Soft cap reached!</div>
+									{/if}
+									{#if hardCapNum2 > 0 && prevRaised < hardCapNum2 * 0.5 && runningRaised >= hardCapNum2 * 0.5}
+										<div class="activity-milestone milestone-half">💎 50% to hard cap</div>
+									{/if}
+									{#if i === 9}
+										<div class="activity-milestone milestone-buyers">👥 10th purchase</div>
+									{/if}
+								{/if}
+
+								<div class="activity-row" class:activity-latest={i === 0} class:activity-whale={isWhale} class:activity-self={isSelf} class:activity-live={isLive} style="animation-delay: {i * 40}ms">
 									<div class="activity-left">
-										{#if i === 0}
+										{#if isLive}
 											<span class="activity-live-dot"></span>
 										{:else}
 											<span class="activity-dot"></span>
@@ -2168,22 +2208,45 @@
 									<div class="activity-card">
 										<div class="activity-card-top">
 											<a href="{network?.explorer_url || ''}/address/{tx.buyer}" target="_blank" rel="noopener noreferrer" class="activity-addr">{isSelf ? 'You' : shortAddr(tx.buyer)}</a>
-											<span class="activity-time">{relativeTime(tx.created_at)}</span>
+											{#if isFirstBuyer}<span class="activity-badge badge-first">🥇 First</span>{/if}
+											{#if isTopBuyer && !isFirstBuyer}<span class="activity-badge badge-top">🔥 Top</span>{/if}
+											{#if isWhale && !isTopBuyer}<span class="activity-badge badge-whale">🐋</span>{/if}
+											{#if isRepeat && !isSelf}<span class="activity-badge badge-repeat">🔁</span>{/if}
+											{#if isLive}
+												<span class="activity-live-badge">just now</span>
+											{:else}
+												<span class="activity-time">{relativeTime(tx.created_at)}</span>
+											{/if}
 										</div>
 										<div class="activity-card-hero">
-											{isWhale ? '🐋 ' : ''}<span class="activity-tok-num">{tokVal > 1000000 ? (tokVal / 1000000).toFixed(1) + 'M' : tokVal > 1000 ? (tokVal / 1000).toFixed(1) + 'K' : tokVal.toFixed(0)}</span> <span class="activity-tok-sym">{tokenMeta.symbol}</span>
+											<span class="activity-tok">{fmtTok}</span> <span class="activity-tok-sym">{tokenMeta.symbol}</span> <span class="activity-sep">·</span> <span class="activity-usd">${usdtVal < 0.01 ? '<0.01' : usdtVal.toFixed(2)}</span>
 										</div>
-										<div class="activity-card-sub">
-											<span class="activity-spent">${usdtVal < 0.01 ? '<0.01' : usdtVal.toFixed(2)}</span>
-										</div>
+										{#if priceDiffPct > 5}
+											<div class="activity-price-ctx">bought {priceDiffPct.toFixed(0)}% below current price</div>
+										{/if}
 									</div>
 								</div>
 							{/each}
 						</div>
+
+						<!-- Join CTA -->
+						{#if launch.state === 1 && !userAddress}
+							<div class="activity-join-cta">
+								<span>Join {totalBuyers} buyer{totalBuyers !== 1 ? 's' : ''}</span>
+								<button class="btn-primary text-xs px-4 py-2" onclick={connectWallet}>Connect & Buy →</button>
+							</div>
+						{:else if launch.state === 1 && userBasePaid === 0n}
+							<div class="activity-join-cta">
+								<span>Be buyer #{totalBuyers + 1}</span>
+								<a href="#buy-amount" class="btn-primary text-xs px-4 py-2 no-underline">Buy Now →</a>
+							</div>
+						{/if}
+
 						{#if txHasMore}
 							<button class="load-more-btn" onclick={loadMoreTransactions} disabled={txLoadingMore}>
 								{txLoadingMore ? `${$t('status.loading')}...` : `Load older (${txTotal - txItems.length} more)`}
 							</button>
+						{/if}
 						{/if}
 					{/if}
 				</div>
@@ -3785,6 +3848,68 @@
 	}
 	.signal-gain svg { color: #10b981; flex-shrink: 0; }
 
+	/* Activity header */
+	.activity-header {
+		display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;
+	}
+	.activity-live-indicator {
+		display: flex; align-items: center; gap: 5px;
+		font-family: 'Space Mono', monospace; font-size: 9px; font-weight: 700;
+		color: #10b981; text-transform: uppercase; letter-spacing: 0.08em;
+	}
+	.activity-live-pulse {
+		width: 7px; height: 7px; border-radius: 50%; background: #10b981;
+		box-shadow: 0 0 8px rgba(16,185,129,0.6);
+		animation: pulse-glow 2s ease-in-out infinite;
+	}
+
+	/* Activity — badges */
+	.activity-badge {
+		font-size: 9px; padding: 1px 5px; border-radius: 4px;
+		font-family: 'Space Mono', monospace; font-weight: 600;
+	}
+	.badge-first { background: rgba(245,158,11,0.1); color: #f59e0b; }
+	.badge-top { background: rgba(239,68,68,0.1); color: #f87171; }
+	.badge-whale { background: rgba(245,158,11,0.08); color: #f59e0b; }
+	.badge-repeat { background: rgba(139,92,246,0.08); color: #a78bfa; }
+
+	/* Activity — price context */
+	.activity-price-ctx {
+		font-family: 'Space Mono', monospace; font-size: 9px;
+		color: #10b981; margin-top: 2px; opacity: 0.7;
+	}
+
+	/* Activity — milestone markers */
+	.activity-milestone {
+		display: flex; align-items: center; justify-content: center;
+		gap: 6px; padding: 6px 12px; margin: 4px 0;
+		border-radius: 8px; font-family: 'Syne', sans-serif;
+		font-size: 11px; font-weight: 700;
+	}
+	.milestone-sc { background: rgba(16,185,129,0.08); color: #10b981; border: 1px solid rgba(16,185,129,0.15); }
+	.milestone-half { background: rgba(0,210,255,0.06); color: #00d2ff; border: 1px solid rgba(0,210,255,0.1); }
+	.milestone-buyers { background: rgba(139,92,246,0.06); color: #a78bfa; border: 1px solid rgba(139,92,246,0.1); }
+
+	/* Activity — join CTA */
+	.activity-join-cta {
+		display: flex; align-items: center; justify-content: space-between;
+		padding: 12px 14px; margin-top: 12px;
+		border-radius: 10px;
+		background: linear-gradient(135deg, rgba(0,210,255,0.06), rgba(16,185,129,0.06));
+		border: 1px solid rgba(0,210,255,0.12);
+		font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700;
+		color: var(--text-heading);
+	}
+
+	/* Activity — row animation */
+	.activity-row {
+		animation: activity-slide-in 0.3s ease-out both;
+	}
+	@keyframes activity-slide-in {
+		from { opacity: 0; transform: translateY(-6px); }
+		to { opacity: 1; transform: translateY(0); }
+	}
+
 	/* Activity — timeline */
 	.activity-list { display: flex; flex-direction: column; gap: 0; padding-top: 8px; }
 
@@ -3818,41 +3943,47 @@
 		flex: 1; min-width: 0; padding-bottom: 12px;
 	}
 	.activity-card-top {
-		display: flex; align-items: center; justify-content: space-between;
-		gap: 8px; margin-bottom: 2px;
+		display: flex; align-items: baseline; flex-wrap: wrap;
+		gap: 4px 6px; margin-bottom: 2px;
 	}
 	.activity-addr { text-decoration: none; }
 	.activity-addr:hover { color: #00d2ff; }
 	a.activity-addr {
-		font-family: 'Rajdhani', sans-serif; font-size: 12px;
-		color: var(--text-muted); font-weight: 600;
+		font-family: 'Space Mono', monospace; font-size: 12px;
+		color: var(--text); font-weight: 700;
 	}
-	.activity-self .activity-addr { color: #00d2ff; font-weight: 700; }
+	.activity-self .activity-addr { color: #00d2ff; }
 	.activity-latest .activity-addr { color: var(--text-heading); }
 	.activity-time {
-		font-family: 'Rajdhani', sans-serif; font-size: 11px;
-		color: var(--text-dim); white-space: nowrap;
+		font-family: 'Space Mono', monospace; font-size: 10px;
+		color: var(--text-dim); white-space: nowrap; margin-left: auto;
+	}
+	.activity-live-badge {
+		font-family: 'Space Mono', monospace; font-size: 9px; font-weight: 700;
+		color: #00d2ff; margin-left: auto;
+		padding: 1px 6px; border-radius: 4px;
+		background: rgba(0,210,255,0.1); border: 1px solid rgba(0,210,255,0.15);
+		animation: pulse-glow 2s ease-in-out infinite;
 	}
 
-	/* Token amount — the hero number */
+	/* Buy line: "368.7K SMS · $9.90" */
 	.activity-card-hero {
-		font-family: 'Syne', sans-serif; font-size: 16px;
-		font-weight: 800; color: var(--text-heading);
-		line-height: 1.2;
+		font-family: 'Rajdhani', sans-serif; font-size: 14px;
+		font-weight: 600; line-height: 1.4;
+		font-variant-numeric: tabular-nums;
 	}
-	.activity-tok-num { color: var(--text-heading); }
-	.activity-tok-sym {
-		font-size: 11px; font-weight: 600;
-		color: var(--text-muted); margin-left: 2px;
-	}
-	.activity-whale .activity-tok-num { color: #f59e0b; }
-	.activity-latest .activity-tok-num { color: #00d2ff; }
+	.activity-tok { color: var(--text-muted); }
+	.activity-tok-sym { color: var(--text-dim); font-size: 12px; }
+	.activity-sep { color: var(--text-dim); font-size: 10px; margin: 0 2px; }
+	.activity-usd { color: #10b981; font-weight: 700; font-size: 15px; }
+	.activity-whale .activity-usd { color: #f59e0b; font-size: 16px; }
+	.activity-latest .activity-usd { color: #00d2ff; }
 
-	/* USDT spent — secondary */
-	.activity-card-sub { margin-top: 1px; }
-	.activity-spent {
-		font-family: 'Rajdhani', sans-serif; font-size: 12px;
-		color: var(--text-dim);
+	/* Latest row highlight */
+	.activity-live .activity-card {
+		background: rgba(0,210,255,0.04);
+		border-radius: 8px; padding: 6px 10px; margin: -6px -10px;
+		border: 1px solid rgba(0,210,255,0.08);
 	}
 	.load-more-btn {
 		display: block;

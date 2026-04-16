@@ -242,7 +242,8 @@ contract LaunchInstance is ReentrancyGuard {
     uint256 public totalBuyFeesCollected; // accumulated buy fees
     uint256 public totalTokensDeposited;
 
-    mapping(address => uint256) public basePaid;
+    mapping(address => uint256) public basePaid;      // net (after fee) — used for refunds + max buy check
+    mapping(address => uint256) public grossPaid;     // gross (before fee) — what the user actually spent
     mapping(address => uint256) public tokensBought;
 
     // ── Purchase history (on-chain, enumerable) ───────────────
@@ -669,10 +670,12 @@ contract LaunchInstance is ReentrancyGuard {
         // Check minTokensOut AFTER all capping
         if (tokensOut < minTokensOut) revert InsufficientTokensOut();
 
-        // Update state — basePaid tracks net amount (after fee), which is refundable
+        // Update state — basePaid tracks net amount (after fee), which is refundable.
+        // grossPaid tracks what the user actually spent (before fee) for display.
         tokensSold += tokensOut;
         totalBaseRaised += baseForTokens;
         basePaid[buyer] += baseForTokens;
+        grossPaid[buyer] += baseForTokens + buyFee;
         tokensBought[buyer] += tokensOut;
 
         // Record purchase history
@@ -854,6 +857,11 @@ contract LaunchInstance is ReentrancyGuard {
         // Update buyer entitlement (might leave small residuals for the
         // caller to claim on a second call)
         basePaid[msg.sender] = paid - refundBase;
+        // Pro-rata gross reduction matching the net refund ratio
+        uint256 grossRefund = grossPaid[msg.sender] > 0
+            ? (grossPaid[msg.sender] * tokensToReturn) / buyerTokens
+            : 0;
+        grossPaid[msg.sender] -= grossRefund;
         tokensBought[msg.sender] = buyerTokens - tokensToReturn;
 
         // Buyer must hold + have approved the tokens they're returning
