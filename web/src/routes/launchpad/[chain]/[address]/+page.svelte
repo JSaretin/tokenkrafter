@@ -2463,15 +2463,16 @@
 
 								<!-- Velocity: raw speed in the last hour -->
 								{#if txItems.length > 0}
-									{@const oneHrAgo = Date.now() - 3600000}
-									{@const tenMinAgo = Date.now() - 600000}
-									{@const hourBuys = txItems.filter(tx => { const ts = typeof tx.created_at === 'number' ? tx.created_at * 1000 : new Date(tx.created_at).getTime(); return ts > oneHrAgo; })}
-									{@const hourVol = hourBuys.reduce((s, tx) => s + parseFloat(ethers.formatUnits(BigInt(tx.base_amount) + BigInt(tx.fee || '0'), usdtDecimals)), 0)}
-									{@const recentBuys = txItems.filter(tx => { const ts = typeof tx.created_at === 'number' ? tx.created_at * 1000 : new Date(tx.created_at).getTime(); return ts > tenMinAgo; }).length}
+									{@const now = countdownNow}
+									{@const oneHrAgo = now - 3600000}
+									{@const tenMinAgo = now - 600000}
+									{@const hourBuys = txItems.filter(tx => { try { const ts = typeof tx.created_at === 'number' ? tx.created_at * 1000 : new Date(tx.created_at).getTime(); return !isNaN(ts) && ts > oneHrAgo; } catch { return false; } })}
+									{@const hourVol = hourBuys.reduce((s, tx) => { try { return s + parseFloat(ethers.formatUnits(BigInt(tx.base_amount) + BigInt(tx.fee || '0'), usdtDecimals)); } catch { return s; } }, 0)}
+									{@const recentCount = txItems.filter(tx => { try { const ts = typeof tx.created_at === 'number' ? tx.created_at * 1000 : new Date(tx.created_at).getTime(); return !isNaN(ts) && ts > tenMinAgo; } catch { return false; } }).length}
 									{#if hourVol > 0}
 										<div class="ctx-line ctx-velocity">
 											<span>🔥</span>
-											<span>+${hourVol.toFixed(2)} in the last hour{recentBuys > 0 ? ` · ${recentBuys} buy${recentBuys > 1 ? 's' : ''} in 10 min` : ''}</span>
+											<span>+${hourVol.toFixed(2)} in the last hour{recentCount > 0 ? ` · ${recentCount} buy${recentCount > 1 ? 's' : ''} in 10 min` : ''}</span>
 										</div>
 									{/if}
 								{/if}

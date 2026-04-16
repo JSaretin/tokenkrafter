@@ -160,10 +160,10 @@
 	.lcd-lg .lcd-sep { font-size: 20px; padding-bottom: 14px; }
 
 	@keyframes flipDown {
-		0% { transform: rotateX(-90deg); opacity: 0; }
-		40% { transform: rotateX(10deg); opacity: 1; }
-		70% { transform: rotateX(-5deg); }
-		100% { transform: rotateX(0deg); }
+		0% { transform: scaleY(0.3) translateY(-40%); opacity: 0.2; }
+		50% { transform: scaleY(1.08) translateY(2%); opacity: 1; }
+		75% { transform: scaleY(0.97) translateY(-1%); }
+		100% { transform: scaleY(1) translateY(0); opacity: 1; }
 	}
 
 	@keyframes urgentPulse {
