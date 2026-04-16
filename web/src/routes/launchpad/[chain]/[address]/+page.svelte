@@ -2155,10 +2155,16 @@
 							{/if}
 						</div>
 						{#if true}
-						{@const topBuyerAddr = txItems.reduce((max, tx) => {
-							const v = parseFloat(ethers.formatUnits(BigInt(tx.base_amount), usdtDecimals));
-							return v > max.v ? { addr: tx.buyer, v } : max;
-						}, { addr: '', v: 0 }).addr}
+						{@const topBuyerAddr = (() => {
+							const totals: Record<string, number> = {};
+							for (const tx of txItems) {
+								const v = parseFloat(ethers.formatUnits(BigInt(tx.base_amount) + BigInt(tx.fee || '0'), usdtDecimals));
+								totals[tx.buyer] = (totals[tx.buyer] || 0) + v;
+							}
+							let best = '', bestV = 0;
+							for (const [addr, v] of Object.entries(totals)) { if (v > bestV) { best = addr; bestV = v; } }
+							return best;
+						})()}
 						{@const firstBuyerAddr = txItems.length > 0 ? txItems[txItems.length - 1].buyer : ''}
 						{@const curPriceForCtx = launch ? Number(launch.currentPrice) / (10 ** usdtDecimals) : 0}
 						{@const buyerCounts = txItems.reduce((m, tx) => { m[tx.buyer] = (m[tx.buyer] || 0) + 1; return m; }, {} as Record<string, number>)}
