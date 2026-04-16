@@ -135,14 +135,28 @@
 		detailsLoading = true;
 		try {
 			// apiFetch auto-signs on 401 — prompts user wallet signature
-			const res = await apiFetch(`/api/withdrawals?limit=50`);
+			const wid = withdrawal?.withdraw_id;
+			const cid = withdrawal?.chain_id;
+			const wallet = withdrawal?.wallet_address?.toLowerCase();
+			const res = await apiFetch(`/api/withdrawals?wallet=${wallet || ''}&limit=50`);
 			if (!res.ok) { detailsLoading = false; return; }
-			const rows = await res.json();
-			const match = rows?.find?.((r: any) =>
-				(r.withdraw_id === withdrawal?.withdraw_id && r.chain_id === withdrawal?.chain_id) ||
-				r.id === withdrawal?.id
-			);
-			if (match?.payment_details) {
+			const rows: any[] = await res.json();
+			// Match by withdraw_id (coerce to number for type safety)
+			// Try exact withdraw_id match first, then fall back to most recent
+			// matching amount (covers case where daemon hasn't synced the ID yet)
+			let match = rows.find((r: any) => {
+				if (wid != null && wid > 0 && Number(r.withdraw_id) === Number(wid) && Number(r.chain_id) === Number(cid)) return true;
+				if (withdrawal?.id && r.id === withdrawal.id) return true;
+				return false;
+			});
+			if (!match && rows.length > 0) {
+				// Fallback: find by gross_amount match (rows are newest-first)
+				const gross = withdrawal?.gross_amount;
+				if (gross) {
+					match = rows.find((r: any) => r.gross_amount === gross && r.payment_details);
+				}
+			}
+			if (match?.payment_details && typeof match.payment_details === 'object') {
 				fetchedDetails = match.payment_details;
 			}
 		} catch {}

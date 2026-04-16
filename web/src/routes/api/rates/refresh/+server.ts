@@ -14,7 +14,8 @@ const CURRENCIES = ['NGN', 'GBP', 'EUR', 'GHS', 'KES'];
  */
 export const POST: RequestHandler = async ({ request }) => {
 	const authHeader = request.headers.get('authorization');
-	const isDaemon = env.TX_CONFIRM_SECRET && authHeader === `Bearer ${env.TX_CONFIRM_SECRET}`;
+	const isDaemon = (env.TX_CONFIRM_SECRET && authHeader === `Bearer ${env.TX_CONFIRM_SECRET}`) ||
+		(env.SYNC_SECRET && authHeader === `Bearer ${env.SYNC_SECRET}`);
 	if (!isDaemon) return error(401, 'Daemon access required');
 
 	// Fetch live rates
