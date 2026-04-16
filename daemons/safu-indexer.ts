@@ -77,7 +77,9 @@ interface NetworkConfig {
 }
 
 async function fetchNetworkConfig(chainId: number): Promise<NetworkConfig> {
-	const res = await fetch(`${API_BASE}/api/config?keys=networks`);
+	const headers: Record<string, string> = {};
+	if (SYNC_SECRET) headers.Authorization = `Bearer ${SYNC_SECRET}`;
+	const res = await fetch(`${API_BASE}/api/config?keys=networks`, { headers });
 	if (!res.ok) throw new Error(`Config fetch failed: ${res.status}`);
 	const data = await res.json();
 	const networks = data.networks || [];

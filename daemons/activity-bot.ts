@@ -390,7 +390,9 @@ async function main() {
 	// Load config from backend (DB-managed addresses + RPC)
 	let factoryAddr = '', routerAddr = '', usdtAddr = '', rpcUrl = RPC_URL;
 	try {
-		const res = await fetch(`${API_BASE}/api/config?keys=networks`);
+		const cfgHeaders: Record<string, string> = {};
+		if (SYNC_SECRET) cfgHeaders.Authorization = `Bearer ${SYNC_SECRET}`;
+		const res = await fetch(`${API_BASE}/api/config?keys=networks`, { headers: cfgHeaders });
 		const { networks } = await res.json();
 		const net = (networks || []).find((n: any) => Number(n.chain_id) === CHAIN_ID);
 		factoryAddr = net?.platform_address;

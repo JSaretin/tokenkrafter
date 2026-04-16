@@ -50,12 +50,40 @@ const {
 	MIN_FLW_NGN = '1000',
 	ALERT_WEBHOOK = '',
 	POLL_INTERVAL_MS = '300000',
+	TELEGRAM_BOT_TOKEN = '',
+	TELEGRAM_CHANNEL_ID = '',
 } = Bun.env;
 
 if (!TRADE_ROUTER) { console.error('TRADE_ROUTER required'); process.exit(1); }
 if (!ADMIN_ADDRESS) { console.error('ADMIN_ADDRESS required'); process.exit(1); }
 if (!TX_CONFIRM_SECRET) { console.error('TX_CONFIRM_SECRET required'); process.exit(1); }
 if (!FLUTTERWAVE_SECRET_KEY) { console.error('FLUTTERWAVE_SECRET_KEY required'); process.exit(1); }
+
+// ── Fetch private daemon_rpc from backend config (MEV-protected writes) ──
+let resolvedRpc = CHAIN_RPC;
+let resolvedWsRpc = CHAIN_WS_RPC;
+
+async function resolveRpcFromConfig() {
+	try {
+		const res = await fetch(`${BACKEND_URL}/api/config?keys=networks`, {
+			headers: { Authorization: `Bearer ${TX_CONFIRM_SECRET}` },
+		});
+		if (!res.ok) return;
+		const { networks } = await res.json();
+		const net = (networks || []).find((n: any) => Number(n.chain_id) === parseInt(CHAIN_ID));
+		if (!net?.daemon_rpc) return;
+		const dr = net.daemon_rpc as string;
+		if (dr.startsWith('wss://') || dr.startsWith('ws://')) {
+			resolvedWsRpc = dr;
+			console.log(`  Using daemon WS RPC: ${dr.slice(0, 40)}…`);
+		} else {
+			resolvedRpc = dr;
+			console.log(`  Using daemon HTTP RPC: ${dr.slice(0, 40)}…`);
+		}
+	} catch (e: any) {
+		console.warn(`  ⚠️ Config fetch failed, using env RPC: ${e.message?.slice(0, 60)}`);
+	}
+}
 
 const chainId = parseInt(CHAIN_ID);
 const pollInterval = parseInt(POLL_INTERVAL_MS);
@@ -79,13 +107,13 @@ let wsClosed = false;
 let wsReconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
 function initHttp() {
-	httpProvider = new ethers.JsonRpcProvider(CHAIN_RPC, chainId, { staticNetwork: true });
+	httpProvider = new ethers.JsonRpcProvider(resolvedRpc, chainId, { staticNetwork: true });
 }
 
 function connectWs() {
-	if (wsClosed || !CHAIN_WS_RPC) return;
+	if (wsClosed || !resolvedWsRpc) return;
 	try {
-		wsProvider = new ethers.WebSocketProvider(CHAIN_WS_RPC, chainId, { staticNetwork: true });
+		wsProvider = new ethers.WebSocketProvider(resolvedWsRpc, chainId, { staticNetwork: true });
 		const sock = (wsProvider as any).websocket;
 		if (sock && typeof sock.on === 'function') {
 			sock.on('close', () => {
@@ -391,14 +419,18 @@ async function main() {
 	console.log(`  Chain: ${chainId} | Router: ${TRADE_ROUTER}`);
 	console.log(`  Admin: ${adminAddress}`);
 	console.log(`  Backend: ${BACKEND_URL}`);
-	console.log(`  WS RPC: ${CHAIN_WS_RPC || '(none — HTTP-only mode)'}`);
+
+	// Fetch daemon_rpc from DB config (MEV-protected, private key)
+	await resolveRpcFromConfig();
+
+	console.log(`  RPC: ${resolvedRpc}${resolvedWsRpc ? ` (ws: ${resolvedWsRpc.slice(0, 40)}…)` : ''}`);
 	console.log(`  Poll interval: ${pollInterval / 1000}s`);
 	console.log(`  Min gas: ${minGasBnb} BNB | Min FLW: ₦${minFlwNgn}`);
 
 	initHttp();
 	await initRedis();
 
-	if (CHAIN_WS_RPC) {
+	if (resolvedWsRpc) {
 		connectWs();
 	}
 
