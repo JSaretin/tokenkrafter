@@ -1,0 +1,17 @@
+{
+  "name": "tokenkrafter-payment-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "proxy": "bun run index.ts",
+    "processor": "bun run withdrawal-processor.ts"
+  },
+  "dependencies": {
+    "ethers": "^6.16.0",
+    "redis": "^5.0.1"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  }
+}

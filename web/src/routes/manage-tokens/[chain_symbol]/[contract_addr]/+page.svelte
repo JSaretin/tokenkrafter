@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { chainSlug, type SupportedNetworks, type SupportedNetwork, type PaymentOption } from '$lib/structure';
+	import type { WsProviderManager, EventSubscription } from '$lib/wsProvider';
+	import { transferFilter } from '$lib/wsProvider';
 	import { ethers } from 'ethers';
 	import { getContext, onMount, onDestroy } from 'svelte';
 	import { TOKEN_ABI, ROUTER_ABI, FACTORY_V2_ABI, PAIR_ABI, ERC20_ABI, FACTORY_ABI, ZERO_ADDRESS } from '$lib/tokenCrafter';
@@ -28,6 +30,7 @@
 	let getUserAddress: () => string | null = getContext('userAddress');
 	let connectWallet: () => Promise<boolean> = getContext('connectWallet');
 	let getNetworkProviders: () => Map<number, ethers.JsonRpcProvider> = getContext('networkProviders');
+	let getWsManager: () => WsProviderManager | null = getContext('wsManager');
 	let getPaymentOptions: (network: SupportedNetwork) => PaymentOption[] = getContext('getPaymentOptions');
 
 	let signer = $derived(getSigner());
@@ -860,9 +863,16 @@
 		return true;
 	}
 
+	let _manageDepositSub: EventSubscription | null = null;
+	let _manageDepositDebounce: ReturnType<typeof setTimeout> | null = null;
+
 	function startDepositPoll(requiredAmount: bigint, tokenAddr: string, decimals: number, isNative: boolean, onResume: () => void) {
 		stopDepositPoll();
-		depositPollTimer = setInterval(async () => {
+
+		const ws = getWsManager();
+		const chainId = network?.chain_id;
+
+		const checkDeposit = async () => {
 			if (!userAddress || !network) return;
 			try {
 				const provider = getProvider() ?? new ethers.JsonRpcProvider(network.rpc);
@@ -880,20 +890,37 @@
 					addFeedback({ message: 'Deposit detected! Proceeding...', type: 'success' });
 					onResume();
 				} else if (depositInfo) {
-					// Update displayed balance
 					const balFormatted = isNative ? ethers.formatEther(bal) : ethers.formatUnits(bal, decimals);
 					const deficit = Number(depositInfo.required) - Number(balFormatted);
 					depositInfo.userBalance = Number(balFormatted).toFixed(4);
 					depositInfo.deficit = deficit > 0 ? deficit.toFixed(4) : '0';
 				}
 			} catch {}
-		}, 5000);
+		};
+
+		if (ws && userAddress && chainId) {
+			_manageDepositSub = ws.subscribeLogs(chainId, transferFilter(userAddress), () => {
+				if (_manageDepositDebounce) clearTimeout(_manageDepositDebounce);
+				_manageDepositDebounce = setTimeout(() => { _manageDepositDebounce = null; checkDeposit(); }, 500);
+			});
+			depositPollTimer = setInterval(checkDeposit, 30_000);
+		} else {
+			depositPollTimer = setInterval(checkDeposit, 5000);
+		}
 	}
 
 	function stopDepositPoll() {
 		if (depositPollTimer) {
 			clearInterval(depositPollTimer);
 			depositPollTimer = null;
+		}
+		if (_manageDepositSub) {
+			_manageDepositSub.unsubscribe();
+			_manageDepositSub = null;
+		}
+		if (_manageDepositDebounce) {
+			clearTimeout(_manageDepositDebounce);
+			_manageDepositDebounce = null;
 		}
 	}
 

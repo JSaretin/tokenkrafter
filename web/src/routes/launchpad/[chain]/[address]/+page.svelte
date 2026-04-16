@@ -12,6 +12,8 @@
 	import { favorites, toggleFavorite } from '$lib/favorites';
 	import RecentTransactionsTicker from '$lib/RecentTransactionsTicker.svelte';
 	import type { SupportedNetwork } from '$lib/structure';
+	import type { WsProviderManager, EventSubscription } from '$lib/wsProvider';
+	import { transferFilter } from '$lib/wsProvider';
 	import { ERC20_ABI, ZERO_ADDRESS, FACTORY_ABI } from '$lib/tokenCrafter';
 	import {
 		LAUNCH_INSTANCE_ABI,
@@ -40,6 +42,7 @@
 	let _getNetworks: () => SupportedNetwork[] = getContext('supportedNetworks');
 	let supportedNetworks = $derived(_getNetworks());
 	let getNetworkProviders: () => Map<number, ethers.JsonRpcProvider> = getContext('networkProviders');
+	let getWsManager: () => WsProviderManager | null = getContext('wsManager');
 	let getProvidersReady: () => boolean = getContext('providersReady');
 
 	let signer = $derived(getSigner());
@@ -430,6 +433,9 @@
 	});
 
 	let refreshInterval: ReturnType<typeof setInterval> | null = null;
+	let _wsSubs: EventSubscription[] = [];
+	let _wsRefreshDebounce: ReturnType<typeof setTimeout> | null = null;
+	let _wsBalanceDebounce: ReturnType<typeof setTimeout> | null = null;
 
 	// Chain map for URL-based lookup
 	const CHAIN_MAP: Record<string, number> = { bsc: 56, eth: 1, base: 8453, arbitrum: 42161, polygon: 137 };
@@ -636,19 +642,60 @@
 		}
 	});
 
-	// Auto-refresh every 15s for active launches
+	// WS event-driven refresh for active launches, with polling fallback
 	$effect(() => {
-		if (launch && launch.state === 1) {
+		if (!launch || launch.state !== 1) return;
+		const ws = getWsManager();
+		const chainId = network?.chain_id ?? targetChainId;
+
+		// Clean up previous subscriptions
+		for (const s of _wsSubs) s.unsubscribe();
+		_wsSubs = [];
+
+		if (ws) {
+			const TOKEN_BOUGHT_TOPIC = ethers.id('TokenBought(address,uint256,uint256,uint256)');
+			const STATE_TOPICS = [
+				ethers.id('Graduated(address,uint256,address,uint256)'),
+				ethers.id('RefundingEnabled(uint256,uint256)'),
+			];
+
+			const buySub = ws.subscribeLogs(chainId, {
+				address: launchAddress,
+				topics: [TOKEN_BOUGHT_TOPIC],
+			}, () => {
+				if (_wsRefreshDebounce) clearTimeout(_wsRefreshDebounce);
+				_wsRefreshDebounce = setTimeout(() => { _wsRefreshDebounce = null; refreshData(); refreshLatestTransactions(); }, 500);
+			});
+			_wsSubs.push(buySub);
+
+			for (const topic of STATE_TOPICS) {
+				const sub = ws.subscribeLogs(chainId, {
+					address: launchAddress,
+					topics: [topic],
+				}, () => { refreshData(); });
+				_wsSubs.push(sub);
+			}
+
+			// Slow safety-net poll with WS active
+			refreshInterval = setInterval(refreshData, 120_000);
+		} else {
 			refreshInterval = setInterval(refreshData, 15000);
 		}
+
 		return () => {
-			if (refreshInterval) clearInterval(refreshInterval);
+			if (refreshInterval) { clearInterval(refreshInterval); refreshInterval = null; }
+			for (const s of _wsSubs) s.unsubscribe();
+			_wsSubs = [];
 		};
 	});
 
 	onDestroy(() => {
 		if (refreshInterval) clearInterval(refreshInterval);
 		if (_swapEstimateTimeout) clearTimeout(_swapEstimateTimeout);
+		if (_wsRefreshDebounce) clearTimeout(_wsRefreshDebounce);
+		if (_wsBalanceDebounce) clearTimeout(_wsBalanceDebounce);
+		for (const s of _wsSubs) s.unsubscribe();
+		_wsSubs = [];
 		stopBalancePolling();
 	});
 
@@ -797,22 +844,42 @@
 		}
 	}
 
+	let _depositWsSub: EventSubscription | null = null;
+
 	function startBalancePolling() {
 		stopBalancePolling();
-		balanceCheckInterval = setInterval(async () => {
+		const ws = getWsManager();
+		const chainId = network?.chain_id ?? targetChainId;
+
+		const checkAndResolve = async () => {
 			const sufficient = await checkPaymentBalance();
 			if (sufficient && showDepositModal) {
 				stopBalancePolling();
 				showDepositModal = false;
 				addFeedback({ message: 'Deposit detected! You can now proceed.', type: 'success' });
 			}
-		}, 5000);
+		};
+
+		if (ws && userAddress) {
+			_depositWsSub = ws.subscribeLogs(chainId, transferFilter(userAddress), () => {
+				if (_wsBalanceDebounce) clearTimeout(_wsBalanceDebounce);
+				_wsBalanceDebounce = setTimeout(() => { _wsBalanceDebounce = null; checkAndResolve(); }, 500);
+			});
+			// Slow fallback poll
+			balanceCheckInterval = setInterval(checkAndResolve, 30_000);
+		} else {
+			balanceCheckInterval = setInterval(checkAndResolve, 5000);
+		}
 	}
 
 	function stopBalancePolling() {
 		if (balanceCheckInterval) {
 			clearInterval(balanceCheckInterval);
 			balanceCheckInterval = null;
+		}
+		if (_depositWsSub) {
+			_depositWsSub.unsubscribe();
+			_depositWsSub = null;
 		}
 	}
 
@@ -1353,11 +1420,13 @@
 		await refreshLatestTransactions();
 	}
 
-	// Start activity feed polling when launch is active
+	// Activity feed: WS events already trigger refreshLatestTransactions via launch sub.
+	// Keep a slow fallback poll for safety.
 	$effect(() => {
+		const ws = getWsManager();
 		if (launch && launch.state === 1) {
 			loadTransactions();
-			txRefreshInterval = setInterval(refreshLatestTransactions, 15000);
+			txRefreshInterval = setInterval(refreshLatestTransactions, ws ? 120_000 : 15000);
 		} else {
 			loadTransactions();
 		}

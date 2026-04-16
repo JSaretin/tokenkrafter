@@ -5,6 +5,8 @@
 	import { getContext, onDestroy } from 'svelte';
 	import { page } from '$app/state';
 	import type { SupportedNetwork, PaymentOption } from '$lib/structure';
+	import type { WsProviderManager, EventSubscription } from '$lib/wsProvider';
+	import { transferFilter } from '$lib/wsProvider';
 	import { FACTORY_ABI, PLATFORM_ROUTER_ABI, ROUTER_ABI, ERC20_ABI, ZERO_ADDRESS } from '$lib/tokenCrafter';
 	import { LAUNCHPAD_FACTORY_ABI, LAUNCH_INSTANCE_ABI, CURVE_TYPES, type CurveType } from '$lib/launchpad';
 	import { apiFetch } from '$lib/apiFetch';
@@ -358,6 +360,7 @@
 	let connectWallet: () => Promise<boolean> = getContext('connectWallet');
 	const addFeedback = getContext<(f: { message: string; type: string }) => void>('addFeedback');
 	let getNetworkProviders: () => Map<number, ethers.JsonRpcProvider> = getContext('networkProviders');
+	let getWsManager: () => WsProviderManager | null = getContext('wsManager');
 	let getProvidersReady: () => boolean = getContext('providersReady');
 	let getPaymentOptions: (network: SupportedNetwork) => PaymentOption[] = getContext('getPaymentOptions');
 
@@ -777,22 +780,46 @@
 		return userBalance >= selectedFee;
 	}
 
+	let _createDepositSub: EventSubscription | null = null;
+	let _createDepositDebounce: ReturnType<typeof setTimeout> | null = null;
+
 	function startBalancePolling() {
 		stopBalancePolling();
-		balanceCheckInterval = setInterval(async () => {
+		const ws = getWsManager();
+		const chainId = tokenInfo?.network?.chain_id;
+
+		const checkAndResolve = async () => {
 			const sufficient = await checkBalance();
 			if (sufficient && step === 'waiting-deposit') {
 				stopBalancePolling();
 				addFeedback({ message: 'Deposit detected! Proceeding...', type: 'success' });
 				proceedAfterBalance();
 			}
-		}, 5000);
+		};
+
+		if (ws && userAddress && chainId) {
+			_createDepositSub = ws.subscribeLogs(chainId, transferFilter(userAddress), () => {
+				if (_createDepositDebounce) clearTimeout(_createDepositDebounce);
+				_createDepositDebounce = setTimeout(() => { _createDepositDebounce = null; checkAndResolve(); }, 500);
+			});
+			balanceCheckInterval = setInterval(checkAndResolve, 30_000);
+		} else {
+			balanceCheckInterval = setInterval(checkAndResolve, 5000);
+		}
 	}
 
 	function stopBalancePolling() {
 		if (balanceCheckInterval) {
 			clearInterval(balanceCheckInterval);
 			balanceCheckInterval = null;
+		}
+		if (_createDepositSub) {
+			_createDepositSub.unsubscribe();
+			_createDepositSub = null;
+		}
+		if (_createDepositDebounce) {
+			clearTimeout(_createDepositDebounce);
+			_createDepositDebounce = null;
 		}
 	}
 

@@ -1,0 +1,6 @@
+node_modules/
+dist/
+daemon-state.json
+ws-indexer.db
+activity-bot-state.json
+*.log

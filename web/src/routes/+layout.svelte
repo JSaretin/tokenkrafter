@@ -14,8 +14,9 @@
 	import { initApiFetch } from '$lib/apiFetch';
 	import WalletModal from '$lib/WalletModal.svelte';
 	import AccountPanel from '$lib/AccountPanel.svelte';
-	import { getSigner as getEmbeddedSigner, signOut, lockWallet, getWalletState, checkAuthReturn, hasVault, autoReconnect, onWalletStateChange } from '$lib/embeddedWallet';
-	import { startBalancePoller, stopBalancePoller, updatePollerAddress, balanceState, refreshBalancesNow } from '$lib/balancePoller';
+	import { getSigner as getEmbeddedSigner, signOut, lockWallet, getWalletState, checkAuthReturn, hasVault, autoReconnect, onWalletStateChange, pushPreferences } from '$lib/embeddedWallet';
+	import { startBalancePoller, stopBalancePoller, updatePollerAddress, balanceState, refreshBalancesNow, setWsManager, onTokenDiscovered } from '$lib/balancePoller';
+	import { createWsProviderManager, type WsProviderManager } from '$lib/wsProvider';
 	import { ROUTER_ABI_LITE } from '$lib/commonABIs';
 
 	let { children, data }: { children: any; data: any } = $props();
@@ -39,6 +40,7 @@
 
 	// Network providers initialized in background
 	let networkProviders: Map<number, ethers.JsonRpcProvider> = $state(new Map());
+	let wsManager: WsProviderManager | null = $state(null);
 	let providersReady = $state(false);
 
 	function getPaymentOptions(network: SupportedNetwork): PaymentOption[] {
@@ -220,7 +222,7 @@
 					provider = null; // no BrowserProvider for embedded wallet
 				}
 				// Start background balance polling
-				startBalancePoller(rpcProvider, address, net.chain_id);
+				startBalancePoller(rpcProvider, address, net.chain_id, 30_000, wsManager);
 			}
 		}
 	}
@@ -233,6 +235,13 @@
 			map.set(n.chain_id, p);
 		}
 		networkProviders = map;
+		if (wsManager) wsManager.close();
+		wsManager = createWsProviderManager(supportedNetworks, map);
+		setWsManager(wsManager);
+		onTokenDiscovered((token) => {
+			addFeedback({ message: `New token received: ${token.symbol}`, type: 'info' });
+			pushPreferences();
+		});
 		providersReady = true;
 	}
 
@@ -539,6 +548,7 @@
 			unsubWalletState();
 			unsubBalance();
 			supabase.removeChannel(configChannel);
+			wsManager?.close();
 		};
 	});
 
@@ -556,6 +566,7 @@
 	setContext('connectWallet', connectWallet);
 	setContext('supportedNetworks', () => supportedNetworks);
 	setContext('networkProviders', () => networkProviders);
+	setContext('wsManager', () => wsManager);
 	setContext('providersReady', () => providersReady);
 	setContext('getPaymentOptions', getPaymentOptions);
 
@@ -979,6 +990,7 @@
 	usdtAddress={supportedNetworks[0]?.usdt_address || ''}
 	usdcAddress={supportedNetworks[0]?.usdc_address || ''}
 	chainId={supportedNetworks[0]?.chain_id || 56}
+	{wsManager}
 	tokens={[]}
 	onDisconnect={disconnectWallet}
 	onAddFeedback={addFeedback}

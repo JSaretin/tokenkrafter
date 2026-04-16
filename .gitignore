@@ -5,7 +5,7 @@ node_modules
 .vercel
 .netlify
 .wrangler
-/.svelte-kit
+.svelte-kit
 /build
 
 # OS
@@ -16,7 +16,6 @@ Thumbs.db
 .env
 .env.*
 !.env.example
-!.env.test
 
 # Vite
 vite.config.js.timestamp-*
@@ -27,6 +26,14 @@ vite.config.ts.timestamp-*
 solidty-contracts/artifacts
 solidty-contracts/cache
 solidty-contracts/typechain-types
+
+# Build outputs
+daemons/dist/
+payment-server/dist/
+
+# Runtime state (changes every daemon poll)
+daemons/daemon-state.json
+
+# Misc
 strategy/
-daemon-state.json
 .claude/

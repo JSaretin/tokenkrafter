@@ -4,6 +4,7 @@
 	import { page } from '$app/state';
 	import { supabase } from '$lib/supabaseClient';
 	import type { SupportedNetwork } from '$lib/structure';
+	import type { WsProviderManager, EventSubscription } from '$lib/wsProvider';
 
 	let { data: serverData }: { data: any } = $props();
 	import { ERC20_ABI, ZERO_ADDRESS } from '$lib/tokenCrafter';
@@ -25,6 +26,7 @@
 	let _getNetworks: () => SupportedNetwork[] = getContext('supportedNetworks');
 	let supportedNetworks = $derived(_getNetworks());
 	let getNetworkProviders: () => Map<number, ethers.JsonRpcProvider> = getContext('networkProviders');
+	let getWsManager: () => WsProviderManager | null = getContext('wsManager');
 
 	let signer = $derived(getSigner());
 	let userAddress = $derived(getUserAddress());
@@ -499,11 +501,37 @@
 		}
 	}
 
-	// Refresh prices every 15 seconds
+	// Refresh prices: WS-driven on Swap/Sync events, with polling fallback
+	let _tradeSubs: EventSubscription[] = [];
+	let _tradeDebounce: ReturnType<typeof setTimeout> | null = null;
+
 	$effect(() => {
 		if (!selectedNetwork?.dex_router) return;
-		const interval = setInterval(refreshPrices, 15000);
-		return () => clearInterval(interval);
+		const ws = getWsManager();
+		const chainId = selectedNetwork.chain_id;
+		let interval: ReturnType<typeof setInterval>;
+
+		for (const s of _tradeSubs) s.unsubscribe();
+		_tradeSubs = [];
+
+		if (ws) {
+			const SYNC_TOPIC = ethers.id('Sync(uint112,uint112)');
+			const sub = ws.subscribeLogs(chainId, { topics: [SYNC_TOPIC] }, () => {
+				if (_tradeDebounce) clearTimeout(_tradeDebounce);
+				_tradeDebounce = setTimeout(() => { _tradeDebounce = null; refreshPrices(); }, 1000);
+			});
+			_tradeSubs.push(sub);
+			interval = setInterval(refreshPrices, 120_000);
+		} else {
+			interval = setInterval(refreshPrices, 15000);
+		}
+
+		return () => {
+			clearInterval(interval);
+			if (_tradeDebounce) { clearTimeout(_tradeDebounce); _tradeDebounce = null; }
+			for (const s of _tradeSubs) s.unsubscribe();
+			_tradeSubs = [];
+		};
 	});
 
 	async function handleUrlParams() {

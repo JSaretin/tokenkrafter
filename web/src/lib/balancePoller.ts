@@ -1,10 +1,17 @@
 /**
- * Background balance poller for embedded wallet users.
- * Polls native balance + all imported token balances using batch calls.
+ * Background balance updater for embedded wallet users.
+ * Prefers WebSocket event subscriptions (Transfer events) for instant updates.
+ * Falls back to interval polling when WS is unavailable.
+ *
+ * Auto-discovers unknown tokens: when a Transfer event arrives from a contract
+ * not in the imported list, we fetch its metadata and auto-import it.
  * Pauses when tab is hidden, resumes when visible.
  */
 import { writable, get } from 'svelte/store';
 import { ethers } from 'ethers';
+import type { WsProviderManager, EventSubscription } from './wsProvider';
+import { transferFilter, transferFromFilter } from './wsProvider';
+import { resolveTokenLogo } from './tokenLogo';
 
 export interface TokenBalance {
 	address: string;
@@ -27,13 +34,11 @@ export const balanceState = writable<BalanceState>({
 	lastUpdated: 0,
 });
 
-// ERC-20 multicall ABI fragment
 const MULTICALL_ABI = [
 	'function aggregate(tuple(address target, bytes callData)[] calls) view returns (uint256 blockNumber, bytes[] returnData)',
 ];
-const BALANCE_OF_SIG = '0x70a08231'; // balanceOf(address)
+const BALANCE_OF_SIG = '0x70a08231';
 
-// BSC multicall3 address (same on most EVM chains)
 const MULTICALL_ADDRESSES: Record<number, string> = {
 	56: '0xcA11bde05977b3631167028862bE2a173976CA11',
 	1: '0xcA11bde05977b3631167028862bE2a173976CA11',
@@ -44,14 +49,19 @@ const MULTICALL_ADDRESSES: Record<number, string> = {
 
 let _interval: ReturnType<typeof setInterval> | null = null;
 let _provider: ethers.JsonRpcProvider | null = null;
+let _wsManager: WsProviderManager | null = null;
+let _wsSubs: EventSubscription[] = [];
 let _userAddress: string = '';
 let _chainId: number = 56;
 let _pollIntervalMs: number = 30_000;
 let _visibilityHandler: (() => void) | null = null;
 let _started = false;
-let _generation = 0; // incremented on address change to discard stale results
+let _generation = 0;
+let _useWs = false;
+let _debounceTimer: ReturnType<typeof setTimeout> | null = null;
+let _pendingDiscovery = new Set<string>();
+let _onTokenDiscovered: ((token: { address: string; symbol: string; name: string; decimals: number; logoUrl?: string }) => void) | null = null;
 
-/** Get imported tokens from localStorage */
 function getImportedTokens(): { address: string; symbol: string; name: string; decimals: number; logoUrl?: string }[] {
 	try {
 		const saved = localStorage.getItem('imported_tokens');
@@ -60,7 +70,6 @@ function getImportedTokens(): { address: string; symbol: string; name: string; d
 	return [];
 }
 
-/** Fetch all balances in one batch via multicall */
 async function fetchBalances(): Promise<void> {
 	if (!_provider || !_userAddress) return;
 
@@ -71,13 +80,11 @@ async function fetchBalances(): Promise<void> {
 	const multicallAddr = MULTICALL_ADDRESSES[_chainId];
 
 	try {
-		// Always fetch native balance
 		const nativeBal = await _provider.getBalance(addr);
 
 		let tokenBalances: TokenBalance[] = [];
 
 		if (imported.length > 0 && multicallAddr) {
-			// Use multicall for token balances
 			const calls = imported.map(t => ({
 				target: t.address,
 				callData: BALANCE_OF_SIG + paddedAddr.slice(2),
@@ -105,15 +112,12 @@ async function fetchBalances(): Promise<void> {
 					};
 				});
 			} catch {
-				// Multicall failed — fall back to individual calls
 				tokenBalances = await fetchBalancesIndividual(imported);
 			}
 		} else if (imported.length > 0) {
-			// No multicall on this chain — individual calls
 			tokenBalances = await fetchBalancesIndividual(imported);
 		}
 
-		// Discard if address changed while fetching
 		if (gen !== _generation) return;
 
 		balanceState.set({
@@ -121,9 +125,7 @@ async function fetchBalances(): Promise<void> {
 			tokens: tokenBalances,
 			lastUpdated: Date.now(),
 		});
-	} catch {
-		// Silent fail — will retry on next poll
-	}
+	} catch {}
 }
 
 async function fetchBalancesIndividual(
@@ -141,11 +143,94 @@ async function fetchBalancesIndividual(
 	return results;
 }
 
+function debouncedFetch() {
+	if (_debounceTimer) clearTimeout(_debounceTimer);
+	_debounceTimer = setTimeout(() => {
+		_debounceTimer = null;
+		fetchBalances();
+	}, 500);
+}
+
+async function handleTransferLog(log: ethers.Log) {
+	const tokenAddr = log.address.toLowerCase();
+
+	const imported = getImportedTokens();
+	if (imported.some(t => t.address.toLowerCase() === tokenAddr)) {
+		debouncedFetch();
+		return;
+	}
+
+	if (_pendingDiscovery.has(tokenAddr)) return;
+	_pendingDiscovery.add(tokenAddr);
+
+	try {
+		if (!_provider) return;
+		const c = new ethers.Contract(tokenAddr, [
+			'function name() view returns (string)',
+			'function symbol() view returns (string)',
+			'function decimals() view returns (uint8)',
+		], _provider);
+
+		const [name, symbol, decimals] = await Promise.all([
+			c.name().catch(() => ''),
+			c.symbol().catch(() => ''),
+			c.decimals().catch(() => 0),
+		]);
+
+		if (!symbol) return;
+
+		const logoUrl = await resolveTokenLogo(tokenAddr, _chainId).catch(() => '');
+		const token = { address: tokenAddr, symbol, name: name || symbol, decimals: Number(decimals), logoUrl };
+
+		const current = getImportedTokens();
+		if (current.some(t => t.address.toLowerCase() === tokenAddr)) return;
+		current.push(token);
+		try { localStorage.setItem('imported_tokens', JSON.stringify(current)); } catch {}
+
+		_onTokenDiscovered?.(token);
+	} catch {} finally {
+		_pendingDiscovery.delete(tokenAddr);
+	}
+
+	debouncedFetch();
+}
+
+function subscribeWs() {
+	unsubscribeWs();
+	if (!_wsManager || !_userAddress) return;
+
+	const incomingSub = _wsManager.subscribeLogs(
+		_chainId,
+		transferFilter(_userAddress),
+		(log) => handleTransferLog(log),
+	);
+	_wsSubs.push(incomingSub);
+
+	const outgoingSub = _wsManager.subscribeLogs(
+		_chainId,
+		transferFromFilter(_userAddress),
+		() => debouncedFetch(),
+	);
+	_wsSubs.push(outgoingSub);
+
+	_useWs = true;
+}
+
+function unsubscribeWs() {
+	for (const sub of _wsSubs) sub.unsubscribe();
+	_wsSubs = [];
+	_useWs = false;
+}
+
 function startInterval() {
 	stopInterval();
-	// Fetch immediately
 	fetchBalances();
-	_interval = setInterval(fetchBalances, _pollIntervalMs);
+	if (_useWs) {
+		// WS active: use a slow safety-net poll (2 min) instead of 30s
+		_interval = setInterval(fetchBalances, 120_000);
+	} else {
+		_interval = setInterval(fetchBalances, _pollIntervalMs);
+	}
 }
 
 function stopInterval() {
@@ -163,15 +248,12 @@ function handleVisibility() {
 	}
 }
 
-/**
- * Start polling balances for an embedded wallet user.
- * Call once when wallet connects.
- */
 export function startBalancePoller(
 	provider: ethers.JsonRpcProvider,
 	userAddress: string,
 	chainId: number = 56,
 	intervalMs: number = 30_000,
+	wsManager?: WsProviderManager | null,
 ): void {
 	_provider = provider;
 	_userAddress = userAddress;
@@ -179,39 +261,67 @@ export function startBalancePoller(
 	_generation++;
 	_pollIntervalMs = intervalMs;
 	_started = true;
+	_wsManager = wsManager ?? _wsManager;
 
-	// Listen for tab visibility
 	if (!_visibilityHandler) {
 		_visibilityHandler = handleVisibility;
 		document.addEventListener('visibilitychange', _visibilityHandler);
 	}
 
+	if (_wsManager) {
+		subscribeWs();
+	}
+
 	startInterval();
 }
 
-/** Stop polling. Call on disconnect. */
 export function stopBalancePoller(): void {
 	_started = false;
 	stopInterval();
+	unsubscribeWs();
 
 	if (_visibilityHandler) {
 		document.removeEventListener('visibilitychange', _visibilityHandler);
 		_visibilityHandler = null;
 	}
 
+	if (_debounceTimer) {
+		clearTimeout(_debounceTimer);
+		_debounceTimer = null;
+	}
+
 	balanceState.set({ nativeBalance: 0n, tokens: [], lastUpdated: 0 });
 }
 
-/** Force an immediate refresh (e.g. after a transaction) */
 export function refreshBalancesNow(): void {
 	if (_started) fetchBalances();
 }
 
-/** Update the user address (e.g. on account switch) */
 export function updatePollerAddress(address: string): void {
 	_userAddress = address;
 	_generation++;
-	// Clear stale balances immediately
 	balanceState.set({ nativeBalance: 0n, tokens: [], lastUpdated: 0 });
-	if (_started) fetchBalances();
+	if (_started) {
+		if (_wsManager) subscribeWs();
+		fetchBalances();
+	}
+}
+
+export function setWsManager(wsManager: WsProviderManager | null): void {
+	_wsManager = wsManager;
+	if (_started && wsManager) {
+		subscribeWs();
+		stopInterval();
+		startInterval();
+	} else if (_started && !wsManager) {
+		unsubscribeWs();
+		stopInterval();
+		startInterval();
+	}
+}
+
+export function onTokenDiscovered(
+	cb: ((token: { address: string; symbol: string; name: string; decimals: number; logoUrl?: string }) => void) | null,
+): void {
+	_onTokenDiscovered = cb;
 }

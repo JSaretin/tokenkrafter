@@ -22,6 +22,8 @@
 	import WalletSwitcher from './WalletSwitcher.svelte';
 	import { getKnownLogo, resolveTokenLogo } from './tokenLogo';
 	import { balanceState } from './balancePoller';
+	import type { WsProviderManager, EventSubscription } from './wsProvider';
+	import { transferFilter, transferFromFilter } from './wsProvider';
 	import { queryTradeLens } from './tradeLens';
 	import { friendlyError } from './errorDecoder';
 	import QrCode from './QrCode.svelte';
@@ -46,6 +48,7 @@
 		onAddFeedback = (_: { message: string; type: string }) => {},
 		onAccountSwitch = (_addr: string) => {},
 		onRefreshBalance = () => {},
+		wsManager = null as WsProviderManager | null,
 	}: {
 		open: boolean;
 		userAddress: string;
@@ -65,6 +68,7 @@
 		onAddFeedback: (f: { message: string; type: string }) => void;
 		onAccountSwitch: (addr: string) => void;
 		onRefreshBalance: () => void;
+		wsManager?: WsProviderManager | null;
 	} = $props();
 
 	// ── Reactive wallet state (re-renders on account switch, add, etc.) ──
@@ -592,12 +596,41 @@
 		}
 	});
 
-	// Auto-refresh portfolio every 10s when panel is open (pause when switcher is open)
+	// WS-driven portfolio refresh when panel is open, with polling fallback
+	let _panelSubs: EventSubscription[] = [];
+	let _panelDebounce: ReturnType<typeof setTimeout> | null = null;
+
 	$effect(() => {
 		if (!open || !userAddress || !dexRouter || showSwitcher) return;
 		refreshTokenBalances();
-		const interval = setInterval(refreshTokenBalances, 10000);
-		return () => clearInterval(interval);
+
+		for (const s of _panelSubs) s.unsubscribe();
+		_panelSubs = [];
+
+		let interval: ReturnType<typeof setInterval>;
+
+		if (wsManager) {
+			const inSub = wsManager.subscribeLogs(chainId, transferFilter(userAddress), () => {
+				if (_panelDebounce) clearTimeout(_panelDebounce);
+				_panelDebounce = setTimeout(() => { _panelDebounce = null; refreshTokenBalances(); }, 500);
+			});
+			_panelSubs.push(inSub);
+			const outSub = wsManager.subscribeLogs(chainId, transferFromFilter(userAddress), () => {
+				if (_panelDebounce) clearTimeout(_panelDebounce);
+				_panelDebounce = setTimeout(() => { _panelDebounce = null; refreshTokenBalances(); }, 500);
+			});
+			_panelSubs.push(outSub);
+			interval = setInterval(refreshTokenBalances, 120_000);
+		} else {
+			interval = setInterval(refreshTokenBalances, 10000);
+		}
+
+		return () => {
+			clearInterval(interval);
+			if (_panelDebounce) { clearTimeout(_panelDebounce); _panelDebounce = null; }
+			for (const s of _panelSubs) s.unsubscribe();
+			_panelSubs = [];
+		};
 	});
 
 	async function handleImportToken() {
