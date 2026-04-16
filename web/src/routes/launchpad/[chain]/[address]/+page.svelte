@@ -1799,11 +1799,10 @@
 		{/if}
 
 		<div class="page-grid">
-			<!-- Left: Token-focused content -->
-			<div class="left-col">
-				<!-- About / Inline Editor — hidden for non-creators when there's nothing to show -->
+			<!-- About — own grid item so mobile can place it between buy and tokenomics -->
+			<div class="about-col">
 				{#if isEditing || metadata.description || metadata.video_url || isCreator}
-				<div class="card p-6 mb-4">
+				<div class="card p-6">
 					{#if isEditing}
 						<!-- Inline edit mode -->
 						<div class="flex justify-between items-center mb-4">
@@ -1895,7 +1894,10 @@
 					{/if}
 				</div>
 				{/if}
+			</div>
 
+			<!-- Left: Tokenomics, Curve, Discussion -->
+			<div class="left-col">
 				<!-- Tokenomics -->
 				<div class="card p-6 mb-4">
 					<h3 class="syne font-bold text-white mb-4">{$t('lpd.tokenomics')}</h3>
@@ -2080,11 +2082,13 @@
 									<div class="activity-card">
 										<div class="activity-card-top">
 											<span class="activity-addr">{isSelf ? 'You' : shortAddr(tx.buyer)}</span>
-											<span class="activity-amount">{isWhale ? '🐋 ' : ''}${usdtVal < 0.01 ? '<0.01' : usdtVal.toFixed(2)}</span>
-										</div>
-										<div class="activity-card-bottom">
-											<span class="activity-tokens">{tokVal > 1000000 ? (tokVal / 1000000).toFixed(1) + 'M' : tokVal > 1000 ? (tokVal / 1000).toFixed(1) + 'K' : tokVal.toFixed(0)} {tokenMeta.symbol}</span>
 											<span class="activity-time">{relativeTime(tx.created_at)}</span>
+										</div>
+										<div class="activity-card-hero">
+											{isWhale ? '🐋 ' : ''}<span class="activity-tok-num">{tokVal > 1000000 ? (tokVal / 1000000).toFixed(1) + 'M' : tokVal > 1000 ? (tokVal / 1000).toFixed(1) + 'K' : tokVal.toFixed(0)}</span> <span class="activity-tok-sym">{tokenMeta.symbol}</span>
+										</div>
+										<div class="activity-card-sub">
+											<span class="activity-spent">${usdtVal < 0.01 ? '<0.01' : usdtVal.toFixed(2)}</span>
 										</div>
 									</div>
 								</div>
@@ -2875,14 +2879,22 @@
 		grid-template-columns: 1fr;
 		gap: 24px;
 	}
+	/* Mobile: Buy first, then About, then rest */
 	@media (max-width: 1023px) {
-		.right-col { order: -1; }
+		.right-col { order: -2; }
+		.about-col { order: -1; }
+		.left-col { order: 0; }
 	}
 	@media (min-width: 1024px) {
 		.page-grid {
 			grid-template-columns: 1fr 400px;
+			grid-template-rows: auto 1fr;
 			align-items: start;
 		}
+		/* About spans left column, above tokenomics */
+		.about-col { grid-column: 1; }
+		.left-col { grid-column: 1; }
+		.right-col { grid-column: 2; grid-row: 1 / -1; }
 		.right-col {
 			position: sticky;
 			top: 80px;
@@ -3437,12 +3449,12 @@
 	}
 	.activity-stat { display: flex; flex-direction: column; align-items: center; gap: 1px; }
 	.activity-stat-val {
-		font-family: 'Syne', sans-serif; font-size: 15px; font-weight: 800;
+		font-family: 'Syne', sans-serif; font-size: 16px; font-weight: 800;
 		color: var(--text-heading);
 	}
 	.activity-stat-label {
-		font-family: 'Space Mono', monospace; font-size: 9px;
-		color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em;
+		font-family: 'Rajdhani', sans-serif; font-size: 10px;
+		color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.03em;
 	}
 	.activity-stat-divider { width: 1px; height: 24px; background: var(--border-subtle); }
 
@@ -3476,36 +3488,42 @@
 	.activity-latest .activity-line { background: rgba(0,210,255,0.2); }
 
 	.activity-card {
-		flex: 1; min-width: 0; padding-bottom: 10px;
+		flex: 1; min-width: 0; padding-bottom: 12px;
 	}
 	.activity-card-top {
 		display: flex; align-items: center; justify-content: space-between;
-		gap: 8px;
+		gap: 8px; margin-bottom: 2px;
 	}
 	.activity-addr {
-		font-family: 'Space Mono', monospace; font-size: 11px;
+		font-family: 'Rajdhani', sans-serif; font-size: 12px;
 		color: var(--text-muted); font-weight: 600;
 	}
-	.activity-self .activity-addr { color: #00d2ff; }
+	.activity-self .activity-addr { color: #00d2ff; font-weight: 700; }
 	.activity-latest .activity-addr { color: var(--text-heading); }
-
-	.activity-amount {
-		font-family: 'Syne', sans-serif; font-size: 13px;
-		font-weight: 800; color: #10b981; white-space: nowrap;
-	}
-	.activity-whale .activity-amount { color: #f59e0b; font-size: 14px; }
-
-	.activity-card-bottom {
-		display: flex; align-items: center; justify-content: space-between;
-		gap: 8px; margin-top: 2px;
-	}
-	.activity-tokens {
-		font-family: 'Space Mono', monospace; font-size: 10px;
-		color: var(--text-dim);
-	}
 	.activity-time {
-		font-family: 'Space Mono', monospace; font-size: 9px;
+		font-family: 'Rajdhani', sans-serif; font-size: 11px;
 		color: var(--text-dim); white-space: nowrap;
+	}
+
+	/* Token amount — the hero number */
+	.activity-card-hero {
+		font-family: 'Syne', sans-serif; font-size: 16px;
+		font-weight: 800; color: var(--text-heading);
+		line-height: 1.2;
+	}
+	.activity-tok-num { color: var(--text-heading); }
+	.activity-tok-sym {
+		font-size: 11px; font-weight: 600;
+		color: var(--text-muted); margin-left: 2px;
+	}
+	.activity-whale .activity-tok-num { color: #f59e0b; }
+	.activity-latest .activity-tok-num { color: #00d2ff; }
+
+	/* USDT spent — secondary */
+	.activity-card-sub { margin-top: 1px; }
+	.activity-spent {
+		font-family: 'Rajdhani', sans-serif; font-size: 12px;
+		color: var(--text-dim);
 	}
 	.load-more-btn {
 		display: block;
