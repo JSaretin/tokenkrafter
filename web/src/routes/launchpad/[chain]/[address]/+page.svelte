@@ -2011,6 +2011,9 @@
 						currentPrice={launch.currentPrice}
 						softCap={launch.softCap}
 						hardCap={launch.hardCap}
+						totalBaseRaised={launch.totalBaseRaised}
+						{userBasePaid}
+						{userTokensBought}
 						tokenDecimals={tokenMeta.decimals}
 						usdtDecimals={ud}
 					/>

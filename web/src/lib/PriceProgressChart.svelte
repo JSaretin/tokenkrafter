@@ -8,9 +8,12 @@
 		currentPrice = 0n,
 		softCap = 0n,
 		hardCap = 0n,
+		totalBaseRaised = 0n,
+		userBasePaid = 0n,
+		userTokensBought = 0n,
 		tokenDecimals = 18,
 		usdtDecimals = 18,
-		height = '160px'
+		height = '180px'
 	}: {
 		curveType?: number;
 		tokensForCurve?: bigint;
@@ -18,6 +21,9 @@
 		currentPrice?: bigint;
 		softCap?: bigint;
 		hardCap?: bigint;
+		totalBaseRaised?: bigint;
+		userBasePaid?: bigint;
+		userTokensBought?: bigint;
 		tokenDecimals?: number;
 		usdtDecimals?: number;
 		height?: string;
@@ -36,7 +42,7 @@
 		}
 	}
 
-	function formatNum(val: bigint, decimals: number): string {
+	function fmtNum(val: bigint, decimals: number): string {
 		const num = Number(val) / (10 ** decimals);
 		if (num >= 1e9) return (num / 1e9).toFixed(1) + 'B';
 		if (num >= 1e6) return (num / 1e6).toFixed(1) + 'M';
@@ -46,33 +52,61 @@
 		return num.toFixed(6);
 	}
 
+	function fmtUsd(val: number): string {
+		if (val >= 1e6) return '$' + (val / 1e6).toFixed(1) + 'M';
+		if (val >= 1e3) return '$' + (val / 1e3).toFixed(1) + 'K';
+		if (val >= 1) return '$' + val.toFixed(2);
+		if (val >= 0.01) return '$' + val.toFixed(4);
+		if (val >= 0.0001) return '$' + val.toFixed(6);
+		return '$' + val.toFixed(8);
+	}
+
 	let chartOption = $derived.by(() => {
 		const totalTokens = Number(tokensForCurve) / (10 ** tokenDecimals);
 		const sold = Number(tokensSold) / (10 ** tokenDecimals);
 		const progressFrac = tokensForCurve > 0n ? Math.max(0, Math.min(1, Number(tokensSold) / Number(tokensForCurve))) : 0;
-		const maxY = curveFn(1, curveType);
+		const maxCurveY = curveFn(1, curveType);
+		const curPriceNum = Number(currentPrice) / (10 ** usdtDecimals);
+		const hardCapNum = Number(hardCap) / (10 ** usdtDecimals);
 
-		// Auto-scale Y axis so the curve detail is visible at low progress
-		const peekAhead = Math.min(1, progressFrac + 0.3);
-		const peekY = (curveFn(peekAhead, curveType) / maxY) * 100;
-		const yMax = progressFrac < 0.5 ? Math.max(15, Math.ceil(peekY / 5) * 5) : 100;
+		// Compute max price from the curve endpoint and current price
+		const maxPrice = curPriceNum > 0 && progressFrac > 0
+			? curPriceNum / (curveFn(progressFrac, curveType) / maxCurveY)
+			: hardCapNum / totalTokens * 2;
 
-		// Full curve data — X = tokens sold, Y = price level (normalized 0-100%)
+		// Auto-scale Y axis
+		const peekFrac = Math.min(1, progressFrac + 0.3);
+		const peekPrice = maxPrice * (curveFn(peekFrac, curveType) / maxCurveY);
+		const yMaxPrice = progressFrac < 0.5
+			? Math.max(curPriceNum * 3, peekPrice * 1.3)
+			: maxPrice * 1.05;
+
+		// Price curve data (Y = actual USDT price)
 		const curveData: [number, number][] = [];
 		for (let i = 0; i <= STEPS; i++) {
 			const x = i / STEPS;
-			curveData.push([x * totalTokens, (curveFn(x, curveType) / maxY) * 100]);
+			const price = maxPrice * (curveFn(x, curveType) / maxCurveY);
+			curveData.push([x * totalTokens, price]);
 		}
 
-		// Filled area up to progress
+		// Filled area up to current progress
 		const fillData: [number, number][] = [];
 		const fillSteps = Math.max(1, Math.round(progressFrac * STEPS));
 		for (let i = 0; i <= fillSteps; i++) {
 			const x = i / STEPS;
-			fillData.push([x * totalTokens, (curveFn(x, curveType) / maxY) * 100]);
+			const price = maxPrice * (curveFn(x, curveType) / maxCurveY);
+			fillData.push([x * totalTokens, price]);
 		}
 
-		const markerY = (curveFn(progressFrac, curveType) / maxY) * 100;
+		// User's average price
+		const userAvgPrice = userTokensBought > 0n
+			? Number(userBasePaid) / Number(userTokensBought)
+			: 0;
+
+		// Soft cap position on the curve
+		const scFrac = hardCap > 0n ? Math.min(1, Number(softCap) / Number(hardCap)) : 0;
+		const scTokens = scFrac * totalTokens;
+		const scPrice = maxPrice * (curveFn(scFrac, curveType) / maxCurveY);
 
 		return {
 			tooltip: {
@@ -83,15 +117,15 @@
 					const p = arr.find((a: any) => a.seriesIndex === 1) || arr[0];
 					if (!p?.data) return '';
 					const tokens = p.data[0];
-					const pricePct = p.data[1];
+					const price = p.data[1];
 					return `<div style="font-family:Rajdhani,sans-serif">
 						<div style="font-weight:700;margin-bottom:4px">${CURVE_LABELS[curveType]} Curve</div>
-						<div>Tokens: <b>${formatNum(BigInt(Math.round(tokens * (10 ** tokenDecimals))), tokenDecimals)}</b></div>
-						<div>Price level: <b>${pricePct.toFixed(1)}%</b></div>
+						<div>Tokens: <b>${fmtNum(BigInt(Math.round(tokens * (10 ** tokenDecimals))), tokenDecimals)}</b></div>
+						<div>Price: <b>${fmtUsd(price)}</b></div>
 					</div>`;
 				},
 			},
-			grid: { top: 30, right: 8, bottom: 32, left: 38 },
+			grid: { top: 30, right: 8, bottom: 32, left: 50 },
 			xAxis: {
 				type: 'value',
 				name: 'Tokens Sold',
@@ -101,22 +135,24 @@
 				min: 0,
 				max: totalTokens,
 				axisLabel: {
-					fontSize: 9,
-					color: '#94a3b8',
-					formatter: (v: number) => formatNum(BigInt(Math.round(v * (10 ** tokenDecimals))), tokenDecimals),
+					fontSize: 9, color: '#94a3b8',
+					formatter: (v: number) => fmtNum(BigInt(Math.round(v * (10 ** tokenDecimals))), tokenDecimals),
 				},
 				axisLine: { lineStyle: { color: 'rgba(255,255,255,0.1)' } },
 				splitLine: { show: false },
 			},
 			yAxis: {
 				type: 'value',
-				name: 'Price',
+				name: 'Price (USDT)',
 				nameLocation: 'center',
-				nameGap: 36,
+				nameGap: 42,
 				nameTextStyle: { fontSize: 10, color: '#94a3b8' },
 				min: 0,
-				max: yMax,
-				axisLabel: { formatter: '{value}%', fontSize: 9, color: '#94a3b8' },
+				max: yMaxPrice,
+				axisLabel: {
+					fontSize: 9, color: '#94a3b8',
+					formatter: (v: number) => fmtUsd(v),
+				},
 				axisLine: { lineStyle: { color: 'rgba(255,255,255,0.1)' } },
 				splitLine: { lineStyle: { color: 'rgba(255,255,255,0.05)' } },
 			},
@@ -132,15 +168,14 @@
 						color: {
 							type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
 							colorStops: [
-								{ offset: 0, color: 'rgba(16,185,129,0.3)' },
+								{ offset: 0, color: 'rgba(16,185,129,0.25)' },
 								{ offset: 1, color: 'rgba(16,185,129,0.02)' },
 							],
 						},
 					},
 					z: 1,
-					_fixed: true,
 				},
-				// Full curve line
+				// Full curve line (dimmed)
 				{
 					type: 'line',
 					data: curveData,
@@ -148,19 +183,14 @@
 					symbol: 'none',
 					lineStyle: {
 						width: 2,
-						color: {
-							type: 'linear', x: 0, y: 0, x2: 1, y2: 0,
-							colorStops: [
-								{ offset: 0, color: '#10b981' },
-								{ offset: 1, color: '#00d2ff' },
-							],
+						color: { type: 'linear', x: 0, y: 0, x2: 1, y2: 0,
+							colorStops: [{ offset: 0, color: '#10b981' }, { offset: 1, color: '#00d2ff' }],
 						},
-						opacity: 0.4,
+						opacity: 0.35,
 					},
 					z: 2,
-					_fixed: true,
 				},
-				// Active segment (thicker)
+				// Active curve segment (bright)
 				...(progressFrac > 0 ? [{
 					type: 'line',
 					data: fillData,
@@ -168,62 +198,66 @@
 					symbol: 'none',
 					lineStyle: {
 						width: 2.5,
-						color: {
-							type: 'linear', x: 0, y: 0, x2: 1, y2: 0,
-							colorStops: [
-								{ offset: 0, color: '#10b981' },
-								{ offset: 1, color: '#00d2ff' },
-							],
+						color: { type: 'linear', x: 0, y: 0, x2: 1, y2: 0,
+							colorStops: [{ offset: 0, color: '#10b981' }, { offset: 1, color: '#00d2ff' }],
 						},
 					},
 					z: 3,
-					_fixed: true,
 				}] : []),
-				// Soft cap marker (orange dot on the curve)
-				...(softCap > 0n && hardCap > 0n ? (() => {
-					const scFrac = Math.min(1, Number(softCap) / Number(hardCap));
-					const scY = (curveFn(scFrac, curveType) / maxY) * 100;
-					const scTokens = scFrac * totalTokens;
-					return [{
-						type: 'scatter',
-						data: [[scTokens, scY]],
-						symbolSize: 8,
-						itemStyle: { color: '#f59e0b', borderColor: '#fff', borderWidth: 1.5 },
-						tooltip: {
-							trigger: 'item',
-							formatter: () => `<div style="font-family:Rajdhani,sans-serif">
-								<div style="font-weight:700;color:#f59e0b">Soft Cap</div>
-								<div>${formatNum(softCap, usdtDecimals)} USDT</div>
-								<div>${(scFrac * 100).toFixed(0)}% of hard cap</div>
-							</div>`,
-						},
-						z: 3,
-						_fixed: true,
-					}];
-				})() : []),
-			// Current position marker
-				...(progressFrac > 0 ? [{
+				// Soft cap marker
+				...(scFrac > 0 && scFrac < 1 ? [{
 					type: 'scatter',
-					data: [[sold, markerY]],
-					symbolSize: 12,
-					itemStyle: {
-						color: '#10b981',
-						borderColor: '#fff',
-						borderWidth: 2,
-						shadowColor: 'rgba(16,185,129,0.5)',
-						shadowBlur: 8,
-					},
+					data: [[scTokens, scPrice]],
+					symbolSize: 8,
+					itemStyle: { color: '#f59e0b', borderColor: '#fff', borderWidth: 1.5 },
 					tooltip: {
-						trigger: 'item',
+						trigger: 'item' as const,
 						formatter: () => `<div style="font-family:Rajdhani,sans-serif">
-							<div style="font-weight:700">Current Position</div>
-							<div>Sold: <b>${formatNum(tokensSold, tokenDecimals)}</b> / ${formatNum(tokensForCurve, tokenDecimals)}</div>
-							<div>Progress: <b>${(progressFrac * 100).toFixed(1)}%</b></div>
-							<div>Price level: <b>${markerY.toFixed(1)}%</b></div>
+							<div style="font-weight:700;color:#f59e0b">Soft Cap</div>
+							<div>${fmtUsd(Number(softCap) / (10 ** usdtDecimals))}</div>
 						</div>`,
 					},
 					z: 4,
-					_fixed: true,
+				}] : []),
+				// Current position marker
+				...(progressFrac > 0 ? [{
+					type: 'scatter',
+					data: [[sold, curPriceNum]],
+					symbolSize: 12,
+					itemStyle: {
+						color: '#10b981', borderColor: '#fff', borderWidth: 2,
+						shadowColor: 'rgba(16,185,129,0.5)', shadowBlur: 8,
+					},
+					tooltip: {
+						trigger: 'item' as const,
+						formatter: () => `<div style="font-family:Rajdhani,sans-serif">
+							<div style="font-weight:700">Current Price</div>
+							<div>${fmtUsd(curPriceNum)}</div>
+							<div>Sold: ${fmtNum(tokensSold, tokenDecimals)} tokens</div>
+						</div>`,
+					},
+					z: 5,
+				}] : []),
+				// User average price marker
+				...(userAvgPrice > 0 ? [{
+					type: 'scatter',
+					data: [[sold, userAvgPrice]],
+					symbolSize: 10,
+					symbol: 'diamond',
+					itemStyle: {
+						color: '#a78bfa', borderColor: '#fff', borderWidth: 1.5,
+						shadowColor: 'rgba(139,92,246,0.5)', shadowBlur: 6,
+					},
+					tooltip: {
+						trigger: 'item' as const,
+						formatter: () => `<div style="font-family:Rajdhani,sans-serif">
+							<div style="font-weight:700;color:#a78bfa">Your Avg Price</div>
+							<div>${fmtUsd(userAvgPrice)}</div>
+							<div>Spent: ${fmtUsd(Number(userBasePaid) / (10 ** usdtDecimals))}</div>
+							<div>Tokens: ${fmtNum(userTokensBought, tokenDecimals)}</div>
+						</div>`,
+					},
+					z: 6,
 				}] : []),
 			],
 			graphic: [{

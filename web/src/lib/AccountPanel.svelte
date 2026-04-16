@@ -1322,7 +1322,7 @@
 								{#if nativeUsd > 0}<span class="ap-picker-usd">{fmtUsd(nativeUsd)}</span>{/if}
 							</div>
 						</button>
-						{#each sortedTokens as tok}
+						{#each [...pinnedStables, ...sortedTokens] as tok}
 							{@const logo = getTokenLogo(tok)}
 							<button class="ap-picker-item" class:active={sendAsset.toLowerCase() === tok.address?.toLowerCase()} onclick={() => { sendAsset = tok.address; showAssetPicker = false; }}>
 								{#if logo}
