@@ -665,7 +665,7 @@
 	.token-card:hover { border-color: rgba(0,210,255,0.15); box-shadow: 0 4px 20px rgba(0,0,0,0.15); }
 
 	/* Badges row */
-	.tc-badges-row { display: flex; gap: 4px; align-items: center; justify-content: flex-end; overflow: hidden; white-space: nowrap; max-height: 22px; }
+	.tc-badges-row { display: flex; gap: 4px; align-items: center; justify-content: flex-end; flex-wrap: wrap; }
 	.tc-badge-new { background: rgba(16,185,129,0.15); color: #10b981; }
 	.tc-badge-safu { background: rgba(16,185,129,0.2); color: #10b981; font-weight: 800; border: 1px solid rgba(16,185,129,0.3); }
 	.tc-badge-live-launch { background: rgba(0,210,255,0.12); color: #00d2ff; border: 1px solid rgba(0,210,255,0.25); font-weight: 700; }
