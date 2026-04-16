@@ -286,6 +286,12 @@ async function processWithdrawal(withdrawId: number): Promise<boolean> {
 
 		if (data.success) {
 			console.log(`[OK] Withdrawal #${withdrawId} processed: NGN ${data.ngn_amount}, tx: ${data.confirm_tx}`);
+			await sendAlert('Payment Processed', [
+				`✅ Withdrawal #${withdrawId}`,
+				`💰 $${data.usdt_amount || '?'} → NGN ${Number(data.ngn_amount || 0).toLocaleString()}`,
+				`🏦 ${data.bank_name || '?'} — ${data.account_name || '?'}`,
+				data.confirm_tx ? `🔗 tx: ${data.confirm_tx}` : '',
+			].filter(Boolean).join('\n'));
 			await clearAlert(`alert:low_flw:${withdrawId}`);
 			await redis.del(key);
 			return true;
