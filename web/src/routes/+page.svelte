@@ -746,6 +746,45 @@
 		</div>
 	</section>
 
+	<!-- AFFILIATE CTA — dedicated banner for the referral program -->
+	<section class="mb-10">
+		<div class="affiliate-banner card p-6 sm:p-8">
+			<div class="cta-inner">
+				<div class="cta-text">
+					<div class="flex items-center gap-2 mb-2">
+						<span class="affiliate-icon-sm">
+							<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+						</span>
+						<span class="syne text-xs font-bold text-emerald-400 uppercase tracking-wider">Affiliate Program</span>
+					</div>
+					<h2 class="syne text-xl sm:text-2xl font-bold text-white mb-2">Earn 25% of all platform fees. For life.</h2>
+					<p class="text-gray-400 font-mono text-sm mb-2">Share your link. Earn on every action your referrals take — no cap, no expiry. Paid in USDT.</p>
+					<div class="affiliate-streams">
+						<span class="affiliate-stream">
+							<span class="affiliate-stream-pct">25%</span>
+							Token Creation Fees
+						</span>
+						<span class="affiliate-stream-sep">·</span>
+						<span class="affiliate-stream">
+							<span class="affiliate-stream-pct">25%</span>
+							Launch Buy Fees
+						</span>
+						<span class="affiliate-stream-sep">·</span>
+						<span class="affiliate-stream">
+							<span class="affiliate-stream-pct">25%</span>
+							Off-Ramp Fees
+						</span>
+					</div>
+				</div>
+				<div class="cta-actions">
+					<a href="/affiliate" class="btn-affiliate text-sm px-6 py-3 no-underline font-bold">
+						Start Earning →
+					</a>
+				</div>
+			</div>
+		</div>
+	</section>
+
 	<!-- BOTTOM CTA — Specific, with pricing, for users who scrolled through everything -->
 	<section class="mb-10">
 		<div class="cta-banner card p-6 sm:p-8">
@@ -1220,6 +1259,39 @@
 	.feature-card:hover { border-color: rgba(0,210,255,0.15); }
 	.feature-name { font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700; color: var(--text-heading); margin: 0; }
 	.feature-desc { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text-dim); line-height: 1.6; margin: 0; }
+
+	/* ── Affiliate Banner ── */
+	.affiliate-banner {
+		background: rgba(16, 185, 129, 0.03);
+		border-color: rgba(16, 185, 129, 0.15);
+	}
+	.affiliate-icon-sm {
+		display: flex; align-items: center; justify-content: center;
+		color: #10b981;
+	}
+	.affiliate-streams {
+		display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+		margin-top: 8px;
+	}
+	.affiliate-stream {
+		font-family: 'Space Mono', monospace; font-size: 11px; color: var(--text-dim);
+	}
+	.affiliate-stream-pct {
+		font-weight: 700; color: #10b981;
+	}
+	.affiliate-stream-sep {
+		color: var(--text-dim); font-size: 11px;
+	}
+	.btn-affiliate {
+		background: linear-gradient(135deg, #10b981, #059669);
+		color: white; font-family: 'Syne', sans-serif;
+		border-radius: 10px; border: none; cursor: pointer;
+		transition: all 0.2s;
+	}
+	.btn-affiliate:hover {
+		transform: translateY(-1px);
+		box-shadow: 0 6px 28px rgba(16, 185, 129, 0.35);
+	}
 
 	/* ── CTA Banner ── */
 	.cta-banner {

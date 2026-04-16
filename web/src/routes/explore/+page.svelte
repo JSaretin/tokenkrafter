@@ -683,7 +683,7 @@
 	.badge-tip-content {
 		display: none; position: absolute; bottom: calc(100% + 10px); left: 50%;
 		transform: translateX(-50%); z-index: 50; pointer-events: none;
-		background: #1e293b; border: 1px solid #334155;
+		background: var(--bg, #1e293b); border: 1px solid var(--border, #334155);
 		border-radius: 10px; padding: 12px 16px; min-width: 200px;
 		box-shadow: 0 12px 40px rgba(0,0,0,0.5);
 		flex-direction: column; gap: 0;
@@ -691,16 +691,16 @@
 	}
 	.badge-tip-content::after {
 		content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
-		border: 6px solid transparent; border-top-color: #334155;
+		border: 6px solid transparent; border-top-color: var(--border, #334155);
 	}
 	.btp-title {
 		font-family: 'Syne', sans-serif; font-size: 12px; font-weight: 700;
-		color: #fff; margin-bottom: 8px; padding-bottom: 6px;
-		border-bottom: 1px solid rgba(255,255,255,0.08);
+		color: var(--text-heading); margin-bottom: 8px; padding-bottom: 6px;
+		border-bottom: 1px solid var(--divider);
 	}
 	.btp-row {
 		display: flex; align-items: flex-start; gap: 6px; padding: 3px 0;
-		font-family: 'Space Mono', monospace; font-size: 10px; color: #94a3b8;
+		font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text-muted);
 		line-height: 1.4;
 	}
 	.btp-check { color: #10b981; flex-shrink: 0; font-size: 11px; }
@@ -709,17 +709,9 @@
 		display: flex; justify-content: space-between; padding: 3px 0;
 		font-family: 'Space Mono', monospace; font-size: 10px;
 	}
-	.btp-kv span:first-child { color: #64748b; }
-	.btp-kv span:last-child { color: #e2e8f0; font-weight: 600; }
+	.btp-kv span:first-child { color: var(--text-dim); }
+	.btp-kv span:last-child { color: var(--text); font-weight: 600; }
 	.badge-tip:hover .badge-tip-content { display: flex; }
-	:global(.light) .badge-tip-content {
-		background: #fff; border-color: #e2e8f0; box-shadow: 0 12px 40px rgba(0,0,0,0.12);
-	}
-	:global(.light) .badge-tip-content::after { border-top-color: #e2e8f0; }
-	:global(.light) .btp-title { color: #0f172a; border-bottom-color: rgba(0,0,0,0.08); }
-	:global(.light) .btp-row { color: #475569; }
-	:global(.light) .btp-kv span:first-child { color: #94a3b8; }
-	:global(.light) .btp-kv span:last-child { color: #1e293b; }
 	.tc-badge-lp { background: rgba(59,130,246,0.12); color: #60a5fa; }
 	.tc-badge-renounced { background: rgba(16,185,129,0.12); color: #34d399; }
 	.tc-badge-locked { background: rgba(139,92,246,0.12); color: #a78bfa; }
