@@ -2,7 +2,7 @@
 # Rebuild daemons + payment server and ship to VPS, then restart services.
 #
 # Services:
-#   tk-ws-indexer  — WS event subscriber + safety-net poller (replaces tk-indexer)
+#   tk-ws-indexer  — WS event subscriber + safety-net poller
 #   tk-activity    — activity bot
 #   tk-rates       — fiat rate updater
 #   tk-safu        — SAFU bulk sweep
@@ -61,12 +61,6 @@ $SCP "$DAEMONS/dist/rate-updater.mjs" "${VPS_USER}@${VPS_HOST}:~/rate-updater.mj
 $SCP "$DAEMONS/dist/tk-safu.mjs" "${VPS_USER}@${VPS_HOST}:~/tk-safu.mjs"
 $SCP "$PAYMENT/dist/tk-payment.mjs" "${VPS_USER}@${VPS_HOST}:~/tk-payment.mjs"
 $SCP "$PAYMENT/dist/tk-processor.mjs" "${VPS_USER}@${VPS_HOST}:~/tk-processor.mjs"
-
-echo
-echo "═══════════════════════════════════════════════"
-echo "  Stopping retired tk-indexer (replaced by ws-indexer)..."
-echo "═══════════════════════════════════════════════"
-$SSH "systemctl stop tk-indexer 2>/dev/null; systemctl disable tk-indexer 2>/dev/null || true"
 
 echo
 echo "═══════════════════════════════════════════════"

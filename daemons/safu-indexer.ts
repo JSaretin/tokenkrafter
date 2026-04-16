@@ -6,7 +6,7 @@
  * DB. The explore page reads these columns for instant SQL filtering
  * and sorting — no client-side RPC needed for the list view.
  *
- * Separate from the main chain-indexer because the sweep is O(N) over
+ * Separate from the ws-indexer because the sweep is O(N) over
  * all tokens and can take minutes at scale. The main indexer stays fast
  * for real-time event capture (token creations, buys, withdrawals).
  *

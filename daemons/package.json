@@ -5,8 +5,7 @@
   "type": "module",
   "scripts": {
     "ws-indexer": "bun run ws-indexer.ts",
-    "chain-indexer": "bun run chain-indexer.ts",
-    "safu-indexer": "bun run safu-indexer.ts",
+"safu-indexer": "bun run safu-indexer.ts",
     "activity-bot": "bun run activity-bot.ts",
     "rate-updater": "bun run rate-updater.ts"
   },
