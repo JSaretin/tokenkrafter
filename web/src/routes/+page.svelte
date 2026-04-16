@@ -110,6 +110,18 @@
 		return `${pad(h)}:${pad(m)}:${pad(s)}`;
 	}
 
+	function countdownParts(ts: number): { d: number; h: number; m: number; s: number; ended: boolean } {
+		const ms = ts * 1000 - tickNow;
+		if (ms <= 0) return { d: 0, h: 0, m: 0, s: 0, ended: true };
+		return {
+			d: Math.floor(ms / 86400000),
+			h: Math.floor((ms % 86400000) / 3600000),
+			m: Math.floor((ms % 3600000) / 60000),
+			s: Math.floor((ms % 60000) / 1000),
+			ended: false,
+		};
+	}
+
 	function countdownColor(deadline: number): string {
 		const ms = deadline * 1000 - tickNow;
 		if (ms <= 0) return 'text-gray-500';
@@ -320,21 +332,16 @@
 					{@const deadline = Number(launch.deadline || 0)}
 					{@const hot = isHot(launch)}
 					<a href="/launchpad/{chainSlug(launch.chain_id)}/{launch.address}" class="launch-card card p-0 block no-underline group">
-						<!-- Countdown banner -->
-						{#if deadline > 0}
-							<div class="card-countdown {countdownColor(deadline)}">
-								<span class="font-mono text-xs font-bold">{countdownStr(deadline)}</span>
-								<div class="flex items-center gap-1.5">
-									{#if isNew(launch)}
-										<span class="new-badge">NEW</span>
-									{/if}
-									{#if hot}
-										<span class="hot-badge">HOT</span>
-									{/if}
-								</div>
+						<!-- Header: badges -->
+						{#if isNew(launch) || hot || launch.is_partner}
+							<div class="hp-card-badges">
+								{#if isNew(launch)}<span class="new-badge">NEW</span>{/if}
+								{#if hot}<span class="hot-badge">HOT</span>{/if}
+								{#if launch.is_partner}<span class="launch-trust-badge launch-trust-partner">Partner</span>{/if}
 							</div>
 						{/if}
 
+						<!-- Identity -->
 						<div class="p-4 pb-3">
 							<div class="flex items-start gap-3">
 								{#if launch.logo_url}
@@ -347,21 +354,11 @@
 								<div class="flex-1 min-w-0">
 									<div class="flex items-center gap-2 mb-0.5">
 										<span class="syne font-bold text-white text-sm group-hover:text-cyan-300 transition truncate">{launch.token_name || 'Unknown'}</span>
-										{#if launch.is_partner}
-											<span class="partner-verified" title="Partner">✓</span>
-										{/if}
 										<span class="text-gray-600 text-xs font-mono shrink-0">{launch.token_symbol || '???'}</span>
 									</div>
 									<div class="flex items-center gap-1.5 flex-wrap">
 										<span class="live-dot"></span>
 										<span class="text-xs font-mono text-cyan-400">Active</span>
-										{#if launch.is_partner}
-											<span class="launch-trust-badge launch-trust-partner">Partner</span>
-										{/if}
-										<!-- TODO: SAFU badge needs a join from created_tokens; buyer_count needs aggregation from purchases -->
-										{#if launch.buyer_count != null}
-											<span class="launch-trust-badge launch-trust-buyers">{launch.buyer_count} buyers</span>
-										{/if}
 										<span class="text-gray-600 text-[10px] font-mono ml-auto" title="Bonding curve: {CURVE_TYPES[launch.curve_type] ?? 'Linear'}">{CURVE_TYPES[launch.curve_type] ?? 'Linear'}</span>
 									</div>
 								</div>
@@ -374,16 +371,33 @@
 							</div>
 						{/if}
 
-						<div class="px-4 pb-4">
-							<div class="flex justify-between items-baseline mb-1.5">
-								<span class="text-white text-xs font-mono font-semibold">{progress}% {$t('home.raised')}</span>
+						<!-- Countdown grid -->
+						{#if deadline > 0}
+							{@const cd = countdownParts(deadline)}
+							{#if !cd.ended}
+								<div class="hp-cd-section">
+									<span class="hp-cd-label {countdownColor(deadline)}">Sale ends in</span>
+									<div class="hp-cd-grid">
+										<div class="hp-cd-box"><span class="hp-cd-num">{String(cd.d).padStart(2, '0')}</span><span class="hp-cd-unit">Days</span></div>
+										<div class="hp-cd-box"><span class="hp-cd-num">{String(cd.h).padStart(2, '0')}</span><span class="hp-cd-unit">Hrs</span></div>
+										<div class="hp-cd-box"><span class="hp-cd-num">{String(cd.m).padStart(2, '0')}</span><span class="hp-cd-unit">Min</span></div>
+										<div class="hp-cd-box"><span class="hp-cd-num">{String(cd.s).padStart(2, '0')}</span><span class="hp-cd-unit">Sec</span></div>
+									</div>
+								</div>
+							{/if}
+						{/if}
+
+						<!-- Progress -->
+						<div class="hp-progress-section">
+							<div class="flex justify-between items-baseline mb-2">
+								<span class="text-white text-xs font-mono font-semibold">Raised {progress}%</span>
 								<span class="text-gray-500 text-[10px] font-mono">{formatUsdt(hardCap, ud)}</span>
 							</div>
-							<div class="progress-track">
+							<div class="progress-track hp-progress-track">
 								<div class="progress-fill progress-cyan" style="width: {progress}%"></div>
 							</div>
 							<div class="flex justify-between mt-1.5">
-								<span class="text-gray-600 text-[10px] font-mono">{formatUsdt(raised, ud)} {$t('home.raised')}</span>
+								<span class="text-gray-600 text-[10px] font-mono">{formatUsdt(raised, ud)} / {formatUsdt(hardCap, ud)}</span>
 							</div>
 						</div>
 					</a>
@@ -900,13 +914,44 @@
 		border-color: rgba(0, 210, 255, 0.2);
 	}
 
-	.card-countdown {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		padding: 6px 16px;
-		background: var(--bg-surface-hover);
+	/* Badge bar at top of card */
+	.hp-card-badges {
+		display: flex; align-items: center; gap: 4px; padding: 6px 12px;
 		border-bottom: 1px solid var(--border-subtle);
+	}
+
+	/* Countdown grid on home cards */
+	.hp-cd-section { padding: 0 16px 10px; }
+	.hp-cd-label {
+		display: block; text-align: center; margin-bottom: 6px;
+		font-family: 'Space Mono', monospace; font-size: 9px;
+		text-transform: uppercase; letter-spacing: 0.06em;
+	}
+	.hp-cd-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+	.hp-cd-box {
+		display: flex; flex-direction: column; align-items: center; gap: 2px;
+		padding: 6px 2px; border-radius: 8px;
+		background: linear-gradient(135deg, rgba(0, 210, 255, 0.06), rgba(139, 92, 246, 0.06));
+		border: 1px solid rgba(0, 210, 255, 0.1);
+	}
+	.hp-cd-num {
+		font-family: 'Space Mono', monospace; font-size: 16px; font-weight: 700;
+		color: var(--text-heading); line-height: 1;
+	}
+	.hp-cd-unit {
+		font-family: 'Space Mono', monospace; font-size: 7px;
+		text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-dim);
+	}
+
+	/* Progress section on home cards */
+	.hp-progress-section {
+		padding: 10px 16px 16px;
+		border-top: 1px solid var(--border-subtle);
+	}
+	.hp-progress-track {
+		height: 12px !important;
+		border-radius: 6px !important;
+		border: 1px solid var(--border-subtle) !important;
 	}
 
 	.hot-badge, .new-badge {
