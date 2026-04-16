@@ -116,6 +116,66 @@ export const load: PageServerLoad = async ({ params, setHeaders }) => {
 					};
 				}));
 
+				// Compute on-chain price from pool reserves.
+				// Priority: USDT pool → USDC pool → WBNB pool (via WBNB/USDT).
+				let onChainPriceUsd = 0;
+				const tokenDec = tokenInfo?.decimals ?? 18;
+
+				// Find WBNB price in USDT for indirect pricing
+				let wbnbPriceUsdt = 0;
+				if (weth && net.usdt_address) {
+					try {
+						const wbnbUsdtPool = rawPools.find((p: any) =>
+							p.base?.toLowerCase() === net.usdt_address.toLowerCase() &&
+							p.hasLiquidity
+						);
+						// If there's a direct WBNB/USDT pool in the result, great.
+						// Otherwise query the DEX factory for the pair.
+						if (!wbnbUsdtPool) {
+							const dexFactoryAbi = ['function getPair(address,address) view returns (address)'];
+							const pairAbi = ['function getReserves() view returns (uint112,uint112,uint32)', 'function token0() view returns (address)'];
+							const dexFactory = new ethers.Contract(
+								await new ethers.Contract(net.dex_router, ['function factory() view returns (address)'], provider).factory(),
+								dexFactoryAbi, provider
+							);
+							const wbnbUsdtPair = await dexFactory.getPair(weth, net.usdt_address);
+							if (wbnbUsdtPair && wbnbUsdtPair !== ethers.ZeroAddress) {
+								const pair = new ethers.Contract(wbnbUsdtPair, pairAbi, provider);
+								const [r0, r1] = await pair.getReserves();
+								const t0 = await pair.token0();
+								const [rWbnb, rUsdt] = t0.toLowerCase() === weth.toLowerCase() ? [r0, r1] : [r1, r0];
+								if (rWbnb > 0n) {
+									wbnbPriceUsdt = Number(rUsdt) / Number(rWbnb);
+								}
+							}
+						}
+					} catch {}
+				}
+
+				for (const p of rawPools) {
+					if (!p.hasLiquidity || !p.reserveToken || p.reserveToken === 0n) continue;
+					const baseAddr = p.base?.toLowerCase() || '';
+					const rToken = Number(p.reserveToken);
+					const rBase = Number(p.reserveBase);
+					if (rToken <= 0 || rBase <= 0) continue;
+
+					const rawPrice = rBase / rToken;
+
+					if (baseAddr === net.usdt_address?.toLowerCase()) {
+						// Direct USDT price — best source
+						onChainPriceUsd = rawPrice;
+						break;
+					}
+					if (net.usdc_address && baseAddr === net.usdc_address.toLowerCase()) {
+						onChainPriceUsd = rawPrice;
+						break;
+					}
+					if (weth && baseAddr === weth.toLowerCase() && wbnbPriceUsdt > 0) {
+						onChainPriceUsd = rawPrice * wbnbPriceUsdt;
+						// Don't break — a USDT/USDC pool may follow
+					}
+				}
+
 				return {
 					tokenInfo: tokenInfo ? {
 						name: tokenInfo.name,
@@ -126,6 +186,7 @@ export const load: PageServerLoad = async ({ params, setHeaders }) => {
 					} : null,
 					pools,
 					taxInfo: result.taxInfo || null,
+					onChainPriceUsd,
 				};
 			} catch (e) {
 				console.warn('TradeLensV2 failed:', (e as any)?.message?.slice(0, 80));

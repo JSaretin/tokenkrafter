@@ -7,8 +7,9 @@
 
 	const { tokenAddress, chain: chainInfo, dbData, lensData } = data;
 
-	// TradeLensV2 data from SSR (on-chain: token info + pools + tax)
+	// TradeLensV2 data from SSR (on-chain: token info + pools + tax + price)
 	const onChainData = lensData?.tokenInfo || null;
+	const ssrPriceUsd: number = lensData?.onChainPriceUsd || 0;
 	let pools: any[] = $state(lensData?.pools || []);
 	const ssrTaxInfo = lensData?.taxInfo || null;
 	let copied = $state(false);
@@ -36,14 +37,17 @@
 	let activePools = $derived(pools.filter((p: any) => p.has_liquidity));
 	let allBurned = $derived(pools.length > 0 && pools.every((p: any) => p.lp_burned && p.lp_burned_pct >= 9900));
 
-	// ── GeckoTerminal market data (client-side fetch) ──
+	// ── Market data: on-chain price (SSR) + GeckoTerminal (volume/24h change) ──
 	const GECKO_NETS: Record<number, string> = { 56: 'bsc', 1: 'eth', 8453: 'base', 42161: 'arbitrum', 137: 'polygon_pos' };
-	let price = $state(0);
+	let price = $state(ssrPriceUsd);
+	let geckoPrice = $state(0);
 	let volume24h = $state(0);
 	let priceChange24h = $state(0);
 	let geckoLoading = $state(true);
 
-	let mcap = $derived(price > 0 ? price * parseFloat(ethers.formatUnits(totalSupply, tokenDecimals)) : 0);
+	// Prefer on-chain price; fall back to Gecko if on-chain is unavailable
+	let effectivePrice = $derived(price > 0 ? price : geckoPrice);
+	let mcap = $derived(effectivePrice > 0 ? effectivePrice * parseFloat(ethers.formatUnits(totalSupply, tokenDecimals)) : 0);
 
 	function fmtPrice(v: number): string {
 		if (v === 0) return '—';
@@ -105,7 +109,7 @@
 					const json = await res.json();
 					const a = json?.data?.attributes;
 					if (a) {
-						price = parseFloat(a.price_usd || '0');
+						geckoPrice = parseFloat(a.price_usd || '0');
 						volume24h = parseFloat(a.volume_usd?.h24 || '0');
 						priceChange24h = parseFloat(a.price_change_percentage?.h24 || '0');
 					}
@@ -298,10 +302,10 @@
 		</div>
 
 		<div class="hero-right">
-			<!-- Price display (from GeckoTerminal) -->
-			{#if price > 0}
+			<!-- Price display (on-chain primary, Gecko fallback) -->
+			{#if effectivePrice > 0}
 				<div class="hero-price">
-					<span class="hero-price-val">{fmtPrice(price)}</span>
+					<span class="hero-price-val">{fmtPrice(effectivePrice)}</span>
 					{#if priceChange24h !== 0}
 						<span class="hero-price-change" class:up={priceChange24h > 0} class:down={priceChange24h < 0}>
 							{priceChange24h > 0 ? '+' : ''}{priceChange24h.toFixed(1)}%
@@ -345,17 +349,19 @@
 
 	<!-- Stats strip — price/mcap/volume replace Decimals -->
 	<div class="stats-strip">
-		{#if price > 0}
+		{#if effectivePrice > 0}
 			<div class="s-cell">
 				<span class="s-label">Market Cap</span>
 				<span class="s-val">{fmtMcap(mcap)}</span>
 			</div>
 			<div class="s-divider"></div>
-			<div class="s-cell">
-				<span class="s-label">Volume 24h</span>
-				<span class="s-val">{fmtVol(volume24h)}</span>
-			</div>
-			<div class="s-divider"></div>
+			{#if volume24h > 0}
+				<div class="s-cell">
+					<span class="s-label">Volume 24h</span>
+					<span class="s-val">{fmtVol(volume24h)}</span>
+				</div>
+				<div class="s-divider"></div>
+			{/if}
 		{/if}
 		<div class="s-cell">
 			<span class="s-label">Supply</span>

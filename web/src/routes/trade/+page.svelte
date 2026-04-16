@@ -157,7 +157,7 @@
 	let bankResolving = $state(false);
 	let bankResolved = $state(false);
 	let bankError = $state('');
-	let ngBanks: { code: string; name: string; slug: string; logo?: string; ussd?: string }[] = $state(serverData?.ngBanks || []);
+	let ngBanks: { code: string; name: string; slug: string; logo?: string; ussd?: string }[] = $derived(serverData?.ngBanks || []);
 	let bankSearchQuery = $state('');
 	let showBankDropdown = $state(false);
 	let showBankModal = $state(false);
