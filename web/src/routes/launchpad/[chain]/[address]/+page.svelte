@@ -2155,19 +2155,6 @@
 							{/if}
 						</div>
 						{#if true}
-						{@const topBuyerAddr = (() => {
-							const totals: Record<string, number> = {};
-							for (const tx of txItems) {
-								const v = parseFloat(ethers.formatUnits(BigInt(tx.base_amount) + BigInt(tx.fee || '0'), usdtDecimals));
-								totals[tx.buyer] = (totals[tx.buyer] || 0) + v;
-							}
-							const entries = Object.entries(totals);
-							if (entries.length < 2) return '';
-							let best = '', bestV = 0;
-							for (const [addr, v] of entries) { if (v > bestV) { best = addr; bestV = v; } }
-							const avg = entries.reduce((s, [, v]) => s + v, 0) / entries.length;
-							return bestV >= avg * 1.5 ? best : '';
-						})()}
 						{@const firstBuyerAddr = txItems.length > 0 ? txItems[txItems.length - 1].buyer : ''}
 						{@const curPriceForCtx = launch ? Number(launch.currentPrice) / (10 ** usdtDecimals) : 0}
 						{@const buyerCounts = txItems.reduce((m, tx) => { m[tx.buyer] = (m[tx.buyer] || 0) + 1; return m; }, {} as Record<string, number>)}
@@ -2177,13 +2164,13 @@
 							{#each txItems as tx, i}
 								{@const usdtVal = parseFloat(ethers.formatUnits(BigInt(tx.base_amount) + BigInt(tx.fee || '0'), usdtDecimals))}
 								{@const tokVal = parseFloat(ethers.formatUnits(BigInt(tx.tokens_received), tokenMeta.decimals))}
-								{@const isWhale = usdtVal >= 100}
+								{@const hardCapVal = Number(launch.hardCap) / (10 ** usdtDecimals)}
+								{@const isWhale = hardCapVal > 0 && (usdtVal / hardCapVal) >= 0.05}
 								{@const isSelf = tx.buyer === userAddress?.toLowerCase()}
 								{@const txTs = typeof tx.created_at === 'number' ? tx.created_at * 1000 : new Date(tx.created_at).getTime()}
 								{@const ageMs = Date.now() - txTs}
 								{@const isLive = ageMs < 300000}
 								{@const fmtTok = tokVal > 1000000 ? (tokVal / 1000000).toFixed(1) + 'M' : tokVal > 1000 ? (tokVal / 1000).toFixed(1) + 'K' : tokVal.toFixed(0)}
-								{@const isTopBuyer = tx.buyer === topBuyerAddr && usdtVal >= 10}
 								{@const isFirstBuyer = tx.buyer === firstBuyerAddr && i === txItems.length - 1}
 								{@const isRepeat = (buyerCounts[tx.buyer] || 0) > 1}
 								{@const txPrice = tokVal > 0 ? usdtVal / tokVal : 0}
@@ -2219,8 +2206,7 @@
 										<div class="activity-card-top">
 											<a href="{network?.explorer_url || ''}/address/{tx.buyer}" target="_blank" rel="noopener noreferrer" class="activity-addr">{isSelf ? 'You' : shortAddr(tx.buyer)}</a>
 											{#if isFirstBuyer}<span class="activity-badge badge-first">🥇 First</span>{/if}
-											{#if isTopBuyer && !isFirstBuyer}<span class="activity-badge badge-top">🔥 Top</span>{/if}
-											{#if isWhale && !isTopBuyer}<span class="activity-badge badge-whale">🐋</span>{/if}
+											{#if isWhale}<span class="activity-badge badge-whale">🐋</span>{/if}
 											{#if isRepeat && !isSelf}<span class="activity-badge badge-repeat">🔁</span>{/if}
 											{#if isLive}
 												<span class="activity-live-badge">just now</span>
