@@ -331,11 +331,22 @@
 		return [...tokens, ...importedTokens, ...pinnedStables].find((t) => t.address?.toLowerCase() === target) || null;
 	});
 
-	let sendAssetInfo = $derived(
-		sendAssetTok
-			? { symbol: sendAssetTok.symbol || '???', decimals: sendAssetTok.decimals ?? 18, balance: sendAssetTok.balance ?? 0n, priceUsd: sendAssetTok.priceUsd || 0 }
-			: { symbol: nativeCoin || 'BNB', decimals: nativeDecimals || 18, balance: nativeBalance || 0n, priceUsd: nativePriceUsd || 0 }
-	);
+	let sendAssetInfo: { symbol: string; decimals: number; balance: bigint; priceUsd: number } = $derived.by(() => {
+		if (sendAssetTok) {
+			return {
+				symbol: sendAssetTok.symbol || '???',
+				decimals: sendAssetTok.decimals ?? 18,
+				balance: sendAssetTok.balance ?? 0n,
+				priceUsd: sendAssetTok.priceUsd || 0,
+			};
+		}
+		return {
+			symbol: nativeCoin || 'BNB',
+			decimals: nativeDecimals || 18,
+			balance: nativeBalance ?? 0n,
+			priceUsd: nativePriceUsd || 0,
+		};
+	});
 
 	// Preview derived values — lifted out of {@const} inside the
 	// {#if sendStep === 'preview'} block because the block's local
@@ -1432,16 +1443,10 @@
 							{:else}
 								<span class="ap-preview-icon-fb">{sendAssetInfo.symbol.charAt(0)}</span>
 							{/if}
-							<button
-								type="button"
-								class="ap-preview-amount"
-								onclick={() => previewCompact = !previewCompact}
-								title={previewCompact ? 'Tap to show full amount' : 'Tap to shrink'}
-								style="--char-count: {(previewCompact ? fmtCompactAmount(sendAmount) : sendAmount).length}"
-							>
-								<span class="ap-preview-num">{previewCompact ? fmtCompactAmount(sendAmount) : sendAmount}</span>
-								<span class="ap-preview-sym">{sendAssetInfo.symbol}</span>
-							</button>
+							<div class="ap-preview-big">
+								<span class="ap-preview-big-num">{sendAmount}</span>
+								<span class="ap-preview-big-sym">{sendAssetInfo.symbol}</span>
+							</div>
 							{#if previewUsd > 0}
 								<div class="ap-preview-usd">≈ {fmtUsd(previewUsd)}</div>
 							{/if}
@@ -1450,15 +1455,14 @@
 						<!-- Transfer flow -->
 						<div class="ap-preview-flow">
 							<div class="ap-preview-addr-card">
-								<span class="ap-preview-addr-label">{$t('account.from')}</span>
+								<span class="ap-preview-addr-label">From</span>
 								<span class="ap-preview-addr-val">{userAddress.slice(0, 6)}…{userAddress.slice(-4)}</span>
 							</div>
 							<div class="ap-preview-arrow">
-								<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" stroke-width="2"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>
+								<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" stroke-width="2.5"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>
 							</div>
 							<div class="ap-preview-addr-card">
-								<span class="ap-preview-addr-label">{$t('account.to')}</span>
-								{#if previewBookLabel}<span class="ap-preview-addr-tag">{previewBookLabel}</span>{/if}
+								<span class="ap-preview-addr-label">To</span>
 								<span class="ap-preview-addr-val">{sendTo.slice(0, 6)}…{sendTo.slice(-4)}</span>
 							</div>
 						</div>
@@ -1466,13 +1470,13 @@
 						<!-- Details card -->
 						<div class="ap-preview-details">
 							<div class="ap-preview-row">
-								<span class="ap-preview-k">{$t('account.asset')}</span>
+								<span class="ap-preview-k">Asset</span>
 								<span class="ap-preview-v">{sendAssetInfo.symbol}</span>
 							</div>
 							<div class="ap-preview-row">
-								<span class="ap-preview-k">{$t('account.networkFee')}</span>
+								<span class="ap-preview-k">Network fee</span>
 								<span class="ap-preview-v">
-									{#if sendFeeLoading}{$t('account.estimating')}
+									{#if sendFeeLoading}estimating...
 									{:else if sendFeeEst}~{sendFeeEst} {nativeCoin}
 									{:else}—{/if}
 								</span>
@@ -1692,17 +1696,27 @@
 		display: flex; flex-direction: column; gap: 16px;
 	}
 	.ap-preview-hero {
-		display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 0;
+		display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 0 4px;
 	}
 	.ap-preview-icon {
-		width: 40px; height: 40px; border-radius: 50%; object-fit: cover;
-		border: 2px solid var(--border); margin-bottom: 4px;
+		width: 44px; height: 44px; border-radius: 50%; object-fit: cover;
+		border: 2px solid var(--border); margin-bottom: 6px;
 	}
 	.ap-preview-icon-fb {
-		width: 40px; height: 40px; border-radius: 50%;
+		width: 44px; height: 44px; border-radius: 50%;
 		display: flex; align-items: center; justify-content: center;
 		background: rgba(0,210,255,0.1); color: #00d2ff; border: 2px solid rgba(0,210,255,0.2);
-		font-family: 'Syne', sans-serif; font-size: 16px; font-weight: 800; margin-bottom: 4px;
+		font-family: 'Syne', sans-serif; font-size: 18px; font-weight: 800; margin-bottom: 6px;
+	}
+	.ap-preview-big {
+		display: flex; align-items: baseline; gap: 8px; justify-content: center;
+	}
+	.ap-preview-big-num {
+		font-family: 'Rajdhani', sans-serif; font-size: 32px; font-weight: 700;
+		color: var(--text-heading); font-variant-numeric: tabular-nums; line-height: 1;
+	}
+	.ap-preview-big-sym {
+		font-family: 'Syne', sans-serif; font-size: 16px; font-weight: 700; color: var(--text-muted);
 	}
 	.ap-preview-flow {
 		display: flex; flex-direction: column; align-items: center; gap: 0;
@@ -1726,11 +1740,6 @@
 	.ap-preview-addr-val {
 		font-family: 'Space Mono', monospace; font-size: 12px; color: var(--text);
 		margin-left: auto;
-	}
-	.ap-preview-addr-tag {
-		display: inline-block; padding: 1px 6px; border-radius: 4px;
-		background: rgba(0,210,255,0.12); color: #00d2ff; font-family: 'Syne', sans-serif;
-		font-size: 9px; font-weight: 700; margin-right: 4px;
 	}
 	.ap-preview-details {
 		display: flex; flex-direction: column; gap: 8px;

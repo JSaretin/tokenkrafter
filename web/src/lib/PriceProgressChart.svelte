@@ -56,6 +56,22 @@
 		}
 	}
 
+	// Find token fraction where cumulative raised = target fraction of hard cap
+	function inverseCurveIntegral(targetFrac: number, type: number): number {
+		if (targetFrac <= 0) return 0;
+		if (targetFrac >= 1) return 1;
+		const totalIntegral = curveIntegral(1, type);
+		const target = targetFrac * totalIntegral;
+		// Binary search
+		let lo = 0, hi = 1;
+		for (let i = 0; i < 50; i++) {
+			const mid = (lo + hi) / 2;
+			if (curveIntegral(mid, type) < target) lo = mid;
+			else hi = mid;
+		}
+		return (lo + hi) / 2;
+	}
+
 	function fmtNum(val: bigint, decimals: number): string {
 		const num = Number(val) / (10 ** decimals);
 		if (num >= 1e9) return (num / 1e9).toFixed(1) + 'B';
@@ -125,10 +141,11 @@
 			? Number(userBasePaid) / Number(userTokensBought)
 			: 0;
 
-		// Soft cap position
-		const scFrac = hardCap > 0n ? Math.min(1, Number(softCap) / Number(hardCap)) : 0;
-		const scTokens = scFrac * totalTokens;
-		const scPrice = maxPrice * (curveFn(scFrac, curveType) / maxCurveY);
+		// Soft cap position — find the token fraction where raised = softCap
+		const scUsdtFrac = hardCap > 0n ? Math.min(1, Number(softCap) / Number(hardCap)) : 0;
+		const scTokenFrac = inverseCurveIntegral(scUsdtFrac, curveType);
+		const scTokens = scTokenFrac * totalTokens;
+		const scPrice = maxPrice * (curveFn(scTokenFrac, curveType) / maxCurveY);
 
 		return {
 			tooltip: {
@@ -270,7 +287,7 @@
 					z: 2,
 				},
 				// Soft cap marker
-				...(scFrac > 0 && scFrac < 1 ? [{
+				...(scUsdtFrac > 0 && scUsdtFrac < 1 ? [{
 					name: 'Soft Cap',
 					type: 'scatter',
 					data: [[scTokens, scPrice]],

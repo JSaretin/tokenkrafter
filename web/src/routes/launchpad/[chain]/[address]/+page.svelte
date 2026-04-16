@@ -2099,6 +2099,12 @@
 					{:else}
 						{@const totalBuyers = new Set(txItems.map(t => t.buyer)).size}
 						{@const totalVol = txItems.reduce((sum, t) => sum + parseFloat(ethers.formatUnits(BigInt(t.base_amount), usdtDecimals)), 0)}
+						{@const recentBuys = txItems.filter(t => {
+							const ts = typeof t.created_at === 'number' ? t.created_at * 1000 : new Date(t.created_at).getTime();
+							return Date.now() - ts < 300000;
+						}).length}
+						{@const remainingUsdt = launch ? launch.hardCap - launch.totalBaseRaised : 0n}
+						{@const remainingUsdtNum = Number(remainingUsdt) / (10 ** usdtDecimals)}
 						<div class="activity-stats">
 							<div class="activity-stat">
 								<span class="activity-stat-val">{txTotal}</span>
@@ -2114,6 +2120,33 @@
 								<span class="activity-stat-val">${totalVol >= 1000 ? (totalVol / 1000).toFixed(1) + 'K' : totalVol.toFixed(0)}</span>
 								<span class="activity-stat-label">volume</span>
 							</div>
+						</div>
+
+						<!-- Momentum + scarcity signals -->
+						<div class="activity-signals">
+							{#if recentBuys > 0}
+								<div class="activity-signal signal-momentum">
+									<span class="signal-pulse"></span>
+									{recentBuys} {recentBuys === 1 ? 'buy' : 'buys'} in the last 5 min
+								</div>
+							{/if}
+							{#if remainingUsdt > 0n && remainingUsdtNum < 500}
+								<div class="activity-signal signal-scarcity">
+									<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+									Only {formatUsdt(remainingUsdt, ud)} left until hard cap
+								</div>
+							{/if}
+							{#if userBasePaid > 0n && launch && launch.currentPrice > 0n}
+								{@const userAvg = Number(userBasePaid) / Number(userTokensBought)}
+								{@const currentP = Number(launch.currentPrice) / (10 ** usdtDecimals)}
+								{#if currentP > userAvg}
+									{@const gain = ((currentP - userAvg) / userAvg * 100)}
+									<div class="activity-signal signal-gain">
+										<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/></svg>
+										Your entry is {gain.toFixed(0)}% below current price
+									</div>
+								{/if}
+							{/if}
 						</div>
 						<div class="activity-list">
 							{#each txItems as tx, i}
@@ -3727,6 +3760,30 @@
 		color: var(--text-muted, #94a3b8); text-transform: uppercase; letter-spacing: 0.03em;
 	}
 	.activity-stat-divider { width: 1px; height: 24px; background: var(--border-subtle); }
+
+	/* Activity — momentum signals */
+	.activity-signals { display: flex; flex-direction: column; gap: 6px; padding: 10px 0; }
+	.activity-signal {
+		display: flex; align-items: center; gap: 6px;
+		font-family: 'Space Mono', monospace; font-size: 10px; font-weight: 600;
+		padding: 6px 10px; border-radius: 8px;
+	}
+	.signal-momentum {
+		color: #00d2ff; background: rgba(0,210,255,0.06); border: 1px solid rgba(0,210,255,0.1);
+	}
+	.signal-pulse {
+		width: 6px; height: 6px; border-radius: 50%; background: #00d2ff;
+		box-shadow: 0 0 6px rgba(0,210,255,0.5);
+		animation: pulse-glow 2s ease-in-out infinite;
+	}
+	.signal-scarcity {
+		color: #f59e0b; background: rgba(245,158,11,0.06); border: 1px solid rgba(245,158,11,0.1);
+	}
+	.signal-scarcity svg { color: #f59e0b; flex-shrink: 0; }
+	.signal-gain {
+		color: #10b981; background: rgba(16,185,129,0.06); border: 1px solid rgba(16,185,129,0.1);
+	}
+	.signal-gain svg { color: #10b981; flex-shrink: 0; }
 
 	/* Activity — timeline */
 	.activity-list { display: flex; flex-direction: column; gap: 0; padding-top: 8px; }
