@@ -134,10 +134,22 @@
 		const d = Math.floor(ms / 86400000);
 		const h = Math.floor((ms % 86400000) / 3600000);
 		const m = Math.floor((ms % 3600000) / 60000);
-		if (d > 0) return `${d}d ${h}h ${m}m`;
-		if (h > 0) return `${h}h ${m}m`;
 		const s = Math.floor((ms % 60000) / 1000);
+		if (d > 0) return `${d}d ${h}h ${m}m ${s}s`;
+		if (h > 0) return `${h}h ${m}m ${s}s`;
 		return `${m}m ${s}s`;
+	}
+
+	function countdownParts(deadline: bigint): { d: number; h: number; m: number; s: number; ended: boolean } {
+		const ms = Number(deadline) * 1000 - tickNow;
+		if (ms <= 0) return { d: 0, h: 0, m: 0, s: 0, ended: true };
+		return {
+			d: Math.floor(ms / 86400000),
+			h: Math.floor((ms % 86400000) / 3600000),
+			m: Math.floor((ms % 3600000) / 60000),
+			s: Math.floor((ms % 60000) / 1000),
+			ended: false,
+		};
 	}
 
 	let filteredLaunches = $derived.by(() => {
@@ -698,18 +710,16 @@
 					<div class="px-4 pb-4">
 						<div class="flex justify-between items-baseline mb-1.5">
 							<span class="text-white text-xs font-mono font-semibold">Raised {progress}%</span>
-							<!-- Timer inline with progress -->
 							{#if launch.state <= 1}
 								{@const isScheduled = launch.startTimestamp > 0n && launch.startTimestamp > BigInt(Math.floor(tickNow / 1000))}
 								{@const targetTs = isScheduled ? launch.startTimestamp : launch.deadline}
 								{@const cdMs = countdownMs(targetTs)}
-								{@const cdStr = countdownStr(targetTs)}
 								{#if cdMs > 0}
-									<span class="card-timer {isScheduled ? 'countdown-scheduled' : countdownColor(launch.deadline)}">
-										{isScheduled ? 'Starts in ' : ''}{cdStr}
+									<span class="card-timer-label {isScheduled ? 'countdown-scheduled' : countdownColor(launch.deadline)}">
+										{isScheduled ? 'Starts in' : countdownStr(targetTs)}
 									</span>
 								{:else}
-									<span class="card-timer text-gray-600">Ended</span>
+									<span class="card-timer-label text-gray-600">Ended</span>
 								{/if}
 							{/if}
 						</div>
