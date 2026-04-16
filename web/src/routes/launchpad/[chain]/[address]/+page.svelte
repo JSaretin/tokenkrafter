@@ -653,10 +653,10 @@
 		_wsSubs = [];
 
 		if (ws) {
-			const TOKEN_BOUGHT_TOPIC = ethers.id('TokenBought(address,uint256,uint256,uint256)');
+			const TOKEN_BOUGHT_TOPIC = ethers.id('TokenBought(address,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256)');
 			const STATE_TOPICS = [
-				ethers.id('Graduated(address,uint256,address,uint256)'),
-				ethers.id('RefundingEnabled(uint256,uint256)'),
+				ethers.id('Graduated(address,uint256,uint256,uint256,uint256,uint256,uint256,uint256)'),
+				ethers.id('RefundingEnabled(address,uint256,uint256)'),
 			];
 
 			const buySub = ws.subscribeLogs(chainId, {
