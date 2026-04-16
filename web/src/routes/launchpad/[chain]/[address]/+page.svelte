@@ -1692,7 +1692,7 @@
 								onclick={() => { if (typeof navigator !== 'undefined') { navigator.clipboard.writeText(window.location.href); addFeedback({ message: 'Link copied!', type: 'success' }); } }}
 							>🔗</button>
 						</div>
-						<div class="flex items-center gap-2 mt-2 flex-wrap">
+						<div class="header-tags">
 							<span class="header-tag">{network.name}</span>
 							<span class="header-tag">{CURVE_TYPES[launch.curveType]} {$t('lpd.curve')}</span>
 							<span class="header-tag">{$t('lpd.creator')}: {shortAddr(launch.creator)}</span>
@@ -3148,6 +3148,10 @@
 		padding: 2px 10px;
 		border-radius: 6px;
 	}
+	.header-tags { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+	@media (max-width: 640px) {
+		.header-tags { display: none; }
+	}
 	.header-tag {
 		font-size: 11px;
 		font-family: 'Space Mono', monospace;
@@ -4035,5 +4039,8 @@
 		.countdown-label {
 			font-size: 7px;
 		}
+		.card { padding: 12px; }
+		.card.p-6 { padding: 12px; }
+		.card.p-5 { padding: 10px; }
 	}
 </style>

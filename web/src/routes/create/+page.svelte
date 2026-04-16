@@ -1934,7 +1934,7 @@
 		<!-- ═══════ INTENT SELECTION ═══════ -->
 		<div class="sel-header">
 			<h1 class="sel-title">What do you want to build?</h1>
-			<p class="sel-sub">Choose how to deploy your token</p>
+			<p class="sel-sub">Every option is non-custodial and on-chain</p>
 		</div>
 
 		<div class="sel-grid">
@@ -1949,13 +1949,17 @@
 					<div class="sel-icon sel-icon-cyan">
 						<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
 					</div>
-					<h3 class="sel-name">Create & Launch</h3>
-					<p class="sel-desc">Deploy token + bonding curve fundraise. Graduates to DEX automatically.</p>
-					<div class="sel-features">
-						<span>Bonding curve</span>
-						<span>Auto DEX listing</span>
-						<span>Anti-whale</span>
+					<div class="sel-card-body">
+						<h3 class="sel-name">Create & Launch</h3>
+						<p class="sel-desc">Deploy your token with a bonding curve fundraise. Price rises with demand. Graduates to DEX with liquidity burned automatically.</p>
+						<div class="sel-features sel-features-featured">
+							<span>Bonding curve</span>
+							<span>Auto DEX listing</span>
+							<span>Anti-whale</span>
+							<span>Refundable</span>
+						</div>
 					</div>
+					<span class="sel-cta sel-cta-featured">Get Started <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg></span>
 				</div>
 			</button>
 
@@ -1966,26 +1970,29 @@
 						<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
 					</div>
 					<h3 class="sel-name">Create & List on DEX</h3>
-					<p class="sel-desc">Deploy and add liquidity to PancakeSwap in one transaction.</p>
+					<p class="sel-desc">Deploy token and add liquidity to PancakeSwap in one transaction. You set the initial price.</p>
 					<div class="sel-features">
 						<span>Instant trading</span>
 						<span>Set your price</span>
+						<span>LP burned</span>
 					</div>
+					<span class="sel-cta">Continue <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg></span>
 				</div>
 			</button>
 
 			<!-- Create Token Only -->
 			<button class="sel-card" onclick={() => selectMode('token')}>
 				<div class="sel-card-inner">
-					<div class="sel-icon sel-icon-default">
+					<div class="sel-icon sel-icon-purple">
 						<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v12M6 12h12"/></svg>
 					</div>
 					<h3 class="sel-name">Deploy Token Only</h3>
-					<p class="sel-desc">Create your ERC-20 token. Add liquidity or launch later.</p>
+					<p class="sel-desc">Just the token contract. Add liquidity, launch, or integrate later on your terms.</p>
 					<div class="sel-features">
-						<span>Fastest</span>
-						<span>Flexible</span>
+						<span>Just the token</span>
+						<span>Add features later</span>
 					</div>
+					<span class="sel-cta">Continue <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg></span>
 				</div>
 			</button>
 
@@ -1996,13 +2003,71 @@
 						<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="M12 15l-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/></svg>
 					</div>
 					<h3 class="sel-name">Launch Existing Token</h3>
-					<p class="sel-desc">Already have a token? Create a bonding curve launch for it.</p>
+					<p class="sel-desc">Already deployed a token? Add a bonding curve fundraise with refund guarantees.</p>
 					<div class="sel-features">
 						<span>Bring your token</span>
 						<span>Fundraise</span>
+						<span>Refundable</span>
 					</div>
+					<span class="sel-cta">Continue <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg></span>
 				</div>
 			</button>
+		</div>
+
+		<!-- Comparison table -->
+		<div class="sel-compare">
+			<h4 class="sel-compare-title">Compare paths</h4>
+			<div class="sel-compare-table">
+				<div class="sel-compare-row sel-compare-header">
+					<span></span>
+					<span>Create & Launch</span>
+					<span>Create & List</span>
+					<span>Deploy Only</span>
+					<span>Launch Existing</span>
+				</div>
+				<div class="sel-compare-row">
+					<span>Bonding curve</span>
+					<span class="sel-check">&#10003;</span>
+					<span class="sel-dash">—</span>
+					<span class="sel-dash">—</span>
+					<span class="sel-check">&#10003;</span>
+				</div>
+				<div class="sel-compare-row">
+					<span>DEX liquidity</span>
+					<span class="sel-note">Auto at graduation</span>
+					<span class="sel-note">Instant</span>
+					<span class="sel-dash">—</span>
+					<span class="sel-note">Auto at graduation</span>
+				</div>
+				<div class="sel-compare-row">
+					<span>LP permanently burned</span>
+					<span class="sel-check">&#10003;</span>
+					<span class="sel-check">&#10003;</span>
+					<span class="sel-dash">—</span>
+					<span class="sel-check">&#10003;</span>
+				</div>
+				<div class="sel-compare-row">
+					<span>Anti-whale protection</span>
+					<span class="sel-check">&#10003;</span>
+					<span class="sel-dash">—</span>
+					<span class="sel-dash">—</span>
+					<span class="sel-check">&#10003;</span>
+				</div>
+				<div class="sel-compare-row">
+					<span>Refundable if missed</span>
+					<span class="sel-check">&#10003;</span>
+					<span class="sel-dash">—</span>
+					<span class="sel-dash">—</span>
+					<span class="sel-check">&#10003;</span>
+				</div>
+				<div class="sel-compare-row">
+					<span>Needs existing token</span>
+					<span class="sel-dash">—</span>
+					<span class="sel-dash">—</span>
+					<span class="sel-dash">—</span>
+					<span class="sel-check sel-check-amber">Required</span>
+				</div>
+			</div>
 		</div>
 
 	{:else}
@@ -2418,10 +2483,10 @@
 	/* ── Selection screen ── */
 	.sel-header { text-align: center; margin-bottom: 28px; }
 	.sel-title { font-family: 'Syne', sans-serif; font-size: 28px; font-weight: 800; color: var(--text-heading); margin: 0; }
-	.sel-sub { font-size: 13px; color: var(--text-dim); font-family: 'Space Mono', monospace; margin: 6px 0 0; }
+	.sel-sub { font-size: 13px; color: var(--text-muted); font-family: 'Rajdhani', sans-serif; margin: 4px 0 0; }
 
-	.sel-grid { display: grid; grid-template-columns: 1fr; gap: 10px; max-width: 640px; margin: 0 auto; }
-	@media (min-width: 640px) { .sel-grid { grid-template-columns: 1fr 1fr; } }
+	.sel-grid { display: grid; grid-template-columns: 1fr; gap: 10px; max-width: 720px; margin: 0 auto; }
+	@media (min-width: 640px) { .sel-grid { grid-template-columns: 1fr 1fr 1fr; } }
 
 	.sel-card {
 		position: relative; border-radius: 14px; overflow: hidden;
@@ -2430,12 +2495,13 @@
 		font-family: inherit; color: inherit;
 	}
 	.sel-card:hover { border-color: rgba(0,210,255,0.2); transform: translateY(-2px); box-shadow: 0 8px 30px rgba(0,0,0,0.2); }
-	.sel-card-inner { padding: 20px; display: flex; flex-direction: column; gap: 8px; position: relative; z-index: 1; }
+	.sel-card-inner { padding: 18px; display: flex; flex-direction: column; gap: 8px; position: relative; z-index: 1; height: 100%; }
+	.sel-card-body { flex: 1; min-width: 0; }
 
 	.sel-featured { grid-column: 1 / -1; border-color: rgba(0,210,255,0.15); }
-	.sel-featured .sel-card-inner { flex-direction: row; align-items: center; gap: 16px; flex-wrap: wrap; }
+	.sel-featured .sel-card-inner { flex-direction: row; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
 	.sel-featured .sel-name { font-size: 18px; }
-	.sel-featured .sel-desc { flex: 1; min-width: 200px; }
+	.sel-featured .sel-card-body { flex: 1; min-width: 200px; }
 	.sel-featured:hover { border-color: rgba(0,210,255,0.4); box-shadow: 0 0 40px rgba(0,210,255,0.08), 0 8px 30px rgba(0,0,0,0.2); }
 	.sel-card-glow {
 		position: absolute; inset: 0; z-index: 0;
@@ -2446,9 +2512,10 @@
 	.sel-tag {
 		position: absolute; top: 10px; right: 12px; z-index: 2;
 		display: inline-flex; align-items: center; gap: 4px;
-		font-size: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
-		padding: 3px 8px; border-radius: 4px;
-		background: rgba(0,210,255,0.12); color: #00d2ff; font-family: 'Space Mono', monospace;
+		font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
+		padding: 4px 10px; border-radius: 6px;
+		background: rgba(0,210,255,0.15); color: #00d2ff; font-family: 'Rajdhani', sans-serif;
+		border: 1px solid rgba(0,210,255,0.25);
 	}
 
 	.sel-icon {
@@ -2458,15 +2525,71 @@
 	.sel-icon-cyan { background: rgba(0,210,255,0.1); color: #00d2ff; border: 1px solid rgba(0,210,255,0.15); }
 	.sel-icon-amber { background: rgba(245,158,11,0.1); color: #f59e0b; border: 1px solid rgba(245,158,11,0.15); }
 	.sel-icon-emerald { background: rgba(16,185,129,0.1); color: #10b981; border: 1px solid rgba(16,185,129,0.15); }
-	.sel-icon-default { background: var(--bg-surface-input); color: var(--text-dim); border: 1px solid var(--border); }
+	.sel-icon-purple { background: rgba(139,92,246,0.1); color: #a78bfa; border: 1px solid rgba(139,92,246,0.15); }
 
 	.sel-name { font-family: 'Syne', sans-serif; font-size: 15px; font-weight: 700; color: var(--text-heading); margin: 0; }
-	.sel-desc { font-size: 11px; color: var(--text-dim); font-family: 'Space Mono', monospace; line-height: 1.5; margin: 0; }
-	.sel-features { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 2px; }
+	.sel-desc { font-size: 12px; color: var(--text-muted); font-family: 'Rajdhani', sans-serif; line-height: 1.4; margin: 0; }
+	.sel-features { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 4px; }
 	.sel-features span {
 		font-size: 9px; padding: 2px 8px; border-radius: 99px;
-		background: var(--bg-surface); border: 1px solid var(--border-subtle);
-		color: var(--text-dim); font-family: 'Space Mono', monospace;
+		background: var(--bg-surface-hover); border: 1px solid var(--border);
+		color: var(--text-muted); font-family: 'Rajdhani', sans-serif; font-weight: 600;
+	}
+	.sel-features-featured span {
+		background: rgba(0,210,255,0.08); border-color: rgba(0,210,255,0.2); color: #00d2ff;
+	}
+
+	/* CTA arrow */
+	.sel-cta {
+		display: inline-flex; align-items: center; gap: 4px; margin-top: auto; padding-top: 10px;
+		font-family: 'Rajdhani', sans-serif; font-size: 12px; font-weight: 700;
+		color: var(--text-dim); transition: color 150ms;
+	}
+	.sel-card:hover .sel-cta { color: #00d2ff; }
+	.sel-cta-featured { color: #00d2ff; font-size: 13px; }
+
+	/* Comparison table */
+	.sel-compare {
+		max-width: 720px; margin: 28px auto 0;
+	}
+	.sel-compare-title {
+		font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 800;
+		color: var(--text-heading); margin: 0 0 10px; text-align: center;
+	}
+	.sel-compare-table {
+		border: 1px solid var(--border-subtle); border-radius: 12px; overflow: hidden;
+	}
+	.sel-compare-row {
+		display: grid; grid-template-columns: 1.4fr repeat(4, 1fr);
+		border-bottom: 1px solid var(--border-subtle);
+	}
+	.sel-compare-row:last-child { border-bottom: none; }
+	.sel-compare-row span {
+		padding: 8px 10px; font-family: 'Rajdhani', sans-serif; font-size: 11px;
+		color: var(--text-muted); display: flex; align-items: center;
+	}
+	.sel-compare-row span:first-child {
+		color: var(--text-dim); font-weight: 600;
+		background: var(--bg-surface);
+	}
+	.sel-compare-header {
+		background: var(--bg-surface);
+	}
+	.sel-compare-header span {
+		font-family: 'Syne', sans-serif; font-size: 10px; font-weight: 700;
+		color: var(--text-heading); text-align: center; justify-content: center;
+	}
+	.sel-compare-header span:first-child { background: transparent; }
+	.sel-check { color: #10b981 !important; font-weight: 700; justify-content: center !important; }
+	.sel-check-amber { color: #f59e0b !important; }
+	.sel-dash { color: var(--text-dim) !important; opacity: 0.3; justify-content: center !important; }
+	.sel-note { font-size: 10px !important; color: var(--text-muted) !important; justify-content: center !important; text-align: center; }
+
+	@media (max-width: 640px) {
+		.sel-compare-table { font-size: 9px; }
+		.sel-compare-row { grid-template-columns: 1.2fr repeat(4, 1fr); }
+		.sel-compare-row span { padding: 6px 4px; font-size: 9px; }
+		.sel-compare-header span { font-size: 8px; }
 	}
 
 	/* Legacy — keep for backward compat */
