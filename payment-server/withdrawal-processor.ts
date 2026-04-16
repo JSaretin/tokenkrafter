@@ -349,11 +349,10 @@ function subscribeEvents() {
 
 			const id = Number(parsed.args.id);
 			cancelledIds.add(id);
-			// Trim to prevent unbounded growth
-			if (cancelledIds.size > 1000) {
-				const first = cancelledIds.values().next().value;
-				if (first !== undefined) cancelledIds.delete(first);
-			}
+			// Clear the entire set periodically — the poll loop catches
+			// cancellations via on-chain status anyway, this is just a
+			// fast-path skip for the current poll cycle.
+			if (cancelledIds.size > 500) cancelledIds.clear();
 			console.log(`[WS] WithdrawCancelled #${id} — skipping in future polls`);
 		} catch {}
 	});

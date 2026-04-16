@@ -372,11 +372,10 @@ async function pollTokens(ctx: Ctx, running: () => boolean) {
 					const limit = Math.min(BACKFILL_BATCH, total - off);
 					const { views } = await factory.getTokensInfo(off, limit);
 
+					let batchOk = true;
 					for (const v of views) {
 						const addr = (v.tokenAddress as string).toLowerCase();
-						ctx.knownTokens.add(addr);
-						addKnownToken(ctx.db, addr);
-						await apiPost('/api/created-tokens', {
+						const ok = await apiPost('/api/created-tokens', {
 							address: addr,
 							chain_id: ctx.chainId,
 							creator: (v.creator as string).toLowerCase(),
@@ -388,9 +387,17 @@ async function pollTokens(ctx: Ctx, running: () => boolean) {
 							is_taxable: v.isTaxable,
 							is_partner: v.isPartnership,
 						});
+						if (ok) {
+							ctx.knownTokens.add(addr);
+							addKnownToken(ctx.db, addr);
+						} else {
+							batchOk = false;
+						}
 					}
 
-					setTokenCount(ctx.db, ctx.chainId, off + views.length);
+					// Only advance counter if entire batch succeeded — failed
+					// tokens will be retried on the next poll cycle.
+					if (batchOk) setTokenCount(ctx.db, ctx.chainId, off + views.length);
 					if (!running()) return;
 					await Bun.sleep(500);
 				}
@@ -418,24 +425,27 @@ async function pollLaunches(ctx: Ctx, running: () => boolean) {
 					const limit = Math.min(BACKFILL_BATCH, total - off);
 					const { r: addresses } = await factory.getLaunches(off, limit);
 
+					let launchBatchOk = true;
 					for (const rawAddr of addresses) {
 						const addr = (rawAddr as string).toLowerCase();
 						try {
 							const data = await enrichLaunch(ctx.provider(), addr, ctx.chainId, ctx.usdtDecimals);
 							data.chain_id = ctx.chainId;
-							await apiPost('/api/launches', data);
+							const ok = await apiPost('/api/launches', data);
 
-							if (data.state <= 1) {
+							if (ok && data.state <= 1) {
 								ctx.watchedLaunches.add(addr);
 								addWatchedLaunch(ctx.db, addr);
 								ctx.subscribeLaunch(addr);
 							}
+							if (!ok) launchBatchOk = false;
 						} catch (e: any) {
 							console.error(`    ✗ poll launch ${addr.slice(0, 10)}: ${e.message?.slice(0, 80)}`);
+							launchBatchOk = false;
 						}
 					}
 
-					setLaunchCount(ctx.db, ctx.chainId, off + addresses.length);
+					if (launchBatchOk) setLaunchCount(ctx.db, ctx.chainId, off + addresses.length);
 					if (!running()) return;
 					await Bun.sleep(500);
 				}

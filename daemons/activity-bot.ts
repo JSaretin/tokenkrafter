@@ -119,12 +119,21 @@ function saveState(s: State) {
 // ── GeckoTerminal ──
 const GCT_BASE = 'https://api.geckoterminal.com/api/v2';
 
-async function gctGet(p: string): Promise<any> {
-	const res = await fetch(`${GCT_BASE}${p}`, {
-		headers: { Accept: 'application/json;version=20230203' },
-	});
-	if (!res.ok) throw new Error(`GCT ${res.status} on ${p}`);
-	return res.json();
+async function gctGet(p: string, retries = 2): Promise<any> {
+	for (let attempt = 0; attempt <= retries; attempt++) {
+		const res = await fetch(`${GCT_BASE}${p}`, {
+			headers: { Accept: 'application/json;version=20230203' },
+		});
+		if (res.status === 429) {
+			const wait = Math.min(10_000, (attempt + 1) * 3000);
+			console.warn(`  ⏳ GCT 429 on ${p} — backing off ${wait / 1000}s`);
+			await Bun.sleep(wait);
+			continue;
+		}
+		if (!res.ok) throw new Error(`GCT ${res.status} on ${p}`);
+		return res.json();
+	}
+	throw new Error(`GCT 429 exhausted retries on ${p}`);
 }
 
 async function fetchTrending(): Promise<CachedToken[]> {
@@ -500,7 +509,10 @@ async function main() {
 
 		const delaySec = randInt(speed.tokenMin, speed.tokenMax);
 		console.log(`  ⏳ Next in ~${(delaySec / 60).toFixed(1)} min`);
-		for (let i = 0; i < delaySec && running; i += 5) await sleep(5000);
+		// Sleep the full delay in one shot — SIGINT sets running=false and
+		// the loop condition catches it on the next iteration.
+		await Bun.sleep(delaySec * 1000);
+		if (!running) break;
 	}
 
 	console.log(`\n✅ Stopped. Total: ${state.tokensCreated} tokens cloned.`);
