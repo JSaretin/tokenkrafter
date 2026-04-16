@@ -2567,9 +2567,9 @@
 							<div class="pos-limit-remaining-hint">
 								{formatUsdt(remainingBuyUsdt, ud)} left to buy
 							</div>
-						{:else if maxBuyPerWallet > 0n}
-							<div class="pos-limit-remaining-hint pos-limit-maxed">
-								Max allocation reached
+						{:else if maxBuyPerWallet > 0n && atMaxBuy}
+							<div class="pos-limit-remaining-hint" style="color: #10b981">
+								✓ Full allocation used ({formatUsdt(maxBuyPerWallet, ud)})
 							</div>
 						{/if}
 					</div>
@@ -2599,8 +2599,17 @@
 								{#if maxBuyPerWallet === 0n}
 									<span class="text-gray-500 text-xs font-mono">{$t('lpd.noBuyLimit')}</span>
 								{:else if atMaxBuy}
-									<div class="remaining-buy-maxed">
-										<span class="text-red-400 text-xs font-mono font-semibold">{$t('lpd.maxAllocationReached')}</span>
+									<div class="remaining-buy-detail">
+										<div class="flex justify-between text-[10px] font-mono mb-1.5">
+											<span class="text-emerald-400 font-semibold">Max allocation reached</span>
+											<span class="text-emerald-400">100%</span>
+										</div>
+										<div class="remaining-buy-track">
+											<div class="remaining-buy-fill remaining-buy-full" style="width: 100%"></div>
+										</div>
+										<div class="text-[10px] font-mono mt-1.5 text-gray-500">
+											You've used your full {formatUsdt(maxBuyPerWallet, ud)} allocation
+										</div>
 									</div>
 								{:else}
 									<div class="remaining-buy-detail">
@@ -3992,6 +4001,9 @@
 		border-radius: 3px;
 		background: linear-gradient(90deg, #00d2ff, #3a7bd5);
 		transition: width 0.3s ease;
+	}
+	.remaining-buy-full {
+		background: linear-gradient(90deg, #10b981, #059669);
 	}
 
 	/* Fix 1: Light-mode card visibility */

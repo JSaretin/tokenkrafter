@@ -67,9 +67,10 @@
 				name: 'Tokens sold',
 				nameLocation: 'center',
 				nameGap: 20,
-				nameTextStyle: { fontSize: 10, color: '#64748b' },
+				nameTextStyle: { fontSize: 10, color: '#94a3b8' },
 				min: 0, max: 100,
-				axisLabel: { formatter: '{value}%', fontSize: 10 },
+				axisLabel: { formatter: '{value}%', fontSize: 10, color: '#94a3b8' },
+				axisLine: { lineStyle: { color: 'rgba(255,255,255,0.1)' } },
 				splitLine: { show: false },
 			},
 			yAxis: {
@@ -77,9 +78,11 @@
 				name: 'Price',
 				nameLocation: 'center',
 				nameGap: 32,
-				nameTextStyle: { fontSize: 10, color: '#64748b' },
+				nameTextStyle: { fontSize: 10, color: '#94a3b8' },
 				min: 0, max: 100,
-				axisLabel: { formatter: '{value}%', fontSize: 10 },
+				axisLabel: { formatter: '{value}%', fontSize: 10, color: '#94a3b8' },
+				axisLine: { lineStyle: { color: 'rgba(255,255,255,0.1)' } },
+				splitLine: { lineStyle: { color: 'rgba(255,255,255,0.05)' } },
 			},
 			series: [
 				// Filled area (progress)
