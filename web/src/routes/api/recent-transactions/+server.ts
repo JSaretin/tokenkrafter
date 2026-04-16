@@ -1,6 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { supabaseAdmin } from '$lib/supabaseServer';
+import { isDaemonAuth } from '$lib/daemonAuth';
 
 // GET /api/recent-transactions?chain_id=56&limit=20&launch=0x...
 export const GET: RequestHandler = async ({ url }) => {
@@ -30,13 +31,9 @@ export const GET: RequestHandler = async ({ url }) => {
 	return json(data || []);
 };
 
-// POST /api/recent-transactions — daemon-only. Requires SYNC_SECRET.
+// POST /api/recent-transactions — daemon-only (isDaemonAuth)
 export const POST: RequestHandler = async ({ request }) => {
-	const authHeader = request.headers.get('authorization');
-	const { env } = await import('$env/dynamic/private');
-	if (!env.SYNC_SECRET || authHeader !== `Bearer ${env.SYNC_SECRET}`) {
-		return error(401, 'Unauthorized');
-	}
+	if (!isDaemonAuth(request)) return error(401, 'Unauthorized');
 
 	const body = await request.json();
 

@@ -1,7 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { supabaseAdmin } from '$lib/supabaseServer';
-import { env } from '$env/dynamic/private';
+import { isDaemonAuth } from '$lib/daemonAuth';
 
 const RATE_API = 'https://open.er-api.com/v6/latest/USD';
 const CURRENCIES = ['NGN', 'GBP', 'EUR', 'GHS', 'KES'];
@@ -10,13 +10,10 @@ const CURRENCIES = ['NGN', 'GBP', 'EUR', 'GHS', 'KES'];
  * POST /api/rates/refresh
  *
  * Fetches live exchange rates and updates platform_config.
- * Auth: TX_CONFIRM_SECRET bearer token (daemon cron ping).
+ * Auth: daemon-only (isDaemonAuth — TX_CONFIRM_SECRET or SYNC_SECRET).
  */
 export const POST: RequestHandler = async ({ request }) => {
-	const authHeader = request.headers.get('authorization');
-	const isDaemon = (env.TX_CONFIRM_SECRET && authHeader === `Bearer ${env.TX_CONFIRM_SECRET}`) ||
-		(env.SYNC_SECRET && authHeader === `Bearer ${env.SYNC_SECRET}`);
-	if (!isDaemon) return error(401, 'Daemon access required');
+	if (!isDaemonAuth(request)) return error(401, 'Daemon access required');
 
 	// Fetch live rates
 	let rates: Record<string, number>;

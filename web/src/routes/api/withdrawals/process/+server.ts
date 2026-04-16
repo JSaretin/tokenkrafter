@@ -6,6 +6,7 @@ import { decrypt } from '$lib/crypto';
 import { ethers } from 'ethers';
 import { TRADE_ROUTER_ABI } from '$lib/tradeRouter';
 import { env } from '$env/dynamic/private';
+import { isVaultAuth } from '$lib/daemonAuth';
 
 /** Get network config from DB */
 async function getNetworkConfig(chainId: number): Promise<{
@@ -32,17 +33,15 @@ async function getNetworkConfig(chainId: number): Promise<{
  * via bankRef + user, checks Flutterwave balance, confirms on-chain
  * (releases USDT from escrow), then initiates the fiat transfer.
  *
- * Auth: admin session cookie OR TX_CONFIRM_SECRET bearer token (daemon).
+ * Auth: admin session cookie OR isVaultAuth (SYNC_SECRET only — financial vault).
  *
  * Body: { withdraw_id: number, chain_id: number, naira_rate?: number, confirm_to?: string }
  *   confirm_to: optional address to receive USDT instead of platformWallet
  */
 export const POST: RequestHandler = async ({ request, locals }) => {
-	// ── Auth: admin cookie OR TX_CONFIRM_SECRET ──
-	const authHeader = request.headers.get('authorization');
-	const isDaemon = env.TX_CONFIRM_SECRET && authHeader === `Bearer ${env.TX_CONFIRM_SECRET}`;
-	if (!locals.isAdmin && !isDaemon) {
-		return error(401, 'Admin or daemon access required');
+	// ── Auth: admin cookie OR vault-level secret (SYNC_SECRET only) ──
+	if (!locals.isAdmin && !isVaultAuth(request)) {
+		return error(401, 'Admin or vault access required');
 	}
 
 	const body = await request.json();

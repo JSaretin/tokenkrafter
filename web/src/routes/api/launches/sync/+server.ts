@@ -1,8 +1,8 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { ethers } from 'ethers';
-import { env } from '$env/dynamic/private';
 import { supabaseAdmin } from '$lib/supabaseServer';
+import { isDaemonAuth } from '$lib/daemonAuth';
 import { LAUNCHPAD_FACTORY_ABI, LAUNCH_INSTANCE_ABI, fetchLaunchInfo, fetchTokenMeta } from '$lib/launchpad';
 
 /** Read networks from platform_config DB table */
@@ -25,12 +25,9 @@ const TOKEN_INFO_ABI = ['function tokenInfo(address) view returns (address creat
 const OWNER_ABI = ['function owner() view returns (address)'];
 
 // POST /api/launches/sync — sync on-chain launches into database
-// Protected by SYNC_SECRET to prevent abuse (expensive RPC calls)
+// Protected: daemon-only (isDaemonAuth)
 export const POST: RequestHandler = async ({ request }) => {
-	const authHeader = request.headers.get('authorization');
-	if (!env.SYNC_SECRET || authHeader !== `Bearer ${env.SYNC_SECRET}`) {
-		return error(401, 'Unauthorized');
-	}
+	if (!isDaemonAuth(request)) return error(401, 'Unauthorized');
 
 	const results = { synced: 0, errors: 0 };
 	const networks = await getNetworks();

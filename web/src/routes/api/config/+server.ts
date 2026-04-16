@@ -1,7 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { supabaseAdmin } from '$lib/supabaseServer';
-import { env } from '$env/dynamic/private';
+import { isDaemonAuth } from '$lib/daemonAuth';
 
 // GET /api/config?keys=networks,site,social_links
 export const GET: RequestHandler = async ({ url, request, locals }) => {
@@ -17,9 +17,8 @@ export const GET: RequestHandler = async ({ url, request, locals }) => {
 		return error(500, 'Failed to fetch config');
 	}
 
-	// Determine if caller is a trusted daemon (bearer token match)
-	const authHeader = request.headers.get('authorization');
-	const isDaemon = !!(env.TX_CONFIRM_SECRET && authHeader === `Bearer ${env.TX_CONFIRM_SECRET}`);
+	// Determine if caller is a trusted daemon
+	const isDaemon = isDaemonAuth(request);
 	const isAdmin = !!(locals as any).isAdmin;
 
 	const result: Record<string, any> = {};
@@ -39,11 +38,9 @@ export const GET: RequestHandler = async ({ url, request, locals }) => {
 };
 
 // PATCH /api/config — admin or daemon
-// Auth: admin session (hooks.server.ts) OR TX_CONFIRM_SECRET bearer token
+// Auth: admin session (hooks.server.ts) OR isDaemonAuth
 export const PATCH: RequestHandler = async ({ request, locals }) => {
-	const authHeader = request.headers.get('authorization');
-	const isDaemon = env.TX_CONFIRM_SECRET && authHeader === `Bearer ${env.TX_CONFIRM_SECRET}`;
-	if (!locals.isAdmin && !isDaemon) return error(401, 'Admin access required');
+	if (!locals.isAdmin && !isDaemonAuth(request)) return error(401, 'Admin access required');
 
 	const body = await request.json();
 	const { key, value } = body;

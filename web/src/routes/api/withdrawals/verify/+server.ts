@@ -3,7 +3,7 @@ import type { RequestHandler } from './$types';
 import { supabaseAdmin } from '$lib/supabaseServer';
 import { ethers } from 'ethers';
 import { decrypt } from '$lib/crypto';
-import { env } from '$env/dynamic/private';
+import { isDaemonAuth } from '$lib/daemonAuth';
 
 const TRADE_ROUTER_ABI = [
 	'event WithdrawRequested(uint256 indexed id, address indexed user, address token, uint256 grossAmount, uint256 fee, uint256 netAmount, bytes32 bankRef)'
@@ -29,9 +29,8 @@ async function getNetworkConfig(chainId: number): Promise<{ rpc: string; trade_r
 export const POST: RequestHandler = async ({ request, locals }) => {
 	const body = await request.json();
 
-	// Auth: session cookie (frontend) or SYNC_SECRET (daemon)
-	const authHeader = request.headers.get('authorization');
-	const isDaemon = env.SYNC_SECRET && authHeader === `Bearer ${env.SYNC_SECRET}`;
+	// Auth: session cookie (frontend) or daemon (isDaemonAuth)
+	const isDaemon = isDaemonAuth(request);
 	const wallet_address = locals.wallet || (isDaemon ? body.wallet_address?.toLowerCase() : null);
 
 	if (!wallet_address && !isDaemon) {

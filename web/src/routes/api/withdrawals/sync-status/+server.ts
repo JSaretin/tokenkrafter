@@ -1,14 +1,11 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { supabaseAdmin } from '$lib/supabaseServer';
-import { env } from '$env/dynamic/private';
+import { isDaemonAuth } from '$lib/daemonAuth';
 
-// PATCH /api/withdrawals/sync-status — daemon-only, sync on-chain status to DB
+// PATCH /api/withdrawals/sync-status — daemon-only (isDaemonAuth)
 export const PATCH: RequestHandler = async ({ request }) => {
-	const authHeader = request.headers.get('authorization');
-	if (!env.SYNC_SECRET || authHeader !== `Bearer ${env.SYNC_SECRET}`) {
-		return error(401, 'Unauthorized');
-	}
+	if (!isDaemonAuth(request)) return error(401, 'Unauthorized');
 
 	const body = await request.json();
 	const { id, status: newStatus, admin_note } = body;

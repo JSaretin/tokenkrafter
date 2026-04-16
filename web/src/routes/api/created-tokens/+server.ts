@@ -1,7 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { supabaseAdmin } from '$lib/supabaseServer';
-import { env } from '$env/dynamic/private';
+import { isDaemonAuth } from '$lib/daemonAuth';
 
 // GET /api/created-tokens?chain_id=56&creator=0x...&search=baby&offset=0&limit=30
 export const GET: RequestHandler = async ({ url }) => {
@@ -38,10 +38,7 @@ export const GET: RequestHandler = async ({ url }) => {
 
 // POST /api/created-tokens — daemon-only, upsert token from chain
 export const POST: RequestHandler = async ({ request }) => {
-	const authHeader = request.headers.get('authorization');
-	if (!env.SYNC_SECRET || authHeader !== `Bearer ${env.SYNC_SECRET}`) {
-		return error(401, 'Unauthorized');
-	}
+	if (!isDaemonAuth(request)) return error(401, 'Unauthorized');
 
 	const body = await request.json();
 
@@ -80,10 +77,7 @@ export const POST: RequestHandler = async ({ request }) => {
 
 // PATCH /api/created-tokens — daemon-only, update a single token's fields
 export const PATCH: RequestHandler = async ({ request }) => {
-	const authHeader = request.headers.get('authorization');
-	const isAuth = (env.SYNC_SECRET && authHeader === `Bearer ${env.SYNC_SECRET}`) ||
-		(env.TX_CONFIRM_SECRET && authHeader === `Bearer ${env.TX_CONFIRM_SECRET}`);
-	if (!isAuth) return error(401, 'Unauthorized');
+	if (!isDaemonAuth(request)) return error(401, 'Unauthorized');
 
 	const body = await request.json();
 	if (!body.address || !body.chain_id) return error(400, 'address and chain_id required');

@@ -2,6 +2,7 @@ import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { env } from '$env/dynamic/private';
 import { supabaseAdmin } from '$lib/supabaseServer';
+import { isDaemonAuth } from '$lib/daemonAuth';
 
 /**
  * POST /api/alert — centralized alert fanout
@@ -9,7 +10,7 @@ import { supabaseAdmin } from '$lib/supabaseServer';
  * Dispatches alerts to configured channels: Telegram, email (future),
  * webhooks (future), user notifications (future).
  *
- * Auth: TX_CONFIRM_SECRET or SYNC_SECRET bearer token.
+ * Auth: daemon-only (isDaemonAuth — TX_CONFIRM_SECRET or SYNC_SECRET).
  *
  * Body: {
  *   type: 'payment' | 'launch' | 'system' | 'graduation' | 'refund',
@@ -19,12 +20,6 @@ import { supabaseAdmin } from '$lib/supabaseServer';
  *   data?: Record<string, any>,                        // structured payload for templates
  * }
  */
-
-function authenticate(request: Request): boolean {
-	const auth = request.headers.get('authorization');
-	return !!(env.TX_CONFIRM_SECRET && auth === `Bearer ${env.TX_CONFIRM_SECRET}`) ||
-		!!(env.SYNC_SECRET && auth === `Bearer ${env.SYNC_SECRET}`);
-}
 
 async function sendTelegram(title: string, message: string): Promise<boolean> {
 	const token = env.TELEGRAM_BOT_TOKEN;
@@ -56,7 +51,7 @@ async function sendTelegram(title: string, message: string): Promise<boolean> {
 // async function sendWebhook(url: string, payload: any): Promise<boolean> { ... }
 
 export const POST: RequestHandler = async ({ request }) => {
-	if (!authenticate(request)) return error(401, 'Unauthorized');
+	if (!isDaemonAuth(request)) return error(401, 'Unauthorized');
 
 	const body = await request.json();
 	const { type = 'system', title = '', message = '', channels, data } = body;
