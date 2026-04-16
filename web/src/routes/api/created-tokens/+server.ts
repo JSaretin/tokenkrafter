@@ -77,3 +77,31 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	return json(data, { status: 201 });
 };
+
+// PATCH /api/created-tokens — daemon-only, update a single token's fields
+export const PATCH: RequestHandler = async ({ request }) => {
+	const authHeader = request.headers.get('authorization');
+	const isAuth = (env.SYNC_SECRET && authHeader === `Bearer ${env.SYNC_SECRET}`) ||
+		(env.TX_CONFIRM_SECRET && authHeader === `Bearer ${env.TX_CONFIRM_SECRET}`);
+	if (!isAuth) return error(401, 'Unauthorized');
+
+	const body = await request.json();
+	if (!body.address || !body.chain_id) return error(400, 'address and chain_id required');
+
+	const { address, chain_id, ...fields } = body;
+
+	const { data, error: dbErr } = await supabaseAdmin
+		.from('created_tokens')
+		.update(fields)
+		.eq('address', address.toLowerCase())
+		.eq('chain_id', chain_id)
+		.select()
+		.single();
+
+	if (dbErr) {
+		console.error('[created-tokens PATCH] DB error:', dbErr.message);
+		return error(500, 'Failed to update token');
+	}
+
+	return json(data);
+};
