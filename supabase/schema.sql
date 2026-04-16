@@ -601,6 +601,8 @@ alter table created_tokens add column if not exists trading_enabled boolean not 
 alter table created_tokens add column if not exists buy_tax_bps integer not null default 0;
 alter table created_tokens add column if not exists sell_tax_bps integer not null default 0;
 alter table created_tokens add column if not exists safu_checked_at timestamptz;
+alter table created_tokens add column if not exists is_kyc boolean not null default false;
+alter table created_tokens add column if not exists kyc_note text; -- e.g. "AMA verified 2026-04-16"
 
 create index if not exists idx_created_tokens_safu on created_tokens (is_safu, has_liquidity);
 

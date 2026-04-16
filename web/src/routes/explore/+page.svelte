@@ -870,6 +870,9 @@
 									title="SAFU — passes all on-chain safety checks:&#10;• Trading enabled + liquidity has reserves&#10;• LP ≥99% burned to 0xdEaD&#10;• Tax ceiling locked (or token is non-taxable)&#10;• Not mintable, or owner renounced"
 								>SAFU</span>
 							{/if}
+							{#if tok.is_kyc}
+								<span class="tc-badge tc-badge-kyc" title="Creator identity verified via AMA or KYC process">KYC</span>
+							{/if}
 							{#if tok.created_at && isNew(tok.created_at)}
 								<span class="tc-badge tc-badge-new">New</span>
 							{:else if tok.is_partner}
@@ -1069,6 +1072,7 @@
 	.tc-badges-row { display: flex; gap: 4px; align-items: center; justify-content: flex-end; }
 	.tc-badge-new { background: rgba(16,185,129,0.15); color: #10b981; }
 	.tc-badge-safu { background: rgba(16,185,129,0.2); color: #10b981; font-weight: 800; border: 1px solid rgba(16,185,129,0.3); }
+	.tc-badge-kyc { background: rgba(59,130,246,0.15); color: #60a5fa; font-weight: 800; border: 1px solid rgba(59,130,246,0.3); }
 	.tc-badge-lp { background: rgba(59,130,246,0.12); color: #60a5fa; }
 	.tc-badge-renounced { background: rgba(16,185,129,0.12); color: #34d399; }
 	.tc-badge-locked { background: rgba(139,92,246,0.12); color: #a78bfa; }
