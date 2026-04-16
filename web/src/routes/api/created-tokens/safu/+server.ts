@@ -39,7 +39,7 @@ async function handleUpdate(request: Request) {
 		}
 
 		const row: Record<string, any> = {
-			safu_updated_at: new Date().toISOString(),
+			safu_checked_at: new Date().toISOString(),
 		};
 
 		// Only set fields that are explicitly provided (don't null out missing ones)
@@ -52,6 +52,10 @@ async function handleUpdate(request: Request) {
 		if (t.trading_enabled !== undefined) row.trading_enabled = t.trading_enabled;
 		if (t.buy_tax_bps !== undefined) row.buy_tax_bps = t.buy_tax_bps;
 		if (t.sell_tax_bps !== undefined) row.sell_tax_bps = t.sell_tax_bps;
+
+		// A mintable token with a renounced owner can never mint again —
+		// clear is_mintable so the UI doesn't show a misleading "Mintable" badge.
+		if (t.owner_renounced === true) row.is_mintable = false;
 
 		const { error: dbErr } = await supabaseAdmin
 			.from('created_tokens')
