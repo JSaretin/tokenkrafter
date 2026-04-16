@@ -25,8 +25,11 @@
 	let liveNote = $state(withdrawal?.admin_note || '');
 	let confirmedAt = $state<string | null>(withdrawal?.confirmed_at || null);
 
-	// Live countdown tick
-	const tickInterval = setInterval(() => { tickNow = Date.now(); }, 1000);
+	// Live countdown tick — stops once we reach a terminal state
+	const tickInterval = setInterval(() => {
+		if (liveStatus === 'confirmed' || liveStatus === 'cancelled') return;
+		tickNow = Date.now();
+	}, 1000);
 
 	// Subscribe to realtime updates on this withdrawal
 	const channel = supabase
@@ -98,14 +101,16 @@
 
 	// Derived
 	let createdAt = $derived(withdrawal?.created_at ? Math.floor(new Date(withdrawal.created_at).getTime() / 1000) : 0);
-	// expiresAt comes as a unix timestamp (seconds) from on-chain data
+	// expiresAt comes as a unix timestamp (seconds) from on-chain data.
+	// When 0, we don't have an on-chain expiry — show a spinner instead of a countdown.
 	let expiresAt = $derived(Number(withdrawal?.expiresAt || withdrawal?.expires_at || 0));
-	let totalDuration = $derived(expiresAt > createdAt ? expiresAt - createdAt : 600);
+	let hasExpiry = $derived(expiresAt > 0);
+	let totalDuration = $derived(hasExpiry ? expiresAt - createdAt : 0);
 	let nowSec = $derived(Math.floor(tickNow / 1000));
-	let remaining = $derived(expiresAt > 0 ? Math.max(0, expiresAt - nowSec) : Math.max(0, totalDuration - (nowSec - createdAt)));
-	let elapsed = $derived(nowSec - createdAt);
+	let remaining = $derived(hasExpiry ? Math.max(0, expiresAt - nowSec) : -1);
+	let elapsed = $derived(hasExpiry ? nowSec - createdAt : 0);
 	let progressPct = $derived(totalDuration > 0 ? Math.max(0, (remaining / totalDuration) * 100) : 0);
-	let canCancel = $derived((liveStatus === 'pending' || liveStatus === 'timeout') && remaining <= 0);
+	let canCancel = $derived((liveStatus === 'pending' || liveStatus === 'timeout') && hasExpiry && remaining <= 0);
 	let grossAmount = $derived(parseFloat(withdrawal?.gross_amount || '0') / (10 ** usdtDecimals));
 	let feeAmount = $derived(parseFloat(withdrawal?.fee || '0') / (10 ** usdtDecimals));
 	let netAmount = $derived(parseFloat(withdrawal?.net_amount || '0') / (10 ** usdtDecimals));
@@ -205,16 +210,16 @@
 			{:else}
 				<!-- ═══ PENDING / TIMED OUT VIEW ═══ -->
 				<div class="status-icon-wrap" style="background: {statusConfig.bg};">
-					{#if liveStatus === 'pending' && remaining > 0}
+					{#if liveStatus === 'pending' && (!hasExpiry || remaining > 0)}
 						<div class="spinner-lg" style="border-top-color: {statusConfig.color};"></div>
-					{:else if liveStatus === 'pending' && remaining <= 0}
+					{:else if liveStatus === 'pending' && hasExpiry && remaining <= 0}
 						<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
 					{:else}
 						<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke={statusConfig.color} stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d={statusConfig.icon}/></svg>
 					{/if}
 				</div>
 
-				{#if liveStatus === 'pending' && remaining <= 0}
+				{#if liveStatus === 'pending' && hasExpiry && remaining <= 0}
 					<div class="status-label" style="color: #f87171;">Timed Out</div>
 				{:else if liveStatus === 'cancelled'}
 					<div class="status-label" style="color: {statusConfig.color};">{statusConfig.label}</div>
@@ -222,15 +227,25 @@
 					<div class="status-label" style="color: {statusConfig.color};">{statusConfig.label}</div>
 				{/if}
 
-				{#if liveStatus === 'pending' && remaining > 0}
-					<div class="countdown-timer">
-						<span class="timer-digits">{Math.floor(remaining / 60)}:{String(remaining % 60).padStart(2, '0')}</span>
-					</div>
-					<div class="countdown-bar-wrap">
-						<div class="countdown-bar">
-							<div class="countdown-fill" style="width: {progressPct}%; background: linear-gradient(90deg, #f59e0b, #d97706)"></div>
+				{#if liveStatus === 'pending'}
+					{#if hasExpiry && remaining > 0}
+						<div class="countdown-timer">
+							<span class="timer-digits">{Math.floor(remaining / 60)}:{String(remaining % 60).padStart(2, '0')}</span>
 						</div>
-					</div>
+						<div class="countdown-bar-wrap">
+							<div class="countdown-bar">
+								<div class="countdown-fill" style="width: {progressPct}%; background: linear-gradient(90deg, #f59e0b, #d97706)"></div>
+							</div>
+						</div>
+					{:else if hasExpiry && remaining <= 0}
+						<div class="countdown-timer">
+							<span class="timer-expired">0:00</span>
+						</div>
+					{:else}
+						<div class="status-waiting">
+							<span class="waiting-text">Waiting for confirmation...</span>
+						</div>
+					{/if}
 				{/if}
 
 				<div class="status-amount">${usdtAmount.toFixed(2)}</div>
@@ -251,7 +266,7 @@
 							<span>Refunded</span>
 						</div>
 					</div>
-				{:else if liveStatus === 'pending' && remaining <= 0}
+				{:else if liveStatus === 'pending' && hasExpiry && remaining <= 0}
 					<div class="step-tracker">
 						<div class="step step-done">
 							<div class="step-dot"></div>
@@ -266,7 +281,7 @@
 				{:else}
 					{@const step = liveStatus === 'confirmed' ? 3 : (liveStatus === 'processing' ? 2 : 1)}
 					<div class="step-tracker">
-						<div class="step" class:step-done={step >= 1} class:step-active={step === 1 && remaining > 0}>
+						<div class="step" class:step-done={step >= 1} class:step-active={step === 1 && (!hasExpiry || remaining > 0)}>
 							<div class="step-dot"></div>
 							<span>Deposited</span>
 						</div>

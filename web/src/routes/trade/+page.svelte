@@ -2381,8 +2381,8 @@
 		lockedNgnRate={lockedNgnRate}
 		lockedNgnAmount={lockedNgnAmount}
 		explorerUrl={selectedNetwork?.explorer_url || ''}
-		onclose={() => { activeWithdrawal = null; lockedNgnRate = 0; lockedNgnAmount = 0; }}
-		oncancel={async (id) => { await handleCancel(id); activeWithdrawal = null; lockedNgnRate = 0; lockedNgnAmount = 0; }}
+		onclose={() => { activeWithdrawal = null; lockedNgnRate = 0; lockedNgnAmount = 0; amountIn = ''; bankAccount = ''; bankCode = ''; bankName = ''; bankBankName = ''; bankResolved = false; bankError = ''; }}
+		oncancel={async (id) => { await handleCancel(id); activeWithdrawal = null; lockedNgnRate = 0; lockedNgnAmount = 0; amountIn = ''; bankAccount = ''; bankCode = ''; bankName = ''; bankBankName = ''; bankResolved = false; bankError = ''; }}
 	/>
 {/if}
 

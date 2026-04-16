@@ -1558,6 +1558,7 @@
 	}
 
 	function closePreview() {
+		const wasDone = step === 'done';
 		tokenInfo = null;
 		showPreview = false;
 		step = 'idle';
@@ -1566,6 +1567,13 @@
 		deployedTokenAddress = null;
 		deployTxHash = null;
 		stopBalancePolling();
+		// Reset the wizard form after a successful deploy so the user
+		// starts fresh. Don't reset on cancel (mid-flow close).
+		if (wasDone) {
+			resetSignal++;
+			previewState = null;
+			try { sessionStorage.removeItem('tk_create_form_draft'); } catch {}
+		}
 	}
 
 

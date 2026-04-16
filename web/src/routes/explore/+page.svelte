@@ -118,9 +118,19 @@
 	function fmtPrice(val: number): string {
 		if (val === 0) return '$0';
 		if (val >= 1) return `$${val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}`;
-		// Show full precision for small prices (as returned by GCT)
-		const s = val.toPrecision(7);
-		return `$${parseFloat(s)}`;
+		if (val >= 0.01) return `$${val.toFixed(4)}`;
+		// Subscript notation for tiny prices: $0.0₇2008
+		const str = val.toFixed(20);
+		const afterDot = str.split('.')[1] || '';
+		let zeros = 0;
+		for (const ch of afterDot) {
+			if (ch === '0') zeros++;
+			else break;
+		}
+		if (zeros < 2) return `$${val.toFixed(4)}`;
+		const sig = afterDot.slice(zeros, zeros + 4).replace(/0+$/, '');
+		const sub = String(zeros).split('').map(d => '₀₁₂₃₄₅₆₇₈₉'[+d]).join('');
+		return `$0.0${sub}${sig || '0'}`;
 	}
 
 	function fmtVolume(val: number): string {
