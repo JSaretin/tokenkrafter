@@ -189,19 +189,37 @@ async function clearAlert(key: string): Promise<void> {
 async function sendAlert(subject: string, message: string): Promise<void> {
 	console.warn(`[ALERT] ${subject}: ${message}`);
 
-	if (!ALERT_WEBHOOK) return;
+	// Telegram bot notification
+	if (TELEGRAM_BOT_TOKEN && TELEGRAM_CHANNEL_ID) {
+		try {
+			await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					chat_id: TELEGRAM_CHANNEL_ID,
+					text: `⚠️ *${subject}*\n${message}`,
+					parse_mode: 'Markdown',
+				}),
+			});
+		} catch (e: any) {
+			console.error('Telegram alert failed:', e.message);
+		}
+	}
 
-	try {
-		await fetch(ALERT_WEBHOOK, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				content: `**${subject}**\n${message}`,
-				text: `${subject}: ${message}`,
-			}),
-		});
-	} catch (e: any) {
-		console.error('Alert webhook failed:', e.message);
+	// Generic webhook fallback
+	if (ALERT_WEBHOOK) {
+		try {
+			await fetch(ALERT_WEBHOOK, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					content: `**${subject}**\n${message}`,
+					text: `${subject}: ${message}`,
+				}),
+			});
+		} catch (e: any) {
+			console.error('Alert webhook failed:', e.message);
+		}
 	}
 }
 
