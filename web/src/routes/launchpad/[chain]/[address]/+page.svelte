@@ -559,15 +559,20 @@
 				}
 			}
 
+			// Load launch settings (contract-level, not per-user) with the
+			// site provider so they show even without a connected wallet.
+			try {
+				const instance = new ethers.Contract(launchAddress, LAUNCH_INSTANCE_ABI, prov);
+				const [maxBuy, minBuy] = await Promise.all([
+					instance.maxBuyPerWallet().catch(() => 0n),
+					instance.minBuyUsdt().catch(() => 0n),
+				]);
+				maxBuyPerWallet = maxBuy;
+				minBuyUsdt = minBuy;
+			} catch {}
+
 			if (userAddress) {
 				await loadUserPosition(prov);
-			} else {
-				// Load minBuy floor even without a connected user so the
-				// UI can validate amounts & disable the buy button.
-				try {
-					const instance = new ethers.Contract(launchAddress, LAUNCH_INSTANCE_ABI, prov);
-					minBuyUsdt = await instance.minBuyUsdt();
-				} catch { minBuyUsdt = 0n; }
 			}
 
 			// Metadata already loaded from SSR — only fetch if empty

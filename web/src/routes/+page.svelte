@@ -349,13 +349,7 @@
 						<!-- Identity -->
 						<div class="p-4 pb-3">
 							<div class="flex items-start gap-3">
-								{#if launch.logo_url}
-									<img src={launch.logo_url} alt="" class="launch-logo card-logo-adapt" />
-								{:else}
-									<div class="launch-logo launch-logo-placeholder">
-										{(launch.token_symbol || '?').charAt(0)}
-									</div>
-								{/if}
+								<TokenLogo logoUrl={launch.logo_url} symbol={launch.token_symbol} address={launch.token_address || launch.address} size={40} />
 								<div class="flex-1 min-w-0">
 									<div class="flex items-center gap-2 mb-0.5">
 										<span class="syne font-bold text-white text-sm group-hover:text-cyan-300 transition truncate">{launch.token_name || 'Unknown'}</span>
@@ -441,13 +435,7 @@
 
 						<div class="p-4 pb-3">
 							<div class="flex items-start gap-3">
-								{#if launch.logo_url}
-									<img src={launch.logo_url} alt="" class="launch-logo card-logo-adapt" />
-								{:else}
-									<div class="launch-logo launch-logo-placeholder" style="background: rgba(139,92,246,0.08); color: #a78bfa; border-color: rgba(139,92,246,0.15);">
-										{(launch.token_symbol || '?').charAt(0)}
-									</div>
-								{/if}
+								<TokenLogo logoUrl={launch.logo_url} symbol={launch.token_symbol} address={launch.token_address || launch.address} size={40} />
 								<div class="flex-1 min-w-0">
 									<div class="flex items-center gap-1.5 mb-0.5">
 										<span class="syne font-bold text-white text-sm group-hover:text-purple-300 transition truncate">{launch.token_name || 'Unknown'}</span>
@@ -542,13 +530,7 @@
 
 						<div class="p-4 pb-3">
 							<div class="flex items-start gap-3">
-								{#if launch.logo_url}
-									<img src={launch.logo_url} alt="" class="launch-logo card-logo-adapt" />
-								{:else}
-									<div class="launch-logo launch-logo-placeholder launch-logo-upcoming">
-										{(launch.token_symbol || '?').charAt(0)}
-									</div>
-								{/if}
+								<TokenLogo logoUrl={launch.logo_url} symbol={launch.token_symbol} address={launch.token_address || launch.address} size={40} />
 								<div class="flex-1 min-w-0">
 									<div class="flex items-center gap-2 mb-0.5">
 										<span class="syne font-bold text-white text-sm group-hover:text-amber-300 transition truncate">{launch.token_name || 'Unknown'}</span>
