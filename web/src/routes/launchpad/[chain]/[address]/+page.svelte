@@ -1660,6 +1660,18 @@
 							{#if tokenTrust?.owner_renounced}
 								<span class="launch-badge badge-renounced" title="Ownership renounced">Renounced</span>
 							{/if}
+							{#if tokenTrust}
+								<span class="launch-badge badge-audited" title="Created via TokenKrafter audited contracts">Audited</span>
+							{/if}
+							{#if tokenTrust?.is_mintable}
+								<span class="launch-badge badge-mintable" title="Token supply can be increased by owner">Mintable</span>
+							{/if}
+							{#if tokenTrust?.is_taxable}
+								<span class="launch-badge badge-taxable" title="Token has buy/sell tax">Taxable</span>
+							{/if}
+							{#if tokenTrust?.is_partner}
+								<span class="launch-badge badge-partner" title="Partner token">Partner</span>
+							{/if}
 							<!-- Favorite + Share buttons -->
 							<button
 								class="detail-fav-btn"
@@ -3216,6 +3228,10 @@
 	.badge-lp { background: rgba(59, 130, 246, 0.12); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.2); }
 	.badge-locked { background: rgba(139, 92, 246, 0.12); color: #a78bfa; border: 1px solid rgba(139, 92, 246, 0.2); }
 	.badge-renounced { background: rgba(16, 185, 129, 0.12); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.2); }
+	.badge-audited { background: rgba(0, 210, 255, 0.12); color: #00d2ff; border: 1px solid rgba(0, 210, 255, 0.2); }
+	.badge-mintable { background: rgba(245, 158, 11, 0.12); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.2); }
+	.badge-taxable { background: rgba(245, 158, 11, 0.12); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.2); }
+	.badge-partner { background: rgba(139, 92, 246, 0.12); color: #a78bfa; border: 1px solid rgba(139, 92, 246, 0.2); }
 	.badge-orange { background: rgba(249, 115, 22, 0.12); color: #fb923c; border: 1px solid rgba(249, 115, 22, 0.25); }
 
 	/* Video embed */

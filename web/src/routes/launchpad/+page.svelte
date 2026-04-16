@@ -280,24 +280,30 @@
 			if (tokenAddrs.length > 0) {
 				const { data: tokenRows } = await supabase
 					.from('created_tokens')
-					.select('address, logo_url, is_safu, is_kyc, lp_burned, tax_ceiling_locked, owner_renounced')
+					.select('address, logo_url, is_safu, is_kyc, is_mintable, is_taxable, is_partner, lp_burned, tax_ceiling_locked, owner_renounced')
 					.in('address', tokenAddrs);
 				const tokenByAddr = new Map<string, any>();
 				for (const t of tokenRows || []) {
 					tokenByAddr.set(t.address.toLowerCase(), t);
 				}
 				for (const l of mapped) {
-					const t = tokenByAddr.get(l.token?.toLowerCase());
+					const addr = l.token?.toLowerCase();
+					const t = tokenByAddr.get(addr);
 					if (t) {
 						if (!(l as any).logoUrl && t.logo_url) (l as any).logoUrl = t.logo_url;
 						(l as any).tokenTrust = {
 							is_safu: t.is_safu,
 							is_kyc: t.is_kyc,
+							is_mintable: t.is_mintable,
+							is_taxable: t.is_taxable,
+							is_partner: t.is_partner,
+							is_platform: true, // exists in created_tokens = made via our factory
 							lp_burned: t.lp_burned,
 							tax_ceiling_locked: t.tax_ceiling_locked,
 							owner_renounced: t.owner_renounced,
 						};
 					}
+					// No row in created_tokens = external token, no "Audited" badge
 				}
 			}
 
@@ -597,6 +603,18 @@
 						{/if}
 						{#if (launch as any).tokenTrust?.is_kyc}
 							<span class="badge-pill badge-pill-kyc">KYC</span>
+						{/if}
+						{#if (launch as any).tokenTrust?.is_platform}
+							<span class="badge-pill badge-pill-audited">Audited</span>
+						{/if}
+						{#if (launch as any).tokenTrust?.is_mintable}
+							<span class="badge-pill badge-pill-mintable">Mintable</span>
+						{/if}
+						{#if (launch as any).tokenTrust?.is_taxable}
+							<span class="badge-pill badge-pill-taxable">Taxable</span>
+						{/if}
+						{#if (launch as any).tokenTrust?.is_partner}
+							<span class="badge-pill badge-pill-partner">Partner</span>
 						{/if}
 						{#if isHot(launch)}
 							<span class="badge-pill badge-list-hot">HOT</span>
@@ -1058,6 +1076,10 @@
 	.badge-pill-lp { background: rgba(16, 185, 129, 0.08); color: #34d399; border-color: rgba(16, 185, 129, 0.2); }
 	.badge-pill-safu { background: rgba(16,185,129,0.15); color: #10b981; font-weight: 800; border-color: rgba(16,185,129,0.3); }
 	.badge-pill-kyc { background: rgba(59,130,246,0.12); color: #60a5fa; font-weight: 800; border-color: rgba(59,130,246,0.25); }
+	.badge-pill-audited { background: rgba(0,210,255,0.08); color: #22d3ee; border-color: rgba(0,210,255,0.2); }
+	.badge-pill-mintable { background: rgba(245,158,11,0.08); color: #fbbf24; border-color: rgba(245,158,11,0.2); }
+	.badge-pill-taxable { background: rgba(245,158,11,0.08); color: #f59e0b; border-color: rgba(245,158,11,0.2); }
+	.badge-pill-partner { background: rgba(139,92,246,0.08); color: #a78bfa; border-color: rgba(139,92,246,0.2); }
 
 	/* ── Platform trust banner ── */
 	.trust-banner {
