@@ -79,11 +79,13 @@
 	}
 
 	function mergeTheme(opt: echarts.EChartsOption): echarts.EChartsOption {
+		const optLegend = (opt.legend as any) || {};
 		return addDataZoom({
 			...DARK_THEME,
 			...opt,
 			tooltip: { ...DARK_THEME.tooltip, ...(opt.tooltip as any || {}) },
 			grid: { ...DARK_THEME.grid, ...(opt.grid as any || {}) },
+			legend: { ...DARK_THEME.legend, ...optLegend, textStyle: { ...(DARK_THEME.legend as any).textStyle, ...optLegend.textStyle } },
 			xAxis: { ...DARK_THEME.xAxis, ...(opt.xAxis as any || {}) },
 			yAxis: { ...DARK_THEME.yAxis, ...(opt.yAxis as any || {}), splitLine: { lineStyle: { color: 'rgba(255,255,255,0.05)' }, ...(opt.yAxis as any)?.splitLine } },
 		});

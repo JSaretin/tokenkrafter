@@ -1939,7 +1939,7 @@
 					]}
 					<Chart option={{
 						tooltip: { trigger: 'item', formatter: '{b}: {d}%' },
-						legend: { bottom: 0, left: 'center', itemWidth: 10, itemHeight: 10, itemGap: 16 },
+						legend: { bottom: 0, left: 'center', itemWidth: 10, itemHeight: 10, itemGap: 16, textStyle: { color: '#94a3b8', fontSize: 11, fontFamily: "'Rajdhani', sans-serif" } },
 						series: [{
 							type: 'pie',
 							radius: ['45%', '75%'],

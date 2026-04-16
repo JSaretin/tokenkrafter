@@ -171,27 +171,55 @@
 							<span>Status</span>
 							<span class="receipt-status">{liveStatus === 'confirmed' ? 'Sent' : 'Processing'}</span>
 						</div>
-						{#if details.bank_name || details.bank_code}
+						{#if refId}
 							<div class="receipt-row">
-								<span>Bank</span>
-								<span>{details.bank_name || details.bank_code}</span>
+								<span>Reference</span>
+								<span>{refId}</span>
 							</div>
 						{/if}
-						{#if details.account}
+						{#if details.bank_name || details.bank_code || details.account || details.holder || details.email}
+							{#if details.bank_name || details.bank_code}
+								<div class="receipt-row">
+									<span>Bank</span>
+									<span>{details.bank_name || details.bank_code}</span>
+								</div>
+							{/if}
+							{#if details.account}
+								<div class="receipt-row">
+									<span>Account</span>
+									<span>{details.account}</span>
+								</div>
+							{/if}
+							{#if details.holder}
+								<div class="receipt-row">
+									<span>Recipient</span>
+									<span class="receipt-highlight">{details.holder}</span>
+								</div>
+							{/if}
+							{#if details.email}
+								<div class="receipt-row">
+									<span>Email</span>
+									<span>{details.email}</span>
+								</div>
+							{/if}
+						{:else}
 							<div class="receipt-row">
-								<span>Account</span>
-								<span>{details.account}</span>
+								<span>Paid to</span>
+								<span class="receipt-dim">On-chain withdrawal</span>
 							</div>
 						{/if}
-						{#if details.holder}
+						{#if feeAmount > 0}
 							<div class="receipt-row">
-								<span>Recipient</span>
-								<span class="receipt-highlight">{details.holder}</span>
+								<span>Gross</span>
+								<span>${grossAmount.toFixed(2)}</span>
 							</div>
-						{:else if details.email}
 							<div class="receipt-row">
-								<span>Email</span>
-								<span>{details.email}</span>
+								<span>Fee</span>
+								<span>${feeAmount.toFixed(2)}</span>
+							</div>
+							<div class="receipt-row">
+								<span>Net paid</span>
+								<span class="receipt-highlight">${netAmount.toFixed(2)}</span>
 							</div>
 						{/if}
 						{#if ngnAmount > 0}
@@ -202,8 +230,23 @@
 						{/if}
 						<div class="receipt-row">
 							<span>Date</span>
-							<span>{new Date(withdrawal?.created_at || Date.now()).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+							<span>{new Date(withdrawal?.created_at || Date.now()).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
 						</div>
+						{#if confirmedAtDisplay}
+							<div class="receipt-row">
+								<span>Confirmed</span>
+								<span>{confirmedAtDisplay}</span>
+							</div>
+						{/if}
+						{#if txExplorerLink}
+							<div class="receipt-row">
+								<span>On-chain tx</span>
+								<a class="receipt-link" href={txExplorerLink} target="_blank" rel="noopener noreferrer">
+									{withdrawal.tx_hash?.slice(0, 10)}...
+									<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+								</a>
+							</div>
+						{/if}
 					</div>
 				</div>
 				<button class="done-btn" onclick={onclose}>Done</button>
@@ -445,35 +488,49 @@
 	.countdown-fill { height: 100%; border-radius: 2px; transition: width 1s linear; }
 
 	/* Receipt (confirmed/processing) */
-	.receipt { margin-bottom: 16px; }
+	.receipt { margin-bottom: 12px; }
 	.receipt-check {
-		width: 64px; height: 64px; border-radius: 50%; margin: 0 auto 12px;
+		width: 44px; height: 44px; border-radius: 50%; margin: 0 auto 8px;
 		background: rgba(16,185,129,0.1);
 		display: flex; align-items: center; justify-content: center;
 	}
+	.receipt-check svg { width: 28px; height: 28px; }
 	.receipt-amount {
-		font-family: 'Syne', sans-serif; font-size: 28px; font-weight: 800;
-		color: var(--text-heading); margin-bottom: 2px;
+		font-family: 'Syne', sans-serif; font-size: 22px; font-weight: 800;
+		color: var(--text-heading); margin-bottom: 1px;
 	}
 	.receipt-fiat {
-		font-family: 'Rajdhani', sans-serif; font-size: 18px; font-weight: 700;
-		color: #10b981; margin-bottom: 16px;
+		font-family: 'Rajdhani', sans-serif; font-size: 15px; font-weight: 700;
+		color: #10b981; margin-bottom: 10px;
 	}
 	.receipt-divider {
-		height: 1px; background: var(--border);
-		margin: 0 -20px 16px; /* bleed to edges */
+		height: 1px;
+		margin: 0 -20px 10px;
 		border-style: dashed; border-width: 1px 0 0; border-color: var(--border);
 		background: none;
 	}
 	.receipt-rows { text-align: left; }
 	.receipt-row {
-		display: flex; justify-content: space-between; padding: 6px 0;
-		font-family: 'Space Mono', monospace; font-size: 12px;
+		display: flex; justify-content: space-between; padding: 4px 0;
+		font-family: 'Rajdhani', sans-serif; font-size: 12px;
 	}
 	.receipt-row span:first-child { color: var(--text-muted); }
 	.receipt-row span:last-child { color: var(--text); }
 	.receipt-status { color: #10b981 !important; font-weight: 700; }
 	.receipt-highlight { color: #10b981 !important; font-weight: 700; }
+	.receipt-dim { color: var(--text-dim) !important; font-style: italic; }
+	.receipt-link {
+		display: inline-flex; align-items: center; gap: 3px;
+		color: #00d2ff; text-decoration: none; font-family: 'Space Mono', monospace; font-size: 12px;
+	}
+	.receipt-link:hover { text-decoration: underline; }
+
+	.status-waiting { margin: 8px 0 12px; }
+	.waiting-text {
+		font-family: 'Rajdhani', sans-serif; font-size: 13px;
+		color: var(--text-muted); animation: waitPulse 2s ease-in-out infinite;
+	}
+	@keyframes waitPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
 
 	/* Step tracker */
 	.step-tracker {
