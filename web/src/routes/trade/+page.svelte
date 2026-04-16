@@ -1171,8 +1171,8 @@
 						net_amount: previewNet.toString(),
 						payment_method: paymentMethod,
 						payment_details: paymentDetails,
-						locked_naira_rate: ngnRate,
-						locked_ngn_amount: Math.floor(parseFloat(ethers.formatUnits(previewNet, usdtDecimals)) * ngnRate),
+						locked_naira_rate: lockedNgnRate || ngnRate,
+						locked_ngn_amount: lockedNgnAmount > 0 ? Math.floor(lockedNgnAmount) : Math.floor(parseFloat(ethers.formatUnits(previewNet, usdtDecimals)) * ngnRate),
 					})
 				});
 				if (!preRes.ok) {

@@ -130,26 +130,39 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 
 	const details = matched._details;
 
-	// ── 4. Calculate NGN amount ──
-	// Use the locked rate/amount from trade creation time if available.
-	// This is the exact amount the user was shown — no recalculation drift.
-	let ngnAmount: number;
-	let rate: number;
+	// ── 4. Calculate NGN amount (server-authoritative) ──
+	// NEVER trust frontend-supplied locked_ngn_amount — a malicious client
+	// could inflate it to drain the Flutterwave balance. Always compute
+	// from on-chain net amount × server exchange rate.
+	let usdtDecimals = 18;
+	try {
+		const tokenContract = new ethers.Contract(onChain.token, ['function decimals() view returns (uint8)'], provider);
+		usdtDecimals = Number(await tokenContract.decimals());
+	} catch {}
+	const netUsdt = parseFloat(ethers.formatUnits(netAmount, usdtDecimals));
 
-	if (matched.locked_ngn_amount && matched.locked_naira_rate) {
-		ngnAmount = Math.floor(parseFloat(matched.locked_ngn_amount));
-		rate = parseFloat(matched.locked_naira_rate);
-	} else {
-		// Fallback: recalculate (for old records without locked values)
-		let usdtDecimals = 18;
-		try {
-			const tokenContract = new ethers.Contract(onChain.token, ['function decimals() view returns (uint8)'], provider);
-			usdtDecimals = Number(await tokenContract.decimals());
-		} catch {}
-		const netUsdt = parseFloat(ethers.formatUnits(netAmount, usdtDecimals));
+	// Fetch the platform exchange rate from DB (same source as frontend)
+	let rate: number;
+	try {
+		const { data: rateConfig } = await supabaseAdmin
+			.from('platform_config')
+			.select('value')
+			.eq('key', 'exchange_rates')
+			.single();
+		const { data: override } = await supabaseAdmin
+			.from('platform_config')
+			.select('value')
+			.eq('key', 'rate_override')
+			.single();
+		const baseRate = rateConfig?.value?.rates?.NGN || 1600;
+		const spreadBps = override?.value?.spread_bps ?? 30;
+		const overrideRate = override?.value?.NGN;
+		rate = overrideRate ?? (baseRate * (1 - spreadBps / 10000));
+	} catch {
 		rate = naira_rate || 1600;
-		ngnAmount = Math.floor(netUsdt * rate);
 	}
+
+	const ngnAmount = Math.floor(netUsdt * rate);
 
 	if (ngnAmount <= 0) return error(400, 'Amount too small');
 
