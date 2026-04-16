@@ -349,7 +349,7 @@
 				Tradeable
 			</button>
 			<select class="sort-select" bind:value={sortBy}>
-				<option value="safu">SAFU first</option>
+				<option value="safu" title="Tokens with burned LP, locked taxes, and renounced ownership appear first.">SAFU first</option>
 				<option value="newest">Newest</option>
 				<option value="name">A → Z</option>
 			</select>
@@ -421,6 +421,7 @@
 								{#if tok.created_at && isNew(tok.created_at)}
 									<span class="tc-badge tc-badge-new">New</span>
 								{/if}
+								<!-- TODO: If token has an active launch (needs join to launches table), show amber "Pre-launch" pill + price from launch curve here -->
 								<span class="tc-badge tc-badge-{color}">{tokenType(tok)}</span>
 							</div>
 							{#if gecko?.has_data}
@@ -557,13 +558,13 @@
 	.token-card {
 		display: flex; flex-direction: column; gap: 10px;
 		padding: 16px; border-radius: 12px;
-		background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05);
+		background: rgba(255,255,255,0.02); border: 1px solid var(--border, rgba(0,0,0,0.08));
 		transition: all 0.15s;
 	}
 	.token-card:hover { border-color: rgba(0,210,255,0.15); box-shadow: 0 4px 20px rgba(0,0,0,0.15); }
 
 	/* Badges row */
-	.tc-badges-row { display: flex; gap: 4px; align-items: center; justify-content: flex-end; }
+	.tc-badges-row { display: flex; gap: 4px; align-items: center; justify-content: flex-end; overflow: hidden; white-space: nowrap; max-height: 22px; }
 	.tc-badge-new { background: rgba(16,185,129,0.15); color: #10b981; }
 	.tc-badge-safu { background: rgba(16,185,129,0.2); color: #10b981; font-weight: 800; border: 1px solid rgba(16,185,129,0.3); }
 	.tc-badge-lp { background: rgba(59,130,246,0.12); color: #60a5fa; }

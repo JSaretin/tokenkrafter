@@ -390,6 +390,7 @@ select.input-field option { background: var(--select-bg); color: var(--text); }
   background: var(--bg-surface-hover);
   border-radius: 3px;
   overflow: hidden;
+  border: 1px solid var(--border-subtle, rgba(255,255,255,0.06));
 }
 .progress-fill {
   height: 100%;

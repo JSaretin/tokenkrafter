@@ -271,9 +271,16 @@
 										{/if}
 										<span class="text-gray-600 text-xs font-mono shrink-0">{launch.token_symbol || '???'}</span>
 									</div>
-									<div class="flex items-center gap-1.5">
+									<div class="flex items-center gap-1.5 flex-wrap">
 										<span class="live-dot"></span>
 										<span class="text-xs font-mono text-cyan-400">Active</span>
+										{#if launch.is_partner}
+											<span class="launch-trust-badge launch-trust-partner">Partner</span>
+										{/if}
+										<!-- TODO: SAFU badge needs a join from created_tokens; buyer_count needs aggregation from purchases -->
+										{#if launch.buyer_count != null}
+											<span class="launch-trust-badge launch-trust-buyers">{launch.buyer_count} buyers</span>
+										{/if}
 										<span class="text-gray-600 text-[10px] font-mono ml-auto">{CURVE_TYPES[launch.curve_type] ?? 'Linear'}</span>
 									</div>
 								</div>
@@ -601,6 +608,28 @@
 		background: #00d2ff;
 		box-shadow: 0 0 8px rgba(0, 210, 255, 0.6);
 		animation: pulse 2s ease-in-out infinite;
+	}
+
+	/* Trust badges on launch cards */
+	.launch-trust-badge {
+		display: inline-flex;
+		align-items: center;
+		padding: 1px 6px;
+		border-radius: 999px;
+		font-size: 9px;
+		font-weight: 700;
+		font-family: 'Space Mono', monospace;
+		letter-spacing: 0.03em;
+	}
+	.launch-trust-partner {
+		background: rgba(139, 92, 246, 0.12);
+		color: #a78bfa;
+		border: 1px solid rgba(139, 92, 246, 0.2);
+	}
+	.launch-trust-buyers {
+		background: rgba(0, 210, 255, 0.08);
+		color: #67e8f9;
+		border: 1px solid rgba(0, 210, 255, 0.15);
 	}
 
 	/* Launch cards */
