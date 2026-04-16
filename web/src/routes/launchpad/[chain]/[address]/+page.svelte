@@ -2161,9 +2161,12 @@
 								const v = parseFloat(ethers.formatUnits(BigInt(tx.base_amount) + BigInt(tx.fee || '0'), usdtDecimals));
 								totals[tx.buyer] = (totals[tx.buyer] || 0) + v;
 							}
+							const entries = Object.entries(totals);
+							if (entries.length < 2) return '';
 							let best = '', bestV = 0;
-							for (const [addr, v] of Object.entries(totals)) { if (v > bestV) { best = addr; bestV = v; } }
-							return best;
+							for (const [addr, v] of entries) { if (v > bestV) { best = addr; bestV = v; } }
+							const avg = entries.reduce((s, [, v]) => s + v, 0) / entries.length;
+							return bestV >= avg * 1.5 ? best : '';
 						})()}
 						{@const firstBuyerAddr = txItems.length > 0 ? txItems[txItems.length - 1].buyer : ''}
 						{@const curPriceForCtx = launch ? Number(launch.currentPrice) / (10 ** usdtDecimals) : 0}

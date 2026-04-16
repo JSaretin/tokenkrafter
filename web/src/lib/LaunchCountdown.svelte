@@ -29,22 +29,15 @@
 	let warning = $derived(ms > 0 && ms >= 900000 && ms < 3600000);
 	let pad = (n: number) => String(n).padStart(2, '0');
 
-	// Previous values for the flip-out layer
-	let prevD = $state('00'); let prevH = $state('00'); let prevM = $state('00'); let prevS = $state('00');
-	let flipD = $state(false); let flipH = $state(false); let flipM = $state(false); let flipS = $state(false);
+	let prevS = $state(-1); let flipS = $state(false);
+	let prevM = $state(-1); let flipM = $state(false);
+	let prevH = $state(-1); let flipH = $state(false);
+	let prevD = $state(-1); let flipD = $state(false);
 
-	function triggerFlip(getter: () => string, prev: string, setPrev: (v: string) => void, setFlip: (v: boolean) => void) {
-		const cur = getter();
-		if (cur !== prev) {
-			setFlip(true);
-			setTimeout(() => { setPrev(cur); setFlip(false); }, 600);
-		}
-	}
-
-	$effect(() => { triggerFlip(() => pad(s), prevS, v => prevS = v, v => flipS = v); });
-	$effect(() => { triggerFlip(() => pad(m), prevM, v => prevM = v, v => flipM = v); });
-	$effect(() => { triggerFlip(() => pad(h), prevH, v => prevH = v, v => flipH = v); });
-	$effect(() => { triggerFlip(() => pad(d), prevD, v => prevD = v, v => flipD = v); });
+	$effect(() => { if (s !== prevS) { flipS = true; prevS = s; setTimeout(() => flipS = false, 400); } });
+	$effect(() => { if (m !== prevM) { flipM = true; prevM = m; setTimeout(() => flipM = false, 400); } });
+	$effect(() => { if (h !== prevH) { flipH = true; prevH = h; setTimeout(() => flipH = false, 400); } });
+	$effect(() => { if (d !== prevD) { flipD = true; prevD = d; setTimeout(() => flipD = false, 400); } });
 </script>
 
 {#if !ended}
@@ -54,32 +47,16 @@
 		{/if}
 		<div class="lcd-grid">
 			{#each [
-				{ cur: pad(d), prev: prevD, flip: flipD, unit: size === 'sm' ? 'd' : 'Days' },
-				{ cur: pad(h), prev: prevH, flip: flipH, unit: size === 'sm' ? 'h' : 'Hrs' },
-				{ cur: pad(m), prev: prevM, flip: flipM, unit: size === 'sm' ? 'm' : 'Min' },
-				{ cur: pad(s), prev: prevS, flip: flipS, unit: size === 'sm' ? 's' : 'Sec' },
+				{ val: pad(d), flip: flipD, unit: size === 'sm' ? 'd' : 'DAYS' },
+				{ val: pad(h), flip: flipH, unit: size === 'sm' ? 'h' : 'HRS' },
+				{ val: pad(m), flip: flipM, unit: size === 'sm' ? 'm' : 'MIN' },
+				{ val: pad(s), flip: flipS, unit: size === 'sm' ? 's' : 'SEC' },
 			] as item, i}
 				{#if i > 0}<div class="lcd-sep">:</div>{/if}
 				<div class="lcd-col">
-					<div class="flap">
-						<!-- Static bottom half: shows NEW number -->
-						<div class="flap-face flap-bottom">
-							<span class="flap-num">{item.cur}</span>
-						</div>
-						<!-- Static top half: shows NEW number -->
-						<div class="flap-face flap-top">
-							<span class="flap-num">{item.cur}</span>
-						</div>
-						<!-- Animated top flap: shows OLD number, flips down -->
-						{#if item.flip}
-							<div class="flap-face flap-top flap-fold-top">
-								<span class="flap-num">{item.prev}</span>
-							</div>
-							<!-- Animated bottom flap: shows NEW number, folds up from behind -->
-							<div class="flap-face flap-bottom flap-fold-bottom">
-								<span class="flap-num">{item.cur}</span>
-							</div>
-						{/if}
+					<div class="lcd-card" class:lcd-tick={item.flip}>
+						<span class="lcd-num">{item.val}</span>
+						<div class="lcd-line"></div>
 					</div>
 					<span class="lcd-unit">{item.unit}</span>
 				</div>
@@ -91,9 +68,9 @@
 <style>
 	.lcd { width: 100%; }
 	.lcd-label {
-		display: block; text-align: center; margin-bottom: 6px;
+		display: block; text-align: center; margin-bottom: 8px;
 		font-family: 'Space Mono', monospace;
-		text-transform: uppercase; letter-spacing: 0.06em;
+		text-transform: uppercase; letter-spacing: 0.08em;
 	}
 	.lcd-cyan .lcd-label { color: #00d2ff; }
 	.lcd-amber .lcd-label { color: #f59e0b; }
@@ -101,100 +78,85 @@
 	.lcd-urgent { color: #f87171 !important; animation: urgentPulse 1.5s ease-in-out infinite; }
 
 	.lcd-grid {
-		display: grid; grid-template-columns: 1fr auto 1fr auto 1fr auto 1fr;
+		display: grid;
+		grid-template-columns: 1fr auto 1fr auto 1fr auto 1fr;
 		align-items: start;
 	}
 	.lcd-sep {
 		font-family: 'Rajdhani', sans-serif; font-weight: 700;
-		color: var(--text-dim); text-align: center; opacity: 0.4;
+		color: var(--text-dim); text-align: center; opacity: 0.3;
 	}
 	.lcd-col {
 		display: flex; flex-direction: column; align-items: center;
 	}
 	.lcd-unit {
 		font-family: 'Space Mono', monospace;
-		text-transform: uppercase; letter-spacing: 0.06em;
+		text-transform: uppercase; letter-spacing: 0.08em;
 		color: var(--text-dim);
 	}
 
-	/* ── Split-flap card ── */
-	.flap {
-		position: relative; overflow: hidden; border-radius: 6px;
-	}
-	.lcd-cyan .flap { background: rgba(0,210,255,0.06); border: 1px solid rgba(0,210,255,0.1); }
-	.lcd-amber .flap { background: rgba(245,158,11,0.06); border: 1px solid rgba(245,158,11,0.1); }
-
-	.flap-face {
+	/* Card */
+	.lcd-card {
+		position: relative;
 		display: flex; align-items: center; justify-content: center;
-		overflow: hidden; backface-visibility: hidden;
+		border-radius: 6px;
 	}
-	.flap-num {
+	.lcd-cyan .lcd-card {
+		background: linear-gradient(180deg, rgba(0,210,255,0.08) 0%, rgba(0,210,255,0.02) 100%);
+		border: 1px solid rgba(0,210,255,0.12);
+	}
+	.lcd-amber .lcd-card {
+		background: linear-gradient(180deg, rgba(245,158,11,0.08) 0%, rgba(245,158,11,0.02) 100%);
+		border: 1px solid rgba(245,158,11,0.12);
+	}
+
+	/* Horizontal split line */
+	.lcd-line {
+		position: absolute; left: 2px; right: 2px; top: 50%;
+		height: 1px; background: var(--bg, #07070d); opacity: 0.2;
+		pointer-events: none;
+	}
+
+	.lcd-num {
 		font-family: 'Rajdhani', sans-serif; font-weight: 700;
 		color: var(--text-heading); font-variant-numeric: tabular-nums;
-		line-height: 1;
+		line-height: 1; position: relative; z-index: 1;
 	}
-	.lcd-amber .flap-num { color: #f59e0b; }
+	.lcd-amber .lcd-num { color: #f59e0b; }
 
-	/* Top half clips bottom, bottom half clips top */
-	.flap-top {
-		position: absolute; top: 0; left: 0; right: 0; height: 50%;
+	/* Tick animation — card flips down then back up */
+	.lcd-tick {
+		animation: tick 0.4s ease-in-out;
 	}
-	.flap-top .flap-num { position: relative; top: 35%; }
-	.flap-bottom {
-		position: relative; width: 100%; height: 100%;
-	}
-
-	/* Divider line */
-	.flap::after {
-		content: ''; position: absolute; left: 0; right: 0; top: 50%;
-		height: 1px; background: var(--bg, #07070d); opacity: 0.3; z-index: 5;
-	}
-
-	/* ── Animated flaps ── */
-	.flap-fold-top {
-		z-index: 10;
-		transform-origin: center bottom;
-		animation: flapDown 0.3s ease-in forwards;
-	}
-	.flap-fold-bottom {
-		z-index: 8; top: 50%; height: 50%;
-		transform-origin: center top;
-		animation: flapUp 0.3s 0.15s ease-out forwards;
-		transform: rotateX(90deg);
-	}
-	.flap-fold-bottom .flap-num { position: relative; top: -35%; }
 
 	/* ── Sizes ── */
 	.lcd-sm .lcd-grid { gap: 2px; }
-	.lcd-sm .flap { width: 28px; height: 28px; border-radius: 4px; }
-	.lcd-sm .flap-num { font-size: 16px; }
-	.lcd-sm .lcd-unit { font-size: 6px; margin-top: 1px; }
-	.lcd-sm .lcd-sep { font-size: 10px; margin-top: 6px; }
-	.lcd-sm .lcd-label { font-size: 8px; margin-bottom: 4px; }
+	.lcd-sm .lcd-card { width: 26px; height: 28px; border-radius: 4px; }
+	.lcd-sm .lcd-num { font-size: 16px; }
+	.lcd-sm .lcd-unit { font-size: 5px; margin-top: 1px; }
+	.lcd-sm .lcd-sep { font-size: 10px; margin-top: 8px; }
+	.lcd-sm .lcd-label { font-size: 7px; margin-bottom: 4px; }
 
 	.lcd-md .lcd-grid { gap: 3px; }
-	.lcd-md .flap { width: 38px; height: 38px; border-radius: 6px; }
-	.lcd-md .flap-num { font-size: 22px; }
-	.lcd-md .lcd-unit { font-size: 7px; margin-top: 2px; }
-	.lcd-md .lcd-sep { font-size: 14px; margin-top: 10px; }
-	.lcd-md .lcd-label { font-size: 9px; }
+	.lcd-md .lcd-card { width: 36px; height: 40px; border-radius: 6px; }
+	.lcd-md .lcd-num { font-size: 22px; }
+	.lcd-md .lcd-unit { font-size: 6px; margin-top: 2px; }
+	.lcd-md .lcd-sep { font-size: 14px; margin-top: 12px; }
+	.lcd-md .lcd-label { font-size: 8px; }
 
-	.lcd-lg .lcd-grid { gap: 6px; }
-	.lcd-lg .flap { width: 52px; height: 52px; border-radius: 8px; }
-	.lcd-lg .flap-num { font-size: 30px; }
-	.lcd-lg .lcd-unit { font-size: 9px; margin-top: 3px; }
-	.lcd-lg .lcd-sep { font-size: 20px; margin-top: 14px; }
-	.lcd-lg .lcd-label { font-size: 10px; margin-bottom: 8px; }
+	.lcd-lg .lcd-grid { gap: 8px; }
+	.lcd-lg .lcd-card { width: 52px; height: 56px; border-radius: 8px; }
+	.lcd-lg .lcd-num { font-size: 32px; }
+	.lcd-lg .lcd-unit { font-size: 8px; margin-top: 3px; }
+	.lcd-lg .lcd-sep { font-size: 22px; margin-top: 16px; }
+	.lcd-lg .lcd-label { font-size: 10px; margin-bottom: 10px; }
 
-	@keyframes flapDown {
-		0% { transform: rotateX(0deg); }
-		100% { transform: rotateX(-90deg); }
+	@keyframes tick {
+		0% { transform: perspective(200px) rotateX(0deg); }
+		50% { transform: perspective(200px) rotateX(-30deg) scale(0.97); }
+		100% { transform: perspective(200px) rotateX(0deg); }
 	}
-	@keyframes flapUp {
-		0% { transform: rotateX(90deg); }
-		70% { transform: rotateX(-8deg); }
-		100% { transform: rotateX(0deg); }
-	}
+
 	@keyframes urgentPulse {
 		0%, 100% { opacity: 1; }
 		50% { opacity: 0.5; }
