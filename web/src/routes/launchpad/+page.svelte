@@ -5,6 +5,7 @@
 	import { t } from '$lib/i18n';
 	import { favorites, toggleFavorite } from '$lib/favorites';
 	import MarketFlow from '$lib/MarketFlow.svelte';
+	import FlipCountdown from '$lib/FlipCountdown.svelte';
 	import { chainSlug, type SupportedNetwork } from '$lib/structure';
 	import {
 		LAUNCHPAD_FACTORY_ABI,
@@ -690,24 +691,7 @@
 								<span class="card-countdown-label {isScheduled ? 'countdown-scheduled' : countdownColor(launch.deadline)}">
 									{isScheduled ? 'Starts in' : 'Sale ends in'}
 								</span>
-								<div class="card-countdown-grid {isScheduled ? 'card-countdown-amber' : ''}">
-									<div class="card-cd-box">
-										<span class="card-cd-num">{String(cd.d).padStart(2, '0')}</span>
-										<span class="card-cd-label">Days</span>
-									</div>
-									<div class="card-cd-box">
-										<span class="card-cd-num">{String(cd.h).padStart(2, '0')}</span>
-										<span class="card-cd-label">Hrs</span>
-									</div>
-									<div class="card-cd-box">
-										<span class="card-cd-num">{String(cd.m).padStart(2, '0')}</span>
-										<span class="card-cd-label">Min</span>
-									</div>
-									<div class="card-cd-box">
-										<span class="card-cd-num">{String(cd.s).padStart(2, '0')}</span>
-										<span class="card-cd-label">Sec</span>
-									</div>
-								</div>
+								<FlipCountdown days={cd.d} hours={cd.h} minutes={cd.m} seconds={cd.s} variant={isScheduled ? 'amber' : 'cyan'} />
 							</div>
 						{/if}
 					{/if}
@@ -1010,42 +994,7 @@
 		text-align: center;
 		margin-bottom: 6px;
 	}
-	.card-countdown-grid {
-		display: grid;
-		grid-template-columns: repeat(4, 1fr);
-		gap: 4px;
-	}
-	.card-cd-box {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: 2px;
-		padding: 6px 2px;
-		background: linear-gradient(135deg, rgba(0, 210, 255, 0.06), rgba(139, 92, 246, 0.06));
-		border: 1px solid rgba(0, 210, 255, 0.1);
-		border-radius: 8px;
-	}
-	.card-countdown-amber .card-cd-box {
-		background: linear-gradient(135deg, rgba(245, 158, 11, 0.06), rgba(217, 119, 6, 0.06));
-		border-color: rgba(245, 158, 11, 0.12);
-	}
-	.card-cd-num {
-		font-family: 'Space Mono', monospace;
-		font-size: 16px;
-		font-weight: 700;
-		color: var(--text-heading);
-		line-height: 1;
-	}
-	.card-countdown-amber .card-cd-num {
-		color: #f59e0b;
-	}
-	.card-cd-label {
-		font-family: 'Space Mono', monospace;
-		font-size: 7px;
-		text-transform: uppercase;
-		letter-spacing: 0.06em;
-		color: var(--text-dim);
-	}
+	/* Old card-cd-* styles removed — now using FlipCountdown component */
 
 	/* Timer inline label fallback */
 	.card-timer-label {

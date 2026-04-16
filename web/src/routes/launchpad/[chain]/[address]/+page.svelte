@@ -2408,6 +2408,24 @@
 									<div class="lp-sc-label">SC</div>
 								</div>
 							{/if}
+							<!-- Milestone ticks at 25%, 50%, 75% -->
+							{#each [25, 50, 75] as pct}
+								<div class="lp-milestone-tick" class:lp-milestone-reached={progress >= pct} style="left: {pct}%" title="{pct}%">
+									<div class="lp-milestone-line"></div>
+								</div>
+							{/each}
+							<!-- Ghost marker: where it was ~1h ago (estimated from txItems) -->
+							{#if txItems.length > 0 && launch.hardCap > 0n}
+								{@const oneHourAgo = Date.now() - 3600000}
+								{@const recentBuysUsdt = txItems.reduce((sum, tx) => {
+									const ts = typeof tx.created_at === 'number' ? tx.created_at * 1000 : new Date(tx.created_at).getTime();
+									return ts > oneHourAgo ? sum + parseFloat(ethers.formatUnits(BigInt(tx.base_amount) + BigInt(tx.fee || '0'), usdtDecimals)) : sum;
+								}, 0)}
+								{@const ghostPct = Math.max(0, progress - (recentBuysUsdt / (Number(launch.hardCap) / (10 ** usdtDecimals)) * 100))}
+								{#if ghostPct > 0 && progress - ghostPct > 0.5}
+									<div class="lp-ghost-marker" style="left: {ghostPct}%" title="~1 hour ago"></div>
+								{/if}
+							{/if}
 						</div>
 						<div class="flex justify-between text-[10px] font-mono mt-1">
 							<span class="text-gray-500">{progress}% {$t('lpd.raised')}</span>
@@ -2417,6 +2435,77 @@
 								<span class="text-emerald-400">{$t('lpd.softCapReached')}</span>
 							{/if}
 						</div>
+
+						<!-- Context signals under progress bar -->
+						{#if launch.state === 1}
+							{@const remainingUsdt = launch.hardCap - launch.totalBaseRaised}
+							{@const remainingNum = Number(remainingUsdt) / (10 ** usdtDecimals)}
+							{@const startTs = launch.startTimestamp > 0n ? Number(launch.startTimestamp) : 0}
+							{@const deadlineTs = Number(launch.deadline)}
+							{@const totalDuration = deadlineTs - startTs}
+							{@const elapsed = startTs > 0 ? Math.floor(Date.now() / 1000) - startTs : 0}
+							{@const timePct = totalDuration > 0 ? Math.min(100, (elapsed / totalDuration) * 100) : 0}
+							{@const curP = Number(launch.currentPrice) / (10 ** usdtDecimals)}
+							{@const tokFrac = launch.tokensForCurve > 0n ? Number(launch.tokensSold) / Number(launch.tokensForCurve) : 0}
+							{@const ct = Number(launch.curveType)}
+							{@const curveFnAt = (x: number) => ct === 0 ? x : ct === 1 ? Math.sqrt(x) : ct === 2 ? x * x : (Math.exp(x * 3) - 1) / (Math.E ** 3 - 1)}
+							{@const nextFrac = Math.min(1, tokFrac + 0.01)}
+							{@const curveAtNow = curveFnAt(tokFrac)}
+							{@const curveAtNext = curveFnAt(nextFrac)}
+							{@const impactPct = curveAtNow > 0 ? ((curveAtNext - curveAtNow) / curveAtNow * 100) : 0}
+							<div class="progress-context">
+								{#if remainingNum > 0}
+									<div class="ctx-line ctx-scarcity">
+										<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+										<span>{formatUsdt(remainingUsdt, ud)} left until hard cap</span>
+									</div>
+								{/if}
+
+								<!-- Velocity: raw speed in the last hour -->
+								{#if txItems.length > 0}
+									{@const oneHrAgo = Date.now() - 3600000}
+									{@const tenMinAgo = Date.now() - 600000}
+									{@const hourBuys = txItems.filter(tx => { const ts = typeof tx.created_at === 'number' ? tx.created_at * 1000 : new Date(tx.created_at).getTime(); return ts > oneHrAgo; })}
+									{@const hourVol = hourBuys.reduce((s, tx) => s + parseFloat(ethers.formatUnits(BigInt(tx.base_amount) + BigInt(tx.fee || '0'), usdtDecimals)), 0)}
+									{@const recentBuys = txItems.filter(tx => { const ts = typeof tx.created_at === 'number' ? tx.created_at * 1000 : new Date(tx.created_at).getTime(); return ts > tenMinAgo; }).length}
+									{#if hourVol > 0}
+										<div class="ctx-line ctx-velocity">
+											<span>🔥</span>
+											<span>+${hourVol.toFixed(2)} in the last hour{recentBuys > 0 ? ` · ${recentBuys} buy${recentBuys > 1 ? 's' : ''} in 10 min` : ''}</span>
+										</div>
+									{/if}
+								{/if}
+
+								{#if timePct > 0 && progress > 0}
+									{@const pace = progress / timePct}
+									{#if pace > 1.5}
+										<div class="ctx-line ctx-pace-fast">
+											<span>🚀</span>
+											<span>{progress.toFixed(1)}% raised in {timePct.toFixed(0)}% of time — ahead of pace</span>
+										</div>
+									{:else if pace < 0.5 && timePct > 20}
+										<div class="ctx-line ctx-pace-slow">
+											<span>⏳</span>
+											<span>{progress.toFixed(1)}% raised, {(100 - timePct).toFixed(0)}% of time remaining</span>
+										</div>
+									{/if}
+								{/if}
+
+								{#if tokenProgress > 0 && Math.abs(progress - tokenProgress) > 3}
+									<div class="ctx-line ctx-curve">
+										<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4m0-4h.01"/></svg>
+										<span>{tokenProgress}% tokens sold = {progress}% of hard cap (price rises along curve)</span>
+									</div>
+								{/if}
+
+								{#if impactPct > 0.1}
+									<div class="ctx-line ctx-impact">
+										<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/></svg>
+										<span>Next 1% of tokens → price +{impactPct.toFixed(1)}%</span>
+									</div>
+								{/if}
+							</div>
+						{/if}
 					</div>
 
 					<div class="mb-4">
@@ -3213,7 +3302,51 @@
 	.impact-notice-btn:hover { background: rgba(0, 210, 255, 0.15); border-color: rgba(0, 210, 255, 0.4); }
 
 	/* Progress bar with soft cap marker */
+	/* Progress context signals */
+	.progress-context {
+		display: flex; flex-direction: column; gap: 4px;
+		margin-top: 8px;
+	}
+	.ctx-line {
+		display: flex; align-items: center; gap: 5px;
+		font-family: 'Space Mono', monospace; font-size: 9px;
+		padding: 4px 8px; border-radius: 6px;
+	}
+	.ctx-line svg { flex-shrink: 0; }
+	.ctx-scarcity { color: #f59e0b; background: rgba(245,158,11,0.05); }
+	.ctx-scarcity svg { color: #f59e0b; }
+	.ctx-pace-fast { color: #00d2ff; background: rgba(0,210,255,0.05); }
+	.ctx-pace-slow { color: var(--text-dim); background: rgba(255,255,255,0.02); }
+	.ctx-curve { color: var(--text-muted); background: rgba(255,255,255,0.02); }
+	.ctx-curve svg { color: var(--text-dim); }
+	.ctx-velocity { color: #f59e0b; background: rgba(245,158,11,0.05); }
+	.ctx-impact { color: #10b981; background: rgba(16,185,129,0.05); }
+	.ctx-impact svg { color: #10b981; }
+
 	.lp-progress-wrap { position: relative; }
+
+	/* Milestone ticks on progress bar */
+	.lp-milestone-tick {
+		position: absolute; top: 0; transform: translateX(-50%);
+		pointer-events: none; z-index: 1;
+	}
+	.lp-milestone-line {
+		width: 1px; height: 16px;
+		background: rgba(255,255,255,0.08);
+		transition: background 0.3s;
+	}
+	.lp-milestone-reached .lp-milestone-line {
+		background: rgba(0,210,255,0.25);
+	}
+
+	/* Ghost marker: where bar was ~1h ago */
+	.lp-ghost-marker {
+		position: absolute; top: 3px; transform: translateX(-50%);
+		width: 6px; height: 10px; border-radius: 2px;
+		background: rgba(255,255,255,0.1);
+		border: 1px solid rgba(255,255,255,0.08);
+		pointer-events: none; z-index: 1;
+	}
 	.lp-sc-marker {
 		position: absolute; top: -4px; transform: translateX(-50%);
 		display: flex; flex-direction: column; align-items: center; z-index: 2;
