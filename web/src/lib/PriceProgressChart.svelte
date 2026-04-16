@@ -10,7 +10,7 @@
 		hardCap = 0n,
 		tokenDecimals = 18,
 		usdtDecimals = 18,
-		height = '240px'
+		height = '160px'
 	}: {
 		curveType?: number;
 		tokensForCurve?: bigint;
@@ -52,6 +52,11 @@
 		const progressFrac = tokensForCurve > 0n ? Math.max(0, Math.min(1, Number(tokensSold) / Number(tokensForCurve))) : 0;
 		const maxY = curveFn(1, curveType);
 
+		// Auto-scale Y axis so the curve detail is visible at low progress
+		const peekAhead = Math.min(1, progressFrac + 0.3);
+		const peekY = (curveFn(peekAhead, curveType) / maxY) * 100;
+		const yMax = progressFrac < 0.5 ? Math.max(15, Math.ceil(peekY / 5) * 5) : 100;
+
 		// Full curve data — X = tokens sold, Y = price level (normalized 0-100%)
 		const curveData: [number, number][] = [];
 		for (let i = 0; i <= STEPS; i++) {
@@ -92,13 +97,15 @@
 				name: 'Tokens Sold',
 				nameLocation: 'center',
 				nameGap: 22,
-				nameTextStyle: { fontSize: 10, color: '#64748b' },
+				nameTextStyle: { fontSize: 10, color: '#94a3b8' },
 				min: 0,
 				max: totalTokens,
 				axisLabel: {
 					fontSize: 9,
+					color: '#94a3b8',
 					formatter: (v: number) => formatNum(BigInt(Math.round(v * (10 ** tokenDecimals))), tokenDecimals),
 				},
+				axisLine: { lineStyle: { color: 'rgba(255,255,255,0.1)' } },
 				splitLine: { show: false },
 			},
 			yAxis: {
@@ -106,10 +113,12 @@
 				name: 'Price',
 				nameLocation: 'center',
 				nameGap: 36,
-				nameTextStyle: { fontSize: 10, color: '#64748b' },
+				nameTextStyle: { fontSize: 10, color: '#94a3b8' },
 				min: 0,
-				max: 100,
-				axisLabel: { formatter: '{value}%', fontSize: 9 },
+				max: yMax,
+				axisLabel: { formatter: '{value}%', fontSize: 9, color: '#94a3b8' },
+				axisLine: { lineStyle: { color: 'rgba(255,255,255,0.1)' } },
+				splitLine: { lineStyle: { color: 'rgba(255,255,255,0.05)' } },
 			},
 			series: [
 				// Filled area (progress)
@@ -222,7 +231,7 @@
 				left: 'center',
 				top: 6,
 				style: {
-					text: `${CURVE_LABELS[curveType]}${progressFrac > 0 ? ` · ${(progressFrac * 100).toFixed(1)}% sold` : ''}`,
+					text: `${CURVE_LABELS[curveType]}${progressFrac > 0 ? ` · ${(progressFrac * 100).toFixed(1)}% tokens sold` : ''}`,
 					fill: '#94a3b8',
 					fontSize: 11,
 					fontFamily: "'Rajdhani', sans-serif",

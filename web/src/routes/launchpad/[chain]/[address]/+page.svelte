@@ -655,6 +655,25 @@
 		}
 	});
 
+	// Re-fetch user position when wallet changes (switch account, connect, disconnect)
+	let _prevUserAddr: string | null = null;
+	$effect(() => {
+		const addr = userAddress;
+		if (addr === _prevUserAddr) return;
+		_prevUserAddr = addr;
+		if (!addr) {
+			// Disconnected — reset user-specific state
+			userBasePaid = 0n;
+			userTokensBought = 0n;
+			return;
+		}
+		// New wallet connected — fetch their position
+		const net = network;
+		if (!net) return;
+		const provider = networkProviders.get(net.chain_id);
+		if (provider) loadUserPosition(provider);
+	});
+
 	// WS event-driven refresh for Pending + Active launches, with polling fallback
 	$effect(() => {
 		if (!launch || launch.state > 1) return; // only Pending (0) and Active (1)

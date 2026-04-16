@@ -4,7 +4,7 @@
 	let {
 		curveType = 0,
 		progress = 0,
-		height = '240px'
+		height = '160px'
 	}: {
 		curveType?: number;
 		progress?: number;
@@ -27,6 +27,11 @@
 	let chartOption = $derived.by(() => {
 		const clampedProgress = Math.max(0, Math.min(100, progress));
 		const pFrac = clampedProgress / 100;
+
+		// Auto-scale Y axis so the curve isn't crammed into a corner at low progress
+		const peekAhead = Math.min(1, pFrac + 0.3);
+		const peekY = curveFn(peekAhead, curveType) * 100;
+		const yMax = pFrac < 0.5 ? Math.max(15, Math.ceil(peekY / 5) * 5) : 100;
 
 		// Full curve data
 		const curveData: [number, number][] = [];
@@ -79,7 +84,7 @@
 				nameLocation: 'center',
 				nameGap: 32,
 				nameTextStyle: { fontSize: 10, color: '#94a3b8' },
-				min: 0, max: 100,
+				min: 0, max: yMax,
 				axisLabel: { formatter: '{value}%', fontSize: 10, color: '#94a3b8' },
 				axisLine: { lineStyle: { color: 'rgba(255,255,255,0.1)' } },
 				splitLine: { lineStyle: { color: 'rgba(255,255,255,0.05)' } },
