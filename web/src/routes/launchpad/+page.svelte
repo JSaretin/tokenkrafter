@@ -739,10 +739,10 @@
 					{/if}
 
 					<!-- 5. Progress -->
-					<div class="px-4 pb-4">
-						<div class="flex justify-between items-baseline mb-1.5">
+					<div class="card-progress-section">
+						<div class="flex justify-between items-baseline mb-2">
 							<span class="text-white text-xs font-mono font-semibold">Raised {progress}%</span>
-							<span class="text-gray-600 text-[10px] font-mono">{formatUsdt(launch.hardCap, ud)}</span>
+							<span class="text-gray-500 text-[10px] font-mono">{formatUsdt(launch.hardCap, ud)}</span>
 						</div>
 						<div class="progress-track-wrap">
 							<div class="progress-track">
@@ -1133,14 +1133,19 @@
 	.state-text-red { color: #f87171; }
 
 	/* Progress bar with soft cap marker */
+	.card-progress-section {
+		padding: 12px 16px 16px;
+		border-top: 1px solid var(--border-subtle);
+	}
 	.progress-track-wrap {
 		position: relative;
-		height: 16px;
+		height: 20px;
 	}
 	.progress-track-wrap .progress-track {
-		height: 8px;
+		height: 12px;
 		margin-top: 2px;
-		border-radius: 4px;
+		border-radius: 6px;
+		border: 1px solid var(--border-subtle);
 	}
 	.softcap-marker {
 		position: absolute;
@@ -1233,9 +1238,9 @@
 	}
 
 	/* ── Tokenomics visual bar ── */
-	.card-distro-bar-wrap { padding: 0 16px 8px; }
+	.card-distro-bar-wrap { padding: 0 16px 6px; opacity: 0.7; }
 	.card-distro-bar {
-		display: flex; height: 4px; border-radius: 2px; overflow: hidden;
+		display: flex; height: 3px; border-radius: 2px; overflow: hidden;
 		background: var(--bg-surface-hover);
 	}
 	.distro-seg { min-width: 2px; }
