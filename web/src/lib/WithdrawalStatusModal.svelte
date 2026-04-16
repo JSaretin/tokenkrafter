@@ -105,15 +105,19 @@
 	let elapsed = $derived(nowSec - createdAt);
 	let progressPct = $derived(totalDuration > 0 ? Math.min(100, (elapsed / totalDuration) * 100) : 100);
 	let canCancel = $derived((liveStatus === 'pending' || liveStatus === 'timeout') && remaining <= 0);
-	let usdtAmount = $derived(parseFloat(withdrawal?.gross_amount || '0') / (10 ** usdtDecimals));
+	let grossAmount = $derived(parseFloat(withdrawal?.gross_amount || '0') / (10 ** usdtDecimals));
+	let feeAmount = $derived(parseFloat(withdrawal?.fee || '0') / (10 ** usdtDecimals));
+	let netAmount = $derived(parseFloat(withdrawal?.net_amount || '0') / (10 ** usdtDecimals));
+	let usdtAmount = $derived(grossAmount); // display gross as headline
 	// Prefer the amount locked at confirm time; otherwise compute live.
 	let ngnAmount = $derived(
 		lockedNgnAmount > 0
 			? lockedNgnAmount
-			: (ngnRate > 0 && usdtAmount > 0 ? usdtAmount * ngnRate : 0)
+			: (ngnRate > 0 && netAmount > 0 ? netAmount * ngnRate : 0)
 	);
 	let details = $derived(withdrawal?.payment_details || {});
 	let bankLabel = $derived(details?.bank_name || details?.bank_code || details?.email || 'your account');
+	let refId = $derived(withdrawal?.withdraw_id ? `#${withdrawal.withdraw_id}` : '');
 	let txExplorerLink = $derived(
 		withdrawal?.tx_hash && explorerUrl
 			? `${explorerUrl.replace(/\/$/, '')}/tx/${withdrawal.tx_hash}`
@@ -237,17 +241,104 @@
 					<div class="status-fiat">≈ NGN {ngnAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
 				{/if}
 
+				<!-- Step tracker -->
+				{#if liveStatus === 'cancelled'}
+					<div class="step-tracker">
+						<div class="step step-done">
+							<div class="step-dot"></div>
+							<span>Deposited</span>
+						</div>
+						<div class="step-line step-line-done"></div>
+						<div class="step step-done">
+							<div class="step-dot"></div>
+							<span>Refunded</span>
+						</div>
+					</div>
+				{:else if liveStatus === 'pending' && remaining <= 0}
+					<div class="step-tracker">
+						<div class="step step-done">
+							<div class="step-dot"></div>
+							<span>Deposited</span>
+						</div>
+						<div class="step-line step-line-expired"></div>
+						<div class="step step-expired">
+							<div class="step-dot"></div>
+							<span>Expired</span>
+						</div>
+					</div>
+				{:else}
+					{@const step = liveStatus === 'confirmed' ? 3 : (liveStatus === 'processing' ? 2 : 1)}
+					<div class="step-tracker">
+						<div class="step" class:step-done={step >= 1} class:step-active={step === 1 && remaining > 0}>
+							<div class="step-dot"></div>
+							<span>Deposited</span>
+						</div>
+						<div class="step-line" class:step-line-done={step >= 2}></div>
+						<div class="step" class:step-done={step >= 2} class:step-active={step === 2}>
+							<div class="step-dot"></div>
+							<span>Processing</span>
+						</div>
+						<div class="step-line" class:step-line-done={step >= 3}></div>
+						<div class="step" class:step-done={step >= 3}>
+							<div class="step-dot"></div>
+							<span>Sent</span>
+						</div>
+					</div>
+				{/if}
+
 				<div class="details-card">
+					{#if refId}
+						<div class="detail-row">
+							<span>Reference</span>
+							<span>{refId}</span>
+						</div>
+					{/if}
 					{#if details.bank_name || details.bank_code}
 						<div class="detail-row">
 							<span>Bank</span>
 							<span>{details.bank_name || details.bank_code}</span>
 						</div>
 					{/if}
+					{#if details.account}
+						<div class="detail-row">
+							<span>Account</span>
+							<span>{details.account}</span>
+						</div>
+					{/if}
 					{#if details.holder}
 						<div class="detail-row detail-row-highlight">
 							<span>Recipient</span>
 							<span>{details.holder}</span>
+						</div>
+					{:else if details.email}
+						<div class="detail-row">
+							<span>Email</span>
+							<span>{details.email}</span>
+						</div>
+					{/if}
+					{#if feeAmount > 0}
+						<div class="detail-row">
+							<span>Fee</span>
+							<span>${feeAmount.toFixed(2)}</span>
+						</div>
+						<div class="detail-row">
+							<span>You receive</span>
+							<span class="detail-highlight">${netAmount.toFixed(2)}</span>
+						</div>
+					{/if}
+					{#if ngnRate > 0}
+						<div class="detail-row">
+							<span>Rate</span>
+							<span>1 USD = NGN {ngnRate.toFixed(2)}</span>
+						</div>
+					{/if}
+					{#if txExplorerLink}
+						<div class="detail-row">
+							<span>Tx</span>
+							<a class="detail-link" href={txExplorerLink} target="_blank" rel="noopener noreferrer">
+								{withdrawal.tx_hash?.slice(0, 10)}...
+								<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+							</a>
 						</div>
 					{/if}
 				</div>
@@ -266,12 +357,6 @@
 						</div>
 						{#if confirmedAtDisplay}
 							<div class="success-sub">{confirmedAtDisplay}</div>
-						{/if}
-						{#if txExplorerLink}
-							<a class="success-tx" href={txExplorerLink} target="_blank" rel="noopener noreferrer">
-								View transaction
-								<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-							</a>
 						{/if}
 					</div>
 					<button class="done-btn" onclick={onclose}>Done</button>
@@ -378,6 +463,37 @@
 	.receipt-status { color: #10b981 !important; font-weight: 700; }
 	.receipt-highlight { color: #10b981 !important; font-weight: 700; }
 
+	/* Step tracker */
+	.step-tracker {
+		display: flex; align-items: center; justify-content: center;
+		gap: 0; margin: 16px 0;
+	}
+	.step {
+		display: flex; flex-direction: column; align-items: center; gap: 4px;
+		font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text-muted);
+	}
+	.step-dot {
+		width: 10px; height: 10px; border-radius: 50%;
+		background: var(--bg-surface-hover); border: 2px solid var(--border);
+		transition: all 200ms;
+	}
+	.step-done .step-dot { background: #10b981; border-color: #10b981; }
+	.step-active .step-dot {
+		background: #f59e0b; border-color: #f59e0b;
+		box-shadow: 0 0 8px rgba(245,158,11,0.4);
+	}
+	.step-done { color: var(--text); }
+	.step-active { color: #f59e0b; }
+	.step-line {
+		width: 40px; height: 2px; background: var(--border);
+		margin: 0 4px; margin-bottom: 18px;
+		transition: background 200ms;
+	}
+	.step-line-done { background: #10b981; }
+	.step-line-expired { background: #f87171; }
+	.step-expired .step-dot { background: #f87171; border-color: #f87171; }
+	.step-expired { color: #f87171; }
+
 	.details-card {
 		background: var(--bg-surface-input); border-radius: 12px; padding: 12px;
 		margin-bottom: 16px; text-align: left;
@@ -389,6 +505,12 @@
 	.detail-row span:first-child { color: var(--text-muted); }
 	.detail-row span:last-child { color: var(--text); }
 	.detail-row-highlight span:last-child { color: #10b981; font-weight: 700; }
+	.detail-highlight { color: #10b981 !important; font-weight: 700; }
+	.detail-link {
+		display: inline-flex; align-items: center; gap: 3px;
+		color: #00d2ff; text-decoration: none; font-family: 'Space Mono', monospace; font-size: 11px;
+	}
+	.detail-link:hover { text-decoration: underline; }
 	.cancel-action-btn {
 		width: 100%; padding: 14px; border-radius: 12px; border: 1px solid rgba(239,68,68,0.3);
 		background: rgba(239,68,68,0.1); color: #f87171; cursor: pointer;
@@ -410,13 +532,6 @@
 		font-family: 'Space Mono', monospace; font-size: 11px; color: var(--text-muted);
 		padding-left: 24px;
 	}
-	.success-tx {
-		display: inline-flex; align-items: center; gap: 4px;
-		font-family: 'Space Mono', monospace; font-size: 11px;
-		color: #00d2ff; text-decoration: none; padding-left: 24px;
-	}
-	.success-tx:hover { text-decoration: underline; }
-
 	.done-btn {
 		width: 100%; padding: 14px; border-radius: 12px; border: none;
 		background: linear-gradient(135deg, #10b981, #059669); color: white;

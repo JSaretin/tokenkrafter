@@ -1423,11 +1423,17 @@
 			const merged: any[] = [];
 
 			for (const chain of chainRecords) {
-				// Find matching DB record by withdraw_id or bankRef
-				let db = dbRecords.find((r: any) => r.withdraw_id === chain.withdraw_id && r.withdraw_id != null && r.withdraw_id > 0);
-				if (!db && chain.bankRef) {
-					db = dbRecords.find((r: any) => !usedDbIds.has(r.id) && r.wallet_address?.toLowerCase() === chain.user);
-				}
+				// Match DB record strictly by withdraw_id — it's the unique
+				// on-chain key. Previous code fell back to wallet_address match
+				// which caused cross-contamination when the same user had
+				// multiple withdrawals (cancelled one's DB record matched the
+				// pending on-chain record).
+				let db = dbRecords.find((r: any) =>
+					!usedDbIds.has(r.id) &&
+					r.withdraw_id === chain.withdraw_id &&
+					r.withdraw_id != null &&
+					r.withdraw_id > 0
+				);
 				if (db) usedDbIds.add(db.id);
 
 				merged.push({
@@ -1998,7 +2004,8 @@
 								payment_method: w.payment_method || 'bank',
 								payment_details: w.payment_details || {},
 								tx_hash: w.tx_hash || '',
-								created_at: new Date(Number(w.createdAt) * 1000).toISOString()
+								created_at: new Date(Number(w.createdAt) * 1000).toISOString(),
+								expiresAt: w.expiresAt || 0,
 							};
 						}}>
 							<div class="history-row-top">
