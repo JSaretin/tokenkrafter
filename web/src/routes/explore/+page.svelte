@@ -451,34 +451,28 @@
 							</div>
 						</div>
 						<div class="tc-header-right">
+							{@const buyTax = safu?.buyTaxBps ?? tok.buy_tax_bps ?? 0}
 							<div class="tc-badges-row">
 								{#if isSafu}
-									<span class="tc-badge tc-badge-safu">SAFU</span>
+									<span class="tc-badge tc-badge-safu" title="SAFU — all safety checks passed:&#10;• LP ≥99% burned&#10;• Tax ceiling locked (or non-taxable)&#10;• Trading enabled + liquidity&#10;• Not mintable, or owner renounced">SAFU</span>
 								{/if}
-								{#if isLpBurned}
-									<span class="tc-badge tc-badge-lp">LP Burned</span>
+								{#if tok.is_kyc}
+									<span class="tc-badge tc-badge-kyc" title="Creator identity verified via KYC/AMA">KYC</span>
 								{/if}
-								{#if isRenounced}
-									<span class="tc-badge tc-badge-renounced">Renounced</span>
-								{/if}
-								{#if isTaxLocked}
-									<span class="tc-badge tc-badge-locked">Tax Locked</span>
-								{/if}
-								{#if sellTax > 0}
-									<span class="tc-badge tc-badge-tax">{(sellTax / 100).toFixed(0)}% tax</span>
+								{#if tok.is_taxable}
+									<span class="tc-badge tc-badge-tax" title="Buy {(buyTax / 100).toFixed(1)}% · Sell {(sellTax / 100).toFixed(1)}%{isTaxLocked ? ' · Tax ceiling locked' : ''}">Taxable</span>
 								{/if}
 								{#if isMintableRisk}
-									<span class="tc-badge tc-badge-mintable">Mintable</span>
-								{/if}
-								{#if tok.created_at && isNew(tok.created_at)}
-									<span class="tc-badge tc-badge-new">New</span>
+									<span class="tc-badge tc-badge-mintable" title="Owner can increase token supply. Ownership not renounced.">Mintable</span>
 								{/if}
 								{#if isOnLaunchpad(tok)}
-									<span class="tc-badge tc-badge-live-launch">Live Launch</span>
-								{:else if !gecko?.has_data}
-									<span class="tc-badge tc-badge-prelaunch">Pre-launch</span>
+									<span class="tc-badge tc-badge-live-launch" title="Active bonding curve sale">Live Launch</span>
+								{:else if !gecko?.has_data && !isOnLaunchpad(tok)}
+									<span class="tc-badge tc-badge-prelaunch" title="Not yet listed on DEX">Pre-launch</span>
 								{/if}
-								<span class="tc-badge tc-badge-{color}">{tokenType(tok)}</span>
+								{#if tok.created_at && isNew(tok.created_at)}
+									<span class="tc-badge tc-badge-new" title="Created less than 24 hours ago">New</span>
+								{/if}
 							</div>
 							{#if gecko?.has_data}
 								<span class="tc-price">{fmtPrice(gecko.price_usd)}</span>
