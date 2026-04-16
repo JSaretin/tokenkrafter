@@ -70,6 +70,7 @@
 	// Pre-populate badges from server
 	let badges: string[] = $state(serverData?.badges || []);
 	let tokenTrust: any = $state(serverData?.tokenTrust || null);
+	let mobileAboutExpanded = $state(false);
 	let buyAmount = $state(''); // always in USDT
 	let buyPaymentMethod: 'usdt' | 'usdc' | 'native' | 'custom' = $state('usdt');
 	let showPayPicker = $state(false);
@@ -2194,6 +2195,19 @@
 					</div>
 				{/if}
 
+				<!-- Mobile-only: compact About between timer and buy -->
+				{#if metadata.description}
+					<div class="card p-4 mb-4 mobile-about">
+						<h4 class="syne font-bold text-sm mb-2" style="color: var(--text-heading)">{$t('lpd.about')}</h4>
+						<p class="mobile-about-text" class:mobile-about-expanded={mobileAboutExpanded}>{metadata.description}</p>
+						{#if metadata.description.length > 120}
+							<button class="mobile-about-toggle" onclick={() => mobileAboutExpanded = !mobileAboutExpanded}>
+								{mobileAboutExpanded ? 'Show less' : 'Read more'}
+							</button>
+						{/if}
+					</div>
+				{/if}
+
 				<!-- Progress -->
 				<div class="card p-5 mb-4">
 					<!-- Progress bars -->
@@ -2440,32 +2454,63 @@
 					</div>
 				{/if}
 
-				<!-- Your Position -->
+				<!-- Your Bag -->
 				{#if userAddress && (userTokensBought > 0n || userBasePaid > 0n)}
-					<div class="card p-5 mb-4">
-						<h3 class="syne font-bold text-white text-sm mb-3">Your Position</h3>
-						<div class="grid grid-cols-2 gap-3">
-							<div class="position-stat">
-								<span class="position-stat-value">{formatTokens(userTokensBought, tokenMeta.decimals)}</span>
-								<span class="position-stat-label">{tokenMeta.symbol} Bought</span>
+					{@const avgPrice = userTokensBought > 0n ? (userBasePaid * BigInt(10 ** tokenMeta.decimals)) / userTokensBought : 0n}
+					{@const currentVal = launch.currentPrice > 0n ? (userTokensBought * launch.currentPrice) / BigInt(10 ** tokenMeta.decimals) : 0n}
+					{@const pnl = currentVal > 0n ? currentVal - userBasePaid : 0n}
+					{@const pnlPct = userBasePaid > 0n ? Number((pnl * 10000n) / userBasePaid) / 100 : 0}
+					{@const isUp = pnl > 0n}
+					<div class="card pos-card mb-4">
+						<div class="pos-header">
+							<h3 class="pos-title">Your Bag</h3>
+							{#if currentVal > 0n}
+								<span class="pos-pnl" class:pos-up={isUp} class:pos-down={pnl < 0n}>
+									{isUp ? '+' : ''}{pnlPct.toFixed(1)}%
+								</span>
+							{/if}
+						</div>
+
+						<div class="pos-hero">
+							<span class="pos-hero-num">{formatTokens(userTokensBought, tokenMeta.decimals)}</span>
+							<span class="pos-hero-sym">{tokenMeta.symbol}</span>
+						</div>
+
+						<div class="pos-grid">
+							<div class="pos-detail">
+								<span class="pos-detail-label">Spent</span>
+								<span class="pos-detail-val">{formatUsdt(userBasePaid, ud)}</span>
 							</div>
-							<div class="position-stat">
-								<span class="position-stat-value">{formatUsdt(userBasePaid, ud)}</span>
-								<span class="position-stat-label">USDT Spent</span>
+							{#if currentVal > 0n}
+								<div class="pos-detail">
+									<span class="pos-detail-label">Value now</span>
+									<span class="pos-detail-val" class:pos-up={isUp}>{formatUsdt(currentVal, ud)}</span>
+								</div>
+							{/if}
+							{#if avgPrice > 0n}
+								<div class="pos-detail">
+									<span class="pos-detail-label">Avg price</span>
+									<span class="pos-detail-val">{formatUsdt(avgPrice, ud, 6)}</span>
+								</div>
+							{/if}
+							<div class="pos-detail">
+								<span class="pos-detail-label">Price now</span>
+								<span class="pos-detail-val">{formatUsdt(launch.currentPrice, ud, 6)}</span>
 							</div>
 						</div>
+
 						{#if maxBuyPerWallet > 0n}
-							<div class="mt-3">
-								<div class="flex justify-between text-[10px] font-mono mb-1">
-									<span class="text-gray-500">Buy Limit Used</span>
-									<span class="text-gray-400">{allocationPct.toFixed(1)}%</span>
+							<div class="pos-limit">
+								<div class="pos-limit-header">
+									<span>Buy limit</span>
+									<span>{allocationPct.toFixed(0)}% used</span>
 								</div>
 								<div class="progress-track">
-									<div class="progress-fill progress-purple" style="width: {allocationPct}%"></div>
+									<div class="progress-fill {allocationPct >= 100 ? 'progress-red' : allocationPct >= 75 ? 'progress-amber' : 'progress-cyan'}" style="width: {allocationPct}%"></div>
 								</div>
-								<div class="text-right text-[10px] font-mono mt-1 text-gray-500">
-									{remainingBuyUsdt > 0n ? formatUsdt(remainingBuyUsdt, ud) + ' remaining' : 'Limit reached'}
-								</div>
+								<span class="pos-limit-remaining">
+									{remainingBuyUsdt > 0n ? formatUsdt(remainingBuyUsdt, ud) + ' left to buy' : 'Maxed out'}
+								</span>
 							</div>
 						{/if}
 					</div>
@@ -2879,11 +2924,31 @@
 		grid-template-columns: 1fr;
 		gap: 24px;
 	}
-	/* Mobile: Buy first, then About, then rest */
+	/* Mobile: Buy first (with inline about), then full About, then rest */
 	@media (max-width: 1023px) {
 		.right-col { order: -2; }
 		.about-col { order: -1; }
 		.left-col { order: 0; }
+	}
+	/* Mobile-only compact about inside right-col */
+	.mobile-about { display: none; }
+	@media (max-width: 1023px) {
+		.mobile-about { display: block; }
+	}
+	.mobile-about-text {
+		font-family: 'Space Mono', monospace; font-size: 12px;
+		color: var(--text-muted); line-height: 1.6;
+		display: -webkit-box; -webkit-box-orient: vertical;
+		-webkit-line-clamp: 2; line-clamp: 2;
+		overflow: hidden; white-space: pre-line;
+	}
+	.mobile-about-text.mobile-about-expanded {
+		-webkit-line-clamp: unset; line-clamp: unset;
+	}
+	.mobile-about-toggle {
+		font-family: 'Space Mono', monospace; font-size: 11px;
+		color: #00d2ff; background: none; border: none;
+		cursor: pointer; padding: 4px 0 0; margin: 0;
 	}
 	@media (min-width: 1024px) {
 		.page-grid {
@@ -3154,26 +3219,63 @@
 		margin-top: 2px;
 	}
 
-	/* Your Position */
-	.position-stat {
-		text-align: center;
-		padding: 10px 8px;
-		border-radius: 8px;
-		background: var(--bg-surface-hover);
-		border: 1px solid var(--border-subtle);
+	/* Your Bag */
+	.pos-card { padding: 20px; }
+	.pos-header {
+		display: flex; align-items: center; justify-content: space-between;
+		margin-bottom: 8px;
 	}
-	.position-stat-value {
-		display: block;
-		font-size: 14px;
-		font-weight: 700;
+	.pos-title {
+		font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 800;
 		color: var(--text-heading);
-		font-family: 'Space Mono', monospace;
 	}
-	.position-stat-label {
-		display: block;
-		font-size: 9px;
-		color: var(--text-muted);
-		font-family: 'Space Mono', monospace;
+	.pos-pnl {
+		font-family: 'Rajdhani', sans-serif; font-size: 13px; font-weight: 700;
+		padding: 2px 8px; border-radius: 6px;
+	}
+	.pos-up { color: #10b981; background: rgba(16,185,129,0.1); }
+	.pos-down { color: #f87171; background: rgba(248,113,113,0.1); }
+
+	.pos-hero { margin-bottom: 14px; }
+	.pos-hero-num {
+		font-family: 'Syne', sans-serif; font-size: 26px; font-weight: 800;
+		color: var(--text-heading);
+	}
+	.pos-hero-sym {
+		font-family: 'Rajdhani', sans-serif; font-size: 14px; font-weight: 600;
+		color: var(--text-muted); margin-left: 6px;
+	}
+
+	.pos-grid {
+		display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+		margin-bottom: 14px;
+	}
+	.pos-detail {
+		padding: 8px 10px; border-radius: 8px;
+		background: var(--bg-surface-hover);
+	}
+	.pos-detail-label {
+		display: block; font-family: 'Rajdhani', sans-serif; font-size: 10px;
+		color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.03em;
+		margin-bottom: 2px;
+	}
+	.pos-detail-val {
+		display: block; font-family: 'Syne', sans-serif; font-size: 14px;
+		font-weight: 700; color: var(--text-heading);
+	}
+
+	.pos-limit {
+		padding-top: 12px; border-top: 1px solid var(--border-subtle);
+	}
+	.pos-limit-header {
+		display: flex; justify-content: space-between;
+		font-family: 'Rajdhani', sans-serif; font-size: 11px;
+		color: var(--text-dim); margin-bottom: 6px;
+	}
+	.pos-limit-remaining {
+		display: block; text-align: right;
+		font-family: 'Rajdhani', sans-serif; font-size: 11px;
+		color: var(--text-dim); margin-top: 4px;
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
 		margin-top: 2px;
