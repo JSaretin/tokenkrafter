@@ -225,8 +225,10 @@ async function main() {
 	console.log(`   Batch size: ${BATCH_SIZE}`);
 
 	const config = await fetchNetworkConfig(CHAIN_ID);
-	const rpcUrl = (config as any).rpc || RPC_URL;
-	const wsRpc = (config as any).ws_rpc;
+	const daemonRpc = (config as any).daemon_rpc || '';
+	const isWs = daemonRpc.startsWith('wss://') || daemonRpc.startsWith('ws://');
+	const rpcUrl = (!isWs && daemonRpc) || (config as any).rpc || RPC_URL;
+	const wsRpc = (isWs ? daemonRpc : '') || (config as any).ws_rpc || '';
 	console.log(`   RPC: ${rpcUrl}${wsRpc ? ` (ws: ${wsRpc})` : ''}`);
 	const managed = createManagedProvider({ chainId: CHAIN_ID, httpRpc: rpcUrl, wsRpc });
 	const provider = managed.getProvider();

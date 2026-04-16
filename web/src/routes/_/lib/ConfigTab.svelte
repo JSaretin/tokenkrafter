@@ -29,6 +29,7 @@
 		trade_lens_address: '',
 		rpc: '',
 		ws_rpc: '',
+		daemon_rpc: '',
 		explorer_url: '',
 		gecko_network: '',
 		default_bases: [] as DefaultBase[],
@@ -215,8 +216,12 @@
 							<input class="input-field" placeholder="https://..." bind:value={newNetwork.rpc} />
 						</div>
 						<div>
-							<label class="label-text">WS RPC URL</label>
+							<label class="label-text">WS RPC URL (public — frontend)</label>
 							<input class="input-field" placeholder="wss://..." bind:value={newNetwork.ws_rpc} />
+						</div>
+						<div>
+							<label class="label-text">Daemon RPC (private — server only)</label>
+							<input class="input-field" placeholder="wss://... or https://..." bind:value={newNetwork.daemon_rpc} />
 						</div>
 						<div>
 							<label class="label-text">USDT Address</label>
@@ -304,8 +309,12 @@
 							<input class="input-field text-xs" bind:value={net.rpc} />
 						</div>
 						<div>
-							<label class="label-text text-[9px]">WS RPC</label>
+							<label class="label-text text-[9px]">WS RPC (public)</label>
 							<input class="input-field text-xs" placeholder="wss://..." bind:value={net.ws_rpc} />
+						</div>
+						<div>
+							<label class="label-text text-[9px]">Daemon RPC (private)</label>
+							<input class="input-field text-xs" placeholder="wss:// or https://..." bind:value={net.daemon_rpc} />
 						</div>
 						<div>
 							<label class="label-text text-[9px]">USDT</label>

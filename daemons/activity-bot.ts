@@ -396,8 +396,11 @@ async function main() {
 		factoryAddr = net?.platform_address;
 		routerAddr = net?.router_address;
 		usdtAddr = net?.usdt_address;
-		if (net?.rpc) rpcUrl = net.rpc;
-		var wsRpc: string | undefined = net?.ws_rpc;
+		const daemonRpc = net?.daemon_rpc || '';
+		const isWs = daemonRpc.startsWith('wss://') || daemonRpc.startsWith('ws://');
+		if (!isWs && daemonRpc) rpcUrl = daemonRpc;
+		else if (net?.rpc) rpcUrl = net.rpc;
+		var wsRpc: string | undefined = (isWs ? daemonRpc : '') || net?.ws_rpc;
 	} catch (e: any) {
 		console.error(`❌ Config fetch failed: ${e.message}`);
 		process.exit(1);

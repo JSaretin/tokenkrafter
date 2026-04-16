@@ -11,7 +11,8 @@ export interface SupportedNetwork {
 	dex_router: string;
 	trade_router_address: string;
 	rpc: string;
-	ws_rpc?: string;             // optional websocket endpoint — daemons subscribe via WS when set
+	ws_rpc?: string;             // public WS endpoint — frontend browser subscriptions (balance, pair sync)
+	daemon_rpc?: string;         // private RPC (HTTP or WS) — server-side daemons only, never sent to browser
 	explorer_url?: string;       // e.g. "https://bscscan.com"
 	gecko_network?: string;      // e.g. "bsc" for GeckoTerminal API
 	/**

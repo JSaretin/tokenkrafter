@@ -351,12 +351,15 @@ async function main() {
 	// Load network config (RPC, addresses) from backend FIRST so the provider
 	// uses the DB-managed RPC endpoint. Env RPC_URL is a last-resort fallback.
 	const config = await fetchNetworkConfig(CHAIN_ID);
-	const rpcUrl = config.rpc || RPC_URL;
-	console.log(`   RPC: ${rpcUrl}${config.ws_rpc ? ` (ws: ${config.ws_rpc})` : ''}`);
+	const daemonRpc = (config as any).daemon_rpc || '';
+	const isWs = daemonRpc.startsWith('wss://') || daemonRpc.startsWith('ws://');
+	const rpcUrl = (!isWs && daemonRpc) || config.rpc || RPC_URL;
+	const wsRpc = (isWs ? daemonRpc : '') || config.ws_rpc || '';
+	console.log(`   RPC: ${rpcUrl}${wsRpc ? ` (ws: ${wsRpc})` : ''}`);
 	const managed = createManagedProvider({
 		chainId: CHAIN_ID,
 		httpRpc: rpcUrl,
-		wsRpc: config.ws_rpc,
+		wsRpc,
 	});
 	const provider = managed.getProvider();
 

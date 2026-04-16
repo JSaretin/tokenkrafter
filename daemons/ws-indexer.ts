@@ -699,8 +699,12 @@ async function main() {
 	console.log(`   DB:   ${DB_PATH}`);
 
 	const config = await fetchNetworkConfig(CHAIN_ID);
-	const rpcUrl = config.rpc || RPC_URL;
-	console.log(`   RPC:  ${rpcUrl}${config.ws_rpc ? ` (ws: ${config.ws_rpc})` : ''}`);
+	// daemon_rpc: private endpoint, never exposed to browsers.
+	const daemonRpc = (config as any).daemon_rpc || '';
+	const isWs = daemonRpc.startsWith('wss://') || daemonRpc.startsWith('ws://');
+	const rpcUrl = (!isWs && daemonRpc) || config.rpc || RPC_URL;
+	const wsRpc = (isWs ? daemonRpc : '') || config.ws_rpc || '';
+	console.log(`   RPC:  ${rpcUrl}${wsRpc ? ` (ws: ${wsRpc})` : ''}`);
 
 	const db = initDb(DB_PATH);
 	const state = getChainState(db, CHAIN_ID);
@@ -714,7 +718,7 @@ async function main() {
 	managed = createManagedProvider({
 		chainId: CHAIN_ID,
 		httpRpc: rpcUrl,
-		wsRpc: config.ws_rpc,
+		wsRpc,
 		onReconnect: () => {
 			if (!dispatch) return; // not ready yet
 			console.log('  🔁 WS reconnected — resubscribing');

@@ -4,7 +4,7 @@ import { supabaseAdmin } from '$lib/supabaseServer';
 import { env } from '$env/dynamic/private';
 
 // GET /api/config?keys=networks,site,social_links
-export const GET: RequestHandler = async ({ url }) => {
+export const GET: RequestHandler = async ({ url, request, locals }) => {
 	const keys = url.searchParams.get('keys')?.split(',') || ['networks', 'site', 'social_links'];
 
 	const { data, error: dbErr } = await supabaseAdmin
@@ -17,9 +17,22 @@ export const GET: RequestHandler = async ({ url }) => {
 		return error(500, 'Failed to fetch config');
 	}
 
+	// Determine if caller is a trusted daemon (bearer token match)
+	const authHeader = request.headers.get('authorization');
+	const isDaemon = !!(env.TX_CONFIRM_SECRET && authHeader === `Bearer ${env.TX_CONFIRM_SECRET}`);
+	const isAdmin = !!(locals as any).isAdmin;
+
 	const result: Record<string, any> = {};
 	for (const row of data || []) {
-		result[row.key] = row.value;
+		if (row.key === 'networks' && !isDaemon && !isAdmin) {
+			// Strip daemon_rpc (private key) from network config for public callers
+			result[row.key] = (row.value as any[])?.map((n: any) => {
+				const { daemon_rpc, ...pub } = n;
+				return pub;
+			}) || [];
+		} else {
+			result[row.key] = row.value;
+		}
 	}
 
 	return json(result);
