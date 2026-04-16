@@ -161,7 +161,7 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
         uint256 netAmount, bytes32 bankRef,
         address referrer, uint256 expiresAt
     );
-    event WithdrawConfirmed(uint256 indexed id, address indexed admin, address indexed to, uint256 amount);
+    event WithdrawConfirmed(uint256 indexed id, address indexed admin, address indexed to, uint256 netAmount, uint256 grossAmount, uint256 fee, address token);
     event WithdrawCancelled(uint256 indexed id, address indexed user, uint256 refundedAmount);
     event FeesWithdrawn(address indexed token, uint256 amount, address indexed to);
     event TokenRescued(address indexed token, uint256 amount, address indexed to);
@@ -510,7 +510,7 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
 
         IERC20(req.token).safeTransfer(to, req.netAmount);
 
-        emit WithdrawConfirmed(id, msg.sender, to, req.netAmount);
+        emit WithdrawConfirmed(id, msg.sender, to, req.netAmount, req.grossAmount, req.fee, req.token);
     }
 
     /// @notice Batch confirm — all net amounts to platformWallet, with proper affiliate handling

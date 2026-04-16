@@ -260,13 +260,23 @@ contract LaunchInstance is ReentrancyGuard {
     mapping(address => bool) private _isBuyer;    // dedup
 
     // ── Events ─────────────────────────────────────────────────
-    event TokensDeposited(address indexed creator, uint256 amount);
-    event LaunchActivated();
-    event TokenBought(address indexed buyer, uint256 tokenAmount, uint256 basePaid, uint256 newPrice);
-    event Graduated(address indexed dexPair, uint256 baseToLP, uint256 tokensToLP, uint256 platformBaseFee, uint256 platformTokenFee);
-    event Refunded(address indexed buyer, uint256 baseAmount);
-    event CreatorClaimed(address indexed creator, uint256 amount);
-    event RefundingEnabled();
+    // Enriched with cumulative state so a WS-subscribed indexer never needs
+    // follow-up eth_calls to rebuild the current snapshot.
+    event TokensDeposited(address indexed creator, uint256 amount, uint256 totalDeposited, uint256 totalRequired);
+    event LaunchActivated(address indexed token, uint256 deadline, uint256 softCap, uint256 hardCap, uint256 tokensForCurve);
+    event TokenBought(
+        address indexed buyer, uint256 tokenAmount, uint256 basePaid, uint256 fee,
+        uint256 newPrice, uint256 totalBaseRaised, uint256 totalTokensSold,
+        uint256 remainingTokens, uint256 buyerCount
+    );
+    event Graduated(
+        address indexed dexPair, uint256 baseToLP, uint256 tokensToLP,
+        uint256 platformBaseFee, uint256 platformTokenFee,
+        uint256 finalTotalRaised, uint256 finalTokensSold, uint256 totalBuyers
+    );
+    event Refunded(address indexed buyer, uint256 baseAmount, uint256 tokensReturned);
+    event CreatorClaimed(address indexed creator, uint256 amount, uint256 totalClaimed, uint256 totalVested);
+    event RefundingEnabled(uint256 totalRaised, uint256 softCap);
     event CreatorWithdraw(address indexed creator, uint256 tokenAmount);
     event CreatorReclaim(address indexed creator, uint256 tokenAmount);
 
@@ -382,7 +392,7 @@ contract LaunchInstance is ReentrancyGuard {
         token.safeTransferFrom(msg.sender, address(this), toDeposit);
         totalTokensDeposited += toDeposit;
 
-        emit TokensDeposited(msg.sender, toDeposit);
+        emit TokensDeposited(msg.sender, toDeposit, totalTokensDeposited, totalTokensRequired);
 
         _tryActivate();
     }
@@ -445,7 +455,7 @@ contract LaunchInstance is ReentrancyGuard {
         state = LaunchState.Active;
         uint256 start = startTimestamp > block.timestamp ? startTimestamp : block.timestamp;
         deadline = start + durationSeconds;
-        emit LaunchActivated();
+        emit LaunchActivated(address(token), deadline, softCap, hardCap, tokensForCurve);
     }
 
     /// @notice Called by the factory after tokens have been transferred directly
@@ -461,7 +471,7 @@ contract LaunchInstance is ReentrancyGuard {
         // Verify the contract actually holds enough tokens
         if (token.balanceOf(address(this)) < totalTokensDeposited) revert InsufficientTokenBalance();
 
-        emit TokensDeposited(creator, amount);
+        emit TokensDeposited(creator, amount, totalTokensDeposited, totalTokensRequired);
 
         _tryActivate();
     }
@@ -683,7 +693,11 @@ contract LaunchInstance is ReentrancyGuard {
         // Transfer tokens to buyer
         token.safeTransfer(buyer, tokensOut);
 
-        emit TokenBought(buyer, tokensOut, baseForTokens, currentPrice);
+        emit TokenBought(
+            buyer, tokensOut, baseForTokens, buyFee,
+            currentPrice, totalBaseRaised, tokensSold,
+            tokensForCurve - tokensSold, _buyers.length
+        );
 
         // Auto-graduate on hard cap or curve sell-out
         if (totalBaseRaised >= hardCap || tokensSold >= tokensForCurve) {
@@ -769,7 +783,10 @@ contract LaunchInstance is ReentrancyGuard {
             token.safeTransfer(address(0xdead), tokenBal - tokenReserved);
         }
 
-        emit Graduated(pair, usdtForLP, tokensForDexLP, platformBaseFee, platformTokenFee);
+        emit Graduated(
+            pair, usdtForLP, tokensForDexLP, platformBaseFee, platformTokenFee,
+            totalBaseRaised, tokensSold, _buyers.length
+        );
 
         // Record graduation in factory daily stats
         try ILaunchpadFactory(factory).recordGraduation(address(this)) {} catch {}
@@ -795,7 +812,7 @@ contract LaunchInstance is ReentrancyGuard {
             // which is the only role permitted to unlock.
             try ILaunchToken(address(token)).unlockTaxCeiling() {} catch {}
 
-            emit RefundingEnabled();
+            emit RefundingEnabled(totalBaseRaised, softCap);
         }
     }
 
@@ -847,7 +864,7 @@ contract LaunchInstance is ReentrancyGuard {
 
         usdt.safeTransfer(msg.sender, refundBase);
 
-        emit Refunded(msg.sender, refundBase);
+        emit Refunded(msg.sender, refundBase, tokensToReturn);
     }
 
     /// @notice Creator reclaims launch tokens currently held by the contract.
@@ -935,7 +952,7 @@ contract LaunchInstance is ReentrancyGuard {
         creatorClaimed += claimable;
         token.safeTransfer(creator, claimable);
 
-        emit CreatorClaimed(creator, claimable);
+        emit CreatorClaimed(creator, claimable, creatorClaimed, vested);
     }
 
     // ── View Functions ─────────────────────────────────────────

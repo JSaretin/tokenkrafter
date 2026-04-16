@@ -124,7 +124,9 @@ contract TokenFactory is Ownable, ReentrancyGuard {
         string name,
         string symbol,
         uint256 totalSupply,
-        uint8 decimals
+        uint8 decimals,
+        uint256 fee,
+        address referrer
     );
     event ImplementationUpdated(uint8 indexed tokenType, address impl);
     event TaxProcessed(address indexed token, uint256 amountIn, uint256 amountOut);
@@ -429,6 +431,8 @@ contract TokenFactory is Ownable, ReentrancyGuard {
         address creator,
         address mintTo,
         address tokenAddress,
+        uint256 fee,
+        address referrer,
         uint8 typeKey
     ) internal {
         uint256 supply = p.totalSupply * 10 ** p.decimals;
@@ -453,7 +457,8 @@ contract TokenFactory is Ownable, ReentrancyGuard {
 
         emit TokenCreated(
             creator, tokenAddress, typeKey,
-            p.name, p.symbol, p.totalSupply, p.decimals
+            p.name, p.symbol, p.totalSupply, p.decimals,
+            fee, referrer
         );
     }
 
@@ -507,7 +512,7 @@ contract TokenFactory is Ownable, ReentrancyGuard {
 
         bytes32 salt = _computeSalt(msg.sender);
         tokenAddress = Clones.cloneDeterministic(impl, salt);
-        _initAndRecord(p, msg.sender, msg.sender, tokenAddress, typeKey);
+        _initAndRecord(p, msg.sender, msg.sender, tokenAddress, fee, referral, typeKey);
     }
 
     /// @notice Creates a token on behalf of `creator`. Owner only.
@@ -532,7 +537,7 @@ contract TokenFactory is Ownable, ReentrancyGuard {
 
         bytes32 salt = _computeSalt(creator);
         tokenAddress = Clones.cloneDeterministic(impl, salt);
-        _initAndRecord(p, creator, creator, tokenAddress, typeKey);
+        _initAndRecord(p, creator, creator, tokenAddress, fee, referral, typeKey);
     }
 
     /// @notice Creates a token on behalf of a user via the authorized PlatformRouter.
@@ -562,7 +567,7 @@ contract TokenFactory is Ownable, ReentrancyGuard {
         tokenAddress = Clones.cloneDeterministic(impl, salt);
 
         // Mint to factory so the router can pull the supply afterward.
-        _initAndRecord(p, creator, address(this), tokenAddress, typeKey);
+        _initAndRecord(p, creator, address(this), tokenAddress, fee, referral, typeKey);
 
         uint256 tokenBalance = IERC20(tokenAddress).balanceOf(address(this));
         IERC20(tokenAddress).safeTransfer(msg.sender, tokenBalance);
