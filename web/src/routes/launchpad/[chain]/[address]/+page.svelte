@@ -373,7 +373,10 @@
 		return Number((maxBuyPerWallet * 10000n) / l.hardCap) / 100;
 	});
 
-	let atMaxBuy = $derived(maxBuyPerWallet > 0n && remainingBuyUsdt === 0n);
+	// Treat as maxed out when remaining < minBuy — no valid purchase is possible
+	let atMaxBuy = $derived(
+		maxBuyPerWallet > 0n && (remainingBuyUsdt === 0n || (minBuyUsdt > 0n && remainingBuyUsdt > 0n && remainingBuyUsdt < minBuyUsdt))
+	);
 
 	// Below-min-buy validation. Contract reverts with BelowMinBuy() if amount
 	// is under minBuyUsdt. Surface this pre-flight so the button can disable
@@ -391,6 +394,7 @@
 
 	let allocationPct = $derived.by(() => {
 		if (maxBuyPerWallet === 0n) return 0;
+		if (atMaxBuy) return 100;
 		return Math.min(100, Number((userBasePaid * 10000n) / maxBuyPerWallet) / 100);
 	});
 
@@ -2559,18 +2563,13 @@
 							</div>
 						</div>
 
-						{#if maxBuyPerWallet > 0n}
-							<div class="pos-limit">
-								<div class="pos-limit-header">
-									<span>Buy limit</span>
-									<span>{allocationPct.toFixed(0)}% used</span>
-								</div>
-								<div class="progress-track">
-									<div class="progress-fill {allocationPct >= 100 ? 'progress-red' : allocationPct >= 75 ? 'progress-amber' : 'progress-cyan'}" style="width: {allocationPct}%"></div>
-								</div>
-								<span class="pos-limit-remaining">
-									{remainingBuyUsdt > 0n ? formatUsdt(remainingBuyUsdt, ud) + ' left to buy' : 'Maxed out'}
-								</span>
+						{#if maxBuyPerWallet > 0n && remainingBuyUsdt > 0n && !atMaxBuy}
+							<div class="pos-limit-remaining-hint">
+								{formatUsdt(remainingBuyUsdt, ud)} left to buy
+							</div>
+						{:else if maxBuyPerWallet > 0n}
+							<div class="pos-limit-remaining-hint pos-limit-maxed">
+								Max allocation reached
 							</div>
 						{/if}
 					</div>
@@ -3394,6 +3393,12 @@
 		font-weight: 700; color: var(--text-heading);
 	}
 
+	.pos-limit-remaining-hint {
+		padding-top: 10px; border-top: 1px solid var(--border-subtle);
+		font-family: 'Space Mono', monospace; font-size: 10px;
+		color: var(--text-muted); text-align: center;
+	}
+	.pos-limit-maxed { color: #f87171; }
 	.pos-limit {
 		padding-top: 12px; border-top: 1px solid var(--border-subtle);
 	}

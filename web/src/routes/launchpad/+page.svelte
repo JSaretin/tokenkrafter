@@ -680,32 +680,6 @@
 						{/if}
 					</div>
 
-					<!-- 3c. Tokenomics visual bar -->
-					{#if launch.totalTokensRequired > 0n || true}
-						{@const curvePct = launch.totalTokensRequired > 0n ? Number((launch.tokensForCurve * 100n) / launch.totalTokensRequired) : 70}
-						{@const creatorPct = Number(launch.creatorAllocationBps) / 100}
-						{@const lpPct = Math.max(0, 100 - curvePct - creatorPct)}
-						<div class="card-distro-bar-wrap">
-							<div class="card-distro-bar">
-								<div class="distro-seg distro-seg-curve" style="width: {curvePct}%"></div>
-								<div class="distro-seg distro-seg-lp" style="width: {lpPct}%"></div>
-								{#if creatorPct > 0}
-									<div class="distro-seg distro-seg-creator" style="width: {creatorPct}%"></div>
-								{/if}
-							</div>
-							<div class="card-distro-labels">
-								<span class="distro-label-curve">{curvePct}% sale</span>
-								<span class="distro-label-lp">{lpPct.toFixed(0)}% LP</span>
-								{#if creatorPct > 0}
-									<span class="distro-label-creator">{creatorPct.toFixed(0)}% creator</span>
-								{/if}
-								{#if vestingLabel(launch)}
-									<span class="distro-label-vest">{vestingLabel(launch)}</span>
-								{/if}
-							</div>
-						</div>
-					{/if}
-
 					<!-- 4. Countdown Timer Grid -->
 					{#if launch.state <= 1}
 						{@const isScheduled = launch.startTimestamp > 0n && launch.startTimestamp > BigInt(Math.floor(tickNow / 1000))}

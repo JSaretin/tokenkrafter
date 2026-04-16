@@ -1068,6 +1068,23 @@
 		return formatAmount(String(r), tokenOutDecimals, tokenOutSymbol);
 	});
 
+	// Spot rate preview (shown before amounts are entered)
+	let spotRate = $derived.by(() => {
+		if (rate) return ''; // already showing computed rate
+		if (!tokenInSymbol || !tokenOutSymbol || !pricesLoaded || !selectedNetwork?.usdt_address) return '';
+		try {
+			const inAddr = tokenInIsNative ? (wethAddr || getWeth()) : tokenInAddr;
+			const outAddr = tokenOutIsNative ? (wethAddr || getWeth()) : tokenOutAddr;
+			if (!inAddr || !outAddr) return '';
+			const oneUnit = ethers.parseUnits('1', tokenInDecimals);
+			const inUsd = getUsdValue(inAddr, oneUnit, tokenInDecimals, selectedNetwork.usdt_address);
+			const outUsd = getUsdValue(outAddr, ethers.parseUnits('1', tokenOutDecimals), tokenOutDecimals, selectedNetwork.usdt_address);
+			if (!inUsd || !outUsd || outUsd === 0) return '';
+			const r = inUsd / outUsd;
+			return `1 ${tokenInSymbol} ≈ ${r >= 1 ? r.toFixed(2) : r.toFixed(6)} ${tokenOutSymbol}`;
+		} catch { return ''; }
+	});
+
 	let minReceived = $derived.by(() => {
 		if (!postTaxAmountOut || noLiquidity) return '';
 		const out = parseFloat(postTaxAmountOut);
@@ -1613,7 +1630,7 @@
 			</div>
 			<div class="header-actions">
 				{#if userAddress}
-					<button class="icon-btn" onclick={() => { showHistory = !showHistory; }} title="History">
+					<button class="icon-btn" class:icon-btn-active={showHistory} onclick={() => { showHistory = !showHistory; if (!showHistory) return; setTimeout(() => document.getElementById('trade-history')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100); }} title="Withdrawal History">
 						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
 					</button>
 				{/if}
@@ -1878,6 +1895,8 @@
 							bind:value={bankAccount}
 							maxlength="10"
 							inputmode="numeric"
+							pattern="[0-9]*"
+							oninput={(e) => { bankAccount = bankAccount.replace(/\D/g, ''); }}
 						/>
 					</div>
 					{#if bankResolving}
@@ -1898,14 +1917,46 @@
 					{/if}
 				</div>
 
-				<div class="bank-safety-pill" title="Your USDT is locked in a smart contract — not held by an admin. If the bank transfer isn't confirmed within the timeout, you can cancel and get your USDT back automatically.">
-					<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-					Escrowed on-chain — funds held by smart contract, not an admin{#if payoutTimeoutLoaded} &middot; Cancel after {payoutTimeoutMins}min timeout{/if}
+				<div class="bank-trust-card">
+					<div class="bank-trust-header">
+						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+						<span>On-Chain Escrow</span>
+					</div>
+					<div class="bank-trust-items">
+						<div class="bank-trust-item">
+							<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+							<span>Held in smart contract, not by TokenKrafter</span>
+						</div>
+						<div class="bank-trust-item">
+							<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+							<span>{#if payoutTimeoutLoaded}Auto-refund after {payoutTimeoutMins}min if payout fails{:else}Auto-refund if bank payout fails{/if}</span>
+						</div>
+						<div class="bank-trust-item">
+							<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+							<span>Cancel anytime before confirmation</span>
+						</div>
+						<div class="bank-trust-item">
+							<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+							<span>No KYC required</span>
+						</div>
+					</div>
+					{#if selectedNetwork?.trade_router_address}
+						<a href="{selectedNetwork.explorer_url || 'https://bscscan.com'}/address/{selectedNetwork.trade_router_address}" target="_blank" rel="noopener" class="bank-trust-contract">
+							Verify contract →
+						</a>
+					{/if}
 				</div>
 			{/if}
 
 			<!-- Trade details -->
 			<!-- Route is handled automatically by findBestRoute — no display needed -->
+
+			{#if spotRate && outputMode === 'token'}
+				<div class="spot-rate-preview">
+					<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+					{spotRate}
+				</div>
+			{/if}
 
 			{#if rate && outputMode === 'token'}
 				<div class="trade-details">
@@ -1972,12 +2023,24 @@
 
 		<!-- History panel -->
 		{#if showHistory}
-			<div class="history-panel">
+			<div class="history-panel" id="trade-history">
 				<h3 class="history-title">{$t('trade.withdrawalHistory')}</h3>
+				{#if true}
+				{@const allW = [...withdrawals].sort((a, b) => Number(b.createdAt) - Number(a.createdAt))}
+				{@const nowTs = Math.floor(Date.now() / 1000)}
+				{@const counts = {
+					all: allW.length,
+					pending: allW.filter(w => w.status === 0 && !(w.expiresAt > 0 && nowTs > w.expiresAt)).length,
+					completed: allW.filter(w => w.status === 1).length,
+					timeout: allW.filter(w => w.status === 0 && w.expiresAt > 0 && nowTs > w.expiresAt).length,
+					cancelled: allW.filter(w => w.status === 2).length,
+				}}
 				<div class="history-filters">
 					{#each ['all', 'pending', 'completed', 'timeout', 'cancelled'] as f}
+						{@const count = counts[f as keyof typeof counts]}
 						<button class="history-filter" class:active={historyFilter === f} onclick={() => historyFilter = f}>
 							{f === 'all' ? $t('trade.all') : f === 'pending' ? $t('trade.pending') : f === 'completed' ? $t('trade.completed') : f === 'timeout' ? $t('trade.timeout') : $t('trade.cancelled')}
+							{#if count > 0}<span class="history-filter-count">{count}</span>{/if}
 						</button>
 					{/each}
 				</div>
@@ -2021,7 +2084,8 @@
 								<span class="history-status status-{sc}">{timedOut ? $t('trade.timedOut') : withdrawStatusLabel(w.status)}</span>
 							</div>
 							<div class="history-row-bottom">
-								<span class="history-date">{new Date(Number(w.createdAt) * 1000).toLocaleString()}</span>
+								{#if w.withdraw_id}<span class="history-ref">#{w.withdraw_id}</span>{/if}
+								<span class="history-date">{new Date(Number(w.createdAt) * 1000).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
 								{#if canCancel}
 									<span class="cancel-hint">{$t('trade.tapToCancel')}</span>
 								{/if}
@@ -2032,13 +2096,14 @@
 								{@const elapsed = now - Number(w.createdAt)}
 								{@const remaining = Math.max(0, w.expiresAt - now)}
 								<div class="history-progress">
-									<div class="progress-track"><div class="progress-fill progress-amber" style="width: {totalDuration > 0 ? Math.min(100, (elapsed / totalDuration) * 100) : 100}%"></div></div>
+									<div class="progress-track"><div class="progress-fill progress-amber" style="width: {totalDuration > 0 ? Math.max(0, (remaining / totalDuration) * 100) : 0}%"></div></div>
 									<span class="history-timer">{remaining > 0 ? `${Math.floor(remaining / 60)}m ${remaining % 60}s` : $t('trade.timedOut')}</span>
 								</div>
 							{/if}
 						</button>
 					{/each}
 				{/if}
+			{/if}
 			</div>
 		{/if}
 	</div>
@@ -2338,12 +2403,19 @@
 						{#if tokenInTaxSell > 0}<div class="cr-row cr-row-warn"><span>{$t('trade.sellTax')} ({tokenInSymbol})</span><span>{(tokenInTaxSell / 100).toFixed(1)}%</span></div>{/if}
 						{#if tokenOutTaxBuy > 0}<div class="cr-row cr-row-warn"><span>{$t('trade.buyTax')} ({tokenOutSymbol})</span><span>{(tokenOutTaxBuy / 100).toFixed(1)}%</span></div>{/if}
 					{:else if outputMode === 'bank'}
+						{#if previewFee > 0n}
+							<div class="cr-row"><span>Fee ({((Number(previewFee) / Number(previewFee + previewNet)) * 100).toFixed(1)}%)</span><span>${parseFloat(ethers.formatUnits(previewFee, usdtDecimals)).toFixed(2)}</span></div>
+							<div class="cr-row"><span>Net amount</span><span>${parseFloat(ethers.formatUnits(previewNet, usdtDecimals)).toFixed(2)}</span></div>
+						{/if}
 						{#if fiatEquivalent}
 							<div class="cr-row cr-row-highlight"><span>{$t('trade.youReceive')}</span><span class="cr-ngn">{fiatEquivalent}</span></div>
 							{#if ngnRate > 0}<div class="cr-row"><span>{$t('trade.rate')}</span><span>1 USD = ₦{ngnRate.toFixed(2)}</span></div>{/if}
 						{/if}
-						{#if payoutTimeoutLoaded}<div class="cr-row"><span>{$t('trade.processing2')}</span><span>Under {payoutTimeoutMins} min</span></div>{/if}
-						<div class="cr-row"><span>{$t('trade.safety')}</span><span>Cancel after timeout</span></div>
+						{#if payoutTimeoutLoaded}<div class="cr-row"><span>Processing</span><span>Usually under {payoutTimeoutMins} min</span></div>{/if}
+						<div class="cr-row cr-row-escrow">
+							<span>Escrow</span>
+							<span>Held by smart contract, not admin</span>
+						</div>
 					{/if}
 				</div>
 
@@ -2526,7 +2598,7 @@
 		font-size: 30px; font-weight: 700; padding: 0; min-width: 0;
 		font-variant-numeric: tabular-nums;
 	}
-	.amount-input::placeholder { color: var(--text-dim); opacity: 0.4; }
+	.amount-input::placeholder { color: var(--text-muted); opacity: 0.6; }
 	.amount-input-out { color: var(--text-muted); }
 
 	.preview-shimmer {
@@ -2570,22 +2642,38 @@
 	/* Flip */
 	.flip-row { display: flex; justify-content: center; margin: -8px 0; position: relative; z-index: 2; }
 	.flip-btn {
-		width: 36px; height: 36px; border-radius: 10px;
+		width: 42px; height: 42px; border-radius: 12px;
 		border: 3px solid var(--bg-surface); background: var(--bg-surface-hover);
 		color: var(--text-muted); cursor: pointer; display: flex;
 		align-items: center; justify-content: center; transition: all 200ms;
+		box-shadow: 0 2px 8px rgba(0,0,0,0.15);
 	}
-	.flip-btn:hover { color: #00d2ff; background: rgba(0,210,255,0.1); transform: rotate(180deg); }
+	.flip-btn:hover { color: #00d2ff; background: rgba(0,210,255,0.1); transform: rotate(180deg); box-shadow: 0 4px 16px rgba(0,210,255,0.15); }
 
 	/* Bank section */
-	.bank-safety-pill {
-		display: flex; align-items: center; justify-content: center; gap: 5px;
-		padding: 6px 10px; border-radius: 20px;
-		background: rgba(16,185,129,0.06); border: 1px solid rgba(16,185,129,0.1);
-		font-family: 'Space Mono', monospace; font-size: 9px; color: rgba(16,185,129,0.7);
-		margin-top: 8px;
+	.bank-trust-card {
+		margin-top: 12px; padding: 12px 14px; border-radius: 10px;
+		background: rgba(16,185,129,0.04); border: 1px solid rgba(16,185,129,0.12);
 	}
-	.bank-safety-pill svg { flex-shrink: 0; }
+	.bank-trust-header {
+		display: flex; align-items: center; gap: 6px; margin-bottom: 8px;
+		font-family: 'Syne', sans-serif; font-size: 12px; font-weight: 700;
+		color: #10b981;
+	}
+	.bank-trust-items { display: flex; flex-direction: column; gap: 5px; }
+	.bank-trust-item {
+		display: flex; align-items: center; gap: 7px;
+		font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text-muted);
+	}
+	.bank-trust-item svg { flex-shrink: 0; }
+	.bank-trust-contract {
+		display: block; margin-top: 8px; padding-top: 8px;
+		border-top: 1px solid rgba(16,185,129,0.08);
+		font-family: 'Space Mono', monospace; font-size: 9px;
+		color: rgba(16,185,129,0.6); text-decoration: none;
+		transition: color 0.15s;
+	}
+	.bank-trust-contract:hover { color: #10b981; }
 	.bank-payout-card {
 		background: rgba(16,185,129,0.05); border: 1px solid rgba(16,185,129,0.1);
 		border-radius: 10px; padding: 14px; margin: 12px 0 10px;
@@ -2672,6 +2760,15 @@
 	}
 
 	/* Trade details */
+	.spot-rate-preview {
+		display: flex; align-items: center; justify-content: center; gap: 6px;
+		padding: 8px 12px; border-radius: 8px;
+		background: rgba(0, 210, 255, 0.04); border: 1px solid rgba(0, 210, 255, 0.08);
+		font-family: 'Space Mono', monospace; font-size: 11px; color: var(--text-muted);
+		margin-bottom: 4px;
+	}
+	.spot-rate-preview svg { color: #00d2ff; flex-shrink: 0; }
+
 	.trade-details { padding: 10px 12px; }
 	.detail-line {
 		display: flex; justify-content: space-between; padding: 3px 0;
@@ -2750,7 +2847,15 @@
 	.status-emerald { color: #10b981; }
 	.status-red { color: #f87171; }
 	.history-row-bottom { display: flex; justify-content: space-between; align-items: center; margin-top: 4px; }
+	.history-ref { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text-muted); font-weight: 600; }
 	.history-date { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text-dim); }
+	.history-filter-count {
+		display: inline-flex; align-items: center; justify-content: center;
+		min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px;
+		font-size: 9px; font-weight: 700;
+		background: rgba(0,210,255,0.1); color: #00d2ff;
+		margin-left: 3px;
+	}
 	.history-progress { margin-top: 6px; }
 	.history-timer { font-family: 'Space Mono', monospace; font-size: 9px; color: rgba(245,158,11,0.7); }
 
@@ -2918,6 +3023,7 @@
 	.cr-row span:first-child { color: var(--text-muted); }
 	.cr-row span:last-child { color: var(--text); }
 	.cr-row-warn span:last-child { color: #f59e0b; }
+	.cr-row-escrow span:last-child { color: #10b981; font-size: 10px; }
 	.cr-row-highlight { padding: 6px 0; }
 	.cr-ngn { font-family: 'Rajdhani', sans-serif; font-size: 16px; font-weight: 700; color: #10b981; font-variant-numeric: tabular-nums; }
 	.confirm-processing {
