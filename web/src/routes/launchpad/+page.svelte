@@ -134,9 +134,10 @@
 		const d = Math.floor(ms / 86400000);
 		const h = Math.floor((ms % 86400000) / 3600000);
 		const m = Math.floor((ms % 3600000) / 60000);
+		if (d > 0) return `${d}d ${h}h ${m}m`;
+		if (h > 0) return `${h}h ${m}m`;
 		const s = Math.floor((ms % 60000) / 1000);
-		if (d > 0) return `${String(d).padStart(2, '0')}:${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-		return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+		return `${m}m ${s}s`;
 	}
 
 	let filteredLaunches = $derived.by(() => {
@@ -438,10 +439,12 @@
 					<span class="stat-label">Upcoming</span>
 				</div>
 			{/if}
-			<div class="stat-item">
-				<span class="stat-value">{graduatedCount}</span>
-				<span class="stat-label">{$t('lp.graduated')}</span>
-			</div>
+			{#if graduatedCount > 0}
+				<div class="stat-item">
+					<span class="stat-value">{graduatedCount}</span>
+					<span class="stat-label">{$t('lp.graduated')}</span>
+				</div>
+			{/if}
 			<div class="stat-item">
 				<span class="stat-value">{formatUsdt(totalRaised)}</span>
 				<span class="stat-label">{$t('lp.totalRaised')}</span>
@@ -450,30 +453,22 @@
 	{/if}
 
 	<!-- Platform trust banner — contract-enforced guarantees -->
-	<div class="trust-banner mb-5">
-		<div class="trust-banner-inner">
-			<svg class="trust-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-			<div class="trust-items">
-				<span class="trust-item">
-					<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
-					LP permanently burned
-				</span>
-				<span class="trust-sep">·</span>
-				<span class="trust-item">
-					<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
-					Instant token delivery
-				</span>
-				<span class="trust-sep">·</span>
-				<span class="trust-item">
-					<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
-					Refundable if soft cap not met
-				</span>
-				<span class="trust-sep">·</span>
-				<span class="trust-item">
-					<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
-					Unsold tokens burned
-				</span>
-			</div>
+	<div class="trust-grid mb-5">
+		<div class="trust-cell">
+			<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+			<span>LP burned permanently</span>
+		</div>
+		<div class="trust-cell">
+			<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round"><polyline points="13 17 18 12 13 7"/><polyline points="6 17 11 12 6 7"/></svg>
+			<span>Instant token delivery</span>
+		</div>
+		<div class="trust-cell">
+			<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+			<span>Refundable if soft cap missed</span>
+		</div>
+		<div class="trust-cell">
+			<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+			<span>Unsold tokens burned</span>
 		</div>
 	</div>
 
@@ -481,14 +476,15 @@
 	<div class="lp-controls">
 		<div class="lp-controls-left">
 			<div class="tab-row">
-				<button class="tab-btn {activeTab === 'live' ? 'tab-active' : ''}" onclick={() => activeTab = 'live'}>{$t('lp.live')}{#if liveCount > 0} <span class="tab-count">{liveCount}</span>{/if}</button>
-				<button class="tab-btn {activeTab === 'upcoming' ? 'tab-active' : ''}" onclick={() => activeTab = 'upcoming'}>{$t('lp.upcoming')}{#if upcomingCount > 0} <span class="tab-count">{upcomingCount}</span>{/if}</button>
-				<button class="tab-btn {activeTab === 'graduated' ? 'tab-active' : ''}" onclick={() => activeTab = 'graduated'}>{$t('lp.graduated')}{#if graduatedCount > 0} <span class="tab-count">{graduatedCount}</span>{/if}</button>
-				<button class="tab-btn {activeTab === 'all' ? 'tab-active' : ''}" onclick={() => activeTab = 'all'}>{$t('lp.all')}{#if launches.length > 0} <span class="tab-count">{launches.length}</span>{/if}</button>
+				<button class="tab-btn {activeTab === 'live' ? 'tab-active' : ''}" onclick={() => activeTab = 'live'}>{$t('lp.live')} <span class="tab-count">{liveCount}</span></button>
+				<button class="tab-btn {activeTab === 'upcoming' ? 'tab-active' : ''}" onclick={() => activeTab = 'upcoming'}>{$t('lp.upcoming')} <span class="tab-count">{upcomingCount}</span></button>
+				<button class="tab-btn {activeTab === 'graduated' ? 'tab-active' : ''}" onclick={() => activeTab = 'graduated'}>{$t('lp.graduated')} <span class="tab-count">{graduatedCount}</span></button>
+				<button class="tab-btn {activeTab === 'all' ? 'tab-active' : ''}" onclick={() => activeTab = 'all'}>{$t('lp.all')} <span class="tab-count">{launches.length}</span></button>
 			</div>
 			<button
 				onclick={() => { showFavorites = !showFavorites; if (showFavorites) showMyLaunches = false; }}
 				class="tab-btn {showFavorites ? 'tab-active' : ''}"
+				title="Favorites"
 			>
 				<svg width="11" height="11" viewBox="0 0 24 24" fill={showFavorites ? '#00d2ff' : 'none'} stroke={showFavorites ? '#00d2ff' : 'currentColor'} stroke-width="2.5" style="display:inline;vertical-align:-1px;"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
 			</button>
@@ -656,15 +652,45 @@
 						</div>
 					{/if}
 
-					<!-- 3b. Token distribution — the trust row -->
-					{#if distroLabel(launch)}
-						<div class="card-distro">
-							<span class="distro-text">{distroLabel(launch)}</span>
-							{#if vestingLabel(launch)}
-								<span class="distro-vest">{vestingLabel(launch)}</span>
+					<!-- 3b. Price + Supply row -->
+					<div class="card-metrics">
+						{#if launch.currentPrice > 0n}
+							<div class="card-metric">
+								<span class="card-metric-label">Price</span>
+								<span class="card-metric-val">{formatUsdt(launch.currentPrice, ud, 6)}</span>
+							</div>
+						{/if}
+						{#if launch.totalTokensRequired > 0n}
+							<div class="card-metric">
+								<span class="card-metric-label">Supply</span>
+								<span class="card-metric-val">{formatTokens(launch.totalTokensRequired, launch.tokenDecimals)}</span>
+							</div>
+						{/if}
+					</div>
+
+					<!-- 3c. Tokenomics visual bar -->
+					{@const curvePct = launch.totalTokensRequired > 0n ? Number((launch.tokensForCurve * 100n) / launch.totalTokensRequired) : 70}
+					{@const creatorPct = Number(launch.creatorAllocationBps) / 100}
+					{@const lpPct = Math.max(0, 100 - curvePct - creatorPct)}
+					<div class="card-distro-bar-wrap">
+						<div class="card-distro-bar">
+							<div class="distro-seg distro-seg-curve" style="width: {curvePct}%"></div>
+							<div class="distro-seg distro-seg-lp" style="width: {lpPct}%"></div>
+							{#if creatorPct > 0}
+								<div class="distro-seg distro-seg-creator" style="width: {creatorPct}%"></div>
 							{/if}
 						</div>
-					{/if}
+						<div class="card-distro-labels">
+							<span class="distro-label-curve">{curvePct}% sale</span>
+							<span class="distro-label-lp">{lpPct.toFixed(0)}% LP</span>
+							{#if creatorPct > 0}
+								<span class="distro-label-creator">{creatorPct.toFixed(0)}% creator</span>
+							{/if}
+							{#if vestingLabel(launch)}
+								<span class="distro-label-vest">{vestingLabel(launch)}</span>
+							{/if}
+						</div>
+					</div>
 
 					<!-- 4. Progress + Timer (bottom) -->
 					<div class="px-4 pb-4">
@@ -696,9 +722,18 @@
 								</div>
 							{/if}
 						</div>
-						<div class="flex justify-between mt-1">
+						<div class="flex justify-between mt-1.5">
 							<span class="text-gray-600 text-[10px] font-mono">{formatUsdt(launch.totalBaseRaised, ud)} / {formatUsdt(launch.hardCap, ud)}</span>
 						</div>
+
+						<!-- Buy CTA -->
+						{#if launch.state === 1}
+							<div class="card-cta">Buy Now</div>
+						{:else if launch.state === 0}
+							<div class="card-cta card-cta-muted">View Launch</div>
+						{:else if launch.state === 2}
+							<div class="card-cta card-cta-graduated">Graduated</div>
+						{/if}
 					</div>
 
 					<!-- Hover tooltip -->
@@ -1020,8 +1055,9 @@
 		height: 16px;
 	}
 	.progress-track-wrap .progress-track {
-		height: 6px;
+		height: 8px;
 		margin-top: 2px;
+		border-radius: 4px;
 	}
 	.softcap-marker {
 		position: absolute;
@@ -1076,47 +1112,83 @@
 	.badge-pill-lp { background: rgba(16, 185, 129, 0.08); color: #34d399; border-color: rgba(16, 185, 129, 0.2); }
 	.badge-pill-safu { background: rgba(16,185,129,0.15); color: #10b981; font-weight: 800; border-color: rgba(16,185,129,0.3); }
 	.badge-pill-kyc { background: rgba(59,130,246,0.12); color: #60a5fa; font-weight: 800; border-color: rgba(59,130,246,0.25); }
-	.badge-pill-audited { background: rgba(0,210,255,0.08); color: #22d3ee; border-color: rgba(0,210,255,0.2); }
+	.badge-pill-audited { background: rgba(16,185,129,0.1); color: #34d399; border-color: rgba(16,185,129,0.25); font-weight: 800; }
 	.badge-pill-mintable { background: rgba(245,158,11,0.08); color: #fbbf24; border-color: rgba(245,158,11,0.2); }
 	.badge-pill-taxable { background: rgba(245,158,11,0.08); color: #f59e0b; border-color: rgba(245,158,11,0.2); }
 	.badge-pill-partner { background: rgba(139,92,246,0.08); color: #a78bfa; border-color: rgba(139,92,246,0.2); }
 
-	/* ── Platform trust banner ── */
-	.trust-banner {
-		background: rgba(16,185,129,0.04);
-		border: 1px solid rgba(16,185,129,0.15);
-		border-radius: 10px; overflow: hidden;
+	/* ── Platform trust grid ── */
+	.trust-grid {
+		display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px;
+		background: var(--border-subtle); border-radius: 10px; overflow: hidden;
 	}
-	.trust-banner-inner {
-		display: flex; align-items: center; gap: 10px;
-		padding: 10px 16px;
+	.trust-cell {
+		display: flex; flex-direction: column; align-items: center; gap: 6px;
+		padding: 12px 8px; background: var(--bg-surface); text-align: center;
+		font-family: 'Rajdhani', sans-serif; font-size: 11px; color: var(--text-muted);
+		line-height: 1.3;
 	}
-	.trust-icon { color: #10b981; flex-shrink: 0; }
-	.trust-items {
-		display: flex; align-items: center; gap: 6px;
-		flex-wrap: wrap;
-		font-family: 'Space Mono', monospace; font-size: 11px; color: var(--text-muted);
-	}
-	.trust-item { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
-	.trust-sep { color: var(--text-dim); opacity: 0.3; }
 	@media (max-width: 640px) {
-		.trust-banner-inner { flex-direction: column; align-items: flex-start; gap: 6px; }
-		.trust-items { gap: 4px; }
-		.trust-sep { display: none; }
-		.trust-item { font-size: 10px; }
+		.trust-grid { grid-template-columns: repeat(2, 1fr); }
 	}
 
-	/* ── Token distribution row on card ── */
-	.card-distro {
-		display: flex; align-items: center; justify-content: space-between; gap: 6px;
-		padding: 0 16px 6px;
-		font-family: 'Space Mono', monospace; font-size: 9px;
+	/* ── Card metrics (price + supply) ── */
+	.card-metrics {
+		display: flex; gap: 1px; margin: 0 16px 8px;
+		background: var(--border-subtle); border-radius: 8px; overflow: hidden;
 	}
-	.distro-text { color: var(--text-dim); }
-	.distro-vest {
-		color: #10b981; font-weight: 600;
-		padding: 1px 6px; border-radius: 4px;
-		background: rgba(16,185,129,0.08);
+	.card-metric {
+		flex: 1; padding: 6px 10px; background: var(--bg-surface-hover);
+	}
+	.card-metric-label {
+		display: block; font-family: 'Rajdhani', sans-serif; font-size: 9px;
+		color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.03em;
+	}
+	.card-metric-val {
+		font-family: 'Syne', sans-serif; font-size: 12px; font-weight: 700;
+		color: var(--text-heading);
+	}
+
+	/* ── Tokenomics visual bar ── */
+	.card-distro-bar-wrap { padding: 0 16px 8px; }
+	.card-distro-bar {
+		display: flex; height: 4px; border-radius: 2px; overflow: hidden;
+		background: var(--bg-surface-hover);
+	}
+	.distro-seg { min-width: 2px; }
+	.distro-seg-curve { background: #00d2ff; }
+	.distro-seg-lp { background: #10b981; }
+	.distro-seg-creator { background: #a78bfa; }
+	.card-distro-labels {
+		display: flex; gap: 8px; margin-top: 3px;
+		font-family: 'Rajdhani', sans-serif; font-size: 9px;
+	}
+	.distro-label-curve { color: #00d2ff; }
+	.distro-label-lp { color: #10b981; }
+	.distro-label-creator { color: #a78bfa; }
+	.distro-label-vest {
+		color: #10b981; font-weight: 600; margin-left: auto;
+	}
+
+	/* ── Buy CTA ── */
+	.card-cta {
+		margin: 10px 16px 0; padding: 8px; border-radius: 8px; text-align: center;
+		font-family: 'Syne', sans-serif; font-size: 12px; font-weight: 700;
+		background: linear-gradient(135deg, rgba(0,210,255,0.12), rgba(58,123,213,0.12));
+		color: #00d2ff; border: 1px solid rgba(0,210,255,0.2);
+		transition: all 150ms;
+	}
+	.launch-card:hover .card-cta {
+		background: linear-gradient(135deg, rgba(0,210,255,0.2), rgba(58,123,213,0.2));
+		border-color: rgba(0,210,255,0.4);
+	}
+	.card-cta-muted {
+		background: var(--bg-surface-hover); color: var(--text-muted);
+		border-color: var(--border);
+	}
+	.card-cta-graduated {
+		background: rgba(16,185,129,0.08); color: #10b981;
+		border-color: rgba(16,185,129,0.2);
 	}
 
 	/* Skeleton card pulse */

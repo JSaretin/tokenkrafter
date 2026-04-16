@@ -456,36 +456,43 @@
 								{#if isSafu}
 									<span class="badge-tip">
 										<span class="tc-badge tc-badge-safu">SAFU</span>
-										<span class="badge-tip-content">
-											<strong>SAFU — All safety checks passed</strong>
-											<span>LP ≥99% burned</span>
-											<span>Tax ceiling locked (or non-taxable)</span>
-											<span>Trading enabled + liquidity</span>
-											<span>Not mintable, or owner renounced</span>
-										</span>
+										<div class="badge-tip-content">
+											<div class="btp-title">SAFU Token</div>
+											<div class="btp-row"><span class="btp-check">✓</span><span>LP ≥99% burned</span></div>
+											<div class="btp-row"><span class="btp-check">✓</span><span>Tax ceiling locked</span></div>
+											<div class="btp-row"><span class="btp-check">✓</span><span>Trading enabled + liquidity</span></div>
+											<div class="btp-row"><span class="btp-check">✓</span><span>Not mintable / owner renounced</span></div>
+										</div>
 									</span>
 								{/if}
 								{#if tok.is_kyc}
 									<span class="badge-tip">
 										<span class="tc-badge tc-badge-kyc">KYC</span>
-										<span class="badge-tip-content"><strong>Creator identity verified</strong><span>Confirmed via AMA or KYC process</span></span>
+										<div class="badge-tip-content">
+											<div class="btp-title">KYC Verified</div>
+											<div class="btp-row"><span>Creator identity confirmed via AMA or KYC</span></div>
+										</div>
 									</span>
 								{/if}
 								{#if tok.is_taxable}
 									<span class="badge-tip">
 										<span class="tc-badge tc-badge-tax">Taxable</span>
-										<span class="badge-tip-content">
-											<strong>Token has buy/sell tax</strong>
-											<span>Buy: {(buyTax / 100).toFixed(1)}%</span>
-											<span>Sell: {(sellTax / 100).toFixed(1)}%</span>
-											{#if isTaxLocked}<span class="badge-tip-good">Tax ceiling locked</span>{/if}
-										</span>
+										<div class="badge-tip-content">
+											<div class="btp-title">Token Tax</div>
+											<div class="btp-kv"><span>Buy</span><span>{(buyTax / 100).toFixed(1)}%</span></div>
+											<div class="btp-kv"><span>Sell</span><span>{(sellTax / 100).toFixed(1)}%</span></div>
+											{#if isTaxLocked}<div class="btp-row"><span class="btp-check">✓</span><span>Tax ceiling locked</span></div>{/if}
+										</div>
 									</span>
 								{/if}
 								{#if isMintableRisk}
 									<span class="badge-tip">
 										<span class="tc-badge tc-badge-mintable">Mintable</span>
-										<span class="badge-tip-content"><strong>Supply can increase</strong><span>Owner can mint new tokens. Ownership not renounced.</span></span>
+										<div class="badge-tip-content">
+											<div class="btp-title">Mintable Token</div>
+											<div class="btp-row"><span class="btp-warn">⚠</span><span>Owner can increase supply</span></div>
+											<div class="btp-row"><span class="btp-warn">⚠</span><span>Ownership not renounced</span></div>
+										</div>
 									</span>
 								{/if}
 								{#if isOnLaunchpad(tok)}
@@ -671,31 +678,48 @@
 	.tc-badge-live-launch { background: rgba(0,210,255,0.12); color: #00d2ff; border: 1px solid rgba(0,210,255,0.25); font-weight: 700; }
 	.tc-badge-prelaunch { background: rgba(245,158,11,0.1); color: #f59e0b; border: 1px solid rgba(245,158,11,0.2); }
 
-	/* Styled badge tooltip popover */
-	.badge-tip { position: relative; display: inline-flex; }
+	/* Styled badge tooltip popover — matches launchpad hover card */
+	.badge-tip { position: relative; display: inline-flex; cursor: pointer; }
 	.badge-tip-content {
-		display: none; position: absolute; bottom: calc(100% + 8px); left: 50%;
+		display: none; position: absolute; bottom: calc(100% + 10px); left: 50%;
 		transform: translateX(-50%); z-index: 50; pointer-events: none;
-		background: var(--bg, #0f172a); border: 1px solid var(--border, #1e293b);
-		border-radius: 8px; padding: 8px 12px; min-width: 180px; max-width: 240px;
-		box-shadow: 0 8px 24px rgba(0,0,0,0.4);
-		flex-direction: column; gap: 3px;
-		font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text-muted);
-		line-height: 1.4; white-space: normal;
+		background: #1e293b; border: 1px solid #334155;
+		border-radius: 10px; padding: 12px 16px; min-width: 200px;
+		box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+		flex-direction: column; gap: 0;
+		white-space: normal;
 	}
 	.badge-tip-content::after {
 		content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
-		border: 5px solid transparent; border-top-color: var(--border, #1e293b);
+		border: 6px solid transparent; border-top-color: #334155;
 	}
-	.badge-tip-content strong {
-		font-size: 11px; color: var(--text-heading); font-weight: 700; margin-bottom: 2px;
+	.btp-title {
+		font-family: 'Syne', sans-serif; font-size: 12px; font-weight: 700;
+		color: #fff; margin-bottom: 8px; padding-bottom: 6px;
+		border-bottom: 1px solid rgba(255,255,255,0.08);
 	}
-	.badge-tip-good { color: #10b981; }
+	.btp-row {
+		display: flex; align-items: flex-start; gap: 6px; padding: 3px 0;
+		font-family: 'Space Mono', monospace; font-size: 10px; color: #94a3b8;
+		line-height: 1.4;
+	}
+	.btp-check { color: #10b981; flex-shrink: 0; font-size: 11px; }
+	.btp-warn { color: #f59e0b; flex-shrink: 0; font-size: 11px; }
+	.btp-kv {
+		display: flex; justify-content: space-between; padding: 3px 0;
+		font-family: 'Space Mono', monospace; font-size: 10px;
+	}
+	.btp-kv span:first-child { color: #64748b; }
+	.btp-kv span:last-child { color: #e2e8f0; font-weight: 600; }
 	.badge-tip:hover .badge-tip-content { display: flex; }
 	:global(.light) .badge-tip-content {
-		background: #fff; border-color: #e2e8f0; box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+		background: #fff; border-color: #e2e8f0; box-shadow: 0 12px 40px rgba(0,0,0,0.12);
 	}
 	:global(.light) .badge-tip-content::after { border-top-color: #e2e8f0; }
+	:global(.light) .btp-title { color: #0f172a; border-bottom-color: rgba(0,0,0,0.08); }
+	:global(.light) .btp-row { color: #475569; }
+	:global(.light) .btp-kv span:first-child { color: #94a3b8; }
+	:global(.light) .btp-kv span:last-child { color: #1e293b; }
 	.tc-badge-lp { background: rgba(59,130,246,0.12); color: #60a5fa; }
 	.tc-badge-renounced { background: rgba(16,185,129,0.12); color: #34d399; }
 	.tc-badge-locked { background: rgba(139,92,246,0.12); color: #a78bfa; }
