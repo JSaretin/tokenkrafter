@@ -68,7 +68,9 @@ contract LaunchpadFactory is Ownable, ReentrancyGuard {
         LaunchInstance.CurveType curveType,
         uint256 softCap,
         uint256 hardCap,
-        uint256 totalTokens
+        uint256 totalTokens,
+        uint256 param1,
+        uint256 param2
     );
     event PlatformWalletUpdated(address newWallet);
     event DexRouterUpdated(address newRouter);
@@ -239,7 +241,9 @@ contract LaunchpadFactory is Ownable, ReentrancyGuard {
             curveType_,
             softCap_,
             hardCap_,
-            totalTokens_
+            totalTokens_,
+            param1_,
+            param2_
         );
 
         return address(launch);

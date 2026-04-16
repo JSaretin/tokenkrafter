@@ -152,7 +152,7 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
 
     // ── Events ──────────────────────────────────────────────────────
     event Swap(
-        address indexed user, address tokenIn, address tokenOut,
+        address indexed user, address indexed tokenIn, address indexed tokenOut,
         uint256 amountIn, uint256 amountOut
     );
     event WithdrawRequested(

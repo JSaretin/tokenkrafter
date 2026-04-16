@@ -276,7 +276,7 @@ contract LaunchInstance is ReentrancyGuard {
     );
     event Refunded(address indexed buyer, uint256 baseAmount, uint256 tokensReturned);
     event CreatorClaimed(address indexed creator, uint256 amount, uint256 totalClaimed, uint256 totalVested);
-    event RefundingEnabled(uint256 totalRaised, uint256 softCap);
+    event RefundingEnabled(address indexed token, uint256 totalRaised, uint256 softCap);
     event CreatorWithdraw(address indexed creator, uint256 tokenAmount);
     event CreatorReclaim(address indexed creator, uint256 tokenAmount);
 
@@ -812,7 +812,7 @@ contract LaunchInstance is ReentrancyGuard {
             // which is the only role permitted to unlock.
             try ILaunchToken(address(token)).unlockTaxCeiling() {} catch {}
 
-            emit RefundingEnabled(totalBaseRaised, softCap);
+            emit RefundingEnabled(address(token), totalBaseRaised, softCap);
         }
     }
 
