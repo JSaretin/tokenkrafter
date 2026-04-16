@@ -151,15 +151,9 @@ function addKnownToken(db: Database, address: string) {
 	db.run('INSERT OR IGNORE INTO known_tokens (address) VALUES (?)', [address.toLowerCase()]);
 }
 
-function isKnownToken(db: Database, address: string): boolean {
-	return !!db.query<{ address: string }, [string]>(
-		'SELECT address FROM known_tokens WHERE address = ?'
-	).get(address.toLowerCase());
-}
-
 function loadAllKnownTokens(db: Database): Set<string> {
-	const rows = db.query<{ address: string }, []>('SELECT address FROM known_tokens').all();
-	return new Set(rows.map(r => r.address));
+	const rows: Array<{ address: string }> = db.query('SELECT address FROM known_tokens').all() as any;
+	return new Set(rows.map((r: { address: string }) => r.address));
 }
 
 function addWatchedLaunch(db: Database, address: string) {
@@ -171,8 +165,8 @@ function removeWatchedLaunch(db: Database, address: string) {
 }
 
 function loadWatchedLaunches(db: Database): Set<string> {
-	const rows = db.query<{ address: string }, []>('SELECT address FROM watched_launches').all();
-	return new Set(rows.map(r => r.address));
+	const rows: Array<{ address: string }> = db.query('SELECT address FROM watched_launches').all() as any;
+	return new Set(rows.map((r: { address: string }) => r.address));
 }
 
 // ── HTTP ──────────────────────────────────────────────────
@@ -224,7 +218,7 @@ interface Ctx {
 }
 
 // ── Enrichment ────────────────────────────────────────────
-async function enrichLaunch(provider: ethers.Provider, addr: string, usdtDecimals: number) {
+async function enrichLaunch(provider: ethers.Provider, addr: string, chainId: number, usdtDecimals: number) {
 	const inst = new ethers.Contract(addr, LAUNCH_INSTANCE_ABI, provider);
 	const [info, req, dep] = await Promise.all([
 		inst.getLaunchInfo(), inst.totalTokensRequired(), inst.totalTokensDeposited(),
@@ -238,6 +232,7 @@ async function enrichLaunch(provider: ethers.Provider, addr: string, usdtDecimal
 	]);
 	return {
 		address: addr.toLowerCase(),
+		chain_id: chainId,
 		token_address: tokenAddr,
 		creator: (info.creator_ as string).toLowerCase(),
 		curve_type: Number(info.curveType_),

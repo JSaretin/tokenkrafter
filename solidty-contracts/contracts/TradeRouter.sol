@@ -158,7 +158,8 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
     event WithdrawRequested(
         uint256 indexed id, address indexed user,
         address token, uint256 grossAmount, uint256 fee,
-        uint256 netAmount, bytes32 bankRef
+        uint256 netAmount, bytes32 bankRef,
+        address referrer, uint256 expiresAt
     );
     event WithdrawConfirmed(uint256 indexed id, address indexed admin, address indexed to, uint256 amount);
     event WithdrawCancelled(uint256 indexed id, address indexed user, uint256 refundedAmount);
@@ -826,7 +827,7 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
         pendingIds.push(id);
         userWithdrawIds[user].push(id);
 
-        emit WithdrawRequested(id, user, token, grossAmount, fee, netAmount, bankRef);
+        emit WithdrawRequested(id, user, token, grossAmount, fee, netAmount, bankRef, referrer, block.timestamp + payoutTimeout);
     }
 
     /// @dev Remove id from pendingIds using swap-and-pop (O(1))
