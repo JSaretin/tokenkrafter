@@ -1718,22 +1718,46 @@
 			</div>
 		</div>
 
-		<!-- Trust Signals -->
-		<div class="trust-signals mb-4">
-			<span class="trust-pill trust-green">LP Burns at Graduation</span>
-			{#if badges.includes('taxable')}
-				<span class="trust-pill trust-green">Tax Ceiling Locked</span>
-			{/if}
-			{#if maxBuyPerWallet > 0n}
-				<span class="trust-pill trust-cyan">Max Buy: {formatUsdt(maxBuyPerWallet, usdtDecimals)} USDT per wallet</span>
-			{/if}
-			{#if lockDurationAfterListing > 0n}
-				<span class="trust-pill trust-cyan">Anti-Snipe: {Number(lockDurationAfterListing) >= 3600 ? `${Math.round(Number(lockDurationAfterListing) / 3600)}h` : `${Math.round(Number(lockDurationAfterListing) / 60)}m`} trading delay</span>
-			{/if}
-			<span class="trust-pill trust-green">Refunds if soft cap missed</span>
-			{#if launch.creatorAllocationBps > 0n && (vestingCliffSeconds > 0n || vestingDurationSeconds > 0n)}
-				<span class="trust-pill trust-cyan">Creator vesting: {vestingCliffSeconds > 0n ? `${Math.round(Number(vestingCliffSeconds) / 86400)}d cliff` : ''}{vestingCliffSeconds > 0n && vestingDurationSeconds > 0n ? ' + ' : ''}{vestingDurationSeconds > 0n ? `${Math.round(Number(vestingDurationSeconds) / 86400)}d vest` : ''}</span>
-			{/if}
+		<!-- Launch Rules -->
+		<div class="rules-card mb-4">
+			<div class="rules-header">
+				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+				<span class="rules-title">Launch Rules</span>
+			</div>
+			<div class="rules-list">
+				<div class="rules-item rules-enforced">
+					<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+					<span>Liquidity permanently burned at graduation</span>
+				</div>
+				<div class="rules-item rules-enforced">
+					<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+					<span>Full refund if soft cap not reached</span>
+				</div>
+				{#if badges.includes('taxable')}
+					<div class="rules-item rules-enforced">
+						<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+						<span>Tax rates locked — creator can't raise them</span>
+					</div>
+				{/if}
+				{#if maxBuyPerWallet > 0n}
+					<div class="rules-item rules-info">
+						<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4m0-4h.01"/></svg>
+						<span>Max {formatUsdt(maxBuyPerWallet, usdtDecimals)} per wallet</span>
+					</div>
+				{/if}
+				{#if lockDurationAfterListing > 0n}
+					<div class="rules-item rules-info">
+						<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+						<span>{Number(lockDurationAfterListing) >= 3600 ? `${Math.round(Number(lockDurationAfterListing) / 3600)}h` : `${Math.round(Number(lockDurationAfterListing) / 60)}m`} trading delay after graduation</span>
+					</div>
+				{/if}
+				{#if launch.creatorAllocationBps > 0n && (vestingCliffSeconds > 0n || vestingDurationSeconds > 0n)}
+					<div class="rules-item rules-info">
+						<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+						<span>Creator tokens vested{vestingCliffSeconds > 0n ? ` — ${Math.round(Number(vestingCliffSeconds) / 86400)}d cliff` : ''}{vestingDurationSeconds > 0n ? ` + ${Math.round(Number(vestingDurationSeconds) / 86400)}d linear unlock` : ''}</span>
+					</div>
+				{/if}
+			</div>
 		</div>
 
 		<!-- Graduation Celebration Banner -->
@@ -2196,13 +2220,19 @@
 				{/if}
 
 				<!-- Mobile-only: compact About between timer and buy -->
-				{#if metadata.description}
+				{#if metadata.description || isCreator}
 					<div class="card p-4 mb-4 mobile-about">
 						<h4 class="syne font-bold text-sm mb-2" style="color: var(--text-heading)">{$t('lpd.about')}</h4>
-						<p class="mobile-about-text" class:mobile-about-expanded={mobileAboutExpanded}>{metadata.description}</p>
-						{#if metadata.description.length > 120}
-							<button class="mobile-about-toggle" onclick={() => mobileAboutExpanded = !mobileAboutExpanded}>
-								{mobileAboutExpanded ? 'Show less' : 'Read more'}
+						{#if metadata.description}
+							<p class="mobile-about-text" class:mobile-about-expanded={mobileAboutExpanded}>{metadata.description}</p>
+							{#if metadata.description.length > 120}
+								<button class="mobile-about-toggle" onclick={() => mobileAboutExpanded = !mobileAboutExpanded}>
+									{mobileAboutExpanded ? 'Show less' : 'Read more'}
+								</button>
+							{/if}
+						{:else}
+							<button onclick={startEditing} class="empty-state-btn">
+								<span class="text-gray-500 text-xs">{$t('lpd.addDescription')}</span>
 							</button>
 						{/if}
 					</div>
@@ -3108,13 +3138,27 @@
 		border-radius: 4px;
 	}
 	/* Trust signal pills */
-	.trust-signals { display: flex; flex-wrap: wrap; gap: 6px; }
-	.trust-pill {
-		font-size: 10px; font-family: 'Space Mono', monospace; font-weight: 600;
-		padding: 3px 10px; border-radius: 99px; white-space: nowrap;
+	/* Launch Rules */
+	.rules-card {
+		background: var(--bg-surface); border: 1px solid var(--border);
+		border-radius: 14px; padding: 14px 16px;
 	}
-	.trust-green { background: rgba(16,185,129,0.12); color: #10b981; border: 1px solid rgba(16,185,129,0.25); }
-	.trust-cyan { background: rgba(0,210,255,0.1); color: #00d2ff; border: 1px solid rgba(0,210,255,0.2); }
+	.rules-header {
+		display: flex; align-items: center; gap: 6px; margin-bottom: 10px;
+	}
+	.rules-title {
+		font-family: 'Syne', sans-serif; font-size: 12px; font-weight: 800;
+		color: var(--text-heading); letter-spacing: 0.02em;
+	}
+	.rules-list { display: flex; flex-direction: column; gap: 8px; }
+	.rules-item {
+		display: flex; align-items: flex-start; gap: 8px;
+		font-family: 'Rajdhani', sans-serif; font-size: 12px;
+		line-height: 1.3;
+	}
+	.rules-item svg { flex-shrink: 0; margin-top: 1px; }
+	.rules-enforced { color: #10b981; }
+	.rules-info { color: var(--text-muted); }
 
 	.header-socials {
 		display: flex;
@@ -3233,8 +3277,10 @@
 		font-family: 'Rajdhani', sans-serif; font-size: 13px; font-weight: 700;
 		padding: 2px 8px; border-radius: 6px;
 	}
-	.pos-up { color: #10b981; background: rgba(16,185,129,0.1); }
-	.pos-down { color: #f87171; background: rgba(248,113,113,0.1); }
+	.pos-pnl.pos-up { color: #10b981; background: rgba(16,185,129,0.1); }
+	.pos-pnl.pos-down { color: #f87171; background: rgba(248,113,113,0.1); }
+	.pos-detail-val.pos-up { color: #10b981; }
+	.pos-detail-val.pos-down { color: #f87171; }
 
 	.pos-hero { margin-bottom: 14px; }
 	.pos-hero-num {
