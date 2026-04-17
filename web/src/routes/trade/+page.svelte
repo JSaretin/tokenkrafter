@@ -69,6 +69,10 @@
 	// Token tax detection (from TradeLens simulation)
 	let tokenInTax = $state<TaxInfo | null>(null);
 	let tokenOutTax = $state<TaxInfo | null>(null);
+	// Platform tokens can never be honeypots — suppress false positives
+	let platformTokenAddrs = $derived(new Set(platformTokens.map(t => t.address.toLowerCase())));
+	let tokenInIsPlatform = $derived(!!tokenInAddr && platformTokenAddrs.has(tokenInAddr.toLowerCase()));
+	let tokenOutIsPlatform = $derived(!!tokenOutAddr && platformTokenAddrs.has(tokenOutAddr.toLowerCase()));
 
 	// Amounts
 	let amountIn = $state('');
@@ -1766,7 +1770,7 @@
 					{/if}
 					{#if usdValueIn}<span class="usd-value">{usdValueIn}</span>{/if}
 				</div>
-				{#if tokenInTax && !tokenInTax.canSell && !tokenInIsNative}
+				{#if tokenInTax && !tokenInTax.canSell && !tokenInIsNative && !tokenInIsPlatform}
 					<div class="honeypot-badge">
 						<span class="tax-dot" style="background: #f87171;"></span>
 						{$t('trade.honeypot')}
@@ -1830,7 +1834,7 @@
 						{/if}
 						{#if usdValueOut}<span class="usd-value">{usdValueOut}</span>{/if}
 					</div>
-					{#if tokenOutTax && !tokenOutTax.canSell && !tokenOutIsNative}
+					{#if tokenOutTax && !tokenOutTax.canSell && !tokenOutIsNative && !tokenOutIsPlatform}
 						<div class="honeypot-badge">
 							<span class="tax-dot" style="background: #f87171;"></span>
 							{$t('trade.honeypot')}
