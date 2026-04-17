@@ -58,17 +58,45 @@
 
 	const launchAddress: string = page.params.address as string;
 
-	// Pre-populate from server data for instant render
+	// Pre-populate from server data for instant render (no RPC needed)
 	const ssrLaunch = serverData?.launch;
-	let launch: LaunchInfo | null = $state(null);
-	let network: SupportedNetwork | null = $state(null);
+	function ssrToLaunchInfo(row: any): LaunchInfo | null {
+		if (!row) return null;
+		return {
+			address: row.address || '',
+			token: row.token_address || '',
+			creator: row.creator || '',
+			curveType: row.curve_type ?? 0,
+			state: row.state ?? 0,
+			softCap: BigInt(row.soft_cap || '0'),
+			hardCap: BigInt(row.hard_cap || '0'),
+			deadline: BigInt(row.deadline || 0),
+			startTimestamp: BigInt(row.start_timestamp || 0),
+			totalBaseRaised: BigInt(row.total_base_raised || '0'),
+			tokensSold: BigInt(row.tokens_sold || '0'),
+			tokensForCurve: BigInt(row.tokens_for_curve || '0'),
+			tokensForLP: BigInt(row.tokens_for_lp || '0'),
+			creatorAllocationBps: BigInt(row.creator_allocation_bps || 0),
+			currentPrice: BigInt(row.current_price || '0'),
+			usdtAddress: row.usdt_address || '',
+			totalTokensRequired: BigInt(row.total_tokens_required || '0'),
+			totalTokensDeposited: BigInt(row.total_tokens_deposited || '0'),
+			tokenName: row.token_name,
+			tokenSymbol: row.token_symbol,
+			tokenDecimals: row.token_decimals ?? 18,
+			usdtDecimals: row.usdt_decimals ?? 18,
+		};
+	}
+	let launch: LaunchInfo | null = $state(ssrToLaunchInfo(ssrLaunch));
+	let network: SupportedNetwork | null = $state(serverData?.network || null);
 	let tokenMeta = $state({
 		name: ssrLaunch?.token_name || 'Loading...',
 		symbol: ssrLaunch?.token_symbol || '...',
 		decimals: ssrLaunch?.token_decimals ?? 18
 	});
 	let usdtDecimals = $state(ssrLaunch?.usdt_decimals ?? 18);
-	let loading = $state(true);
+	// If SSR provided launch data, skip the loading spinner
+	let loading = $state(!ssrLaunch);
 
 	// Pre-populate badges from server
 	let badges: string[] = $state(serverData?.badges || []);
@@ -76,6 +104,8 @@
 	let mobileAboutExpanded = $state(false);
 	let buyAmount = $state(''); // always in USDT
 	let buyPaymentMethod: 'usdt' | 'usdc' | 'native' | 'custom' = $state('usdt');
+	let slippagePct = $state(5); // default 5% slippage tolerance
+	let showSlippageMenu = $state(false);
 	let showPayPicker = $state(false);
 	let customPayToken: PickerToken | null = $state(null);
 	let preview: BuyPreview | null = $state(null);
@@ -451,134 +481,102 @@
 	const targetChainId = CHAIN_MAP[page.params.chain?.toLowerCase() || 'bsc'] || 56;
 
 	async function loadLaunch() {
-		// Target the specific chain from URL — no iteration needed
 		const net = supportedNetworks.find(n => n.chain_id === targetChainId);
 		if (!net) { loading = false; return; }
+		network = net;
 
 		const prov = networkProviders.get(net.chain_id);
 		if (!prov) { loading = false; return; }
 
 		try {
+			// Phase 1: Fetch core launch info (single eth_call) — merge with SSR data
 			const info = await fetchLaunchInfo(launchAddress, prov);
-			launch = info;
-			network = net;
-			const [meta, usdtMeta] = await Promise.all([
+			// Preserve SSR token metadata until Phase 2 fetches fresh values
+			const prevLaunch = launch;
+			launch = {
+				...info,
+				tokenName: prevLaunch?.tokenName || info.tokenName,
+				tokenSymbol: prevLaunch?.tokenSymbol || info.tokenSymbol,
+				tokenDecimals: prevLaunch?.tokenDecimals || info.tokenDecimals,
+			};
+			loading = false; // render now with on-chain data
+
+			// Phase 2: All secondary data in parallel — non-blocking
+			const instance = new ethers.Contract(launchAddress, LAUNCH_INSTANCE_ABI, prov);
+			const tokenC = new ethers.Contract(info.token, PROTECTED_TOKEN_ABI, prov);
+
+			const [meta, usdtMeta, tradingResult, vestingResult, settingsResult] = await Promise.all([
+				// Token + USDT metadata
 				fetchTokenMeta(info.token, prov),
-				fetchTokenMeta(info.usdtAddress, prov)
+				fetchTokenMeta(info.usdtAddress, prov),
+				// Trading status
+				tokenC.secondsUntilTradingOpens().catch(() => 0n),
+				// Vesting + trust signals
+				Promise.all([
+					instance.vestingCliff().catch(() => 0n),
+					instance.vestingDuration().catch(() => 0n),
+					instance.lockDurationAfterListing().catch(() => 0n),
+					instance.creatorTotalTokens().catch(() => 0n),
+					instance.creatorClaimed().catch(() => 0n),
+					instance.graduationTimestamp().catch(() => 0n),
+				]),
+				// Launch settings
+				Promise.all([
+					instance.maxBuyPerWallet().catch(() => 0n),
+					instance.minBuyUsdt().catch(() => 0n),
+				]),
 			]);
+
+			// Apply metadata
 			tokenMeta = meta;
 			usdtDecimals = usdtMeta.decimals;
 			launch = { ...info, tokenName: meta.name, tokenSymbol: meta.symbol, tokenDecimals: meta.decimals, usdtDecimals: usdtMeta.decimals };
 
-			// Check if trading is enabled. New contracts replaced the boolean
-			// flag with a sentinel uint256: secondsUntilTradingOpens() returns
-			// type(uint256).max if not yet scheduled, 0 if already open, or
-			// the remaining countdown otherwise. Treat anything other than
-			// "not yet scheduled" as enabled (countdown is fine for the UI —
-			// the contract gates trading on the actual timestamp anyway).
-			try {
-				const tokenC = new ethers.Contract(info.token, PROTECTED_TOKEN_ABI, prov);
-				const seconds: bigint = await tokenC.secondsUntilTradingOpens();
-				const SENTINEL = (1n << 256n) - 1n;
-				tradingEnabled = seconds !== SENTINEL;
-			} catch {
-				tradingEnabled = true;
-			}
+			// Apply trading status
+			const SENTINEL = (1n << 256n) - 1n;
+			tradingEnabled = tradingResult !== SENTINEL;
 
-			// Load trust signal data (vesting, lock duration, creator claim state)
-			try {
-				const instance = new ethers.Contract(launchAddress, LAUNCH_INSTANCE_ABI, prov);
-				const [vc, vd, lda, ctt, cc, gt] = await Promise.all([
-					instance.vestingCliff(),
-					instance.vestingDuration(),
-					instance.lockDurationAfterListing(),
-					instance.creatorTotalTokens(),
-					instance.creatorClaimed(),
-					instance.graduationTimestamp()
-				]);
-				vestingCliffSeconds = vc;
-				vestingDurationSeconds = vd;
-				lockDurationAfterListing = lda;
-				creatorTotalTokens = ctt;
-				creatorClaimed = cc;
-				graduationTimestamp = gt;
-			} catch {
-				vestingCliffSeconds = 0n;
-				vestingDurationSeconds = 0n;
-			}
+			// Apply vesting
+			const [vc, vd, lda, ctt, cc, gt] = vestingResult;
+			vestingCliffSeconds = vc;
+			vestingDurationSeconds = vd;
+			lockDurationAfterListing = lda;
+			creatorTotalTokens = ctt;
+			creatorClaimed = cc;
+			graduationTimestamp = gt;
 
-			// For Pending launches, load the preflight status so we can
-			// show the creator a checklist of what's missing before the
-			// launch can go live.
+			// Apply settings
+			const [maxBuy, minBuy] = settingsResult;
+			maxBuyPerWallet = maxBuy;
+			minBuyUsdt = minBuy;
+
+			// Phase 3: State-specific calls (non-blocking, run in background)
 			if (info.state === 0) {
-				try {
-					const instance = new ethers.Contract(launchAddress, LAUNCH_INSTANCE_ABI, prov);
-					const [ready, reason] = await instance.preflight();
+				instance.preflight().then(([ready, reason]: [boolean, string]) => {
 					preflightReady = Boolean(ready);
 					preflightReason = String(reason || '');
-				} catch {
-					preflightReady = false;
-					preflightReason = '';
-				}
+				}).catch(() => { preflightReady = false; preflightReason = ''; });
 			}
 
-			// Load reclaim / sweep state if we're in Refunding. We need:
-			//   - the launch's current token balance (available for creator reclaim)
-			//   - the launch's current USDT balance (available for platform sweep after 90 days)
-			//   - refundStartTimestamp (gates the sweep window)
-			//   - lockDurationAfterListing (informational for the UI)
-			//   - platformWallet (gates who can call sweepStrandedUsdt — the
-			//     audit L2 fix made this platform-only)
 			if (info.state === 3) {
-				try {
-					const tokenC = new ethers.Contract(info.token, ERC20_ABI, prov);
-					reclaimableBalance = await tokenC.balanceOf(launchAddress);
-				} catch { reclaimableBalance = 0n; }
-				try {
-					const usdtC = new ethers.Contract(info.usdtAddress, ERC20_ABI, prov);
-					strandedUsdtBalance = await usdtC.balanceOf(launchAddress);
-				} catch { strandedUsdtBalance = 0n; }
-				try {
-					const instance = new ethers.Contract(launchAddress, LAUNCH_INSTANCE_ABI, prov);
-					const [rts, lda, ssd] = await Promise.all([
-						instance.refundStartTimestamp(),
-						instance.lockDurationAfterListing(),
-						instance.STRANDED_SWEEP_DELAY(),
-					]);
+				Promise.all([
+					new ethers.Contract(info.token, ERC20_ABI, prov).balanceOf(launchAddress).catch(() => 0n),
+					new ethers.Contract(info.usdtAddress, ERC20_ABI, prov).balanceOf(launchAddress).catch(() => 0n),
+					instance.refundStartTimestamp().catch(() => 0n),
+					instance.STRANDED_SWEEP_DELAY().catch(() => 0n),
+					new ethers.Contract(net.launchpad_address, LAUNCHPAD_FACTORY_ABI, prov).platformWallet().catch(() => ''),
+				]).then(([tokenBal, usdtBal, rts, ssd, pw]) => {
+					reclaimableBalance = tokenBal;
+					strandedUsdtBalance = usdtBal;
 					refundStartTimestamp = rts;
-					lockDurationAfterListing = lda;
 					strandedSweepDelay = ssd;
-				} catch {
-					refundStartTimestamp = 0n;
-					lockDurationAfterListing = 0n;
-					strandedSweepDelay = 0n;
-				}
-				try {
-					const lpFactory = new ethers.Contract(
-						net.launchpad_address,
-						LAUNCHPAD_FACTORY_ABI,
-						prov
-					);
-					platformWalletAddress = await lpFactory.platformWallet();
-				} catch {
-					platformWalletAddress = '';
-				}
+					platformWalletAddress = pw;
+				});
 			}
 
-			// Load launch settings (contract-level, not per-user) with the
-			// site provider so they show even without a connected wallet.
-			try {
-				const instance = new ethers.Contract(launchAddress, LAUNCH_INSTANCE_ABI, prov);
-				const [maxBuy, minBuy] = await Promise.all([
-					instance.maxBuyPerWallet().catch(() => 0n),
-					instance.minBuyUsdt().catch(() => 0n),
-				]);
-				maxBuyPerWallet = maxBuy;
-				minBuyUsdt = minBuy;
-			} catch {}
-
+			// Load user position (non-blocking)
 			if (userAddress) {
-				await loadUserPosition(prov);
+				loadUserPosition(prov);
 			}
 
 			// Metadata already loaded from SSR — only fetch if empty
@@ -608,7 +606,6 @@
 				}
 			} catch {}
 
-			loading = false;
 		} catch {
 			loading = false;
 		}
@@ -649,6 +646,14 @@
 			console.warn('Refresh failed:', e);
 		}
 	}
+
+	// Set network as soon as supportedNetworks loads (before providers are ready)
+	$effect(() => {
+		if (!network && supportedNetworks.length > 0) {
+			const net = supportedNetworks.find(n => n.chain_id === targetChainId);
+			if (net) network = net;
+		}
+	});
 
 	$effect(() => {
 		if (providersReady) {
@@ -960,14 +965,10 @@
 		isBuying = true;
 		try {
 			const instance = new ethers.Contract(launchAddress, LAUNCH_INSTANCE_ABI, signer);
-			// Slippage: accept 2% less tokens than preview estimates
-			const minTokensOut = preview ? preview.tokensOut * 98n / 100n : 0n;
+			const slipBps = BigInt(Math.round(slippagePct * 100)); // e.g. 5% → 500
+			const minTokensOut = preview ? preview.tokensOut * (10000n - slipBps) / 10000n : 0n;
 
-			// New unified buy(path, amountIn, minUsdtOut, minTokensOut) payable.
-			// path[0] = address(0) signals native payment (msg.value must == amountIn).
-			// For ERC20 payments msg.value must be 0.
 			if (buyPaymentMethod === 'native') {
-				// Get DEX quote for how much BNB is needed to produce buyAmount USDT
 				const routerAbi = [
 					'function getAmountsIn(uint256 amountOut, address[] calldata path) view returns (uint256[] memory amounts)',
 					'function WETH() view returns (address)'
@@ -977,9 +978,8 @@
 				const usdtNeeded = ethers.parseUnits(String(buyAmount), usdtDecimals);
 				const amounts = await router.getAmountsIn(usdtNeeded, [weth, network.usdt_address]);
 				const bnbNeeded = amounts[0];
-				// 3% buffer for swap slippage
-				const bnbToSend = bnbNeeded * 103n / 100n;
-				const minUsdtOut = usdtNeeded * 98n / 100n;
+				const bnbToSend = bnbNeeded * (10000n + slipBps) / 10000n;
+				const minUsdtOut = usdtNeeded * (10000n - slipBps) / 10000n;
 
 				// Path: [native, USDT]. The contract rewrites address(0) → WETH
 				// for the actual swap call.
@@ -996,7 +996,7 @@
 				const paymentAddress = getPaymentAddress();
 				const amountWei = ethers.parseUnits(String(buyAmount), paymentDecimals);
 				// minUsdtOut for non-USDT tokens (USDC → USDT swap), 0 if paying USDT directly
-				const minUsdtOut = buyPaymentMethod === 'usdt' ? 0n : amountWei * 98n / 100n;
+				const minUsdtOut = buyPaymentMethod === 'usdt' ? 0n : amountWei * (10000n - slipBps) / 10000n;
 
 				// Check allowance & approve
 				const tokenContract = new ethers.Contract(paymentAddress, ERC20_ABI, signer);
@@ -1599,7 +1599,7 @@
 				</div>
 
 				<p class="text-gray-600 text-[10px] font-mono">
-					{$t('lpd.sendTo').replace('{token}', paymentLabel)} <span class="text-gray-400">{network.name}</span>. {$t('lpd.autoDetect')}
+					{$t('lpd.sendTo').replace('{token}', paymentLabel)} <span class="text-gray-400">{network?.name || 'BSC'}</span>. {$t('lpd.autoDetect')}
 				</p>
 
 				<div class="flex items-center justify-center gap-2 mt-4">
@@ -1622,16 +1622,21 @@
 			<div class="spinner w-10 h-10 rounded-full border-2 border-white/10 border-t-cyan-400"></div>
 			<p class="text-gray-500 text-sm font-mono">{$t('lpd.loading')}</p>
 		</div>
-	{:else if !launch || !network}
+	{:else if !launch && providersReady}
 		<div class="text-center py-20">
 			<p class="text-gray-400 font-mono text-sm">{$t('lpd.notFound')}</p>
 			<a href="/launchpad" class="btn-primary text-sm px-5 py-2.5 mt-4 inline-block no-underline">
 				{$t('lpd.browseLaunches')}
 			</a>
 		</div>
+	{:else if !launch}
+		<div class="flex flex-col items-center gap-4 py-20">
+			<div class="spinner w-10 h-10 rounded-full border-2 border-white/10 border-t-cyan-400"></div>
+			<p class="text-gray-500 text-sm font-mono">{$t('lpd.loading')}</p>
+		</div>
 	{:else}
 		{@const color = stateColor(launch.state)}
-		{@const nativeCoin = network.native_coin}
+		{@const nativeCoin = network?.native_coin || 'BNB'}
 		{@const ud = usdtDecimals}
 
 		<!-- Header -->
@@ -1724,7 +1729,7 @@
 							>🔗</button>
 						</div>
 						<div class="header-tags">
-							<span class="header-tag">{network.name}</span>
+							<span class="header-tag">{network?.name || 'BSC'}</span>
 							<span class="header-tag">{CURVE_TYPES[launch.curveType]} {$t('lpd.curve')}</span>
 							<span class="header-tag">{$t('lpd.creator')}: {shortAddr(launch.creator)}</span>
 						</div>
@@ -2856,8 +2861,8 @@
 							tokens={payTokens}
 							onPick={onPayTokenPick}
 							title="Pay with"
-							chainId={network.chain_id}
-							provider={signer?.provider ?? networkProviders.get(network.chain_id) ?? null}
+							chainId={network?.chain_id ?? targetChainId}
+							provider={signer?.provider ?? networkProviders.get(network?.chain_id ?? targetChainId) ?? null}
 							userAddress={userAddress || ''}
 						/>
 
@@ -2940,6 +2945,38 @@
 								</span>
 							</div>
 						{/if}
+
+						<!-- Slippage -->
+						<div class="slippage-row">
+							<button class="slippage-toggle" onclick={() => showSlippageMenu = !showSlippageMenu}>
+								<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+								<span>Slippage {slippagePct}%</span>
+							</button>
+							{#if showSlippageMenu}
+								<div class="slippage-options">
+									{#each [1, 3, 5, 10] as pct}
+										<button
+											class="slip-opt"
+											class:active={slippagePct === pct}
+											onclick={() => { slippagePct = pct; showSlippageMenu = false; }}
+										>{pct}%</button>
+									{/each}
+									<input
+										type="number"
+										class="slip-custom"
+										placeholder="Custom"
+										min="0.5"
+										max="50"
+										step="0.5"
+										value={[1,3,5,10].includes(slippagePct) ? '' : slippagePct}
+										onchange={(e) => {
+											const v = parseFloat((e.target as HTMLInputElement).value);
+											if (v >= 0.5 && v <= 50) { slippagePct = v; showSlippageMenu = false; }
+										}}
+									/>
+								</div>
+							{/if}
+						</div>
 
 						{#if userAddress}
 							<button
@@ -3251,6 +3288,35 @@
 		border: 1px solid var(--bg-surface-hover);
 		border-radius: 8px;
 	}
+
+	.slippage-row {
+		display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; position: relative;
+	}
+	.slippage-toggle {
+		display: inline-flex; align-items: center; gap: 5px;
+		background: none; border: none; color: var(--text-dim);
+		font-family: 'Space Mono', monospace; font-size: 11px;
+		cursor: pointer; padding: 4px 0; width: fit-content;
+	}
+	.slippage-toggle:hover { color: var(--text-heading); }
+	.slippage-options {
+		display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
+	}
+	.slip-opt {
+		padding: 4px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.08);
+		background: rgba(255,255,255,0.03); color: var(--text-muted);
+		font-family: 'Space Mono', monospace; font-size: 11px; cursor: pointer;
+	}
+	.slip-opt:hover { border-color: rgba(0, 210, 255, 0.3); color: var(--text-heading); }
+	.slip-opt.active {
+		border-color: rgba(0, 210, 255, 0.5); background: rgba(0, 210, 255, 0.08); color: #00d2ff;
+	}
+	.slip-custom {
+		width: 60px; padding: 4px 6px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.08);
+		background: rgba(255,255,255,0.03); color: var(--text-heading);
+		font-family: 'Space Mono', monospace; font-size: 11px; text-align: center;
+	}
+	.slip-custom:focus { border-color: rgba(0, 210, 255, 0.4); outline: none; }
 
 	.exceed-warning {
 		padding: 8px 12px;

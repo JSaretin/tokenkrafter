@@ -33,14 +33,19 @@ export const load: PageServerLoad = async ({ params, setHeaders }) => {
 		tokenAddress
 			? supabaseAdmin
 				.from('created_tokens')
-				.select('is_safu, is_kyc, has_liquidity, lp_burned, lp_burned_pct, tax_ceiling_locked, owner_renounced, trading_enabled, buy_tax_bps, sell_tax_bps, is_taxable, is_mintable, is_partner, logo_url')
+				.select('name, symbol, decimals, is_safu, is_kyc, has_liquidity, lp_burned, lp_burned_pct, tax_ceiling_locked, owner_renounced, trading_enabled, buy_tax_bps, sell_tax_bps, is_taxable, is_mintable, is_partner, logo_url')
 				.eq('address', tokenAddress)
 				.eq('chain_id', chainId)
 				.single()
 			: Promise.resolve({ data: null }),
 	]);
 
-	// Fill launch logo from token if missing
+	// Fill missing launch fields from token data
+	if (launch && tokenResult.data) {
+		if (!launch.token_name && tokenResult.data.name) launch.token_name = tokenResult.data.name;
+		if (!launch.token_symbol && tokenResult.data.symbol) launch.token_symbol = tokenResult.data.symbol;
+		if (!launch.token_decimals && tokenResult.data.decimals) launch.token_decimals = tokenResult.data.decimals;
+	}
 	if (launch && !launch.logo_url && tokenResult.data?.logo_url) {
 		launch.logo_url = tokenResult.data.logo_url;
 	}

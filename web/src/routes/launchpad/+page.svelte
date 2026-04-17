@@ -34,8 +34,45 @@
 	let networkProviders = $derived(getNetworkProviders());
 	let providersReady = $derived(getProvidersReady());
 
-	let launches: (LaunchInfo & { network: SupportedNetwork })[] = $state([]);
-	let loading = $state(true);
+	let { data: pageData }: { data: any } = $props();
+
+	// Fallback network stubs for SSR pre-render (before real networks load)
+	const CHAIN_STUBS: Record<number, Partial<SupportedNetwork>> = {
+		56: { chain_id: 56, name: 'BNB Smart Chain', symbol: 'bsc', native_coin: 'BNB' },
+		1: { chain_id: 1, name: 'Ethereum', symbol: 'eth', native_coin: 'ETH' },
+	};
+
+	function ssrRowToLaunch(row: any): (LaunchInfo & { network: SupportedNetwork }) | null {
+		const net = supportedNetworks.find((n) => n.chain_id === row.chain_id)
+			|| CHAIN_STUBS[row.chain_id] as SupportedNetwork;
+		if (!net) return null;
+		return {
+			address: row.address, token: row.token_address, creator: row.creator,
+			curveType: row.curve_type, state: row.state,
+			softCap: BigInt(row.soft_cap || '0'), hardCap: BigInt(row.hard_cap || '0'),
+			deadline: BigInt(row.deadline || 0), startTimestamp: BigInt(row.start_timestamp || 0),
+			totalBaseRaised: BigInt(row.total_base_raised || '0'),
+			tokensSold: BigInt(row.tokens_sold || '0'),
+			tokensForCurve: BigInt(row.tokens_for_curve || '0'),
+			tokensForLP: BigInt(row.tokens_for_lp || '0'),
+			creatorAllocationBps: BigInt(row.creator_allocation_bps || 0),
+			currentPrice: BigInt(row.current_price || '0'), usdtAddress: '',
+			totalTokensRequired: BigInt(row.total_tokens_required || '0'),
+			totalTokensDeposited: BigInt(row.total_tokens_deposited || '0'),
+			tokenName: row.token_name, tokenSymbol: row.token_symbol,
+			tokenDecimals: row.token_decimals ?? 18, usdtDecimals: row.usdt_decimals ?? 18,
+			totalBuyers: row.total_buyers ?? 0, totalPurchases: row.total_purchases ?? 0,
+			description: row.description, logoUrl: row.logo_url,
+			badges: row.badges || [], tokenTrust: row.tokenTrust || null,
+			network: net,
+		} as any;
+	}
+
+	// Pre-populate from SSR for instant render
+	let launches: (LaunchInfo & { network: SupportedNetwork })[] = $state(
+		(pageData?.launches || []).map(ssrRowToLaunch).filter(Boolean)
+	);
+	let loading = $state(!pageData?.launches?.length);
 	let selectedNetwork = $state<'all' | number>('all');
 	let activeTab = $state<'live' | 'upcoming' | 'graduated' | 'all'>('live');
 	let sortBy = $state<'newest' | 'ending' | 'raised' | 'progress' | 'trending'>('newest');
@@ -268,6 +305,8 @@
 			tokenSymbol: row.token_symbol,
 			tokenDecimals: row.token_decimals ?? 18,
 			usdtDecimals: row.usdt_decimals ?? 18,
+			totalBuyers: row.total_buyers ?? 0,
+			totalPurchases: row.total_purchases ?? 0,
 			description: row.description,
 			logoUrl: row.logo_url,
 			website: row.website,
@@ -374,10 +413,13 @@
 	}
 
 	async function loadLaunches() {
+		// If SSR already populated, just refresh badges in background
+		if (launches.length > 0 && loading === false) {
+			loadFromDb().then(() => loadBadges());
+			return;
+		}
 		loading = true;
-		launches = [];
-		await loadFromDb();
-		await loadBadges();
+		await Promise.all([loadFromDb(), loadBadges()]);
 		loading = false;
 	}
 
@@ -683,6 +725,8 @@
 							<span class="card-metric-label">Buyers</span>
 							{#if (launch as any).totalBuyers > 0}
 								<span class="card-metric-val">{(launch as any).totalBuyers}</span>
+							{:else if launch.totalBaseRaised > 0n}
+								<span class="card-metric-val">-</span>
 							{:else}
 								<span class="card-metric-val" style="color: #00d2ff; font-size: 10px;">Be first!</span>
 							{/if}
