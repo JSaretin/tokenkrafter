@@ -2362,18 +2362,51 @@
 				<!-- Mobile-only: compact About between timer and buy -->
 				{#if metadata.description || isCreator}
 					<div class="card p-4 mb-4 mobile-about">
-						<h4 class="syne font-bold text-sm mb-2" style="color: var(--text-heading)">{$t('lpd.about')}</h4>
-						{#if metadata.description}
-							<p class="mobile-about-text" class:mobile-about-expanded={mobileAboutExpanded}>{metadata.description}</p>
-							{#if metadata.description.length > 120}
-								<button class="mobile-about-toggle" onclick={() => mobileAboutExpanded = !mobileAboutExpanded}>
-									{mobileAboutExpanded ? 'Show less' : 'Read more'}
+						{#if isEditing}
+							<!-- Inline edit on mobile -->
+							<div class="flex justify-between items-center mb-3">
+								<h4 class="syne font-bold text-sm" style="color: var(--text-heading)">{$t('lpd.editTokenInfo')}</h4>
+								<button onclick={cancelEditing} class="text-gray-500 hover:text-white text-xs font-mono cursor-pointer">{$t('common.cancel')}</button>
+							</div>
+							<div class="flex flex-col gap-3">
+								<textarea class="input-field" rows="4" placeholder="Tell users about your token..." bind:value={editDescription}></textarea>
+								<input type="url" class="input-field" placeholder="Video URL (YouTube, X)" bind:value={editVideoUrl} />
+								<div class="grid grid-cols-2 gap-2">
+									<input type="url" class="input-field" placeholder="Website" bind:value={editWebsite} />
+									<input class="input-field" placeholder="Twitter" bind:value={editTwitter} />
+								</div>
+								<div class="grid grid-cols-2 gap-2">
+									<input class="input-field" placeholder="Telegram" bind:value={editTelegram} />
+									<input class="input-field" placeholder="Discord" bind:value={editDiscord} />
+								</div>
+								<div class="flex gap-2">
+									<button onclick={cancelEditing} class="btn-secondary flex-1 py-2 text-xs cursor-pointer">{$t('common.cancel')}</button>
+									<button onclick={saveMetadata} disabled={isSavingMeta} class="btn-primary flex-1 py-2 text-xs cursor-pointer">
+										{isSavingMeta ? $t('lpd.saving') : $t('lpd.saveChanges')}
+									</button>
+								</div>
+							</div>
+						{:else}
+							<div class="flex justify-between items-center mb-2">
+								<h4 class="syne font-bold text-sm" style="color: var(--text-heading)">{$t('lpd.about')}</h4>
+								{#if isCreator}
+									<button onclick={startEditing} class="text-gray-500 hover:text-cyan-400 text-xs font-mono transition cursor-pointer">
+										{metadata.description ? $t('lpd.editInfo') : $t('lpd.addInfo')}
+									</button>
+								{/if}
+							</div>
+							{#if metadata.description}
+								<p class="mobile-about-text" class:mobile-about-expanded={mobileAboutExpanded}>{metadata.description}</p>
+								{#if metadata.description.length > 120}
+									<button class="mobile-about-toggle" onclick={() => mobileAboutExpanded = !mobileAboutExpanded}>
+										{mobileAboutExpanded ? 'Show less' : 'Read more'}
+									</button>
+								{/if}
+							{:else if isCreator}
+								<button onclick={startEditing} class="empty-state-btn">
+									<span class="text-gray-500 text-xs">{$t('lpd.addDescription')}</span>
 								</button>
 							{/if}
-						{:else}
-							<button onclick={startEditing} class="empty-state-btn">
-								<span class="text-gray-500 text-xs">{$t('lpd.addDescription')}</span>
-							</button>
 						{/if}
 					</div>
 				{/if}
@@ -3220,10 +3253,10 @@
 		grid-template-columns: 1fr;
 		gap: 24px;
 	}
-	/* Mobile: Buy first (with inline about), then full About, then rest */
+	/* Mobile: Buy first (with inline about), then rest. Hide about-col since mobile-about handles it. */
 	@media (max-width: 1023px) {
 		.right-col { order: -2; }
-		.about-col { order: -1; }
+		.about-col { display: none; }
 		.left-col { order: 0; }
 	}
 	/* Mobile-only compact about inside right-col */
