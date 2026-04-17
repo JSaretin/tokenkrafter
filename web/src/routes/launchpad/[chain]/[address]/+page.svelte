@@ -12,7 +12,7 @@
 	import { supabase } from '$lib/supabaseClient';
 	import { favorites, toggleFavorite } from '$lib/favorites';
 	import RecentTransactionsTicker from '$lib/RecentTransactionsTicker.svelte';
-	import type { SupportedNetwork } from '$lib/structure';
+	import { chainSlug, type SupportedNetwork } from '$lib/structure';
 	import type { WsProviderManager, EventSubscription } from '$lib/wsProvider';
 	import { transferFilter } from '$lib/wsProvider';
 	import { ERC20_ABI, ZERO_ADDRESS, FACTORY_ABI } from '$lib/tokenCrafter';
@@ -2069,11 +2069,15 @@
 
 					<div class="sale-contracts">
 						<span class="sale-contracts-label">Contracts</span>
-						{#each [['Token', launch.token], ['Launch', launch.address], ['Creator', launch.creator]] as [label, addr]}
+						{#each [
+							['Token', launch.token, tokenTrust ? `/explore/${chainSlug(network?.chain_id ?? 56)}/${launch.token}` : `${network?.explorer_url || ''}/address/${launch.token}`],
+							['Launch', launch.address, `${network?.explorer_url || ''}/address/${launch.address}`],
+							['Creator', launch.creator, `${network?.explorer_url || ''}/address/${launch.creator}`],
+						] as [label, addr, href]}
 							<div class="sale-addr-row">
 								<span>{label}</span>
 								<div class="sale-addr-group">
-									<a href="{network?.explorer_url || ''}/address/{addr}" target="_blank" rel="noopener noreferrer" class="sale-addr">{addr}</a>
+									<a href={href} target={label === 'Token' && tokenTrust ? undefined : '_blank'} rel="noopener noreferrer" class="sale-addr">{addr.slice(0, 6)}…{addr.slice(-4)}</a>
 									<button class="copy-addr-btn" title="Copy address" onclick={() => { navigator.clipboard.writeText(addr); addFeedback({ message: 'Copied!', type: 'success' }); }}>
 										<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
 									</button>
@@ -2180,17 +2184,18 @@
 								{@const txPrice = tokVal > 0 ? usdtVal / tokVal : 0}
 								{@const priceDiffPct = curPriceForCtx > 0 && txPrice > 0 ? ((curPriceForCtx - txPrice) / txPrice * 100) : 0}
 
-								<!-- Milestone markers (inserted between rows) -->
-								{#if i > 0}
-									{@const runningRaised = txItems.slice(0, i).reduce((s, t) => s + parseFloat(ethers.formatUnits(BigInt(t.base_amount), usdtDecimals)), 0)}
-									{@const prevRaised = txItems.slice(0, i - 1).reduce((s, t) => s + parseFloat(ethers.formatUnits(BigInt(t.base_amount), usdtDecimals)), 0)}
-									{#if softCapNum > 0 && prevRaised < softCapNum && runningRaised >= softCapNum}
+								<!-- Milestone markers — txItems is newest-first, so raised at row i = sum from i to end -->
+								{#if i < txItems.length - 1}
+									{@const raisedIncluding = txItems.slice(i).reduce((s, t) => s + parseFloat(ethers.formatUnits(BigInt(t.base_amount), usdtDecimals)), 0)}
+									{@const raisedBefore = txItems.slice(i + 1).reduce((s, t) => s + parseFloat(ethers.formatUnits(BigInt(t.base_amount), usdtDecimals)), 0)}
+									{#if softCapNum > 0 && raisedBefore < softCapNum && raisedIncluding >= softCapNum}
 										<div class="activity-milestone milestone-sc">🎯 Soft cap reached!</div>
 									{/if}
-									{#if hardCapNum2 > 0 && prevRaised < hardCapNum2 * 0.5 && runningRaised >= hardCapNum2 * 0.5}
+									{#if hardCapNum2 > 0 && raisedBefore < hardCapNum2 * 0.5 && raisedIncluding >= hardCapNum2 * 0.5}
 										<div class="activity-milestone milestone-half">💎 50% to hard cap</div>
 									{/if}
-									{#if i === 9}
+									{@const buyNumber = txItems.length - i}
+									{#if buyNumber === 10}
 										<div class="activity-milestone milestone-buyers">👥 10th purchase</div>
 									{/if}
 								{/if}
@@ -3570,7 +3575,6 @@
 	.sale-addr-row span { color: var(--text-dim); }
 	.sale-addr {
 		color: var(--text-muted); text-decoration: none;
-		max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 		font-family: 'Space Mono', monospace; font-size: 10px;
 	}
 	.sale-addr:hover { color: #00d2ff; }
