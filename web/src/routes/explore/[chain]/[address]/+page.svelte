@@ -88,7 +88,10 @@
 	let simFailed = $derived(!!(taxInfo && (!taxInfo.canBuy || !taxInfo.canSell)));
 	let isHoneypot = $derived(simFailed && !isOnPlatform);
 	// Platform tokens that fail simulation: show neutral "not trading" status
-	let notTradingYet = $derived(simFailed && isOnPlatform && !hasLiquidity);
+	// Covers both pre-liquidity and anti-snipe lock window
+	let antiSnipeLock = $state(false);
+	let antiSnipeSeconds = $state(0);
+	let notTradingYet = $derived(simFailed && isOnPlatform && (!hasLiquidity || antiSnipeLock));
 
 	// ── Launch cross-link ──
 	let launchAddress = $state<string | null>(null);
@@ -141,9 +144,19 @@
 					'function cooldownTime() view returns (uint256)',
 					'function blacklistWindow() view returns (uint256)',
 					'function tradingStartTime() view returns (uint256)',
+					'function secondsUntilTradingOpens() view returns (uint256)',
 					'function taxWallets(uint256) view returns (address)',
 					'function taxSharesBps(uint256) view returns (uint16)',
 				], prov);
+				// Check anti-snipe lock
+				try {
+					const secs = await tok.secondsUntilTradingOpens();
+					const SENTINEL = (1n << 256n) - 1n;
+					if (secs > 0n && secs !== SENTINEL) {
+						antiSnipeLock = true;
+						antiSnipeSeconds = Number(secs);
+					}
+				} catch {}
 				// Protection settings
 				const [mw, mt, cd, bw] = await Promise.all([
 					tok.maxWalletAmount().catch(() => 0n),
@@ -404,10 +417,12 @@
 					<span class="tax-val" class:tax-free={taxInfo.transferTaxBps === 0}>{taxInfo.transferTaxBps === 0 ? 'Free' : `${(taxInfo.transferTaxBps / 100).toFixed(1)}%`}</span>
 				</div>
 			</div>
-			{#if !taxInfo.canBuy && !isHoneypot && !notTradingYet}
+			{#if antiSnipeLock}
+				<div class="tax-info">Anti-snipe lock — trading opens in {Math.ceil(antiSnipeSeconds / 60)} min</div>
+			{:else if !taxInfo.canBuy && !isHoneypot && !notTradingYet}
 				<div class="tax-warn">Cannot buy — {taxInfo.buyError || 'reverts'}</div>
 			{/if}
-			{#if !taxInfo.canSell && !isHoneypot && !notTradingYet}
+			{#if !taxInfo.canSell && !isHoneypot && !notTradingYet && !antiSnipeLock}
 				<div class="tax-warn">Cannot sell — {taxInfo.sellError || 'honeypot'}</div>
 			{/if}
 		</div>
@@ -794,6 +809,11 @@
 		padding: 8px 16px; border-top: 1px solid rgba(239,68,68,0.1);
 		font-family: 'Space Mono', monospace; font-size: 10px; color: #f87171;
 		background: rgba(239,68,68,0.03);
+	}
+	.tax-info {
+		padding: 8px 16px; border-top: 1px solid rgba(245,158,11,0.1);
+		font-family: 'Space Mono', monospace; font-size: 10px; color: #f59e0b;
+		background: rgba(245,158,11,0.03);
 	}
 
 	/* ── Actions ── */

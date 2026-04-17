@@ -115,6 +115,7 @@
 	let isGraduating = $state(false);
 	let isDepositing = $state(false);
 	let tradingEnabled = $state(true); // assume true unless we detect otherwise
+	let tradingOpensIn = $state(0n); // seconds until anti-snipe lock expires (-1 = never called, 0 = open)
 	let isEnablingTrading = $state(false);
 	// Creator reclaim (refunding-state) + platform sweep of stranded USDT.
 	let isReclaiming = $state(false);
@@ -534,7 +535,8 @@
 
 			// Apply trading status
 			const SENTINEL = (1n << 256n) - 1n;
-			tradingEnabled = tradingResult !== SENTINEL;
+			tradingEnabled = tradingResult === 0n; // 0 = open, >0 = anti-snipe lock, SENTINEL = never called
+			tradingOpensIn = tradingResult === SENTINEL ? -1n : tradingResult; // -1 = never called, 0 = open, >0 = seconds
 
 			// Apply vesting
 			const [vc, vd, lda, ctt, cc, gt] = vestingResult;
@@ -2713,38 +2715,49 @@
 					</div>
 				{/if}
 
-				<!-- Enable Trading Banner — only shown AFTER graduation (state 2),
-				     not during an active curve. During the curve, the launch
-				     instance is excluded from limits + authorized launcher, so
-				     it can transfer tokens to buyers regardless of the token's
-				     tradingEnabled flag. Trading gets auto-enabled on graduation. -->
-				{#if !tradingEnabled && launch.state === 2 && userAddress?.toLowerCase() === launch.creator.toLowerCase()}
-					<div class="card p-4 mb-4 border border-red-500/20">
-						<h3 class="syne font-bold text-red-400 mb-2 text-sm">{$t('lpd.enableTradingTitle')}</h3>
-						<p class="text-gray-400 text-xs font-mono mb-2">
-							{$t('lpd.enableTradingMsg')}
-						</p>
-						<p class="text-gray-500 text-[10px] font-mono mb-3">
-							{$t('lpd.enableTradingNote')}
-						</p>
-						<button
-							onclick={handleEnableTrading}
-							disabled={isEnablingTrading}
-							class="btn-primary w-full py-2.5 text-sm cursor-pointer"
-						>
-							{#if isEnablingTrading}
-								<span class="spinner-inline"></span> {$t('lpd.enabling')}
-							{:else}
-								{$t('lpd.enableTrading')}
-							{/if}
-						</button>
-					</div>
-				{:else if !tradingEnabled && launch.state === 2}
-					<div class="card p-4 mb-4 border border-red-500/20">
-						<p class="text-red-400 text-xs font-mono">
-							{$t('lpd.tradingNotEnabled')}
-						</p>
-					</div>
+				<!-- Trading status banner — post-graduation only -->
+				{#if !tradingEnabled && launch.state === 2}
+					{#if tradingOpensIn > 0n}
+						<!-- Anti-snipe lock countdown -->
+						<div class="card p-4 mb-4 border border-amber-500/20">
+							<div class="flex items-center gap-2 mb-1">
+								<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+								<h3 class="syne font-bold text-amber-400 text-sm">Anti-snipe lock active</h3>
+							</div>
+							<p class="text-gray-400 text-xs font-mono">
+								Trading opens automatically in <span class="text-amber-400 font-bold">{Math.ceil(Number(tradingOpensIn) / 60)} min</span>. This lock protects buyers from front-running bots at launch.
+							</p>
+						</div>
+					{:else if tradingOpensIn === -1n && userAddress?.toLowerCase() === launch.creator.toLowerCase()}
+						<!-- enableTrading was never called — creator needs to act -->
+						<div class="card p-4 mb-4 border border-red-500/20">
+							<h3 class="syne font-bold text-red-400 mb-2 text-sm">{$t('lpd.enableTradingTitle')}</h3>
+							<p class="text-gray-400 text-xs font-mono mb-2">
+								{$t('lpd.enableTradingMsg')}
+							</p>
+							<p class="text-gray-500 text-[10px] font-mono mb-3">
+								{$t('lpd.enableTradingNote')}
+							</p>
+							<button
+								onclick={handleEnableTrading}
+								disabled={isEnablingTrading}
+								class="btn-primary w-full py-2.5 text-sm cursor-pointer"
+							>
+								{#if isEnablingTrading}
+									<span class="spinner-inline"></span> {$t('lpd.enabling')}
+								{:else}
+									{$t('lpd.enableTrading')}
+								{/if}
+							</button>
+						</div>
+					{:else if tradingOpensIn === -1n}
+						<!-- Not creator, trading never enabled -->
+						<div class="card p-4 mb-4 border border-red-500/20">
+							<p class="text-red-400 text-xs font-mono">
+								{$t('lpd.tradingNotEnabled')}
+							</p>
+						</div>
+					{/if}
 				{/if}
 
 				<!-- Your Bag -->
