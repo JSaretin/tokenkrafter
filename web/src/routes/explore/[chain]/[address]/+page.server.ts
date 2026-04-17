@@ -18,8 +18,8 @@ export const load: PageServerLoad = async ({ params, setHeaders }) => {
 	const tokenAddress = params.address?.toLowerCase() || '';
 	const chain = CHAIN_MAP[chainSlug] || CHAIN_MAP.bsc;
 
-	// Fetch DB + TradeLensV2 (on-chain: token info + pools + tax) in parallel
-	const [dbResult, lensResult] = await Promise.all([
+	// Fetch DB + TradeLensV2 + launch data in parallel
+	const [dbResult, lensResult, launchResult] = await Promise.all([
 		// 1. DB metadata
 		(async () => {
 			try {
@@ -33,7 +33,39 @@ export const load: PageServerLoad = async ({ params, setHeaders }) => {
 			} catch { return null; }
 		})(),
 
-		// 2. TradeLensV2: token info + all pools + tax sim in one eth_call
+		// 2. Launch data for this token (if any)
+		(async () => {
+			try {
+				const { data: launch } = await supabaseAdmin
+					.from('launches')
+					.select('address, chain_id, state')
+					.eq('token_address', tokenAddress)
+					.eq('chain_id', chain.id)
+					.limit(1)
+					.maybeSingle();
+				if (!launch) return null;
+
+				// If graduated, check anti-snipe lock on-chain
+				let antiSnipeSeconds = 0;
+				if (launch.state === 2) {
+					try {
+						const provider = new ethers.JsonRpcProvider(chain.rpc, chain.id, { staticNetwork: true });
+						const tok = new ethers.Contract(tokenAddress, [
+							'function secondsUntilTradingOpens() view returns (uint256)',
+						], provider);
+						const secs = await tok.secondsUntilTradingOpens();
+						const SENTINEL = (1n << 256n) - 1n;
+						if (secs > 0n && secs !== SENTINEL) {
+							antiSnipeSeconds = Number(secs);
+						}
+					} catch {}
+				}
+
+				return { address: launch.address, state: launch.state, antiSnipeSeconds };
+			} catch { return null; }
+		})(),
+
+		// 3. TradeLensV2: token info + all pools + tax sim in one eth_call
 		(async () => {
 			try {
 				// Get network config for dex_router + base tokens
@@ -201,5 +233,6 @@ export const load: PageServerLoad = async ({ params, setHeaders }) => {
 		chain,
 		dbData: dbResult,
 		lensData: lensResult,
+		launchData: launchResult,
 	};
 };

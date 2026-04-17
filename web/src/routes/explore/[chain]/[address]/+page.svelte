@@ -1,12 +1,11 @@
 <script lang="ts">
 	import { ethers } from 'ethers';
 	import { onMount, getContext } from 'svelte';
-	import { supabase } from '$lib/supabaseClient';
 	import { shortAddr } from '$lib/formatters';
 
 	let { data }: { data: any } = $props();
 
-	const { tokenAddress, chain: chainInfo, dbData, lensData } = data;
+	const { tokenAddress, chain: chainInfo, dbData, lensData, launchData } = data;
 
 	// TradeLensV2 data from SSR (on-chain: token info + pools + tax + price)
 	const onChainData = lensData?.tokenInfo || null;
@@ -77,7 +76,6 @@
 	// ── SAFU derived from dbData ──
 	let isSafu = $derived(!!dbData?.is_safu);
 	let ownerRenounced = $derived(!!dbData?.owner_renounced);
-	let tradingEnabled = $derived(!!dbData?.trading_enabled);
 	let taxCeilingLocked = $derived(!!dbData?.tax_ceiling_locked);
 
 	// Honeypot detection — ONLY for non-platform tokens. Platform-created
@@ -89,12 +87,12 @@
 	let isHoneypot = $derived(simFailed && !isOnPlatform);
 	// Platform tokens that fail simulation: show neutral "not trading" status
 	// Covers both pre-liquidity and anti-snipe lock window
-	let antiSnipeLock = $state(false);
-	let antiSnipeSeconds = $state(0);
+	let antiSnipeLock = $state(!!launchData?.antiSnipeSeconds);
+	let antiSnipeSeconds = $state(launchData?.antiSnipeSeconds ?? 0);
 	let notTradingYet = $derived(simFailed && isOnPlatform && (!hasLiquidity || antiSnipeLock));
 
 	// ── Launch cross-link ──
-	let launchAddress = $state<string | null>(null);
+	let launchAddress = $state<string | null>(launchData?.address ?? null);
 
 	// ── On-chain protection settings + tax distribution ──
 	let protMaxWallet = $state(0n);
@@ -122,18 +120,6 @@
 		}
 		geckoLoading = false;
 
-		// Check if token has a launch instance
-		try {
-			const { data: launch } = await supabase
-				.from('launches')
-				.select('address, chain_id')
-				.eq('token_address', tokenAddress)
-				.eq('chain_id', chainInfo.id)
-				.limit(1)
-				.maybeSingle();
-			if (launch) launchAddress = launch.address;
-		} catch {}
-
 		// Fetch on-chain protection settings + tax distribution (if platform token)
 		if (isOnPlatform && chainInfo.rpc) {
 			try {
@@ -144,19 +130,9 @@
 					'function cooldownTime() view returns (uint256)',
 					'function blacklistWindow() view returns (uint256)',
 					'function tradingStartTime() view returns (uint256)',
-					'function secondsUntilTradingOpens() view returns (uint256)',
 					'function taxWallets(uint256) view returns (address)',
 					'function taxSharesBps(uint256) view returns (uint16)',
 				], prov);
-				// Check anti-snipe lock
-				try {
-					const secs = await tok.secondsUntilTradingOpens();
-					const SENTINEL = (1n << 256n) - 1n;
-					if (secs > 0n && secs !== SENTINEL) {
-						antiSnipeLock = true;
-						antiSnipeSeconds = Number(secs);
-					}
-				} catch {}
 				// Protection settings
 				const [mw, mt, cd, bw] = await Promise.all([
 					tok.maxWalletAmount().catch(() => 0n),
