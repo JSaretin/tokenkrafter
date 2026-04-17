@@ -515,7 +515,7 @@
 								{/if}
 								{#if isOnLaunchpad(tok)}
 									<span class="tc-badge tc-badge-live-launch">Live Launch</span>
-								{:else if !gecko?.has_data && !isOnLaunchpad(tok)}
+								{:else if !gecko?.has_data && !tok.has_liquidity}
 									<span class="tc-badge tc-badge-prelaunch">Pre-launch</span>
 								{/if}
 								{#if tok.created_at && isNew(tok.created_at)}
