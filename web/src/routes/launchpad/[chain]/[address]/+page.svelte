@@ -34,6 +34,7 @@
 	} from '$lib/launchpad';
 	import Chart from '$lib/Chart.svelte';
 	import LaunchCountdown from '$lib/LaunchCountdown.svelte';
+	import ConfirmModal from '$lib/ConfirmModal.svelte';
 	import BondingCurveChart from '$lib/BondingCurveChart.svelte';
 	import PriceProgressChart from '$lib/PriceProgressChart.svelte';
 
@@ -3235,87 +3236,47 @@
 </div>
 
 <!-- ═══ Buy Confirmation Modal ═══ -->
-{#if showBuyConfirm && preview && launch}
-	<div class="confirm-overlay" onclick={() => { showBuyConfirm = false; }}>
-		<div class="confirm-modal" onclick={(e) => e.stopPropagation()}>
-			<h3 class="confirm-title">Confirm Purchase</h3>
-			<div class="confirm-body">
-				<div class="confirm-row">
-					<span>You pay</span>
-					<span class="confirm-val">{buyAmount} {paymentLabel}</span>
-				</div>
-				<div class="confirm-row">
-					<span>You receive</span>
-					<span class="confirm-val">~{parseFloat(ethers.formatUnits(preview.tokensOut, tokenMeta.decimals)).toLocaleString(undefined, { maximumFractionDigits: 2 })} {launch.tokenSymbol || tokenMeta.symbol}</span>
-				</div>
-				<div class="confirm-row">
-					<span>Fee (1%)</span>
-					<span class="confirm-val">{parseFloat(ethers.formatUnits(preview.fee, usdtDecimals)).toFixed(2)} USDT</span>
-				</div>
-				<div class="confirm-row">
-					<span>Slippage</span>
-					<span class="confirm-val">{slippagePct}%</span>
-				</div>
-				{#if Number(preview.priceImpactBps) > 0}
-					<div class="confirm-row">
-						<span>Price impact</span>
-						<span class="confirm-val">{(Number(preview.priceImpactBps) / 100).toFixed(2)}%</span>
-					</div>
-				{/if}
-			</div>
-			<p class="confirm-warn">This action is irreversible. Tokens are purchased on a bonding curve — price increases with each buy.</p>
-			<div class="confirm-actions">
-				<button class="btn-secondary flex-1 py-2.5 text-sm cursor-pointer" onclick={() => { showBuyConfirm = false; }}>Cancel</button>
-				<button class="btn-primary flex-1 py-2.5 text-sm cursor-pointer" onclick={() => { showBuyConfirm = false; handleBuy(); }}>
-					Confirm Buy
-				</button>
-			</div>
-		</div>
-	</div>
+{#if preview && launch}
+	<ConfirmModal
+		bind:show={showBuyConfirm}
+		title="Confirm Purchase"
+		fromAmount={buyAmount}
+		fromSymbol={paymentLabel}
+		toAmount={'~' + parseFloat(ethers.formatUnits(preview.tokensOut, tokenMeta.decimals)).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+		toSymbol={launch.tokenSymbol || tokenMeta.symbol}
+		details={[
+			{ label: 'Fee (1%)', value: parseFloat(ethers.formatUnits(preview.fee, usdtDecimals)).toFixed(2) + ' USDT' },
+			{ label: 'Slippage', value: slippagePct + '%' },
+			...(Number(preview.priceImpactBps) > 0 ? [{ label: 'Price impact', value: (Number(preview.priceImpactBps) / 100).toFixed(2) + '%' }] : []),
+		]}
+		confirmText="Confirm Buy"
+		onconfirm={() => { showBuyConfirm = false; handleBuy(); }}
+	/>
 {/if}
 
 <!-- ═══ Graduate Confirmation Modal ═══ -->
-{#if showGraduateConfirm && launch}
-	<div class="confirm-overlay" onclick={() => { showGraduateConfirm = false; }}>
-		<div class="confirm-modal" onclick={(e) => e.stopPropagation()}>
-			<h3 class="confirm-title">⚠ Graduate to DEX</h3>
-			<div class="confirm-body">
-				<div class="confirm-row">
-					<span>Total raised</span>
-					<span class="confirm-val">{formatUsdt(launch.totalBaseRaised, usdtDecimals)}</span>
-				</div>
-				<div class="confirm-row">
-					<span>Hard cap</span>
-					<span class="confirm-val">{formatUsdt(launch.hardCap, usdtDecimals)}</span>
-				</div>
-				<div class="confirm-row">
-					<span>Fill</span>
-					<span class="confirm-val">{progress.toFixed(1)}%</span>
-				</div>
-				<div class="confirm-row">
-					<span>Buyers</span>
-					<span class="confirm-val">{launch.totalBuyers ?? '—'}</span>
-				</div>
-			</div>
-			<div class="confirm-warn-box">
-				<p class="confirm-warn-title">This cannot be undone</p>
-				<ul class="confirm-warn-list">
-					<li>Liquidity will be added to DEX and LP tokens burned permanently</li>
-					<li>The bonding curve closes — no more buys through launchpad</li>
-					<li>Refunds will no longer be available to buyers</li>
-					{#if progress < 100}
-						<li class="text-amber-400">Curve is only {progress.toFixed(0)}% filled — waiting for more buys creates deeper liquidity</li>
-					{/if}
-				</ul>
-			</div>
-			<div class="confirm-actions">
-				<button class="btn-secondary flex-1 py-2.5 text-sm cursor-pointer" onclick={() => { showGraduateConfirm = false; }}>Cancel</button>
-				<button class="btn-primary flex-1 py-2.5 text-sm cursor-pointer" style="background: linear-gradient(135deg, #f59e0b, #d97706);" onclick={() => { showGraduateConfirm = false; handleGraduate(); }}>
-					Graduate Now
-				</button>
-			</div>
-		</div>
-	</div>
+{#if launch}
+	<ConfirmModal
+		bind:show={showGraduateConfirm}
+		title="Graduate to DEX"
+		fromLabel="Raised"
+		fromAmount={formatUsdt(launch.totalBaseRaised, usdtDecimals)}
+		fromSymbol="USDT"
+		fromSub={progress.toFixed(1) + '% of ' + formatUsdt(launch.hardCap, usdtDecimals) + ' hard cap'}
+		toLabel="Liquidity pool"
+		toAmount={launch.tokenSymbol || tokenMeta.symbol}
+		toSymbol="/ USDT"
+		toSub="LP tokens burned permanently"
+		details={[
+			{ label: 'Buyers', value: String(launch.totalBuyers ?? '—') },
+			{ label: 'Fill', value: progress.toFixed(1) + '%' },
+			...(progress < 100 ? [{ label: 'Note', value: 'Waiting for more buys creates deeper liquidity', warn: true }] : []),
+		]}
+		warning="This cannot be undone. The bonding curve closes, LP is burned, and refunds are no longer available."
+		confirmText="Graduate Now"
+		confirmStyle="background: linear-gradient(135deg, #f59e0b, #d97706);"
+		onconfirm={() => { showGraduateConfirm = false; handleGraduate(); }}
+	/>
 {/if}
 
 <style>
@@ -3484,53 +3445,6 @@
 		font-family: 'Space Mono', monospace; font-size: 11px; text-align: center;
 	}
 	.slip-custom:focus { border-color: rgba(0, 210, 255, 0.4); outline: none; }
-
-	/* ── Confirmation modals ── */
-	.confirm-overlay {
-		position: fixed; inset: 0; z-index: 1000;
-		background: rgba(0,0,0,0.7); backdrop-filter: blur(4px);
-		display: flex; align-items: center; justify-content: center;
-		padding: 16px;
-	}
-	.confirm-modal {
-		background: var(--bg-card, #0f1729); border: 1px solid rgba(255,255,255,0.08);
-		border-radius: 16px; padding: 24px; max-width: 400px; width: 100%;
-		box-shadow: 0 20px 60px rgba(0,0,0,0.5);
-	}
-	.confirm-title {
-		font-family: 'Syne', sans-serif; font-size: 16px; font-weight: 700;
-		color: var(--text-heading, #fff); margin-bottom: 16px;
-	}
-	.confirm-body {
-		display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px;
-		padding: 12px; border-radius: 10px;
-		background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05);
-	}
-	.confirm-row {
-		display: flex; justify-content: space-between; align-items: center;
-		font-family: 'Space Mono', monospace; font-size: 12px;
-		color: var(--text-muted, #9ca3af);
-	}
-	.confirm-val { color: var(--text-heading, #fff); font-weight: 600; }
-	.confirm-warn {
-		font-family: 'Space Mono', monospace; font-size: 10px;
-		color: var(--text-dim, #6b7280); margin-bottom: 16px; line-height: 1.5;
-	}
-	.confirm-warn-box {
-		padding: 12px; border-radius: 10px; margin-bottom: 16px;
-		background: rgba(245,158,11,0.04); border: 1px solid rgba(245,158,11,0.15);
-	}
-	.confirm-warn-title {
-		font-family: 'Syne', sans-serif; font-size: 12px; font-weight: 700;
-		color: #f59e0b; margin-bottom: 8px;
-	}
-	.confirm-warn-list {
-		font-family: 'Space Mono', monospace; font-size: 10px;
-		color: var(--text-muted, #9ca3af); line-height: 1.6;
-		padding-left: 16px; margin: 0;
-	}
-	.confirm-warn-list li { margin-bottom: 4px; }
-	.confirm-actions { display: flex; gap: 10px; }
 
 	.exceed-warning {
 		padding: 8px 12px;
