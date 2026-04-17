@@ -114,7 +114,9 @@
 	let isRefunding = $state(false);
 	let isGraduating = $state(false);
 	let isDepositing = $state(false);
-	let tradingEnabled = $state(true); // assume true unless we detect otherwise
+	// For graduated launches, assume trading NOT enabled until on-chain check confirms.
+	// This prevents a flash of "now trading on DEX" during Phase 2 load.
+	let tradingEnabled = $state(ssrLaunch?.state === 2 ? false : true);
 	let tradingOpensIn = $state(0n); // seconds until anti-snipe lock expires (-1 = never called, 0 = open)
 	let isEnablingTrading = $state(false);
 	// Creator reclaim (refunding-state) + platform sweep of stranded USDT.
@@ -512,6 +514,8 @@
 				tokenDecimals: prevLaunch?.tokenDecimals || info.tokenDecimals,
 			};
 			loading = false; // render now with on-chain data
+			// Graduated state: assume trading NOT enabled until Phase 2 confirms
+			if (info.state === 2) tradingEnabled = false;
 
 			// Phase 2: All secondary data in parallel — non-blocking
 			const instance = new ethers.Contract(launchAddress, LAUNCH_INSTANCE_ABI, prov);
