@@ -44,6 +44,7 @@ const {
 	TRADE_ROUTER = '',
 	ADMIN_ADDRESS = '',
 	TX_CONFIRM_SECRET = '',
+	SYNC_SECRET = '',
 	BACKEND_URL = 'https://tokenkrafter.com',
 	FLUTTERWAVE_SECRET_KEY = '',
 	REDIS_URL = 'redis://localhost:6379',
@@ -59,6 +60,7 @@ const {
 // Only fatal-exit if neither source provides them after resolveFromConfig().
 
 if (!TX_CONFIRM_SECRET) { console.error('TX_CONFIRM_SECRET required'); process.exit(1); }
+if (!SYNC_SECRET) { console.error('SYNC_SECRET required (vault auth for withdrawal processing)'); process.exit(1); }
 if (!FLUTTERWAVE_SECRET_KEY) { console.error('FLUTTERWAVE_SECRET_KEY required'); process.exit(1); }
 
 // ── Fetch private daemon_rpc from backend config (MEV-protected writes) ──
@@ -256,7 +258,7 @@ async function processWithdrawal(withdrawId: number): Promise<boolean> {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/json',
-				Authorization: `Bearer ${TX_CONFIRM_SECRET}`,
+				Authorization: `Bearer ${SYNC_SECRET}`,
 			},
 			body: JSON.stringify({
 				withdraw_id: withdrawId,
