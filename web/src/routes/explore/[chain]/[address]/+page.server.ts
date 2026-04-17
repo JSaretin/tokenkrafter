@@ -89,16 +89,33 @@ export const load: PageServerLoad = async ({ params, setHeaders }) => {
 					}
 				}
 
-				const result = await queryTradeLens(
-					provider,
-					net.dex_router,
-					[tokenAddress],       // single token
-					tokenAddress,          // simulateTax for this token
-					ethers.parseEther('0.001'),
-					ethers.ZeroAddress,    // no user
-					chain.id,
-					baseTokens,
-				);
+				let result;
+				try {
+					result = await queryTradeLens(
+						provider,
+						net.dex_router,
+						[tokenAddress],       // single token
+						tokenAddress,          // simulateTax for this token
+						ethers.parseEther('0.001'),
+						ethers.ZeroAddress,    // no user
+						chain.id,
+						baseTokens,
+					);
+				} catch {
+					// Tax simulation can revert during anti-snipe lock or when
+					// trading isn't enabled. Retry without tax sim to still get
+					// token info + pools.
+					result = await queryTradeLens(
+						provider,
+						net.dex_router,
+						[tokenAddress],
+						ethers.ZeroAddress,   // skip tax simulation
+						0n,
+						ethers.ZeroAddress,
+						chain.id,
+						baseTokens,
+					);
+				}
 
 				// Resolve base token symbols for pool names
 				const baseSymbols: Record<string, string> = {};
