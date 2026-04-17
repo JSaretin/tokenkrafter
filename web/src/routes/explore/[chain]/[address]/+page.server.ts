@@ -19,7 +19,7 @@ export const load: PageServerLoad = async ({ params, setHeaders }) => {
 	const chain = CHAIN_MAP[chainSlug] || CHAIN_MAP.bsc;
 
 	// Fetch DB + TradeLensV2 + launch data in parallel
-	const [dbResult, lensResult, launchResult] = await Promise.all([
+	const [dbResult, launchResult, lensResult] = await Promise.all([
 		// 1. DB metadata
 		(async () => {
 			try {
