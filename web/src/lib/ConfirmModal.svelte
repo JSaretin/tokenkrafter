@@ -83,13 +83,10 @@
 					<div class="cm-warn">{warning}</div>
 				{/if}
 
-				<!-- Actions -->
-				<div class="cm-actions">
-					<button class="cm-btn-cancel" onclick={() => { show = false; }} disabled={processing}>Cancel</button>
-					<button class="cm-btn-confirm" style={confirmStyle} onclick={onconfirm} disabled={processing}>
-						{confirmText}
-					</button>
-				</div>
+				<!-- Confirm -->
+				<button class="cm-btn-confirm" style={confirmStyle} onclick={onconfirm} disabled={processing}>
+					{confirmText}
+				</button>
 			</div>
 		</div>
 	</div>
@@ -176,23 +173,15 @@
 		color: #f59e0b;
 	}
 
-	/* Actions */
-	.cm-actions { display: flex; gap: 10px; }
-	.cm-btn-cancel {
-		flex: 1; padding: 10px; border-radius: 10px; cursor: pointer;
-		font-family: 'Space Mono', monospace; font-size: 12px; font-weight: 600;
-		background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
-		color: var(--text-muted, #9ca3af);
-	}
-	.cm-btn-cancel:hover { background: rgba(255,255,255,0.06); color: var(--text-heading, #fff); }
+	/* Confirm button */
 	.cm-btn-confirm {
-		flex: 1; padding: 10px; border-radius: 10px; cursor: pointer;
-		font-family: 'Space Mono', monospace; font-size: 12px; font-weight: 600;
+		width: 100%; padding: 12px; border-radius: 12px; cursor: pointer;
+		font-family: 'Space Mono', monospace; font-size: 13px; font-weight: 600;
 		background: linear-gradient(135deg, #00d2ff, #8b5cf6); border: none;
 		color: #fff;
 	}
 	.cm-btn-confirm:hover { filter: brightness(1.1); }
-	.cm-btn-confirm:disabled, .cm-btn-cancel:disabled { opacity: 0.5; cursor: not-allowed; }
+	.cm-btn-confirm:disabled { opacity: 0.5; cursor: not-allowed; }
 
 	@media (max-width: 480px) {
 		.cm-overlay { padding: 0; align-items: flex-end; }
