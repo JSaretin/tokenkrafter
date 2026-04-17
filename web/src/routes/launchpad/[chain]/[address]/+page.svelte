@@ -1808,6 +1808,20 @@
 			</div>
 		{/if}
 
+		<!-- Trade CTA for graduated launches -->
+		{#if launch.state === 2 && tradingEnabled}
+			<div class="graduated-trade-cta mb-4">
+				<div class="graduated-trade-inner">
+					<div>
+						<span class="graduated-trade-label">This token is now trading on DEX</span>
+					</div>
+					<a href="/trade?token={launch.token}" class="btn-primary text-sm px-5 py-2.5 no-underline">
+						Trade {launch.tokenSymbol || tokenMeta.symbol} →
+					</a>
+				</div>
+			</div>
+		{/if}
+
 		<!-- Creator vesting claim (graduated + creator has allocation) -->
 		{#if launch.state === 2 && isCreator && launch.creatorAllocationBps > 0n && vestingDurationSeconds > 0n && graduationTimestamp > 0n}
 			{@const elapsed = BigInt(Math.floor(tickNow / 1000)) - graduationTimestamp}
@@ -4344,6 +4358,20 @@
 	}
 
 	/* Graduation celebration banner */
+	.graduated-trade-cta {
+		background: linear-gradient(135deg, rgba(0,210,255,0.06), rgba(16,185,129,0.06));
+		border: 1px solid rgba(0,210,255,0.15);
+		border-radius: 12px; padding: 16px 20px;
+	}
+	.graduated-trade-inner {
+		display: flex; align-items: center; justify-content: space-between; gap: 12px;
+		flex-wrap: wrap;
+	}
+	.graduated-trade-label {
+		font-family: 'Space Mono', monospace; font-size: 12px; font-weight: 600;
+		color: #10b981;
+	}
+
 	.graduation-banner {
 		position: relative;
 		overflow: hidden;
