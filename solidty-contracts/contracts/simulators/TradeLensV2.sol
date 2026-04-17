@@ -125,11 +125,17 @@ contract TradeLensV2 {
             tokenResults[i] = _getTokenInfo(tokens[i], baseTokens, factory, users);
         }
 
-        // ── Tax simulation (uses WETH pair) ──
+        // ── Tax simulation — find best route first, then simulate ──
         TaxInfo memory taxInfo;
         address taxToken = simulateTax;
         if (simulateTax != address(0) && simBuyAmount > 0) {
-            taxInfo = _simulateTax(dex, simulateTax, weth, factory, simBuyAmount);
+            // Find best buy path: WETH → [base] → token
+            address[] memory bestBuyPath = _findBestBuyPath(factory, weth, simulateTax, simBuyAmount, baseTokens);
+            if (bestBuyPath.length > 0) {
+                taxInfo = _simulateTax(dex, simulateTax, bestBuyPath, simBuyAmount);
+            } else {
+                taxInfo.buyError = "No liquidity";
+            }
         }
 
         // ── Encode and return ──
@@ -190,27 +196,73 @@ contract TradeLensV2 {
         }
     }
 
+    /// @dev Find the buy path that yields the most tokens.
+    ///      Tries WETH→token direct, then WETH→base→token for each base.
+    function _findBestBuyPath(
+        address factory, address weth, address token, uint256 amountIn, address[] memory baseTokens
+    ) internal view returns (address[] memory bestPath) {
+        uint256 bestOut;
+
+        // 1. Direct: WETH → token
+        {
+            uint256 out = _quoteTwo(factory, weth, token, amountIn);
+            if (out > bestOut) {
+                bestOut = out;
+                bestPath = new address[](2);
+                bestPath[0] = weth;
+                bestPath[1] = token;
+            }
+        }
+
+        // 2. Two-hop: WETH → base → token
+        for (uint256 i = 0; i < baseTokens.length; i++) {
+            address base = baseTokens[i];
+            if (base == weth || base == token) continue;
+            uint256 mid = _quoteTwo(factory, weth, base, amountIn);
+            if (mid == 0) continue;
+            uint256 out = _quoteTwo(factory, base, token, mid);
+            if (out > bestOut) {
+                bestOut = out;
+                bestPath = new address[](3);
+                bestPath[0] = weth;
+                bestPath[1] = base;
+                bestPath[2] = token;
+            }
+        }
+    }
+
+    /// @dev Quote output for a single-hop swap using reserves (0.25% fee).
+    function _quoteTwo(address factory, address tokenA, address tokenB, uint256 amountIn)
+        internal view returns (uint256)
+    {
+        try IFactory(factory).getPair(tokenA, tokenB) returns (address pair) {
+            if (pair == address(0)) return 0;
+            try IPair(pair).getReserves() returns (uint112 r0, uint112 r1, uint32) {
+                address t0 = IPair(pair).token0();
+                (uint256 rIn, uint256 rOut) = t0 == tokenA ? (uint256(r0), uint256(r1)) : (uint256(r1), uint256(r0));
+                if (rIn == 0 || rOut == 0) return 0;
+                uint256 inFee = amountIn * 9975;
+                return (inFee * rOut) / (rIn * 10000 + inFee);
+            } catch { return 0; }
+        } catch { return 0; }
+    }
+
+    /// @dev Simulate buy + transfer + sell tax using a pre-computed buy path.
+    ///      buyPath starts with WETH so swapExactETHForTokens works.
     function _simulateTax(
-        IRouter dex, address token, address weth, address factory, uint256 buyAmount
+        IRouter dex, address token, address[] memory buyPath, uint256 buyAmount
     ) internal returns (TaxInfo memory t) {
-        address pair;
-        try IFactory(factory).getPair(token, weth) returns (address p) { pair = p; } catch {}
-        if (pair == address(0)) { t.buyError = "No liquidity"; return t; }
-
-        address[] memory path = new address[](2);
-        path[0] = weth;
-        path[1] = token;
-
+        // ── Buy ──
         uint256 expectedBuy;
-        try dex.getAmountsOut(buyAmount, path) returns (uint256[] memory amounts) {
-            expectedBuy = amounts[1];
+        try dex.getAmountsOut(buyAmount, buyPath) returns (uint256[] memory amounts) {
+            expectedBuy = amounts[amounts.length - 1];
         } catch { t.buyError = "Quote failed"; return t; }
 
         uint256 gasBefore = gasleft();
         uint256 balBefore = IERC20(token).balanceOf(address(this));
 
         try dex.swapExactETHForTokensSupportingFeeOnTransferTokens{value: buyAmount}(
-            0, path, address(this), block.timestamp
+            0, buyPath, address(this), block.timestamp
         ) {
             uint256 actualBuy = IERC20(token).balanceOf(address(this)) - balBefore;
             t.buyGas = gasBefore - gasleft();
@@ -224,6 +276,7 @@ contract TradeLensV2 {
             t.buyError = "Buy reverted"; t.buyGas = gasBefore - gasleft(); return t;
         }
 
+        // ── Transfer tax ──
         {
             uint256 testAmount = IERC20(token).balanceOf(address(this)) / 10;
             if (testAmount > 0) {
@@ -238,6 +291,7 @@ contract TradeLensV2 {
             }
         }
 
+        // ── Sell — reverse the buy path ──
         uint256 tokensToSell = IERC20(token).balanceOf(address(this));
         if (tokensToSell == 0) { t.sellError = "No tokens"; return t; }
 
@@ -245,19 +299,21 @@ contract TradeLensV2 {
             t.sellError = "Approve failed"; return t;
         }
 
-        path[0] = token;
-        path[1] = weth;
+        address[] memory sellPath = new address[](buyPath.length);
+        for (uint256 i = 0; i < buyPath.length; i++) {
+            sellPath[i] = buyPath[buyPath.length - 1 - i];
+        }
 
         uint256 expectedSell;
-        try dex.getAmountsOut(tokensToSell, path) returns (uint256[] memory amounts) {
-            expectedSell = amounts[1];
+        try dex.getAmountsOut(tokensToSell, sellPath) returns (uint256[] memory amounts) {
+            expectedSell = amounts[amounts.length - 1];
         } catch {}
 
         uint256 ethBefore = address(this).balance;
         gasBefore = gasleft();
 
         try dex.swapExactTokensForETHSupportingFeeOnTransferTokens(
-            tokensToSell, 0, path, address(this), block.timestamp
+            tokensToSell, 0, sellPath, address(this), block.timestamp
         ) {
             uint256 actualSell = address(this).balance - ethBefore;
             t.sellGas = gasBefore - gasleft();

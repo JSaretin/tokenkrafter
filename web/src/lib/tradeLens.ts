@@ -290,6 +290,24 @@ export function findBestRoute(
 		}
 	}
 
+	// ── Direct: tokenIn is a base token that tokenOut has a pool with ──
+	if (!inIsWeth && outInfo) {
+		const pool = outInfo.pools.find(p => p.base.toLowerCase() === inAddr && p.hasLiquidity);
+		if (pool) {
+			const out = _calcOut(amountIn, pool.reserveBase, pool.reserveToken);
+			if (out > 0n) candidates.push({ path: [inAddr, outAddr], symbols: [inSymbol, outSymbol], amountOut: out, hops: 1 });
+		}
+	}
+
+	// ── Direct: tokenOut is a base token that tokenIn has a pool with ──
+	if (!outIsWeth && inInfo) {
+		const pool = inInfo.pools.find(p => p.base.toLowerCase() === outAddr && p.hasLiquidity);
+		if (pool) {
+			const out = _calcOut(amountIn, pool.reserveToken, pool.reserveBase);
+			if (out > 0n) candidates.push({ path: [inAddr, outAddr], symbols: [inSymbol, outSymbol], amountOut: out, hops: 1 });
+		}
+	}
+
 	// ── Routes through each base token (WETH, USDT, USDC, etc.) ──
 	// Collect all known bases from both tokens' pools
 	const allBases = new Set<string>();

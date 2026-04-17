@@ -124,10 +124,6 @@ library BondingCurve {
 // DEX interfaces (IUniswapV2Router02, IUniswapV2Factory, IUniswapV2Pair,
 // IWETH) come from shared/DexInterfaces.sol.
 
-interface IOwnable {
-    function owner() external view returns (address);
-}
-
 // =============================================================
 // LAUNCH INSTANCE
 // =============================================================
@@ -541,7 +537,9 @@ contract LaunchInstance is ReentrancyGuard {
         uint256 minUsdtOut,
         uint256 minTokensOut,
         address ref
-    ) internal nonReentrant onlyActive {
+    ) internal nonReentrant {
+        _autoResolve();
+        if (state != LaunchState.Active) revert NotActive();
         if (amountIn == 0) revert ZeroAmount();
         if (path.length < 2) revert InvalidPath();
         if (path[path.length - 1] != address(usdt)) revert PathMustEndAtUsdt();
@@ -601,26 +599,59 @@ contract LaunchInstance is ReentrancyGuard {
     }
 
     /// @dev Internal buy logic. All amounts are in USDT after conversion.
-    ///      1% buy fee taken before curve math. Refunds return basePaid (net after fee).
+    ///      1% buy fee computed upfront but only charged on the actual amount
+    ///      spent after curve-cap and max-buy capping. Excess is refunded.
     function _processBuy(address buyer, uint256 usdtAmount, uint256 minTokensOut, address ref) internal {
         // Anti-dust floor: reject buys below the creator-set minimum so an
         // attacker can't flood `_purchases` with near-zero entries.
         if (usdtAmount < minBuyUsdt) revert BelowMinBuy();
 
-        // Take buy fee upfront — send immediately to platform
+        // Compute fee on full amount, but we may adjust after capping
         uint256 buyFee = (usdtAmount * BUY_FEE_BPS) / BPS;
         uint256 baseForTokens = usdtAmount - buyFee;
+
+        // Calculate tokens from curve
+        uint256 tokensOut = _getTokensForBase(baseForTokens);
+        if (tokensOut == 0) revert AmountTooSmall();
+
+        // Cap to remaining curve tokens
+        uint256 remaining = tokensForCurve - tokensSold;
+        if (tokensOut > remaining) {
+            tokensOut = remaining;
+            baseForTokens = _getCostForTokens(tokensOut);
+        }
+
+        // Anti-whale: cap by USDT value (% of hard cap)
+        if (basePaid[buyer] + baseForTokens > maxBuyPerWallet) {
+            uint256 remaining_allowance = maxBuyPerWallet > basePaid[buyer]
+                ? maxBuyPerWallet - basePaid[buyer]
+                : 0;
+            if (remaining_allowance == 0) revert ExceedsMaxBuy();
+
+            tokensOut = _getTokensForBase(remaining_allowance);
+            if (tokensOut == 0) revert ExceedsMaxBuy();
+            baseForTokens = _getCostForTokens(tokensOut);
+        }
+
+        // Check minTokensOut AFTER all capping
+        if (tokensOut < minTokensOut) revert InsufficientTokensOut();
+
+        // Recompute fee on the ACTUAL amount spent, not the original input.
+        // This ensures users only pay 1% on what they actually used.
+        buyFee = (baseForTokens * BUY_FEE_BPS) / (BPS - BUY_FEE_BPS);
+        uint256 totalSpent = baseForTokens + buyFee;
+        // Refund any excess USDT
+        if (usdtAmount > totalSpent) {
+            usdt.safeTransfer(buyer, usdtAmount - totalSpent);
+        }
+
+        // Send fee to platform + affiliate
         totalBuyFeesCollected += buyFee;
         if (buyFee > 0) {
             address _platformWallet = ILaunchpadFactory(factory).platformWallet();
             address aff = ILaunchpadFactory(factory).affiliate();
             uint256 platformShare = buyFee;
 
-            // Affiliate accrual — pull cut from this contract's USDT balance
-            // first, then forward the remainder to platformWallet. Lazy-init
-            // the approval so a fresh launch self-configures on first buy.
-            // try/catch wrapping ensures a paused or buggy Affiliate never
-            // bricks buys.
             if (aff != address(0)) {
                 if (usdt.allowance(address(this), aff) < buyFee) {
                     usdt.forceApprove(aff, type(uint256).max);
@@ -635,47 +666,11 @@ contract LaunchInstance is ReentrancyGuard {
             if (platformShare > 0) usdt.safeTransfer(_platformWallet, platformShare);
         }
 
-        // Calculate tokens from curve
-        uint256 tokensOut = _getTokensForBase(baseForTokens);
-        if (tokensOut == 0) revert AmountTooSmall();
-
-        uint256 remaining = tokensForCurve - tokensSold;
-        if (tokensOut > remaining) {
-            tokensOut = remaining;
-            uint256 actualCost = _getCostForTokens(tokensOut);
-            uint256 refundUsdt = baseForTokens - actualCost;
-            baseForTokens = actualCost;
-            if (refundUsdt > 0) {
-                usdt.safeTransfer(buyer, refundUsdt);
-            }
-        }
-
-        // Anti-whale: cap by USDT value (% of hard cap)
-        if (basePaid[buyer] + baseForTokens > maxBuyPerWallet) {
-            uint256 remaining_allowance = maxBuyPerWallet > basePaid[buyer]
-                ? maxBuyPerWallet - basePaid[buyer]
-                : 0;
-            if (remaining_allowance == 0) revert ExceedsMaxBuy();
-
-            tokensOut = _getTokensForBase(remaining_allowance);
-            if (tokensOut == 0) revert ExceedsMaxBuy();
-            uint256 actualCost = _getCostForTokens(tokensOut);
-            uint256 refundUsdt = baseForTokens - actualCost;
-            baseForTokens = actualCost;
-            if (refundUsdt > 0) {
-                usdt.safeTransfer(buyer, refundUsdt);
-            }
-        }
-
-        // Check minTokensOut AFTER all capping
-        if (tokensOut < minTokensOut) revert InsufficientTokensOut();
-
-        // Update state — basePaid tracks net amount (after fee), which is refundable.
-        // grossPaid tracks what the user actually spent (before fee) for display.
+        // Update state
         tokensSold += tokensOut;
         totalBaseRaised += baseForTokens;
         basePaid[buyer] += baseForTokens;
-        grossPaid[buyer] += baseForTokens + buyFee;
+        grossPaid[buyer] += totalSpent;
         tokensBought[buyer] += tokensOut;
 
         // Record purchase history
@@ -733,11 +728,27 @@ contract LaunchInstance is ReentrancyGuard {
 
         // Buy fees already sent to platform on each buy — no transfer needed here
 
-        // Graduation fees: 1% of USDT raised + 1% of LP tokens
+        // Graduation fee: 1% of USDT raised
         uint256 platformBaseFee = (totalBaseRaised * GRADUATION_FEE_BPS) / BPS;
-        uint256 platformTokenFee = (tokensForLP * GRADUATION_FEE_BPS) / BPS;
         uint256 usdtForLP = totalBaseRaised - platformBaseFee;
-        uint256 tokensForDexLP = tokensForLP - platformTokenFee;
+
+        // Seed LP at the current curve price so DEX opens at fair value.
+        // tokensForDexLP = usdtForLP / price_per_token.
+        // getCurrentPrice() = USDT cost for 1e18 token units.
+        uint256 curvePrice = getCurrentPrice();
+        uint256 maxLPTokens = tokensForLP;
+        uint256 tokensForDexLP;
+        if (curvePrice > 0) {
+            tokensForDexLP = Math.mulDiv(usdtForLP, 1e18, curvePrice);
+            if (tokensForDexLP > maxLPTokens) tokensForDexLP = maxLPTokens;
+        } else {
+            // Curve fully sold — use full LP allocation
+            tokensForDexLP = maxLPTokens;
+        }
+
+        // Platform token fee: 1% of tokens actually going to LP
+        uint256 platformTokenFee = (tokensForDexLP * GRADUATION_FEE_BPS) / BPS;
+        tokensForDexLP -= platformTokenFee;
 
         // Send graduation fees
         if (platformBaseFee > 0) {
@@ -939,7 +950,7 @@ contract LaunchInstance is ReentrancyGuard {
     // ── Creator Vesting ────────────────────────────────────────
 
     /// @notice Claim vested creator tokens after graduation.
-    function claimCreatorTokens() external onlyCreator {
+    function claimCreatorTokens() external onlyCreator nonReentrant {
         if (state != LaunchState.Graduated) revert NotGraduated();
         if (creatorTotalTokens == 0) revert NoAllocation();
 
@@ -980,9 +991,18 @@ contract LaunchInstance is ReentrancyGuard {
     }
 
     /// @notice Current token price on the curve (cost for 1 full token).
+    ///         When the curve is fully sold, returns the final price rather
+    ///         than 0 — needed by _graduate() for fair LP seeding.
     function getCurrentPrice() public view returns (uint256) {
         uint256 remaining = tokensForCurve - tokensSold;
-        if (remaining == 0) return 0;
+        if (remaining == 0) {
+            // Curve fully sold — compute price at the final position.
+            // Use the cost of the last 1e18 units of the curve.
+            if (tokensSold >= 1e18) {
+                return _getCostForTokensAt(tokensSold - 1e18, 1e18);
+            }
+            return _getCostForTokensAt(0, tokensSold);
+        }
         uint256 amount = remaining < 1e18 ? remaining : 1e18;
         return _getCostForTokens(amount);
     }
@@ -1183,6 +1203,22 @@ contract LaunchInstance is ReentrancyGuard {
         return _curveCost(amount) / baseScale;
     }
 
+    /// @dev Cost at a specific supply position (not necessarily tokensSold).
+    ///      Used by getCurrentPrice() to compute the final curve price after sell-out.
+    function _getCostForTokensAt(uint256 atSupply, uint256 amount) internal view returns (uint256) {
+        uint256 rawCost;
+        if (curveType == CurveType.Linear) {
+            rawCost = BondingCurve.linearCost(atSupply, amount, curveParam1, curveParam2);
+        } else if (curveType == CurveType.SquareRoot) {
+            rawCost = BondingCurve.sqrtCost(atSupply, amount, curveParam1);
+        } else if (curveType == CurveType.Quadratic) {
+            rawCost = BondingCurve.quadraticCost(atSupply, amount, curveParam1);
+        } else {
+            rawCost = BondingCurve.exponentialCost(atSupply, amount, curveParam1, curveParam2);
+        }
+        return rawCost / baseScale;
+    }
+
     function _getTokensForBase(uint256 baseAmount) internal view returns (uint256) {
         if (baseAmount == 0) return 0;
         uint256 remaining = tokensForCurve - tokensSold;
@@ -1228,12 +1264,19 @@ contract LaunchInstance is ReentrancyGuard {
         return _curveCost(amount);
     }
 
-    /// @notice Recover accidentally sent ETH. Only callable by creator.
-    function recoverETH() external onlyCreator {
+    /// @notice Recover accidentally sent ETH. Creator or platform can call.
+    ///         Sends to creator first; if that fails (e.g. contract creator
+    ///         that reverts on receive), falls back to platformWallet.
+    function recoverETH() external nonReentrant {
+        if (msg.sender != creator && msg.sender != ILaunchpadFactory(factory).platformWallet()) revert NotCreator();
         uint256 bal = address(this).balance;
         if (bal == 0) revert NoETH();
         (bool ok, ) = creator.call{value: bal}("");
-        if (!ok) revert TransferFailed();
+        if (!ok) {
+            address pw = ILaunchpadFactory(factory).platformWallet();
+            (bool ok2, ) = pw.call{value: bal}("");
+            if (!ok2) revert TransferFailed();
+        }
     }
 
     receive() external payable {}

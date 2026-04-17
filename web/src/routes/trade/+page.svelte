@@ -14,7 +14,8 @@
 	import WithdrawalStatusModal from '$lib/WithdrawalStatusModal.svelte';
 	import { formatUsdt } from '$lib/launchpad';
 	import { apiFetch } from '$lib/apiFetch';
-	import { queryTradeLens, getInstantQuote, getWeth, isCacheLoaded, getUsdValue, getCachedToken, findBestRoute, type TaxInfo, type SwapRoute } from '$lib/tradeLens';
+	import { queryTradeLens, getInstantQuote, getWeth, isCacheLoaded, getUsdValue, getCachedToken, findBestRoute as findBestRouteLocal, type TaxInfo, type SwapRoute } from '$lib/tradeLens';
+	import { findBestRoute as findBestRouteOnChain } from '$lib/routeFinder';
 	import { pushPreferences } from '$lib/embeddedWallet';
 	import { resolveTokenLogo } from '$lib/tokenLogo';
 	import { t } from '$lib/i18n';
@@ -868,7 +869,7 @@
 			return;
 		}
 
-		// ── Instant calculation from TradeLens cache (0ms, best route) ──
+		// ── Instant calculation from TradeLens cache (0ms, local route) ──
 		let hasInstant = false;
 		try {
 			if (pricesLoaded) {
@@ -877,7 +878,7 @@
 				const addrIn = tokenInIsNative ? (wethAddr || getWeth()) : inAddr;
 				const addrOut = tokenOutIsNative ? (wethAddr || getWeth()) : outAddr;
 
-				const route = findBestRoute(addrIn, addrOut, parsedIn);
+				const route = findBestRouteLocal(addrIn, addrOut, parsedIn);
 				if (route && route.amountOut > 0n) {
 					amountOut = ethers.formatUnits(route.amountOut, tokenOutDecimals);
 					swapRoute = route;
@@ -889,23 +890,40 @@
 			}
 		} catch {}
 
-		// ── Background on-chain validation (silent update, no loading flash) ──
+		// ── On-chain RouteFinder (single eth_call, finds best path through all bases) ──
 		if (!hasInstant) previewLoading = true;
 		previewTimeout = setTimeout(async () => {
 			try {
 				const provider = networkProviders.get(net.chain_id);
-				if (!provider) return;
-				const router = new ethers.Contract(net.trade_router_address, TRADE_ROUTER_ABI, provider);
-				const weth = wethAddr || await router.weth();
-				const addrIn = tokenInIsNative ? weth : inAddr;
-				const addrOut = tokenOutIsNative ? weth : outAddr;
+				if (!provider || !net.dex_router) return;
+
 				const sanitized = parseFloat(amt).toFixed(tokenInDecimals);
 				const parsedIn = ethers.parseUnits(sanitized, tokenInDecimals);
-				// Use best route path for on-chain quote
-				const quotePath = swapRoute?.path.length ? swapRoute.path : (addrIn !== weth && addrOut !== weth ? [addrIn, weth, addrOut] : [addrIn, addrOut]);
-				const out = await router.getAmountOut(quotePath, parsedIn);
-				amountOut = ethers.formatUnits(out, tokenOutDecimals);
-				noLiquidity = false;
+				const addrIn = tokenInIsNative ? ethers.ZeroAddress : inAddr;
+				const addrOut = tokenOutIsNative ? ethers.ZeroAddress : outAddr;
+
+				// Collect base tokens from network config
+				const bases: string[] = [];
+				const weth = wethAddr || getWeth();
+				if (weth) bases.push(weth);
+				if (net.usdt_address) bases.push(net.usdt_address);
+				if (net.usdc_address) bases.push(net.usdc_address);
+				for (const b of (net as any).default_bases || []) {
+					if (b.address && !bases.some((x: string) => x.toLowerCase() === b.address.toLowerCase())) {
+						bases.push(b.address);
+					}
+				}
+
+				const route = await findBestRouteOnChain(provider, net.dex_router, addrIn, addrOut, parsedIn, bases);
+				if (route && route.amountOut > 0n) {
+					amountOut = ethers.formatUnits(route.amountOut, tokenOutDecimals);
+					// Map to SwapRoute format for the swap execution
+					swapRoute = { path: route.path, symbols: [], amountOut: route.amountOut, hops: route.path.length - 1 };
+					noLiquidity = false;
+				} else if (!hasInstant) {
+					amountOut = '';
+					noLiquidity = true;
+				}
 			} catch {
 				if (!hasInstant) {
 					amountOut = '';
@@ -914,7 +932,7 @@
 			} finally {
 				previewLoading = false;
 			}
-		}, hasInstant ? 500 : 150); // longer debounce if we already have instant price
+		}, hasInstant ? 500 : 150);
 	});
 
 	// ── Preview bank fee ───────────────────────────────────────
