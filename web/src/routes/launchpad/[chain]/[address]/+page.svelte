@@ -668,9 +668,13 @@
 		if (addr === _prevUserAddr) return;
 		_prevUserAddr = addr;
 		if (!addr) {
-			// Disconnected — reset user-specific state
+			// Disconnected — reset all user-specific state
 			userBasePaid = 0n;
 			userTokensBought = 0n;
+			buyAmount = '';
+			showDepositModal = false;
+			userPaymentBalance = 0n;
+			stopBalancePolling();
 			return;
 		}
 		// New wallet connected — fetch their position
@@ -4060,14 +4064,21 @@
 
 	/* Activity — milestone markers */
 	.activity-milestone {
-		display: flex; align-items: center; justify-content: center;
-		gap: 6px; padding: 6px 12px; margin: 4px 0;
-		border-radius: 8px; font-family: 'Syne', sans-serif;
-		font-size: 11px; font-weight: 700;
+		display: flex; align-items: center;
+		gap: 8px; margin: 8px 0;
+		font-family: 'Space Mono', monospace;
+		font-size: 10px; font-weight: 700;
 	}
-	.milestone-sc { background: rgba(16,185,129,0.08); color: #10b981; border: 1px solid rgba(16,185,129,0.15); }
-	.milestone-half { background: rgba(0,210,255,0.06); color: #00d2ff; border: 1px solid rgba(0,210,255,0.1); }
-	.milestone-buyers { background: rgba(139,92,246,0.06); color: #a78bfa; border: 1px solid rgba(139,92,246,0.1); }
+	.activity-milestone::before,
+	.activity-milestone::after {
+		content: ''; flex: 1; height: 1px;
+	}
+	.milestone-sc { color: #10b981; }
+	.milestone-sc::before, .milestone-sc::after { background: rgba(16,185,129,0.25); }
+	.milestone-half { color: #00d2ff; }
+	.milestone-half::before, .milestone-half::after { background: rgba(0,210,255,0.2); }
+	.milestone-buyers { color: #a78bfa; }
+	.milestone-buyers::before, .milestone-buyers::after { background: rgba(139,92,246,0.2); }
 
 	/* Activity — join CTA */
 	.activity-join-cta {
