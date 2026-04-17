@@ -264,7 +264,16 @@ async function processWithdrawal(withdrawId: number): Promise<boolean> {
 			}),
 		});
 
-		const data = await res.json();
+		let data: any;
+		try {
+			data = await res.json();
+		} catch {
+			// SvelteKit error() returns non-JSON (HTML error page)
+			const text = await res.text().catch(() => '');
+			console.error(`[FAIL] Withdrawal #${withdrawId}: HTTP ${res.status} — ${text.slice(0, 200)}`);
+			await redis.del(key);
+			return false;
+		}
 
 		if (data.success) {
 			console.log(`[OK] Withdrawal #${withdrawId} processed: NGN ${data.ngn_amount}, tx: ${data.confirm_tx}`);
@@ -278,7 +287,11 @@ async function processWithdrawal(withdrawId: number): Promise<boolean> {
 			await redis.del(key);
 			return true;
 		} else {
-			console.error(`[FAIL] Withdrawal #${withdrawId}: ${data.error}`);
+			const errMsg = data.error || data.message || JSON.stringify(data).slice(0, 200);
+			console.error(`[FAIL] Withdrawal #${withdrawId}: ${errMsg}`);
+
+			// Alert on all failures, not just low balance
+			await sendAlert('Withdrawal Failed', `❌ #${withdrawId}: ${errMsg}`, 'payment');
 
 			if (data.error?.includes('Insufficient Flutterwave')) {
 				const alertKey = `alert:low_flw:${withdrawId}`;
