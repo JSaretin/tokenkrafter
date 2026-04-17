@@ -29,9 +29,13 @@
 		const pFrac = clampedProgress / 100;
 
 		// Auto-scale Y axis so the curve isn't crammed into a corner at low progress
-		const peekAhead = Math.min(1, pFrac + 0.3);
-		const peekY = curveFn(peekAhead, curveType) * 100;
-		const yMax = pFrac < 0.5 ? Math.max(15, Math.ceil(peekY / 5) * 5) : 100;
+		// When no progress, show the full curve (yMax = 100)
+		let yMax = 100;
+		if (pFrac > 0 && pFrac < 0.5) {
+			const peekAhead = Math.min(1, pFrac + 0.3);
+			const peekY = curveFn(peekAhead, curveType) * 100;
+			yMax = Math.max(15, Math.ceil(peekY / 5) * 5);
+		}
 
 		// Full curve data
 		const curveData: [number, number][] = [];
@@ -66,7 +70,7 @@
 					</div>`;
 				},
 			},
-			grid: { top: 30, right: 8, bottom: 32, left: 38 },
+			grid: { top: 30, right: 8, bottom: 4, left: 4, containLabel: true },
 			xAxis: {
 				type: 'value',
 				name: 'Tokens sold',
