@@ -1695,8 +1695,12 @@
 							{#if tokenTrust?.is_mintable}
 								<span class="launch-badge badge-mintable" title="Token supply can be increased by owner">Mintable</span>
 							{/if}
-							{#if tokenTrust?.is_taxable}
-								<span class="launch-badge badge-taxable" title="Token has buy/sell tax">Taxable</span>
+							{#if tokenTrust?.is_taxable && ((tokenTrust?.buy_tax_bps ?? 0) > 0 || (tokenTrust?.sell_tax_bps ?? 0) > 0)}
+								{#if tokenTrust?.tax_ceiling_locked}
+									<span class="launch-badge badge-tax-locked" title="Tax {((tokenTrust.buy_tax_bps ?? 0) / 100).toFixed(0)}/{((tokenTrust.sell_tax_bps ?? 0) / 100).toFixed(0)}% — rates locked at creation, cannot be increased">Tax {((tokenTrust.buy_tax_bps ?? 0) / 100).toFixed(0)}/{((tokenTrust.sell_tax_bps ?? 0) / 100).toFixed(0)}% Locked</span>
+								{:else}
+									<span class="launch-badge badge-taxable" title="Token has buy/sell tax — ceiling not locked">Tax {((tokenTrust.buy_tax_bps ?? 0) / 100).toFixed(0)}/{((tokenTrust.sell_tax_bps ?? 0) / 100).toFixed(0)}%</span>
+								{/if}
 							{/if}
 							{#if tokenTrust?.is_partner}
 								<span class="launch-badge badge-partner" title="Partner token">Partner</span>
@@ -3746,6 +3750,7 @@
 	.badge-audited { background: rgba(0, 210, 255, 0.12); color: #00d2ff; border: 1px solid rgba(0, 210, 255, 0.2); }
 	.badge-mintable { background: rgba(245, 158, 11, 0.12); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.2); }
 	.badge-taxable { background: rgba(245, 158, 11, 0.12); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.2); }
+	.badge-tax-locked { background: rgba(16, 185, 129, 0.12); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.2); }
 	.badge-partner { background: rgba(139, 92, 246, 0.12); color: #a78bfa; border: 1px solid rgba(139, 92, 246, 0.2); }
 	.badge-orange { background: rgba(249, 115, 22, 0.12); color: #fb923c; border: 1px solid rgba(249, 115, 22, 0.25); }
 

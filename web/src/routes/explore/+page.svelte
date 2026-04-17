@@ -484,14 +484,22 @@
 										</div>
 									</span>
 								{/if}
-								{#if tok.is_taxable}
+								{#if tok.is_taxable && (buyTax > 0 || sellTax > 0)}
 									<span class="badge-tip">
-										<span class="tc-badge tc-badge-tax">Taxable</span>
+										{#if isTaxLocked}
+											<span class="tc-badge tc-badge-tax-locked">Tax {(buyTax / 100).toFixed(0)}/{(sellTax / 100).toFixed(0)}% Locked</span>
+										{:else}
+											<span class="tc-badge tc-badge-tax">Tax {(buyTax / 100).toFixed(0)}/{(sellTax / 100).toFixed(0)}%</span>
+										{/if}
 										<div class="badge-tip-content">
-											<div class="btp-title">Token Tax</div>
+											<div class="btp-title">{isTaxLocked ? 'Tax Rates (Locked)' : 'Token Tax'}</div>
 											<div class="btp-kv"><span>Buy</span><span>{(buyTax / 100).toFixed(1)}%</span></div>
 											<div class="btp-kv"><span>Sell</span><span>{(sellTax / 100).toFixed(1)}%</span></div>
-											{#if isTaxLocked}<div class="btp-row"><span class="btp-check">✓</span><span>Tax ceiling locked</span></div>{/if}
+											{#if isTaxLocked}
+												<div class="btp-row"><span class="btp-check">✓</span><span>Rates locked at creation — cannot be increased after graduation</span></div>
+											{:else}
+												<div class="btp-row"><span class="btp-warn">⚠</span><span>Tax ceiling not locked — creator could increase rates</span></div>
+											{/if}
 										</div>
 									</span>
 								{/if}
@@ -732,6 +740,7 @@
 	.tc-badge-renounced { background: rgba(16,185,129,0.12); color: #34d399; }
 	.tc-badge-locked { background: rgba(139,92,246,0.12); color: #a78bfa; }
 	.tc-badge-tax { background: rgba(245,158,11,0.12); color: #f59e0b; }
+	.tc-badge-tax-locked { background: rgba(16,185,129,0.12); color: #10b981; }
 	.tc-badge-mintable { background: rgba(239,68,68,0.12); color: #f87171; }
 
 	/* Header */

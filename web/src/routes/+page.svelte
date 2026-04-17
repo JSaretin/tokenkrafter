@@ -893,7 +893,7 @@
 
 	/* Progress section on home cards */
 	.hp-progress-section {
-		padding: 10px 16px 16px;
+		padding: 14px 16px 16px;
 		border-top: 1px solid var(--border-subtle);
 	}
 	.hp-progress-track {

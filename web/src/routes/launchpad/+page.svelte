@@ -5,7 +5,7 @@
 	import { t } from '$lib/i18n';
 	import { favorites, toggleFavorite } from '$lib/favorites';
 	import MarketFlow from '$lib/MarketFlow.svelte';
-	import FlipCountdown from '$lib/FlipCountdown.svelte';
+	import LaunchCountdown from '$lib/LaunchCountdown.svelte';
 	import { chainSlug, type SupportedNetwork } from '$lib/structure';
 	import {
 		LAUNCHPAD_FACTORY_ABI,
@@ -620,7 +620,15 @@
 							<span class="badge-pill badge-pill-mintable">Mintable</span>
 						{/if}
 						{#if (launch as any).tokenTrust?.is_taxable}
-							<span class="badge-pill badge-pill-taxable">Taxable</span>
+							{@const bt = (launch as any).tokenTrust?.buy_tax_bps ?? 0}
+							{@const st = (launch as any).tokenTrust?.sell_tax_bps ?? 0}
+							{#if bt > 0 || st > 0}
+								{#if (launch as any).tokenTrust?.tax_ceiling_locked}
+									<span class="badge-pill badge-pill-tax-locked">Tax {(bt/100).toFixed(0)}/{(st/100).toFixed(0)}% Locked</span>
+								{:else}
+									<span class="badge-pill badge-pill-taxable">Tax {(bt/100).toFixed(0)}/{(st/100).toFixed(0)}%</span>
+								{/if}
+							{/if}
 						{/if}
 						{#if (launch as any).tokenTrust?.is_partner}
 							<span class="badge-pill badge-pill-partner">Partner</span>
@@ -665,21 +673,27 @@
 						</div>
 					{/if}
 
-					<!-- 3b. Price + Supply row -->
+					<!-- 3b. Key stats + SC badge -->
 					<div class="card-metrics">
-						{#if launch.currentPrice > 0n}
-							<div class="card-metric">
-								<span class="card-metric-label">Price</span>
-								<span class="card-metric-val">{formatUsdt(launch.currentPrice, ud, 6)}</span>
-							</div>
-						{/if}
-						{#if launch.totalTokensRequired > 0n}
-							<div class="card-metric">
-								<span class="card-metric-label">Supply</span>
-								<span class="card-metric-val">{formatTokens(launch.totalTokensRequired, launch.tokenDecimals)}</span>
-							</div>
-						{/if}
+						<div class="card-metric">
+							<span class="card-metric-label">Hard Cap</span>
+							<span class="card-metric-val">{formatUsdt(launch.hardCap, ud)}</span>
+						</div>
+						<div class="card-metric">
+							<span class="card-metric-label">Buyers</span>
+							{#if (launch as any).totalBuyers > 0}
+								<span class="card-metric-val">{(launch as any).totalBuyers}</span>
+							{:else}
+								<span class="card-metric-val" style="color: #00d2ff; font-size: 10px;">Be first!</span>
+							{/if}
+						</div>
 					</div>
+					{#if launch.totalBaseRaised >= launch.softCap && launch.softCap > 0n}
+						<div class="card-sc-reached">
+							<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+							Soft cap reached — will graduate
+						</div>
+					{/if}
 
 					<!-- 4. Countdown Timer Grid -->
 					{#if launch.state <= 1}
@@ -688,10 +702,12 @@
 						{@const cd = countdownParts(targetTs)}
 						{#if !cd.ended}
 							<div class="card-countdown-section">
-								<span class="card-countdown-label {isScheduled ? 'countdown-scheduled' : countdownColor(launch.deadline)}">
-									{isScheduled ? 'Starts in' : 'Sale ends in'}
-								</span>
-								<FlipCountdown days={cd.d} hours={cd.h} minutes={cd.m} seconds={cd.s} variant={isScheduled ? 'amber' : 'cyan'} />
+								<LaunchCountdown
+									deadline={Number(targetTs)}
+									label={isScheduled ? 'Starts in' : 'Sale ends in'}
+									variant={isScheduled ? 'amber' : 'cyan'}
+									size="md"
+								/>
 							</div>
 						{/if}
 					{/if}
@@ -1126,6 +1142,7 @@
 	.badge-pill-audited { background: rgba(16,185,129,0.1); color: #34d399; border-color: rgba(16,185,129,0.25); font-weight: 800; }
 	.badge-pill-mintable { background: rgba(245,158,11,0.08); color: #fbbf24; border-color: rgba(245,158,11,0.2); }
 	.badge-pill-taxable { background: rgba(245,158,11,0.08); color: #f59e0b; border-color: rgba(245,158,11,0.2); }
+	.badge-pill-tax-locked { background: rgba(16,185,129,0.08); color: #10b981; border-color: rgba(16,185,129,0.2); }
 	.badge-pill-partner { background: rgba(139,92,246,0.08); color: #a78bfa; border-color: rgba(139,92,246,0.2); }
 
 	/* ── Platform trust grid ── */
@@ -1149,7 +1166,7 @@
 		background: var(--border-subtle); border-radius: 8px; overflow: hidden;
 	}
 	.card-metric {
-		flex: 1; padding: 6px 10px; background: var(--bg-surface-hover);
+		flex: 1; padding: 6px 10px; background: rgba(255,255,255,0.02);
 	}
 	.card-metric-label {
 		display: block; font-family: 'Rajdhani', sans-serif; font-size: 9px;
@@ -1159,6 +1176,16 @@
 		font-family: 'Syne', sans-serif; font-size: 12px; font-weight: 700;
 		color: var(--text-heading);
 	}
+
+	/* SC reached badge */
+	.card-sc-reached {
+		display: flex; align-items: center; justify-content: center; gap: 5px;
+		margin: 0 16px 8px; padding: 5px 10px; border-radius: 6px;
+		background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.15);
+		font-family: 'Space Mono', monospace; font-size: 9px; font-weight: 700;
+		color: #10b981;
+	}
+	.card-sc-reached svg { flex-shrink: 0; }
 
 	/* ── Tokenomics visual bar ── */
 	.card-distro-bar-wrap { padding: 0 16px 6px; opacity: 0.7; }
