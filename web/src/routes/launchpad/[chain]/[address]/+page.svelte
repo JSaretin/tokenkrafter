@@ -472,6 +472,17 @@
 		};
 	});
 
+	// Auto-flip tradingEnabled when anti-snipe countdown expires
+	$effect(() => {
+		if (!tradingEnabled && graduationTimestamp > 0n && lockDurationAfterListing > 0n) {
+			const deadline = Number(graduationTimestamp + lockDurationAfterListing) * 1000;
+			if (countdownNow >= deadline) {
+				tradingEnabled = true;
+				tradingOpensIn = 0n;
+			}
+		}
+	});
+
 	let refreshInterval: ReturnType<typeof setInterval> | null = null;
 	let _wsSubs: EventSubscription[] = [];
 	let _wsRefreshDebounce: ReturnType<typeof setTimeout> | null = null;
@@ -2373,6 +2384,16 @@
 							label={isScheduled ? 'Sale Starts In' : $t('lpd.saleEndsIn')}
 						/>
 					</div>
+				{:else if launch.state === 2 && !tradingEnabled && tradingOpensIn > 0n && graduationTimestamp > 0n && lockDurationAfterListing > 0n}
+					<div class="card p-5 mb-4" style="border-color: rgba(245, 158, 11, 0.2)">
+						<LaunchCountdown
+							deadline={Number(graduationTimestamp + lockDurationAfterListing)}
+							size="lg"
+							variant="amber"
+							label="Trading starts in"
+						/>
+						<p class="text-gray-500 text-[10px] font-mono text-center mt-2">Anti-snipe lock protects buyers from front-running bots</p>
+					</div>
 				{/if}
 
 				<!-- Mobile-only: compact About between timer and buy -->
@@ -2731,18 +2752,7 @@
 
 				<!-- Trading status banner — post-graduation only -->
 				{#if !tradingEnabled && launch.state === 2}
-					{#if tradingOpensIn > 0n}
-						<!-- Anti-snipe lock countdown -->
-						<div class="card p-4 mb-4 border border-amber-500/20">
-							<div class="flex items-center gap-2 mb-1">
-								<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-								<h3 class="syne font-bold text-amber-400 text-sm">Anti-snipe lock active</h3>
-							</div>
-							<p class="text-gray-400 text-xs font-mono">
-								Trading opens automatically in <span class="text-amber-400 font-bold">{Math.ceil(Number(tradingOpensIn) / 60)} min</span>. This lock protects buyers from front-running bots at launch.
-							</p>
-						</div>
-					{:else if tradingOpensIn === -1n && userAddress?.toLowerCase() === launch.creator.toLowerCase()}
+					{#if tradingOpensIn === -1n && userAddress?.toLowerCase() === launch.creator.toLowerCase()}
 						<!-- enableTrading was never called — creator needs to act -->
 						<div class="card p-4 mb-4 border border-red-500/20">
 							<h3 class="syne font-bold text-red-400 mb-2 text-sm">{$t('lpd.enableTradingTitle')}</h3>
