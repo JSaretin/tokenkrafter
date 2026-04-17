@@ -113,6 +113,8 @@
 	let isBuying = $state(false);
 	let isRefunding = $state(false);
 	let isGraduating = $state(false);
+	let showBuyConfirm = $state(false);
+	let showGraduateConfirm = $state(false);
 	let isDepositing = $state(false);
 	// For graduated launches, assume trading NOT enabled until on-chain check confirms.
 	// This prevents a flash of "now trading on DEX" during Phase 2 load.
@@ -3058,7 +3060,10 @@
 
 						{#if userAddress}
 							<button
-								onclick={handleBuy}
+								onclick={() => {
+									if (!signer || !userAddress || !buyAmount || !network || !launch) { connectWallet(); return; }
+									showBuyConfirm = true;
+								}}
 								disabled={isBuying || !buyAmount || parseFloat(String(buyAmount)) <= 0 || exceedsMaxBuy || atMaxBuy || belowMinBuy}
 								class="btn-primary w-full py-3 text-sm cursor-pointer"
 							>
@@ -3090,7 +3095,7 @@
 						<div class="card p-4 mb-4">
 							<p class="text-gray-400 text-xs font-mono mb-3">{$t('lpd.softCapReachedGrad')}</p>
 							<button
-								onclick={handleGraduate}
+								onclick={() => { showGraduateConfirm = true; }}
 								disabled={isGraduating}
 								class="btn-primary w-full py-2.5 text-sm cursor-pointer"
 							>
@@ -3228,6 +3233,90 @@
 		</div>
 	{/if}
 </div>
+
+<!-- ═══ Buy Confirmation Modal ═══ -->
+{#if showBuyConfirm && preview && launch}
+	<div class="confirm-overlay" onclick={() => { showBuyConfirm = false; }}>
+		<div class="confirm-modal" onclick={(e) => e.stopPropagation()}>
+			<h3 class="confirm-title">Confirm Purchase</h3>
+			<div class="confirm-body">
+				<div class="confirm-row">
+					<span>You pay</span>
+					<span class="confirm-val">{buyAmount} {paymentLabel}</span>
+				</div>
+				<div class="confirm-row">
+					<span>You receive</span>
+					<span class="confirm-val">~{parseFloat(ethers.formatUnits(preview.tokensOut, tokenMeta.decimals)).toLocaleString(undefined, { maximumFractionDigits: 2 })} {launch.tokenSymbol || tokenMeta.symbol}</span>
+				</div>
+				<div class="confirm-row">
+					<span>Fee (1%)</span>
+					<span class="confirm-val">{parseFloat(ethers.formatUnits(preview.fee, usdtDecimals)).toFixed(2)} USDT</span>
+				</div>
+				<div class="confirm-row">
+					<span>Slippage</span>
+					<span class="confirm-val">{slippagePct}%</span>
+				</div>
+				{#if Number(preview.priceImpactBps) > 0}
+					<div class="confirm-row">
+						<span>Price impact</span>
+						<span class="confirm-val">{(Number(preview.priceImpactBps) / 100).toFixed(2)}%</span>
+					</div>
+				{/if}
+			</div>
+			<p class="confirm-warn">This action is irreversible. Tokens are purchased on a bonding curve — price increases with each buy.</p>
+			<div class="confirm-actions">
+				<button class="btn-secondary flex-1 py-2.5 text-sm cursor-pointer" onclick={() => { showBuyConfirm = false; }}>Cancel</button>
+				<button class="btn-primary flex-1 py-2.5 text-sm cursor-pointer" onclick={() => { showBuyConfirm = false; handleBuy(); }}>
+					Confirm Buy
+				</button>
+			</div>
+		</div>
+	</div>
+{/if}
+
+<!-- ═══ Graduate Confirmation Modal ═══ -->
+{#if showGraduateConfirm && launch}
+	<div class="confirm-overlay" onclick={() => { showGraduateConfirm = false; }}>
+		<div class="confirm-modal" onclick={(e) => e.stopPropagation()}>
+			<h3 class="confirm-title">⚠ Graduate to DEX</h3>
+			<div class="confirm-body">
+				<div class="confirm-row">
+					<span>Total raised</span>
+					<span class="confirm-val">{formatUsdt(launch.totalBaseRaised, usdtDecimals)}</span>
+				</div>
+				<div class="confirm-row">
+					<span>Hard cap</span>
+					<span class="confirm-val">{formatUsdt(launch.hardCap, usdtDecimals)}</span>
+				</div>
+				<div class="confirm-row">
+					<span>Fill</span>
+					<span class="confirm-val">{progress.toFixed(1)}%</span>
+				</div>
+				<div class="confirm-row">
+					<span>Buyers</span>
+					<span class="confirm-val">{launch.totalBuyers ?? '—'}</span>
+				</div>
+			</div>
+			<div class="confirm-warn-box">
+				<p class="confirm-warn-title">This cannot be undone</p>
+				<ul class="confirm-warn-list">
+					<li>Liquidity will be added to DEX and LP tokens burned permanently</li>
+					<li>The bonding curve closes — no more buys through launchpad</li>
+					<li>Refunds will no longer be available to buyers</li>
+					{#if progress < 100}
+						<li class="text-amber-400">Curve is only {progress.toFixed(0)}% filled — waiting for more buys creates deeper liquidity</li>
+					{/if}
+				</ul>
+			</div>
+			<div class="confirm-actions">
+				<button class="btn-secondary flex-1 py-2.5 text-sm cursor-pointer" onclick={() => { showGraduateConfirm = false; }}>Cancel</button>
+				<button class="btn-primary flex-1 py-2.5 text-sm cursor-pointer" style="background: linear-gradient(135deg, #f59e0b, #d97706);" onclick={() => { showGraduateConfirm = false; handleGraduate(); }}>
+					Graduate Now
+				</button>
+			</div>
+		</div>
+	</div>
+{/if}
 
 <style>
 	/* Pay asset picker */
@@ -3395,6 +3484,53 @@
 		font-family: 'Space Mono', monospace; font-size: 11px; text-align: center;
 	}
 	.slip-custom:focus { border-color: rgba(0, 210, 255, 0.4); outline: none; }
+
+	/* ── Confirmation modals ── */
+	.confirm-overlay {
+		position: fixed; inset: 0; z-index: 1000;
+		background: rgba(0,0,0,0.7); backdrop-filter: blur(4px);
+		display: flex; align-items: center; justify-content: center;
+		padding: 16px;
+	}
+	.confirm-modal {
+		background: var(--bg-card, #0f1729); border: 1px solid rgba(255,255,255,0.08);
+		border-radius: 16px; padding: 24px; max-width: 400px; width: 100%;
+		box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+	}
+	.confirm-title {
+		font-family: 'Syne', sans-serif; font-size: 16px; font-weight: 700;
+		color: var(--text-heading, #fff); margin-bottom: 16px;
+	}
+	.confirm-body {
+		display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px;
+		padding: 12px; border-radius: 10px;
+		background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05);
+	}
+	.confirm-row {
+		display: flex; justify-content: space-between; align-items: center;
+		font-family: 'Space Mono', monospace; font-size: 12px;
+		color: var(--text-muted, #9ca3af);
+	}
+	.confirm-val { color: var(--text-heading, #fff); font-weight: 600; }
+	.confirm-warn {
+		font-family: 'Space Mono', monospace; font-size: 10px;
+		color: var(--text-dim, #6b7280); margin-bottom: 16px; line-height: 1.5;
+	}
+	.confirm-warn-box {
+		padding: 12px; border-radius: 10px; margin-bottom: 16px;
+		background: rgba(245,158,11,0.04); border: 1px solid rgba(245,158,11,0.15);
+	}
+	.confirm-warn-title {
+		font-family: 'Syne', sans-serif; font-size: 12px; font-weight: 700;
+		color: #f59e0b; margin-bottom: 8px;
+	}
+	.confirm-warn-list {
+		font-family: 'Space Mono', monospace; font-size: 10px;
+		color: var(--text-muted, #9ca3af); line-height: 1.6;
+		padding-left: 16px; margin: 0;
+	}
+	.confirm-warn-list li { margin-bottom: 4px; }
+	.confirm-actions { display: flex; gap: 10px; }
 
 	.exceed-warning {
 		padding: 8px 12px;
