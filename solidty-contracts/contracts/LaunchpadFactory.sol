@@ -219,6 +219,27 @@ contract LaunchpadFactory is Ownable, ReentrancyGuard {
         return (0, 0);
     }
 
+    /// @dev Salt layout for CREATE2 launch clones. Deterministic addresses
+    ///      let creators preflight a 3rd-party token against a predicted
+    ///      launch address before paying gas to create the clone.
+    function _launchSalt(address creator_, address token_, uint256 userSalt) internal pure returns (bytes32) {
+        return keccak256(abi.encodePacked(creator_, token_, userSalt));
+    }
+
+    /// @notice Predict the address of a launch clone for (creator, token, salt).
+    ///         Valid only while `launchImplementation` is unchanged.
+    function predictLaunchAddress(
+        address creator_,
+        address token_,
+        uint256 userSalt
+    ) external view returns (address) {
+        return Clones.predictDeterministicAddress(
+            launchImplementation,
+            _launchSalt(creator_, token_, userSalt),
+            address(this)
+        );
+    }
+
     /// @dev Shared logic for deploying a LaunchInstance and recording it.
     function _createLaunchInternal(
         address creator_,
