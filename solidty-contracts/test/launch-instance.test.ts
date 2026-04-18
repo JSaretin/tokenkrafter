@@ -454,7 +454,7 @@ describe("LaunchInstance", () => {
       await expect(launch.connect(s.alice).sweepStrandedUsdt()).to.be.reverted;
     });
 
-    it("after 90 days, stranded USDT can be swept to platform wallet", async () => {
+    it("after STRANDED_SWEEP_DELAY, stranded USDT can be swept to platform wallet", async () => {
       const s = await setup();
       const { token, launch, launchAddress } = await createTokenWithLaunch(s);
       const req = await launch.totalTokensRequired();
@@ -477,8 +477,9 @@ describe("LaunchInstance", () => {
       await time.increase(DURATION_DAYS * 24 * 3600 + 1);
       await launch.resolveState();
 
-      // Bob never refunds — 90 days pass
-      await time.increase(90 * 24 * 3600 + 1);
+      // Bob never refunds — wait the full sweep delay (5 years)
+      const delay = await launch.STRANDED_SWEEP_DELAY();
+      await time.increase(Number(delay) + 1);
 
       const platformBefore = await s.usdt.balanceOf(s.platform.address);
       await launch.connect(s.platform).sweepStrandedUsdt();
@@ -528,7 +529,7 @@ describe("LaunchInstance", () => {
       await expect(
         s.launch
           .connect(s.bob)
-          .buy(
+          ["buy(address[],uint256,uint256,uint256)"](
             [ethers.ZeroAddress, await s.usdt.getAddress()],
             ethIn,
             0,
@@ -544,7 +545,7 @@ describe("LaunchInstance", () => {
       await expect(
         s.launch
           .connect(s.bob)
-          .buy(
+          ["buy(address[],uint256,uint256,uint256)"](
             [ethers.ZeroAddress, await s.usdt.getAddress()],
             ethers.parseEther("0.1"),
             0,
@@ -582,7 +583,7 @@ describe("LaunchInstance", () => {
       await expect(
         s.launch
           .connect(s.bob)
-          .buy(
+          ["buy(address[],uint256,uint256,uint256)"](
             [await s.usdt.getAddress(), await s.usdt.getAddress()],
             PARSE_USDT(10),
             0,
