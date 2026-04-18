@@ -8,8 +8,10 @@
 	import type { SupportedNetwork, PaymentOption } from '$lib/structure';
 	import type { WsProviderManager, EventSubscription } from '$lib/wsProvider';
 	import { transferFilter } from '$lib/wsProvider';
-	import { FACTORY_ABI, PLATFORM_ROUTER_ABI, ROUTER_ABI, ERC20_ABI, ZERO_ADDRESS } from '$lib/tokenCrafter';
-	import { LAUNCHPAD_FACTORY_ABI, LAUNCH_INSTANCE_ABI, CURVE_TYPES, type CurveType } from '$lib/launchpad';
+	import { PLATFORM_ROUTER_ABI, ROUTER_ABI, ERC20_ABI, ZERO_ADDRESS } from '$lib/tokenCrafter';
+	import { LAUNCH_INSTANCE_ABI, CURVE_TYPES, type CurveType } from '$lib/launchpad';
+	import { TokenFactoryClient } from '$lib/contracts/tokenFactory';
+	import { LaunchpadFactoryClient } from '$lib/contracts/launchpadFactory';
 	import { apiFetch } from '$lib/apiFetch';
 	import { friendlyError } from '$lib/errorDecoder';
 	import QrCode from '$lib/QrCode.svelte';
@@ -250,8 +252,8 @@
 			const router = new ethers.Contract(routerAddr, PLATFORM_ROUTER_ABI, signer);
 
 			// Launch fee in USDT
-			const lpFactoryRead = new ethers.Contract(launchNetwork.launchpad_address, LAUNCHPAD_FACTORY_ABI, signer);
-			const launchFee: bigint = await lpFactoryRead.launchFee();
+			const lpFactoryRead = new LaunchpadFactoryClient(launchNetwork.launchpad_address, signer);
+			const launchFee = await lpFactoryRead.launchFee();
 
 			// USDT decimals
 			let usdtDec = 18;
@@ -460,7 +462,7 @@
 
 		for (const net of networks) {
 			const pro = networkProviders.get(net.chain_id) ?? new ethers.JsonRpcProvider(net.rpc);
-			const factory = new ethers.Contract(net.platform_address, FACTORY_ABI, pro);
+			const factory = new TokenFactoryClient(net.platform_address, pro);
 			const lpAddr = net.launchpad_address && net.launchpad_address !== '0x'
 				? net.launchpad_address
 				: ZERO_ADDRESS;
@@ -471,7 +473,7 @@
 						const key = feeCacheKey(net.chain_id, taxable, mintable, partner);
 						promises.push(
 							factory.getCreationFees(taxable, mintable, partner, lpAddr)
-								.then(([creationFeeUsdt, launchFeeUsdt]: [bigint, bigint]) => {
+								.then(({ creationFeeUsdt, launchFeeUsdt }) => {
 									feeCache.set(key, { creationFeeUsdt, launchFeeUsdt });
 								})
 								.catch((e: any) => console.warn(`Fee preload failed for ${key}:`, e))
@@ -680,11 +682,11 @@
 			try {
 				const pro = getProviderForNetwork(info!.network.chain_id)
 					?? new ethers.JsonRpcProvider(info!.network.rpc);
-				const factory = new ethers.Contract(info!.network.platform_address, FACTORY_ABI, pro);
+				const factory = new TokenFactoryClient(info!.network.platform_address, pro);
 				const lpAddr = info!.network.launchpad_address && info!.network.launchpad_address !== '0x'
 					? info!.network.launchpad_address
 					: ZERO_ADDRESS;
-				const [creationFeeUsdt, launchFeeUsdt]: [bigint, bigint] = await factory.getCreationFees(
+				const { creationFeeUsdt, launchFeeUsdt } = await factory.getCreationFees(
 					info!.isTaxable, info!.isMintable, info!.isPartner, lpAddr
 				);
 				cached = { creationFeeUsdt, launchFeeUsdt };

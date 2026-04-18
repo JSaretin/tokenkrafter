@@ -35,6 +35,12 @@
 	let userAddress = $derived(getUserAddress());
 	let isCreator = $derived(!!(userAddress && view.creator && userAddress.toLowerCase() === view.creator.toLowerCase()));
 
+	// ── Read-only network providers (shared across app, no wallet needed) ──
+	let getNetworkProviders: () => Map<number, ethers.JsonRpcProvider> = getContext('networkProviders');
+	let getProvidersReady: () => boolean = getContext('providersReady');
+	let networkProviders = $derived(getNetworkProviders());
+	let providersReady = $derived(getProvidersReady());
+
 	// ── Transient UI state ──
 	let copied = $state(false);
 	let copiedUrl = $state(false);
@@ -121,11 +127,20 @@
 			} catch {}
 		}
 		geckoLoading = false;
+	});
 
-		// Fetch on-chain protection settings + tax distribution (platform tokens only)
-		if (view.isOnPlatform && chainInfo.rpc) {
+	// Fetch on-chain protection settings + tax distribution (platform tokens only).
+	// Runs once providersReady flips true — uses the shared networkProviders map
+	// rather than constructing a per-page JsonRpcProvider.
+	let _onChainFetched = false;
+	$effect(() => {
+		if (!providersReady || _onChainFetched) return;
+		if (!view.isOnPlatform) return;
+		const prov = networkProviders.get(chainInfo.id);
+		if (!prov) return;
+		_onChainFetched = true;
+		(async () => {
 			try {
-				const prov = new ethers.JsonRpcProvider(chainInfo.rpc);
 				const client = new PlatformTokenClient(tokenAddress, prov);
 				const [prot, dist] = await Promise.all([
 					client.getProtectionSettings(),
@@ -134,7 +149,7 @@
 				protection = prot;
 				taxDistribution = dist;
 			} catch {}
-		}
+		})();
 	});
 
 	function copyAddress() {

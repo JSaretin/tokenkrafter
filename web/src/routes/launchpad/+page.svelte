@@ -8,11 +8,8 @@
 	import LaunchCountdown from '$lib/LaunchCountdown.svelte';
 	import { chainSlug, type SupportedNetwork } from '$lib/structure';
 	import {
-		LAUNCHPAD_FACTORY_ABI,
-		LAUNCH_INSTANCE_ABI,
 		type LaunchInfo,
 		type LaunchState,
-		fetchLaunchInfo,
 		fetchTokenMeta,
 		stateColor,
 		stateLabel,
@@ -22,6 +19,8 @@
 		timeRemaining,
 		CURVE_TYPES
 	} from '$lib/launchpad';
+	import { LaunchpadFactoryClient } from '$lib/contracts/launchpadFactory';
+	import { LaunchInstanceClient } from '$lib/contracts/launchInstance';
 
 	let getUserAddress: () => string | null = getContext('userAddress');
 	let _getNetworks: () => SupportedNetwork[] = getContext('supportedNetworks');
@@ -373,23 +372,64 @@
 			const provider = networkProviders.get(net.chain_id);
 			if (!provider) continue;
 			try {
-				const factory = new ethers.Contract(net.launchpad_address, LAUNCHPAD_FACTORY_ABI, provider);
-				const total = await factory.totalLaunches();
-				const count = Number(total);
+				const factory = new LaunchpadFactoryClient(net.launchpad_address, provider);
+				const count = await factory.totalLaunches();
 				const limit = Math.min(count, 50);
 				const offset = Math.max(0, count - limit);
-				for (let i = offset; i < count; i++) {
+				const addrs = await factory.getLaunches(offset, limit);
+				for (const addr of addrs) {
 					try {
-						const addr = await factory.launches(i);
-						const info = await fetchLaunchInfo(addr, provider);
+						const info = await fetchLaunchInfoViaClient(addr, provider);
 						const meta = await fetchTokenMeta(info.token, provider);
 						allLaunches.push({ ...info, tokenName: meta.name, tokenSymbol: meta.symbol, tokenDecimals: meta.decimals, network: net });
-					} catch (e) { console.warn(`Failed to load launch ${i}:`, e); }
+					} catch (e) { console.warn(`Failed to load launch ${addr}:`, e); }
 				}
 			} catch (e) { console.warn(`Failed to load launches from ${net.name}:`, e); }
 		}
 		allLaunches.sort((a, b) => Number(b.deadline - a.deadline));
 		launches = allLaunches;
+	}
+
+	/**
+	 * Fetch LaunchInfo for a single launch using LaunchInstanceClient. Mirrors
+	 * the shape returned by `fetchLaunchInfo` in `$lib/launchpad` but uses the
+	 * typed client instead of a raw ethers.Contract.
+	 */
+	async function fetchLaunchInfoViaClient(
+		launchAddress: string,
+		provider: ethers.Provider,
+	): Promise<LaunchInfo> {
+		const client = new LaunchInstanceClient(launchAddress, provider);
+		const [info, totalTokensRequired, totalTokensDeposited, effectiveState, totalBuyers, totalPurchases] = await Promise.all([
+			client.getLaunchInfo(),
+			client.totalTokensRequired(),
+			client.totalTokensDeposited(),
+			client.effectiveState().catch(() => null),
+			client.totalBuyers().catch(() => 0),
+			client.totalPurchases().catch(() => 0),
+		]);
+		return {
+			address: launchAddress,
+			token: info.token,
+			creator: info.creator,
+			curveType: Number(info.curveType) as LaunchInfo['curveType'],
+			state: (effectiveState != null ? Number(effectiveState) : Number(info.state)) as LaunchState,
+			softCap: info.softCap,
+			hardCap: info.hardCap,
+			deadline: info.deadline,
+			totalBaseRaised: info.totalBaseRaised,
+			tokensSold: info.tokensSold,
+			tokensForCurve: info.tokensForCurve,
+			tokensForLP: info.tokensForLP,
+			creatorAllocationBps: info.creatorAllocationBps,
+			currentPrice: info.currentPrice,
+			usdtAddress: info.usdt,
+			startTimestamp: info.startTimestamp,
+			totalTokensRequired,
+			totalTokensDeposited,
+			totalBuyers: Number(totalBuyers),
+			totalPurchases: Number(totalPurchases),
+		} as LaunchInfo;
 	}
 
 	async function loadBadges() {
