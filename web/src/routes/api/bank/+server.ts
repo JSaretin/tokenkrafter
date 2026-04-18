@@ -3,7 +3,18 @@ import type { RequestHandler } from './$types';
 import { supabaseAdmin } from '$lib/supabaseServer';
 import { getBanks } from '$lib/flutterwave';
 
-// GET /api/bank — list Nigerian banks (Flutterwave only, cached in DB)
+// Bank list is extremely stable — new banks get added maybe once a year,
+// and a user seeing a day-old cache is a non-issue (they'd still find
+// their bank). 3 months of browser + Cloudflare caching saves a Supabase
+// round trip on every trade-page load.
+const CACHE_3_MONTHS =
+	'public, max-age=7776000, s-maxage=7776000, stale-while-revalidate=86400';
+
+// Admins who pass ?refresh=true want a fresh Flutterwave fetch — don't let
+// a CDN serve them a stale copy.
+const CACHE_BYPASS = 'private, no-store';
+
+// GET /api/bank — list Nigerian banks (Flutterwave, cached in DB)
 export const GET: RequestHandler = async ({ url }) => {
 	const refresh = url.searchParams.get('refresh') === 'true';
 
@@ -16,7 +27,7 @@ export const GET: RequestHandler = async ({ url }) => {
 			.order('name');
 
 		if (data && data.length > 0) {
-			return json(data);
+			return json(data, { headers: { 'cache-control': CACHE_3_MONTHS } });
 		}
 	}
 
@@ -36,16 +47,22 @@ export const GET: RequestHandler = async ({ url }) => {
 			await supabaseAdmin.from('ng_banks').update({ active: false }).neq('code', '');
 			await supabaseAdmin.from('ng_banks').upsert(rows, { onConflict: 'code' });
 
-			return json(rows.map(b => ({ code: b.code, name: b.name, slug: b.slug })));
+			const payload = rows.map(b => ({ code: b.code, name: b.name, slug: b.slug }));
+			// Refresh path bypasses caches so admin sees the new list immediately.
+			// Non-refresh path that falls through here (DB was empty) gets the
+			// long cache since it's now the canonical answer.
+			return json(payload, {
+				headers: { 'cache-control': refresh ? CACHE_BYPASS : CACHE_3_MONTHS },
+			});
 		}
 	} catch {}
 
-	// Fallback to DB
+	// Fallback to DB (Flutterwave was unreachable / returned empty)
 	const { data } = await supabaseAdmin
 		.from('ng_banks')
 		.select('code, name, slug')
 		.eq('active', true)
 		.order('name');
 
-	return json(data || []);
+	return json(data || [], { headers: { 'cache-control': CACHE_3_MONTHS } });
 };
