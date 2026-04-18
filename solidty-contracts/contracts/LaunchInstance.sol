@@ -176,6 +176,7 @@ contract LaunchInstance is ReentrancyGuard {
     error PathMustEndAtUsdt();
     error StrandedSweepTooEarly();
     error LaunchPaused();
+    error FeeOnTransferNotSupported();
 
     // ── Enums ──────────────────────────────────────────────────
     enum CurveType { Linear, SquareRoot, Quadratic, Exponential }
@@ -394,10 +395,17 @@ contract LaunchInstance is ReentrancyGuard {
         uint256 remaining = totalTokensRequired - totalTokensDeposited;
         uint256 toDeposit = amount > remaining ? remaining : amount;
 
+        // Reject fee-on-transfer tokens — any shortfall desyncs
+        // totalTokensDeposited from actual balance, breaking buy distribution,
+        // refunds, and LP seeding downstream.
+        uint256 balBefore = token.balanceOf(address(this));
         token.safeTransferFrom(msg.sender, address(this), toDeposit);
-        totalTokensDeposited += toDeposit;
+        uint256 received = token.balanceOf(address(this)) - balBefore;
+        if (received != toDeposit) revert FeeOnTransferNotSupported();
 
-        emit TokensDeposited(msg.sender, toDeposit, totalTokensDeposited, totalTokensRequired);
+        totalTokensDeposited += received;
+
+        emit TokensDeposited(msg.sender, received, totalTokensDeposited, totalTokensRequired);
 
         _tryActivate();
     }
@@ -706,8 +714,9 @@ contract LaunchInstance is ReentrancyGuard {
             _buyers.push(buyer);
         }
 
-        // Transfer tokens to buyer
-        token.safeTransfer(buyer, tokensOut);
+        // Transfer tokens to buyer — exact-delta check catches any
+        // fee-on-transfer flipped on after deposit validation.
+        _transferExact(buyer, tokensOut);
 
         emit TokenBought(
             buyer, tokensOut, baseForTokens, buyFee,
@@ -719,6 +728,29 @@ contract LaunchInstance is ReentrancyGuard {
         if (totalBaseRaised >= hardCap || tokensSold >= tokensForCurve) {
             _graduate();
         }
+    }
+
+    /// @dev Transfer `amount` of the launch token to `to` and verify the
+    ///      recipient's balance increased by exactly `amount`. Catches
+    ///      fee-on-transfer or blacklist behavior enabled AFTER the
+    ///      initial deposit check passed (token admin flipping a global
+    ///      tax post-activation). Reverts so accounting stays consistent.
+    function _transferExact(address to, uint256 amount) internal {
+        if (amount == 0) return;
+        uint256 before = token.balanceOf(to);
+        token.safeTransfer(to, amount);
+        uint256 received = token.balanceOf(to) - before;
+        if (received != amount) revert FeeOnTransferNotSupported();
+    }
+
+    /// @dev transferFrom counterpart — pull `amount` into this contract
+    ///      and verify exact receipt.
+    function _transferFromExact(address from, uint256 amount) internal {
+        if (amount == 0) return;
+        uint256 before = token.balanceOf(address(this));
+        token.safeTransferFrom(from, address(this), amount);
+        uint256 received = token.balanceOf(address(this)) - before;
+        if (received != amount) revert FeeOnTransferNotSupported();
     }
 
     // ── Graduate ───────────────────────────────────────────────
@@ -775,7 +807,7 @@ contract LaunchInstance is ReentrancyGuard {
         }
 
         if (platformTokenFee > 0) {
-            token.safeTransfer(platformWallet, platformTokenFee);
+            _transferExact(platformWallet, platformTokenFee);
         }
 
         // Add LP by transferring directly to the pair and calling mint().
@@ -788,8 +820,9 @@ contract LaunchInstance is ReentrancyGuard {
             pair = IUniswapV2Factory(dexFactory).createPair(address(token), address(usdt));
         }
 
-        // Transfer LP amounts directly to the pair
-        token.safeTransfer(pair, tokensForDexLP);
+        // Transfer LP amounts directly to the pair. _transferExact reverts
+        // if the token charges a hidden fee — protects the LP ratio.
+        _transferExact(pair, tokensForDexLP);
         usdt.safeTransfer(pair, usdtForLP);
 
         // Mint LP tokens and burn them — permanent liquidity
@@ -901,7 +934,7 @@ contract LaunchInstance is ReentrancyGuard {
         uint256 balance = token.balanceOf(msg.sender);
         uint256 allowance = token.allowance(msg.sender, address(this));
         if (balance < tokensToReturn || allowance < tokensToReturn) revert ReturnTokensToRefund();
-        token.safeTransferFrom(msg.sender, address(this), tokensToReturn);
+        _transferFromExact(msg.sender, tokensToReturn);
 
         usdt.safeTransfer(msg.sender, refundBase);
 
@@ -930,7 +963,7 @@ contract LaunchInstance is ReentrancyGuard {
         uint256 available = token.balanceOf(address(this));
         if (available == 0) revert NoTokens();
 
-        token.safeTransfer(creator, available);
+        _transferExact(creator, available);
 
         // Clear the factory's tokenToLaunch slot so the creator (or anyone)
         // can re-launch this token. Safe to call repeatedly — the factory
@@ -991,7 +1024,7 @@ contract LaunchInstance is ReentrancyGuard {
         if (claimable == 0) revert NothingToClaim();
 
         creatorClaimed += claimable;
-        token.safeTransfer(creator, claimable);
+        _transferExact(creator, claimable);
 
         emit CreatorClaimed(creator, claimable, creatorClaimed, vested);
     }
