@@ -177,6 +177,8 @@ contract LaunchInstance is ReentrancyGuard {
     error StrandedSweepTooEarly();
     error LaunchPaused();
     error FeeOnTransferNotSupported();
+    error InvalidCurveParams();
+    error InvalidTotalTokens();
 
     // ── Enums ──────────────────────────────────────────────────
     enum CurveType { Linear, SquareRoot, Quadratic, Exponential }
@@ -329,7 +331,17 @@ contract LaunchInstance is ReentrancyGuard {
 
         if (token_ == address(0)) revert InvalidToken();
         if (usdt_ == address(0)) revert InvalidUsdt();
-        if (softCap_ == 0 || hardCap_ < softCap_) revert InvalidCaps();
+        if (totalTokensForLaunch_ == 0) revert InvalidTotalTokens();
+
+        uint8 usdtDec = IERC20Metadata(usdt_).decimals();
+        // Min soft cap: 10 USDT (native decimals). Prevents dust-cap
+        // exploits where softCap=1 + minBuy=1 lets a creator fill cap
+        // for 1 wei and graduate with a broken LP.
+        uint256 minSoftCap = 10 * (10 ** usdtDec);
+        if (softCap_ < minSoftCap || hardCap_ < softCap_) revert InvalidCaps();
+        // Cap hardCap to prevent overflow in maxBuyPerWallet and fee math.
+        if (hardCap_ > 10**30) revert InvalidCaps();
+
         if (durationDays_ < 7 || durationDays_ > 90) revert InvalidDuration();
         if (maxBuyBps_ < 50 || maxBuyBps_ > 500) revert InvalidMaxBuy();
         if (creatorAllocationBps_ > 500) revert InvalidCreatorAlloc();
@@ -348,11 +360,19 @@ contract LaunchInstance is ReentrancyGuard {
             revert InvalidMinBuy();
         }
 
+        // Curve param validation — curveParam1=0 on multiplicative curves
+        // (sqrt/quad/exp) makes tokens free and rugs the curve. Linear
+        // needs at least one of slope/intercept nonzero.
+        if (curveType_ == CurveType.Linear) {
+            if (curveParam1_ == 0 && curveParam2_ == 0) revert InvalidCurveParams();
+        } else {
+            if (curveParam1_ == 0) revert InvalidCurveParams();
+        }
+
         factory = payable(msg.sender);
         creator = creator_;
         token = IERC20(token_);
         usdt = IERC20(usdt_);
-        uint8 usdtDec = IERC20Metadata(usdt_).decimals();
         baseScale = usdtDec < 18 ? 10 ** (18 - usdtDec) : 1;
         curveType = curveType_;
         curveParam1 = curveParam1_;
