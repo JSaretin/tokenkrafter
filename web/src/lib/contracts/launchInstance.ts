@@ -18,7 +18,7 @@ import {
 	toCreatorClaimedEventView,
 	toRefundingEnabledEventView,
 	toCreatorReclaimEventView,
-} from './structure/launchInstance';
+} from '../structure/launchInstance';
 import type {
 	LaunchInfoRaw,
 	LaunchInfoView,
@@ -53,7 +53,7 @@ import type {
 	CreatorReclaimEventView,
 	PausedChangedEventRaw,
 	PausedChangedEventView,
-} from './structure/launchInstance';
+} from '../structure/launchInstance';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  ABI — comprehensive surface for LaunchInstance clones.

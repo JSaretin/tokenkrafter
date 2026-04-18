@@ -8,7 +8,7 @@
 	import { friendlyError } from '$lib/errorDecoder';
 	import { ERC20_DECIMALS_ABI } from '$lib/commonABIs';
 	import { WithdrawStatus, withdrawStatusLabel } from '$lib/structure/tradeRouter';
-	import { TradeRouterClient } from '$lib/TradeRouterClient';
+	import { TradeRouterClient } from '$lib/contracts/tradeRouter';
 	import WithdrawalStatusModal from '$lib/WithdrawalStatusModal.svelte';
 	import { apiFetch } from '$lib/apiFetch';
 	import { queryTradeLens, getInstantQuote, getWeth, isCacheLoaded, getUsdValue, getCachedToken, findBestRoute as findBestRouteLocal, type TaxInfo, type SwapRoute } from '$lib/tradeLens';

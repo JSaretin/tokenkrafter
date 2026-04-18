@@ -2,7 +2,7 @@
 	import { ethers } from 'ethers';
 	import { WithdrawStatus, withdrawStatusLabel, withdrawStatusColor } from '$lib/structure/tradeRouter';
 	import { t } from '$lib/i18n';
-	import type { WithdrawalRecord } from '$lib/TradeRouterClient';
+	import type { WithdrawalRecord } from '$lib/contracts/tradeRouter';
 
 	interface DisplayWithdrawal extends Pick<WithdrawalRecord, 'grossAmount' | 'createdAt' | 'expiresAt' | 'status'> {
 		withdraw_id?: number | string;

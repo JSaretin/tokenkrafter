@@ -1,11 +1,11 @@
 import { ethers } from 'ethers';
-import { TRADE_ROUTER_ABI } from './tradeRouter';
+import { TRADE_ROUTER_ABI } from '../tradeRouter';
 import type {
 	WithdrawRequestRaw,
 	RouterStateRaw,
 	PreviewDepositRaw,
 	WithdrawRequestedEventRaw,
-} from './structure/tradeRouter';
+} from '../structure/tradeRouter';
 
 /**
  * WithdrawRequestRaw's timestamps come back as bigint from ethers; the client

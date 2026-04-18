@@ -25,8 +25,8 @@ import {
 	type LaunchesPausedEventRaw,
 	type LaunchesPausedEventView,
 	type CurveDefaultsUpdatedEventRaw,
-} from './structure/launchpadFactory';
-import { toCurveDefaultsView, toLaunchDayStatsView } from './structure/launchpadFactory';
+} from '../structure/launchpadFactory';
+import { toCurveDefaultsView, toLaunchDayStatsView } from '../structure/launchpadFactory';
 
 /**
  * Self-contained ABI for LaunchpadFactory. The legacy ABI in `./launchpad` is

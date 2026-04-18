@@ -5,7 +5,7 @@
 	import type { PageData } from './$types';
 	import type { TaxDistributionRow, ExplorePool, Eip1193Provider, ImportedTokenRow } from '$lib/structure';
 	import { toExploreView } from '$lib/structure/views/exploreView';
-	import { PlatformTokenClient, type ProtectionSettings } from '$lib/PlatformTokenClient';
+	import { PlatformTokenClient, type ProtectionSettings } from '$lib/contracts/platformToken';
 	import TradeWarningBanner from './lib/TradeWarningBanner.svelte';
 	import TokenHero from './lib/TokenHero.svelte';
 	import FeatureBadges from './lib/FeatureBadges.svelte';

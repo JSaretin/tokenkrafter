@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
-	import type { ProtectionSettings } from '$lib/PlatformTokenClient';
+	import type { ProtectionSettings } from '$lib/contracts/platformToken';
 
 	let {
 		protection,

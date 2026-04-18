@@ -1,5 +1,5 @@
 import { ethers } from 'ethers';
-import { ERC20_ABI } from './tokenCrafter';
+import { ERC20_ABI } from '../tokenCrafter';
 import {
 	TokenType,
 	computeTypeKey as computeTypeKeyStruct,
@@ -14,7 +14,7 @@ import {
 	toTokenInfoView,
 	toReferralStatsView,
 	toCreationFeesView,
-} from './structure/tokenFactory';
+} from '../structure/tokenFactory';
 import type {
 	CreateTokenParamsInput,
 	CreateTokenParamsRaw,
@@ -38,7 +38,7 @@ import type {
 	TokenCreatedEventView,
 	ImplementationUpdatedEventRaw,
 	ImplementationUpdatedEventView,
-} from './structure/tokenFactory';
+} from '../structure/tokenFactory';
 
 /**
  * TODO: extract this ABI into `./tokenFactory.ts` as `TOKEN_FACTORY_ABI` to

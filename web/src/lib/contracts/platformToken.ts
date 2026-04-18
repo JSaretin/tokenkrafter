@@ -1,5 +1,5 @@
 import { ethers } from 'ethers';
-import type { TaxDistributionRow } from './structure';
+import type { TaxDistributionRow } from '../structure';
 
 /**
  * Minimal ABI for protection + tax-distribution reads on platform tokens

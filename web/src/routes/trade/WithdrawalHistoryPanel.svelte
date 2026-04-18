@@ -3,7 +3,7 @@
 	import { supabase } from '$lib/supabaseClient';
 	import type { RealtimeChannel } from '@supabase/supabase-js';
 	import { apiFetch } from '$lib/apiFetch';
-	import { TradeRouterClient, type WithdrawalRecord } from '$lib/TradeRouterClient';
+	import { TradeRouterClient, type WithdrawalRecord } from '$lib/contracts/tradeRouter';
 	import type { SupportedNetwork, DbWithdrawalRow, MergedWithdrawal } from '$lib/structure';
 	import { WithdrawStatus } from '$lib/structure/tradeRouter';
 	import { t } from '$lib/i18n';
