@@ -168,6 +168,15 @@ export type AuthorizedRouterUpdatedEventView = AuthorizedRouterUpdatedEventRaw;
 export interface AffiliateUpdatedEventRaw { previous: string; current: string; }
 export type AffiliateUpdatedEventView = AffiliateUpdatedEventRaw;
 
+export interface GlobalPauseChangedEventRaw { paused: boolean; }
+export type GlobalPauseChangedEventView = GlobalPauseChangedEventRaw;
+
+export interface LaunchPausedEventRaw { launch: string; paused: boolean; }
+export type LaunchPausedEventView = LaunchPausedEventRaw;
+
+export interface LaunchesPausedEventRaw { fromIndex: bigint; toIndex: bigint; paused: boolean; }
+export interface LaunchesPausedEventView { fromIndex: number; toIndex: number; paused: boolean; }
+
 // ════════════════════════════════════════════════════════════════════════════
 //  Converters — writes
 // ════════════════════════════════════════════════════════════════════════════
@@ -295,6 +304,10 @@ export function toLaunchFeePaidEventView(raw: LaunchFeePaidEventRaw, usdtDecimal
 	return { payer: raw.payer, amount: ethers.formatUnits(raw.amount, usdtDecimals) };
 }
 
+export function toLaunchesPausedEventView(raw: LaunchesPausedEventRaw): LaunchesPausedEventView {
+	return { fromIndex: Number(raw.fromIndex), toIndex: Number(raw.toIndex), paused: raw.paused };
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 //  Event signatures + errors + re-exports
 // ════════════════════════════════════════════════════════════════════════════
@@ -308,6 +321,9 @@ export const LAUNCHPAD_FACTORY_EVENT_SIGNATURES = {
 	LaunchFeePaid: 'LaunchFeePaid(address,uint256)',
 	AuthorizedRouterUpdated: 'AuthorizedRouterUpdated(address)',
 	AffiliateUpdated: 'AffiliateUpdated(address,address)',
+	GlobalPauseChanged: 'GlobalPauseChanged(bool)',
+	LaunchPaused: 'LaunchPaused(address,bool)',
+	LaunchesPaused: 'LaunchesPaused(uint256,uint256,bool)',
 } as const;
 
 export const LAUNCHPAD_FACTORY_ERRORS = [

@@ -329,6 +329,9 @@ export interface CreatorWithdrawEventView { creator: string; tokenAmount: string
 export interface CreatorReclaimEventRaw { creator: string; tokenAmount: bigint; }
 export interface CreatorReclaimEventView { creator: string; tokenAmount: string; }
 
+export interface PausedChangedEventRaw { paused: boolean; }
+export type PausedChangedEventView = PausedChangedEventRaw;
+
 // ════════════════════════════════════════════════════════════════════════════
 //  Converters — helpers
 // ════════════════════════════════════════════════════════════════════════════
@@ -577,6 +580,7 @@ export const LAUNCH_INSTANCE_EVENT_SIGNATURES = {
 	RefundingEnabled: 'RefundingEnabled(address,uint256,uint256)',
 	CreatorWithdraw: 'CreatorWithdraw(address,uint256)',
 	CreatorReclaim: 'CreatorReclaim(address,uint256)',
+	PausedChanged: 'PausedChanged(bool)',
 } as const;
 
 export const LAUNCH_INSTANCE_ERRORS = [
@@ -589,5 +593,6 @@ export const LAUNCH_INSTANCE_ERRORS = [
 	'NoTokens', 'NotGraduated', 'NoAllocation', 'CliffNotReached', 'NothingToClaim',
 	'NoETH', 'TransferFailed', 'InsufficientTokensOut', 'LaunchNotStarted',
 	'InvalidStartTimestamp', 'InvalidPath', 'PathMustEndAtUsdt', 'StrandedSweepTooEarly',
+	'LaunchPaused', 'FeeOnTransferNotSupported', 'InvalidCurveParams', 'InvalidTotalTokens',
 	'AlreadyInitialized', 'BelowMinBuy', 'InvalidMinBuy',
 ] as const;
