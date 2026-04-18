@@ -35,6 +35,7 @@
 	import SuccessScreen from './lib/SuccessScreen.svelte';
 	import DeployProgressStepper from './lib/DeployProgressStepper.svelte';
 	import DepositInfo from './lib/DepositInfo.svelte';
+	import PaymentMethodSelector from './lib/PaymentMethodSelector.svelte';
 	import { goto } from '$app/navigation';
 	import Tooltip from '$lib/Tooltip.svelte';
 
@@ -430,6 +431,20 @@
 	let payImportAddr = $state('');
 	let payImportBusy = $state(false);
 	let payImportError = $state<string | null>(null);
+
+	// View: format payment options for PaymentMethodSelector
+	let paymentMethodTokens = $derived(paymentOptions.map((opt, i) => {
+		const bal = paymentBalances[i] ?? 0n;
+		const quote = paymentQuotes[i] ?? 0n;
+		return {
+			address: opt.address,
+			symbol: opt.symbol,
+			name: opt.name,
+			balanceDisplay: parseFloat(ethers.formatUnits(bal, opt.decimals)).toFixed(4),
+			quoteDisplay: quote > 0n ? parseFloat(ethers.formatUnits(quote * 101n / 100n, opt.decimals)).toFixed(4) : '—',
+			logoUrl: COIN_LOGOS[opt.symbol.toUpperCase()] ?? null,
+		};
+	}));
 
 	// Preloaded fee cache: keyed by "chainId-typeKey".
 	// USDT-only model: each entry holds the single USDT creation fee and
@@ -1728,74 +1743,16 @@
 						</div>
 
 						<!-- Payment method modal (styled like the trade page token selector) -->
-						{#if showPaymentModal}
-							<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-							<div class="pm-backdrop" onclick={() => showPaymentModal = false}
-								role="dialog" aria-modal="true"
-							>
-								<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-								<div class="pm-modal" onclick={(e) => e.stopPropagation()}>
-									<div class="pm-header">
-										<h3>Select payment</h3>
-										<button class="pm-close" onclick={() => showPaymentModal = false}>
-											<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-										</button>
-									</div>
-
-									<input
-										class="input-field pm-search"
-										placeholder="0x... paste token address to import"
-										bind:value={payImportAddr}
-										disabled={payImportBusy}
-										onkeydown={(e) => { if (e.key === 'Enter') importPaymentToken(); }}
-									/>
-									{#if payImportError}
-										<p class="pm-import-error">{payImportError}</p>
-									{/if}
-									{#if payImportAddr.trim() && ethers.isAddress(payImportAddr.trim())}
-										<div class="pm-import-row">
-											<button class="pm-import-btn" disabled={payImportBusy} onclick={importPaymentToken}>
-												{payImportBusy ? 'Resolving...' : 'Import token'}
-											</button>
-										</div>
-									{/if}
-
-									<div class="pm-list">
-										{#if quoteFeeLoading}
-											<div class="pm-loading">
-												<div class="pm-spinner"></div>
-												<span>Loading quotes...</span>
-											</div>
-										{/if}
-										{#each paymentOptions as opt, i}
-											{@const bal = paymentBalances[i] ?? 0n}
-											{@const quote = paymentQuotes[i] ?? 0n}
-											{@const fmtBal = parseFloat(ethers.formatUnits(bal, opt.decimals)).toFixed(4)}
-											{@const fmtQuote = quote > 0n ? parseFloat(ethers.formatUnits(quote * 101n / 100n, opt.decimals)).toFixed(4) : '—'}
-											<button class="pm-item" class:pm-item-active={selectedPaymentIndex === i}
-												onclick={() => { selectedPaymentIndex = i; showPaymentModal = false; }}>
-												{#if COIN_LOGOS[opt.symbol.toUpperCase()]}
-													<img src={COIN_LOGOS[opt.symbol.toUpperCase()]} alt={opt.symbol} class="pm-logo" />
-												{:else}
-													<div class="pm-logo-placeholder">{opt.symbol.charAt(0)}</div>
-												{/if}
-												<div class="pm-info">
-													<span class="pm-sym">{opt.symbol}</span>
-													<span class="pm-name">{opt.name}</span>
-												</div>
-												<div class="pm-right">
-													<span class="pm-fee">{fmtQuote}</span>
-													<span class="pm-bal">{fmtBal}</span>
-												</div>
-												{#if selectedPaymentIndex === i}
-													<span class="pm-check">&#10003;</span>
-												{/if}
-											</button>
-										{/each}
-									</div>
-								</div>
-							</div>
-						{/if}
+						<PaymentMethodSelector
+							bind:show={showPaymentModal}
+							tokens={paymentMethodTokens}
+							selectedAddress={paymentOptions[selectedPaymentIndex]?.address ?? ''}
+							loading={quoteFeeLoading}
+							importBusy={payImportBusy}
+							importError={payImportError}
+							onSelect={(_tok, i) => { selectedPaymentIndex = i; showPaymentModal = false; }}
+							onImport={(addr) => { payImportAddr = addr; importPaymentToken(); }}
+						/>
 					{/if}
 				</div>
 
