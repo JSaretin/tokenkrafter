@@ -104,11 +104,53 @@ contract LaunchpadFactory is Ownable, ReentrancyGuard {
     address public affiliate;
     event AffiliateUpdated(address indexed previous, address indexed current);
 
+    /// @notice Global kill switch — when true, ALL launch instances block
+    ///         new buys and manual graduation. Refunds remain open so users
+    ///         can always exit. Scoped for platform-wide incident response.
+    bool public globalPause;
+    event GlobalPauseChanged(bool paused);
+    event LaunchPaused(address indexed launch, bool paused);
+    event LaunchesPaused(uint256 fromIndex, uint256 toIndex, bool paused);
+
     /// @notice Owner-only. Points launches at a (new) Affiliate contract.
     ///         Per-launch instances read this dynamically at fee time.
     function setAffiliate(address aff) external onlyOwner {
         emit AffiliateUpdated(affiliate, aff);
         affiliate = aff;
+    }
+
+    /// @notice Global kill switch. Owner-only. When true, every launch
+    ///         instance refuses new buys and manual graduation via the
+    ///         `factory.globalPause()` check they run before each buy.
+    ///         Single tx, instant platform-wide stop. Refunds still work.
+    function setGlobalPause(bool paused_) external onlyOwner {
+        globalPause = paused_;
+        emit GlobalPauseChanged(paused_);
+    }
+
+    /// @notice Emergency pause for a specific launch clone. Owner-only.
+    ///         When paused, new buys and manual graduation are blocked
+    ///         on that launch; refunds still work so users can always exit.
+    function pauseLaunch(address launch_, bool paused_) external onlyOwner {
+        if (launch_ == address(0)) revert InvalidToken();
+        LaunchInstance(payable(launch_)).setPaused(paused_);
+        emit LaunchPaused(launch_, paused_);
+    }
+
+    /// @notice Paginated per-launch pause. Iterates `[offset, offset+limit)`
+    ///         bounded by `launches.length`. Use for targeted incident
+    ///         response on a subset of launches (e.g. all launches of a
+    ///         compromised external token) when globalPause is too broad.
+    function pauseLaunches(uint256 offset, uint256 limit, bool paused_) external onlyOwner {
+        uint256 total = launches.length;
+        if (offset >= total) return;
+        uint256 end = offset + limit;
+        if (end > total) end = total;
+        for (uint256 i = offset; i < end;) {
+            launches[i].setPaused(paused_);
+            unchecked { ++i; }
+        }
+        emit LaunchesPaused(offset, end, paused_);
     }
 
     // ── Constructor ────────────────────────────────────────────

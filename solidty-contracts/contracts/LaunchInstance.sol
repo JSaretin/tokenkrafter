@@ -15,6 +15,7 @@ import "./shared/DexInterfaces.sol";
 interface ILaunchpadFactory {
     function platformWallet() external view returns (address);
     function affiliate() external view returns (address);
+    function globalPause() external view returns (bool);
     function recordGraduation(address launch_) external;
     function clearTokenLaunch(address token_) external;
 }
@@ -174,6 +175,7 @@ contract LaunchInstance is ReentrancyGuard {
     error InvalidPath();
     error PathMustEndAtUsdt();
     error StrandedSweepTooEarly();
+    error LaunchPaused();
 
     // ── Enums ──────────────────────────────────────────────────
     enum CurveType { Linear, SquareRoot, Quadratic, Exponential }
@@ -231,6 +233,11 @@ contract LaunchInstance is ReentrancyGuard {
     uint256 public constant GRADUATION_FEE_BPS = 100;   // 1% on graduation
     uint256 public constant BPS = 10000;
 
+    /// @notice Emergency pause — factory-controlled per-launch circuit breaker.
+    ///         When true, `buy()` and manual `graduate()` revert. Refunds
+    ///         open even during Active state (emergency exit).
+    bool public paused;
+
     // ── State ──────────────────────────────────────────────────
     LaunchState public state;
     uint256 public tokensSold;
@@ -276,6 +283,7 @@ contract LaunchInstance is ReentrancyGuard {
     event RefundingEnabled(address indexed token, uint256 totalRaised, uint256 softCap);
     event CreatorWithdraw(address indexed creator, uint256 tokenAmount);
     event CreatorReclaim(address indexed creator, uint256 tokenAmount);
+    event PausedChanged(bool paused);
 
     // ── Modifiers ──────────────────────────────────────────────
     modifier onlyActive() {
@@ -455,6 +463,15 @@ contract LaunchInstance is ReentrancyGuard {
         emit LaunchActivated(address(token), deadline, softCap, hardCap, tokensForCurve);
     }
 
+    /// @notice Factory-only emergency pause. When true, `buy()` and manual
+    ///         `graduate()` revert. Refunds remain open so users can always
+    ///         exit. Intended for post-deployment incident response.
+    function setPaused(bool paused_) external {
+        if (msg.sender != factory) revert OnlyFactory();
+        paused = paused_;
+        emit PausedChanged(paused_);
+    }
+
     /// @notice Called by the factory after tokens have been transferred directly
     ///         to this contract (e.g. during one-click createTokenAndLaunch flow).
     ///         Only callable by the LaunchpadFactory that deployed this instance.
@@ -538,6 +555,7 @@ contract LaunchInstance is ReentrancyGuard {
         uint256 minTokensOut,
         address ref
     ) internal nonReentrant {
+        if (paused || ILaunchpadFactory(factory).globalPause()) revert LaunchPaused();
         _autoResolve();
         if (state != LaunchState.Active) revert NotActive();
         if (amountIn == 0) revert ZeroAmount();
@@ -708,6 +726,7 @@ contract LaunchInstance is ReentrancyGuard {
     /// @notice Graduate to DEX. Creator can call after soft cap, or auto on hard cap / sell-out.
     ///         After deadline, anyone can trigger graduation if soft cap was met (prevents fund lock).
     function graduate() external nonReentrant onlyActive {
+        if (paused || ILaunchpadFactory(factory).globalPause()) revert LaunchPaused();
         _autoResolve();
         if (state != LaunchState.Active) revert NotActive();
         if (totalBaseRaised < softCap) revert SoftCapNotReached();
@@ -850,7 +869,10 @@ contract LaunchInstance is ReentrancyGuard {
     ///         someone else's entitlement.
     function refund(uint256 tokensToReturn) external nonReentrant {
         _autoResolve();
-        if (state != LaunchState.Refunding) revert NotRefunding();
+        // Refunds available in Refunding state OR when the launch is paused
+        // (emergency exit path — factory-flipped pause gives users an
+        // immediate way out without waiting for the deadline).
+        if (state != LaunchState.Refunding && !paused) revert NotRefunding();
         uint256 paid = basePaid[msg.sender];
         if (paid == 0) revert NothingToRefund();
 
