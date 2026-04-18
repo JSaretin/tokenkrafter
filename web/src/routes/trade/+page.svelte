@@ -630,11 +630,8 @@
 		resolveTimeout = setTimeout(async () => {
 			bankResolving = true;
 			try {
-				const res = await fetch('/api/bank/resolve', {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({ account_number: acc, account_bank: code })
-				});
+				const qs = new URLSearchParams({ account_number: acc, account_bank: code });
+				const res = await fetch(`/api/bank/resolve?${qs}`);
 				const data = await res.json();
 				if (data.account_name) {
 					bankName = data.account_name;
