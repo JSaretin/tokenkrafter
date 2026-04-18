@@ -115,83 +115,83 @@
 {#if open}
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div class="tpm-backdrop" onclick={close} role="dialog" aria-modal="true">
-		<div class="tpm-modal" onclick={(e) => e.stopPropagation()}>
-			<div class="tpm-header">
-				<h3>{title}</h3>
-				<button class="tpm-close" onclick={close}>
+	<div class="fixed inset-0 z-[100] bg-black/70 backdrop-blur-[4px] flex items-start justify-center py-[60px] px-4 max-[639px]:items-end max-[639px]:p-0" onclick={close} role="dialog" aria-modal="true">
+		<div class="w-full max-w-[420px] max-h-[70vh] bg-background border border-line rounded-[20px] overflow-hidden flex flex-col max-[639px]:max-w-full max-[639px]:rounded-t-[20px] max-[639px]:rounded-b-none max-[639px]:max-h-[85vh]" onclick={(e) => e.stopPropagation()}>
+			<div class="flex justify-between items-center py-4 px-5 border-b border-line">
+				<h3 class="font-display text-base font-bold text-heading m-0">{title}</h3>
+				<button class="bg-none border-none text-muted cursor-pointer p-1 rounded-lg transition-all hover:text-foreground hover:bg-surface-hover" onclick={close}>
 					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
 				</button>
 			</div>
 
 			<input
-				class="input-field tpm-search"
+				class="input-field mx-4 my-3 w-[calc(100%-32px)]"
 				placeholder="Search name, symbol, or paste address..."
 				bind:value={search}
 				autofocus
 			/>
 
-			<div class="tpm-list">
+			<div class="tpm-list overflow-y-auto px-2 pb-2 h-[60vh] sm:h-[80vh]">
 				<!-- Import by address (pasted) -->
 				{#if ethers.isAddress(search.trim()) && !filtered.find(t => t.address.toLowerCase() === search.trim().toLowerCase())}
 					{#if pastedLoading}
-						<div class="tpm-item" style="cursor: default; opacity: 0.6;">
-							<div class="tpm-icon tpm-icon-custom">
-								<div class="tpm-spinner"></div>
+						<div class="flex items-center gap-[10px] w-full py-[10px] px-3 rounded-xl text-left" style="cursor: default; opacity: 0.6;">
+							<div class="w-9 h-9 rounded-full shrink-0 flex items-center justify-center bg-[rgba(139,92,246,0.1)] text-[#a78bfa] border border-[rgba(139,92,246,0.2)] font-display text-sm font-bold">
+								<div class="w-4 h-4 border-2 border-[rgba(139,92,246,0.2)] border-t-[#a78bfa] rounded-full animate-spin"></div>
 							</div>
-							<div class="tpm-info">
-								<span class="tpm-symbol">Loading...</span>
-								<span class="tpm-addr">{search.trim().slice(0, 6)}...{search.trim().slice(-4)}</span>
+							<div class="flex-1 min-w-0">
+								<span class="block font-mono text-[13px] font-bold text-heading">Loading...</span>
+								<span class="block font-mono text-[10px] text-dim shrink-0">{search.trim().slice(0, 6)}...{search.trim().slice(-4)}</span>
 							</div>
 						</div>
 					{:else if pastedMeta}
-						<button class="tpm-item" onclick={importPasted}>
+						<button class="flex items-center gap-[10px] w-full py-[10px] px-3 rounded-xl border-none bg-transparent cursor-pointer transition-all text-left hover:bg-surface-hover" onclick={importPasted}>
 							{#if pastedMeta.logoUrl}
-								<img src={pastedMeta.logoUrl} alt="" class="tpm-icon" />
+								<img src={pastedMeta.logoUrl} alt="" class="w-9 h-9 rounded-full object-cover shrink-0" />
 							{:else}
-								<div class="tpm-icon tpm-icon-custom">{pastedMeta.symbol.charAt(0)}</div>
+								<div class="w-9 h-9 rounded-full shrink-0 flex items-center justify-center bg-[rgba(139,92,246,0.1)] text-[#a78bfa] border border-[rgba(139,92,246,0.2)] font-display text-sm font-bold">{pastedMeta.symbol.charAt(0)}</div>
 							{/if}
-							<div class="tpm-info">
-								<span class="tpm-symbol">{pastedMeta.symbol}</span>
-								<span class="tpm-name">{pastedMeta.name}</span>
+							<div class="flex-1 min-w-0">
+								<span class="block font-mono text-[13px] font-bold text-heading">{pastedMeta.symbol}</span>
+								<span class="block font-mono text-[10px] text-muted whitespace-nowrap overflow-hidden text-ellipsis">{pastedMeta.name}</span>
 							</div>
-							<span class="tpm-import-badge">Import</span>
+							<span class="font-mono text-[10px] font-bold text-[#a78bfa] bg-[rgba(139,92,246,0.1)] border border-[rgba(139,92,246,0.2)] py-[3px] px-2 rounded-md shrink-0">Import</span>
 						</button>
 					{:else}
-						<button class="tpm-item" onclick={importPasted}>
-							<div class="tpm-icon tpm-icon-custom">?</div>
-							<div class="tpm-info">
-								<span class="tpm-symbol">Import Token</span>
-								<span class="tpm-addr">{search.trim().slice(0, 6)}...{search.trim().slice(-4)}</span>
+						<button class="flex items-center gap-[10px] w-full py-[10px] px-3 rounded-xl border-none bg-transparent cursor-pointer transition-all text-left hover:bg-surface-hover" onclick={importPasted}>
+							<div class="w-9 h-9 rounded-full shrink-0 flex items-center justify-center bg-[rgba(139,92,246,0.1)] text-[#a78bfa] border border-[rgba(139,92,246,0.2)] font-display text-sm font-bold">?</div>
+							<div class="flex-1 min-w-0">
+								<span class="block font-mono text-[13px] font-bold text-heading">Import Token</span>
+								<span class="block font-mono text-[10px] text-dim shrink-0">{search.trim().slice(0, 6)}...{search.trim().slice(-4)}</span>
 							</div>
 						</button>
 					{/if}
 				{/if}
 
 				{#each filtered as token}
-					<button class="tpm-item" onclick={() => pick(token)}>
+					<button class="flex items-center gap-[10px] w-full py-[10px] px-3 rounded-xl border-none bg-transparent cursor-pointer transition-all text-left hover:bg-surface-hover" onclick={() => pick(token)}>
 						{#if token.logoUrl || getKnownLogo(token.symbol)}
-							<img src={token.logoUrl || getKnownLogo(token.symbol)} alt="" class="tpm-icon" />
+							<img src={token.logoUrl || getKnownLogo(token.symbol)} alt="" class="w-9 h-9 rounded-full object-cover shrink-0" />
 						{:else}
-							<div class="tpm-icon tpm-icon-placeholder">
+							<div class="w-9 h-9 rounded-full shrink-0 flex items-center justify-center bg-[rgba(0,210,255,0.08)] text-brand-cyan border border-[rgba(0,210,255,0.15)] font-display text-sm font-bold">
 								{token.symbol.charAt(0)}
 							</div>
 						{/if}
-						<div class="tpm-info">
-							<span class="tpm-symbol">{token.symbol}</span>
-							<span class="tpm-name">{token.name}</span>
+						<div class="flex-1 min-w-0">
+							<span class="block font-mono text-[13px] font-bold text-heading">{token.symbol}</span>
+							<span class="block font-mono text-[10px] text-muted whitespace-nowrap overflow-hidden text-ellipsis">{token.name}</span>
 						</div>
 						{#if token.balance !== undefined && token.balance > 0n}
-							<span class="tpm-balance">{formatBalance(token.balance, token.decimals)}</span>
+							<span class="font-mono text-[11px] font-bold text-foreground shrink-0">{formatBalance(token.balance, token.decimals)}</span>
 						{/if}
 						{#if token.address !== ethers.ZeroAddress}
-							<span class="tpm-addr">{token.address.slice(0, 6)}...{token.address.slice(-4)}</span>
+							<span class="font-mono text-[10px] text-dim shrink-0">{token.address.slice(0, 6)}...{token.address.slice(-4)}</span>
 						{/if}
 					</button>
 				{/each}
 
 				{#if filtered.length === 0 && !ethers.isAddress(search.trim())}
-					<p class="tpm-empty">No tokens found</p>
+					<p class="text-center p-5 text-muted font-mono text-xs">No tokens found</p>
 				{/if}
 			</div>
 		</div>
@@ -199,92 +199,8 @@
 {/if}
 
 <style>
-	.tpm-backdrop {
-		position: fixed; inset: 0; z-index: 100; background: rgba(0,0,0,0.7);
-		backdrop-filter: blur(4px); display: flex; align-items: flex-start;
-		justify-content: center; padding: 60px 16px;
-	}
-	.tpm-modal {
-		width: 100%; max-width: 420px; max-height: 70vh;
-		background: var(--bg); border: 1px solid var(--border);
-		border-radius: 20px; overflow: hidden; display: flex; flex-direction: column;
-	}
-	.tpm-header {
-		display: flex; justify-content: space-between; align-items: center;
-		padding: 16px 20px; border-bottom: 1px solid var(--border);
-	}
-	.tpm-header h3 {
-		font-family: 'Syne', sans-serif; font-size: 16px; font-weight: 700;
-		color: var(--text-heading); margin: 0;
-	}
-	.tpm-close {
-		background: none; border: none; color: var(--text-muted); cursor: pointer;
-		padding: 4px; border-radius: 8px; transition: all 150ms;
-	}
-	.tpm-close:hover { color: var(--text); background: var(--bg-surface-hover); }
-	.tpm-search { margin: 12px 16px; width: calc(100% - 32px); }
-
 	.tpm-list {
-		overflow-y: auto; padding: 0 8px 8px;
-		scrollbar-width: thin; scrollbar-color: var(--bg-surface-hover) transparent;
-		height: 60vh;
-	}
-	@media (min-width: 640px) {
-		.tpm-list { height: 80vh; }
-	}
-	.tpm-item {
-		display: flex; align-items: center; gap: 10px; width: 100%;
-		padding: 10px 12px; border-radius: 12px; border: none;
-		background: transparent; cursor: pointer; transition: all 150ms; text-align: left;
-	}
-	.tpm-item:hover { background: var(--bg-surface-hover); }
-	.tpm-icon {
-		width: 36px; height: 36px; border-radius: 50%; object-fit: cover; flex-shrink: 0;
-	}
-	.tpm-icon-placeholder {
-		display: flex; align-items: center; justify-content: center;
-		background: rgba(0,210,255,0.08); color: #00d2ff; border: 1px solid rgba(0,210,255,0.15);
-		font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700;
-	}
-	.tpm-icon-custom {
-		display: flex; align-items: center; justify-content: center;
-		background: rgba(139,92,246,0.1); color: #a78bfa; border: 1px solid rgba(139,92,246,0.2);
-		font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700;
-	}
-	.tpm-spinner {
-		width: 16px; height: 16px; border: 2px solid rgba(139,92,246,0.2);
-		border-top-color: #a78bfa; border-radius: 50%; animation: tpm-spin 0.8s linear infinite;
-	}
-	@keyframes tpm-spin { to { transform: rotate(360deg); } }
-	.tpm-import-badge {
-		font-family: 'Space Mono', monospace; font-size: 10px; font-weight: 700;
-		color: #a78bfa; background: rgba(139,92,246,0.1); border: 1px solid rgba(139,92,246,0.2);
-		padding: 3px 8px; border-radius: 6px; flex-shrink: 0;
-	}
-	.tpm-info { flex: 1; min-width: 0; }
-	.tpm-symbol {
-		display: block; font-family: 'Space Mono', monospace; font-size: 13px;
-		font-weight: 700; color: var(--text-heading);
-	}
-	.tpm-name {
-		display: block; font-family: 'Space Mono', monospace; font-size: 10px;
-		color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-	}
-	.tpm-balance {
-		font-family: 'Space Mono', monospace; font-size: 11px; font-weight: 700;
-		color: var(--text); flex-shrink: 0;
-	}
-	.tpm-addr {
-		font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text-dim); flex-shrink: 0;
-	}
-	.tpm-empty {
-		text-align: center; padding: 20px; color: var(--text-muted);
-		font-family: 'Space Mono', monospace; font-size: 12px;
-	}
-
-	/* Mobile bottom-sheet */
-	@media (max-width: 639px) {
-		.tpm-backdrop { align-items: flex-end; padding: 0; }
-		.tpm-modal { max-width: 100%; border-radius: 20px 20px 0 0; max-height: 85vh; }
+		scrollbar-width: thin;
+		scrollbar-color: var(--color-surface-hover) transparent;
 	}
 </style>

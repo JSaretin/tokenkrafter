@@ -227,21 +227,21 @@
 		<!-- Connected-user dashboard summary (shown ABOVE marketing copy so
 		     it's the first thing a returning affiliate sees). The fuller
 		     stats/claim UI still lives further down in the page. -->
-		<section class="section-top">
+		<section class="pt-5 pb-2">
 			<div class="card p-6">
 				<div class="flex items-start justify-between gap-3 flex-wrap mb-4">
 					<div>
 						<div class="text-[10px] font-mono uppercase tracking-widest text-emerald-400">Your affiliate dashboard</div>
-						<h2 class="syne text-xl font-bold text-white mt-1">Welcome back</h2>
+						<h2 class="font-display text-xl font-bold text-heading mt-1">Welcome back</h2>
 					</div>
-					<a href="#affiliate-full-dashboard" class="text-xs font-mono text-cyan-400 hover:underline">View full stats →</a>
+					<a href="#affiliate-full-dashboard" class="text-xs font-mono text-brand-cyan hover:underline">View full stats →</a>
 				</div>
 
 				<!-- Referral link (no backend required) -->
 				<div class="label-text mb-2">Your referral link</div>
 				<div class="flex gap-2 items-stretch mb-4">
-					<div class="ref-link-box flex-1 flex items-center px-4 py-3 rounded-lg overflow-hidden" style="background: var(--bg-surface-input); border: 1px solid var(--border-input)">
-						<span class="text-sm font-mono truncate" style="color: var(--text)">{referralLink}</span>
+					<div class="min-w-0 flex-1 flex items-center px-4 py-3 rounded-lg overflow-hidden bg-surface-input border border-line-input">
+						<span class="text-sm font-mono truncate text-foreground">{referralLink}</span>
 					</div>
 					<button onclick={copyLink} class="btn-primary text-sm px-5 flex-shrink-0 cursor-pointer">
 						{copied ? $t('aff.copied') : $t('aff.copy')}
@@ -253,22 +253,22 @@
 				     wire "paid vs pending" counts here. The contract gives total earned +
 				     pending USDT; number-of-referrals = totalReferred. -->
 				<div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-					<div class="summary-stat">
-						<div class="summary-label">Referrals</div>
-						<div class="summary-value">{loading ? '—' : totalReferred.toString()}</div>
+					<div class="px-3 py-2.5 rounded-[10px] bg-white/2 border border-white/5">
+						<div class="font-mono text-[9px] text-white/35 uppercase tracking-[0.06em]">Referrals</div>
+						<div class="font-display text-[1.05rem] font-bold text-white mt-0.5">{loading ? '—' : totalReferred.toString()}</div>
 					</div>
-					<div class="summary-stat">
-						<div class="summary-label">Total earned</div>
-						<div class="summary-value text-emerald-400">{loading ? '—' : `${formatAmount(totalEarnedUsdt, usdtDecimals)} ${usdtSymbol}`}</div>
+					<div class="px-3 py-2.5 rounded-[10px] bg-white/2 border border-white/5">
+						<div class="font-mono text-[9px] text-white/35 uppercase tracking-[0.06em]">Total earned</div>
+						<div class="font-display text-[1.05rem] font-bold text-emerald-400 mt-0.5">{loading ? '—' : `${formatAmount(totalEarnedUsdt, usdtDecimals)} ${usdtSymbol}`}</div>
 					</div>
-					<div class="summary-stat">
-						<div class="summary-label">Pending</div>
-						<div class="summary-value text-amber-400">{loading ? '—' : `${formatAmount(pendingUsdt, usdtDecimals)} ${usdtSymbol}`}</div>
+					<div class="px-3 py-2.5 rounded-[10px] bg-white/2 border border-white/5">
+						<div class="font-mono text-[9px] text-white/35 uppercase tracking-[0.06em]">Pending</div>
+						<div class="font-display text-[1.05rem] font-bold text-amber-400 mt-0.5">{loading ? '—' : `${formatAmount(pendingUsdt, usdtDecimals)} ${usdtSymbol}`}</div>
 					</div>
-					<div class="summary-stat">
-						<div class="summary-label">Paid</div>
+					<div class="px-3 py-2.5 rounded-[10px] bg-white/2 border border-white/5">
+						<div class="font-mono text-[9px] text-white/35 uppercase tracking-[0.06em]">Paid</div>
 						<!-- Paid = total earned − pending (no dedicated endpoint yet). -->
-						<div class="summary-value">{loading ? '—' : `${formatAmount(totalEarnedUsdt - pendingUsdt > 0n ? totalEarnedUsdt - pendingUsdt : 0n, usdtDecimals)} ${usdtSymbol}`}</div>
+						<div class="font-display text-[1.05rem] font-bold text-white mt-0.5">{loading ? '—' : `${formatAmount(totalEarnedUsdt - pendingUsdt > 0n ? totalEarnedUsdt - pendingUsdt : 0n, usdtDecimals)} ${usdtSymbol}`}</div>
 					</div>
 				</div>
 			</div>
@@ -329,7 +329,7 @@
 				{ levelKey: 'aff.level2', pct: '3%', descKey: 'aff.level2Desc', color: 'cyan', detailKey: 'aff.level2Detail' },
 				{ levelKey: 'aff.level3', pct: '2%', descKey: 'aff.level3Desc', color: 'purple', detailKey: 'aff.level3Detail' }
 			] as tier}
-				<div class="tier-card card p-6 text-center">
+				<div class="card p-6 text-center transition-all duration-[250ms] hover:-translate-y-[3px] hover:shadow-[0_12px_40px_rgba(0,0,0,0.3)]">
 					<div class="tier-badge badge badge-{tier.color} mx-auto mb-4">{$t(tier.levelKey)}</div>
 					<div class="syne text-4xl font-black text-white mb-2">{tier.pct}</div>
 					<div class="text-sm text-gray-300 font-mono mb-2">{$t(tier.descKey)}</div>
@@ -617,10 +617,10 @@
 
 	<!-- CTA -->
 	<section class="section text-center pb-24">
-		<div class="cta-card card p-10 sm:p-14 relative overflow-hidden">
-			<div class="cta-glow absolute inset-0 pointer-events-none"></div>
-			<h2 class="syne text-3xl sm:text-4xl font-bold text-white mb-4 relative">{$t('aff.ctaTitle')}</h2>
-			<p class="text-gray-400 font-mono text-sm mb-8 relative">{$t('aff.ctaDesc')}</p>
+		<div class="card p-10 sm:p-14 relative overflow-hidden bg-emerald-500/4 border-emerald-500/15">
+			<div class="absolute inset-0 pointer-events-none bg-[radial-gradient(ellipse_at_50%_0%,rgba(16,185,129,0.08),transparent_70%)]"></div>
+			<h2 class="font-display text-3xl sm:text-4xl font-bold text-heading mb-4 relative">{$t('aff.ctaTitle')}</h2>
+			<p class="text-muted font-mono text-sm mb-8 relative">{$t('aff.ctaDesc')}</p>
 			{#if userAddress}
 				<button onclick={copyLink} class="btn-primary text-sm px-8 py-3 cursor-pointer relative">
 					{copied ? $t('aff.ctaCopied') : $t('aff.ctaCopy')}
@@ -635,47 +635,11 @@
 </div>
 
 <style>
-	/* Page-specific gradient */
+	/* Page-specific gradient — not expressible as a utility */
 	.gradient-text {
 		background: linear-gradient(135deg, #10b981, #00d2ff);
 		-webkit-background-clip: text;
 		-webkit-text-fill-color: transparent;
 		background-clip: text;
 	}
-
-	.tier-card {
-		transition: all 0.25s;
-	}
-	.tier-card:hover {
-		transform: translateY(-3px);
-		box-shadow: 0 12px 40px rgba(0,0,0,0.3);
-	}
-
-	.ref-link-box {
-		min-width: 0;
-	}
-
-	.section-top { padding-top: 1.25rem; padding-bottom: 0.5rem; }
-	.summary-stat {
-		padding: 10px 12px; border-radius: 10px;
-		background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05);
-	}
-	.summary-label {
-		font-family: 'Space Mono', monospace; font-size: 9px;
-		color: rgba(255,255,255,0.35); text-transform: uppercase; letter-spacing: 0.06em;
-	}
-	.summary-value {
-		font-family: 'Syne', sans-serif; font-size: 1.05rem; font-weight: 700;
-		color: #fff; margin-top: 2px;
-	}
-
-	/* Page-specific CTA colors */
-	.cta-card {
-		background: rgba(16,185,129,0.04);
-		border-color: rgba(16,185,129,0.15);
-	}
-	.cta-glow {
-		background: radial-gradient(ellipse at 50% 0%, rgba(16,185,129,0.08), transparent 70%);
-	}
-
 </style>

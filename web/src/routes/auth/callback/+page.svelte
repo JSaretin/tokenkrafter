@@ -33,30 +33,12 @@
 	});
 </script>
 
-<div class="callback-page">
-	<div class="spinner"></div>
+<div class="flex flex-col items-center justify-center min-h-[60vh] gap-4 text-muted font-mono text-sm">
+	<div class="spinner w-8 h-8 rounded-full border-2 border-line-input border-t-[#00d2ff]"></div>
 	<p>{status}</p>
 </div>
 
 <style>
-	.callback-page {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		justify-content: center;
-		min-height: 60vh;
-		gap: 16px;
-		color: var(--text-muted);
-		font-family: 'Space Mono', monospace;
-		font-size: 14px;
-	}
-	.spinner {
-		width: 32px;
-		height: 32px;
-		border: 2px solid var(--border-input);
-		border-top-color: #00d2ff;
-		border-radius: 50%;
-		animation: spin 0.8s linear infinite;
-	}
+	.spinner { animation: spin 0.8s linear infinite; }
 	@keyframes spin { to { transform: rotate(360deg); } }
 </style>

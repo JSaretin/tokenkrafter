@@ -933,25 +933,25 @@
 	onpointerdown={() => { if (open && walletType === 'embedded') extendSession(); }} />
 
 {#if open}
-<div class="ap-backdrop" onclick={close} role="presentation"></div>
+<div class="fixed inset-0 z-[9998] bg-black/60 backdrop-blur-[3px]" onclick={close} role="presentation"></div>
 
 <div class="ap" class:ap-closing={!open} role="dialog" aria-label="Account panel">
 	<!-- ═══ HEADER ═══ -->
-	<div class="ap-head">
+	<div class="flex items-center gap-2 pt-3.5 px-4 pb-2.5 relative min-h-[52px]">
 		{#if view !== 'main'}
-			<button class="ap-back" onclick={() => { view = 'main'; resetExport(); }}>
+			<button class="w-[30px] h-[30px] rounded-lg border-none bg-(--bg-surface-input) text-(--text-muted) cursor-pointer flex items-center justify-center transition-all duration-100 shrink-0 hover:bg-(--bg-surface-hover) hover:text-(--text-heading)" onclick={() => { view = 'main'; resetExport(); }}>
 				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
 			</button>
-			<span class="ap-head-title">
+			<span class="font-display text-sm font-bold text-(--text) flex-1">
 				{view === 'receive' ? $t('account.receive') : view === 'security' ? $t('account.security') : view === 'export-key' ? $t('account.privateKey') : $t('account.recoveryPhrase')}
 			</span>
 		{:else}
 			<!-- Unified wallet+account chip — opens WalletSwitcher sheet -->
-			<button class="ap-chip" onclick={() => { showSwitcher = true; }}>
-				<div class="ap-chip-icon">
+			<button class="flex items-center gap-2.5 flex-1 min-w-0 bg-(--bg-surface) border border-(--border) rounded-[10px] py-[7px] px-3 cursor-pointer text-inherit font-inherit transition-colors duration-150 hover:border-[rgba(0,210,255,0.25)] hover:bg-[rgba(0,210,255,0.04)]" onclick={() => { showSwitcher = true; }}>
+				<div class="w-7 h-7 rounded-full shrink-0 bg-gradient-to-br from-[rgba(0,210,255,0.16)] to-[rgba(58,123,213,0.16)] border border-[rgba(0,210,255,0.25)] flex items-center justify-center font-display text-[11px] font-extrabold text-[#00d2ff]">
 					{#if walletType === 'embedded'}
 						{#if acctAvatar(activeIndex)}
-							<span class="ap-chip-emoji">{acctAvatar(activeIndex)}</span>
+							<span class="text-[15px] leading-none">{acctAvatar(activeIndex)}</span>
 						{:else}
 							{activeIndex + 1}
 						{/if}
@@ -959,23 +959,23 @@
 						◆
 					{/if}
 				</div>
-				<div class="ap-chip-meta">
-					<span class="ap-chip-line1">
+				<div class="flex-1 min-w-0 flex flex-col gap-px overflow-hidden">
+					<span class="flex items-center gap-[5px] min-w-0 font-display text-[11px] font-bold text-(--text) whitespace-nowrap overflow-hidden text-ellipsis">
 						{#if walletType === 'embedded' && activeWallet}
-							<span class="ap-chip-wallet">{activeWallet.name}</span>
-							<span class="ap-chip-sep">•</span>
-							<span class="ap-chip-acct">{acctName(activeIndex)}</span>
+							<span class="text-(--text)">{activeWallet.name}</span>
+							<span class="text-(--text-dim)">•</span>
+							<span class="text-(--text-muted) font-semibold">{acctName(activeIndex)}</span>
 						{:else}
 							{$t('account.externalWallet')}
 						{/if}
 					</span>
-					<span class="ap-chip-line2">{shortAddr(userAddress)}</span>
+					<span class="font-mono text-[8px] text-(--text-dim)">{shortAddr(userAddress)}</span>
 				</div>
-				<svg class="ap-chip-chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+				<svg class="text-(--text-dim) shrink-0" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
 			</button>
 		{/if}
 
-		<button class="ap-x" onclick={close}>
+		<button class="w-7 h-7 rounded-lg border-none bg-(--bg-surface-input) text-(--text-dim) cursor-pointer flex items-center justify-center transition-all duration-100 shrink-0 ml-auto hover:bg-(--bg-surface-hover) hover:text-(--text-heading)" onclick={close}>
 			<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
 		</button>
 	</div>
@@ -999,12 +999,12 @@
 	<!-- ═══ MAIN VIEW ═══ -->
 	{#if view === 'main'}
 		<!-- Network -->
-		<div class="ap-net"><span class="ap-net-dot"></span>{networkName}</div>
+		<div class="flex items-center gap-[5px] px-4 pb-1 text-[9px] text-(--text-dim) font-mono"><span class="w-[5px] h-[5px] rounded-full bg-[#10b981]"></span>{networkName}</div>
 
 		<!-- Balance -->
-		<div class="ap-bal">
-			<span class="ap-bal-total">{fmtUsd(totalUsd)}{#if portfolioLoading && totalUsd === 0} <span class="ap-bal-loading">...</span>{/if}</span>
-			<span class="ap-bal-native">
+		<div class="ap-bal text-center pt-4 px-4 pb-5">
+			<span class="ap-bal-total block font-numeric font-bold text-(--text-heading) leading-[1.1] tabular-nums tracking-[-0.02em] max-w-full overflow-hidden text-ellipsis whitespace-nowrap">{fmtUsd(totalUsd)}{#if portfolioLoading && totalUsd === 0} <span class="text-2xl text-(--text-dim) animate-[blink_1s_infinite]">...</span>{/if}</span>
+			<span class="block font-numeric text-base font-medium text-(--text-muted) mt-1.5 tabular-nums max-w-full overflow-hidden text-ellipsis whitespace-nowrap px-2">
 				{#if totalNativeEquiv > 0}
 					≈ {totalNativeEquiv.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {nativeCoin}
 				{:else}
@@ -1014,21 +1014,21 @@
 		</div>
 
 		<!-- Actions -->
-		<div class="ap-acts">
-			<button class="ap-act" onclick={() => { close(); goto('/trade'); }}>
-				<div class="ap-act-circle"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg></div>
+		<div class="flex justify-center gap-[18px] px-4 pb-3.5">
+			<button class="group/act flex flex-col items-center gap-[5px] bg-none border-none cursor-pointer text-(--text-muted) font-mono text-[9px] transition-colors duration-100 hover:text-[#00d2ff]" onclick={() => { close(); goto('/trade'); }}>
+				<div class="w-10 h-10 rounded-full bg-[rgba(0,210,255,0.05)] border border-[rgba(0,210,255,0.1)] flex items-center justify-center transition-all duration-150 group-hover/act:bg-[rgba(0,210,255,0.1)] group-hover/act:border-[rgba(0,210,255,0.25)] group-hover/act:-translate-y-0.5 group-hover/act:shadow-[0_4px_12px_rgba(0,210,255,0.1)]"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg></div>
 				<span>{$t('account.buy')}</span>
 			</button>
-			<button class="ap-act" onclick={() => showSend = true}>
-				<div class="ap-act-circle"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg></div>
+			<button class="group/act flex flex-col items-center gap-[5px] bg-none border-none cursor-pointer text-(--text-muted) font-mono text-[9px] transition-colors duration-100 hover:text-[#00d2ff]" onclick={() => showSend = true}>
+				<div class="w-10 h-10 rounded-full bg-[rgba(0,210,255,0.05)] border border-[rgba(0,210,255,0.1)] flex items-center justify-center transition-all duration-150 group-hover/act:bg-[rgba(0,210,255,0.1)] group-hover/act:border-[rgba(0,210,255,0.25)] group-hover/act:-translate-y-0.5 group-hover/act:shadow-[0_4px_12px_rgba(0,210,255,0.1)]"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg></div>
 				<span>{$t('account.send')}</span>
 			</button>
-			<button class="ap-act" onclick={() => view = 'receive'}>
-				<div class="ap-act-circle"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg></div>
+			<button class="group/act flex flex-col items-center gap-[5px] bg-none border-none cursor-pointer text-(--text-muted) font-mono text-[9px] transition-colors duration-100 hover:text-[#00d2ff]" onclick={() => view = 'receive'}>
+				<div class="w-10 h-10 rounded-full bg-[rgba(0,210,255,0.05)] border border-[rgba(0,210,255,0.1)] flex items-center justify-center transition-all duration-150 group-hover/act:bg-[rgba(0,210,255,0.1)] group-hover/act:border-[rgba(0,210,255,0.25)] group-hover/act:-translate-y-0.5 group-hover/act:shadow-[0_4px_12px_rgba(0,210,255,0.1)]"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg></div>
 				<span>{$t('account.receive')}</span>
 			</button>
-			<button class="ap-act" onclick={() => { close(); goto('/trade'); }}>
-				<div class="ap-act-circle"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg></div>
+			<button class="group/act flex flex-col items-center gap-[5px] bg-none border-none cursor-pointer text-(--text-muted) font-mono text-[9px] transition-colors duration-100 hover:text-[#00d2ff]" onclick={() => { close(); goto('/trade'); }}>
+				<div class="w-10 h-10 rounded-full bg-[rgba(0,210,255,0.05)] border border-[rgba(0,210,255,0.1)] flex items-center justify-center transition-all duration-150 group-hover/act:bg-[rgba(0,210,255,0.1)] group-hover/act:border-[rgba(0,210,255,0.25)] group-hover/act:-translate-y-0.5 group-hover/act:shadow-[0_4px_12px_rgba(0,210,255,0.1)]"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg></div>
 				<span>{$t('account.swap')}</span>
 			</button>
 		</div>
@@ -1037,42 +1037,42 @@
 		     Replaces the "navigate away to /trade" friction with a one-tap path
 		     to the receive view + native faucet hint. -->
 		{#if totalUsd === 0 && nativeBalance === 0n && sortedTokens.length === 0 && !portfolioLoading}
-			<div class="ap-empty-cta">
-				<div class="ap-empty-cta-icon">
+			<div class="flex flex-col gap-2.5 mx-4 mb-3 p-4 bg-gradient-to-br from-[rgba(0,210,255,0.06)] to-[rgba(58,123,213,0.04)] border border-[rgba(0,210,255,0.18)] rounded-xl">
+				<div class="w-[38px] h-[38px] rounded-full bg-[rgba(0,210,255,0.12)] border border-[rgba(0,210,255,0.25)] flex items-center justify-center text-[#00d2ff]">
 					<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>
 				</div>
-				<div class="ap-empty-cta-text">
-					<strong>{$t('account.fundWallet')}</strong>
-					<p>Receive {nativeCoin}, USDT or any token on {networkName} at your address.</p>
+				<div>
+					<strong class="block font-display text-[13px] text-(--text-heading) mb-[3px]">{$t('account.fundWallet')}</strong>
+					<p class="m-0 font-mono text-[10px] text-(--text-muted) leading-[1.5]">Receive {nativeCoin}, USDT or any token on {networkName} at your address.</p>
 				</div>
-				<div class="ap-empty-cta-btns">
-					<button class="ap-btn ap-btn-primary" onclick={() => view = 'receive'}>{$t('account.showAddress')}</button>
-					<button class="ap-btn" onclick={() => { close(); goto('/trade'); }}>{$t('account.buyWithCard')}</button>
+				<div class="flex gap-2">
+					<button class="ap-btn ap-btn-primary flex-1 px-2.5 py-2 text-[10px]" onclick={() => view = 'receive'}>{$t('account.showAddress')}</button>
+					<button class="ap-btn flex-1 px-2.5 py-2 text-[10px]" onclick={() => { close(); goto('/trade'); }}>{$t('account.buyWithCard')}</button>
 				</div>
 			</div>
 		{/if}
 
 		<!-- Assets header -->
-		<div class="ap-section-head">{$t('account.assets')}</div>
+		<div class="pt-2 px-4 pb-1 font-display text-xs font-bold text-(--text-dim) uppercase tracking-[0.04em]">{$t('account.assets')}</div>
 
 
 		{#if true}
 			{@const nativeCompact = compactRows.has('native')}
-			<div class="ap-scroll">
+			<div class="flex-1 overflow-y-auto overflow-x-hidden py-1.5">
 				<!-- Native -->
-				<div class="ap-row">
+				<div class="flex items-center gap-3 py-3 px-4 transition-colors duration-100 hover:bg-(--bg-surface)">
 					{#if getKnownLogo(nativeCoin)}
-						<img src={getKnownLogo(nativeCoin)} alt={nativeCoin} class="ap-row-logo" />
+						<img src={getKnownLogo(nativeCoin)} alt={nativeCoin} class="w-10 h-10 rounded-full object-cover shrink-0 border border-(--border)" />
 					{:else}
-						<div class="ap-row-icon ap-row-native">{nativeCoin.charAt(0)}</div>
+						<div class="w-10 h-10 rounded-full bg-[rgba(245,158,11,0.08)] border border-[rgba(245,158,11,0.15)] flex items-center justify-center font-display text-sm font-extrabold text-[#f59e0b] shrink-0">{nativeCoin.charAt(0)}</div>
 					{/if}
-					<div class="ap-row-meta">
-						<span class="ap-row-name">{nativeCoin}</span>
-						<span class="ap-row-sub">{$t('account.native')}</span>
+					<div class="flex-1 min-w-0">
+						<span class="block text-base text-(--text-heading) font-display font-bold leading-[1.3]">{nativeCoin}</span>
+						<span class="block text-xs text-(--text-dim) font-mono mt-0.5">{$t('account.native')}</span>
 					</div>
 					<button class="ap-row-right" type="button" onclick={() => toggleRowCompact('native')} title={nativeCompact ? 'Tap to expand' : 'Tap to shrink'}>
-						<span class="ap-row-amt">{fmtBal(nativeBalance, nativeDecimals)}</span>
-						<span class="ap-row-usd">{nativeCompact ? fmtCompactUsd(nativeUsd) : fmtUsd(nativeUsd)}</span>
+						<span class="block text-base text-(--text-heading) font-numeric font-bold tabular-nums leading-[1.3] max-w-full overflow-hidden text-ellipsis whitespace-nowrap">{fmtBal(nativeBalance, nativeDecimals)}</span>
+						<span class="block text-[13px] text-(--text-dim) font-numeric font-medium tabular-nums mt-0.5 max-w-full overflow-hidden text-ellipsis whitespace-nowrap">{nativeCompact ? fmtCompactUsd(nativeUsd) : fmtUsd(nativeUsd)}</span>
 					</button>
 				</div>
 
@@ -1081,19 +1081,19 @@
 					{@const logo = getTokenLogo(tok as any) || getKnownLogo(tok.symbol)}
 					{@const rowKey = tok.address}
 					{@const isCompact = compactRows.has(rowKey)}
-					<div class="ap-row">
+					<div class="flex items-center gap-3 py-3 px-4 transition-colors duration-100 hover:bg-(--bg-surface)">
 						{#if logo}
-							<img src={logo} alt={tok.symbol} class="ap-row-logo" />
+							<img src={logo} alt={tok.symbol} class="w-10 h-10 rounded-full object-cover shrink-0 border border-(--border)" />
 						{:else}
-							<div class="ap-row-icon">{tok.symbol.charAt(0)}</div>
+							<div class="w-10 h-10 rounded-full bg-(--bg-surface-input) border border-(--border) flex items-center justify-center font-display text-sm font-extrabold text-(--text-muted) shrink-0">{tok.symbol.charAt(0)}</div>
 						{/if}
-						<div class="ap-row-meta">
-							<span class="ap-row-name">{tok.symbol}</span>
-							<span class="ap-row-sub">{tok.name}</span>
+						<div class="flex-1 min-w-0">
+							<span class="block text-base text-(--text-heading) font-display font-bold leading-[1.3]">{tok.symbol}</span>
+							<span class="block text-xs text-(--text-dim) font-mono mt-0.5">{tok.name}</span>
 						</div>
 						<button class="ap-row-right" type="button" onclick={() => toggleRowCompact(rowKey)} title={isCompact ? 'Tap to expand' : 'Tap to shrink'}>
-							<span class="ap-row-amt">{isCompact ? fmtCompactAmount(tok._bal) : fmtBal(tok.balance, tok.decimals)}</span>
-							<span class="ap-row-usd">{tok._usd > 0 ? (isCompact ? fmtCompactUsd(tok._usd) : fmtUsd(tok._usd)) : ''}</span>
+							<span class="block text-base text-(--text-heading) font-numeric font-bold tabular-nums leading-[1.3] max-w-full overflow-hidden text-ellipsis whitespace-nowrap">{isCompact ? fmtCompactAmount(tok._bal) : fmtBal(tok.balance, tok.decimals)}</span>
+							<span class="block text-[13px] text-(--text-dim) font-numeric font-medium tabular-nums mt-0.5 max-w-full overflow-hidden text-ellipsis whitespace-nowrap">{tok._usd > 0 ? (isCompact ? fmtCompactUsd(tok._usd) : fmtUsd(tok._usd)) : ''}</span>
 						</button>
 					</div>
 				{/each}
@@ -1104,31 +1104,31 @@
 					{@const logo = getTokenLogo(tok)}
 					{@const rowKey = (tok.address || tok.symbol).toLowerCase()}
 					{@const isCompact = compactRows.has(rowKey)}
-					<div class="ap-row">
+					<div class="flex items-center gap-3 py-3 px-4 transition-colors duration-100 hover:bg-(--bg-surface)">
 					{#if logo}
-						<img src={logo} alt={tok.symbol} class="ap-row-logo" />
+						<img src={logo} alt={tok.symbol} class="w-10 h-10 rounded-full object-cover shrink-0 border border-(--border)" />
 					{:else}
-						<div class="ap-row-icon">{tok.symbol.charAt(0)}</div>
+						<div class="w-10 h-10 rounded-full bg-(--bg-surface-input) border border-(--border) flex items-center justify-center font-display text-sm font-extrabold text-(--text-muted) shrink-0">{tok.symbol.charAt(0)}</div>
 					{/if}
-						<div class="ap-row-meta">
-							<span class="ap-row-name">{tok.symbol}</span>
-							<span class="ap-row-sub">{tok.name}</span>
+						<div class="flex-1 min-w-0">
+							<span class="block text-base text-(--text-heading) font-display font-bold leading-[1.3]">{tok.symbol}</span>
+							<span class="block text-xs text-(--text-dim) font-mono mt-0.5">{tok.name}</span>
 						</div>
 						<button class="ap-row-right" type="button" onclick={() => toggleRowCompact(rowKey)} title={isCompact ? 'Tap to expand' : 'Tap to shrink'}>
-							<span class="ap-row-amt">{isCompact ? fmtCompactAmount(parseFloat(ethers.formatUnits(tok.balance, tok.decimals))) : fmtBal(tok.balance, tok.decimals)}</span>
-							<span class="ap-row-usd">{usd > 0 ? (isCompact ? fmtCompactUsd(usd) : fmtUsd(usd)) : ''}</span>
+							<span class="block text-base text-(--text-heading) font-numeric font-bold tabular-nums leading-[1.3] max-w-full overflow-hidden text-ellipsis whitespace-nowrap">{isCompact ? fmtCompactAmount(parseFloat(ethers.formatUnits(tok.balance, tok.decimals))) : fmtBal(tok.balance, tok.decimals)}</span>
+							<span class="block text-[13px] text-(--text-dim) font-numeric font-medium tabular-nums mt-0.5 max-w-full overflow-hidden text-ellipsis whitespace-nowrap">{usd > 0 ? (isCompact ? fmtCompactUsd(usd) : fmtUsd(usd)) : ''}</span>
 						</button>
 					</div>
 				{/each}
 
 				{#if tokens.length === 0 && importedTokens.length === 0}
-					<p class="ap-empty">{$t('account.noImportedTokens')}</p>
+					<p class="text-center py-6 text-[13px] text-(--text-dim) font-mono">{$t('account.noImportedTokens')}</p>
 				{/if}
 
 				{#if showImport}
-					<div class="ap-import-form">
+					<div class="py-1.5 px-4 flex flex-col gap-1.5">
 						<input class="ap-input" type="text" placeholder="Token address (0x...)" bind:value={importAddress} {...INPUT_ATTRS} />
-						<div class="ap-import-btns">
+						<div class="flex gap-1.5 justify-end">
 							<button class="ap-btn-s" onclick={() => { showImport = false; importAddress = ''; }}>Cancel</button>
 							<button class="ap-btn-s ap-btn-primary" disabled={importLoading} onclick={() => handleImportToken()}>
 								{importLoading ? 'Loading...' : 'Import'}
@@ -1136,7 +1136,7 @@
 						</div>
 					</div>
 				{:else}
-					<button class="ap-import-btn" onclick={() => showImport = true}>
+					<button class="flex items-center justify-center gap-[5px] mx-4 my-1 py-[9px] border border-dashed border-(--border) rounded-lg bg-transparent text-(--text-dim) cursor-pointer font-mono text-[10px] transition-all duration-150 hover:border-[rgba(0,210,255,0.15)] hover:text-[#00d2ff] w-[calc(100%-2rem)]" onclick={() => showImport = true}>
 						<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
 						{$t('account.importToken')}
 					</button>
@@ -1146,71 +1146,71 @@
 		{/if}
 
 		<!-- Disconnect footer -->
-		<button class="ap-disconnect" onclick={() => { onDisconnect(); close(); }}>
+		<button class="flex items-center justify-center gap-1.5 px-4 py-2.5 mx-4 mt-1 mb-3 rounded-lg border border-(--border-subtle) bg-transparent text-(--text-dim) cursor-pointer font-mono text-[10px] transition-all duration-100 shrink-0 hover:text-[#f87171] hover:border-[rgba(248,113,113,0.15)] hover:bg-[rgba(248,113,113,0.04)]" onclick={() => { onDisconnect(); close(); }}>
 			<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
 			{$t('account.disconnect')}
 		</button>
 
 	<!-- ═══ RECEIVE VIEW ═══ -->
 	{:else if view === 'receive'}
-		<div class="ap-view-content ap-receive">
-			<p class="ap-hint">Send only {nativeCoin} and tokens on {networkName} to this address.</p>
-			<div class="ap-qr">
+		<div class="flex-1 p-4 flex flex-col gap-3 overflow-y-auto items-center">
+			<p class="text-[10px] text-(--text-dim) font-mono m-0 leading-[1.5]">Send only {nativeCoin} and tokens on {networkName} to this address.</p>
+			<div class="p-4 bg-(--bg-surface) border border-(--border) rounded-xl">
 				<QrCode data={userAddress} width={180} />
 			</div>
 			<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-			<div class="ap-addr-box" onclick={() => { copyText(userAddress); onAddFeedback({ message: $t('account.addressCopied'), type: 'success' }); }}>
-				<span class="ap-addr-full">{userAddress}</span>
-				<span class="ap-addr-tap">{copiedAddr ? $t('account.copied') : $t('account.tapToCopy')}</span>
+			<div class="p-4 bg-(--bg-surface) border border-(--border) rounded-[10px] text-center cursor-pointer transition-colors duration-150 hover:border-[rgba(0,210,255,0.2)]" onclick={() => { copyText(userAddress); onAddFeedback({ message: $t('account.addressCopied'), type: 'success' }); }}>
+				<span class="block font-mono text-[10px] text-(--text-muted) break-all leading-[1.6]">{userAddress}</span>
+				<span class="block text-[9px] text-[#00d2ff] mt-1.5 font-mono">{copiedAddr ? $t('account.copied') : $t('account.tapToCopy')}</span>
 			</div>
 		</div>
 
 	<!-- ═══ SECURITY VIEW ═══ -->
 	{:else if view === 'security'}
-		<div class="ap-view-content">
-			<div class="ap-sec-warn">
-				<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-				<p>{$t('account.securityWarn')}</p>
+		<div class="flex-1 p-4 flex flex-col gap-3 overflow-y-auto">
+			<div class="flex gap-2.5 p-3 rounded-[10px] bg-[rgba(245,158,11,0.04)] border border-[rgba(245,158,11,0.1)]">
+				<svg class="shrink-0 mt-0.5" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+				<p class="m-0 text-[10px] text-[#f59e0b] font-mono leading-[1.5]">{$t('account.securityWarn')}</p>
 			</div>
-			<button class="ap-set-item" onclick={() => { resetExport(); view = 'export-key'; }}>
+			<button class="flex items-center gap-2.5 w-full px-4 py-3 border-none bg-transparent text-(--text-muted) cursor-pointer font-mono text-[11px] transition-all duration-100 text-left hover:bg-(--bg-surface) hover:text-(--text)" onclick={() => { resetExport(); view = 'export-key'; }}>
 				<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
 				<span>{$t('account.exportPrivateKey')}</span>
-				<svg class="ap-set-arrow" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+				<svg class="ml-auto text-(--text-dim)" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
 			</button>
-			<button class="ap-set-item" onclick={() => { resetExport(); view = 'export-seed'; }}>
+			<button class="flex items-center gap-2.5 w-full px-4 py-3 border-none bg-transparent text-(--text-muted) cursor-pointer font-mono text-[11px] transition-all duration-100 text-left hover:bg-(--bg-surface) hover:text-(--text)" onclick={() => { resetExport(); view = 'export-seed'; }}>
 				<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
 				<span>{$t('account.exportRecoveryPhrase')}</span>
-				<svg class="ap-set-arrow" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+				<svg class="ml-auto text-(--text-dim)" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
 			</button>
 		</div>
 
 	<!-- ═══ EXPORT VIEW (key or seed) ═══ -->
 	{:else if view === 'export-key' || view === 'export-seed'}
-		<div class="ap-view-content">
+		<div class="flex-1 p-4 flex flex-col gap-3 overflow-y-auto">
 			{#if !exportedValue}
-				<div class="ap-danger-box">
-					<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+				<div class="flex gap-2.5 p-3.5 rounded-[10px] bg-[rgba(248,113,113,0.04)] border border-[rgba(248,113,113,0.12)]">
+					<svg class="shrink-0 mt-0.5" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
 					<div>
-						<strong>Warning</strong>
-						<p>{view === 'export-key' ? $t('account.warningKey') : $t('account.warningPhrase')}</p>
+						<strong class="block font-display text-xs text-[#f87171] mb-1">Warning</strong>
+						<p class="m-0 text-[10px] text-(--text-muted) font-mono leading-[1.5]">{view === 'export-key' ? $t('account.warningKey') : $t('account.warningPhrase')}</p>
 					</div>
 				</div>
 
-				<label class="ap-label">{$t('account.enterPinContinue')}</label>
+				<label class="text-[9px] text-(--text-dim) font-mono uppercase tracking-[0.05em]">{$t('account.enterPinContinue')}</label>
 				<input class="ap-input" type="tel" inputmode="numeric" style="-webkit-text-security: disc; text-security: disc;" placeholder="PIN" bind:value={exportPin}
 					{...INPUT_ATTRS}
 					onkeydown={(e) => { if (e.key === 'Enter') handleExport(view === 'export-key' ? 'key' : 'seed'); }} />
 
-				{#if exportError}<p class="ap-error">{exportError}</p>{/if}
+				{#if exportError}<p class="text-[10px] text-[#f87171] font-mono m-0 py-1 px-2 bg-[rgba(248,113,113,0.04)] rounded">{exportError}</p>{/if}
 
 				<button class="ap-btn ap-btn-danger ap-btn-full" onclick={() => handleExport(view === 'export-key' ? 'key' : 'seed')}>
 					{view === 'export-key' ? $t('account.revealKey') : $t('account.revealPhrase')}
 				</button>
 			{:else}
-				<div class="ap-revealed" onclick={() => { navigator.clipboard.writeText(exportedValue); setTimeout(() => { try { navigator.clipboard.writeText(''); } catch {} }, 30000); onAddFeedback({ message: $t('account.copiedClipboard'), type: 'info' }); }}>
+				<div class="p-3.5 bg-[rgba(248,113,113,0.04)] border border-[rgba(248,113,113,0.12)] rounded-[10px] font-mono text-[10px] text-[#f87171] break-all leading-[1.7] cursor-pointer transition-colors duration-100 hover:bg-[rgba(248,113,113,0.08)]" onclick={() => { navigator.clipboard.writeText(exportedValue); setTimeout(() => { try { navigator.clipboard.writeText(''); } catch {} }, 30000); onAddFeedback({ message: $t('account.copiedClipboard'), type: 'info' }); }}>
 					{exportedValue}
 				</div>
-				<p class="ap-revealed-hint">{$t('account.doNotShare')}</p>
+				<p class="text-center text-[9px] text-(--text-dim) font-mono m-0">{$t('account.doNotShare')}</p>
 				<button class="ap-btn ap-btn-full" onclick={() => { view = 'security'; resetExport(); }}>Done</button>
 			{/if}
 		</div>
@@ -1496,8 +1496,7 @@
 {/if}
 
 <style>
-	.ap-backdrop { position: fixed; inset: 0; z-index: 9998; background: rgba(0,0,0,0.6); backdrop-filter: blur(3px); }
-
+	/* Slide-in panel — keyframe + container-width based on viewport */
 	.ap {
 		position: fixed; top: 0; right: 0; bottom: 0; z-index: 9999;
 		width: 360px; background: var(--bg);
@@ -1506,82 +1505,8 @@
 		animation: apSlide 0.2s ease-out;
 	}
 	@keyframes apSlide { from { transform: translateX(100%); } }
+	@keyframes blink { 0%,100% { opacity: 0.3; } 50% { opacity: 1; } }
 	@media (max-width: 480px) { .ap { width: 100vw; border-left: none; } }
-
-	/* ── Header ── */
-	.ap-head {
-		display: flex; align-items: center; gap: 8px;
-		padding: 14px 16px 10px; position: relative; min-height: 52px;
-	}
-	.ap-back {
-		width: 30px; height: 30px; border-radius: 8px; border: none;
-		background: var(--bg-surface-input); color: var(--text-muted); cursor: pointer;
-		display: flex; align-items: center; justify-content: center;
-		transition: all 0.12s; flex-shrink: 0;
-	}
-	.ap-back:hover { background: var(--bg-surface-hover); color: var(--text-heading); }
-	.ap-head-title {
-		font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700; color: var(--text); flex: 1;
-	}
-	.ap-x {
-		width: 28px; height: 28px; border-radius: 8px; border: none;
-		background: var(--bg-surface-input); color: var(--text-dim); cursor: pointer;
-		display: flex; align-items: center; justify-content: center;
-		transition: all 0.12s; flex-shrink: 0; margin-left: auto;
-	}
-	.ap-x:hover { background: var(--bg-surface-hover); color: var(--text-heading); }
-
-	/* Wallet/account chip — single button, opens WalletSwitcher sheet */
-	.ap-chip {
-		display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0;
-		background: var(--bg-surface); border: 1px solid var(--border);
-		border-radius: 10px; padding: 7px 12px; cursor: pointer;
-		color: inherit; font-family: inherit; transition: border-color 0.15s;
-	}
-	.ap-chip:hover { border-color: rgba(0,210,255,0.25); background: rgba(0,210,255,0.04); }
-	.ap-chip-icon {
-		width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
-		background: linear-gradient(135deg, rgba(0,210,255,0.16), rgba(58,123,213,0.16));
-		border: 1px solid rgba(0,210,255,0.25);
-		display: flex; align-items: center; justify-content: center;
-		font-family: 'Syne', sans-serif; font-size: 11px; font-weight: 800; color: #00d2ff;
-	}
-	.ap-chip-emoji { font-size: 15px; line-height: 1; }
-	.ap-chip-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; overflow: hidden; }
-	.ap-chip-line1 {
-		display: flex; align-items: center; gap: 5px; min-width: 0;
-		font-family: 'Syne', sans-serif; font-size: 11px; font-weight: 700; color: var(--text);
-		white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-	}
-	.ap-chip-wallet { color: var(--text); }
-	.ap-chip-acct { color: var(--text-muted); font-weight: 600; }
-	.ap-chip-sep { color: var(--text-dim); }
-	.ap-chip-line2 { font-family: 'Space Mono', monospace; font-size: 8px; color: var(--text-dim); }
-	.ap-chip-chev { color: var(--text-dim); flex-shrink: 0; }
-
-	/* Empty-state CTA card (shown when wallet is empty) */
-	.ap-empty-cta {
-		display: flex; flex-direction: column; gap: 10px;
-		margin: 0 16px 12px; padding: 16px;
-		background: linear-gradient(135deg, rgba(0,210,255,0.06), rgba(58,123,213,0.04));
-		border: 1px solid rgba(0,210,255,0.18); border-radius: 12px;
-	}
-	.ap-empty-cta-icon {
-		width: 38px; height: 38px; border-radius: 50%;
-		background: rgba(0,210,255,0.12); border: 1px solid rgba(0,210,255,0.25);
-		display: flex; align-items: center; justify-content: center;
-		color: #00d2ff;
-	}
-	.ap-empty-cta-text strong {
-		display: block; font-family: 'Syne', sans-serif; font-size: 13px;
-		color: var(--text-heading); margin-bottom: 3px;
-	}
-	.ap-empty-cta-text p {
-		margin: 0; font-family: 'Space Mono', monospace; font-size: 10px;
-		color: var(--text-muted); line-height: 1.5;
-	}
-	.ap-empty-cta-btns { display: flex; gap: 8px; }
-	.ap-empty-cta-btns .ap-btn { flex: 1; padding: 8px 10px; font-size: 10px; }
 
 	/* Send: recipient row — one bordered container holds both the input and
 	   the book icon. Input is borderless + flex-1 so the full address stays
@@ -1798,74 +1723,16 @@
 	}
 	.ap-preview-btns .ap-btn { flex: 1; }
 
-	/* Network */
-	.ap-net { display: flex; align-items: center; gap: 5px; padding: 0 16px 4px; font-size: 9px; color: var(--text-dim); font-family: 'Space Mono', monospace; }
-	.ap-net-dot { width: 5px; height: 5px; border-radius: 50%; background: #10b981; }
-
-	/* Balance */
-	.ap-bal {
-		text-align: center; padding: 16px 16px 20px;
-		container-type: inline-size;
-	}
+	/* Balance hero — container-query + clamp aren't expressible as utilities */
+	.ap-bal { container-type: inline-size; }
 	.ap-bal-total {
-		display: block; font-family: 'Rajdhani', sans-serif;
 		/* Fluid: clamp against the container's inline size so meme portfolios
 		   (e.g. $73B of shitcoin) shrink to fit instead of overflowing. */
 		font-size: clamp(28px, 11cqw, 44px);
-		font-weight: 700; color: var(--text-heading); line-height: 1.1; font-variant-numeric: tabular-nums;
-		letter-spacing: -0.02em;
-		max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-	}
-	.ap-bal-loading { font-size: 24px; color: var(--text-dim); animation: blink 1s infinite; }
-	@keyframes blink { 0%,100% { opacity: 0.3; } 50% { opacity: 1; } }
-	.ap-bal-native {
-		display: block; font-family: 'Rajdhani', sans-serif; font-size: 16px;
-		font-weight: 500; color: var(--text-muted); margin-top: 6px; font-variant-numeric: tabular-nums;
-		max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-		padding: 0 8px;
 	}
 
-	/* Action buttons */
-	.ap-acts { display: flex; justify-content: center; gap: 18px; padding: 0 16px 14px; }
-	.ap-act {
-		display: flex; flex-direction: column; align-items: center; gap: 5px;
-		background: none; border: none; cursor: pointer; color: var(--text-muted);
-		font-family: 'Space Mono', monospace; font-size: 9px; transition: color 0.12s;
-	}
-	.ap-act:hover { color: #00d2ff; }
-	.ap-act-circle {
-		width: 40px; height: 40px; border-radius: 50%;
-		background: rgba(0,210,255,0.05); border: 1px solid rgba(0,210,255,0.1);
-		display: flex; align-items: center; justify-content: center; transition: all 0.15s;
-	}
-	.ap-act:hover .ap-act-circle { background: rgba(0,210,255,0.1); border-color: rgba(0,210,255,0.25); transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,210,255,0.1); }
-
-	/* Section head */
-	.ap-section-head {
-		padding: 8px 16px 4px; font-family: 'Syne', sans-serif; font-size: 12px;
-		font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.04em;
-	}
-
-	/* Scrollable content area */
-	.ap-scroll { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 6px 0; }
-
-	/* Token rows */
-	.ap-row { display: flex; align-items: center; gap: 12px; padding: 12px 16px; transition: background 0.1s; }
-	.ap-row:hover { background: var(--bg-surface); }
-	.ap-row-icon {
-		width: 40px; height: 40px; border-radius: 50%;
-		background: var(--bg-surface-input); border: 1px solid var(--border);
-		display: flex; align-items: center; justify-content: center;
-		font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 800; color: var(--text-muted); flex-shrink: 0;
-	}
-	.ap-row-native { background: rgba(245,158,11,0.08); border-color: rgba(245,158,11,0.15); color: #f59e0b; }
-	.ap-row-logo { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; flex-shrink: 0; border: 1px solid var(--border); }
-	.ap-row-meta { flex: 1; min-width: 0; }
-	.ap-row-name { display: block; font-size: 16px; color: var(--text-heading); font-family: 'Syne', sans-serif; font-weight: 700; line-height: 1.3; }
-	.ap-row-sub { display: block; font-size: 12px; color: var(--text-dim); font-family: 'Space Mono', monospace; margin-top: 2px; }
-	/* Right-hand column of a token row is a tap target that toggles
-	   full ↔ compact. Reset button-default styling; cap max-width so long
-	   numbers don't push the row into overflow; right-align the inner lines. */
+	/* Right-hand tap-target column of a token row — button reset + width cap
+	   kept here because 55%-max-width needs the flex-column context. */
 	.ap-row-right {
 		text-align: right; flex-shrink: 0;
 		background: none; border: none; padding: 4px 6px; margin: -4px -6px;
@@ -1876,99 +1743,6 @@
 	}
 	.ap-row-right:hover { background: var(--bg-surface-input); }
 	.ap-row-right:active { background: var(--bg-surface-hover); }
-	.ap-row-amt {
-		display: block; font-size: 16px; color: var(--text-heading); font-family: 'Rajdhani', sans-serif;
-		font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.3;
-		max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-	}
-	.ap-row-usd {
-		display: block; font-size: 13px; color: var(--text-dim); font-family: 'Rajdhani', sans-serif;
-		font-weight: 500; font-variant-numeric: tabular-nums; margin-top: 2px;
-		max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-	}
-	.ap-empty { text-align: center; padding: 24px; font-size: 13px; color: var(--text-dim); font-family: 'Space Mono', monospace; }
-
-	/* Import */
-	.ap-import-form { padding: 6px 16px; display: flex; flex-direction: column; gap: 6px; }
-	.ap-import-btns { display: flex; gap: 6px; justify-content: flex-end; }
-	.ap-import-btn {
-		display: flex; align-items: center; justify-content: center; gap: 5px;
-		margin: 4px 16px; padding: 9px; border: 1px dashed var(--border);
-		border-radius: 8px; background: transparent; color: var(--text-dim); cursor: pointer;
-		font-family: 'Space Mono', monospace; font-size: 10px; transition: all 0.15s;
-	}
-	.ap-import-btn:hover { border-color: rgba(0,210,255,0.15); color: #00d2ff; }
-
-	/* Settings items */
-	.ap-set-item {
-		display: flex; align-items: center; gap: 10px; width: 100%;
-		padding: 12px 16px; border: none; background: transparent;
-		color: var(--text-muted); cursor: pointer; font-family: 'Space Mono', monospace;
-		font-size: 11px; transition: all 0.1s; text-align: left;
-	}
-	.ap-set-item:hover { background: var(--bg-surface); color: var(--text); }
-	.ap-set-arrow { margin-left: auto; color: var(--text-dim); }
-	.ap-set-danger { color: #f87171; }
-	.ap-set-danger:hover { background: rgba(248,113,113,0.04); }
-	.ap-set-divider { height: 1px; background: var(--bg-surface); margin: 4px 16px; }
-
-	/* Disconnect footer — subtle, always visible at bottom */
-	.ap-disconnect {
-		display: flex; align-items: center; justify-content: center; gap: 6px;
-		padding: 10px 16px; margin: 4px 16px 12px; border-radius: 8px;
-		border: 1px solid var(--border-subtle); background: transparent;
-		color: var(--text-dim); cursor: pointer; font-family: 'Space Mono', monospace;
-		font-size: 10px; transition: all 0.12s; flex-shrink: 0;
-	}
-	.ap-disconnect:hover { color: #f87171; border-color: rgba(248,113,113,0.15); background: rgba(248,113,113,0.04); }
-
-	/* Sub-views content */
-	.ap-view-content { flex: 1; padding: 16px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; }
-
-	/* Receive */
-	.ap-receive { align-items: center; }
-	.ap-qr {
-		padding: 16px; background: var(--bg-surface);
-		border: 1px solid var(--border); border-radius: 12px;
-	}
-	.ap-qr-img { display: block; border-radius: 4px; image-rendering: pixelated; }
-	.ap-addr-box {
-		padding: 16px; background: var(--bg-surface); border: 1px solid var(--border);
-		border-radius: 10px; text-align: center; cursor: pointer; transition: border-color 0.15s;
-	}
-	.ap-addr-box:hover { border-color: rgba(0,210,255,0.2); }
-	.ap-addr-full { display: block; font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text-muted); word-break: break-all; line-height: 1.6; }
-	.ap-addr-tap { display: block; font-size: 9px; color: #00d2ff; margin-top: 6px; font-family: 'Space Mono', monospace; }
-
-	/* Send */
-	.ap-send-info { display: flex; justify-content: space-between; font-size: 10px; color: var(--text-dim); font-family: 'Space Mono', monospace; }
-	.ap-label { font-size: 9px; color: var(--text-dim); font-family: 'Space Mono', monospace; text-transform: uppercase; letter-spacing: 0.05em; }
-
-	/* Security */
-	.ap-sec-warn {
-		display: flex; gap: 10px; padding: 12px; border-radius: 10px;
-		background: rgba(245,158,11,0.04); border: 1px solid rgba(245,158,11,0.1);
-	}
-	.ap-sec-warn svg { flex-shrink: 0; margin-top: 2px; }
-	.ap-sec-warn p { margin: 0; font-size: 10px; color: #f59e0b; font-family: 'Space Mono', monospace; line-height: 1.5; }
-
-	/* Export danger */
-	.ap-danger-box {
-		display: flex; gap: 10px; padding: 14px; border-radius: 10px;
-		background: rgba(248,113,113,0.04); border: 1px solid rgba(248,113,113,0.12);
-	}
-	.ap-danger-box svg { flex-shrink: 0; margin-top: 2px; }
-	.ap-danger-box strong { display: block; font-family: 'Syne', sans-serif; font-size: 12px; color: #f87171; margin-bottom: 4px; }
-	.ap-danger-box p { margin: 0; font-size: 10px; color: var(--text-muted); font-family: 'Space Mono', monospace; line-height: 1.5; }
-	.ap-revealed {
-		padding: 14px; background: rgba(248,113,113,0.04); border: 1px solid rgba(248,113,113,0.12);
-		border-radius: 10px; font-family: 'Space Mono', monospace; font-size: 10px;
-		color: #f87171; word-break: break-all; line-height: 1.7; cursor: pointer; transition: background 0.12s;
-	}
-	.ap-revealed:hover { background: rgba(248,113,113,0.08); }
-	.ap-revealed-hint { text-align: center; font-size: 9px; color: var(--text-dim); font-family: 'Space Mono', monospace; margin: 0; }
-	.ap-error { font-size: 10px; color: #f87171; font-family: 'Space Mono', monospace; margin: 0; padding: 4px 8px; background: rgba(248,113,113,0.04); border-radius: 4px; }
-	.ap-hint { font-size: 10px; color: var(--text-dim); font-family: 'Space Mono', monospace; margin: 0; line-height: 1.5; }
 
 	/* Shared inputs/buttons */
 	.ap-input {

@@ -209,7 +209,7 @@
 				<DetailLine label={$t('trade.rate')}>1 {tokenInSymbol} = {rate} {tokenOutSymbol}</DetailLine>
 				{#if minReceived}
 					<DetailLine label={$t('trade.minReceived')}>
-						{minReceived} {tokenOutSymbol}{#if minUsd} <span class="text-(--text-muted) text-xs font-[Rajdhani,sans-serif] font-medium tabular-nums">(≈${minUsd})</span>{/if}
+						{minReceived} {tokenOutSymbol}{#if minUsd} <span class="text-(--text-muted) text-xs font-numeric font-medium tabular-nums">(≈${minUsd})</span>{/if}
 					</DetailLine>
 				{/if}
 				<DetailLine label={$t('trade.slippage')}>{slippagePct}%</DetailLine>

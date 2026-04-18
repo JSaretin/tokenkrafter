@@ -8,45 +8,14 @@
 	];
 </script>
 
-<div class="chart-type-toggle">
+<div class="flex gap-[2px] bg-surface rounded-md p-[2px]">
 	{#each types as t}
 		<button
 			onclick={() => { chartPrefs.type = t.key; }}
-			class="toggle-btn"
-			class:active={chartPrefs.type === t.key}
+			class={'px-2 py-[3px] text-xs font-semibold bg-transparent border-none rounded cursor-pointer transition-all duration-150 leading-none ' + (chartPrefs.type === t.key ? 'text-[#00d2ff] bg-[rgba(0,210,255,0.1)]' : 'text-dim hover:text-muted hover:bg-surface-hover')}
 			title="{t.label} chart"
 		>
 			{t.icon}
 		</button>
 	{/each}
 </div>
-
-<style>
-	.chart-type-toggle {
-		display: flex;
-		gap: 2px;
-		background: var(--bg-surface);
-		border-radius: 6px;
-		padding: 2px;
-	}
-	.toggle-btn {
-		padding: 3px 8px;
-		font-size: 12px;
-		font-weight: 600;
-		color: var(--text-dim);
-		background: transparent;
-		border: none;
-		border-radius: 4px;
-		cursor: pointer;
-		transition: all 0.15s;
-		line-height: 1;
-	}
-	.toggle-btn:hover {
-		color: var(--text-muted);
-		background: var(--bg-surface-hover);
-	}
-	.toggle-btn.active {
-		color: #00d2ff;
-		background: rgba(0,210,255,0.1);
-	}
-</style>

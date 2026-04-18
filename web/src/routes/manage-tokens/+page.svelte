@@ -271,94 +271,99 @@
 	<meta name="description" content={$t('mt.metaDesc')} />
 </svelte:head>
 
-<div class="manage">
+<div class="max-w-[1100px] mx-auto px-4 pt-6 pb-[60px]">
 	<!-- Header -->
-	<div class="manage-header">
+	<div class="flex items-start justify-between gap-4 mb-6 flex-wrap max-[500px]:flex-col">
 		<div>
-			<h1 class="manage-title">{$t('mt.pageTitle')}</h1>
-			<p class="manage-sub">
+			<h1 class="font-display text-[28px] font-extrabold text-heading m-0">{$t('mt.pageTitle')}</h1>
+			<p class="text-[13px] text-dim font-mono mt-1 mb-0">
 				{#if userAddress}
-					Tokens created by <span class="manage-addr">{shortAddr(userAddress)}</span>
+					Tokens created by <span class="text-brand-cyan">{shortAddr(userAddress)}</span>
 				{:else}
 					Connect your wallet to manage tokens
 				{/if}
 			</p>
 		</div>
-		<div class="manage-actions">
+		<div class="flex items-center gap-2.5 flex-wrap max-[500px]:w-full">
 			{#if tokens.length > 0}
-				<div class="manage-search">
-					<svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-					<input class="search-input" type="text" placeholder="Search..." bind:value={search} />
+				<div class="flex items-center gap-2 px-3.5 py-2 rounded-[10px] bg-surface border border-line min-w-[180px] transition-[border-color] focus-within:border-cyan-500/30 max-[500px]:flex-1 max-[500px]:min-w-0">
+					<svg class="text-dim shrink-0" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+					<input class="bg-transparent border-none outline-none flex-1 text-foreground font-mono text-xs w-full placeholder:text-dim" type="text" placeholder="Search..." bind:value={search} />
 				</div>
 			{/if}
-			<a href="/create" class="manage-create">+ Create Token</a>
+			<a href="/create" class="inline-flex items-center gap-1 px-[18px] py-[9px] rounded-[10px] bg-gradient-to-br from-[#00d2ff] to-[#3a7bd5] text-white font-display font-bold text-[13px] no-underline transition duration-200 hover:-translate-y-px hover:shadow-[0_6px_24px_rgba(0,210,255,0.3)]">+ Create Token</a>
 		</div>
 	</div>
 
 	{#if !userAddress}
-		<div class="manage-empty">
+		<div class="flex flex-col items-center gap-2 py-[60px] px-5 text-center">
 			<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#374151" stroke-width="1.5"><rect x="2" y="6" width="20" height="12" rx="3"/><path d="M22 10h-4a2 2 0 0 0 0 4h4"/></svg>
-			<h2 class="manage-empty-title">Wallet not connected</h2>
-			<p class="manage-empty-sub">Connect to see tokens you've created</p>
-			<button onclick={handleConnect} class="manage-connect">Connect Wallet</button>
+			<h2 class="font-display text-lg font-bold text-heading m-0">Wallet not connected</h2>
+			<p class="font-mono text-xs text-dim m-0">Connect to see tokens you've created</p>
+			<button onclick={handleConnect} class="inline-block mt-2 px-6 py-[11px] rounded-[10px] border-none bg-gradient-to-br from-[#00d2ff] to-[#3a7bd5] text-white font-display font-bold text-[13px] cursor-pointer transition duration-200 hover:-translate-y-px hover:shadow-[0_6px_24px_rgba(0,210,255,0.3)]">Connect Wallet</button>
 		</div>
 
 	{:else if isLoading}
-		<div class="token-grid">
+		<div class="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-[14px] max-[500px]:grid-cols-1">
 			{#each [0,1,2] as _}
-				<div class="skeleton-card"></div>
+				<div class="h-40 rounded-xl bg-surface border border-line-subtle animate-[pulse_1.5s_ease-in-out_infinite]"></div>
 			{/each}
 		</div>
 
 	{:else if filtered.length === 0}
-		<div class="manage-empty">
+		<div class="flex flex-col items-center gap-2 py-[60px] px-5 text-center">
 			{#if search}
-				<p class="manage-empty-sub">No tokens match "{search}"</p>
+				<p class="font-mono text-xs text-dim m-0">No tokens match "{search}"</p>
 			{:else}
 				<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#374151" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-				<h2 class="manage-empty-title">No tokens yet</h2>
-				<p class="manage-empty-sub">Create your first token to get started</p>
-				<a href="/create" class="manage-connect" style="text-decoration:none;">Create Token</a>
+				<h2 class="font-display text-lg font-bold text-heading m-0">No tokens yet</h2>
+				<p class="font-mono text-xs text-dim m-0">Create your first token to get started</p>
+				<a href="/create" class="inline-block mt-2 px-6 py-[11px] rounded-[10px] bg-gradient-to-br from-[#00d2ff] to-[#3a7bd5] text-white font-display font-bold text-[13px] no-underline transition duration-200 hover:-translate-y-px hover:shadow-[0_6px_24px_rgba(0,210,255,0.3)]">Create Token</a>
 			{/if}
 		</div>
 
 	{:else}
-		<div class="token-grid">
+		<div class="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-[14px] max-[500px]:grid-cols-1">
 			{#each filtered as tok (tok.address + tok.chain_id)}
-				<a href="/manage-tokens/{tok.chain_symbol}/{tok.address}" class="token-card">
+				{@const tc = typeColor(tok)}
+				<a href="/manage-tokens/{tok.chain_symbol}/{tok.address}" class="group flex flex-col gap-2.5 p-4 rounded-xl bg-surface border border-line-subtle no-underline text-inherit transition duration-150 hover:border-cyan-500/20 hover:-translate-y-0.5 hover:shadow-[0_4px_20px_rgba(0,0,0,0.2)]">
 					<!-- Header -->
-					<div class="tc-header">
+					<div class="flex items-center gap-2.5">
 						<TokenLogo logoUrl={tok.logo_url} symbol={tok.symbol} address={tok.address} chainId={tok.chain_id} size={36} />
-						<div class="tc-identity">
-							<span class="tc-name">{tok.name}</span>
-							<span class="tc-symbol">${tok.symbol}</span>
+						<div class="flex-1 min-w-0">
+							<span class="block font-display text-sm font-bold text-heading whitespace-nowrap overflow-hidden text-ellipsis">{tok.name}</span>
+							<span class="block font-mono text-[10px] text-dim">${tok.symbol}</span>
 						</div>
-						<span class="tc-badge tc-badge-{typeColor(tok)}">{tokenType(tok)}</span>
+						<span class={'text-[8px] font-bold uppercase tracking-[0.05em] px-[7px] py-0.5 rounded-full font-mono shrink-0 ' +
+							(tc === 'cyan' ? 'bg-cyan-500/10 text-cyan-400' :
+							 tc === 'amber' ? 'bg-amber-500/10 text-amber-400' :
+							 tc === 'purple' ? 'bg-purple-500/10 text-[#a78bfa]' :
+							 'bg-emerald-500/10 text-emerald-400')}>{tokenType(tok)}</span>
 					</div>
 
 					<!-- Stats -->
-					<div class="tc-stats">
-						<div class="tc-stat">
-							<span class="tc-stat-label">Supply</span>
-							<span class="tc-stat-value">{fmtSupply(tok.total_supply, tok.decimals)}</span>
+					<div class="flex gap-0 rounded-lg overflow-hidden border border-line-subtle">
+						<div class="flex-1 px-2.5 py-2">
+							<span class="block text-[8px] text-dim font-mono uppercase tracking-[0.04em]">Supply</span>
+							<span class="block font-numeric text-sm font-semibold text-foreground tabular-nums mt-px">{fmtSupply(tok.total_supply, tok.decimals)}</span>
 						</div>
-						<div class="tc-stat">
-							<span class="tc-stat-label">Created</span>
-							<span class="tc-stat-value">{tok.created_at ? timeAgo(tok.created_at) : '—'}</span>
+						<div class="flex-1 px-2.5 py-2 border-l border-line-subtle">
+							<span class="block text-[8px] text-dim font-mono uppercase tracking-[0.04em]">Created</span>
+							<span class="block font-numeric text-sm font-semibold text-foreground tabular-nums mt-px">{tok.created_at ? timeAgo(tok.created_at) : '—'}</span>
 						</div>
-						<div class="tc-stat">
-							<span class="tc-stat-label">Chain</span>
-							<span class="tc-stat-value">{tok.network_name}</span>
+						<div class="flex-1 px-2.5 py-2 border-l border-line-subtle">
+							<span class="block text-[8px] text-dim font-mono uppercase tracking-[0.04em]">Chain</span>
+							<span class="block font-numeric text-sm font-semibold text-foreground tabular-nums mt-px">{tok.network_name}</span>
 						</div>
 					</div>
 
 					<!-- Description -->
 					{#if tok.description}
-						<div class="tc-desc">{tok.description.slice(0, 80)}{tok.description.length > 80 ? '...' : ''}</div>
+						<div class="font-mono text-[10px] text-dim leading-[1.4]">{tok.description.slice(0, 80)}{tok.description.length > 80 ? '...' : ''}</div>
 					{/if}
 
 					<!-- Manage arrow -->
-					<div class="tc-manage">
+					<div class="flex items-center justify-end gap-1 font-mono text-[10px] text-dim transition-colors group-hover:text-brand-cyan">
 						<span>Manage</span>
 						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
 					</div>
@@ -366,8 +371,8 @@
 			{/each}
 		</div>
 
-		<div class="manage-footer">
-			<button onclick={loadTokens} class="manage-refresh">
+		<div class="flex justify-center mt-4">
+			<button onclick={loadTokens} class="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-line bg-surface text-dim font-mono text-[11px] cursor-pointer transition hover:text-brand-cyan hover:border-cyan-500/20 hover:bg-cyan-500/[0.04]">
 				<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
 				Refresh
 			</button>

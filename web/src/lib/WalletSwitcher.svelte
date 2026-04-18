@@ -476,34 +476,34 @@
 {#if open}
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div class="ws-overlay" onclick={close}>
-		<div class="ws-sheet" onclick={(e) => e.stopPropagation()} role="dialog" aria-label="Wallet switcher" tabindex="-1">
+	<div class="absolute inset-0 z-50 bg-black/60 backdrop-blur-[4px] flex items-start justify-center p-0 rounded-[inherit]" onclick={close}>
+		<div class="ws-sheet absolute top-0 left-0 right-0 w-full bg-background border-b border-line shadow-[0_12px_32px_rgba(0,0,0,0.6)] flex flex-col max-h-full" onclick={(e) => e.stopPropagation()} role="dialog" aria-label="Wallet switcher" tabindex="-1">
 			<!-- ── Header ───────────────────────────────────────── -->
-			<div class="ws-head">
-				<div class="ws-head-title">{$t('switcher.wallets')}</div>
-				<button class="ws-x" onclick={close} aria-label="Close">
+			<div class="flex items-center justify-between px-4 pt-3.5 pb-2">
+				<div class="font-display text-sm font-extrabold text-heading">{$t('switcher.wallets')}</div>
+				<button class="w-7 h-7 rounded-lg border-none bg-surface-input text-dim cursor-pointer flex items-center justify-center transition hover:bg-surface-hover hover:text-heading" onclick={close} aria-label="Close">
 					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
 				</button>
 			</div>
 
 			<!-- Search -->
-			<div class="ws-search-wrap">
-				<svg class="ws-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+			<div class="relative px-4 pb-2.5">
+				<svg class="absolute left-[26px] top-1/2 -translate-y-[60%] text-dim pointer-events-none" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
 				<input
-					class="ws-search"
+					class="w-full py-2.5 pr-7 pl-8 rounded-[9px] bg-surface-input border border-line text-heading font-mono text-xs outline-none transition-colors duration-[120ms] placeholder:text-dim focus:border-brand-cyan/30"
 					placeholder={$t('switcher.searchPlaceholder')}
 					bind:value={search}
 					{...INPUT_ATTRS}
 				/>
 				{#if search}
-					<button class="ws-search-clear" onclick={() => (search = '')} aria-label="Clear search">
+					<button class="absolute right-[22px] top-1/2 -translate-y-[60%] w-5 h-5 rounded-full border-none bg-surface-hover text-muted cursor-pointer flex items-center justify-center" onclick={() => (search = '')} aria-label="Clear search">
 						<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
 					</button>
 				{/if}
 			</div>
 
 			<!-- ── Wallet list (scrollable) ─────────────────────── -->
-			<div class="ws-list">
+			<div class="flex-1 overflow-y-auto px-1">
 				{#each filteredWallets as w (w.id)}
 					{@const isActive = w.id === activeWalletId}
 					{@const isExpanded = !!expandedWallets[w.id] || !!search.trim()}

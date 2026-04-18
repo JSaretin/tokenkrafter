@@ -8,7 +8,7 @@
 	} = $props();
 </script>
 
-<div class="flex items-center gap-[7px] font-mono text-xs2 text-(--text-muted)">
-	<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="3"><path d="M5 13l4 4L19 7"/></svg>
+<div class="flex items-center gap-[7px] font-mono text-[10px] text-(--text-muted)">
+	<svg class="shrink-0" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
 	{@render children()}
 </div>

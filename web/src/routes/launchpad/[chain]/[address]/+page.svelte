@@ -1567,8 +1567,8 @@
 
 <!-- Deposit Modal -->
 {#if showDepositModal && userAddress && network}
-	<div class="modal-overlay" onclick={() => { showDepositModal = false; stopBalancePolling(); }}>
-		<div class="modal-card" onclick={(e) => e.stopPropagation()}>
+	<div class="fixed inset-0 z-[1000] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onclick={() => { showDepositModal = false; stopBalancePolling(); }}>
+		<div class="bg-select border border-line rounded-2xl p-6 max-w-[420px] w-full" onclick={(e) => e.stopPropagation()}>
 			<div class="flex justify-between items-center mb-4">
 				<h2 class="syne text-xl font-bold text-white">{$t('lpd.insufficientBalance').replace('{token}', paymentLabel)}</h2>
 				<button class="text-gray-500 hover:text-white text-lg cursor-pointer" onclick={() => { showDepositModal = false; stopBalancePolling(); }}>x</button>
@@ -1582,11 +1582,11 @@
 					{$t('lpd.currentBalance')}: {parseFloat(ethers.formatUnits(userPaymentBalance, paymentDecimals)).toFixed(4)} {paymentLabel}
 				</p>
 
-				<div class="qr-section mb-4">
-					<div class="qr-box">
+				<div class="flex flex-col items-center mb-4">
+					<div class="p-3 bg-surface border border-line-input rounded-xl">
 						<QrCode data={userAddress || ''} width={180} colorDark="#00d2ff" colorLight="#0d0d14" alt="Deposit address QR" />
 					</div>
-					<div class="address-box mt-3">
+					<div class="mt-3 py-2 px-3.5 bg-brand-cyan/[0.04] border border-brand-cyan/[0.12] rounded-lg max-w-full break-all">
 						<span class="text-cyan-400 text-xs font-mono break-all">{userAddress}</span>
 					</div>
 					<button
@@ -1639,14 +1639,14 @@
 		{@const ud = usdtDecimals}
 
 		<!-- Header -->
-		<div class="token-header mb-6">
-			<div class="token-header-top">
-				<div class="token-identity">
+		<div class="border-b border-surface-hover pb-5 mb-6">
+			<div class="flex justify-between items-start gap-4">
+				<div class="flex items-start gap-4">
 					<div class="logo-upload-wrap">
 						{#if metadata.logo_url}
-							<img src={metadata.logo_url} alt="" class="token-logo card-logo-adapt" />
+							<img src={metadata.logo_url} alt="" class="w-14 h-14 rounded-full object-cover shrink-0 border-2 border-surface-hover card-logo-adapt" />
 						{:else}
-							<div class="token-logo token-logo-placeholder">
+							<div class="w-14 h-14 rounded-full shrink-0 border-2 border-surface-hover flex items-center justify-center font-display text-[22px] font-bold text-brand-cyan bg-[linear-gradient(135deg,rgba(0,210,255,0.15),rgba(139,92,246,0.15))]">
 								<span>{(launch.tokenSymbol || '?')[0]}</span>
 							</div>
 						{/if}
@@ -1666,7 +1666,7 @@
 							<h1 class="syne text-2xl sm:text-3xl font-bold text-white leading-tight">
 								{launch.tokenName || 'Unknown Token'}
 							</h1>
-							<span class="token-symbol-badge">{launch.tokenSymbol || '???'}</span>
+							<span class="text-[13px] font-mono text-dim bg-surface border border-surface-hover py-0.5 px-2.5 rounded-md">{launch.tokenSymbol || '???'}</span>
 							<span class="badge badge-{color} text-xs px-3 py-1">
 								{stateLabel(launch.state)}
 							</span>
@@ -1727,25 +1727,25 @@
 								onclick={() => { if (typeof navigator !== 'undefined') { navigator.clipboard.writeText(window.location.href); addFeedback({ message: 'Link copied!', type: 'success' }); } }}
 							>🔗</button>
 						</div>
-						<div class="header-tags">
-							<span class="header-tag">{network?.name || 'BSC'}</span>
-							<span class="header-tag">{CURVE_TYPES[launch.curveType]} {$t('lpd.curve')}</span>
-							<span class="header-tag">{$t('lpd.creator')}: {shortAddr(launch.creator)}</span>
+						<div class="hidden sm:flex items-center gap-2 mt-2 flex-wrap">
+							<span class="header-tag text-[11px] font-mono text-dim bg-white/[0.03] border border-line py-0.5 px-2 rounded">{network?.name || 'BSC'}</span>
+							<span class="header-tag text-[11px] font-mono text-dim bg-white/[0.03] border border-line py-0.5 px-2 rounded">{CURVE_TYPES[launch.curveType]} {$t('lpd.curve')}</span>
+							<span class="header-tag text-[11px] font-mono text-dim bg-white/[0.03] border border-line py-0.5 px-2 rounded">{$t('lpd.creator')}: {shortAddr(launch.creator)}</span>
 						</div>
 						<!-- Social icons inline -->
 						{#if metadata.website || metadata.twitter || metadata.telegram || metadata.discord}
-							<div class="header-socials mt-2">
+							<div class="flex gap-1.5 mt-2">
 								{#if metadata.website}
-									<a href={metadata.website} target="_blank" rel="noopener" class="header-social-icon" title="Website">🌐</a>
+									<a href={metadata.website} target="_blank" rel="noopener" class="inline-flex items-center justify-center w-[30px] h-[30px] rounded-lg bg-surface border border-surface-hover text-sm no-underline transition-all hover:border-brand-cyan/40 hover:bg-brand-cyan/[0.06]" title="Website">🌐</a>
 								{/if}
 								{#if metadata.twitter}
-									<a href={metadata.twitter.startsWith('http') ? metadata.twitter : `https://x.com/${metadata.twitter.replace('@', '')}`} target="_blank" rel="noopener" class="header-social-icon" title="Twitter">𝕏</a>
+									<a href={metadata.twitter.startsWith('http') ? metadata.twitter : `https://x.com/${metadata.twitter.replace('@', '')}`} target="_blank" rel="noopener" class="inline-flex items-center justify-center w-[30px] h-[30px] rounded-lg bg-surface border border-surface-hover text-sm no-underline transition-all hover:border-brand-cyan/40 hover:bg-brand-cyan/[0.06]" title="Twitter">𝕏</a>
 								{/if}
 								{#if metadata.telegram}
-									<a href={metadata.telegram.startsWith('http') ? metadata.telegram : `https://t.me/${metadata.telegram.replace('@', '')}`} target="_blank" rel="noopener" class="header-social-icon" title="Telegram">✈</a>
+									<a href={metadata.telegram.startsWith('http') ? metadata.telegram : `https://t.me/${metadata.telegram.replace('@', '')}`} target="_blank" rel="noopener" class="inline-flex items-center justify-center w-[30px] h-[30px] rounded-lg bg-surface border border-surface-hover text-sm no-underline transition-all hover:border-brand-cyan/40 hover:bg-brand-cyan/[0.06]" title="Telegram">✈</a>
 								{/if}
 								{#if metadata.discord}
-									<a href={metadata.discord.startsWith('http') ? metadata.discord : `https://discord.gg/${metadata.discord}`} target="_blank" rel="noopener" class="header-social-icon" title="Discord">💬</a>
+									<a href={metadata.discord.startsWith('http') ? metadata.discord : `https://discord.gg/${metadata.discord}`} target="_blank" rel="noopener" class="inline-flex items-center justify-center w-[30px] h-[30px] rounded-lg bg-surface border border-surface-hover text-sm no-underline transition-all hover:border-brand-cyan/40 hover:bg-brand-cyan/[0.06]" title="Discord">💬</a>
 								{/if}
 							</div>
 						{/if}
@@ -1866,9 +1866,9 @@
 			</div>
 		{/if}
 
-		<div class="page-grid">
+		<div class="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_400px] lg:grid-rows-[auto_1fr] lg:items-start">
 			<!-- About — own grid item so mobile can place it between buy and tokenomics -->
-			<div class="about-col">
+			<div class="hidden lg:block lg:col-start-1">
 				{#if isEditing || metadata.description || metadata.video_url || isCreator}
 				<div class="card p-6">
 					{#if isEditing}
@@ -1965,7 +1965,7 @@
 			</div>
 
 			<!-- Left: Tokenomics, Curve, Discussion -->
-			<div class="left-col">
+			<div class="lg:col-start-1">
 				<!-- Tokenomics -->
 				<div class="card p-6 mb-4">
 					<h3 class="syne font-bold text-white mb-4">{$t('lpd.tokenomics')}</h3>
@@ -2354,7 +2354,7 @@
 			</div>
 
 			<!-- Right: Actions & Progress -->
-			<div class="right-col">
+			<div class="right-col -order-2 lg:order-none lg:col-start-2 lg:row-start-1 lg:row-end-[-1] lg:sticky lg:top-20 lg:overflow-y-auto lg:overflow-x-hidden lg:pb-6">
 				<!-- Countdown Timer -->
 				{#if countdown && launch.state === 1}
 					<div class="card p-5 mb-4" style={isScheduled ? 'border-color: rgba(245, 158, 11, 0.2)' : ''}>
@@ -2379,7 +2379,7 @@
 
 				<!-- Mobile-only: compact About between timer and buy -->
 				{#if metadata.description || isCreator}
-					<div class="card p-4 mb-4 mobile-about">
+					<div class="card p-4 mb-4 block lg:hidden">
 						{#if isEditing}
 							<!-- Inline edit on mobile -->
 							<div class="flex justify-between items-center mb-3">
@@ -2414,9 +2414,9 @@
 								{/if}
 							</div>
 							{#if metadata.description}
-								<p class="mobile-about-text" class:mobile-about-expanded={mobileAboutExpanded}>{metadata.description}</p>
+								<p class={'mobile-about-text font-mono text-xs text-muted leading-relaxed whitespace-pre-line ' + (mobileAboutExpanded ? 'mobile-about-expanded' : '')}>{metadata.description}</p>
 								{#if metadata.description.length > 120}
-									<button class="mobile-about-toggle" onclick={() => mobileAboutExpanded = !mobileAboutExpanded}>
+									<button class="font-mono text-[11px] text-brand-cyan bg-transparent border-none cursor-pointer pt-1 pb-0 px-0 m-0" onclick={() => mobileAboutExpanded = !mobileAboutExpanded}>
 										{mobileAboutExpanded ? 'Show less' : 'Read more'}
 									</button>
 								{/if}
@@ -2437,7 +2437,7 @@
 							<span class="text-gray-300 font-semibold">{formatUsdt(launch.totalBaseRaised, ud)}</span>
 							<span class="text-gray-500">{formatUsdt(launch.hardCap, ud)}</span>
 						</div>
-						<div class="lp-progress-wrap">
+						<div class="relative">
 							<div class="progress-track progress-track-lg">
 								<div class="progress-fill progress-cyan" style="width: {Math.max(progress > 0 ? 0.5 : 0, progress)}%"></div>
 							</div>
@@ -2492,9 +2492,9 @@
 							{@const curveAtNow = curveFnAt(tokFrac)}
 							{@const curveAtNext = curveFnAt(nextFrac)}
 							{@const impactPct = curveAtNow > 0 ? ((curveAtNext - curveAtNow) / curveAtNow * 100) : 0}
-							<div class="progress-context">
+							<div class="flex flex-col gap-1 mt-2">
 								{#if remainingNum > 0}
-									<div class="ctx-line ctx-scarcity">
+									<div class="flex items-center gap-[5px] font-mono text-[9px] py-1 px-2 rounded-md text-amber-500 bg-amber-500/5 [&_svg]:shrink-0 [&_svg]:text-amber-500">
 										<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
 										<span>{formatUsdt(remainingUsdt, ud)} left until hard cap</span>
 									</div>
@@ -2509,7 +2509,7 @@
 									{@const hourVol = hourBuys.reduce((s, tx) => { try { return s + parseFloat(ethers.formatUnits(BigInt(tx.base_amount) + BigInt(tx.fee || '0'), usdtDecimals)); } catch { return s; } }, 0)}
 									{@const recentCount = txItems.filter(tx => { try { const ts = typeof tx.created_at === 'number' ? tx.created_at * 1000 : new Date(tx.created_at).getTime(); return !isNaN(ts) && ts > tenMinAgo; } catch { return false; } }).length}
 									{#if hourVol > 0}
-										<div class="ctx-line ctx-velocity">
+										<div class="flex items-center gap-[5px] font-mono text-[9px] py-1 px-2 rounded-md text-amber-500 bg-amber-500/5 [&_svg]:shrink-0">
 											<span>🔥</span>
 											<span>+${hourVol.toFixed(2)} in the last hour{recentCount > 0 ? ` · ${recentCount} buy${recentCount > 1 ? 's' : ''} in 10 min` : ''}</span>
 										</div>
@@ -2519,12 +2519,12 @@
 								{#if timePct > 0 && progress > 0}
 									{@const pace = progress / timePct}
 									{#if pace > 1.5}
-										<div class="ctx-line ctx-pace-fast">
+										<div class="flex items-center gap-[5px] font-mono text-[9px] py-1 px-2 rounded-md text-brand-cyan bg-brand-cyan/5 [&_svg]:shrink-0">
 											<span>🚀</span>
 											<span>{progress.toFixed(1)}% raised in {timePct.toFixed(0)}% of time — ahead of pace</span>
 										</div>
 									{:else if pace < 0.5 && timePct > 20}
-										<div class="ctx-line ctx-pace-slow">
+										<div class="flex items-center gap-[5px] font-mono text-[9px] py-1 px-2 rounded-md text-dim bg-white/[0.02] [&_svg]:shrink-0">
 											<span>⏳</span>
 											<span>{progress.toFixed(1)}% raised, {(100 - timePct).toFixed(0)}% of time remaining</span>
 										</div>
@@ -2532,14 +2532,14 @@
 								{/if}
 
 								{#if tokenProgress > 0 && Math.abs(progress - tokenProgress) > 3}
-									<div class="ctx-line ctx-curve">
+									<div class="flex items-center gap-[5px] font-mono text-[9px] py-1 px-2 rounded-md text-muted bg-white/[0.02] [&_svg]:shrink-0 [&_svg]:text-dim">
 										<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4m0-4h.01"/></svg>
 										<span>{tokenProgress}% tokens sold = {progress}% of hard cap (price rises along curve)</span>
 									</div>
 								{/if}
 
 								{#if impactPct > 0.1}
-									<div class="ctx-line ctx-impact">
+									<div class="flex items-center gap-[5px] font-mono text-[9px] py-1 px-2 rounded-md text-emerald-500 bg-emerald-500/5 [&_svg]:shrink-0 [&_svg]:text-emerald-500">
 										<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/></svg>
 										<span>Next 1% of tokens → price +{impactPct.toFixed(1)}%</span>
 									</div>
@@ -2898,15 +2898,15 @@
 						<!-- Payment method select -->
 						<div class="mb-3">
 							<label class="label-text">{$t('lpd.payWith')}</label>
-							<button class="pay-asset-btn" type="button" onclick={() => showPayPicker = true}>
+							<button class="flex items-center gap-2 w-full py-2.5 px-3 rounded-[10px] cursor-pointer bg-surface border border-line text-foreground font-mono text-[13px] transition-colors hover:border-brand-cyan/30" type="button" onclick={() => showPayPicker = true}>
 								{#if getKnownLogo(paySymbol)}
-									<img src={getKnownLogo(paySymbol)} alt="" class="pay-asset-logo" />
+									<img src={getKnownLogo(paySymbol)} alt="" class="w-[22px] h-[22px] rounded-full object-cover shrink-0" />
 								{:else}
-									<span class="pay-asset-letter">{paySymbol.charAt(0)}</span>
+									<span class="w-[22px] h-[22px] rounded-full shrink-0 flex items-center justify-center bg-brand-cyan/15 text-brand-cyan text-[10px] font-bold">{paySymbol.charAt(0)}</span>
 								{/if}
-								<span class="pay-asset-name">{paySymbol}</span>
-								{#if buyPaymentMethod === 'native'}<span class="pay-asset-tag">auto-converted</span>{/if}
-								{#if buyPaymentMethod === 'custom'}<span class="pay-asset-tag">swap → USDT</span>{/if}
+								<span class="flex-1 text-left font-semibold">{paySymbol}</span>
+								{#if buyPaymentMethod === 'native'}<span class="text-[9px] text-dim bg-surface-hover py-0.5 px-1.5 rounded">auto-converted</span>{/if}
+								{#if buyPaymentMethod === 'custom'}<span class="text-[9px] text-dim bg-surface-hover py-0.5 px-1.5 rounded">swap → USDT</span>{/if}
 								<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M6 9l6 6 6-6"/></svg>
 							</button>
 						</div>
@@ -2923,24 +2923,24 @@
 
 						<!-- Preview -->
 						{#if preview && !previewLoading}
-							<div class="preview-box mb-4">
+							<div class="preview-box p-3 bg-brand-cyan/[0.03] border border-brand-cyan/10 rounded-[10px] flex flex-col gap-2 mb-4">
 								{#if previewError === 'estimate'}
 									<div class="text-amber-400 text-[10px] font-mono text-center pb-1">
 										{$t('lpd.approxEstimate')}
 									</div>
 								{/if}
-								<div class="preview-row">
+								<div class="flex justify-between text-xs font-mono">
 									<span class="text-gray-500">{$t('lpd.youReceive')}</span>
 									<span class="text-white font-semibold">
 										{previewError === 'estimate' ? '~' : ''}{formatTokens(preview.tokensOut, tokenMeta.decimals)} {launch.tokenSymbol}
 									</span>
 								</div>
-								<div class="preview-row">
+								<div class="flex justify-between text-xs font-mono">
 									<span class="text-gray-500">Buy Fee (1%)</span>
 									<span class="text-amber-400">{preview.fee > 0n ? formatUsdt(preview.fee, ud) : 'None'}</span>
 								</div>
 								{#if preview.priceImpactBps > 0n}
-									<div class="preview-row">
+									<div class="flex justify-between text-xs font-mono">
 										<span class="text-gray-500">Price impact</span>
 										<span class="text-emerald-400">
 											{(Number(preview.priceImpactBps) / 100).toFixed(2)}%
@@ -2951,25 +2951,25 @@
 									</div>
 								{/if}
 								{#if maxBuyPerWallet > 0n}
-									<div class="preview-row">
+									<div class="flex justify-between text-xs font-mono">
 										<span class="text-gray-500">Max buy per wallet</span>
 										<span class="text-cyan-300">{formatUsdt(maxBuyPerWallet, ud)} ({maxBuyPct}%)</span>
 									</div>
 								{/if}
 							</div>
 						{:else if previewLoading}
-							<div class="preview-box mb-4">
+							<div class="preview-box p-3 bg-brand-cyan/[0.03] border border-brand-cyan/10 rounded-[10px] flex flex-col gap-2 mb-4">
 								<div class="text-gray-500 text-xs font-mono text-center py-2">{$t('lpd.calculating')}</div>
 							</div>
 						{:else if previewError && previewError !== 'estimate'}
-							<div class="exceed-warning mb-4">
+							<div class="py-2 px-3 bg-red-500/[0.06] border border-red-500/[0.15] rounded-lg mb-4">
 								<span class="text-red-400 text-xs font-mono">{previewError}</span>
 							</div>
 						{/if}
 
 						<!-- Max buy info -->
 						{#if maxBuyPerWallet > 0n && userAddress}
-							<div class="max-buy-info mb-3">
+							<div class="max-buy-info py-2 px-3 bg-surface border border-surface-hover rounded-lg mb-3">
 								<div class="flex justify-between text-[10px] font-mono">
 									<span class="text-gray-500">{$t('lpd.maxBuyPerWallet')}</span>
 									<span class="text-gray-400">{formatUsdt(maxBuyPerWallet, ud)} ({maxBuyPct}%)</span>
@@ -2986,7 +2986,7 @@
 						{/if}
 
 						{#if exceedsMaxBuy}
-							<div class="exceed-warning mb-3">
+							<div class="py-2 px-3 bg-red-500/[0.06] border border-red-500/[0.15] rounded-lg mb-3">
 								<span class="text-red-400 text-xs font-mono">
 									{$t('lpd.exceedsMaxBuy').replace('{pct}', String(maxBuyPct))}
 								</span>
@@ -2994,7 +2994,7 @@
 						{/if}
 
 						{#if belowMinBuy}
-							<div class="exceed-warning mb-3">
+							<div class="py-2 px-3 bg-red-500/[0.06] border border-red-500/[0.15] rounded-lg mb-3">
 								<span class="text-red-400 text-xs font-mono">
 									Below minimum buy (${minBuyLabel})
 								</span>
@@ -3002,13 +3002,13 @@
 						{/if}
 
 						<!-- Slippage -->
-						<div class="slippage-row">
-							<button class="slippage-toggle" onclick={() => showSlippageMenu = !showSlippageMenu}>
+						<div class="flex flex-col gap-1.5 mb-2.5 relative">
+							<button class="inline-flex items-center gap-[5px] bg-transparent border-none text-dim font-mono text-[11px] cursor-pointer py-1 w-fit hover:text-heading" onclick={() => showSlippageMenu = !showSlippageMenu}>
 								<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
 								<span>Slippage {slippagePct}%</span>
 							</button>
 							{#if showSlippageMenu}
-								<div class="slippage-options">
+								<div class="flex items-center gap-1 flex-wrap">
 									{#each [1, 3, 5, 10] as pct}
 										<button
 											class="slip-opt"
@@ -3254,156 +3254,31 @@
 {/if}
 
 <style>
-	/* Pay asset picker */
-	.pay-asset-btn {
-		display: flex; align-items: center; gap: 8px; width: 100%;
-		padding: 10px 12px; border-radius: 10px; cursor: pointer;
-		background: var(--bg-surface); border: 1px solid var(--border);
-		color: var(--text); font-family: 'Space Mono', monospace; font-size: 13px;
-		transition: border-color 0.15s;
-	}
-	.pay-asset-btn:hover { border-color: rgba(0,210,255,0.3); }
-	.pay-asset-logo { width: 22px; height: 22px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
-	.pay-asset-letter {
-		width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0;
-		display: flex; align-items: center; justify-content: center;
-		background: rgba(0,210,255,0.15); color: #00d2ff; font-size: 10px; font-weight: 700;
-	}
-	.pay-asset-name { flex: 1; text-align: left; font-weight: 600; }
-	.pay-asset-tag {
-		font-size: 9px; color: var(--text-dim); background: var(--bg-surface-hover);
-		padding: 2px 6px; border-radius: 4px;
-	}
-	.pay-picker-overlay {
-		position: fixed; inset: 0; z-index: 90;
-		background: rgba(0,0,0,0.6); backdrop-filter: blur(6px);
-		display: flex; align-items: center; justify-content: center;
-		padding: 16px; animation: fadeIn 0.15s ease-out;
-	}
-	@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-	.pay-picker {
-		background: var(--bg); border: 1px solid var(--border);
-		border-radius: 16px; width: 100%; max-width: 360px;
-		box-shadow: 0 20px 60px rgba(0,0,0,0.5);
-		animation: scaleIn 0.2s ease-out;
-	}
-	@keyframes scaleIn { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }
-	.pay-picker-header {
-		display: flex; justify-content: space-between; align-items: center;
-		padding: 16px 16px 12px; border-bottom: 1px solid var(--border);
-	}
-	.pay-picker-title { font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700; color: white; }
-	.pay-picker-close { background: none; border: none; color: var(--text-dim); cursor: pointer; padding: 4px; border-radius: 6px; }
-	.pay-picker-close:hover { color: white; background: var(--bg-surface-hover); }
-	.pay-picker-list { padding: 8px; }
-	.pay-picker-item {
-		display: flex; align-items: center; gap: 10px; width: 100%;
-		padding: 10px; border-radius: 10px; cursor: pointer;
-		background: none; border: none; color: var(--text); transition: background 0.1s;
-	}
-	.pay-picker-item:hover { background: var(--bg-surface-input); }
-	.pay-picker-item.active { background: rgba(0,210,255,0.08); }
-	.pay-picker-logo { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
-	.pay-picker-letter {
-		width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0;
-		display: flex; align-items: center; justify-content: center;
-		background: rgba(0,210,255,0.12); color: #00d2ff; font-size: 13px; font-weight: 700;
-	}
-	.pay-picker-info { flex: 1; text-align: left; display: flex; flex-direction: column; gap: 1px; }
-	.pay-picker-symbol { font-size: 13px; font-weight: 600; color: white; }
-	.pay-picker-name { font-size: 10px; color: var(--text-dim); }
-
-	.page-grid {
-		display: grid;
-		grid-template-columns: 1fr;
-		gap: 24px;
-	}
-	/* Mobile: Buy first (with inline about), then rest. Hide about-col since mobile-about handles it. */
-	@media (max-width: 1023px) {
-		.right-col { order: -2; }
-		.about-col { display: none; }
-		.left-col { order: 0; }
-	}
-	/* Mobile-only compact about inside right-col */
-	.mobile-about { display: none; }
-	@media (max-width: 1023px) {
-		.mobile-about { display: block; }
-	}
-	.mobile-about-text {
-		font-family: 'Space Mono', monospace; font-size: 12px;
-		color: var(--text-muted); line-height: 1.6;
-		display: -webkit-box; -webkit-box-orient: vertical;
-		-webkit-line-clamp: 2; line-clamp: 2;
-		overflow: hidden; white-space: pre-line;
-	}
-	.mobile-about-text.mobile-about-expanded {
-		-webkit-line-clamp: unset; line-clamp: unset;
-	}
-	.mobile-about-toggle {
-		font-family: 'Space Mono', monospace; font-size: 11px;
-		color: #00d2ff; background: none; border: none;
-		cursor: pointer; padding: 4px 0 0; margin: 0;
-	}
+	/* Right column scrollbar — custom on desktop */
 	@media (min-width: 1024px) {
-		.page-grid {
-			grid-template-columns: 1fr 400px;
-			grid-template-rows: auto 1fr;
-			align-items: start;
-		}
-		/* About spans left column, above tokenomics */
-		.about-col { grid-column: 1; }
-		.left-col { grid-column: 1; }
-		.right-col { grid-column: 2; grid-row: 1 / -1; }
 		.right-col {
-			position: sticky;
-			top: 80px;
-			overflow-y: auto;
-			overflow-x: hidden;
 			scrollbar-width: thin;
 			scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
-			padding-bottom: 24px;
 		}
 		.right-col::-webkit-scrollbar { width: 4px; }
 		.right-col::-webkit-scrollbar-track { background: transparent; }
 		.right-col::-webkit-scrollbar-thumb { background: var(--border-input); border-radius: 2px; }
 	}
 
-	.preview-box {
-		padding: 12px;
-		background: rgba(0, 210, 255, 0.03);
-		border: 1px solid rgba(0, 210, 255, 0.1);
-		border-radius: 10px;
-		display: flex;
-		flex-direction: column;
-		gap: 8px;
+	/* Mobile-only compact about — line-clamp requires custom properties */
+	.mobile-about-text {
+		display: -webkit-box;
+		-webkit-box-orient: vertical;
+		-webkit-line-clamp: 2;
+		line-clamp: 2;
+		overflow: hidden;
 	}
-	.preview-row {
-		display: flex;
-		justify-content: space-between;
-		font-size: 12px;
-		font-family: 'Space Mono', monospace;
+	.mobile-about-text.mobile-about-expanded {
+		-webkit-line-clamp: unset;
+		line-clamp: unset;
 	}
 
-	.max-buy-info {
-		padding: 8px 12px;
-		background: var(--bg-surface);
-		border: 1px solid var(--bg-surface-hover);
-		border-radius: 8px;
-	}
-
-	.slippage-row {
-		display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; position: relative;
-	}
-	.slippage-toggle {
-		display: inline-flex; align-items: center; gap: 5px;
-		background: none; border: none; color: var(--text-dim);
-		font-family: 'Space Mono', monospace; font-size: 11px;
-		cursor: pointer; padding: 4px 0; width: fit-content;
-	}
-	.slippage-toggle:hover { color: var(--text-heading); }
-	.slippage-options {
-		display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
-	}
+	/* Slippage controls — custom focus/hover states on inputs */
 	.slip-opt {
 		padding: 4px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.08);
 		background: rgba(255,255,255,0.03); color: var(--text-muted);
@@ -3420,58 +3295,7 @@
 	}
 	.slip-custom:focus { border-color: rgba(0, 210, 255, 0.4); outline: none; }
 
-	.exceed-warning {
-		padding: 8px 12px;
-		background: rgba(239, 68, 68, 0.06);
-		border: 1px solid rgba(239, 68, 68, 0.15);
-		border-radius: 8px;
-	}
-	.impact-notice {
-		padding: 10px 12px;
-		background: rgba(245, 158, 11, 0.05);
-		border: 1px solid rgba(245, 158, 11, 0.15);
-		border-radius: 10px;
-		display: flex; flex-direction: column; gap: 6px;
-	}
-	.impact-notice-header {
-		display: flex; align-items: center; gap: 6px;
-		color: #f59e0b; font-size: 12px; font-family: 'Space Mono', monospace; font-weight: 600;
-	}
-	.impact-notice-desc {
-		font-size: 11px; color: #92400e; font-family: 'Space Mono', monospace; line-height: 1.5;
-	}
-	.impact-notice-btn {
-		align-self: flex-start;
-		padding: 5px 14px; border-radius: 6px; border: 1px solid rgba(0, 210, 255, 0.25);
-		background: rgba(0, 210, 255, 0.08); color: #00d2ff;
-		font-family: 'Space Mono', monospace; font-size: 11px;
-		cursor: pointer; transition: all 0.15s;
-	}
-	.impact-notice-btn:hover { background: rgba(0, 210, 255, 0.15); border-color: rgba(0, 210, 255, 0.4); }
-
 	/* Progress bar with soft cap marker */
-	/* Progress context signals */
-	.progress-context {
-		display: flex; flex-direction: column; gap: 4px;
-		margin-top: 8px;
-	}
-	.ctx-line {
-		display: flex; align-items: center; gap: 5px;
-		font-family: 'Space Mono', monospace; font-size: 9px;
-		padding: 4px 8px; border-radius: 6px;
-	}
-	.ctx-line svg { flex-shrink: 0; }
-	.ctx-scarcity { color: #f59e0b; background: rgba(245,158,11,0.05); }
-	.ctx-scarcity svg { color: #f59e0b; }
-	.ctx-pace-fast { color: #00d2ff; background: rgba(0,210,255,0.05); }
-	.ctx-pace-slow { color: var(--text-dim); background: rgba(255,255,255,0.02); }
-	.ctx-curve { color: var(--text-muted); background: rgba(255,255,255,0.02); }
-	.ctx-curve svg { color: var(--text-dim); }
-	.ctx-velocity { color: #f59e0b; background: rgba(245,158,11,0.05); }
-	.ctx-impact { color: #10b981; background: rgba(16,185,129,0.05); }
-	.ctx-impact svg { color: #10b981; }
-
-	.lp-progress-wrap { position: relative; }
 
 	/* Milestone ticks on progress bar */
 	.lp-milestone-tick {
@@ -3526,49 +3350,6 @@
 	.status-purple { color: #a78bfa; }
 	.status-red { color: #f87171; }
 
-	/* Token header */
-	.token-header {
-		border-bottom: 1px solid var(--bg-surface-hover);
-		padding-bottom: 20px;
-	}
-	.token-header-top {
-		display: flex;
-		justify-content: space-between;
-		align-items: flex-start;
-		gap: 16px;
-	}
-	.token-identity {
-		display: flex;
-		align-items: flex-start;
-		gap: 16px;
-	}
-	.token-logo {
-		width: 56px;
-		height: 56px;
-		border-radius: 50%;
-		object-fit: cover;
-		flex-shrink: 0;
-		border: 2px solid var(--bg-surface-hover);
-	}
-	.token-logo-placeholder {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		background: linear-gradient(135deg, rgba(0, 210, 255, 0.15), rgba(139, 92, 246, 0.15));
-		font-size: 22px;
-		font-weight: 700;
-		color: #00d2ff;
-		font-family: 'Syne', sans-serif;
-	}
-	.token-symbol-badge {
-		font-size: 13px;
-		font-family: 'Space Mono', monospace;
-		color: var(--text-dim);
-		background: var(--bg-surface);
-		border: 1px solid var(--bg-surface-hover);
-		padding: 2px 10px;
-		border-radius: 6px;
-	}
 	.header-tags { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
 	@media (max-width: 640px) {
 		.header-tags { display: none; }
@@ -3625,64 +3406,6 @@
 	.header-social-icon:hover {
 		border-color: rgba(0, 210, 255, 0.4);
 		background: rgba(0, 210, 255, 0.06);
-	}
-
-	/* Tokenomics allocation bar */
-	.alloc-bar {
-		display: flex;
-		height: 12px;
-		border-radius: 6px;
-		overflow: hidden;
-		background: var(--bg-surface-hover);
-	}
-	.alloc-segment {
-		height: 100%;
-		min-width: 2px;
-		transition: width 0.3s ease;
-	}
-	.alloc-cyan {
-		background: linear-gradient(90deg, #00d2ff, #3a7bd5);
-	}
-	.alloc-purple {
-		background: linear-gradient(90deg, #8b5cf6, #a78bfa);
-	}
-	.alloc-amber {
-		background: linear-gradient(90deg, #f59e0b, #fbbf24);
-	}
-
-	.alloc-legend {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 16px;
-	}
-	.legend-item {
-		display: flex;
-		align-items: center;
-		gap: 6px;
-		font-size: 12px;
-		font-family: 'Space Mono', monospace;
-	}
-	.legend-dot {
-		width: 8px;
-		height: 8px;
-		border-radius: 50%;
-		flex-shrink: 0;
-	}
-	.legend-label {
-		color: var(--text-dim);
-	}
-	.legend-value {
-		color: var(--text);
-		font-weight: 600;
-	}
-
-	/* Address truncation */
-	.addr-value {
-		font-size: 11px !important;
-		max-width: 200px;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
 	}
 
 	/* Sale Details */
@@ -3805,74 +3528,6 @@
 		font-family: 'Space Mono', monospace; font-size: 10px;
 		color: var(--text-muted); text-align: center;
 	}
-	.pos-limit-maxed { color: #f87171; }
-	.pos-limit {
-		padding-top: 12px; border-top: 1px solid var(--border-subtle);
-	}
-	.pos-limit-header {
-		display: flex; justify-content: space-between;
-		font-family: 'Rajdhani', sans-serif; font-size: 11px;
-		color: var(--text-dim); margin-bottom: 6px;
-	}
-	.pos-limit-remaining {
-		display: block; text-align: right;
-		font-family: 'Rajdhani', sans-serif; font-size: 11px;
-		color: var(--text-dim); margin-top: 4px;
-		text-transform: uppercase;
-		letter-spacing: 0.04em;
-		margin-top: 2px;
-	}
-
-	/* Modal */
-	.modal-overlay {
-		position: fixed;
-		inset: 0;
-		z-index: 1000;
-		background: rgba(0, 0, 0, 0.7);
-		backdrop-filter: blur(4px);
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		padding: 16px;
-	}
-	.modal-card {
-		background: var(--select-bg);
-		border: 1px solid var(--border);
-		border-radius: 16px;
-		padding: 24px;
-		max-width: 420px;
-		width: 100%;
-	}
-	.qr-section {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-	}
-	.qr-box {
-		padding: 12px;
-		background: var(--bg-surface);
-		border: 1px solid var(--border-input);
-		border-radius: 12px;
-	}
-	.qr-img {
-		width: 180px;
-		height: 180px;
-		border-radius: 8px;
-	}
-	.address-box {
-		padding: 8px 14px;
-		background: rgba(0, 210, 255, 0.04);
-		border: 1px solid rgba(0, 210, 255, 0.12);
-		border-radius: 8px;
-		max-width: 100%;
-		word-break: break-all;
-	}
-	.badge-red {
-		background: rgba(239, 68, 68, 0.1);
-		color: #f87171;
-		border: 1px solid rgba(239, 68, 68, 0.2);
-	}
-
 	/* Logo upload overlay */
 	.logo-upload-wrap {
 		position: relative;
@@ -3968,40 +3623,6 @@
 		border-color: rgba(0, 210, 255, 0.3);
 	}
 
-	/* Countdown timer */
-	.countdown-grid {
-		display: grid;
-		grid-template-columns: repeat(4, 1fr);
-		gap: 8px;
-	}
-	.countdown-box {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: 4px;
-		padding: 10px 4px;
-		background: linear-gradient(135deg, rgba(0, 210, 255, 0.08), rgba(139, 92, 246, 0.08));
-		border: 1px solid rgba(0, 210, 255, 0.15);
-		border-radius: 10px;
-	}
-	.countdown-num {
-		font-size: 22px;
-		font-weight: 700;
-		color: var(--text-heading);
-		font-family: 'Space Mono', monospace;
-		line-height: 1;
-	}
-	.countdown-num-amber {
-		color: #f59e0b;
-	}
-	.countdown-label {
-		font-size: 9px;
-		text-transform: uppercase;
-		letter-spacing: 0.06em;
-		color: var(--text-dim);
-		font-family: 'Space Mono', monospace;
-	}
-
 	/* Progress bar large variant */
 	.progress-track-lg {
 		height: 16px;
@@ -4015,33 +3636,6 @@
 		height: 1px;
 		background: var(--bg-surface-hover);
 		margin: 0;
-	}
-
-	/* Share section */
-	.share-row {
-		display: flex;
-		justify-content: center;
-		gap: 10px;
-	}
-	.share-btn {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		width: 40px;
-		height: 40px;
-		border-radius: 50%;
-		background: var(--bg-surface);
-		border: 1px solid var(--bg-surface-hover);
-		font-size: 16px;
-		cursor: pointer;
-		transition: all 0.15s ease;
-		text-decoration: none;
-		color: inherit;
-	}
-	.share-btn:hover {
-		border-color: rgba(0, 210, 255, 0.4);
-		background: rgba(0, 210, 255, 0.06);
-		transform: scale(1.05);
 	}
 
 	/* Connect CTA */
@@ -4364,37 +3958,6 @@
 		align-items: center;
 	}
 
-	/* Share buttons row (top of detail page) */
-	.share-buttons-row {
-		display: flex;
-		align-items: center;
-		gap: 12px;
-	}
-	.share-buttons-group {
-		display: flex;
-		gap: 8px;
-	}
-	.share-icon-btn {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		width: 32px;
-		height: 32px;
-		border-radius: 8px;
-		background: var(--bg-surface);
-		border: 1px solid var(--bg-surface-hover);
-		font-size: 14px;
-		cursor: pointer;
-		transition: all 0.15s ease;
-		text-decoration: none;
-		color: inherit;
-	}
-	.share-icon-btn:hover {
-		border-color: rgba(0, 210, 255, 0.4);
-		background: rgba(0, 210, 255, 0.06);
-		transform: scale(1.05);
-	}
-
 	/* Graduation celebration banner */
 	.graduated-trade-cta {
 		background: linear-gradient(135deg, rgba(0,210,255,0.06), rgba(16,185,129,0.06));
@@ -4498,10 +4061,6 @@
 		border: 1px solid var(--bg-surface-hover);
 		border-radius: 10px;
 	}
-	.remaining-buy-maxed {
-		text-align: center;
-		padding: 4px 0;
-	}
 	.remaining-buy-track {
 		height: 6px;
 		border-radius: 3px;
@@ -4522,12 +4081,6 @@
 	:global(:root.light) .card {
 		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 0 0 1px rgba(0, 0, 0, 0.04);
 	}
-	:global(:root.light) .position-stat,
-	:global(:root.light) .rule-chip,
-	:global(:root.light) .countdown-box {
-		background: rgba(0, 0, 0, 0.025);
-		border-color: rgba(0, 0, 0, 0.08);
-	}
 	:global(:root.light) .max-buy-info,
 	:global(:root.light) .remaining-buy-indicator {
 		background: rgba(0, 0, 0, 0.02);
@@ -4545,43 +4098,9 @@
 		border-color: rgba(0, 0, 0, 0.08);
 		color: var(--text-muted);
 	}
-	:global(:root.light) .countdown-box {
-		background: linear-gradient(135deg, rgba(0, 150, 200, 0.06), rgba(100, 60, 200, 0.06));
-		border-color: rgba(0, 150, 200, 0.12);
-	}
-	:global(:root.light) .countdown-num {
-		color: var(--text-heading);
-	}
 
-	/* Fix 3: Bag amount + symbol pairing */
-	.bag-amount {
-		display: inline;
-		font-family: 'Space Mono', monospace;
-	}
-	.bag-symbol {
-		font-size: 0.75em;
-		opacity: 0.6;
-		font-weight: 600;
-	}
-
-	/* Fix 5: Mobile badge wrapping + countdown scaling */
-	.badge-row {
-		flex-wrap: wrap;
-		gap: 6px;
-	}
+	/* Mobile card padding */
 	@media (max-width: 500px) {
-		.badge-row {
-			gap: 4px;
-		}
-		.countdown-box {
-			padding: 6px 2px;
-		}
-		.countdown-num {
-			font-size: 16px;
-		}
-		.countdown-label {
-			font-size: 7px;
-		}
 		.card { padding: 12px; }
 		.card.p-6 { padding: 12px; }
 		.card.p-5 { padding: 10px; }

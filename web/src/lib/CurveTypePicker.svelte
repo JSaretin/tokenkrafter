@@ -40,50 +40,49 @@
 	}
 </script>
 
-<button class="curve-pick-btn" type="button" onclick={() => showModal = true}>
-	<svg class="curve-pick-preview" viewBox="0 0 60 32" fill="none"><path d={curveMiniPath(value, 60, 32)} stroke="#00d2ff" stroke-width="2" stroke-linecap="round" fill="none"/></svg>
-	<span class="curve-pick-name">{CURVE_LABELS[value]}</span>
+<button class="flex items-center gap-2.5 w-full px-3.5 py-2.5 rounded-[10px] bg-surface-hover border border-line-input text-foreground cursor-pointer transition-all duration-150 hover:border-[rgba(0,210,255,0.3)] hover:bg-[rgba(0,210,255,0.04)] [&>svg]:text-dim [&>svg]:shrink-0" type="button" onclick={() => showModal = true}>
+	<svg class="w-[60px] h-8 shrink-0" viewBox="0 0 60 32" fill="none"><path d={curveMiniPath(value, 60, 32)} stroke="#00d2ff" stroke-width="2" stroke-linecap="round" fill="none"/></svg>
+	<span class="flex-1 text-left font-display font-semibold text-sm">{CURVE_LABELS[value]}</span>
 	<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
 </button>
 
 {#if showModal}
 	<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-	<div class="curve-modal-overlay" onclick={() => showModal = false} role="presentation">
+	<div class="fixed inset-0 z-[80] bg-black/70 backdrop-blur flex items-center justify-center p-4 max-[500px]:p-0" onclick={() => showModal = false} role="presentation">
 		<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-		<div class="curve-modal" onclick={(e) => e.stopPropagation()} role="dialog" aria-label="Choose curve type" tabindex="-1">
-			<div class="curve-modal-header">
-				<h3 class="curve-modal-title">Choose Curve Type</h3>
-				<button type="button" class="curve-modal-close" aria-label="Close" onclick={() => showModal = false}>
+		<div class="curve-modal w-full max-w-[440px] max-[500px]:max-w-full bg-background border border-line rounded-[20px] max-[500px]:rounded-2xl overflow-hidden shadow-[0_24px_80px_rgba(0,0,0,0.5)]" onclick={(e) => e.stopPropagation()} role="dialog" aria-label="Choose curve type" tabindex="-1">
+			<div class="flex items-center justify-between px-5 pt-[18px]">
+				<h3 class="font-display text-base font-bold text-heading m-0">Choose Curve Type</h3>
+				<button type="button" class="w-8 h-8 rounded-lg border-none bg-surface-hover text-dim flex items-center justify-center cursor-pointer transition-all duration-150 hover:bg-line-input hover:text-heading" aria-label="Close" onclick={() => showModal = false}>
 					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
 				</button>
 			</div>
 
-			<div class="curve-modal-body">
-				<div class="curve-modal-chart">
+			<div class="px-5 py-4">
+				<div class="bg-surface border border-line-subtle rounded-xl p-1 mb-3.5 overflow-hidden">
 					<BondingCurveChart curveType={value} height="200px" />
 				</div>
 
-				<div class="curve-modal-options">
+				<div class="flex flex-col gap-1.5">
 					{#each CURVE_LABELS as label, i}
 						<button type="button"
-							class="curve-option"
-							class:curve-option-active={value === i}
+							class={'curve-opt flex items-center gap-2.5 px-3 py-2.5 rounded-[10px] border w-full text-inherit cursor-pointer transition-all duration-150 ' + (value === i ? 'bg-[rgba(0,210,255,0.06)] border-[rgba(0,210,255,0.25)] is-active' : 'bg-surface border-line-subtle hover:bg-surface-hover hover:border-line-input')}
 							onclick={() => value = i}
 						>
-							<svg class="curve-option-mini" viewBox="0 0 48 28" fill="none"><path d={curveMiniPath(i, 48, 28)} stroke={value === i ? '#00d2ff' : '#475569'} stroke-width="2" stroke-linecap="round" fill="none"/></svg>
-							<div class="curve-option-info">
-								<span class="curve-option-name">{label}</span>
-								<span class="curve-option-desc">{CURVE_DESCS[i]}</span>
+							<svg class="w-12 h-7 shrink-0" viewBox="0 0 48 28" fill="none"><path d={curveMiniPath(i, 48, 28)} stroke={value === i ? '#00d2ff' : '#475569'} stroke-width="2" stroke-linecap="round" fill="none"/></svg>
+							<div class="flex-1 flex flex-col gap-px text-left">
+								<span class={'curve-opt-name font-display text-[13px] font-semibold ' + (value === i ? 'text-[#00d2ff]' : 'text-foreground')}>{label}</span>
+								<span class="font-mono text-[10px] text-dim leading-[1.3]">{CURVE_DESCS[i]}</span>
 							</div>
 							{#if value === i}
-								<svg class="curve-option-check" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#00d2ff" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+								<svg class="shrink-0" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#00d2ff" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
 							{/if}
 						</button>
 					{/each}
 				</div>
 			</div>
 
-			<button type="button" class="curve-modal-done" onclick={() => showModal = false}>
+			<button type="button" class="curve-done block w-[calc(100%-40px)] mx-5 mb-[18px] p-3 rounded-[10px] border-none text-white font-display text-sm font-bold cursor-pointer transition-all duration-200 hover:-translate-y-px hover:shadow-[0_6px_28px_rgba(0,210,255,0.3)]" onclick={() => showModal = false}>
 				Done
 			</button>
 		</div>
@@ -91,78 +90,10 @@
 {/if}
 
 <style>
-	.curve-pick-btn {
-		display: flex; align-items: center; gap: 10px;
-		width: 100%; padding: 10px 14px; border-radius: 10px;
-		background: var(--bg-surface-hover, rgba(255,255,255,0.04));
-		border: 1px solid var(--border-input, rgba(255,255,255,0.08));
-		color: var(--text); cursor: pointer; transition: all 150ms;
-	}
-	.curve-pick-btn:hover { border-color: rgba(0,210,255,0.3); background: rgba(0,210,255,0.04); }
-	.curve-pick-preview { width: 60px; height: 32px; flex-shrink: 0; }
-	.curve-pick-name { flex: 1; text-align: left; font-family: 'Syne', sans-serif; font-weight: 600; font-size: 14px; }
-	.curve-pick-btn svg { color: var(--text-dim); flex-shrink: 0; }
-
-	.curve-modal-overlay {
-		position: fixed; inset: 0; z-index: 80;
-		background: rgba(0,0,0,0.7); backdrop-filter: blur(4px);
-		display: flex; align-items: center; justify-content: center; padding: 16px;
-	}
-	.curve-modal {
-		width: 100%; max-width: 440px;
-		background: var(--bg, #07070d); border: 1px solid var(--border);
-		border-radius: 20px; overflow: hidden;
-		animation: curveModalIn 200ms ease-out;
-		box-shadow: 0 24px 80px rgba(0,0,0,0.5);
-	}
+	.curve-modal { animation: curveModalIn 200ms ease-out; }
 	@keyframes curveModalIn {
 		from { opacity: 0; transform: scale(0.95) translateY(8px); }
 		to { opacity: 1; transform: scale(1) translateY(0); }
 	}
-	.curve-modal-header {
-		display: flex; align-items: center; justify-content: space-between;
-		padding: 18px 20px 0;
-	}
-	.curve-modal-title { font-family: 'Syne', sans-serif; font-size: 16px; font-weight: 700; color: var(--text-heading); margin: 0; }
-	.curve-modal-close {
-		width: 32px; height: 32px; border-radius: 8px; border: none;
-		background: var(--bg-surface-hover); color: var(--text-dim);
-		display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 150ms;
-	}
-	.curve-modal-close:hover { background: var(--border-input); color: var(--text-heading); }
-
-	.curve-modal-body { padding: 16px 20px; }
-	.curve-modal-chart {
-		background: var(--bg-surface); border: 1px solid var(--border-subtle);
-		border-radius: 12px; padding: 4px; margin-bottom: 14px; overflow: hidden;
-	}
-
-	.curve-modal-options { display: flex; flex-direction: column; gap: 6px; }
-	.curve-option {
-		display: flex; align-items: center; gap: 10px;
-		padding: 10px 12px; border-radius: 10px;
-		background: var(--bg-surface); border: 1px solid var(--border-subtle);
-		color: inherit; cursor: pointer; transition: all 150ms; width: 100%;
-	}
-	.curve-option:hover { background: var(--bg-surface-hover); border-color: var(--border-input); }
-	.curve-option-active { background: rgba(0,210,255,0.06); border-color: rgba(0,210,255,0.25); }
-	.curve-option-mini { width: 48px; height: 28px; flex-shrink: 0; }
-	.curve-option-info { flex: 1; display: flex; flex-direction: column; gap: 1px; text-align: left; }
-	.curve-option-name { font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 600; color: var(--text); }
-	.curve-option-active .curve-option-name { color: #00d2ff; }
-	.curve-option-desc { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text-dim); line-height: 1.3; }
-	.curve-option-check { flex-shrink: 0; }
-
-	.curve-modal-done {
-		display: block; width: calc(100% - 40px); margin: 0 20px 18px;
-		padding: 12px; border-radius: 10px; border: none;
-		background: linear-gradient(135deg, #00d2ff, #3a7bd5); color: white;
-		font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700;
-		cursor: pointer; transition: all 200ms;
-	}
-	.curve-modal-done:hover { transform: translateY(-1px); box-shadow: 0 6px 28px rgba(0,210,255,0.3); }
-
-	@media (max-width: 500px) {
-		.curve-modal { max-width: 100%; border-radius: 16px; }
-	}
+	.curve-done { background: linear-gradient(135deg, #00d2ff, #3a7bd5); }
 </style>

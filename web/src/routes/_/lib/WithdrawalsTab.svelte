@@ -329,8 +329,7 @@
 					{ key: 'timeout', label: 'Timed Out', count: timeoutWithdrawals.length },
 					{ key: 'all', label: 'All', count: 0 }
 				] as tab}
-					<button class="text-xs font-mono px-3 py-1.5 rounded-lg cursor-pointer transition
-						{withdrawFilter === tab.key ? 'bg-cyan-500/15 text-cyan-400 border border-cyan-500/30' : 'text-gray-500 bg-[var(--bg-surface-hover)] border border-transparent'}"
+					<button class={'text-xs font-mono px-3 py-1.5 rounded-lg cursor-pointer transition ' + (withdrawFilter === tab.key ? 'bg-cyan-500/15 text-cyan-400 border border-cyan-500/30' : 'text-gray-500 bg-surface-hover border border-transparent')}
 						onclick={() => { withdrawFilter = tab.key as any; loadWithdrawals(); }}
 					>
 						{tab.label}
@@ -342,7 +341,7 @@
 			</div>
 			<div class="flex items-center gap-2 ml-auto">
 				<label class="text-xs text-gray-500 font-mono">NGN Rate:</label>
-				<input class="input-field text-xs" style="width: 100px;" type="number" bind:value={nairaRate} />
+				<input class="input-field text-xs w-[100px]" type="number" bind:value={nairaRate} />
 			</div>
 			<button class="btn-secondary text-xs px-3 py-1.5 cursor-pointer" onclick={loadWithdrawals}>
 				Refresh
@@ -353,7 +352,7 @@
 	<!-- Withdrawal list -->
 	{#if withdrawalsLoading}
 		<div class="card p-8 text-center">
-			<div class="spinner mx-auto mb-3"></div>
+			<div class="spinner mx-auto mb-3 w-6 h-6 rounded-full border-2 border-line border-t-brand-cyan"></div>
 			<span class="text-gray-500 font-mono text-xs">Loading...</span>
 		</div>
 	{:else}
@@ -376,18 +375,18 @@
 				{@const totalDuration = expiresTs - createdTs}
 				{@const elapsed = nowSec - createdTs}
 				{@const timedOut = isPending && remaining <= 0}
-				<div class="card p-4" style={isPending ? 'border-color: rgba(245,158,11,0.2);' : ''}>
+				<div class={'card p-4' + (isPending ? ' border-amber-500/20' : '')}>
 					<div class="flex items-start justify-between gap-4 mb-3">
 						<div>
 							<div class="flex items-center gap-2 mb-1">
 								<span class="font-mono text-sm font-bold text-white">
 									${usdtAmount.toFixed(2)}
 								</span>
-								<span class="text-[10px] font-mono px-2 py-0.5 rounded-full
-									{w.status === 'pending' ? 'bg-amber-500/15 text-amber-400' :
+								<span class={'text-[10px] font-mono px-2 py-0.5 rounded-full ' +
+									(w.status === 'pending' ? 'bg-amber-500/15 text-amber-400' :
 									 w.status === 'confirmed' ? 'bg-emerald-500/15 text-emerald-400' :
 									 w.status === 'processing' ? 'bg-cyan-500/15 text-cyan-400' :
-									 'bg-red-500/15 text-red-400'}"
+									 'bg-red-500/15 text-red-400')}
 								>{w.status}</span>
 							</div>
 							<span class="text-[10px] text-gray-600 font-mono">{w.wallet_address?.slice(0, 8)}...{w.wallet_address?.slice(-6)}</span>
@@ -403,7 +402,7 @@
 					</div>
 
 					<!-- Payment details -->
-					<div class="bg-[var(--bg-surface-input)] rounded-lg p-3 mb-3">
+					<div class="bg-surface-input rounded-lg p-3 mb-3">
 						<div class="flex justify-between text-xs font-mono mb-1">
 							<span class="text-gray-500">Method</span>
 							<span class="text-white">{w.payment_method || 'bank'}</span>
@@ -443,9 +442,9 @@
 
 					<!-- Actions -->
 					{#if isPending}
-						<div class="countdown-strip mb-3">
-							<div class="countdown-bar">
-								<div class="countdown-fill" style="width: {totalDuration > 0 ? Math.min(100, (elapsed / totalDuration) * 100) : 100}%; background: {timedOut ? 'linear-gradient(90deg, #f87171, #dc2626)' : 'linear-gradient(90deg, #f59e0b, #d97706)'}"></div>
+						<div class="px-0.5 mb-3">
+							<div class="w-full h-1 bg-surface-hover rounded-sm overflow-hidden">
+								<div class="h-full rounded-sm transition-[width] duration-1000 ease-linear" style="width: {totalDuration > 0 ? Math.min(100, (elapsed / totalDuration) * 100) : 100}%; background: {timedOut ? 'linear-gradient(90deg, #f87171, #dc2626)' : 'linear-gradient(90deg, #f59e0b, #d97706)'}"></div>
 							</div>
 							<div class="flex justify-between items-center mt-1">
 								{#if timedOut}
@@ -512,18 +511,18 @@
 	{@const w = confirmTarget}
 	{@const chainDec = usdtDecimalsMap[w.chain_id] || 18}
 	{@const netUsdt = parseFloat(ethers.formatUnits(w.net_amount || w.gross_amount || '0', chainDec))}
-	<div class="modal-backdrop" onclick={() => { showConfirmModal = false; }} role="dialog" aria-modal="true">
-		<div class="confirm-modal" onclick={(e) => e.stopPropagation()}>
-			<div class="modal-header">
-				<h3>Confirm Withdrawal #{w.withdraw_id}</h3>
-				<button class="modal-close" onclick={() => { showConfirmModal = false; }}>
+	<div class="fixed inset-0 z-[100] bg-black/70 backdrop-blur-[4px] flex items-center justify-center p-4" onclick={() => { showConfirmModal = false; }} role="dialog" aria-modal="true">
+		<div class="w-full max-w-[440px] bg-background border border-line rounded-[20px] overflow-hidden" onclick={(e) => e.stopPropagation()}>
+			<div class="flex justify-between items-center px-5 py-4 border-b border-line">
+				<h3 class="font-display text-[15px] font-bold text-heading m-0">Confirm Withdrawal #{w.withdraw_id}</h3>
+				<button class="bg-none border-none text-muted cursor-pointer p-1 rounded-lg transition hover:text-foreground hover:bg-surface-hover" onclick={() => { showConfirmModal = false; }}>
 					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
 				</button>
 			</div>
 
-			<div class="modal-body">
+			<div class="px-5 pt-4 pb-5">
 				<!-- Summary -->
-				<div class="confirm-summary">
+				<div class="bg-surface-input rounded-xl p-3 mb-4">
 					<div class="flex justify-between text-xs font-mono mb-1">
 						<span class="text-gray-500">Net Amount</span>
 						<span class="text-white font-bold">${netUsdt.toFixed(2)}</span>
@@ -541,35 +540,35 @@
 				</div>
 
 				<!-- Mode selector -->
-				<div class="confirm-modes">
-					<button class="confirm-mode-btn" class:confirm-mode-active={confirmMode === 'default'}
+				<div class="flex flex-col gap-1.5 mb-4">
+					<button class={'flex items-center gap-3 w-full px-3.5 py-2.5 rounded-[10px] border bg-transparent cursor-pointer text-left transition hover:border-cyan-500/20 hover:bg-cyan-500/5 ' + (confirmMode === 'default' ? 'border-cyan-500/40 bg-cyan-500/[0.06]' : 'border-line')}
 						onclick={() => { confirmMode = 'default'; }}>
-						<span class="confirm-mode-icon">→</span>
+						<span class={'w-8 h-8 rounded-lg shrink-0 flex items-center justify-center text-sm border ' + (confirmMode === 'default' ? 'bg-cyan-500/10 border-cyan-500/30 text-brand-cyan' : 'bg-surface border-line')}>→</span>
 						<div>
-							<span class="confirm-mode-title">Default</span>
-							<span class="confirm-mode-desc">Send to platform wallet</span>
+							<span class="block font-mono text-xs font-bold text-heading">Default</span>
+							<span class="block font-mono text-[10px] text-muted mt-px">Send to platform wallet</span>
 						</div>
 					</button>
-					<button class="confirm-mode-btn" class:confirm-mode-active={confirmMode === 'custom-wallet'}
+					<button class={'flex items-center gap-3 w-full px-3.5 py-2.5 rounded-[10px] border bg-transparent cursor-pointer text-left transition hover:border-cyan-500/20 hover:bg-cyan-500/5 ' + (confirmMode === 'custom-wallet' ? 'border-cyan-500/40 bg-cyan-500/[0.06]' : 'border-line')}
 						onclick={() => { confirmMode = 'custom-wallet'; }}>
-						<span class="confirm-mode-icon">⇄</span>
+						<span class={'w-8 h-8 rounded-lg shrink-0 flex items-center justify-center text-sm border ' + (confirmMode === 'custom-wallet' ? 'bg-cyan-500/10 border-cyan-500/30 text-brand-cyan' : 'bg-surface border-line')}>⇄</span>
 						<div>
-							<span class="confirm-mode-title">Custom Wallet</span>
-							<span class="confirm-mode-desc">Send full amount to another address</span>
+							<span class="block font-mono text-xs font-bold text-heading">Custom Wallet</span>
+							<span class="block font-mono text-[10px] text-muted mt-px">Send full amount to another address</span>
 						</div>
 					</button>
 				</div>
 
 				<!-- Custom fields -->
 				{#if confirmMode === 'custom-wallet'}
-					<div class="confirm-fields">
-						<label class="text-[10px] text-gray-500 font-mono uppercase">Recipient Address</label>
+					<div class="mb-3">
+						<label class="block mb-1 text-[10px] text-gray-500 font-mono uppercase">Recipient Address</label>
 						<input class="input-field text-xs" bind:value={confirmTo} placeholder="0x..." />
 					</div>
 				{/if}
 
 				<!-- Execute button -->
-				<button class="confirm-execute-btn" onclick={executeConfirm}
+				<button class="w-full p-3 rounded-xl border-none cursor-pointer text-white font-display text-[13px] font-bold transition duration-200 bg-gradient-to-br from-[#10b981] to-[#059669] hover:-translate-y-px hover:shadow-[0_6px_20px_rgba(16,185,129,0.3)] disabled:opacity-40 disabled:cursor-not-allowed disabled:translate-y-0 disabled:shadow-none" onclick={executeConfirm}
 					disabled={confirmMode === 'custom-wallet' && !confirmTo}
 				>
 					{confirmMode === 'default' ? 'Confirm & Send to Platform Wallet' :
@@ -579,82 +578,3 @@
 		</div>
 	</div>
 {/if}
-
-<style>
-	.spinner {
-		width: 24px; height: 24px;
-		border: 2px solid var(--border);
-		border-top-color: #00d2ff;
-		border-radius: 50%;
-		animation: spin 0.8s linear infinite;
-	}
-	@keyframes spin { to { transform: rotate(360deg); } }
-	.countdown-strip { padding: 0 2px; }
-	.countdown-bar {
-		width: 100%; height: 4px; background: var(--bg-surface-hover);
-		border-radius: 2px; overflow: hidden;
-	}
-	.countdown-fill { height: 100%; border-radius: 2px; transition: width 1s linear; }
-
-	/* Confirm Modal */
-	.modal-backdrop {
-		position: fixed; inset: 0; z-index: 100; background: rgba(0,0,0,0.7);
-		backdrop-filter: blur(4px); display: flex; align-items: center;
-		justify-content: center; padding: 16px;
-	}
-	.confirm-modal {
-		width: 100%; max-width: 440px; background: var(--bg);
-		border: 1px solid var(--border); border-radius: 20px; overflow: hidden;
-	}
-	.modal-header {
-		display: flex; justify-content: space-between; align-items: center;
-		padding: 16px 20px; border-bottom: 1px solid var(--border);
-	}
-	.modal-header h3 {
-		font-family: 'Syne', sans-serif; font-size: 15px; font-weight: 700;
-		color: var(--text-heading); margin: 0;
-	}
-	.modal-close {
-		background: none; border: none; color: var(--text-muted); cursor: pointer;
-		padding: 4px; border-radius: 8px; transition: all 150ms;
-	}
-	.modal-close:hover { color: var(--text); background: var(--bg-surface-hover); }
-	.modal-body { padding: 16px 20px 20px; }
-
-	.confirm-summary {
-		background: var(--bg-surface-input); border-radius: 12px; padding: 12px; margin-bottom: 16px;
-	}
-	.confirm-modes { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
-	.confirm-mode-btn {
-		display: flex; align-items: center; gap: 12px; width: 100%;
-		padding: 10px 14px; border-radius: 10px; border: 1px solid var(--border);
-		background: transparent; cursor: pointer; text-align: left; transition: all 150ms;
-	}
-	.confirm-mode-btn:hover { border-color: rgba(0,210,255,0.2); background: rgba(0,210,255,0.03); }
-	.confirm-mode-active {
-		border-color: rgba(0,210,255,0.4) !important; background: rgba(0,210,255,0.06) !important;
-	}
-	.confirm-mode-icon {
-		width: 32px; height: 32px; border-radius: 8px; flex-shrink: 0;
-		display: flex; align-items: center; justify-content: center;
-		background: var(--bg-surface); font-size: 14px;
-		border: 1px solid var(--border);
-	}
-	.confirm-mode-active .confirm-mode-icon { background: rgba(0,210,255,0.1); border-color: rgba(0,210,255,0.3); color: #00d2ff; }
-	.confirm-mode-title {
-		display: block; font-family: 'Space Mono', monospace; font-size: 12px;
-		font-weight: 700; color: var(--text-heading);
-	}
-	.confirm-mode-desc {
-		display: block; font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text-muted); margin-top: 1px;
-	}
-	.confirm-fields { margin-bottom: 12px; }
-	.confirm-fields label { display: block; margin-bottom: 4px; }
-	.confirm-execute-btn {
-		width: 100%; padding: 12px; border-radius: 12px; border: none; cursor: pointer;
-		background: linear-gradient(135deg, #10b981, #059669); color: white;
-		font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700; transition: all 200ms;
-	}
-	.confirm-execute-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(16,185,129,0.3); }
-	.confirm-execute-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-</style>

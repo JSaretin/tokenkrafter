@@ -505,25 +505,25 @@
 {:else}
 	<!-- Factory Info -->
 	<div class="card p-5 mb-4">
-		<div class="info-grid">
-			<div class="info-row"><span class="text-gray-500 text-xs">Owner</span><span class="text-white text-xs font-mono">{factoryOwner}</span></div>
-			<div class="info-row"><span class="text-gray-500 text-xs">Contract</span><span class="text-white text-xs font-mono">{selectedNetwork.platform_address}</span></div>
-			<div class="info-row"><span class="text-gray-500 text-xs">DEX Router</span><span class="text-white text-xs font-mono">{formatAddress(dexRouterAddr)}</span></div>
-			<div class="info-row"><span class="text-gray-500 text-xs">USDT</span><span class="text-white text-xs font-mono">{formatAddress(usdtAddr)}</span></div>
-			<div class="info-row"><span class="text-gray-500 text-xs">Authorized Router</span><span class="text-white text-xs font-mono">{formatAddress(authorizedRouterAddr)}</span></div>
-			<div class="info-row"><span class="text-gray-500 text-xs">Platform Wallet</span><span class="text-white text-xs font-mono">{formatAddress(platformWalletAddr)}</span></div>
-			<div class="info-row"><span class="text-gray-500 text-xs">Tax Slippage</span><span class="text-white text-xs font-mono">{(taxSlippageBps / 100).toFixed(2)}%</span></div>
-			<div class="info-row"><span class="text-gray-500 text-xs">Tokens Created</span><span class="text-cyan-400 text-sm font-bold">{totalTokens.toString()}</span></div>
+		<div class="flex flex-col gap-0.5">
+			<div class="flex justify-between items-center py-2 border-b border-surface last:border-b-0"><span class="text-gray-500 text-xs">Owner</span><span class="text-white text-xs font-mono">{factoryOwner}</span></div>
+			<div class="flex justify-between items-center py-2 border-b border-surface last:border-b-0"><span class="text-gray-500 text-xs">Contract</span><span class="text-white text-xs font-mono">{selectedNetwork.platform_address}</span></div>
+			<div class="flex justify-between items-center py-2 border-b border-surface last:border-b-0"><span class="text-gray-500 text-xs">DEX Router</span><span class="text-white text-xs font-mono">{formatAddress(dexRouterAddr)}</span></div>
+			<div class="flex justify-between items-center py-2 border-b border-surface last:border-b-0"><span class="text-gray-500 text-xs">USDT</span><span class="text-white text-xs font-mono">{formatAddress(usdtAddr)}</span></div>
+			<div class="flex justify-between items-center py-2 border-b border-surface last:border-b-0"><span class="text-gray-500 text-xs">Authorized Router</span><span class="text-white text-xs font-mono">{formatAddress(authorizedRouterAddr)}</span></div>
+			<div class="flex justify-between items-center py-2 border-b border-surface last:border-b-0"><span class="text-gray-500 text-xs">Platform Wallet</span><span class="text-white text-xs font-mono">{formatAddress(platformWalletAddr)}</span></div>
+			<div class="flex justify-between items-center py-2 border-b border-surface last:border-b-0"><span class="text-gray-500 text-xs">Tax Slippage</span><span class="text-white text-xs font-mono">{(taxSlippageBps / 100).toFixed(2)}%</span></div>
+			<div class="flex justify-between items-center py-2 border-b border-surface last:border-b-0"><span class="text-gray-500 text-xs">Tokens Created</span><span class="text-cyan-400 text-sm font-bold">{totalTokens.toString()}</span></div>
 		</div>
 	</div>
 
 	<!-- Governance — setAuthorizedRouter / setUsdt / setPlatformWallet / setTaxSlippage -->
-	<button class="collapse-header" onclick={() => toggleSection('governance')}>
+	<button class="flex justify-between items-center w-full px-4 py-3 bg-surface border border-line rounded-[10px] mb-0.5 cursor-pointer font-numeric text-sm font-semibold text-heading tracking-[0.03em] transition-all duration-[150ms] hover:border-placeholder hover:bg-surface-hover" onclick={() => toggleSection('governance')}>
 		<span>Governance</span>
-		<span class="collapse-arrow" class:open={openSections['governance']}>▸</span>
+		<span class={'text-dim transition-transform duration-200 text-xs ' + (openSections['governance'] ? 'rotate-90' : '')}>▸</span>
 	</button>
 	{#if openSections['governance']}
-		<div class="collapse-body">
+		<div class="pt-3 pb-4">
 			<div class="card p-4 mb-3">
 				<h3 class="section-title mb-2 text-xs">Authorized Router</h3>
 				<p class="text-gray-500 text-xs mb-2">Only this address can call routerCreateToken(). Update when PlatformRouter is redeployed — there is no other admin path for this.</p>
@@ -563,12 +563,12 @@
 	{/if}
 
 	<!-- Fees & Implementations -->
-	<button class="collapse-header" onclick={() => toggleSection('fees')}>
+	<button class="flex justify-between items-center w-full px-4 py-3 bg-surface border border-line rounded-[10px] mb-0.5 cursor-pointer font-numeric text-sm font-semibold text-heading tracking-[0.03em] transition-all duration-[150ms] hover:border-placeholder hover:bg-surface-hover" onclick={() => toggleSection('fees')}>
 		<span>Fees & Implementations</span>
-		<span class="collapse-arrow" class:open={openSections['fees']}>▸</span>
+		<span class={'text-dim transition-transform duration-200 text-xs ' + (openSections['fees'] ? 'rotate-90' : '')}>▸</span>
 	</button>
 	{#if openSections['fees']}
-		<div class="collapse-body">
+		<div class="pt-3 pb-4">
 			<div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
 				<div class="card p-5">
 					<h3 class="section-title mb-3">Creation Fees</h3>
@@ -603,17 +603,17 @@
 	<!-- Partner default bases. Fees are USDT-only; this replaces the old
 	     "Payment Tokens" admin section. These bases are force-merged into
 	     every partner-variant token's bases[] at creation time. -->
-	<button class="collapse-header" onclick={() => toggleSection('bases')}>
+	<button class="flex justify-between items-center w-full px-4 py-3 bg-surface border border-line rounded-[10px] mb-0.5 cursor-pointer font-numeric text-sm font-semibold text-heading tracking-[0.03em] transition-all duration-[150ms] hover:border-placeholder hover:bg-surface-hover" onclick={() => toggleSection('bases')}>
 		<span>Partner Default Bases ({partnerBases.length}/{maxPartnerBases})</span>
-		<span class="collapse-arrow" class:open={openSections['bases']}>▸</span>
+		<span class={'text-dim transition-transform duration-200 text-xs ' + (openSections['bases'] ? 'rotate-90' : '')}>▸</span>
 	</button>
 	{#if openSections['bases']}
-		<div class="collapse-body">
+		<div class="pt-3 pb-4">
 			<div class="card p-5 mb-3">
 				<p class="text-gray-500 text-xs mb-2">Force-merged into bases[] for partner-variant tokens so the platform always has pools on these bases (drives the 0.5% partner fee).</p>
 				<div class="flex flex-col gap-1.5">
 					{#each partnerBases as base}
-						<div class="info-row"><span class="font-mono text-xs text-cyan-400">{base}</span></div>
+						<div class="flex justify-between items-center py-2 border-b border-surface last:border-b-0"><span class="font-mono text-xs text-cyan-400">{base}</span></div>
 					{/each}
 					{#if partnerBases.length === 0}<p class="text-gray-500 text-sm">No default bases set</p>{/if}
 				</div>
@@ -643,17 +643,17 @@
 	{/if}
 
 	<!-- Referral -->
-	<button class="collapse-header" onclick={() => toggleSection('referral')}>
+	<button class="flex justify-between items-center w-full px-4 py-3 bg-surface border border-line rounded-[10px] mb-0.5 cursor-pointer font-numeric text-sm font-semibold text-heading tracking-[0.03em] transition-all duration-[150ms] hover:border-placeholder hover:bg-surface-hover" onclick={() => toggleSection('referral')}>
 		<span>Referral Program</span>
-		<span class="collapse-arrow" class:open={openSections['referral']}>▸</span>
+		<span class={'text-dim transition-transform duration-200 text-xs ' + (openSections['referral'] ? 'rotate-90' : '')}>▸</span>
 	</button>
 	{#if openSections['referral']}
-		<div class="collapse-body">
+		<div class="pt-3 pb-4">
 			<div class="card p-5 mb-3">
-				<div class="info-grid">
-					<div class="info-row"><span class="text-gray-500 text-xs">Levels</span><span class="text-white text-sm">{refLevels}</span></div>
-					<div class="info-row"><span class="text-gray-500 text-xs">Percents</span><span class="text-cyan-400 text-sm font-mono">{refPercents.map(p => p + '%').join(', ') || 'Not set'}</span></div>
-					<div class="info-row"><span class="text-gray-500 text-xs">Auto-distribute</span><span class="text-sm {autoDistribute ? 'text-emerald-400' : 'text-gray-500'}">{autoDistribute ? 'Yes' : 'No'}</span></div>
+				<div class="flex flex-col gap-0.5">
+					<div class="flex justify-between items-center py-2 border-b border-surface last:border-b-0"><span class="text-gray-500 text-xs">Levels</span><span class="text-white text-sm">{refLevels}</span></div>
+					<div class="flex justify-between items-center py-2 border-b border-surface last:border-b-0"><span class="text-gray-500 text-xs">Percents</span><span class="text-cyan-400 text-sm font-mono">{refPercents.map(p => p + '%').join(', ') || 'Not set'}</span></div>
+					<div class="flex justify-between items-center py-2 border-b border-surface last:border-b-0"><span class="text-gray-500 text-xs">Auto-distribute</span><span class="text-sm {autoDistribute ? 'text-emerald-400' : 'text-gray-500'}">{autoDistribute ? 'Yes' : 'No'}</span></div>
 				</div>
 			</div>
 			<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -683,12 +683,12 @@
 	{/if}
 
 	<!-- Tax & DEX -->
-	<button class="collapse-header" onclick={() => toggleSection('tax')}>
+	<button class="flex justify-between items-center w-full px-4 py-3 bg-surface border border-line rounded-[10px] mb-0.5 cursor-pointer font-numeric text-sm font-semibold text-heading tracking-[0.03em] transition-all duration-[150ms] hover:border-placeholder hover:bg-surface-hover" onclick={() => toggleSection('tax')}>
 		<span>Tax & DEX Config</span>
-		<span class="collapse-arrow" class:open={openSections['tax']}>▸</span>
+		<span class={'text-dim transition-transform duration-200 text-xs ' + (openSections['tax'] ? 'rotate-90' : '')}>▸</span>
 	</button>
 	{#if openSections['tax']}
-		<div class="collapse-body">
+		<div class="pt-3 pb-4">
 			<div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
 				<div class="card p-4">
 					<h3 class="section-title mb-2 text-xs">Tax Conversion</h3>
@@ -718,12 +718,12 @@
 	{/if}
 
 	<!-- Protection & Withdraw -->
-	<button class="collapse-header" onclick={() => toggleSection('protect')}>
+	<button class="flex justify-between items-center w-full px-4 py-3 bg-surface border border-line rounded-[10px] mb-0.5 cursor-pointer font-numeric text-sm font-semibold text-heading tracking-[0.03em] transition-all duration-[150ms] hover:border-placeholder hover:bg-surface-hover" onclick={() => toggleSection('protect')}>
 		<span>Protection & Withdraw</span>
-		<span class="collapse-arrow" class:open={openSections['protect']}>▸</span>
+		<span class={'text-dim transition-transform duration-200 text-xs ' + (openSections['protect'] ? 'rotate-90' : '')}>▸</span>
 	</button>
 	{#if openSections['protect']}
-		<div class="collapse-body">
+		<div class="pt-3 pb-4">
 			<div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
 				<div class="card p-5">
 					<h3 class="section-title mb-3">Protection Overrides</h3>
@@ -758,44 +758,7 @@
 {/if}
 
 <style>
-	.collapse-header {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		width: 100%;
-		padding: 12px 16px;
-		background: var(--bg-surface);
-		border: 1px solid var(--border);
-		border-radius: 10px;
-		margin-bottom: 2px;
-		cursor: pointer;
-		font-family: 'Rajdhani', sans-serif;
-		font-size: 14px;
-		font-weight: 600;
-		color: var(--text-heading);
-		letter-spacing: 0.03em;
-		transition: all 0.15s;
-	}
-	.collapse-header:hover { border-color: var(--placeholder); background: var(--bg-surface-hover); }
-	.collapse-arrow { color: var(--text-dim); transition: transform 0.2s; font-size: 12px; }
-	.collapse-arrow.open { transform: rotate(90deg); }
-	.collapse-body { padding: 12px 0 16px; }
-
-	.info-grid { display: flex; flex-direction: column; gap: 2px; }
-	.info-row {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		padding: 8px 0;
-		border-bottom: 1px solid var(--bg-surface);
-	}
-	.info-row:last-child { border-bottom: none; }
-
+	/* select option background is locally scoped so it needs explicit styling (not expressible as a utility). */
 	table { border-collapse: collapse; }
 	select option { background: var(--select-bg); }
-
-	.spinner {
-		animation: spin 0.8s linear infinite;
-	}
-	@keyframes spin { to { transform: rotate(360deg); } }
 </style>

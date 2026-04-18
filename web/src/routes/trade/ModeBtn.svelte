@@ -17,8 +17,8 @@
 
 	let activeClass = $derived(
 		activeColor === 'emerald'
-			? 'bg-[rgba(16,185,129,0.1)] text-success'
-			: 'bg-[rgba(0,210,255,0.1)] text-cyan'
+			? 'bg-[rgba(16,185,129,0.1)] text-[#10b981]'
+			: 'bg-[rgba(0,210,255,0.1)] text-[#00d2ff]'
 	);
 </script>
 

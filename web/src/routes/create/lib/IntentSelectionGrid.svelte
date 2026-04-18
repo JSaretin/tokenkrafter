@@ -52,7 +52,7 @@
 
 	<!-- Create + List on DEX -->
 	<button
-		class="sel-card relative rounded-[14px] overflow-hidden bg-(--bg-surface) border border-(--border-subtle) cursor-pointer transition-all duration-200 text-left font-inherit text-inherit hover:border-cyan-400/20 hover:-translate-y-0.5 hover:shadow-[0_8px_30px_rgba(0,0,0,0.2)]"
+		class="group sel-card relative rounded-[14px] overflow-hidden bg-(--bg-surface) border border-(--border-subtle) cursor-pointer transition-all duration-200 text-left font-inherit text-inherit hover:border-cyan-400/20 hover:-translate-y-0.5 hover:shadow-[0_8px_30px_rgba(0,0,0,0.2)]"
 		onclick={() => onSelect('list')}
 	>
 		<div class="relative z-10 p-[18px] flex flex-col gap-2 h-full">
@@ -68,7 +68,7 @@
 					<span class="text-4xs py-0.5 px-2 rounded-full bg-(--bg-surface-hover) border border-(--border) text-(--text-muted) font-['Rajdhani',sans-serif] font-semibold">LP burned</span>
 				</div>
 			</div>
-			<span class="sel-cta-ghost inline-flex items-center gap-1 mt-auto pt-2.5 font-['Rajdhani',sans-serif] text-xs2 font-bold text-(--text-dim) transition-colors duration-150">
+			<span class="inline-flex items-center gap-1 mt-auto pt-2.5 font-['Rajdhani',sans-serif] text-xs2 font-bold text-(--text-dim) transition-colors duration-150 group-hover:text-[#00d2ff]">
 				Continue
 				<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
 			</span>
@@ -77,7 +77,7 @@
 
 	<!-- Create Token Only -->
 	<button
-		class="sel-card relative rounded-[14px] overflow-hidden bg-(--bg-surface) border border-(--border-subtle) cursor-pointer transition-all duration-200 text-left font-inherit text-inherit hover:border-cyan-400/20 hover:-translate-y-0.5 hover:shadow-[0_8px_30px_rgba(0,0,0,0.2)]"
+		class="group sel-card relative rounded-[14px] overflow-hidden bg-(--bg-surface) border border-(--border-subtle) cursor-pointer transition-all duration-200 text-left font-inherit text-inherit hover:border-cyan-400/20 hover:-translate-y-0.5 hover:shadow-[0_8px_30px_rgba(0,0,0,0.2)]"
 		onclick={() => onSelect('token')}
 	>
 		<div class="relative z-10 p-[18px] flex flex-col gap-2 h-full">
@@ -92,7 +92,7 @@
 					<span class="text-4xs py-0.5 px-2 rounded-full bg-(--bg-surface-hover) border border-(--border) text-(--text-muted) font-['Rajdhani',sans-serif] font-semibold">Add features later</span>
 				</div>
 			</div>
-			<span class="sel-cta-ghost inline-flex items-center gap-1 mt-auto pt-2.5 font-['Rajdhani',sans-serif] text-xs2 font-bold text-(--text-dim) transition-colors duration-150">
+			<span class="inline-flex items-center gap-1 mt-auto pt-2.5 font-['Rajdhani',sans-serif] text-xs2 font-bold text-(--text-dim) transition-colors duration-150 group-hover:text-[#00d2ff]">
 				Continue
 				<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
 			</span>
@@ -101,7 +101,7 @@
 
 	<!-- Launch Existing Token -->
 	<button
-		class="sel-card relative rounded-[14px] overflow-hidden bg-(--bg-surface) border border-(--border-subtle) cursor-pointer transition-all duration-200 text-left font-inherit text-inherit hover:border-cyan-400/20 hover:-translate-y-0.5 hover:shadow-[0_8px_30px_rgba(0,0,0,0.2)]"
+		class="group sel-card relative rounded-[14px] overflow-hidden bg-(--bg-surface) border border-(--border-subtle) cursor-pointer transition-all duration-200 text-left font-inherit text-inherit hover:border-cyan-400/20 hover:-translate-y-0.5 hover:shadow-[0_8px_30px_rgba(0,0,0,0.2)]"
 		onclick={() => onSelect('launch')}
 	>
 		<div class="relative z-10 p-[18px] flex flex-col gap-2 h-full">
@@ -117,7 +117,7 @@
 					<span class="text-4xs py-0.5 px-2 rounded-full bg-(--bg-surface-hover) border border-(--border) text-(--text-muted) font-['Rajdhani',sans-serif] font-semibold">Refundable</span>
 				</div>
 			</div>
-			<span class="sel-cta-ghost inline-flex items-center gap-1 mt-auto pt-2.5 font-['Rajdhani',sans-serif] text-xs2 font-bold text-(--text-dim) transition-colors duration-150">
+			<span class="inline-flex items-center gap-1 mt-auto pt-2.5 font-['Rajdhani',sans-serif] text-xs2 font-bold text-(--text-dim) transition-colors duration-150 group-hover:text-[#00d2ff]">
 				Continue
 				<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
 			</span>
@@ -174,6 +174,3 @@
 	</div>
 </div>
 
-<style>
-	.sel-card:hover .sel-cta-ghost { color: #00d2ff; }
-</style>

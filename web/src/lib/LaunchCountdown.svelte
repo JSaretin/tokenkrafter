@@ -32,30 +32,30 @@
 
 {#if !ended}
 	{#if size === 'inline'}
-		<span class="lcd-inline lcd-{variant}" class:lcd-urgent={urgent} class:lcd-warning={warning}>
+		<span class={'font-numeric font-bold whitespace-nowrap ' + (urgent ? 'text-[#f87171] lcd-urgent' : warning ? 'text-[#fbbf24]' : variant === 'cyan' ? 'text-[#00d2ff]' : 'text-[#f59e0b]')}>
 			{d > 0 ? `${pad(d)}d ` : ''}{pad(h)}:{pad(m)}:{pad(s)}
 		</span>
 	{:else}
-		<div class="lcd lcd-{size} lcd-{variant}">
+		<div class={'w-full lcd-' + variant + ' lcd-' + size}>
 			{#if label}
-				<span class="lcd-label" class:lcd-urgent={urgent} class:lcd-warning={warning}>{label}</span>
+				<span class={'block text-center mb-1.5 font-mono uppercase tracking-[0.06em] ' + (size === 'sm' ? 'text-[8px] mb-1' : size === 'lg' ? 'text-[10px] mb-2' : 'text-[9px]') + ' ' + (urgent ? 'text-[#f87171] lcd-urgent' : warning ? 'text-[#fbbf24]' : variant === 'cyan' ? 'text-[#00d2ff]' : 'text-[#f59e0b]')}>{label}</span>
 			{/if}
-			<div class="lcd-grid">
-				<div class="lcd-box">
-					<span class="lcd-num">{pad(d)}</span>
-					<span class="lcd-unit">{size === 'sm' ? 'd' : 'Days'}</span>
+			<div class={'grid grid-cols-4 ' + (size === 'sm' ? 'gap-[3px]' : size === 'lg' ? 'gap-2' : 'gap-1')}>
+				<div class={'lcd-box flex flex-col items-center rounded-lg ' + (size === 'sm' ? 'px-0.5 py-1 gap-px' : size === 'lg' ? 'px-1 py-2.5 gap-1' : 'px-0.5 py-1.5 gap-0.5')}>
+					<span class={'lcd-num font-numeric font-bold text-heading leading-none ' + (size === 'sm' ? 'text-sm' : size === 'lg' ? 'text-[28px]' : 'text-lg')}>{pad(d)}</span>
+					<span class={'font-mono uppercase tracking-[0.06em] text-dim ' + (size === 'sm' ? 'text-[6px]' : size === 'lg' ? 'text-[9px]' : 'text-[7px]')}>{size === 'sm' ? 'd' : 'Days'}</span>
 				</div>
-				<div class="lcd-box">
-					<span class="lcd-num">{pad(h)}</span>
-					<span class="lcd-unit">{size === 'sm' ? 'h' : 'Hrs'}</span>
+				<div class={'lcd-box flex flex-col items-center rounded-lg ' + (size === 'sm' ? 'px-0.5 py-1 gap-px' : size === 'lg' ? 'px-1 py-2.5 gap-1' : 'px-0.5 py-1.5 gap-0.5')}>
+					<span class={'lcd-num font-numeric font-bold text-heading leading-none ' + (size === 'sm' ? 'text-sm' : size === 'lg' ? 'text-[28px]' : 'text-lg')}>{pad(h)}</span>
+					<span class={'font-mono uppercase tracking-[0.06em] text-dim ' + (size === 'sm' ? 'text-[6px]' : size === 'lg' ? 'text-[9px]' : 'text-[7px]')}>{size === 'sm' ? 'h' : 'Hrs'}</span>
 				</div>
-				<div class="lcd-box">
-					<span class="lcd-num">{pad(m)}</span>
-					<span class="lcd-unit">{size === 'sm' ? 'm' : 'Min'}</span>
+				<div class={'lcd-box flex flex-col items-center rounded-lg ' + (size === 'sm' ? 'px-0.5 py-1 gap-px' : size === 'lg' ? 'px-1 py-2.5 gap-1' : 'px-0.5 py-1.5 gap-0.5')}>
+					<span class={'lcd-num font-numeric font-bold text-heading leading-none ' + (size === 'sm' ? 'text-sm' : size === 'lg' ? 'text-[28px]' : 'text-lg')}>{pad(m)}</span>
+					<span class={'font-mono uppercase tracking-[0.06em] text-dim ' + (size === 'sm' ? 'text-[6px]' : size === 'lg' ? 'text-[9px]' : 'text-[7px]')}>{size === 'sm' ? 'm' : 'Min'}</span>
 				</div>
-				<div class="lcd-box">
-					<span class="lcd-num">{pad(s)}</span>
-					<span class="lcd-unit">{size === 'sm' ? 's' : 'Sec'}</span>
+				<div class={'lcd-box flex flex-col items-center rounded-lg ' + (size === 'sm' ? 'px-0.5 py-1 gap-px' : size === 'lg' ? 'px-1 py-2.5 gap-1' : 'px-0.5 py-1.5 gap-0.5')}>
+					<span class={'lcd-num font-numeric font-bold text-heading leading-none ' + (size === 'sm' ? 'text-sm' : size === 'lg' ? 'text-[28px]' : 'text-lg')}>{pad(s)}</span>
+					<span class={'font-mono uppercase tracking-[0.06em] text-dim ' + (size === 'sm' ? 'text-[6px]' : size === 'lg' ? 'text-[9px]' : 'text-[7px]')}>{size === 'sm' ? 's' : 'Sec'}</span>
 				</div>
 			</div>
 		</div>
@@ -63,24 +63,6 @@
 {/if}
 
 <style>
-	.lcd { width: 100%; }
-
-	.lcd-label {
-		display: block; text-align: center; margin-bottom: 6px;
-		font-family: 'Space Mono', monospace;
-		text-transform: uppercase; letter-spacing: 0.06em;
-	}
-	.lcd-cyan .lcd-label { color: #00d2ff; }
-	.lcd-amber .lcd-label { color: #f59e0b; }
-	.lcd-warning { color: #fbbf24 !important; }
-	.lcd-urgent { color: #f87171 !important; animation: urgentPulse 1.5s ease-in-out infinite; }
-
-	.lcd-grid { display: grid; grid-template-columns: repeat(4, 1fr); }
-
-	.lcd-box {
-		display: flex; flex-direction: column; align-items: center;
-		border-radius: 8px;
-	}
 	.lcd-cyan .lcd-box {
 		background: linear-gradient(135deg, rgba(0, 210, 255, 0.06), rgba(139, 92, 246, 0.06));
 		border: 1px solid rgba(0, 210, 255, 0.1);
@@ -89,51 +71,9 @@
 		background: linear-gradient(135deg, rgba(245, 158, 11, 0.06), rgba(217, 119, 6, 0.06));
 		border: 1px solid rgba(245, 158, 11, 0.12);
 	}
-
-	.lcd-num {
-		font-family: 'Rajdhani', sans-serif; font-weight: 700;
-		color: var(--text-heading); line-height: 1;
-		font-variant-numeric: tabular-nums;
-	}
 	.lcd-amber .lcd-num { color: #f59e0b; }
 
-	.lcd-unit {
-		font-family: 'Space Mono', monospace;
-		text-transform: uppercase; letter-spacing: 0.06em;
-		color: var(--text-dim);
-	}
-
-	/* ── Size: sm (explore/home cards) ── */
-	.lcd-sm .lcd-label { font-size: 8px; margin-bottom: 4px; }
-	.lcd-sm .lcd-grid { gap: 3px; }
-	.lcd-sm .lcd-box { padding: 4px 2px; gap: 1px; }
-	.lcd-sm .lcd-num { font-size: 14px; }
-	.lcd-sm .lcd-unit { font-size: 6px; }
-
-	/* ── Size: md (launchpad list cards) ── */
-	.lcd-md .lcd-label { font-size: 9px; }
-	.lcd-md .lcd-grid { gap: 4px; }
-	.lcd-md .lcd-box { padding: 6px 2px; gap: 2px; }
-	.lcd-md .lcd-num { font-size: 18px; }
-	.lcd-md .lcd-unit { font-size: 7px; }
-
-	/* ── Size: lg (detail page) ── */
-	.lcd-lg .lcd-label { font-size: 10px; margin-bottom: 8px; }
-	.lcd-lg .lcd-grid { gap: 8px; }
-	.lcd-lg .lcd-box { padding: 10px 4px; gap: 4px; }
-	.lcd-lg .lcd-num { font-size: 28px; }
-	.lcd-lg .lcd-unit { font-size: 9px; }
-
-	/* ── Inline (single line for cards) ── */
-	.lcd-inline {
-		font-family: 'Rajdhani', sans-serif; font-weight: 700;
-		font-variant-numeric: tabular-nums; white-space: nowrap;
-	}
-	.lcd-inline.lcd-cyan { color: #00d2ff; }
-	.lcd-inline.lcd-amber { color: #f59e0b; }
-	.lcd-inline.lcd-warning { color: #fbbf24; }
-	.lcd-inline.lcd-urgent { color: #f87171; }
-
+	.lcd-urgent { animation: urgentPulse 1.5s ease-in-out infinite; }
 	@keyframes urgentPulse {
 		0%, 100% { opacity: 1; }
 		50% { opacity: 0.5; }
