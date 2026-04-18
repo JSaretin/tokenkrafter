@@ -32,6 +32,8 @@
 	let resetSignal = $state(0);
 	import DisplayPreview from './lib/DisplayPreview.svelte';
 	import IntentSelectionGrid from './lib/IntentSelectionGrid.svelte';
+	import SuccessScreen from './lib/SuccessScreen.svelte';
+	import { goto } from '$app/navigation';
 	import Tooltip from '$lib/Tooltip.svelte';
 
 	import { createMode, type CreateMode } from '$lib/createModeStore';
@@ -1599,48 +1601,17 @@
 				<div class="drag-bar"></div>
 			</div>
 			{#if step === 'done'}
-				<div class="text-center py-8">
-					<div class="text-5xl mb-4 syne font-bold text-emerald-400">{$t('ct.done')}</div>
-					<h2 class="syne text-2xl font-bold text-white mb-2">
-						{tokenInfo.existingTokenAddress ? 'Launch Created!' : tokenInfo.listing?.enabled ? $t('ct.deployedListed') : tokenInfo.launch?.enabled ? 'Token Deployed & Launched!' : $t('ct.deployed')}
-					</h2>
-					<p class="text-gray-400 font-mono text-sm mb-4">
-						{$t('ct.liveOn')} {tokenInfo.network.name}.{tokenInfo.listing?.enabled ? ' ' + $t('ct.liqAdded') : ''}
-					</p>
-
-					{#if deployedTokenAddress}
-						<div class="deployed-address-box mb-4">
-							<div class="text-gray-500 text-[11px] font-mono uppercase tracking-wider mb-1">{$t('ct.tokenAddress')}</div>
-							<div class="text-cyan-400 text-xs font-mono break-all mb-2">{deployedTokenAddress}</div>
-							<a
-								href={getExplorerUrl(tokenInfo.network.chain_id, 'address', deployedTokenAddress)}
-								target="_blank"
-								rel="noopener noreferrer"
-								class="text-cyan-500 text-xs font-mono hover:text-cyan-300 transition no-underline"
-							>{$t('ct.viewExplorer')} -></a>
-						</div>
-					{/if}
-
-					{#if deployTxHash}
-						<div class="mb-6">
-							<a
-								href={getExplorerUrl(tokenInfo.network.chain_id, 'tx', deployTxHash)}
-								target="_blank"
-								rel="noopener noreferrer"
-								class="text-gray-500 text-[11px] font-mono hover:text-gray-300 transition no-underline"
-							>View transaction: {deployTxHash.slice(0, 10)}...{deployTxHash.slice(-8)} -></a>
-						</div>
-					{/if}
-
-					<div class="flex gap-3 justify-center">
-						<a href={deployedTokenAddress ? `/manage-tokens?just_created=${deployedTokenAddress}&chain=${tokenInfo.network.chain_id}` : '/manage-tokens'} class="btn-primary text-sm px-5 py-2.5 no-underline">
-							{$t('ct.manageTokens')} ->
-						</a>
-						<button onclick={closePreview} class="btn-secondary text-sm px-5 py-2.5 cursor-pointer">
-							{$t('ct.close')}
-						</button>
-					</div>
-				</div>
+				<SuccessScreen
+					tokenName={tokenInfo.name}
+					tokenSymbol={tokenInfo.symbol}
+					tokenAddress={deployedTokenAddress ?? ''}
+					txHash={deployTxHash ?? ''}
+					network={tokenInfo.network}
+					title={tokenInfo.existingTokenAddress ? 'Launch Created!' : tokenInfo.listing?.enabled ? $t('ct.deployedListed') : tokenInfo.launch?.enabled ? 'Token Deployed & Launched!' : $t('ct.deployed')}
+					subtitle={$t('ct.liveOn') + ' ' + tokenInfo.network.name + '.' + (tokenInfo.listing?.enabled ? ' ' + $t('ct.liqAdded') : '')}
+					onManageTokens={() => goto(deployedTokenAddress ? `/manage-tokens?just_created=${deployedTokenAddress}&chain=${tokenInfo!.network.chain_id}` : '/manage-tokens')}
+					onClose={closePreview}
+				/>
 
 			{:else if step === 'waiting-deposit'}
 				<!-- Deposit payment screen -->
