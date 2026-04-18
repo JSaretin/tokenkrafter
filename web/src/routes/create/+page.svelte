@@ -8,16 +8,17 @@
 	import type { SupportedNetwork, PaymentOption } from '$lib/structure';
 	import type { WsProviderManager, EventSubscription } from '$lib/wsProvider';
 	import { transferFilter } from '$lib/wsProvider';
-	import { ERC20_ABI, ZERO_ADDRESS } from '$lib/tokenCrafter';
+	import { ZERO_ADDRESS } from '$lib/tokenCrafter';
 	import { LAUNCH_INSTANCE_ABI, CURVE_TYPES, type CurveType } from '$lib/launchpad';
 	import { TokenFactoryClient } from '$lib/contracts/tokenFactory';
 	import { LaunchpadFactoryClient } from '$lib/contracts/launchpadFactory';
 	import { PlatformRouterClient } from '$lib/contracts/platformRouter';
+	import { ERC20Client } from '$lib/contracts/erc20';
 	import { apiFetch } from '$lib/apiFetch';
 	import { friendlyError } from '$lib/errorDecoder';
 	import QrCode from '$lib/QrCode.svelte';
 	import FixedOverlay from '$lib/FixedOverlay.svelte';
-	import { TOKEN_READ_ABI, ERC20_DECIMALS_ABI, ROUTER_ABI_LITE } from '$lib/commonABIs';
+	import { ROUTER_ABI_LITE } from '$lib/commonABIs';
 	import * as deployHelpers from './lib/deploy/helpers';
 	import { getBaseTokenAddress, getBaseDecimals, getBaseSymbol, feeCacheKey } from './lib/deploy/helpers';
 	import { SwapRouter } from '$lib/swapRouter.svelte';
@@ -180,20 +181,17 @@
 			launchTokenLoading = true;
 			try {
 				const pro = networkProviders.get(net.chain_id) ?? new ethers.JsonRpcProvider(net.rpc);
-				const token = new ethers.Contract(addr, TOKEN_READ_ABI, pro);
+				const token = new ERC20Client(addr, pro);
 				const ua = userAddress;
-				const [n, s, d, bal, supply] = await Promise.all([
-					token.name().catch(() => ''),
-					token.symbol().catch(() => ''),
-					token.decimals().catch(() => 18),
+				const [meta, bal] = await Promise.all([
+					token.getMetadata(),
 					ua ? token.balanceOf(ua).catch(() => 0n) : Promise.resolve(0n),
-					token.totalSupply().catch(() => 0n)
 				]);
-				launchTokenName = n;
-				launchTokenSymbol = s;
-				launchTokenDecimals = Number(d);
+				launchTokenName = meta.name;
+				launchTokenSymbol = meta.symbol;
+				launchTokenDecimals = meta.decimals;
 				launchTokenBalance = bal;
-				launchTokenSupply = supply;
+				launchTokenSupply = meta.totalSupply;
 			} catch {
 				launchTokenName = '';
 				launchTokenSymbol = '';
@@ -260,22 +258,14 @@
 			const launchFee = await lpFactoryRead.launchFee();
 
 			// USDT decimals
-			let usdtDec = 18;
-			try {
-				const usdtC = new ethers.Contract(launchNetwork.usdt_address, ERC20_DECIMALS_ABI, signer);
-				usdtDec = Number(await usdtC.decimals());
-			} catch {}
+			const usdtClient = new ERC20Client(launchNetwork.usdt_address, signer);
+			const usdtDec = await usdtClient.decimals();
 
 			// Approve USDT for the router
 			if (launchFee > 0n) {
 				launchStep = 'approving-fee';
 				addFeedback({ message: $t('ci.approvingFee'), type: 'info' });
-				const usdtC = new ethers.Contract(launchNetwork.usdt_address, ERC20_ABI, signer);
-				const allowance: bigint = await usdtC.allowance(userAddress, routerAddr);
-				if (allowance < launchFee) {
-					const approveTx = await usdtC.approve(routerAddr, launchFee);
-					await approveTx.wait();
-				}
+				await usdtClient.ensureAllowance(userAddress, routerAddr, launchFee);
 			}
 
 			const tokensForLaunch = ethers.parseUnits(launchAmount, launchTokenDecimals);
@@ -585,7 +575,7 @@
 						try {
 							return opt.address === ZERO_ADDRESS
 								? await prov.getBalance(userAddress)
-								: await new ethers.Contract(opt.address, ERC20_ABI, prov).balanceOf(userAddress);
+								: await new ERC20Client(opt.address, prov).balanceOf(userAddress);
 						} catch { return 0n; }
 					})(),
 					// Quote via router.quoteFee
@@ -636,10 +626,11 @@
 				}
 			} catch {}
 			if (!sym) {
-				const c = new ethers.Contract(addr, ERC20_ABI, prov);
-				sym = await c.symbol().catch(() => '');
-				name = await c.name().catch(() => sym);
-				decimals = Number(await c.decimals().catch(() => 18));
+				const c = new ERC20Client(addr, prov);
+				sym = await c.symbol();
+				const rawName = await c.name();
+				name = rawName || sym;
+				decimals = await c.decimals();
 			}
 			if (!sym) { payImportError = 'Could not resolve token'; return; }
 
@@ -789,7 +780,7 @@
 		if (isNativePayment) {
 			userBalance = await pro.getBalance(userAddress);
 		} else {
-			const erc20 = new ethers.Contract(selectedPayment.address, ERC20_ABI, pro);
+			const erc20 = new ERC20Client(selectedPayment.address, pro);
 			userBalance = await erc20.balanceOf(userAddress);
 		}
 
@@ -853,12 +844,11 @@
 				// When using router for launch or listing, approve the router; otherwise approve the factory
 				const usesRouter = (tokenInfo.launch?.enabled || tokenInfo.listing?.enabled) && tokenInfo.network.router_address && tokenInfo.network.router_address !== '0x';
 				const spender = usesRouter ? tokenInfo.network.router_address : tokenInfo.network.platform_address;
-				const erc20 = new ethers.Contract(selectedPayment.address, ERC20_ABI, signer);
+				const erc20 = new ERC20Client(selectedPayment.address, signer);
 				const allowance = await erc20.allowance(userAddress, spender);
 				if (allowance < selectedFee) {
 					addFeedback({ message: `Approving ${selectedPayment.symbol} spend...`, type: 'info' });
-					const tx = await erc20.approve(spender, selectedFee);
-					await tx.wait();
+					await erc20.approve(spender, selectedFee);
 					addFeedback({ message: `${selectedPayment.symbol} approved!`, type: 'success' });
 				}
 			} catch (e: any) {
@@ -927,13 +917,12 @@
 			// exact usdtFee.
 			if (selectedPayment.address !== ZERO_ADDRESS && selectedFee > 0n) {
 				const approvalAmount = feePath.length === 1 ? selectedFee : feeMaxAmountIn;
-				const erc20 = new ethers.Contract(selectedPayment.address, ERC20_ABI, signer);
+				const erc20 = new ERC20Client(selectedPayment.address, signer);
 				const routerAddr = tokenInfo.network.router_address;
-				const allowance: bigint = await erc20.allowance(userAddress, routerAddr);
+				const allowance = await erc20.allowance(userAddress, routerAddr);
 				if (allowance < approvalAmount) {
 					addFeedback({ message: `Approving ${selectedPayment.symbol} for fee...`, type: 'info' });
-					const approveTx = await erc20.approve(routerAddr, approvalAmount);
-					await approveTx.wait();
+					await erc20.approve(routerAddr, approvalAmount);
 				}
 			}
 
@@ -955,11 +944,7 @@
 				// the creator atomically at the end of the router call.
 				addFeedback({ message: 'Preparing launch for existing token...', type: 'info' });
 
-				let usdtDec = 18;
-				try {
-					const usdtC = new ethers.Contract(tokenInfo.network.usdt_address, ERC20_DECIMALS_ABI, signer);
-					usdtDec = Number(await usdtC.decimals());
-				} catch {}
+				const usdtDec = await new ERC20Client(tokenInfo.network.usdt_address, signer).decimals();
 
 				const tokensForLaunch = (totalSupplyWei * BigInt(tokenInfo.launch.tokensForLaunchPct)) / 100n;
 				const routerAddr = tokenInfo.network.router_address;
@@ -1056,11 +1041,7 @@
 				const tokensForLaunch = (totalSupplyWei * BigInt(tokenInfo.launch.tokensForLaunchPct)) / 100n;
 
 				// Fetch USDT decimals for cap parsing
-				let usdtDec = 18;
-				try {
-					const usdtC = new ethers.Contract(tokenInfo.network.usdt_address, ERC20_DECIMALS_ABI, signer);
-					usdtDec = Number(await usdtC.decimals());
-				} catch {}
+				const usdtDec = await new ERC20Client(tokenInfo.network.usdt_address, signer).decimals();
 
 				const launchParams = {
 					tokensForLaunch,
@@ -1156,7 +1137,7 @@
 					const parsedBaseAmount = ethers.parseUnits(String(pair.amount), baseDecimals);
 					const baseSymbol = getBaseSymbol(network, pair.base);
 
-					const baseContract = new ethers.Contract(baseAddress, ERC20_ABI, signer);
+					const baseContract = new ERC20Client(baseAddress, signer);
 					const balance = await baseContract.balanceOf(userAddress);
 					if (balance < parsedBaseAmount) {
 						addFeedback({ message: `Insufficient ${baseSymbol} balance. Need ${pair.amount} ${baseSymbol}.`, type: 'error' });
@@ -1167,8 +1148,7 @@
 					const allowance = await baseContract.allowance(userAddress, network.router_address);
 					if (allowance < parsedBaseAmount) {
 						addFeedback({ message: `Approving ${baseSymbol}...`, type: 'info' });
-						const approveTx = await baseContract.approve(network.router_address, parsedBaseAmount);
-						await approveTx.wait();
+						await baseContract.approve(network.router_address, parsedBaseAmount);
 					}
 				}
 
