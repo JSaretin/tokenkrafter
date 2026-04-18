@@ -118,6 +118,10 @@ export async function deployLaunchStack(
     await launchImpl.getAddress()
   );
 
+  // Disable launch fee in test env — tests don't pre-mint USDT for creators,
+  // and the fee is the creator's responsibility in prod.
+  await launchpadFactory.connect(stack.owner).setLaunchFee(0);
+
   return { bondingCurve, launchImpl, launchpadFactory, LaunchInstance };
 }
 

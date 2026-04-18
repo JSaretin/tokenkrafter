@@ -665,4 +665,453 @@ describe("LaunchInstance", () => {
       expect(tradingStart).to.be.closeTo(BigInt(latest) + 300n, 10n);
     });
   });
+
+  // ═══════════════════════════════════════════════════════════════
+  // Emergency pause — per-launch + global kill switch
+  // ═══════════════════════════════════════════════════════════════
+  describe("emergency pause", () => {
+    async function activeLaunch() {
+      const s = await setup();
+      const { token, launch, launchAddress } = await createTokenWithLaunch(s);
+      const req = await launch.totalTokensRequired();
+      await token.connect(s.alice).setExcludedFromLimits(launchAddress, true);
+      await token.connect(s.alice).setAuthorizedLauncher(launchAddress, true);
+      await token.connect(s.alice).approve(launchAddress, req);
+      await launch.connect(s.alice).depositTokens(req);
+      return { ...s, token, launch, launchAddress };
+    }
+
+    async function buyUsdt(s: any, buyer: any, amount: bigint) {
+      await s.usdt.mint(buyer.address, amount);
+      await s.usdt.connect(buyer).approve(await s.launch.getAddress(), amount);
+      const u = await s.usdt.getAddress();
+      return s.launch
+        .connect(buyer)
+        ["buy(address[],uint256,uint256,uint256)"]([u, u], amount, 0, 0);
+    }
+
+    describe("setPaused (launch-level)", () => {
+      it("only factory can call setPaused", async () => {
+        const s = await activeLaunch();
+        await expect(
+          s.launch.connect(s.alice).setPaused(true)
+        ).to.be.revertedWithCustomError(s.launch, "OnlyFactory");
+        await expect(
+          s.launch.connect(s.bob).setPaused(true)
+        ).to.be.revertedWithCustomError(s.launch, "OnlyFactory");
+      });
+
+      it("flips the paused flag and emits PausedChanged", async () => {
+        const s = await activeLaunch();
+        expect(await s.launch.paused()).to.equal(false);
+        await expect(
+          s.launchpadFactory.connect(s.owner).pauseLaunch(
+            await s.launch.getAddress(),
+            true
+          )
+        )
+          .to.emit(s.launch, "PausedChanged")
+          .withArgs(true);
+        expect(await s.launch.paused()).to.equal(true);
+
+        // Unpause path
+        await s.launchpadFactory.connect(s.owner).pauseLaunch(
+          await s.launch.getAddress(),
+          false
+        );
+        expect(await s.launch.paused()).to.equal(false);
+      });
+    });
+
+    describe("buy blocked when paused", () => {
+      it("buy reverts with LaunchPaused on paused launch", async () => {
+        const s = await activeLaunch();
+        await s.launchpadFactory.connect(s.owner).pauseLaunch(
+          await s.launch.getAddress(),
+          true
+        );
+
+        await s.usdt.mint(s.bob.address, PARSE_USDT(10));
+        await s.usdt
+          .connect(s.bob)
+          .approve(await s.launch.getAddress(), PARSE_USDT(10));
+        const u = await s.usdt.getAddress();
+        await expect(
+          s.launch
+            .connect(s.bob)
+            ["buy(address[],uint256,uint256,uint256)"](
+              [u, u],
+              PARSE_USDT(10),
+              0,
+              0
+            )
+        ).to.be.revertedWithCustomError(s.launch, "LaunchPaused");
+      });
+
+      it("buy reverts with LaunchPaused when factory globalPause is on", async () => {
+        const s = await activeLaunch();
+        await s.launchpadFactory.connect(s.owner).setGlobalPause(true);
+
+        await s.usdt.mint(s.bob.address, PARSE_USDT(10));
+        await s.usdt
+          .connect(s.bob)
+          .approve(await s.launch.getAddress(), PARSE_USDT(10));
+        const u = await s.usdt.getAddress();
+        await expect(
+          s.launch
+            .connect(s.bob)
+            ["buy(address[],uint256,uint256,uint256)"](
+              [u, u],
+              PARSE_USDT(10),
+              0,
+              0
+            )
+        ).to.be.revertedWithCustomError(s.launch, "LaunchPaused");
+      });
+
+      it("resumes buys after unpausing", async () => {
+        const s = await activeLaunch();
+        await s.launchpadFactory.connect(s.owner).pauseLaunch(
+          await s.launch.getAddress(),
+          true
+        );
+        await s.launchpadFactory.connect(s.owner).pauseLaunch(
+          await s.launch.getAddress(),
+          false
+        );
+
+        // Buy should now succeed
+        await expect(buyUsdt(s, s.bob, PARSE_USDT(10))).to.not.be.reverted;
+        expect(await s.token.balanceOf(s.bob.address)).to.be.gt(0n);
+      });
+
+      it("resumes buys after unsetting globalPause", async () => {
+        const s = await activeLaunch();
+        await s.launchpadFactory.connect(s.owner).setGlobalPause(true);
+        await s.launchpadFactory.connect(s.owner).setGlobalPause(false);
+
+        await expect(buyUsdt(s, s.bob, PARSE_USDT(10))).to.not.be.reverted;
+      });
+    });
+
+    describe("graduate blocked when paused", () => {
+      it("manual graduate() reverts with LaunchPaused on paused launch", async () => {
+        const s = await activeLaunch();
+        await buyUsdt(s, s.bob, PARSE_USDT(120)); // softCap=$100, hit it
+
+        await s.launchpadFactory.connect(s.owner).pauseLaunch(
+          await s.launch.getAddress(),
+          true
+        );
+
+        await expect(
+          s.launch.connect(s.alice).graduate()
+        ).to.be.revertedWithCustomError(s.launch, "LaunchPaused");
+      });
+
+      it("manual graduate() reverts when globalPause is on", async () => {
+        const s = await activeLaunch();
+        await buyUsdt(s, s.bob, PARSE_USDT(120));
+
+        await s.launchpadFactory.connect(s.owner).setGlobalPause(true);
+
+        await expect(
+          s.launch.connect(s.alice).graduate()
+        ).to.be.revertedWithCustomError(s.launch, "LaunchPaused");
+      });
+    });
+
+    describe("emergency refund during pause", () => {
+      it("buyers can refund while launch is paused in Active state", async () => {
+        const s = await activeLaunch();
+        // Bob buys $50
+        await buyUsdt(s, s.bob, PARSE_USDT(50));
+        const bobTokens = await s.token.balanceOf(s.bob.address);
+        const bobPaidBefore = await s.launch.basePaid(s.bob.address);
+        expect(bobTokens).to.be.gt(0n);
+        expect(bobPaidBefore).to.be.gt(0n);
+
+        // Admin pauses
+        await s.launchpadFactory.connect(s.owner).pauseLaunch(
+          await s.launch.getAddress(),
+          true
+        );
+        expect(await s.launch.state()).to.equal(1); // still Active
+
+        // Bob can now refund even though state is Active
+        await s.token
+          .connect(s.bob)
+          .approve(await s.launch.getAddress(), bobTokens);
+        const usdtBefore = await s.usdt.balanceOf(s.bob.address);
+        await expect(s.launch.connect(s.bob).refund(bobTokens)).to.emit(
+          s.launch,
+          "Refunded"
+        );
+        const usdtAfter = await s.usdt.balanceOf(s.bob.address);
+
+        // Bob got his basePaid back
+        expect(usdtAfter - usdtBefore).to.equal(bobPaidBefore);
+        expect(await s.launch.basePaid(s.bob.address)).to.equal(0n);
+      });
+
+      it("partial refund works during emergency pause", async () => {
+        const s = await activeLaunch();
+        await buyUsdt(s, s.bob, PARSE_USDT(50));
+        const bobTokens = await s.token.balanceOf(s.bob.address);
+
+        await s.launchpadFactory.connect(s.owner).pauseLaunch(
+          await s.launch.getAddress(),
+          true
+        );
+
+        const half = bobTokens / 2n;
+        await s.token
+          .connect(s.bob)
+          .approve(await s.launch.getAddress(), bobTokens);
+        await s.launch.connect(s.bob).refund(half);
+
+        // Half still held by buyer
+        expect(await s.token.balanceOf(s.bob.address)).to.equal(bobTokens - half);
+        // basePaid reduced by ~half
+        expect(await s.launch.basePaid(s.bob.address)).to.be.gt(0n);
+      });
+
+      it("refund reverts NotRefunding when not paused and in Active state", async () => {
+        const s = await activeLaunch();
+        await buyUsdt(s, s.bob, PARSE_USDT(50));
+        const bobTokens = await s.token.balanceOf(s.bob.address);
+
+        // No pause, launch is Active
+        await s.token
+          .connect(s.bob)
+          .approve(await s.launch.getAddress(), bobTokens);
+        await expect(
+          s.launch.connect(s.bob).refund(bobTokens)
+        ).to.be.revertedWithCustomError(s.launch, "NotRefunding");
+      });
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  // Factory-level kill switches
+  // ═══════════════════════════════════════════════════════════════
+  describe("factory kill switches", () => {
+    async function activeLaunch() {
+      const s = await setup();
+      const { token, launch, launchAddress } = await createTokenWithLaunch(s);
+      const req = await launch.totalTokensRequired();
+      await token.connect(s.alice).setExcludedFromLimits(launchAddress, true);
+      await token.connect(s.alice).setAuthorizedLauncher(launchAddress, true);
+      await token.connect(s.alice).approve(launchAddress, req);
+      await launch.connect(s.alice).depositTokens(req);
+      return { ...s, token, launch, launchAddress };
+    }
+
+    describe("pauseLaunch", () => {
+      it("only owner can call pauseLaunch", async () => {
+        const s = await activeLaunch();
+        await expect(
+          s.launchpadFactory
+            .connect(s.alice)
+            .pauseLaunch(await s.launch.getAddress(), true)
+        ).to.be.revertedWithCustomError(
+          s.launchpadFactory,
+          "OwnableUnauthorizedAccount"
+        );
+      });
+
+      it("reverts on zero address", async () => {
+        const s = await activeLaunch();
+        await expect(
+          s.launchpadFactory
+            .connect(s.owner)
+            .pauseLaunch(ethers.ZeroAddress, true)
+        ).to.be.revertedWithCustomError(s.launchpadFactory, "InvalidToken");
+      });
+
+      it("emits LaunchPaused", async () => {
+        const s = await activeLaunch();
+        const la = await s.launch.getAddress();
+        await expect(
+          s.launchpadFactory.connect(s.owner).pauseLaunch(la, true)
+        )
+          .to.emit(s.launchpadFactory, "LaunchPaused")
+          .withArgs(la, true);
+      });
+    });
+
+    describe("pauseLaunches (paginated)", () => {
+      it("only owner can call pauseLaunches", async () => {
+        const s = await activeLaunch();
+        await expect(
+          s.launchpadFactory.connect(s.alice).pauseLaunches(0, 10, true)
+        ).to.be.revertedWithCustomError(
+          s.launchpadFactory,
+          "OwnableUnauthorizedAccount"
+        );
+      });
+
+      it("pauses a range of launches", async () => {
+        const s = await setup();
+        // Create 3 launches for different creators
+        const launchAddrs: string[] = [];
+        const creators = [s.alice, s.bob, s.carol];
+        for (const c of creators) {
+          const { token, launch, launchAddress } = await createTokenWithLaunch(
+            s,
+            c
+          );
+          const req = await launch.totalTokensRequired();
+          await token.connect(c).setExcludedFromLimits(launchAddress, true);
+          await token.connect(c).setAuthorizedLauncher(launchAddress, true);
+          await token.connect(c).approve(launchAddress, req);
+          await launch.connect(c).depositTokens(req);
+          launchAddrs.push(launchAddress);
+        }
+
+        // Pause all 3
+        await s.launchpadFactory.connect(s.owner).pauseLaunches(0, 3, true);
+
+        for (const addr of launchAddrs) {
+          const l = await ethers.getContractAt("LaunchInstance", addr);
+          expect(await l.paused()).to.equal(true);
+        }
+      });
+
+      it("handles offset > total gracefully (no-op)", async () => {
+        const s = await activeLaunch();
+        // offset=5 when only 1 launch exists should not revert
+        await s.launchpadFactory.connect(s.owner).pauseLaunches(5, 10, true);
+        expect(await s.launch.paused()).to.equal(false);
+      });
+
+      it("caps end at launches.length", async () => {
+        const s = await activeLaunch();
+        // limit=100 when only 1 launch exists should just pause the 1
+        await s.launchpadFactory.connect(s.owner).pauseLaunches(0, 100, true);
+        expect(await s.launch.paused()).to.equal(true);
+      });
+
+      it("emits LaunchesPaused with actual range", async () => {
+        const s = await setup();
+        const creators = [s.alice, s.bob];
+        for (const c of creators) {
+          const { token, launch, launchAddress } = await createTokenWithLaunch(
+            s,
+            c
+          );
+          const req = await launch.totalTokensRequired();
+          await token.connect(c).setExcludedFromLimits(launchAddress, true);
+          await token.connect(c).setAuthorizedLauncher(launchAddress, true);
+          await token.connect(c).approve(launchAddress, req);
+          await launch.connect(c).depositTokens(req);
+        }
+
+        await expect(
+          s.launchpadFactory.connect(s.owner).pauseLaunches(0, 10, true)
+        )
+          .to.emit(s.launchpadFactory, "LaunchesPaused")
+          .withArgs(0, 2, true); // end capped at 2 (launches.length)
+      });
+    });
+
+    describe("setGlobalPause", () => {
+      it("only owner can call setGlobalPause", async () => {
+        const s = await activeLaunch();
+        await expect(
+          s.launchpadFactory.connect(s.alice).setGlobalPause(true)
+        ).to.be.revertedWithCustomError(
+          s.launchpadFactory,
+          "OwnableUnauthorizedAccount"
+        );
+      });
+
+      it("flips globalPause and emits event", async () => {
+        const s = await activeLaunch();
+        expect(await s.launchpadFactory.globalPause()).to.equal(false);
+
+        await expect(
+          s.launchpadFactory.connect(s.owner).setGlobalPause(true)
+        )
+          .to.emit(s.launchpadFactory, "GlobalPauseChanged")
+          .withArgs(true);
+
+        expect(await s.launchpadFactory.globalPause()).to.equal(true);
+      });
+
+      it("globalPause affects all launches instantly", async () => {
+        const s = await setup();
+        // Create 2 launches
+        const launches: any[] = [];
+        for (const c of [s.alice, s.bob]) {
+          const { token, launch, launchAddress } = await createTokenWithLaunch(
+            s,
+            c
+          );
+          const req = await launch.totalTokensRequired();
+          await token.connect(c).setExcludedFromLimits(launchAddress, true);
+          await token.connect(c).setAuthorizedLauncher(launchAddress, true);
+          await token.connect(c).approve(launchAddress, req);
+          await launch.connect(c).depositTokens(req);
+          launches.push(launch);
+        }
+
+        // Global pause
+        await s.launchpadFactory.connect(s.owner).setGlobalPause(true);
+
+        // Both launches should reject buys
+        const u = await s.usdt.getAddress();
+        for (const l of launches) {
+          await s.usdt.mint(s.carol.address, PARSE_USDT(10));
+          await s.usdt
+            .connect(s.carol)
+            .approve(await l.getAddress(), PARSE_USDT(10));
+          await expect(
+            l.connect(s.carol)["buy(address[],uint256,uint256,uint256)"](
+              [u, u],
+              PARSE_USDT(10),
+              0,
+              0
+            )
+          ).to.be.revertedWithCustomError(l, "LaunchPaused");
+        }
+      });
+
+      it("refund still works during globalPause", async () => {
+        const s = await activeLaunch();
+        await s.usdt.mint(s.bob.address, PARSE_USDT(50));
+        await s.usdt
+          .connect(s.bob)
+          .approve(await s.launch.getAddress(), PARSE_USDT(50));
+        const u = await s.usdt.getAddress();
+        await s.launch
+          .connect(s.bob)
+          ["buy(address[],uint256,uint256,uint256)"](
+            [u, u],
+            PARSE_USDT(50),
+            0,
+            0
+          );
+
+        const bobTokens = await s.token.balanceOf(s.bob.address);
+
+        // Owner pauses ALL launches
+        await s.launchpadFactory.connect(s.owner).setGlobalPause(true);
+
+        // Admin ALSO pauses this launch directly (user-exit requires paused flag on launch)
+        await s.launchpadFactory.connect(s.owner).pauseLaunch(
+          await s.launch.getAddress(),
+          true
+        );
+
+        await s.token
+          .connect(s.bob)
+          .approve(await s.launch.getAddress(), bobTokens);
+        await expect(s.launch.connect(s.bob).refund(bobTokens)).to.emit(
+          s.launch,
+          "Refunded"
+        );
+      });
+    });
+  });
 });
