@@ -15,10 +15,8 @@
 	import { chainSlug, type SupportedNetwork } from '$lib/structure';
 	import type { WsProviderManager, EventSubscription } from '$lib/wsProvider';
 	import { transferFilter } from '$lib/wsProvider';
-	import { ERC20_ABI, ZERO_ADDRESS, FACTORY_ABI } from '$lib/tokenCrafter';
+	import { ERC20_ABI, ZERO_ADDRESS } from '$lib/tokenCrafter';
 	import {
-		LAUNCH_INSTANCE_ABI,
-		LAUNCHPAD_FACTORY_ABI,
 		type LaunchInfo,
 		type LaunchState,
 		type BuyPreview,
@@ -32,6 +30,10 @@
 		timeRemaining,
 		CURVE_TYPES
 	} from '$lib/launchpad';
+	import { LaunchInstanceClient } from '$lib/contracts/launchInstance';
+	import { LaunchpadFactoryClient } from '$lib/contracts/launchpadFactory';
+	import { TokenFactoryClient } from '$lib/contracts/tokenFactory';
+	import { PlatformTokenClient } from '$lib/contracts/platformToken';
 	import Chart from '$lib/Chart.svelte';
 	import LaunchCountdown from '$lib/LaunchCountdown.svelte';
 	import ConfirmModal from '$lib/ConfirmModal.svelte';
@@ -521,28 +523,28 @@
 			if (info.state === 2) tradingEnabled = false;
 
 			// Phase 2: All secondary data in parallel — non-blocking
-			const instance = new ethers.Contract(launchAddress, LAUNCH_INSTANCE_ABI, prov);
-			const tokenC = new ethers.Contract(info.token, PROTECTED_TOKEN_ABI, prov);
+			const launchClient = new LaunchInstanceClient(launchAddress, prov);
+			const tokenClient = new PlatformTokenClient(info.token, prov);
 
 			const [meta, usdtMeta, tradingResult, vestingResult, settingsResult] = await Promise.all([
 				// Token + USDT metadata
 				fetchTokenMeta(info.token, prov),
 				fetchTokenMeta(info.usdtAddress, prov),
 				// Trading status
-				tokenC.secondsUntilTradingOpens().catch(() => 0n),
+				tokenClient.secondsUntilTradingOpens().catch(() => 0n),
 				// Vesting + trust signals
 				Promise.all([
-					instance.vestingCliff().catch(() => 0n),
-					instance.vestingDuration().catch(() => 0n),
-					instance.lockDurationAfterListing().catch(() => 0n),
-					instance.creatorTotalTokens().catch(() => 0n),
-					instance.creatorClaimed().catch(() => 0n),
-					instance.graduationTimestamp().catch(() => 0n),
+					launchClient.vestingCliff().catch(() => 0n),
+					launchClient.vestingDuration().catch(() => 0n),
+					launchClient.lockDurationAfterListing().catch(() => 0n),
+					launchClient.creatorTotalTokens().catch(() => 0n),
+					launchClient.creatorClaimed().catch(() => 0n),
+					launchClient.graduationTimestamp().catch(() => 0n),
 				]),
 				// Launch settings
 				Promise.all([
-					instance.maxBuyPerWallet().catch(() => 0n),
-					instance.minBuyUsdt().catch(() => 0n),
+					launchClient.maxBuyPerWallet().catch(() => 0n),
+					launchClient.minBuyUsdt().catch(() => 0n),
 				]),
 			]);
 
@@ -572,7 +574,7 @@
 
 			// Phase 3: State-specific calls (non-blocking, run in background)
 			if (info.state === 0) {
-				instance.preflight().then(([ready, reason]: [boolean, string]) => {
+				launchClient.preflight().then(({ ready, reason }) => {
 					preflightReady = Boolean(ready);
 					preflightReason = String(reason || '');
 				}).catch(() => { preflightReady = false; preflightReason = ''; });
@@ -582,9 +584,9 @@
 				Promise.all([
 					new ethers.Contract(info.token, ERC20_ABI, prov).balanceOf(launchAddress).catch(() => 0n),
 					new ethers.Contract(info.usdtAddress, ERC20_ABI, prov).balanceOf(launchAddress).catch(() => 0n),
-					instance.refundStartTimestamp().catch(() => 0n),
-					instance.STRANDED_SWEEP_DELAY().catch(() => 0n),
-					new ethers.Contract(net.launchpad_address, LAUNCHPAD_FACTORY_ABI, prov).platformWallet().catch(() => ''),
+					launchClient.refundStartTimestamp().catch(() => 0n),
+					launchClient.strandedSweepDelay().catch(() => 0n),
+					new LaunchpadFactoryClient(net.launchpad_address, prov).platformWallet().catch(() => ''),
 				]).then(([tokenBal, usdtBal, rts, ssd, pw]) => {
 					reclaimableBalance = tokenBal;
 					strandedUsdtBalance = usdtBal;
@@ -619,8 +621,8 @@
 
 			// Partner detection from chain
 			try {
-				const factory = new ethers.Contract(net.platform_address, FACTORY_ABI, prov);
-				const tInfo = await factory.tokenInfo(info.token);
+				const tokenFactory = new TokenFactoryClient(net.platform_address, prov);
+				const tInfo = await tokenFactory.tokenInfo(info.token);
 				if (tInfo.isPartnership && !badges.includes('partner')) {
 					badges = [...badges, 'partner'];
 				}
@@ -633,12 +635,12 @@
 
 	async function loadUserPosition(provider: ethers.Provider) {
 		if (!userAddress) return;
-		const instance = new ethers.Contract(launchAddress, LAUNCH_INSTANCE_ABI, provider);
+		const launchClient = new LaunchInstanceClient(launchAddress, provider);
 		const [paid, bought, maxBuy, minBuy] = await Promise.all([
-			instance.basePaid(userAddress),
-			instance.tokensBought(userAddress),
-			instance.maxBuyPerWallet(),
-			instance.minBuyUsdt().catch(() => 0n)
+			launchClient.basePaid(userAddress),
+			launchClient.tokensBought(userAddress),
+			launchClient.maxBuyPerWallet(),
+			launchClient.minBuyUsdt().catch(() => 0n)
 		]);
 		userBasePaid = paid;
 		userTokensBought = bought;
@@ -767,11 +769,11 @@
 	let previewError = $state('');
 
 	async function estimateViaCurrentPrice(
-		instance: ethers.Contract,
+		client: LaunchInstanceClient,
 		usdtWei: bigint
 	): Promise<BuyPreview | null> {
 		try {
-			const currentPrice: bigint = await instance.getCurrentPrice();
+			const currentPrice: bigint = await client.getCurrentPrice();
 			if (currentPrice === 0n) return null;
 
 			// No buy fee — platform earns from graduation only
@@ -815,14 +817,14 @@
 			try {
 				const provider = networkProviders.get(net.chain_id);
 				if (!provider) return;
-				const instance = new ethers.Contract(launchAddress, LAUNCH_INSTANCE_ABI, provider);
+				const launchClient = new LaunchInstanceClient(launchAddress, provider);
 				const usdtWei = ethers.parseUnits(String(amt), usdtDecimals);
 				const result = userAddress
-					? await instance.previewBuyFor(userAddress, usdtWei)
-					: await instance.previewBuy(usdtWei);
-				const tokensOut = result[0];
-				const fee = result[1];
-				const priceImpactBps = result[2];
+					? await launchClient.previewBuyFor(userAddress, usdtWei)
+					: await launchClient.previewBuy(usdtWei);
+				const tokensOut = result.tokensOut;
+				const fee = result.fee;
+				const priceImpactBps = result.priceImpactBps;
 				if (tokensOut === 0n && fee === 0n) {
 					preview = null;
 				} else {
@@ -837,9 +839,9 @@
 					try {
 						const provider = networkProviders.get(net.chain_id);
 						if (provider) {
-							const instance = new ethers.Contract(launchAddress, LAUNCH_INSTANCE_ABI, provider);
+							const launchClient = new LaunchInstanceClient(launchAddress, provider);
 							const usdtWei = ethers.parseUnits(String(amt), usdtDecimals);
-							const est = await estimateViaCurrentPrice(instance, usdtWei);
+							const est = await estimateViaCurrentPrice(launchClient, usdtWei);
 							if (est) {
 								preview = est;
 								previewError = 'estimate';
@@ -988,7 +990,7 @@
 
 		isBuying = true;
 		try {
-			const instance = new ethers.Contract(launchAddress, LAUNCH_INSTANCE_ABI, signer);
+			const launchClient = new LaunchInstanceClient(launchAddress, signer);
 			const slipBps = BigInt(Math.round(slippagePct * 100)); // e.g. 5% → 500
 			const minTokensOut = preview ? preview.tokensOut * (10000n - slipBps) / 10000n : 0n;
 
@@ -1008,21 +1010,20 @@
 				// Path: [native, USDT]. The contract rewrites address(0) → WETH
 				// for the actual swap call.
 				addFeedback({ message: `Swapping ${network.native_coin} → USDT and buying...`, type: 'info' });
-				const tx = await instance.buy(
+				await launchClient.buy(
 					[ethers.ZeroAddress, network.usdt_address],
 					bnbToSend,
 					minUsdtOut,
 					minTokensOut,
 					{ value: bnbToSend }
 				);
-				await tx.wait();
 			} else {
 				const paymentAddress = getPaymentAddress();
 				const amountWei = ethers.parseUnits(String(buyAmount), paymentDecimals);
 				// minUsdtOut for non-USDT tokens (USDC → USDT swap), 0 if paying USDT directly
 				const minUsdtOut = buyPaymentMethod === 'usdt' ? 0n : amountWei * (10000n - slipBps) / 10000n;
 
-				// Check allowance & approve
+				// Check allowance & approve — generic ERC20, inline is fine.
 				const tokenContract = new ethers.Contract(paymentAddress, ERC20_ABI, signer);
 				const allowance: bigint = await tokenContract.allowance(userAddress, launchAddress);
 				if (allowance < amountWei) {
@@ -1038,8 +1039,7 @@
 					: [paymentAddress, network.usdt_address];
 
 				addFeedback({ message: 'Buying tokens...', type: 'info' });
-				const tx = await instance.buy(path, amountWei, minUsdtOut, minTokensOut);
-				await tx.wait();
+				await launchClient.buy(path, amountWei, minUsdtOut, minTokensOut);
 			}
 
 			addFeedback({ message: 'Tokens purchased!', type: 'success' });
@@ -1069,28 +1069,25 @@
 		if (!signer || !launch) return;
 		isEnablingTrading = true;
 		try {
-			const tokenContract = new ethers.Contract(launch.token, PROTECTED_TOKEN_ABI, signer);
+			const tokenClient = new PlatformTokenClient(launch.token, signer);
 			addFeedback({ message: 'Enabling trading...', type: 'info' });
 			// Open trading immediately (0 delay). The launchpad path doesn't
 			// need an anti-snipe window here — graduation will handle the
 			// per-pool lock when the curve fills.
-			const tx = await tokenContract.enableTrading(0);
-			await tx.wait();
+			await tokenClient.enableTrading(0);
 			tradingEnabled = true;
 
 			// Also exclude launch from limits + tax while we're at it
 			try {
-				const isExcluded = await tokenContract.isExcludedFromLimits(launchAddress);
+				const isExcluded = await tokenClient.isExcludedFromLimits(launchAddress);
 				if (!isExcluded) {
-					const tx2 = await tokenContract.setExcludedFromLimits(launchAddress, true);
-					await tx2.wait();
+					await tokenClient.setExcludedFromLimits(launchAddress, true);
 				}
 			} catch {}
 			try {
-				const isFree = await tokenContract.isTaxFree(launchAddress);
+				const isFree = await tokenClient.isTaxFree(launchAddress);
 				if (!isFree) {
-					const tx3 = await tokenContract.excludeFromTax(launchAddress, true);
-					await tx3.wait();
+					await tokenClient.excludeFromTax(launchAddress, true);
 				}
 			} catch {}
 
@@ -1102,18 +1099,6 @@
 		}
 	}
 
-	const PROTECTED_TOKEN_ABI = [
-		'function setExcludedFromLimits(address account, bool excluded) external',
-		'function excludeFromTax(address account, bool exempt) external',
-		'function setAuthorizedLauncher(address launcher, bool authorized) external',
-		'function isExcludedFromLimits(address) view returns (bool)',
-		'function isTaxFree(address) view returns (bool)',
-		'function isAuthorizedLauncher(address) view returns (bool)',
-		'function secondsUntilTradingOpens() view returns (uint256)',
-		'function tradingStartTime() view returns (uint256)',
-		'function enableTrading(uint256 delay) external'
-	];
-
 	async function handleDeposit() {
 		if (!signer || !userAddress || !launch || !network) {
 			connectWallet();
@@ -1122,7 +1107,7 @@
 
 		isDepositing = true;
 		try {
-			const instance = new ethers.Contract(launchAddress, LAUNCH_INSTANCE_ABI, signer);
+			const launchClient = new LaunchInstanceClient(launchAddress, signer);
 			const remaining = launch.totalTokensRequired - launch.totalTokensDeposited;
 
 			if (remaining <= 0n) {
@@ -1142,52 +1127,51 @@
 			// once the curve fills, since the launch is now an authorized
 			// launcher. Curve buys/refunds work because the launch instance
 			// is in isExcludedFromLimits.
-			const tokenContract = new ethers.Contract(launch.token, [...ERC20_ABI, ...PROTECTED_TOKEN_ABI], signer);
+			const tokenClient = new PlatformTokenClient(launch.token, signer);
+			// Generic ERC20 for approve/allowance — the token might be an
+			// external ERC20 without the platform protection surface.
+			const erc20 = new ethers.Contract(launch.token, ERC20_ABI, signer);
 
 			try {
-				const isExcluded: boolean = await tokenContract.isExcludedFromLimits(launchAddress);
+				const isExcluded = await tokenClient.isExcludedFromLimits(launchAddress);
 				if (!isExcluded) {
 					addFeedback({ message: 'Excluding launch from token limits...', type: 'info' });
-					const tx = await tokenContract.setExcludedFromLimits(launchAddress, true);
-					await tx.wait();
+					await tokenClient.setExcludedFromLimits(launchAddress, true);
 				}
 			} catch {
 				// Token may not implement the protection surface (external ERC20)
 			}
 
 			try {
-				const isTaxFree: boolean = await tokenContract.isTaxFree(launchAddress);
+				const isTaxFree = await tokenClient.isTaxFree(launchAddress);
 				if (!isTaxFree) {
 					addFeedback({ message: 'Excluding launch from token tax...', type: 'info' });
-					const tx = await tokenContract.excludeFromTax(launchAddress, true);
-					await tx.wait();
+					await tokenClient.excludeFromTax(launchAddress, true);
 				}
 			} catch {
 				// Token may not be taxable — skip
 			}
 
 			try {
-				const isAuth: boolean = await tokenContract.isAuthorizedLauncher(launchAddress);
+				const isAuth = await tokenClient.isAuthorizedLauncher(launchAddress);
 				if (!isAuth) {
 					addFeedback({ message: 'Authorizing launch instance...', type: 'info' });
-					const tx = await tokenContract.setAuthorizedLauncher(launchAddress, true);
-					await tx.wait();
+					await tokenClient.setAuthorizedLauncher(launchAddress, true);
 				}
 			} catch {
 				// External token without isAuthorizedLauncher — preflight will skip this check
 			}
 
-			// Approve token transfer
-			const allowance: bigint = await tokenContract.allowance(userAddress, launchAddress);
+			// Approve token transfer (generic ERC20 surface)
+			const allowance: bigint = await erc20.allowance(userAddress, launchAddress);
 			if (allowance < remaining) {
 				addFeedback({ message: `Approving ${tokenMeta.symbol}...`, type: 'info' });
-				const approveTx = await tokenContract.approve(launchAddress, remaining);
+				const approveTx = await erc20.approve(launchAddress, remaining);
 				await approveTx.wait();
 			}
 
 			addFeedback({ message: 'Depositing tokens...', type: 'info' });
-			const depositTx = await instance.depositTokens(remaining);
-			await depositTx.wait();
+			await launchClient.depositTokens(remaining);
 
 			addFeedback({ message: 'Tokens deposited! Launch is now active.', type: 'success' });
 			await refreshData();
@@ -1199,25 +1183,23 @@
 	}
 
 	async function handleRefund() {
-		const l = launch;
-		if (!signer || !userAddress || !l || !network) return;
+		if (!signer || !userAddress || !launch || !network) return;
 
 		isRefunding = true;
 		try {
-			const tokenContract = new ethers.Contract(l.token, ERC20_ABI, signer);
-			const allowance = await tokenContract.allowance(userAddress, launchAddress);
-			if (allowance < userTokensBought) {
+			// Approve via the launch token (generic ERC20). The launch client
+			// also exposes ensureRefundApproval(signer, amount) — prefer it to
+			// keep the approve/refund pair close together.
+			const launchClient = new LaunchInstanceClient(launchAddress, signer);
+			const approvalReceipt = await launchClient.ensureRefundApproval(signer, userTokensBought);
+			if (approvalReceipt) {
 				addFeedback({ message: 'Approving token return...', type: 'info' });
-				const approveTx = await tokenContract.approve(launchAddress, userTokensBought);
-				await approveTx.wait();
 			}
 
 			addFeedback({ message: 'Processing refund...', type: 'info' });
-			const instance = new ethers.Contract(launchAddress, LAUNCH_INSTANCE_ABI, signer);
 			// New refund(uint256 tokensToReturn) supports partial refunds.
 			// Pass the user's full position to keep the existing all-or-nothing UX.
-			const tx = await instance.refund(userTokensBought);
-			await tx.wait();
+			await launchClient.refund(userTokensBought);
 			addFeedback({ message: 'Refund successful!', type: 'success' });
 			await refreshData();
 		} catch (e: any) {
@@ -1231,10 +1213,9 @@
 		if (!signer) return;
 		isGraduating = true;
 		try {
-			const instance = new ethers.Contract(launchAddress, LAUNCH_INSTANCE_ABI, signer);
+			const launchClient = new LaunchInstanceClient(launchAddress, signer);
 			addFeedback({ message: 'Graduating to DEX...', type: 'info' });
-			const tx = await instance.graduate();
-			await tx.wait();
+			await launchClient.graduate();
 			addFeedback({ message: 'Graduated! Liquidity added to DEX.', type: 'success' });
 			await refreshData();
 		} catch (e: any) {
@@ -1253,10 +1234,9 @@
 		if (!signer || !launch || launch.state !== 3) return;
 		isReclaiming = true;
 		try {
-			const instance = new ethers.Contract(launchAddress, LAUNCH_INSTANCE_ABI, signer);
+			const launchClient = new LaunchInstanceClient(launchAddress, signer);
 			addFeedback({ message: 'Reclaiming tokens...', type: 'info' });
-			const tx = await instance.creatorWithdrawAvailable();
-			await tx.wait();
+			await launchClient.creatorWithdrawAvailable();
 			addFeedback({ message: 'Tokens reclaimed.', type: 'success' });
 			await refreshData();
 		} catch (e: any) {
@@ -1274,10 +1254,9 @@
 		if (!signer || !launch || launch.state !== 0) return;
 		isActivating = true;
 		try {
-			const instance = new ethers.Contract(launchAddress, LAUNCH_INSTANCE_ABI, signer);
+			const launchClient = new LaunchInstanceClient(launchAddress, signer);
 			addFeedback({ message: 'Activating launch...', type: 'info' });
-			const tx = await instance.activate();
-			await tx.wait();
+			await launchClient.activate();
 			addFeedback({ message: 'Launch is now active.', type: 'success' });
 			await refreshData();
 		} catch (e: any) {
@@ -1296,10 +1275,9 @@
 		if (!signer || !launch || launch.state !== 3) return;
 		isSweeping = true;
 		try {
-			const instance = new ethers.Contract(launchAddress, LAUNCH_INSTANCE_ABI, signer);
+			const launchClient = new LaunchInstanceClient(launchAddress, signer);
 			addFeedback({ message: 'Sweeping stranded USDT...', type: 'info' });
-			const tx = await instance.sweepStrandedUsdt();
-			await tx.wait();
+			await launchClient.sweepStrandedUsdt();
 			addFeedback({ message: 'Stranded USDT swept to platform wallet.', type: 'success' });
 			await refreshData();
 		} catch (e: any) {
@@ -1366,11 +1344,8 @@
 		}));
 	}
 
-	function getTxInstance(provider: ethers.Provider) {
-		return new ethers.Contract(launchAddress, [
-			'function getPurchases(uint256 offset, uint256 limit) view returns (tuple(address buyer, uint256 baseAmount, uint256 tokensReceived, uint256 fee, uint256 price, uint256 timestamp)[] purchases, uint256 total)',
-			'function totalPurchases() view returns (uint256)',
-		], provider);
+	function getTxClient(provider: ethers.Provider): LaunchInstanceClient {
+		return new LaunchInstanceClient(launchAddress, provider);
 	}
 
 	async function loadTransactions() {
@@ -1380,13 +1355,13 @@
 			if (net) {
 				const provider = networkProviders.get(net.chain_id);
 				if (provider) {
-					const instance = getTxInstance(provider);
-					const total = Number(await instance.totalPurchases());
+					const launchClient = getTxClient(provider);
+					const total = await launchClient.totalPurchases();
 					txTotal = total;
 					if (total > 0) {
 						const offset = Math.max(0, total - TX_PER_PAGE);
 						const limit = Math.min(TX_PER_PAGE, total - offset);
-						const { purchases } = await instance.getPurchases(offset, limit);
+						const { purchases } = await launchClient.getPurchases(offset, limit);
 						txItems = parsePurchases(purchases).reverse(); // newest first
 						txPage = 0;
 						txOnChain = true;
@@ -1424,14 +1399,14 @@
 
 		txLoadingMore = true;
 		try {
-			const instance = getTxInstance(provider);
+			const launchClient = getTxClient(provider);
 			const nextPage = txPage + 1;
 			// Items already loaded = newest (nextPage * TX_PER_PAGE) items
 			const endOffset = Math.max(0, txTotal - nextPage * TX_PER_PAGE);
 			const offset = Math.max(0, endOffset - TX_PER_PAGE);
 			const limit = Math.min(TX_PER_PAGE, endOffset - offset);
 			if (limit <= 0) { txLoadingMore = false; return; }
-			const { purchases } = await instance.getPurchases(offset, limit);
+			const { purchases } = await launchClient.getPurchases(offset, limit);
 			const older = parsePurchases(purchases).reverse(); // newest first within this batch
 			txItems = [...txItems, ...older];
 			txPage = nextPage;
@@ -1449,15 +1424,15 @@
 		const provider = networkProviders.get(net.chain_id);
 		if (!provider) return;
 		try {
-			const instance = getTxInstance(provider);
-			const total = Number(await instance.totalPurchases());
+			const launchClient = getTxClient(provider);
+			const total = await launchClient.totalPurchases();
 			if (total === txTotal && total > 0) return; // no new purchases
 			const prevTotal = txTotal;
 			txTotal = total;
 			if (total === 0) { txItems = []; return; }
 			const offset = Math.max(0, total - TX_PER_PAGE);
 			const limit = Math.min(TX_PER_PAGE, total - offset);
-			const { purchases } = await instance.getPurchases(offset, limit);
+			const { purchases } = await launchClient.getPurchases(offset, limit);
 			const latest = parsePurchases(purchases).reverse();
 			// Number of new items since last fetch
 			const newCount = total - prevTotal;
@@ -1874,10 +1849,9 @@
 							const provider = networkProviders.get(net.chain_id);
 							if (!provider || !signer) { addFeedback({ message: 'Connect wallet first', type: 'error' }); return; }
 							const s = (signer as any).connect ? (signer as any).connect(provider) : signer;
-							const instance = new ethers.Contract(launch.address, ['function claimCreatorTokens()'], s);
+							const launchClient = new LaunchInstanceClient(launch.address, s);
 							addFeedback({ message: 'Claiming vested tokens...', type: 'info' });
-							const tx = await instance.claimCreatorTokens();
-							await tx.wait();
+							await launchClient.claimCreatorTokens();
 							addFeedback({ message: 'Vested tokens claimed!', type: 'success' });
 							refreshData();
 						} catch (e: any) {

@@ -118,6 +118,12 @@ const LAUNCH_INSTANCE_CLIENT_ABI = [
 	'function startTimestamp() view returns (uint256)',
 	'function graduationTimestamp() view returns (uint256)',
 	'function refundStartTimestamp() view returns (uint256)',
+	'function vestingCliff() view returns (uint256)',
+	'function vestingDuration() view returns (uint256)',
+	'function lockDurationAfterListing() view returns (uint256)',
+	'function creatorTotalTokens() view returns (uint256)',
+	'function creatorClaimed() view returns (uint256)',
+	'function STRANDED_SWEEP_DELAY() view returns (uint256)',
 	'function stateHash() view returns (bytes32)',
 	'function getLaunchInfo() view returns (address token_, address creator_, uint8 curveType_, uint8 state_, uint256 softCap_, uint256 hardCap_, uint256 deadline_, uint256 totalBaseRaised_, uint256 tokensSold_, uint256 tokensForCurve_, uint256 tokensForLP_, uint256 creatorAllocationBps_, uint256 currentPrice_, address usdt_, uint256 startTimestamp_)',
 	'function preflight() view returns (bool ready, string reason)',
@@ -409,6 +415,22 @@ export class LaunchInstanceClient {
 		const raw: ProgressBpsRaw = { softCapBps: BigInt(softCapBps), hardCapBps: BigInt(hardCapBps) };
 		return toProgressBpsView(raw);
 	}
+
+	/** Raw vesting params (cliff + duration in seconds). */
+	async vestingCliff(): Promise<bigint> { return BigInt(await this.contract.vestingCliff()); }
+	async vestingDuration(): Promise<bigint> { return BigInt(await this.contract.vestingDuration()); }
+	/** Anti-snipe trading lock applied at graduation, in seconds. */
+	async lockDurationAfterListing(): Promise<bigint> { return BigInt(await this.contract.lockDurationAfterListing()); }
+	/** Absolute timestamp (unix seconds) recorded at graduation. 0 if not graduated yet. */
+	async graduationTimestamp(): Promise<bigint> { return BigInt(await this.contract.graduationTimestamp()); }
+	/** Timestamp the launch entered Refunding. 0 if never refunding. */
+	async refundStartTimestamp(): Promise<bigint> { return BigInt(await this.contract.refundStartTimestamp()); }
+	/** Total creator allocation (launch token units, token decimals). */
+	async creatorTotalTokens(): Promise<bigint> { return BigInt(await this.contract.creatorTotalTokens()); }
+	/** Amount of the creator allocation already claimed. */
+	async creatorClaimed(): Promise<bigint> { return BigInt(await this.contract.creatorClaimed()); }
+	/** Contract constant — seconds after refundStart that stranded USDT can be swept. */
+	async strandedSweepDelay(): Promise<bigint> { return BigInt(await this.contract.STRANDED_SWEEP_DELAY()); }
 
 	async vestingInfo(): Promise<VestingInfoNumeric> {
 		const [total, claimed, claimable, nextClaimTimestamp] = await this.contract.vestingInfo();

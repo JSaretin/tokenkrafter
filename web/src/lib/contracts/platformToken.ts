@@ -17,6 +17,15 @@ const PLATFORM_TOKEN_READ_ABI = [
 	'function tradingStartTime() view returns (uint256)',
 	'function taxWallets(uint256) view returns (address)',
 	'function taxSharesBps(uint256) view returns (uint16)',
+	'function secondsUntilTradingOpens() view returns (uint256)',
+	'function isExcludedFromLimits(address) view returns (bool)',
+	'function isTaxFree(address) view returns (bool)',
+	'function isAuthorizedLauncher(address) view returns (bool)',
+	// ── Admin writes (creator-only for platform token clones) ──
+	'function setExcludedFromLimits(address account, bool excluded) external',
+	'function excludeFromTax(address account, bool exempt) external',
+	'function setAuthorizedLauncher(address launcher, bool authorized) external',
+	'function enableTrading(uint256 delay) external',
 ] as const;
 
 export interface ProtectionSettings {
@@ -57,6 +66,54 @@ export class PlatformTokenClient {
 			this.contract.blacklistWindow().catch(() => 0n),
 		]);
 		return { maxWallet, maxTransaction, cooldownTime, blacklistWindow };
+	}
+
+	/**
+	 * Seconds until the token's trading window opens. Returns:
+	 *   - 0 when trading is currently open
+	 *   - (max uint256) sentinel when enableTrading() has never been called
+	 *   - otherwise the remaining anti-snipe lock seconds
+	 */
+	async secondsUntilTradingOpens(): Promise<bigint> {
+		return BigInt(await this.contract.secondsUntilTradingOpens());
+	}
+
+	async isExcludedFromLimits(account: string): Promise<boolean> {
+		return Boolean(await this.contract.isExcludedFromLimits(account));
+	}
+
+	async isTaxFree(account: string): Promise<boolean> {
+		return Boolean(await this.contract.isTaxFree(account));
+	}
+
+	async isAuthorizedLauncher(account: string): Promise<boolean> {
+		return Boolean(await this.contract.isAuthorizedLauncher(account));
+	}
+
+	// ── Writes ────────────────────────────────────────────
+
+	/** Exclude/include `account` from wallet/transaction caps. Creator-only. */
+	async setExcludedFromLimits(account: string, excluded: boolean): Promise<ethers.TransactionReceipt | null> {
+		const tx = (await this.contract.setExcludedFromLimits(account, excluded)) as ethers.TransactionResponse;
+		return tx.wait();
+	}
+
+	/** Mark `account` as tax-exempt. Creator-only. */
+	async excludeFromTax(account: string, exempt: boolean): Promise<ethers.TransactionReceipt | null> {
+		const tx = (await this.contract.excludeFromTax(account, exempt)) as ethers.TransactionResponse;
+		return tx.wait();
+	}
+
+	/** Authorize a launcher contract (e.g. LaunchInstance) to enable trading on graduation. */
+	async setAuthorizedLauncher(launcher: string, authorized: boolean): Promise<ethers.TransactionReceipt | null> {
+		const tx = (await this.contract.setAuthorizedLauncher(launcher, authorized)) as ethers.TransactionResponse;
+		return tx.wait();
+	}
+
+	/** Open trading with an optional anti-snipe delay in seconds. Creator-only. */
+	async enableTrading(delaySeconds: bigint | number): Promise<ethers.TransactionReceipt | null> {
+		const tx = (await this.contract.enableTrading(BigInt(delaySeconds))) as ethers.TransactionResponse;
+		return tx.wait();
 	}
 
 	/**
