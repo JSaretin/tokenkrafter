@@ -9,6 +9,7 @@
 	import { ERC20_DECIMALS_ABI } from '$lib/commonABIs';
 	import { WithdrawStatus, withdrawStatusLabel } from '$lib/structure/tradeRouter';
 	import { TradeRouterClient } from '$lib/contracts/tradeRouter';
+	import { DexRouterClient } from '$lib/contracts/dexRouter';
 	import WithdrawalStatusModal from '$lib/WithdrawalStatusModal.svelte';
 	import { apiFetch } from '$lib/apiFetch';
 	import { queryTradeLens, getInstantQuote, getWeth, isCacheLoaded, getUsdValue, getCachedToken, findBestRoute as findBestRouteLocal, type TaxInfo, type SwapRoute } from '$lib/tradeLens';
@@ -1207,9 +1208,8 @@
 			} else {
 				// ── Direct swap via PancakeSwap (no TradeRouter intermediary) ──
 				const dexRouterAddr = selectedNetwork.dex_router;
-				const { DEX_ROUTER_ABI } = await import('$lib/tradeRouter');
-				const dex = new ethers.Contract(dexRouterAddr, DEX_ROUTER_ABI, signer);
-				const weth = wethAddr || await dex.WETH();
+				const dex = new DexRouterClient(dexRouterAddr, signer);
+				const weth = wethAddr || await dex.weth();
 
 				// Step 1: Approve DEX router (not TradeRouter)
 				swapStep = 1;
@@ -1239,26 +1239,16 @@
 				// Step 2: Execute swap directly on PancakeSwap
 				swapStep = 2;
 				try {
-				if (tokenInIsNative) {
-					const est = await dex.swapExactETHForTokensSupportingFeeOnTransferTokens.estimateGas(
-						minOut, path, userAddress, deadline, { value: parsedIn });
-					tx = await dex.swapExactETHForTokensSupportingFeeOnTransferTokens(
-						minOut, path, userAddress, deadline, { value: parsedIn, gasLimit: est * 130n / 100n }
-					);
-				} else if (tokenOutIsNative) {
-					const est2 = await dex.swapExactTokensForETHSupportingFeeOnTransferTokens.estimateGas(
-						parsedIn, minOut, path, userAddress, deadline);
-					tx = await dex.swapExactTokensForETHSupportingFeeOnTransferTokens(
-						parsedIn, minOut, path, userAddress, deadline, { gasLimit: est2 * 130n / 100n }
-					);
-				} else {
-					const est3 = await dex.swapExactTokensForTokensSupportingFeeOnTransferTokens.estimateGas(
-						parsedIn, minOut, path, userAddress, deadline);
-					tx = await dex.swapExactTokensForTokensSupportingFeeOnTransferTokens(
-						parsedIn, minOut, path, userAddress, deadline, { gasLimit: est3 * 130n / 100n }
-					);
-				}
-				const swapReceipt = await tx.wait();
+				const swapRes = await dex.swap({
+					amountIn: parsedIn,
+					minOut,
+					path,
+					to: userAddress,
+					deadline,
+					fromNative: tokenInIsNative,
+					toNative: tokenOutIsNative,
+				});
+				tx = swapRes.tx;
 				swapStep = 3; // done
 				addFeedback({ message: $t('trade.swappedSuccess').replace('{amountIn}', amountIn).replace('{symbolIn}', tokenInSymbol).replace('{amountOut}', displayAmountOut).replace('{symbolOut}', tokenOutSymbol), type: 'success' });
 				showConfirmModal = false;

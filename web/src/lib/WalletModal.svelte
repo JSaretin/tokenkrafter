@@ -104,6 +104,13 @@
 		step = 'google-loading';
 
 		try {
+			// Remember where we are so /auth/callback can bounce the user
+			// back after the OAuth round-trip. Without this the callback
+			// defaults to `/` and drops context.
+			if (typeof window !== 'undefined') {
+				const here = window.location.pathname + window.location.search;
+				sessionStorage.setItem('auth_return_to', here);
+			}
 			await signInWithGoogle();
 			// Page redirects to Google — nothing after this runs
 		} catch (e: any) {

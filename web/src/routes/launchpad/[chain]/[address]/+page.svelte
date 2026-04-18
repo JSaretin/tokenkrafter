@@ -31,6 +31,7 @@
 		CURVE_TYPES
 	} from '$lib/launchpad';
 	import { LaunchInstanceClient } from '$lib/contracts/launchInstance';
+	import { DexRouterClient } from '$lib/contracts/dexRouter';
 	import { LaunchpadFactoryClient } from '$lib/contracts/launchpadFactory';
 	import { TokenFactoryClient } from '$lib/contracts/tokenFactory';
 	import { PlatformTokenClient } from '$lib/contracts/platformToken';
@@ -356,15 +357,11 @@
 		swapEstimateLoading = true;
 		_swapEstimateTimeout = setTimeout(async () => {
 			try {
-				const routerAbi = [
-					'function getAmountsIn(uint256 amountOut, address[] calldata path) view returns (uint256[] memory amounts)',
-					'function WETH() view returns (address)'
-				];
-				const router = new ethers.Contract(net.dex_router, routerAbi, prov);
+				const router = new DexRouterClient(net.dex_router, prov);
 				const usdtNeeded = ethers.parseUnits(String(amt), usdtDecimals);
 
 				if (method === 'native') {
-					const weth = await router.WETH();
+					const weth = await router.weth();
 					const amounts = await router.getAmountsIn(usdtNeeded, [weth, net.usdt_address]);
 					const val = parseFloat(ethers.formatEther(amounts[0]));
 					swapEstimate = `\u2248 ${val < 0.00000001 ? '< 0.00000001' : val < 0.0001 ? val.toFixed(8).replace(/\.?0+$/, '') : val.toFixed(4)} ${net.native_coin || 'BNB'}`;
@@ -879,12 +876,8 @@
 			paymentDecimals = 18;
 			// For native, get a DEX quote to estimate BNB needed for the USDT amount
 			try {
-				const routerAbi = [
-					'function getAmountsIn(uint256 amountOut, address[] calldata path) view returns (uint256[] memory amounts)',
-					'function WETH() view returns (address)'
-				];
-				const router = new ethers.Contract(network.dex_router, routerAbi, provider);
-				const weth = await router.WETH();
+				const router = new DexRouterClient(network.dex_router, provider);
+				const weth = await router.weth();
 				const usdtNeeded = ethers.parseUnits(String(buyAmount), usdtDecimals);
 				const amounts = await router.getAmountsIn(usdtNeeded, [weth, network.usdt_address]);
 				const bnbNeeded = amounts[0];
@@ -995,12 +988,8 @@
 			const minTokensOut = preview ? preview.tokensOut * (10000n - slipBps) / 10000n : 0n;
 
 			if (buyPaymentMethod === 'native') {
-				const routerAbi = [
-					'function getAmountsIn(uint256 amountOut, address[] calldata path) view returns (uint256[] memory amounts)',
-					'function WETH() view returns (address)'
-				];
-				const router = new ethers.Contract(network.dex_router, routerAbi, signer.provider!);
-				const weth = await router.WETH();
+				const router = new DexRouterClient(network.dex_router, signer.provider!);
+				const weth = await router.weth();
 				const usdtNeeded = ethers.parseUnits(String(buyAmount), usdtDecimals);
 				const amounts = await router.getAmountsIn(usdtNeeded, [weth, network.usdt_address]);
 				const bnbNeeded = amounts[0];

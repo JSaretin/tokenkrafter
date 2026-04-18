@@ -8,10 +8,11 @@
 	import type { SupportedNetwork, PaymentOption } from '$lib/structure';
 	import type { WsProviderManager, EventSubscription } from '$lib/wsProvider';
 	import { transferFilter } from '$lib/wsProvider';
-	import { PLATFORM_ROUTER_ABI, ROUTER_ABI, ERC20_ABI, ZERO_ADDRESS } from '$lib/tokenCrafter';
+	import { ROUTER_ABI, ERC20_ABI, ZERO_ADDRESS } from '$lib/tokenCrafter';
 	import { LAUNCH_INSTANCE_ABI, CURVE_TYPES, type CurveType } from '$lib/launchpad';
 	import { TokenFactoryClient } from '$lib/contracts/tokenFactory';
 	import { LaunchpadFactoryClient } from '$lib/contracts/launchpadFactory';
+	import { PlatformRouterClient } from '$lib/contracts/platformRouter';
 	import { apiFetch } from '$lib/apiFetch';
 	import { friendlyError } from '$lib/errorDecoder';
 	import QrCode from '$lib/QrCode.svelte';
@@ -249,7 +250,7 @@
 				launchStep = 'idle';
 				return;
 			}
-			const router = new ethers.Contract(routerAddr, PLATFORM_ROUTER_ABI, signer);
+			const router = new PlatformRouterClient(routerAddr, signer);
 
 			// Launch fee in USDT
 			const lpFactoryRead = new LaunchpadFactoryClient(launchNetwork.launchpad_address, signer);
@@ -302,7 +303,7 @@
 
 			const launchParams = {
 				tokensForLaunch,
-				curveType: BigInt(launchCurveType),
+				curveType: launchCurveType,
 				softCap: ethers.parseUnits(launchSoftCap, usdtDec),
 				hardCap: ethers.parseUnits(launchHardCap, usdtDec),
 				durationDays: BigInt(launchDurationDays),
@@ -323,7 +324,7 @@
 
 			launchStep = 'creating';
 			addFeedback({ message: 'Creating launch...', type: 'info' });
-			const tx = await router.launchCreatedToken(
+			const { launchAddress: launchAddr } = await router.launchCreatedToken(
 				launchTokenAddress,
 				launchParams,
 				protectionParams,
@@ -331,22 +332,8 @@
 				false, // isTaxable — quick-launch UI does not collect tax params
 				feePayment,
 			);
-			const receipt = await tx.wait();
 
-			// Extract launch address
-			let launchAddr: string | null = null;
-			const event = receipt?.logs?.find((log: any) => {
-				try {
-					const parsed = router.interface.parseLog({ topics: [...log.topics], data: log.data });
-					return parsed?.name === 'TokenLaunched';
-				} catch { return false; }
-			});
-			if (event) {
-				const parsed = router.interface.parseLog({ topics: [...event.topics], data: event.data });
-				launchAddr = parsed?.args?.launch ?? null;
-			}
-
-			if (launchAddr) {
+			if (launchAddr && launchAddr !== ethers.ZeroAddress) {
 				launchStep = 'saving';
 				launchDeployedAddress = launchAddr;
 				launchStep = 'done';
@@ -577,7 +564,7 @@
 			const typeKey = (tokenInfo.isPartner ? 4 : 0) | (tokenInfo.isTaxable ? 2 : 0) | (tokenInfo.isMintable ? 1 : 0);
 			const withLaunch = !!(tokenInfo.launch?.enabled);
 			const routerAddr = net.router_address;
-			const router = new ethers.Contract(routerAddr, PLATFORM_ROUTER_ABI, prov);
+			const router = new PlatformRouterClient(routerAddr, prov);
 
 			// Fire all balance + quote fetches in parallel
 			const results = await Promise.all(paymentOptions.map(async (opt) => {
@@ -595,8 +582,8 @@
 					// Quote via router.quoteFee
 					(async () => {
 						try {
-							const [, amountIn] = await router.quoteFee(typeKey, withLaunch, path);
-							return amountIn as bigint;
+							const { amountIn } = await router.quoteFeeRaw(typeKey, withLaunch, path);
+							return amountIn;
 						} catch { return 0n; }
 					})(),
 				]);
@@ -1010,8 +997,8 @@
 				};
 
 				addFeedback({ message: 'Launching...', type: 'info' });
-				const router = new ethers.Contract(routerAddr, PLATFORM_ROUTER_ABI, signer);
-				const tx = await router.launchCreatedToken(
+				const router = new PlatformRouterClient(routerAddr, signer);
+				const { tx, launchAddress: existingLaunchAddr } = await router.launchCreatedToken(
 					tokenInfo.existingTokenAddress,
 					launchParams,
 					protectionParams,
@@ -1021,28 +1008,19 @@
 					{ value: nativeFeeWithBuffer }
 				);
 				deployTxHash = tx.hash;
-				const receipt = await tx.wait();
 
-				// Extract launch from TokenLaunched event.
-				const event = receipt?.logs?.find((log: any) => {
-					try {
-						const parsed = router.interface.parseLog({ topics: [...log.topics], data: log.data });
-						return parsed?.name === 'TokenLaunched';
-					} catch { return false; }
-				});
-				if (event) {
-					const parsed = router.interface.parseLog({ topics: [...event.topics], data: event.data });
-					deployedTokenAddress = parsed?.args?.token ?? tokenInfo.existingTokenAddress ?? null;
-				} else {
-					deployedTokenAddress = tokenInfo.existingTokenAddress ?? null;
-				}
+				// launchCreatedToken parses TokenLaunched internally; the event emits
+				// (creator, token, launch) — for this flow we already know the token,
+				// but we retain the existing fallback for clarity.
+				void existingLaunchAddr;
+				deployedTokenAddress = tokenInfo.existingTokenAddress ?? null;
 
 				addFeedback({ message: 'Launch is live!', type: 'success' });
 
 			} else if (tokenInfo.launch?.enabled && tokenInfo.network.router_address && tokenInfo.network.router_address !== '0x') {
 				// Use PlatformRouter for atomic Create + Launch
 				addFeedback({ message: 'Creating token & launch...', type: 'info' });
-				const router = new ethers.Contract(tokenInfo.network.router_address, PLATFORM_ROUTER_ABI, signer);
+				const router = new PlatformRouterClient(tokenInfo.network.router_address, signer);
 
 				const tokensForLaunch = (totalSupplyWei * BigInt(tokenInfo.launch.tokensForLaunchPct)) / 100n;
 
@@ -1089,26 +1067,14 @@
 					taxSharesBps: tokenInfo.tax?.wallets?.map((w: any) => Math.round(parseFloat(String(w.sharePct || '0')) * 100)) || []
 				};
 
-				const tx = await router.createTokenAndLaunch(
-					tokenParams, launchParams, protectionParams, taxParams, feePayment, referral,
-					{ value: nativeFeeWithBuffer }
-				);
+				const { tx, tokenAddress: createdTokenAddr, launchAddress: createdLaunchAddr } =
+					await router.createTokenAndLaunch(
+						tokenParams, launchParams, protectionParams, taxParams, feePayment, referral,
+						{ value: nativeFeeWithBuffer }
+					);
 				deployTxHash = tx.hash;
-				const receipt = await tx.wait();
-
-				// Extract from TokenCreatedAndLaunched event
-				const event = receipt?.logs?.find((log: any) => {
-					try {
-						const parsed = router.interface.parseLog({ topics: [...log.topics], data: log.data });
-						return parsed?.name === 'TokenCreatedAndLaunched';
-					} catch { return false; }
-				});
-				let launchAddr: string | null = null;
-				if (event) {
-					const parsed = router.interface.parseLog({ topics: [...event.topics], data: event.data });
-					deployedTokenAddress = parsed?.args?.token ?? null;
-					launchAddr = parsed?.args?.launch ?? null;
-				}
+				deployedTokenAddress = createdTokenAddr !== ethers.ZeroAddress ? createdTokenAddr : null;
+				void createdLaunchAddr;
 
 				addFeedback({ message: 'Token created & launch activated!', type: 'success' });
 
@@ -1126,7 +1092,7 @@
 					return;
 				}
 
-				const router = new ethers.Contract(tokenInfo.network.router_address, PLATFORM_ROUTER_ABI, signer);
+				const router = new PlatformRouterClient(tokenInfo.network.router_address, signer);
 				const network = tokenInfo.network;
 
 				const hasNativePair = pairs.some((p: any) => p.base === 'native' && Number(p.amount) > 0);
@@ -1233,26 +1199,18 @@
 				// both fee and LP use native.
 				const nativeValue = nativeFeeWithBuffer + ethValue;
 
-				const tx = await router.createAndList(
+				const { tx, tokenAddress: listedTokenAddr } = await router.createAndList(
 					tokenParams, listParams,
 					protectionParams, taxParams, feePayment, referral,
 					{ value: nativeValue }
 				);
 				deployTxHash = tx.hash;
-				const receipt = await tx.wait();
-
-				const event = receipt?.logs?.find((log: any) => {
-					try { return router.interface.parseLog({ topics: [...log.topics], data: log.data })?.name === 'TokenCreatedAndListed'; } catch { return false; }
-				});
-				if (event) {
-					const parsed = router.interface.parseLog({ topics: [...event.topics], data: event.data });
-					deployedTokenAddress = parsed?.args?.token ?? null;
-				}
+				deployedTokenAddress = listedTokenAddr !== ethers.ZeroAddress ? listedTokenAddr : null;
 
 				addFeedback({ message: 'Token created & listed on DEX!', type: 'success' });
 			} else {
 				// Token-only creation via PlatformRouter.createTokenOnly
-				const router = new ethers.Contract(tokenInfo.network.router_address, PLATFORM_ROUTER_ABI, signer);
+				const router = new PlatformRouterClient(tokenInfo.network.router_address, signer);
 
 				const taxParams = {
 					buyTaxBps: BigInt(Math.round(parseFloat(String(tokenInfo.tax?.buyTaxPct || '0')) * 100)),
@@ -1273,20 +1231,12 @@
 				};
 
 				addFeedback({ message: 'Deploying token...', type: 'info' });
-				const tx = await router.createTokenOnly(
+				const { tx, tokenAddress: onlyTokenAddr } = await router.createTokenOnly(
 					tokenParams, protectionParams, taxParams, feePayment, referral,
 					{ value: nativeFeeWithBuffer }
 				);
 				deployTxHash = tx.hash;
-				const receipt = await tx.wait();
-
-				const event = receipt?.logs?.find((log: any) => {
-					try { return router.interface.parseLog({ topics: [...log.topics], data: log.data })?.name === 'TokenCreated'; } catch { return false; }
-				});
-				if (event) {
-					const parsed = router.interface.parseLog({ topics: [...event.topics], data: event.data });
-					deployedTokenAddress = parsed?.args?.token ?? null;
-				}
+				deployedTokenAddress = onlyTokenAddr !== ethers.ZeroAddress ? onlyTokenAddr : null;
 
 				addFeedback({ message: 'Token created successfully!', type: 'success' });
 			}
