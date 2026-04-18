@@ -270,6 +270,7 @@ export * as TokenInterfaces from './shared/tokenInterfaces';
 export * as AdminLens from './simulators/adminLens';
 export * as ExploreLens from './simulators/exploreLens';
 export * as LaunchLens from './simulators/launchLens';
+export * as LaunchPreflight from './simulators/launchPreflight';
 export * as MultiCallLens from './simulators/multiCallLens';
 export * as PlatformLens from './simulators/platformLens';
 export * as PlatformLensV2 from './simulators/platformLensV2';
