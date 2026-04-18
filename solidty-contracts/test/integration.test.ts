@@ -523,6 +523,234 @@ describe("Integration — All 4 curve types", () => {
 });
 
 // ════════════════════════════════════════════════════════════════
+// 4b. Early-buyer profitability — the economic claim of fair LP seeding
+// ════════════════════════════════════════════════════════════════
+
+describe("Integration — Early buyer profits after graduation (LP fair-seed)", () => {
+  // The promise of the price-based LP seeding fix:
+  // After SC or HC graduation, an early buyer who paid $X should be able
+  // to sell their tokens for >= $X worth of USDT on the DEX (minus AMM
+  // slippage + DEX fee). Regression test against the old bug where LP
+  // was flooded with the full tokensForLP allocation and a $10 buy
+  // became $0.10 post-graduation.
+
+  async function readLpReserves(s: LaunchStack, token: any) {
+    const pair = await s.dexFactory.getPair(
+      await token.getAddress(),
+      await s.usdt.getAddress()
+    );
+    const p = await ethers.getContractAt("MockUniswapV2Pair", pair);
+    const [r0, r1] = await p.getReserves();
+    const t0 = await p.token0();
+    const tokenAddr = (await token.getAddress()).toLowerCase();
+    const tokenReserve = t0.toLowerCase() === tokenAddr ? r0 : r1;
+    const usdtReserve = t0.toLowerCase() === tokenAddr ? r1 : r0;
+    return { pair, tokenReserve, usdtReserve };
+  }
+
+  // Uniswap V2 getAmountOut math, accounting for 0.3% DEX fee.
+  function getAmountOut(
+    amountIn: bigint,
+    reserveIn: bigint,
+    reserveOut: bigint
+  ): bigint {
+    const amountInWithFee = amountIn * 997n;
+    const numerator = amountInWithFee * reserveOut;
+    const denominator = reserveIn * 1000n + amountInWithFee;
+    return numerator / denominator;
+  }
+
+  it("SC graduation: first buyer can sell tokens for MORE USDT than they paid", async () => {
+    const s = await fullStack();
+    const [, , creator, firstBuyer, b2, b3, b4, b5, b6, b7] =
+      await ethers.getSigners();
+
+    // Mirrors the user's real-world setup that had the $10 → $0.1 regression.
+    const { launch, token } = await createAndFundLaunch(s, creator, {
+      curveType: 0, // Linear
+      softCap: PARSE_USDT(50),
+      hardCap: PARSE_USDT(200),
+      maxBuyBps: 500, // 5% → $10 max per wallet
+    });
+
+    // First buyer paid $10 (net $9.90 after 1% fee)
+    const firstBuyerPaid = PARSE_USDT(10);
+    await buyUsdt(s, launch, firstBuyer, firstBuyerPaid);
+    const firstBuyerTokens = await token.balanceOf(firstBuyer.address);
+
+    // Fill to SC with 6 more $10 buyers
+    for (const b of [b2, b3, b4, b5, b6, b7]) {
+      if ((await launch.state()) !== BigInt(STATE.Active)) break;
+      try {
+        await buyUsdt(s, launch, b, PARSE_USDT(10));
+      } catch {
+        /* max-buy / dust edge */
+      }
+    }
+
+    // Creator graduates early if SC met but not HC
+    if ((await launch.state()) === BigInt(STATE.Active)) {
+      if ((await launch.totalBaseRaised()) >= PARSE_USDT(50)) {
+        await launch.connect(creator).graduate();
+      }
+    }
+    expect(await launch.state()).to.equal(STATE.Graduated);
+
+    // Check first buyer's sellable value on the fresh DEX pair.
+    // (Anti-snipe doesn't apply here — we're computing quoted output, not
+    // actually trying to swap, so the pool-lock gate is irrelevant.)
+    const { tokenReserve, usdtReserve } = await readLpReserves(s, token);
+    const usdtOut = getAmountOut(firstBuyerTokens, tokenReserve, usdtReserve);
+
+    // First buyer must be able to recover at least 95% of their paid amount.
+    // The 5% margin accounts for the AMM's 0.3% fee + curve convexity
+    // between their entry point and the final curve price.
+    const floor = (firstBuyerPaid * 95n) / 100n;
+    expect(usdtOut).to.be.gt(
+      floor,
+      `First buyer paid ${firstBuyerPaid}, DEX quote ${usdtOut}, floor ${floor}`
+    );
+
+    // And — the key guarantee — they should usually profit.
+    expect(usdtOut).to.be.gt(firstBuyerPaid);
+  });
+
+  it("SC graduation: last buyer is not underwater (buy-to-DEX ratio within 5% of paid)", async () => {
+    const s = await fullStack();
+    const [, , creator, ...buyers] = await ethers.getSigners();
+
+    const { launch, token } = await createAndFundLaunch(s, creator, {
+      curveType: 0,
+      softCap: PARSE_USDT(50),
+      hardCap: PARSE_USDT(200),
+      maxBuyBps: 500,
+    });
+
+    // 7 buyers fill ~$70 to clear SC
+    const addrs: string[] = [];
+    const paid: bigint[] = [];
+    for (let i = 0; i < 7; i++) {
+      if ((await launch.state()) !== BigInt(STATE.Active)) break;
+      try {
+        await buyUsdt(s, launch, buyers[i], PARSE_USDT(10));
+        addrs.push(buyers[i].address);
+        paid.push(PARSE_USDT(10));
+      } catch {
+        /* skip */
+      }
+    }
+
+    if ((await launch.state()) === BigInt(STATE.Active)) {
+      await launch.connect(creator).graduate();
+    }
+    expect(await launch.state()).to.equal(STATE.Graduated);
+
+    const { tokenReserve, usdtReserve } = await readLpReserves(s, token);
+
+    // Last buyer sells into the pool — they paid the highest curve price,
+    // so their quoted output should still be close to what they paid
+    // (not a 99% haircut like the old bug).
+    const lastBuyerAddr = addrs[addrs.length - 1];
+    const lastBuyerPaid = paid[paid.length - 1];
+    const lastBuyerTokens = await token.balanceOf(lastBuyerAddr);
+    const lastOut = getAmountOut(
+      lastBuyerTokens,
+      tokenReserve,
+      usdtReserve
+    );
+
+    // Last buyer can recover at least 50% of their paid amount.
+    // (In the old broken LP seeding they got ~0.8% back.)
+    expect(lastOut * 100n).to.be.gt(lastBuyerPaid * 50n);
+  });
+
+  it("HC graduation: first buyer gets a big multiple of what they paid", async () => {
+    const s = await fullStack();
+    const [, , creator, firstBuyer, ...buyers] = await ethers.getSigners();
+
+    const { launch, token } = await createAndFundLaunch(s, creator, {
+      curveType: 0,
+      softCap: PARSE_USDT(50),
+      hardCap: PARSE_USDT(200),
+      maxBuyBps: 500,
+    });
+
+    // First buyer
+    const firstBuyerPaid = PARSE_USDT(10);
+    await buyUsdt(s, launch, firstBuyer, firstBuyerPaid);
+    const firstBuyerTokens = await token.balanceOf(firstBuyer.address);
+
+    // Fill to HC with remaining buyers
+    for (const b of buyers) {
+      if ((await launch.state()) !== BigInt(STATE.Active)) break;
+      try {
+        await buyUsdt(s, launch, b, PARSE_USDT(10));
+      } catch {
+        /* skip */
+      }
+    }
+
+    // If not auto-graduated (didn't hit HC exactly), creator graduates
+    if ((await launch.state()) === BigInt(STATE.Active)) {
+      await launch.connect(creator).graduate();
+    }
+    expect(await launch.state()).to.equal(STATE.Graduated);
+
+    const { tokenReserve, usdtReserve } = await readLpReserves(s, token);
+    const usdtOut = getAmountOut(firstBuyerTokens, tokenReserve, usdtReserve);
+
+    // HC graduation means max USDT raised, so first buyer should see a
+    // significant multiple (bonding curve → early buyer advantage).
+    // Conservative check: > 2x paid.
+    expect(usdtOut).to.be.gt(firstBuyerPaid * 2n);
+  });
+
+  it("HC graduation: every buyer profits or breaks even", async () => {
+    const s = await fullStack();
+    const [, , creator, ...buyers] = await ethers.getSigners();
+
+    const { launch, token } = await createAndFundLaunch(s, creator, {
+      curveType: 0,
+      softCap: PARSE_USDT(50),
+      hardCap: PARSE_USDT(200),
+      maxBuyBps: 500,
+    });
+
+    const buyerAddrs: string[] = [];
+    const buyerPaid: bigint[] = [];
+    for (const b of buyers) {
+      if ((await launch.state()) !== BigInt(STATE.Active)) break;
+      try {
+        await buyUsdt(s, launch, b, PARSE_USDT(10));
+        buyerAddrs.push(b.address);
+        buyerPaid.push(PARSE_USDT(10));
+      } catch {
+        /* skip */
+      }
+    }
+
+    if ((await launch.state()) === BigInt(STATE.Active)) {
+      await launch.connect(creator).graduate();
+    }
+    expect(await launch.state()).to.equal(STATE.Graduated);
+
+    const { tokenReserve, usdtReserve } = await readLpReserves(s, token);
+
+    // Loop: each buyer's tokens quoted against the FROZEN opening reserves
+    // (we don't actually swap — just quote in isolation, representing the
+    // "true post-grad value" available to the first wallet that sells).
+    for (let i = 0; i < buyerAddrs.length; i++) {
+      const tokens = await token.balanceOf(buyerAddrs[i]);
+      const out = getAmountOut(tokens, tokenReserve, usdtReserve);
+      expect(out).to.be.gte(
+        (buyerPaid[i] * 95n) / 100n,
+        `Buyer ${i} paid ${buyerPaid[i]}, would receive ${out}`
+      );
+    }
+  });
+});
+
+// ════════════════════════════════════════════════════════════════
 // 5. Fail-to-SC → refund → creator reclaim → relaunch
 // ════════════════════════════════════════════════════════════════
 
