@@ -5,8 +5,8 @@ import * as path from "path";
 /**
  * TokenKrafter — Final consolidated deployment script.
  *
- * Deploys the full contract stack from scratch on the target network and
- * writes addresses to deployments/{network}.json.
+ * Deploys the full contract stack on the target network and writes
+ * addresses to deployments/{network}.json.
  *
  *   1. BondingCurve library
  *   2. LaunchInstance impl
@@ -15,7 +15,12 @@ import * as path from "path";
  *   5. LaunchpadFactory
  *   6. PlatformRouter
  *   7. TradeRouter
- *   8. TradeLens
+ *   8. Affiliate
+ *
+ * Lens contracts under `contracts/simulators/` (TradeLens, AdminLens,
+ * ExploreLens, LaunchLens, LaunchPreflight, MultiCallLens, PlatformLensV2,
+ * RouteFinder, SafuLens, TradeLensV2, PlatformLens) are eth_call / state-
+ * override simulators and are NOT deployed here.
  *
  * Then configures:
  *   - setImplementationsAndFees on TokenFactory (new pricing)
@@ -24,6 +29,18 @@ import * as path from "path";
  *   - setCurveDefaults on LaunchpadFactory
  *   - setMaxSlippage on TradeRouter
  *   - setFeeBps(150) on TradeRouter
+ *   - Affiliate wiring: setAffiliate on TokenFactory / LaunchpadFactory /
+ *     TradeRouter + Affiliate.setAuthorizedFactory(launchpadFactory) so
+ *     clones auto-whitelist + Affiliate.setAuthorized for the two long-
+ *     lived reporters (TokenFactory, TradeRouter)
+ *
+ * Resume / fail-safe behavior:
+ *   - After each deploy step, the address is written to
+ *     deployments/{network}.json IMMEDIATELY so a transport failure
+ *     (RPC timeout, disconnect) doesn't lose progress.
+ *   - On re-run, any key already present in the JSON is reused via
+ *     getContractAt — no redeploy. Pass DEPLOY_FRESH=1 to force a clean
+ *     redeploy (archives previous addresses under `{Key}_Old`).
  *
  * Verification + Supabase update + VPS daemon refresh are done by
  * separate scripts after this completes:
@@ -31,11 +48,16 @@ import * as path from "path";
  *   - bun ../scripts/_update-bsc-config.mjs     (Supabase platform_config)
  *   - bash scripts/redeploy-vps-daemons.sh      (VPS systemd restart)
  *
- * Usage: npx hardhat run scripts/deploy.ts --network bsc
+ * Usage:
+ *   - Direct:   npx hardhat run scripts/deploy.ts --network bsc
+ *   - With DB RPC (recommended — pulls daemon_rpc from Supabase):
+ *                bun scripts/deploy-bsc.mjs
  *
  * Env vars:
  *   DEPLOYER_PRIVATE_KEY  — owner wallet (read by hardhat.config.ts)
  *   PLATFORM_WALLET       — platform fee recipient (defaults to deployer)
+ *   BSC_RPC_URL           — override public RPC (set by deploy-bsc.mjs)
+ *   DEPLOY_FRESH=1        — archive existing addresses under _Old, deploy fresh
  *   USDT_ADDRESS / DEX_ROUTER_ADDRESS / WBNB_ADDRESS / USDC_ADDRESS
  *     — override the built-in NETWORK_CONFIG for unknown chains
  */
@@ -76,8 +98,20 @@ const CREATION_FEES_WHOLE = [5, 10, 10, 15, 100, 120, 120, 150];
 const TRADE_ROUTER_FEE_BPS = 150; // 1.5%
 const TRADE_ROUTER_MAX_SLIPPAGE_BPS = 2000; // 20% ceiling for user-passed slippage
 
-function archiveOld(existing: any, key: string) {
-  if (existing[key]) existing[`${key}_Old`] = existing[key];
+// Look up a key in ../web/.env — the off-ramp daemon lives there, so
+// ADMIN_KEY is defined alongside its runtime.
+function readEnvFromWeb(key: string): string | undefined {
+  const webEnv = path.join(__dirname, "..", "..", "web", ".env");
+  if (!fs.existsSync(webEnv)) return undefined;
+  const src = fs.readFileSync(webEnv, "utf8");
+  const m = src.match(new RegExp(`^${key}=(.*)$`, "m"));
+  if (!m) return undefined;
+  return m[1].replace(/^["']|["']$/g, "").trim();
+}
+
+function archiveOld(state: any, key: string) {
+  if (state[key]) state[`${key}_Old`] = state[key];
+  delete state[key];
 }
 
 async function main() {
@@ -105,6 +139,50 @@ async function main() {
   );
   const usdtDecimals = Number(await usdt.decimals());
 
+  // ── Load / init deployment state (resumable) ──
+  const dir = path.join(__dirname, "..", "deployments");
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir);
+  const statePath = path.join(dir, `${networkName}.json`);
+  let state: any = {};
+  if (fs.existsSync(statePath)) {
+    try {
+      state = JSON.parse(fs.readFileSync(statePath, "utf8"));
+    } catch {}
+  }
+
+  const fresh = process.env.DEPLOY_FRESH === "1";
+  if (fresh) {
+    // Move all tracked keys to `{Key}_Old` so nothing is deleted, but the
+    // deploy loop sees them as unset and redeploys.
+    for (const key of [
+      "BondingCurve",
+      "LaunchInstanceImpl",
+      ...IMPL_NAMES,
+      "TokenFactory",
+      "LaunchpadFactory",
+      "PlatformRouter",
+      "TradeRouter",
+      "Affiliate",
+    ]) {
+      archiveOld(state, key);
+    }
+    // Also reset config completion flags.
+    state.ConfigDone = {};
+  }
+
+  state.Network = networkName;
+  state.ChainId = chainId;
+  state.USDT = cfg.usdt;
+  state.DEXRouter = cfg.dexRouter;
+  state.WBNB = cfg.wbnb;
+  state.PlatformWallet = platformWallet;
+  state.Deployer = deployer.address;
+  if (cfg.usdc) state.USDC = cfg.usdc;
+  state.ConfigDone = state.ConfigDone || {};
+
+  const save = () => fs.writeFileSync(statePath, JSON.stringify(state, null, 2));
+  save(); // flush the header fields
+
   console.log(`
 ╔══════════════════════════════════════════════════════════╗
 ║        TokenKrafter — Final Stack Deployment             ║
@@ -117,212 +195,267 @@ async function main() {
   DEX router:     ${cfg.dexRouter}
   WBNB:           ${cfg.wbnb}
   USDC:           ${cfg.usdc ?? "—"}
+  Mode:           ${fresh ? "FRESH (archiving prior addresses)" : "resume (reusing existing addresses)"}
 ──────────────────────────────────────────────────────────`);
 
   const scaleFee = (whole: number) =>
     ethers.parseUnits(String(whole), usdtDecimals);
 
-  const deployed: Record<string, any> = {
-    Network: networkName,
-    ChainId: chainId,
-    USDT: cfg.usdt,
-    DEXRouter: cfg.dexRouter,
-    WBNB: cfg.wbnb,
-    PlatformWallet: platformWallet,
-  };
-  if (cfg.usdc) deployed.USDC = cfg.usdc;
-
-  // ── Load existing deployment so we can archive old addresses ──
-  const dir = path.join(__dirname, "..", "deployments");
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir);
-  const bscPath = path.join(dir, `${networkName}.json`);
-  let existing: any = {};
-  if (fs.existsSync(bscPath)) {
-    try {
-      existing = JSON.parse(fs.readFileSync(bscPath, "utf8"));
-    } catch {}
+  // Deploy-or-reuse helper: if state[key] is set, attach via getContractAt;
+  // otherwise call `deploy()` and persist the new address immediately.
+  async function deployOrReuse<T = any>(
+    step: string,
+    key: string,
+    factoryName: string,
+    deploy: (F: any) => Promise<any>,
+    opts?: { libraries?: Record<string, string> }
+  ): Promise<{ contract: T; addr: string }> {
+    const existing = state[key];
+    if (existing && ethers.isAddress(existing)) {
+      console.log(`\n${step} ${factoryName}... (reuse)`);
+      const c = await ethers.getContractAt(factoryName, existing);
+      console.log(`  → ${existing}`);
+      return { contract: c as any, addr: existing };
+    }
+    console.log(`\n${step} ${factoryName}...`);
+    const F = opts?.libraries
+      ? await ethers.getContractFactory(factoryName, { libraries: opts.libraries })
+      : await ethers.getContractFactory(factoryName);
+    const c = await (await deploy(F)).waitForDeployment();
+    const addr = await c.getAddress();
+    state[key] = addr;
+    save();
+    console.log(`  → ${addr}`);
+    return { contract: c as any, addr };
   }
 
   // 1. BondingCurve
-  console.log("\n[1/8] BondingCurve library...");
-  const BondingCurve = await ethers.getContractFactory("BondingCurve");
-  const bondingCurve = await (await BondingCurve.deploy()).waitForDeployment();
-  const bondingCurveAddr = await bondingCurve.getAddress();
-  deployed.BondingCurve = bondingCurveAddr;
-  console.log(`  → ${bondingCurveAddr}`);
+  const { addr: bondingCurveAddr } = await deployOrReuse(
+    "[1/8]",
+    "BondingCurve",
+    "BondingCurve",
+    (F) => F.deploy()
+  );
 
-  // 2. LaunchInstance impl
-  console.log("\n[2/8] LaunchInstance impl...");
-  const LaunchInstance = await ethers.getContractFactory("LaunchInstance", {
-    libraries: { BondingCurve: bondingCurveAddr },
-  });
-  const launchImpl = await (await LaunchInstance.deploy()).waitForDeployment();
-  const launchImplAddr = await launchImpl.getAddress();
-  deployed.LaunchInstanceImpl = launchImplAddr;
-  console.log(`  → ${launchImplAddr}`);
+  // 2. LaunchInstance impl (library-linked)
+  const { addr: launchImplAddr } = await deployOrReuse(
+    "[2/8]",
+    "LaunchInstanceImpl",
+    "LaunchInstance",
+    (F) => F.deploy(),
+    { libraries: { BondingCurve: bondingCurveAddr } }
+  );
 
   // 3. 8 token impls
   console.log("\n[3/8] Token impls...");
   const implAddresses: string[] = [];
   for (let i = 0; i < IMPL_NAMES.length; i++) {
-    const F = await ethers.getContractFactory(IMPL_NAMES[i]);
+    const name = IMPL_NAMES[i];
+    const existing = state[name];
+    if (existing && ethers.isAddress(existing)) {
+      console.log(`  [${i}] ${name}: ${existing} (reuse)`);
+      implAddresses.push(existing);
+      continue;
+    }
+    const F = await ethers.getContractFactory(name);
     const c = await (await F.deploy()).waitForDeployment();
     const addr = await c.getAddress();
     implAddresses.push(addr);
-    deployed[IMPL_NAMES[i]] = addr;
-    console.log(`  [${i}] ${IMPL_NAMES[i]}: ${addr}`);
+    state[name] = addr;
+    save();
+    console.log(`  [${i}] ${name}: ${addr}`);
   }
 
   // 4. TokenFactory
-  console.log("\n[4/8] TokenFactory...");
-  const TokenFactory = await ethers.getContractFactory("TokenFactory");
-  const tokenFactory = await (
-    await TokenFactory.deploy(cfg.usdt, cfg.dexRouter, platformWallet)
-  ).waitForDeployment();
-  const tokenFactoryAddr = await tokenFactory.getAddress();
-  deployed.TokenFactory = tokenFactoryAddr;
-  console.log(`  → ${tokenFactoryAddr}`);
+  const { contract: tokenFactory, addr: tokenFactoryAddr } = await deployOrReuse(
+    "[4/8]",
+    "TokenFactory",
+    "TokenFactory",
+    (F) => F.deploy(cfg.usdt, cfg.dexRouter, platformWallet)
+  );
 
   // 5. LaunchpadFactory
-  console.log("\n[5/8] LaunchpadFactory...");
-  const LaunchpadFactory = await ethers.getContractFactory("LaunchpadFactory");
-  const launchpadFactory = await (
-    await LaunchpadFactory.deploy(
-      platformWallet,
-      cfg.dexRouter,
-      cfg.usdt,
-      launchImplAddr
-    )
-  ).waitForDeployment();
-  const launchpadFactoryAddr = await launchpadFactory.getAddress();
-  deployed.LaunchpadFactory = launchpadFactoryAddr;
-  console.log(`  → ${launchpadFactoryAddr}`);
+  const { contract: launchpadFactory, addr: launchpadFactoryAddr } =
+    await deployOrReuse(
+      "[5/8]",
+      "LaunchpadFactory",
+      "LaunchpadFactory",
+      (F) => F.deploy(platformWallet, cfg.dexRouter, cfg.usdt, launchImplAddr)
+    );
 
   // 6. PlatformRouter
-  console.log("\n[6/8] PlatformRouter...");
-  const PlatformRouter = await ethers.getContractFactory("PlatformRouter");
-  const platformRouter = await (
-    await PlatformRouter.deploy(
-      tokenFactoryAddr,
-      launchpadFactoryAddr,
-      cfg.dexRouter
-    )
-  ).waitForDeployment();
-  const platformRouterAddr = await platformRouter.getAddress();
-  deployed.PlatformRouter = platformRouterAddr;
-  console.log(`  → ${platformRouterAddr}`);
+  const { addr: platformRouterAddr } = await deployOrReuse(
+    "[6/8]",
+    "PlatformRouter",
+    "PlatformRouter",
+    (F) => F.deploy(tokenFactoryAddr, launchpadFactoryAddr, cfg.dexRouter)
+  );
 
   // 7. TradeRouter
-  console.log("\n[7/8] TradeRouter...");
-  const TradeRouter = await ethers.getContractFactory("TradeRouter");
-  const tradeRouter = await (
-    await TradeRouter.deploy(cfg.dexRouter, cfg.usdt, platformWallet)
-  ).waitForDeployment();
-  const tradeRouterAddr = await tradeRouter.getAddress();
-  deployed.TradeRouter = tradeRouterAddr;
-  console.log(`  → ${tradeRouterAddr}`);
+  const { contract: tradeRouter, addr: tradeRouterAddr } = await deployOrReuse(
+    "[7/8]",
+    "TradeRouter",
+    "TradeRouter",
+    (F) => F.deploy(cfg.dexRouter, cfg.usdt, platformWallet)
+  );
 
-  // 8. TradeLens
-  console.log("\n[8/8] TradeLens...");
-  const TradeLens = await ethers.getContractFactory("TradeLens");
-  const tradeLens = await (await TradeLens.deploy()).waitForDeployment();
-  const tradeLensAddr = await tradeLens.getAddress();
-  deployed.TradeLens = tradeLensAddr;
-  console.log(`  → ${tradeLensAddr}`);
+  // 8. Affiliate (admin = deployer so onlyOwner setters work from this
+  //    script; hand off via transferOwnership later if you want a separate
+  //    multisig owner).
+  const { contract: affiliate, addr: affiliateAddr } = await deployOrReuse(
+    "[8/8]",
+    "Affiliate",
+    "Affiliate",
+    (F) => F.deploy(cfg.usdt, deployer.address)
+  );
 
   // ── Configure ──
   console.log("\n──────────────────────────────────────────────────────────");
   console.log("  Configuring contracts...\n");
 
+  // Idempotent config helper: skip if the step ID is already recorded in
+  // state.ConfigDone. Setters are idempotent at the state level (same
+  // value in → same value out), but tx costs gas — skipping saves both
+  // gas and time on resume.
+  async function configStep(id: string, label: string, run: () => Promise<any>) {
+    if (state.ConfigDone[id]) {
+      console.log(`  ${label} (done)`);
+      return;
+    }
+    process.stdout.write(`  ${label}... `);
+    const tx = await run();
+    await tx.wait();
+    state.ConfigDone[id] = true;
+    save();
+    console.log("✓");
+  }
+
   const fees = CREATION_FEES_WHOLE.map(scaleFee) as [
     bigint, bigint, bigint, bigint, bigint, bigint, bigint, bigint
   ];
-  process.stdout.write("  TokenFactory.setImplementationsAndFees... ");
-  await (
-    await tokenFactory.setImplementationsAndFees(
-      implAddresses as [string, string, string, string, string, string, string, string],
-      fees
-    )
-  ).wait();
-  console.log("✓");
+  await configStep(
+    "TokenFactory.setImplementationsAndFees",
+    "TokenFactory.setImplementationsAndFees",
+    () =>
+      tokenFactory.setImplementationsAndFees(
+        implAddresses as [string, string, string, string, string, string, string, string],
+        fees
+      )
+  );
 
   const partnerBases = [cfg.usdt, cfg.wbnb];
   if (cfg.usdc) partnerBases.push(cfg.usdc);
-  process.stdout.write(`  TokenFactory.setDefaultPartnerBases (${partnerBases.length})... `);
-  await (await tokenFactory.setDefaultPartnerBases(partnerBases)).wait();
-  console.log("✓");
-  deployed.DefaultPartnerBases = partnerBases;
-
-  process.stdout.write("  TokenFactory.setAuthorizedRouter... ");
-  await (await tokenFactory.setAuthorizedRouter(platformRouterAddr)).wait();
-  console.log("✓");
-
-  process.stdout.write("  LaunchpadFactory.setAuthorizedRouter... ");
-  await (
-    await launchpadFactory.setAuthorizedRouter(platformRouterAddr)
-  ).wait();
-  console.log("✓");
-
-  process.stdout.write("  LaunchpadFactory.setCurveDefaults... ");
-  await (
-    await launchpadFactory.setCurveDefaults({
-      linearSlope: 0n,
-      linearIntercept: BigInt(1e16),
-      sqrtCoefficient: BigInt(1e16),
-      quadraticCoefficient: 1n,
-      expBase: BigInt(1e16),
-      expKFactor: BigInt(1e12),
-    })
-  ).wait();
-  console.log("✓");
-
-  process.stdout.write(`  TradeRouter.setFeeBps(${TRADE_ROUTER_FEE_BPS})... `);
-  await (await tradeRouter.setFeeBps(TRADE_ROUTER_FEE_BPS)).wait();
-  console.log("✓");
-
-  process.stdout.write(
-    `  TradeRouter.setMaxSlippage(${TRADE_ROUTER_MAX_SLIPPAGE_BPS} bps)... `
+  await configStep(
+    "TokenFactory.setDefaultPartnerBases",
+    `TokenFactory.setDefaultPartnerBases (${partnerBases.length})`,
+    () => tokenFactory.setDefaultPartnerBases(partnerBases)
   );
-  await (
-    await tradeRouter.setMaxSlippage(TRADE_ROUTER_MAX_SLIPPAGE_BPS)
-  ).wait();
-  console.log("✓");
+  state.DefaultPartnerBases = partnerBases;
+  save();
+
+  await configStep(
+    "TokenFactory.setAuthorizedRouter",
+    "TokenFactory.setAuthorizedRouter",
+    () => tokenFactory.setAuthorizedRouter(platformRouterAddr)
+  );
+
+  await configStep(
+    "LaunchpadFactory.setAuthorizedRouter",
+    "LaunchpadFactory.setAuthorizedRouter",
+    () => launchpadFactory.setAuthorizedRouter(platformRouterAddr)
+  );
+
+  await configStep(
+    "LaunchpadFactory.setCurveDefaults",
+    "LaunchpadFactory.setCurveDefaults",
+    () =>
+      launchpadFactory.setCurveDefaults({
+        linearSlope: 0n,
+        linearIntercept: BigInt(1e16),
+        sqrtCoefficient: BigInt(1e16),
+        quadraticCoefficient: 1n,
+        expBase: BigInt(1e16),
+        expKFactor: BigInt(1e12),
+      })
+  );
+
+  await configStep(
+    "TradeRouter.setFeeBps",
+    `TradeRouter.setFeeBps(${TRADE_ROUTER_FEE_BPS})`,
+    () => tradeRouter.setFeeBps(TRADE_ROUTER_FEE_BPS)
+  );
+
+  await configStep(
+    "TradeRouter.setMaxSlippage",
+    `TradeRouter.setMaxSlippage(${TRADE_ROUTER_MAX_SLIPPAGE_BPS} bps)`,
+    () => tradeRouter.setMaxSlippage(TRADE_ROUTER_MAX_SLIPPAGE_BPS)
+  );
+
+  // Affiliate wiring — must happen after all three reporters exist.
+  await configStep(
+    "TokenFactory.setAffiliate",
+    "TokenFactory.setAffiliate",
+    () => tokenFactory.setAffiliate(affiliateAddr)
+  );
+  await configStep(
+    "LaunchpadFactory.setAffiliate",
+    "LaunchpadFactory.setAffiliate",
+    () => launchpadFactory.setAffiliate(affiliateAddr)
+  );
+  await configStep(
+    "TradeRouter.setAffiliate",
+    "TradeRouter.setAffiliate",
+    () => tradeRouter.setAffiliate(affiliateAddr)
+  );
+  await configStep(
+    "Affiliate.setAuthorizedFactory",
+    "Affiliate.setAuthorizedFactory(LaunchpadFactory)",
+    () => affiliate.setAuthorizedFactory(launchpadFactoryAddr, true)
+  );
+  await configStep(
+    "Affiliate.setAuthorized.TokenFactory",
+    "Affiliate.setAuthorized(TokenFactory)",
+    () => affiliate.setAuthorized(tokenFactoryAddr, true)
+  );
+  await configStep(
+    "Affiliate.setAuthorized.TradeRouter",
+    "Affiliate.setAuthorized(TradeRouter)",
+    () => affiliate.setAuthorized(tradeRouterAddr, true)
+  );
 
   // Add the off-ramp daemon's wallet as TradeRouter admin so it can call
-  // confirm() / refund() on user withdrawals. ADMIN_ADDRESS (or derived
-  // from ADMIN_KEY in the project root .env) is required for off-ramp to
-  // work — without it only the deployer can confirm.
-  const adminAddr = process.env.ADMIN_ADDRESS;
-  if (adminAddr && ethers.isAddress(adminAddr) && adminAddr.toLowerCase() !== deployer.address.toLowerCase()) {
-    process.stdout.write(`  TradeRouter.addAdmin(${adminAddr})... `);
-    await (await tradeRouter.addAdmin(adminAddr)).wait();
-    console.log("✓");
+  // confirm() / refund() on user withdrawals. Prefer ADMIN_ADDRESS if set;
+  // otherwise derive from ADMIN_KEY (read from project root web/.env so a
+  // single source of truth covers both deploy and the running daemon).
+  let adminAddr: string | undefined = process.env.ADMIN_ADDRESS;
+  if (!adminAddr) {
+    const adminKey = process.env.ADMIN_KEY ?? readEnvFromWeb("ADMIN_KEY");
+    if (adminKey) {
+      try {
+        adminAddr = new ethers.Wallet(adminKey).address;
+      } catch {
+        console.warn("  ADMIN_KEY present but invalid — cannot derive address");
+      }
+    }
+  }
+  if (
+    adminAddr &&
+    ethers.isAddress(adminAddr) &&
+    adminAddr.toLowerCase() !== deployer.address.toLowerCase()
+  ) {
+    await configStep(
+      `TradeRouter.addAdmin.${adminAddr.toLowerCase()}`,
+      `TradeRouter.addAdmin(${adminAddr})`,
+      () => tradeRouter.addAdmin(adminAddr!)
+    );
   } else {
-    console.log("  TradeRouter.addAdmin: skipped (ADMIN_ADDRESS env not set)");
+    console.log("  TradeRouter.addAdmin: skipped (no ADMIN_ADDRESS / ADMIN_KEY)");
   }
 
-  // ── Save deployment ──
-  // Archive old addresses under _Old keys so we can roll back if needed.
-  for (const key of [
-    "TokenFactory",
-    "LaunchpadFactory",
-    "PlatformRouter",
-    "TradeRouter",
-    "TradeLens",
-    "BondingCurve",
-    "LaunchInstanceImpl",
-    ...IMPL_NAMES,
-  ]) {
-    archiveOld(existing, key);
-  }
-  Object.assign(existing, deployed);
-  fs.writeFileSync(bscPath, JSON.stringify(existing, null, 2));
-  console.log(`\n  Deployment saved to ${bscPath}`);
-
-  // Save build-info for verification. The deployed contracts reference
-  // their build-info via the .dbg.json sibling file, so read that instead
-  // of guessing — handles the case where artifacts/build-info/ has stale
-  // files from earlier compilations.
+  // ── Save build-info for verification ──
+  // The deployed contracts reference their build-info via the .dbg.json
+  // sibling file, so read that instead of guessing — handles the case
+  // where artifacts/build-info/ has stale files from earlier compilations.
   const biDir = path.join(__dirname, "..", "artifacts", "build-info");
   const dbgPath = path.join(
     __dirname,
@@ -338,7 +471,7 @@ async function main() {
     const biSrc = path.join(biDir, biFile);
     if (fs.existsSync(biSrc)) {
       fs.copyFileSync(biSrc, path.join(dir, `${networkName}-build-info.json`));
-      console.log(`  Build-info ${biFile} saved to ${networkName}-build-info.json`);
+      console.log(`\n  Build-info ${biFile} saved to ${networkName}-build-info.json`);
     }
   }
 
@@ -352,7 +485,7 @@ async function main() {
   LaunchpadFactory   ${launchpadFactoryAddr}
   PlatformRouter     ${platformRouterAddr}
   TradeRouter        ${tradeRouterAddr}
-  TradeLens          ${tradeLensAddr}
+  Affiliate          ${affiliateAddr}
   BondingCurve       ${bondingCurveAddr}
   LaunchInstanceImpl ${launchImplAddr}
 

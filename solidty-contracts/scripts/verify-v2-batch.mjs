@@ -56,6 +56,10 @@ const argsLaunchpadFactory =
 const argsPlatformRouter =
 	pad(dep.TokenFactory) + pad(dep.LaunchpadFactory) + pad(dep.DEXRouter);
 const argsTradeRouter = pad(dep.DEXRouter) + pad(dep.USDT) + pad(dep.PlatformWallet);
+// Affiliate constructor = (address usdt, address admin). deploy.ts sets
+// admin = deployer (not PlatformWallet) so onlyOwner setters can be
+// called from the script without a separate transferOwnership tx.
+const argsAffiliate = pad(dep.USDT) + pad(dep.Deployer);
 
 const contracts = [
 	// Token impls (no constructor args)
@@ -75,7 +79,7 @@ const contracts = [
 	{ name: 'LaunchpadFactory', address: dep.LaunchpadFactory, path: 'contracts/LaunchpadFactory.sol:LaunchpadFactory', args: argsLaunchpadFactory },
 	{ name: 'PlatformRouter', address: dep.PlatformRouter, path: 'contracts/PlatformRouter.sol:PlatformRouter', args: argsPlatformRouter },
 	{ name: 'TradeRouter', address: dep.TradeRouter, path: 'contracts/TradeRouter.sol:TradeRouter', args: argsTradeRouter },
-	{ name: 'TradeLens', address: dep.TradeLens, path: 'contracts/simulators/TradeLens.sol:TradeLens', args: '' },
+	{ name: 'Affiliate', address: dep.Affiliate, path: 'contracts/Affiliate.sol:Affiliate', args: argsAffiliate },
 ];
 
 async function submitVerification(c) {

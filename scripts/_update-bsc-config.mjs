@@ -35,7 +35,9 @@ const BSC_PATCH = {
 	launchpad_address: bscDeployment.LaunchpadFactory,
 	router_address: bscDeployment.PlatformRouter,
 	trade_router_address: bscDeployment.TradeRouter,
-	trade_lens_address: bscDeployment.TradeLens,
+	affiliate_address: bscDeployment.Affiliate,
+	// TradeLens is an eth_call simulator (no deploy). Any stale value from a
+	// previous entry is cleaned up below the merge.
 	dex_router: '0x10ED43C718714eb63d5aA57B78B54704E256024E',
 	rpc: 'https://bsc-dataseed.binance.org/',
 	explorer_url: 'https://bscscan.com',
@@ -74,6 +76,8 @@ const current = Array.isArray(row?.value) ? row.value : [];
 let existingBsc = current.find((n) => Number(n.chain_id) === 56);
 // Merge field-by-field so any custom keys (e.g. icons, priority) stay intact.
 const merged = existingBsc ? { ...existingBsc, ...BSC_PATCH } : BSC_PATCH;
+// Drop legacy fields no longer produced by deploy.ts.
+delete merged.trade_lens_address;
 const others = current.filter((n) => Number(n.chain_id) !== 56);
 const next = [...others, merged];
 

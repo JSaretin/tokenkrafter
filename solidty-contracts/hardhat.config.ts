@@ -17,14 +17,19 @@ const config: HardhatUserConfig = {
       accounts: { count: 30 },
     },
     bsc: {
-      url: "https://bsc-dataseed.binance.org/",
+      url: process.env.BSC_RPC_URL || "https://bsc-dataseed.binance.org/",
       chainId: 56,
       accounts: [DEPLOYER_KEY],
+      // Public endpoints rate-limit / close sockets during multi-tx runs.
+      // Override via BSC_RPC_URL (e.g. an Ankr / QuickNode endpoint) for
+      // long deploy scripts.
+      timeout: 60000,
     },
     bscTestnet: {
-      url: "https://data-seed-prebsc-1-s1.binance.org:8545/",
+      url: process.env.BSC_TESTNET_RPC_URL || "https://data-seed-prebsc-1-s1.binance.org:8545/",
       chainId: 97,
       accounts: [DEPLOYER_KEY],
+      timeout: 60000,
     },
     ethereum: {
       url: process.env.ETH_RPC_URL || "https://eth.llamarpc.com",

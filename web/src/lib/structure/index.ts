@@ -16,7 +16,7 @@ export interface SupportedNetwork {
 	router_address: string;
 	dex_router: string;
 	trade_router_address: string;
-	trade_lens_address?: string;
+	affiliate_address?: string;
 	rpc: string;
 	ws_rpc?: string;
 	daemon_rpc?: string;

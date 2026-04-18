@@ -27,7 +27,7 @@
 		router_address: '',
 		dex_router: '',
 		trade_router_address: '',
-		trade_lens_address: '',
+		affiliate_address: '',
 		rpc: '',
 		ws_rpc: '',
 		daemon_rpc: '',
@@ -81,7 +81,7 @@
 		}
 		networks = [...networks, net];
 		showAddNetwork = false;
-		newNetwork = { chain_id: '', name: '', symbol: '', native_coin: '', usdt_address: '', usdc_address: '', platform_address: '', launchpad_address: '', router_address: '', dex_router: '', trade_router_address: '', trade_lens_address: '', rpc: '', ws_rpc: '', daemon_rpc: '', explorer_url: '', gecko_network: '', default_bases: [] };
+		newNetwork = { chain_id: '', name: '', symbol: '', native_coin: '', usdt_address: '', usdc_address: '', platform_address: '', launchpad_address: '', router_address: '', dex_router: '', trade_router_address: '', affiliate_address: '', rpc: '', ws_rpc: '', daemon_rpc: '', explorer_url: '', gecko_network: '', default_bases: [] };
 	}
 
 	function removeNetwork(idx: number) {
@@ -264,8 +264,8 @@
 	<input class="input-field" placeholder="0x..." bind:value={newNetwork.trade_router_address} />
 </label>
 						<label class="block">
-	<span class="label-text">TradeLens</span>
-	<input class="input-field" placeholder="0x..." bind:value={newNetwork.trade_lens_address} />
+	<span class="label-text">Affiliate</span>
+	<input class="input-field" placeholder="0x..." bind:value={newNetwork.affiliate_address} />
 </label>
 						<label class="block">
 	<span class="label-text">Explorer URL</span>
@@ -357,8 +357,8 @@
 	<input class="input-field text-xs" bind:value={net.usdc_address} />
 </label>
 						<label class="block">
-	<span class="label-text text-xs4">TradeLens</span>
-	<input class="input-field text-xs" bind:value={net.trade_lens_address} />
+	<span class="label-text text-xs4">Affiliate</span>
+	<input class="input-field text-xs" bind:value={net.affiliate_address} />
 </label>
 						<label class="block">
 	<span class="label-text text-xs4">Explorer URL</span>
