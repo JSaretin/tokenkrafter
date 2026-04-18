@@ -34,6 +34,7 @@
 	import IntentSelectionGrid from './lib/IntentSelectionGrid.svelte';
 	import SuccessScreen from './lib/SuccessScreen.svelte';
 	import DeployProgressStepper from './lib/DeployProgressStepper.svelte';
+	import DepositInfo from './lib/DepositInfo.svelte';
 	import { goto } from '$app/navigation';
 	import Tooltip from '$lib/Tooltip.svelte';
 
@@ -1615,46 +1616,17 @@
 				/>
 
 			{:else if step === 'waiting-deposit'}
-				<!-- Deposit payment screen -->
-				<div class="deposit-screen">
+				<div class="flex flex-col gap-3">
 					<div class="modal-header mb-2">
 						<h2 class="syne text-lg font-bold text-white">Deposit to Continue</h2>
 						<button onclick={closePreview} class="close-btn cursor-pointer">x</button>
 					</div>
-
-					<div class="deposit-amount">
-						<span class="deposit-amount-label">Send at least</span>
-						<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-						<div class="deposit-amount-copy" onclick={() => { navigator.clipboard.writeText(deposit.depositShortFmt); addFeedback({ message: 'Amount copied', type: 'success' }); }}>
-							<span class="deposit-amount-value">{deposit.depositShortFmt} {selectedPayment?.symbol}</span>
-							<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-						</div>
-						<span class="deposit-amount-bal">Balance: {parseFloat(ethers.formatUnits(userBalance, selectedPayment?.decimals ?? 18)).toFixed(4)} {selectedPayment?.symbol}</span>
-					</div>
-
-					<div class="deposit-qr-row">
-						<div class="qr-placeholder">
-							<QrCode data={userAddress || ''} width={120} colorDark="#000000" colorLight="#ffffff" margin={6} />
-						</div>
-						<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-						<div class="deposit-addr-info" onclick={() => { navigator.clipboard.writeText(userAddress || ''); addFeedback({ message: 'Address copied', type: 'success' }); }}>
-							<span class="deposit-addr-label">Deposit address</span>
-							<span class="deposit-addr">{userAddress}</span>
-							<div class="deposit-addr-actions">
-								<span class="deposit-copy-btn">
-									<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-									Copy
-								</span>
-								<span class="deposit-network">{tokenInfo.network.name} only</span>
-							</div>
-						</div>
-					</div>
-
-					<div class="deposit-status">
-						<div class="spinner-sm w-3 h-3 rounded-full border-2 border-white/10 border-t-cyan-400"></div>
-						<span>Waiting for deposit...</span>
-					</div>
-
+					<DepositInfo
+						address={userAddress ?? ''}
+						amountDisplay={deposit.depositShortFmt + ' ' + (selectedPayment?.symbol ?? '')}
+						balance={parseFloat(ethers.formatUnits(userBalance, selectedPayment?.decimals ?? 18)).toFixed(4) + ' ' + (selectedPayment?.symbol ?? '')}
+						network={tokenInfo?.network}
+					/>
 					<button onclick={closePreview} class="btn-secondary text-sm py-2 cursor-pointer w-full">
 						Cancel
 					</button>
