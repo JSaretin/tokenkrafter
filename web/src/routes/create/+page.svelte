@@ -33,6 +33,7 @@
 	import DisplayPreview from './lib/DisplayPreview.svelte';
 	import IntentSelectionGrid from './lib/IntentSelectionGrid.svelte';
 	import SuccessScreen from './lib/SuccessScreen.svelte';
+	import DeployProgressStepper from './lib/DeployProgressStepper.svelte';
 	import { goto } from '$app/navigation';
 	import Tooltip from '$lib/Tooltip.svelte';
 
@@ -1660,45 +1661,14 @@
 				</div>
 
 			{:else if step !== 'idle' && step !== 'review'}
-				<!-- Progress view — redesigned stepper -->
-				<div class="deploy-progress">
-					<div class="dp-header">
-						<h2 class="dp-title">Deploying your token</h2>
-						<p class="dp-sub">Please wait — do not close this window</p>
-					</div>
-
-					<div class="dp-steps">
-						{#each deploySteps() as ds, i}
-							{@const status = stepStatus(ds.key)}
-							{@const isSkipped = ds.key === 'approving' && isNativePayment}
-							<div class="dp-step" class:dp-done={status === 'done' || isSkipped} class:dp-active={status === 'active' && !isSkipped} class:dp-pending={status === 'pending'}>
-								<div class="dp-step-icon">
-									{#if status === 'done' || isSkipped}
-										<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
-									{:else if status === 'active'}
-										<div class="dp-spinner"></div>
-									{:else}
-										<span class="dp-num">{i + 1}</span>
-									{/if}
-								</div>
-								<div class="dp-step-info">
-									<span class="dp-step-label">{ds.label}</span>
-									{#if isSkipped}<span class="dp-skipped">Skipped</span>{/if}
-								</div>
-							</div>
-							{#if i < deploySteps().length - 1}
-								<div class="dp-line" class:dp-line-done={status === 'done' || isSkipped}></div>
-							{/if}
-						{/each}
-					</div>
-
-					{#if deployTxHash && tokenInfo}
-						<a href={getExplorerUrl(tokenInfo.network.chain_id, 'tx', deployTxHash)}
-							target="_blank" rel="noopener" class="dp-tx-link">
-							View transaction →
-						</a>
-					{/if}
-				</div>
+				<DeployProgressStepper
+					steps={deploySteps().map(ds => ({
+						label: ds.label,
+						status: ds.key === 'approving' && isNativePayment ? 'skipped' : stepStatus(ds.key),
+					}))}
+					txHash={deployTxHash}
+					txHref={deployTxHash && tokenInfo ? getExplorerUrl(tokenInfo.network.chain_id, 'tx', deployTxHash) : null}
+				/>
 
 			{:else}
 				<!-- Payment-focused review -->
