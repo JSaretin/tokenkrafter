@@ -1422,13 +1422,22 @@
 		))
 	);
 
+	// ── Template aliases — flat names from view objects ──────────
+	// Template expects flat names; surface them from the view objects.
+	let displayAmountOut = $derived(amounts.displayAmountOut);
+	let usdValueIn = $derived(amounts.usdValueIn);
+	let usdValueOut = $derived(amounts.usdValueOut);
+	let rate = $derived(amounts.rate);
+	let spotRate = $derived(amounts.spotRate);
+	let minReceived = $derived(amounts.minReceived);
+	let fiatEquivalent = $derived(amounts.fiatEquivalent);
+	let tokenInIsPlatform = $derived(tokenInSlot.isPlatform);
+	let tokenOutIsPlatform = $derived(tokenOutSlot.isPlatform);
+
 	// ── SwapCard composition helpers ─────────────────────────────
 	let slippagePct = $derived((slippageBps / 100).toFixed(slippageBps % 100 === 0 ? 0 : slippageBps % 10 === 0 ? 1 : 2));
-	let minUsd = $derived(
-		usdValueOut && displayAmountOut && parseFloat(displayAmountOut) > 0 && minReceived
-			? (parseFloat(usdValueOut.replace(/[^0-9.]/g, '')) * parseFloat(minReceived) / parseFloat(displayAmountOut)).toFixed(2)
-			: ''
-	);
+	let minUsd = $derived(amounts.minUsd);
+	let confirmMinUsd = $derived(amounts.minUsd);
 	let buttonVariant = $derived<'primary' | 'bank' | 'error'>(
 		insufficientBalance || noGas ? 'error' : outputMode === 'bank' ? 'bank' : 'primary'
 	);
