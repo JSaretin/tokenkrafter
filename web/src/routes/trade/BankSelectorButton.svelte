@@ -12,13 +12,13 @@
 
 <button
 	type="button"
-	class="w-full flex items-center justify-between py-[11px] px-[14px] rounded-[10px] border border-(--border-input) bg-(--bg-surface-input) cursor-pointer transition-all duration-150 hover:border-cyan"
+	class="w-full flex items-center justify-between py-[11px] px-[14px] rounded-[10px] border border-(--border-input) bg-(--bg-surface-input) cursor-pointer transition-all duration-150 hover:border-[rgba(0,210,255,0.3)]"
 	{onclick}
 >
 	{#if bankName}
-		<span class="font-mono text-sm2 font-bold text-(--text-heading)">{bankName}</span>
+		<span class="font-mono text-[13px] font-semibold text-(--text)">{bankName}</span>
 	{:else}
-		<span class="font-mono text-sm2 text-(--text-dim)">{$t('trade.selectBank')}</span>
+		<span class="font-mono text-[13px] text-(--placeholder)">{$t('trade.selectBank')}</span>
 	{/if}
 	<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M6 9l6 6 6-6"/></svg>
 </button>

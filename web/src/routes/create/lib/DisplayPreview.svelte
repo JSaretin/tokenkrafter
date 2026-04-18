@@ -72,55 +72,55 @@
 	});
 </script>
 
-<div class="preview-card">
+<div class="bg-surface border border-line rounded-2xl p-5">
 	<!-- Token Identity -->
-	<div class="token-header">
+	<div class="flex items-center gap-3 mb-4 pb-4 border-b border-line-subtle">
 		{#if logoUrl}
-			<img src={logoUrl} alt={symbol} class="token-logo" />
+			<img src={logoUrl} alt={symbol} class="w-11 h-11 rounded-xl object-cover border border-[rgba(0,210,255,0.2)] shrink-0" />
 		{:else}
-			<div class="token-icon" class:has-name={name.trim()}>
+			<div class={'w-11 h-11 rounded-xl border border-[rgba(0,210,255,0.2)] flex items-center justify-center font-display font-bold text-sm text-brand-cyan shrink-0 transition-all ' + (name.trim() ? 'bg-[linear-gradient(135deg,rgba(0,210,255,0.2),rgba(58,123,213,0.2))]' : 'bg-[linear-gradient(135deg,rgba(0,210,255,0.15),rgba(58,123,213,0.15))]')}>
 				{symbol ? symbol.slice(0, 3).toUpperCase() : '?'}
 			</div>
 		{/if}
-		<div class="token-identity">
-			<div class="token-name syne">{name || 'Token Name'}</div>
-			<div class="token-symbol">{symbol ? symbol.toUpperCase() : 'SYMBOL'}</div>
+		<div class="min-w-0">
+			<div class="font-display text-base font-bold text-foreground whitespace-nowrap overflow-hidden text-ellipsis">{name || 'Token Name'}</div>
+			<div class="text-xs text-muted font-mono">{symbol ? symbol.toUpperCase() : 'SYMBOL'}</div>
 		</div>
 	</div>
 
 	<!-- Metadata (right below identity) -->
 	{#if hasMetadata}
-		<div class="meta-section">
+		<div class="mb-[14px]">
 			{#if description}
-				<p class="meta-desc">{description.length > 80 ? description.slice(0, 80) + '...' : description}</p>
+				<p class="text-[11px] text-muted font-mono leading-[1.5] m-0 mb-[6px]">{description.length > 80 ? description.slice(0, 80) + '...' : description}</p>
 			{/if}
 			{#if website || twitter || telegram}
-				<div class="meta-links">
-					{#if website}<span class="meta-link">🌐 Website</span>{/if}
-					{#if twitter}<span class="meta-link">𝕏 Twitter</span>{/if}
-					{#if telegram}<span class="meta-link">✈ Telegram</span>{/if}
+				<div class="flex gap-[6px] flex-wrap">
+					{#if website}<span class="text-[9px] px-[6px] py-[2px] rounded bg-surface border border-line text-dim font-mono">🌐 Website</span>{/if}
+					{#if twitter}<span class="text-[9px] px-[6px] py-[2px] rounded bg-surface border border-line text-dim font-mono">𝕏 Twitter</span>{/if}
+					{#if telegram}<span class="text-[9px] px-[6px] py-[2px] rounded bg-surface border border-line text-dim font-mono">✈ Telegram</span>{/if}
 				</div>
 			{/if}
 		</div>
 	{/if}
 
 	<!-- Quick Stats -->
-	<div class="stats-grid">
-		<div class="stat">
-			<span class="stat-label">Supply</span>
-			<span class="stat-value">{supplyFormatted()}</span>
+	<div class="grid grid-cols-2 gap-2 mb-[14px]">
+		<div class="py-2 px-[10px] bg-surface rounded-lg border border-line-subtle">
+			<span class="block text-[10px] text-dim font-mono uppercase tracking-[0.04em] mb-[2px]">Supply</span>
+			<span class="block text-[13px] text-foreground font-mono font-semibold">{supplyFormatted()}</span>
 		</div>
-		<div class="stat">
-			<span class="stat-label">Decimals</span>
-			<span class="stat-value">{decimals}</span>
+		<div class="py-2 px-[10px] bg-surface rounded-lg border border-line-subtle">
+			<span class="block text-[10px] text-dim font-mono uppercase tracking-[0.04em] mb-[2px]">Decimals</span>
+			<span class="block text-[13px] text-foreground font-mono font-semibold">{decimals}</span>
 		</div>
-		<div class="stat">
-			<span class="stat-label">Network</span>
-			<span class="stat-value net">{networkName || '—'}</span>
+		<div class="py-2 px-[10px] bg-surface rounded-lg border border-line-subtle">
+			<span class="block text-[10px] text-dim font-mono uppercase tracking-[0.04em] mb-[2px]">Network</span>
+			<span class="block text-[13px] text-brand-cyan font-mono font-semibold">{networkName || '—'}</span>
 		</div>
-		<div class="stat">
-			<span class="stat-label">Type</span>
-			<span class="stat-value">
+		<div class="py-2 px-[10px] bg-surface rounded-lg border border-line-subtle">
+			<span class="block text-[10px] text-dim font-mono uppercase tracking-[0.04em] mb-[2px]">Type</span>
+			<span class="block text-[13px] text-foreground font-mono font-semibold">
 				{#if isPartner && isTaxable}Partner+Tax
 				{:else if isPartner}Partner
 				{:else if isTaxable && isMintable}Tax+Mint
@@ -133,27 +133,27 @@
 
 	<!-- Feature Badges -->
 	{#if hasFeatures}
-		<div class="feature-badges">
-			{#if isMintable}<span class="fbadge cyan">Mintable</span>{/if}
-			{#if isTaxable}<span class="fbadge amber">Taxable</span>{/if}
-			{#if isPartner}<span class="fbadge purple">Partner</span>{/if}
-			{#if launchEnabled}<span class="fbadge emerald">Launch</span>{/if}
+		<div class="flex gap-[6px] flex-wrap mb-[14px]">
+			{#if isMintable}<span class="text-[10px] font-semibold uppercase tracking-[0.04em] px-2 py-[2px] rounded-full font-mono bg-[rgba(0,210,255,0.1)] text-brand-cyan border border-[rgba(0,210,255,0.2)]">Mintable</span>{/if}
+			{#if isTaxable}<span class="text-[10px] font-semibold uppercase tracking-[0.04em] px-2 py-[2px] rounded-full font-mono bg-[rgba(245,158,11,0.1)] text-[#f59e0b] border border-[rgba(245,158,11,0.2)]">Taxable</span>{/if}
+			{#if isPartner}<span class="text-[10px] font-semibold uppercase tracking-[0.04em] px-2 py-[2px] rounded-full font-mono bg-[rgba(139,92,246,0.1)] text-[#a78bfa] border border-[rgba(139,92,246,0.2)]">Partner</span>{/if}
+			{#if launchEnabled}<span class="text-[10px] font-semibold uppercase tracking-[0.04em] px-2 py-[2px] rounded-full font-mono bg-[rgba(16,185,129,0.1)] text-[#10b981] border border-[rgba(16,185,129,0.2)]">Launch</span>{/if}
 		</div>
 	{/if}
 
 	<!-- Tax Summary -->
 	{#if hasTax}
-		<div class="detail-section">
-			<div class="detail-title">Tax Rates</div>
-			<div class="detail-rows">
+		<div class="mb-3 p-[10px] bg-surface rounded-lg border border-line-subtle">
+			<div class="text-[10px] font-semibold uppercase tracking-[0.06em] text-muted font-mono mb-[6px]">Tax Rates</div>
+			<div class="flex flex-col gap-1">
 				{#if parseFloat(buyTaxPct) > 0}
-					<div class="detail-row"><span>Buy</span><span class="val">{buyTaxPct}%</span></div>
+					<div class="flex justify-between text-xs font-mono text-muted"><span>Buy</span><span class="text-foreground font-semibold">{buyTaxPct}%</span></div>
 				{/if}
 				{#if parseFloat(sellTaxPct) > 0}
-					<div class="detail-row"><span>Sell</span><span class="val">{sellTaxPct}%</span></div>
+					<div class="flex justify-between text-xs font-mono text-muted"><span>Sell</span><span class="text-foreground font-semibold">{sellTaxPct}%</span></div>
 				{/if}
 				{#if parseFloat(transferTaxPct) > 0}
-					<div class="detail-row"><span>Transfer</span><span class="val">{transferTaxPct}%</span></div>
+					<div class="flex justify-between text-xs font-mono text-muted"><span>Transfer</span><span class="text-foreground font-semibold">{transferTaxPct}%</span></div>
 				{/if}
 			</div>
 		</div>
@@ -161,26 +161,26 @@
 
 	<!-- Launch Summary -->
 	{#if launchEnabled}
-		<div class="detail-section">
-			<div class="detail-title">Launchpad</div>
-			<div class="detail-rows">
-				<div class="detail-row"><span>Tokens</span><span class="val">{launchTokensPct}%</span></div>
-				<div class="detail-row"><span>Curve</span><span class="val">{CURVE_LABELS[launchCurveType]}</span></div>
-				<div class="detail-row"><span>Cap</span><span class="val">{launchSoftCap}–{launchHardCap} USDT</span></div>
+		<div class="mb-3 p-[10px] bg-surface rounded-lg border border-line-subtle">
+			<div class="text-[10px] font-semibold uppercase tracking-[0.06em] text-muted font-mono mb-[6px]">Launchpad</div>
+			<div class="flex flex-col gap-1">
+				<div class="flex justify-between text-xs font-mono text-muted"><span>Tokens</span><span class="text-foreground font-semibold">{launchTokensPct}%</span></div>
+				<div class="flex justify-between text-xs font-mono text-muted"><span>Curve</span><span class="text-foreground font-semibold">{CURVE_LABELS[launchCurveType]}</span></div>
+				<div class="flex justify-between text-xs font-mono text-muted"><span>Cap</span><span class="text-foreground font-semibold">{launchSoftCap}–{launchHardCap} USDT</span></div>
 			</div>
 		</div>
 	{/if}
 
 	<!-- Protection Summary -->
 	{#if hasProtection}
-		<div class="detail-section">
-			<div class="detail-title amber">Protection</div>
-			<div class="detail-rows">
+		<div class="mb-3 p-[10px] bg-surface rounded-lg border border-line-subtle">
+			<div class="text-[10px] font-semibold uppercase tracking-[0.06em] text-[#f59e0b] font-mono mb-[6px]">Protection</div>
+			<div class="flex flex-col gap-1">
 				{#if maxWalletPct !== '0'}
-					<div class="detail-row"><span>Max wallet</span><span class="val amber">{maxWalletPct}%</span></div>
+					<div class="flex justify-between text-xs font-mono text-muted"><span>Max wallet</span><span class="text-[#f59e0b] font-semibold">{maxWalletPct}%</span></div>
 				{/if}
 				{#if maxTransactionPct !== '0'}
-					<div class="detail-row"><span>Max tx</span><span class="val amber">{maxTransactionPct}%</span></div>
+					<div class="flex justify-between text-xs font-mono text-muted"><span>Max tx</span><span class="text-[#f59e0b] font-semibold">{maxTransactionPct}%</span></div>
 				{/if}
 			</div>
 		</div>
@@ -188,13 +188,13 @@
 
 	<!-- Partner note -->
 	{#if isPartner && !isTaxable}
-		<div class="partner-note">
+		<div class="text-[11px] text-[#a78bfa] font-mono py-2 px-[10px] bg-[rgba(139,92,246,0.06)] border border-[rgba(139,92,246,0.12)] rounded-lg mb-3">
 			0.5% platform fee on buys/sells (fixed)
 		</div>
 	{/if}
 
 	<!-- Current step indicator -->
-	<div class="step-hint">
+	<div class="text-[11px] text-dim font-mono text-center pt-3 border-t border-line-subtle mt-1">
 		{#if wizardStep === 'basics'}Configure your token's identity
 		{:else if wizardStep === 'features'}Choose token capabilities
 		{:else if wizardStep === 'tax'}Set tax rates and wallets
@@ -202,174 +202,3 @@
 		{/if}
 	</div>
 </div>
-
-<style>
-	.preview-card {
-		background: var(--bg-surface);
-		border: 1px solid var(--border);
-		border-radius: 16px;
-		padding: 20px;
-	}
-
-	.token-header {
-		display: flex;
-		align-items: center;
-		gap: 12px;
-		margin-bottom: 16px;
-		padding-bottom: 16px;
-		border-bottom: 1px solid var(--border-subtle);
-	}
-
-	.token-icon {
-		width: 44px;
-		height: 44px;
-		border-radius: 12px;
-		background: linear-gradient(135deg, rgba(0,210,255,0.15), rgba(58,123,213,0.15));
-		border: 1px solid rgba(0,210,255,0.2);
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		font-family: 'Syne', sans-serif;
-		font-weight: 700;
-		font-size: 14px;
-		color: #00d2ff;
-		flex-shrink: 0;
-		transition: all 0.2s;
-	}
-	.token-icon.has-name {
-		background: linear-gradient(135deg, rgba(0,210,255,0.2), rgba(58,123,213,0.2));
-	}
-	.token-logo {
-		width: 44px; height: 44px; border-radius: 12px; object-fit: cover;
-		border: 1px solid rgba(0,210,255,0.2); flex-shrink: 0;
-	}
-
-	.token-identity { min-width: 0; }
-	.token-name {
-		font-size: 16px;
-		font-weight: 700;
-		color: var(--text);
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
-	}
-	.token-symbol {
-		font-size: 12px;
-		color: var(--text-muted);
-		font-family: 'Space Mono', monospace;
-	}
-
-	.stats-grid {
-		display: grid;
-		grid-template-columns: 1fr 1fr;
-		gap: 8px;
-		margin-bottom: 14px;
-	}
-	.stat {
-		padding: 8px 10px;
-		background: var(--bg-surface);
-		border-radius: 8px;
-		border: 1px solid var(--border-subtle);
-	}
-	.stat-label {
-		display: block;
-		font-size: 10px;
-		color: var(--text-dim);
-		font-family: 'Space Mono', monospace;
-		text-transform: uppercase;
-		letter-spacing: 0.04em;
-		margin-bottom: 2px;
-	}
-	.stat-value {
-		display: block;
-		font-size: 13px;
-		color: var(--text);
-		font-family: 'Space Mono', monospace;
-		font-weight: 600;
-	}
-	.stat-value.net { color: #00d2ff; }
-
-	.feature-badges {
-		display: flex;
-		gap: 6px;
-		flex-wrap: wrap;
-		margin-bottom: 14px;
-	}
-	.fbadge {
-		font-size: 10px;
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.04em;
-		padding: 2px 8px;
-		border-radius: 999px;
-		font-family: 'Space Mono', monospace;
-	}
-	.fbadge.cyan { background: rgba(0,210,255,0.1); color: #00d2ff; border: 1px solid rgba(0,210,255,0.2); }
-	.fbadge.amber { background: rgba(245,158,11,0.1); color: #f59e0b; border: 1px solid rgba(245,158,11,0.2); }
-	.fbadge.purple { background: rgba(139,92,246,0.1); color: #a78bfa; border: 1px solid rgba(139,92,246,0.2); }
-	.fbadge.emerald { background: rgba(16,185,129,0.1); color: #10b981; border: 1px solid rgba(16,185,129,0.2); }
-
-	.detail-section {
-		margin-bottom: 12px;
-		padding: 10px;
-		background: var(--bg-surface);
-		border-radius: 8px;
-		border: 1px solid var(--border-subtle);
-	}
-	.detail-title {
-		font-size: 10px;
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.06em;
-		color: var(--text-muted);
-		font-family: 'Space Mono', monospace;
-		margin-bottom: 6px;
-	}
-	.detail-title.amber { color: #f59e0b; }
-
-	.detail-rows { display: flex; flex-direction: column; gap: 4px; }
-	.detail-row {
-		display: flex;
-		justify-content: space-between;
-		font-size: 12px;
-		font-family: 'Space Mono', monospace;
-		color: var(--text-muted);
-	}
-	.detail-row .val { color: var(--text); font-weight: 600; }
-	.detail-row .val.amber { color: #f59e0b; }
-
-	.partner-note {
-		font-size: 11px;
-		color: #a78bfa;
-		font-family: 'Space Mono', monospace;
-		padding: 8px 10px;
-		background: rgba(139,92,246,0.06);
-		border: 1px solid rgba(139,92,246,0.12);
-		border-radius: 8px;
-		margin-bottom: 12px;
-	}
-
-	.step-hint {
-		font-size: 11px;
-		color: var(--text-dim);
-		font-family: 'Space Mono', monospace;
-		text-align: center;
-		padding-top: 12px;
-		border-top: 1px solid var(--border-subtle);
-		margin-top: 4px;
-	}
-
-	.meta-section { margin-bottom: 14px; }
-	.meta-desc {
-		font-size: 11px; color: var(--text-muted); font-family: 'Space Mono', monospace;
-		line-height: 1.5; margin: 0 0 6px;
-	}
-	.meta-links { display: flex; gap: 6px; flex-wrap: wrap; }
-	.meta-link {
-		font-size: 9px; padding: 2px 6px; border-radius: 4px;
-		background: var(--bg-surface); border: 1px solid var(--border);
-		color: var(--text-dim); font-family: 'Space Mono', monospace;
-	}
-
-	.syne { font-family: 'Syne', sans-serif; }
-</style>

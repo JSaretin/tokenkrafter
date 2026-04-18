@@ -154,7 +154,7 @@
 
 <div class="page-wrap max-w-6xl mx-auto px-4 sm:px-6">
 	<!-- Compact Hero -->
-	<section class="compact-hero">
+	<section class="pt-7 pb-5">
 		<div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
 			<div>
 				<h1 class="syne text-2xl sm:text-3xl font-bold text-white">
@@ -173,68 +173,68 @@
 		</div>
 
 		<!-- Live Stats Strip -->
-		<div class="stats-strip">
-			<div class="stat-chip">
-				<span class="stat-chip-dot bg-cyan-400"></span>
-				<span class="stat-chip-value">{liveLaunches.length}</span>
-				<span class="stat-chip-label">Live Now</span>
+		<div class="flex gap-4 mt-4 flex-wrap">
+			<div class="inline-flex items-center gap-1.5 font-mono text-xs">
+				<span class="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-[pulse_2s_ease-in-out_infinite]"></span>
+				<span class="text-heading font-bold">{liveLaunches.length}</span>
+				<span class="text-muted">Live Now</span>
 			</div>
 			{#if scheduledLaunches.length > 0}
-				<div class="stat-chip">
-					<span class="stat-chip-dot bg-amber-400"></span>
-					<span class="stat-chip-value">{scheduledLaunches.length}</span>
-					<span class="stat-chip-label">Upcoming</span>
+				<div class="inline-flex items-center gap-1.5 font-mono text-xs">
+					<span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-[pulse_2s_ease-in-out_infinite]"></span>
+					<span class="text-heading font-bold">{scheduledLaunches.length}</span>
+					<span class="text-muted">Upcoming</span>
 				</div>
 			{/if}
-			<div class="stat-chip">
-				<span class="stat-chip-value">{graduatedCount}</span>
-				<span class="stat-chip-label">Graduated</span>
+			<div class="inline-flex items-center gap-1.5 font-mono text-xs">
+				<span class="text-heading font-bold">{graduatedCount}</span>
+				<span class="text-muted">Graduated</span>
 			</div>
 			{#if totalRaised > 100n * (10n ** 18n)}
-				<div class="stat-chip">
-					<span class="stat-chip-value">{formatUsdt(totalRaised)}</span>
-					<span class="stat-chip-label">Total Raised</span>
+				<div class="inline-flex items-center gap-1.5 font-mono text-xs">
+					<span class="text-heading font-bold">{formatUsdt(totalRaised)}</span>
+					<span class="text-muted">Total Raised</span>
 				</div>
 			{/if}
-			<div class="stat-chip">
-				<span class="stat-chip-value">$5</span>
-				<span class="stat-chip-label">to create</span>
+			<div class="inline-flex items-center gap-1.5 font-mono text-xs">
+				<span class="text-heading font-bold">$5</span>
+				<span class="text-muted">to create</span>
 			</div>
-			<div class="stat-chip">
-				<span class="stat-chip-value">60s</span>
-				<span class="stat-chip-label">to live</span>
+			<div class="inline-flex items-center gap-1.5 font-mono text-xs">
+				<span class="text-heading font-bold">60s</span>
+				<span class="text-muted">to live</span>
 			</div>
 		</div>
 	</section>
 
 	<!-- Trust Bar — On-chain guarantee badges -->
-	<section class="trust-bar mb-6">
-		<div class="trust-badge">
-			<span class="trust-badge-icon">
+	<section class="flex items-center justify-center gap-4 sm:gap-4 flex-wrap px-3.5 py-3 sm:px-5 sm:py-3.5 bg-surface border border-line-subtle rounded-xl mb-6">
+		<div class="inline-flex items-center gap-2">
+			<span class="flex items-center justify-center text-emerald-500">
 				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
 			</span>
-			<span class="trust-badge-text">Tax Ceiling Enforced</span>
+			<span class="font-mono text-[10px] sm:text-[11px] font-bold text-foreground tracking-wide">Tax Ceiling Enforced</span>
 		</div>
-		<div class="trust-sep"></div>
-		<div class="trust-badge">
-			<span class="trust-badge-icon fire">
+		<div class="w-px h-4 bg-line-subtle shrink-0 hidden sm:block"></div>
+		<div class="inline-flex items-center gap-2">
+			<span class="flex items-center justify-center text-amber-500">
 				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/><path d="M8 12l3 3 5-5"/></svg>
 			</span>
-			<span class="trust-badge-text">100% LP Burned</span>
+			<span class="font-mono text-[10px] sm:text-[11px] font-bold text-foreground tracking-wide">100% LP Burned</span>
 		</div>
-		<div class="trust-sep"></div>
-		<div class="trust-badge">
-			<span class="trust-badge-icon refund">
+		<div class="w-px h-4 bg-line-subtle shrink-0 hidden sm:block"></div>
+		<div class="inline-flex items-center gap-2">
+			<span class="flex items-center justify-center text-cyan-400">
 				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><line x1="12" y1="22" x2="12" y2="7"/></svg>
 			</span>
-			<span class="trust-badge-text">On-Chain Refunds</span>
+			<span class="font-mono text-[10px] sm:text-[11px] font-bold text-foreground tracking-wide">On-Chain Refunds</span>
 		</div>
-		<div class="trust-sep"></div>
-		<div class="trust-badge">
-			<span class="trust-badge-icon lock">
+		<div class="w-px h-4 bg-line-subtle shrink-0 hidden sm:block"></div>
+		<div class="inline-flex items-center gap-2">
+			<span class="flex items-center justify-center text-violet-400">
 				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
 			</span>
-			<span class="trust-badge-text">Creator Vesting Lock</span>
+			<span class="font-mono text-[10px] sm:text-[11px] font-bold text-foreground tracking-wide">Creator Vesting Lock</span>
 		</div>
 	</section>
 
@@ -247,37 +247,37 @@
 	<section class="mb-10">
 		<h2 class="syne text-lg font-bold text-white mb-1">{$t('home.howItWorksTitle')}</h2>
 		<p class="text-gray-500 font-mono text-xs mb-5">{$t('home.howItWorksSub')}</p>
-		<div class="how-it-works">
-			<div class="hiw-step">
-				<div class="hiw-num hiw-num-cyan">
+		<div class="flex flex-col sm:flex-row items-stretch bg-surface border border-line rounded-2xl overflow-hidden">
+			<div class="flex-1 flex flex-row sm:flex-col items-center gap-3.5 sm:gap-2.5 p-4 sm:p-5 sm:px-4 text-left sm:text-center">
+				<div class="relative w-13 h-13 rounded-full flex items-center justify-center shrink-0 bg-cyan-400/10 text-cyan-400 border border-cyan-400/25" style="width:52px;height:52px">
 					<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
-					<span class="hiw-step-num">1</span>
+					<span class="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-[5px] rounded-[9px] inline-flex items-center justify-center syne text-[10px] font-extrabold bg-background border border-current">1</span>
 				</div>
-				<div class="hiw-body">
-					<h3 class="hiw-title">{$t('home.step1Label')}</h3>
-					<p class="hiw-desc">{$t('home.step1Desc')}</p>
+				<div class="flex-1">
+					<h3 class="syne text-sm font-bold text-heading m-0 mb-1">{$t('home.step1Label')}</h3>
+					<p class="font-mono text-[10px] text-dim leading-relaxed m-0">{$t('home.step1Desc')}</p>
 				</div>
 			</div>
-			<div class="hiw-line"></div>
-			<div class="hiw-step">
-				<div class="hiw-num hiw-num-amber">
+			<div class="w-0.5 h-5 sm:w-6 sm:h-0.5 shrink-0 self-center opacity-40" style="background: repeating-linear-gradient(var(--dash-dir, 90deg), var(--text-dim) 0, var(--text-dim) 4px, transparent 4px, transparent 8px);"></div>
+			<div class="flex-1 flex flex-row sm:flex-col items-center gap-3.5 sm:gap-2.5 p-4 sm:p-5 sm:px-4 text-left sm:text-center">
+				<div class="relative w-13 h-13 rounded-full flex items-center justify-center shrink-0 bg-amber-500/10 text-amber-500 border border-amber-500/25" style="width:52px;height:52px">
 					<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-					<span class="hiw-step-num">2</span>
+					<span class="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-[5px] rounded-[9px] inline-flex items-center justify-center syne text-[10px] font-extrabold bg-background border border-current">2</span>
 				</div>
-				<div class="hiw-body">
-					<h3 class="hiw-title">{$t('home.step2Label')}</h3>
-					<p class="hiw-desc">{$t('home.step2Desc')}</p>
+				<div class="flex-1">
+					<h3 class="syne text-sm font-bold text-heading m-0 mb-1">{$t('home.step2Label')}</h3>
+					<p class="font-mono text-[10px] text-dim leading-relaxed m-0">{$t('home.step2Desc')}</p>
 				</div>
 			</div>
-			<div class="hiw-line"></div>
-			<div class="hiw-step">
-				<div class="hiw-num hiw-num-emerald">
+			<div class="w-0.5 h-5 sm:w-6 sm:h-0.5 shrink-0 self-center opacity-40" style="background: repeating-linear-gradient(var(--dash-dir, 90deg), var(--text-dim) 0, var(--text-dim) 4px, transparent 4px, transparent 8px);"></div>
+			<div class="flex-1 flex flex-row sm:flex-col items-center gap-3.5 sm:gap-2.5 p-4 sm:p-5 sm:px-4 text-left sm:text-center">
+				<div class="relative w-13 h-13 rounded-full flex items-center justify-center shrink-0 bg-emerald-500/10 text-emerald-500 border border-emerald-500/25" style="width:52px;height:52px">
 					<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>
-					<span class="hiw-step-num">3</span>
+					<span class="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-[5px] rounded-[9px] inline-flex items-center justify-center syne text-[10px] font-extrabold bg-background border border-current">3</span>
 				</div>
-				<div class="hiw-body">
-					<h3 class="hiw-title">{$t('home.step3Label')}</h3>
-					<p class="hiw-desc">{$t('home.step3Desc')}</p>
+				<div class="flex-1">
+					<h3 class="syne text-sm font-bold text-heading m-0 mb-1">{$t('home.step3Label')}</h3>
+					<p class="font-mono text-[10px] text-dim leading-relaxed m-0">{$t('home.step3Desc')}</p>
 				</div>
 			</div>
 		</div>
@@ -317,7 +317,7 @@
 				{/each}
 			</div>
 		{:else if liveLaunches.length === 0}
-			<div class="empty-hero card p-12 text-center">
+			<div class="card p-12 text-center bg-surface border-dashed">
 				<div class="text-5xl mb-4 opacity-15">~</div>
 				<h3 class="syne text-lg font-bold text-white mb-2">{$t('home.noActiveLaunches')}</h3>
 				<p class="text-gray-500 font-mono text-sm mb-6 max-w-sm mx-auto">{$t('home.activeLaunchesSub')}</p>
@@ -336,13 +336,13 @@
 					{@const scPct = hardCap > 0n ? Math.min(100, Number((softCap * 100n) / hardCap)) : 0}
 					{@const deadline = Number(launch.deadline || 0)}
 					{@const hot = isHot(launch)}
-					<a href="/launchpad/{chainSlug(launch.chain_id)}/{launch.address}" class="launch-card card p-0 block no-underline group">
+					<a href="/launchpad/{chainSlug(launch.chain_id)}/{launch.address}" class="card p-0 block no-underline group overflow-hidden transition-all duration-200 hover:-translate-y-[3px] hover:shadow-[0_12px_40px_rgba(0,0,0,0.25)] hover:border-cyan-400/20">
 						<!-- Header: badges -->
 						{#if isNew(launch) || hot || launch.is_partner}
-							<div class="hp-card-badges">
-								{#if isNew(launch)}<span class="new-badge">NEW</span>{/if}
-								{#if hot}<span class="hot-badge">HOT</span>{/if}
-								{#if launch.is_partner}<span class="launch-trust-badge launch-trust-partner">Partner</span>{/if}
+							<div class="flex items-center gap-1 px-3 py-1.5 border-b border-line-subtle">
+								{#if isNew(launch)}<span class="inline-flex items-center gap-[3px] text-[10px] font-bold py-0.5 px-2 rounded-full syne tracking-wider bg-cyan-400/15 text-cyan-400">NEW</span>{/if}
+								{#if hot}<span class="inline-flex items-center gap-[3px] text-[10px] font-bold py-0.5 px-2 rounded-full syne tracking-wider bg-amber-500/15 text-amber-500">HOT</span>{/if}
+								{#if launch.is_partner}<span class="inline-flex items-center py-px px-1.5 rounded-full text-[9px] font-bold font-mono tracking-wider bg-violet-500/[0.12] text-violet-400 border border-violet-500/20">Partner</span>{/if}
 							</div>
 						{/if}
 
@@ -356,7 +356,7 @@
 										<span class="text-gray-600 text-xs font-mono shrink-0">{launch.token_symbol || '???'}</span>
 									</div>
 									<div class="flex items-center gap-1.5 flex-wrap">
-										<span class="live-dot"></span>
+										<span class="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_6px_rgba(0,210,255,0.5)] shrink-0"></span>
 										<span class="text-xs font-mono text-cyan-400">Active</span>
 										<span class="text-gray-600 text-[10px] font-mono ml-auto" title="Bonding curve: {CURVE_TYPES[launch.curve_type] ?? 'Linear'}">{CURVE_TYPES[launch.curve_type] ?? 'Linear'}</span>
 									</div>
@@ -372,13 +372,13 @@
 
 						<!-- Countdown -->
 						{#if deadline > 0}
-							<div class="hp-cd-section">
+							<div class="px-4 pb-2.5">
 								<LaunchCountdown deadline={deadline} size="sm" />
 							</div>
 						{/if}
 
 						<!-- Progress -->
-						<div class="hp-progress-section">
+						<div class="px-4 pt-3.5 pb-4 border-t border-line-subtle">
 							<LaunchProgressBar
 								{progress}
 								softCapPct={scPct}
@@ -405,11 +405,11 @@
 	     CTA looked like a placeholder bug, not an invitation) -->
 	{#if partnerLaunches.length > 0}
 	<section class="mb-10">
-		<div class="partner-section-header">
-			<div class="partner-section-glow"></div>
+		<div class="relative bg-violet-500/[0.04] border border-violet-500/15 rounded-2xl mb-4 overflow-hidden">
+			<div class="absolute inset-0 pointer-events-none" style="background: radial-gradient(ellipse at 20% 50%, rgba(139, 92, 246, 0.12), transparent 60%);"></div>
 			<div class="relative flex items-center justify-between p-4 sm:p-5">
 				<div class="flex items-center gap-3">
-					<div class="partner-section-icon">P</div>
+					<div class="w-9 h-9 rounded-[10px] flex items-center justify-center text-white text-base font-extrabold syne shrink-0" style="background: linear-gradient(135deg, #8b5cf6, #a78bfa);">P</div>
 					<div>
 						<span class="syne font-bold text-base text-white">Featured Partners</span>
 						<p class="text-gray-500 text-[10px] font-mono mt-0.5">Verified projects with premium platform benefits</p>
@@ -429,9 +429,9 @@
 					{@const hardCap = BigInt(launch.hard_cap || '0')}
 					{@const progress = progressPercent(raised, hardCap)}
 					{@const deadline = Number(launch.deadline || 0)}
-					<a href="/launchpad/{chainSlug(launch.chain_id)}/{launch.address}" class="partner-launch-card card p-0 block no-underline group">
+					<a href="/launchpad/{chainSlug(launch.chain_id)}/{launch.address}" class="card p-0 block no-underline group overflow-hidden transition-all duration-200 border-violet-500/[0.12] hover:-translate-y-[3px] hover:border-violet-500/30 hover:shadow-[0_12px_40px_rgba(139,92,246,0.12)]">
 						<!-- Partner accent -->
-						<div class="partner-accent"></div>
+						<div class="h-[3px]" style="background: linear-gradient(90deg, #8b5cf6, #a78bfa, #c4b5fd);"></div>
 
 						<div class="p-4 pb-3">
 							<div class="flex items-start gap-3">
@@ -439,7 +439,7 @@
 								<div class="flex-1 min-w-0">
 									<div class="flex items-center gap-1.5 mb-0.5">
 										<span class="syne font-bold text-white text-sm group-hover:text-purple-300 transition truncate">{launch.token_name || 'Unknown'}</span>
-										<span class="partner-verified" title="Verified Partner">✓</span>
+										<span class="inline-flex items-center justify-center w-[15px] h-[15px] rounded-full bg-violet-500 text-white text-[8px] font-bold shrink-0" title="Verified Partner">✓</span>
 										<span class="text-gray-600 text-xs font-mono shrink-0">{launch.token_symbol || '???'}</span>
 									</div>
 									<div class="flex items-center gap-1.5">
@@ -460,9 +460,9 @@
 						<div class="px-4 pb-3">
 							<!-- Partner benefits -->
 							<div class="flex flex-wrap gap-1.5 mb-3">
-								<span class="partner-pill">Featured</span>
-								<span class="partner-pill">Auto DEX</span>
-								<span class="partner-pill">Verified</span>
+								<span class="inline-block py-0.5 px-2 rounded-full text-[9px] font-mono font-semibold text-violet-300 bg-violet-500/[0.08] border border-violet-500/[0.12]">Featured</span>
+								<span class="inline-block py-0.5 px-2 rounded-full text-[9px] font-mono font-semibold text-violet-300 bg-violet-500/[0.08] border border-violet-500/[0.12]">Auto DEX</span>
+								<span class="inline-block py-0.5 px-2 rounded-full text-[9px] font-mono font-semibold text-violet-300 bg-violet-500/[0.08] border border-violet-500/[0.12]">Verified</span>
 							</div>
 
 							<div class="flex justify-between items-baseline mb-1.5">
@@ -481,7 +481,7 @@
 				{/each}
 			</div>
 		{:else}
-			<div class="partner-cta card p-6 text-center">
+			<div class="card p-6 text-center bg-violet-500/[0.03] border-violet-500/[0.12] border-dashed">
 				<div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-purple-500/25 bg-purple-500/10 mb-3">
 					<span class="text-purple-400 text-[10px] font-mono uppercase tracking-widest">Partnership Program</span>
 				</div>
@@ -516,9 +516,9 @@
 					{@const softCap = BigInt(launch.soft_cap || '0')}
 					{@const startTs = Number(launch.start_timestamp || 0)}
 					{@const isPending = launch.state === 0}
-					<a href="/launchpad/{chainSlug(launch.chain_id)}/{launch.address}" class="upcoming-card-full card p-0 block no-underline group">
+					<a href="/launchpad/{chainSlug(launch.chain_id)}/{launch.address}" class="card p-0 block no-underline group overflow-hidden transition-all duration-200 border-amber-500/10 hover:-translate-y-[3px] hover:border-amber-500/25 hover:shadow-[0_12px_40px_rgba(245,158,11,0.1)]">
 						<!-- Countdown banner -->
-						<div class="card-countdown-upcoming">
+						<div class="flex items-center justify-between px-4 py-2 bg-amber-500/[0.06] border-b border-amber-500/10">
 							{#if isPending}
 								<span class="font-mono text-xs font-bold text-gray-400">Awaiting Deposit</span>
 								<span class="badge-amber text-[10px] px-2 py-0.5 rounded-full">Pending</span>
@@ -577,7 +577,7 @@
 				{#each graduatedLaunches as launch}
 					{@const ud = launch.usdt_decimals ?? 18}
 					{@const raised = BigInt(launch.total_base_raised || '0')}
-					<a href="/launchpad/{chainSlug(launch.chain_id)}/{launch.address}" class="graduated-card card p-4 block no-underline group">
+					<a href="/launchpad/{chainSlug(launch.chain_id)}/{launch.address}" class="card p-4 block no-underline group transition-all duration-200 hover:-translate-y-0.5 hover:border-emerald-500/20">
 						<div class="flex items-center gap-3">
 							<TokenLogo logoUrl={launch.logo_url} symbol={launch.token_symbol} address={launch.token_address || launch.address} size={32} />
 							<div class="flex-1 min-w-0">
@@ -598,125 +598,125 @@
 		<p class="text-gray-500 font-mono text-xs mb-6">{$t('home.featuresSub')}</p>
 
 		<!-- Investor Protection -->
-		<div class="feature-cluster">
-			<div class="feature-cluster-header">
-				<span class="feature-cluster-dot emerald"></span>
-				<span class="feature-cluster-label">Investor Protection</span>
+		<div class="mb-5 last:mb-0">
+			<div class="flex items-center gap-2 mb-2.5">
+				<span class="w-2 h-2 rounded-full shrink-0 bg-emerald-500"></span>
+				<span class="font-mono text-[11px] font-bold text-muted uppercase tracking-wider">Investor Protection</span>
 			</div>
-			<div class="features-grid">
-				<div class="feature-card">
+			<div class="grid grid-cols-1 min-[481px]:grid-cols-2 md:grid-cols-3 gap-3">
+				<div class="flex flex-col gap-2 p-[18px] rounded-xl bg-surface border border-line-subtle transition-colors duration-150 hover:border-cyan-400/15">
 					<div class="feature-icon-box emerald">
 						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
 					</div>
-					<h3 class="feature-name">{$t('home.featureTaxCeiling')}</h3>
-					<p class="feature-desc">{$t('home.featureTaxCeilingDesc')}</p>
+					<h3 class="syne text-[13px] font-bold text-heading m-0">{$t('home.featureTaxCeiling')}</h3>
+					<p class="font-mono text-[10px] text-dim leading-relaxed m-0">{$t('home.featureTaxCeilingDesc')}</p>
 				</div>
-				<div class="feature-card">
+				<div class="flex flex-col gap-2 p-[18px] rounded-xl bg-surface border border-line-subtle transition-colors duration-150 hover:border-cyan-400/15">
 					<div class="feature-icon-box emerald">
 						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/><path d="M8 12l3 3 5-5"/></svg>
 					</div>
-					<h3 class="feature-name">{$t('home.featureLpBurn')}</h3>
-					<p class="feature-desc">{$t('home.featureLpBurnDesc')}</p>
+					<h3 class="syne text-[13px] font-bold text-heading m-0">{$t('home.featureLpBurn')}</h3>
+					<p class="font-mono text-[10px] text-dim leading-relaxed m-0">{$t('home.featureLpBurnDesc')}</p>
 				</div>
-				<div class="feature-card">
+				<div class="flex flex-col gap-2 p-[18px] rounded-xl bg-surface border border-line-subtle transition-colors duration-150 hover:border-cyan-400/15">
 					<div class="feature-icon-box emerald">
 						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><line x1="12" y1="22" x2="12" y2="7"/></svg>
 					</div>
-					<h3 class="feature-name">{$t('home.featureRefunds')}</h3>
-					<p class="feature-desc">{$t('home.featureRefundsDesc')}</p>
+					<h3 class="syne text-[13px] font-bold text-heading m-0">{$t('home.featureRefunds')}</h3>
+					<p class="font-mono text-[10px] text-dim leading-relaxed m-0">{$t('home.featureRefundsDesc')}</p>
 				</div>
 			</div>
 		</div>
 
 		<!-- Anti-Abuse -->
-		<div class="feature-cluster">
-			<div class="feature-cluster-header">
-				<span class="feature-cluster-dot amber"></span>
-				<span class="feature-cluster-label">Anti-Abuse</span>
+		<div class="mb-5 last:mb-0">
+			<div class="flex items-center gap-2 mb-2.5">
+				<span class="w-2 h-2 rounded-full shrink-0 bg-amber-500"></span>
+				<span class="font-mono text-[11px] font-bold text-muted uppercase tracking-wider">Anti-Abuse</span>
 			</div>
-			<div class="features-grid">
-				<div class="feature-card">
+			<div class="grid grid-cols-1 min-[481px]:grid-cols-2 md:grid-cols-3 gap-3">
+				<div class="flex flex-col gap-2 p-[18px] rounded-xl bg-surface border border-line-subtle transition-colors duration-150 hover:border-cyan-400/15">
 					<div class="feature-icon-box amber">
 						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
 					</div>
-					<h3 class="feature-name">{$t('home.featureAntiSnipe')}</h3>
-					<p class="feature-desc">{$t('home.featureAntiSnipeDesc')}</p>
+					<h3 class="syne text-[13px] font-bold text-heading m-0">{$t('home.featureAntiSnipe')}</h3>
+					<p class="font-mono text-[10px] text-dim leading-relaxed m-0">{$t('home.featureAntiSnipeDesc')}</p>
 				</div>
-				<div class="feature-card">
+				<div class="flex flex-col gap-2 p-[18px] rounded-xl bg-surface border border-line-subtle transition-colors duration-150 hover:border-cyan-400/15">
 					<div class="feature-icon-box amber">
 						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
 					</div>
-					<h3 class="feature-name">{$t('home.featureAntiWhale')}</h3>
-					<p class="feature-desc">{$t('home.featureAntiWhaleDesc')}</p>
+					<h3 class="syne text-[13px] font-bold text-heading m-0">{$t('home.featureAntiWhale')}</h3>
+					<p class="font-mono text-[10px] text-dim leading-relaxed m-0">{$t('home.featureAntiWhaleDesc')}</p>
 				</div>
-				<div class="feature-card">
+				<div class="flex flex-col gap-2 p-[18px] rounded-xl bg-surface border border-line-subtle transition-colors duration-150 hover:border-cyan-400/15">
 					<div class="feature-icon-box amber">
 						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
 					</div>
-					<h3 class="feature-name">{$t('home.featureRelaxOnly')}</h3>
-					<p class="feature-desc">{$t('home.featureRelaxOnlyDesc')}</p>
+					<h3 class="syne text-[13px] font-bold text-heading m-0">{$t('home.featureRelaxOnly')}</h3>
+					<p class="font-mono text-[10px] text-dim leading-relaxed m-0">{$t('home.featureRelaxOnlyDesc')}</p>
 				</div>
 			</div>
 		</div>
 
 		<!-- Liquidity & Creator Controls -->
-		<div class="feature-cluster">
-			<div class="feature-cluster-header">
-				<span class="feature-cluster-dot cyan"></span>
-				<span class="feature-cluster-label">Liquidity & Creator Controls</span>
+		<div class="mb-5 last:mb-0">
+			<div class="flex items-center gap-2 mb-2.5">
+				<span class="w-2 h-2 rounded-full shrink-0 bg-cyan-400"></span>
+				<span class="font-mono text-[11px] font-bold text-muted uppercase tracking-wider">Liquidity & Creator Controls</span>
 			</div>
-			<div class="features-grid">
-				<div class="feature-card">
+			<div class="grid grid-cols-1 min-[481px]:grid-cols-2 md:grid-cols-3 gap-3">
+				<div class="flex flex-col gap-2 p-[18px] rounded-xl bg-surface border border-line-subtle transition-colors duration-150 hover:border-cyan-400/15">
 					<div class="feature-icon-box cyan">
 						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
 					</div>
-					<h3 class="feature-name">{$t('home.featureVesting')}</h3>
-					<p class="feature-desc">{$t('home.featureVestingDesc')}</p>
+					<h3 class="syne text-[13px] font-bold text-heading m-0">{$t('home.featureVesting')}</h3>
+					<p class="font-mono text-[10px] text-dim leading-relaxed m-0">{$t('home.featureVestingDesc')}</p>
 				</div>
-				<div class="feature-card">
+				<div class="flex flex-col gap-2 p-[18px] rounded-xl bg-surface border border-line-subtle transition-colors duration-150 hover:border-cyan-400/15">
 					<div class="feature-icon-box cyan">
 						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
 					</div>
-					<h3 class="feature-name">{$t('home.featurePayAny')}</h3>
-					<p class="feature-desc">{$t('home.featurePayAnyDesc')}</p>
+					<h3 class="syne text-[13px] font-bold text-heading m-0">{$t('home.featurePayAny')}</h3>
+					<p class="font-mono text-[10px] text-dim leading-relaxed m-0">{$t('home.featurePayAnyDesc')}</p>
 				</div>
-				<div class="feature-card">
+				<div class="flex flex-col gap-2 p-[18px] rounded-xl bg-surface border border-line-subtle transition-colors duration-150 hover:border-cyan-400/15">
 					<div class="feature-icon-box cyan">
 						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
 					</div>
-					<h3 class="feature-name">{$t('home.featureSafuLens')}</h3>
-					<p class="feature-desc">{$t('home.featureSafuLensDesc')}</p>
+					<h3 class="syne text-[13px] font-bold text-heading m-0">{$t('home.featureSafuLens')}</h3>
+					<p class="font-mono text-[10px] text-dim leading-relaxed m-0">{$t('home.featureSafuLensDesc')}</p>
 				</div>
 			</div>
 		</div>
 
 		<!-- Platform Guarantees -->
-		<div class="feature-cluster">
-			<div class="feature-cluster-header">
-				<span class="feature-cluster-dot purple"></span>
-				<span class="feature-cluster-label">Platform Guarantees</span>
+		<div class="mb-5 last:mb-0">
+			<div class="flex items-center gap-2 mb-2.5">
+				<span class="w-2 h-2 rounded-full shrink-0 bg-violet-400"></span>
+				<span class="font-mono text-[11px] font-bold text-muted uppercase tracking-wider">Platform Guarantees</span>
 			</div>
-			<div class="features-grid">
-				<div class="feature-card">
+			<div class="grid grid-cols-1 min-[481px]:grid-cols-2 md:grid-cols-3 gap-3">
+				<div class="flex flex-col gap-2 p-[18px] rounded-xl bg-surface border border-line-subtle transition-colors duration-150 hover:border-cyan-400/15">
 					<div class="feature-icon-box purple">
 						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
 					</div>
-					<h3 class="feature-name">{$t('home.featureEscrow')}</h3>
-					<p class="feature-desc">{$t('home.featureEscrowDesc')}</p>
+					<h3 class="syne text-[13px] font-bold text-heading m-0">{$t('home.featureEscrow')}</h3>
+					<p class="font-mono text-[10px] text-dim leading-relaxed m-0">{$t('home.featureEscrowDesc')}</p>
 				</div>
-				<div class="feature-card">
+				<div class="flex flex-col gap-2 p-[18px] rounded-xl bg-surface border border-line-subtle transition-colors duration-150 hover:border-cyan-400/15">
 					<div class="feature-icon-box purple">
 						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
 					</div>
-					<h3 class="feature-name">{$t('home.featureAffiliate')}</h3>
-					<p class="feature-desc">{$t('home.featureAffiliateDesc')}</p>
+					<h3 class="syne text-[13px] font-bold text-heading m-0">{$t('home.featureAffiliate')}</h3>
+					<p class="font-mono text-[10px] text-dim leading-relaxed m-0">{$t('home.featureAffiliateDesc')}</p>
 				</div>
-				<div class="feature-card">
+				<div class="flex flex-col gap-2 p-[18px] rounded-xl bg-surface border border-line-subtle transition-colors duration-150 hover:border-cyan-400/15">
 					<div class="feature-icon-box purple">
 						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
 					</div>
-					<h3 class="feature-name">{$t('home.featurePlatformRescue')}</h3>
-					<p class="feature-desc">{$t('home.featurePlatformRescueDesc')}</p>
+					<h3 class="syne text-[13px] font-bold text-heading m-0">{$t('home.featurePlatformRescue')}</h3>
+					<p class="font-mono text-[10px] text-dim leading-relaxed m-0">{$t('home.featurePlatformRescueDesc')}</p>
 				</div>
 			</div>
 		</div>
@@ -724,35 +724,35 @@
 
 	<!-- AFFILIATE CTA — dedicated banner for the referral program -->
 	<section class="mb-10">
-		<div class="affiliate-banner card p-6 sm:p-8">
-			<div class="cta-inner">
-				<div class="cta-text">
-					<div class="flex items-center gap-2 mb-2">
-						<span class="affiliate-icon-sm">
+		<div class="card p-6 sm:p-8 bg-emerald-500/[0.03] border-emerald-500/15">
+			<div class="flex items-center justify-between gap-5 flex-wrap max-sm:flex-col max-sm:items-stretch max-sm:text-center">
+				<div class="flex-1 min-w-[240px]">
+					<div class="flex items-center gap-2 mb-2 max-sm:justify-center">
+						<span class="flex items-center justify-center text-emerald-500">
 							<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
 						</span>
 						<span class="syne text-xs font-bold text-emerald-400 uppercase tracking-wider">Affiliate Program</span>
 					</div>
 					<h2 class="syne text-xl sm:text-2xl font-bold text-white mb-2">Earn 25% of all platform fees. For life.</h2>
 					<p class="text-gray-400 font-mono text-sm mb-2">Share your link. Earn on every action your referrals take — no cap, no expiry. Paid in USDT.</p>
-					<div class="affiliate-streams">
-						<span class="affiliate-stream">
-							<span class="affiliate-stream-pct">25%</span>
+					<div class="flex items-center gap-2 flex-wrap mt-2 max-sm:justify-center">
+						<span class="font-mono text-[11px] text-dim">
+							<span class="font-bold text-emerald-500">25%</span>
 							Token Creation Fees
 						</span>
-						<span class="affiliate-stream-sep">·</span>
-						<span class="affiliate-stream">
-							<span class="affiliate-stream-pct">25%</span>
+						<span class="text-dim text-[11px]">·</span>
+						<span class="font-mono text-[11px] text-dim">
+							<span class="font-bold text-emerald-500">25%</span>
 							Launch Buy Fees
 						</span>
-						<span class="affiliate-stream-sep">·</span>
-						<span class="affiliate-stream">
-							<span class="affiliate-stream-pct">25%</span>
+						<span class="text-dim text-[11px]">·</span>
+						<span class="font-mono text-[11px] text-dim">
+							<span class="font-bold text-emerald-500">25%</span>
 							Off-Ramp Fees
 						</span>
 					</div>
 				</div>
-				<div class="cta-actions">
+				<div class="flex gap-2.5 shrink-0 flex-wrap max-sm:justify-center">
 					<a href="/affiliate" class="btn-affiliate text-sm px-6 py-3 no-underline font-bold">
 						Start Earning →
 					</a>
@@ -763,14 +763,14 @@
 
 	<!-- BOTTOM CTA — Specific, with pricing, for users who scrolled through everything -->
 	<section class="mb-10">
-		<div class="cta-banner card p-6 sm:p-8">
-			<div class="cta-inner">
-				<div class="cta-text">
+		<div class="card p-6 sm:p-8 bg-cyan-400/[0.03] border-cyan-400/[0.12]">
+			<div class="flex items-center justify-between gap-5 flex-wrap max-sm:flex-col max-sm:items-stretch max-sm:text-center">
+				<div class="flex-1 min-w-[240px]">
 					<h2 class="syne text-xl sm:text-2xl font-bold text-white mb-2">Your token can be live in 60 seconds</h2>
 					<p class="text-gray-400 font-mono text-sm mb-1">No coding. No MetaMask required. Just connect with Google and launch.</p>
 					<p class="text-gray-600 font-mono text-xs">Token creation from $5 · Tax ceiling locked at launch · LP permanently burned</p>
 				</div>
-				<div class="cta-actions">
+				<div class="flex gap-2.5 shrink-0 flex-wrap max-sm:justify-center">
 					<a href="/create?launch=true" class="btn-primary text-base px-8 py-3.5 no-underline font-bold">
 						Launch with Bonding Curve →
 					</a>
@@ -784,11 +784,6 @@
 </div>
 
 <style>
-	/* Compact hero */
-	.compact-hero {
-		padding: 28px 0 20px;
-	}
-
 	.gradient-text {
 		background: linear-gradient(135deg, #00d2ff, #a78bfa);
 		-webkit-background-clip: text;
@@ -797,310 +792,9 @@
 		white-space: nowrap;
 	}
 
-	/* Stats strip */
-	.stats-strip {
-		display: flex;
-		gap: 16px;
-		margin-top: 16px;
-		flex-wrap: wrap;
-	}
-
-	.stat-chip {
-		display: inline-flex;
-		align-items: center;
-		gap: 6px;
-		font-family: 'Space Mono', monospace;
-		font-size: 12px;
-	}
-
-	.stat-chip-dot {
-		width: 6px;
-		height: 6px;
-		border-radius: 50%;
-		animation: pulse 2s ease-in-out infinite;
-	}
-
-	.stat-chip-value {
-		color: var(--text-heading);
-		font-weight: 700;
-	}
-
-	.stat-chip-label {
-		color: var(--text-muted);
-	}
-
 	@keyframes pulse {
 		0%, 100% { opacity: 1; }
 		50% { opacity: 0.4; }
-	}
-
-	/* Live badge */
-	.live-badge {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-	}
-
-	.live-badge-dot {
-		width: 8px;
-		height: 8px;
-		border-radius: 50%;
-		background: #00d2ff;
-		box-shadow: 0 0 8px rgba(0, 210, 255, 0.6);
-		animation: pulse 2s ease-in-out infinite;
-	}
-
-	/* Trust badges on launch cards */
-	.launch-trust-badge {
-		display: inline-flex;
-		align-items: center;
-		padding: 1px 6px;
-		border-radius: 999px;
-		font-size: 9px;
-		font-weight: 700;
-		font-family: 'Space Mono', monospace;
-		letter-spacing: 0.03em;
-	}
-	.launch-trust-partner {
-		background: rgba(139, 92, 246, 0.12);
-		color: #a78bfa;
-		border: 1px solid rgba(139, 92, 246, 0.2);
-	}
-	.launch-trust-buyers {
-		background: rgba(0, 210, 255, 0.08);
-		color: #67e8f9;
-		border: 1px solid rgba(0, 210, 255, 0.15);
-	}
-
-	/* Launch cards */
-	.launch-card {
-		overflow: hidden;
-		transition: all 0.2s ease;
-	}
-	.launch-card:hover {
-		transform: translateY(-3px);
-		box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
-		border-color: rgba(0, 210, 255, 0.2);
-	}
-
-	/* Badge bar at top of card */
-	.hp-card-badges {
-		display: flex; align-items: center; gap: 4px; padding: 6px 12px;
-		border-bottom: 1px solid var(--border-subtle);
-	}
-
-	.hp-cd-section { padding: 0 16px 10px; }
-
-	/* Progress section on home cards */
-	.hp-progress-section {
-		padding: 14px 16px 16px;
-		border-top: 1px solid var(--border-subtle);
-	}
-	.hp-progress-track {
-		height: 12px !important;
-		border-radius: 6px !important;
-		border: 1px solid var(--border-subtle) !important;
-	}
-
-	.hot-badge, .new-badge {
-		display: inline-flex;
-		align-items: center;
-		gap: 3px;
-		font-size: 10px;
-		font-weight: 700;
-		padding: 2px 8px;
-		border-radius: 999px;
-		font-family: 'Syne', sans-serif;
-		letter-spacing: 0.05em;
-	}
-	.hot-badge {
-		background: rgba(245, 158, 11, 0.15);
-		color: #f59e0b;
-	}
-	.new-badge {
-		background: rgba(0, 210, 255, 0.15);
-		color: #00d2ff;
-	}
-
-	.launch-logo {
-		width: 40px;
-		height: 40px;
-		border-radius: 50%;
-		object-fit: cover;
-		flex-shrink: 0;
-	}
-
-	.launch-logo-sm {
-		width: 32px;
-		height: 32px;
-		border-radius: 50%;
-		object-fit: cover;
-		flex-shrink: 0;
-	}
-
-	.launch-logo-placeholder {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		background: rgba(0, 210, 255, 0.08);
-		color: #00d2ff;
-		font-size: 14px;
-		font-weight: 700;
-		font-family: 'Syne', sans-serif;
-		border: 1px solid rgba(0, 210, 255, 0.15);
-	}
-
-	.launch-logo-graduated {
-		background: rgba(16, 185, 129, 0.08);
-		color: #10b981;
-		border-color: rgba(16, 185, 129, 0.15);
-	}
-
-	.launch-logo-upcoming {
-		background: rgba(245, 158, 11, 0.08);
-		color: #f59e0b;
-		border-color: rgba(245, 158, 11, 0.15);
-	}
-
-	.live-dot {
-		width: 6px;
-		height: 6px;
-		border-radius: 50%;
-		background: #00d2ff;
-		box-shadow: 0 0 6px rgba(0, 210, 255, 0.5);
-		flex-shrink: 0;
-	}
-
-	/* Upcoming cards (full size like active) */
-	.upcoming-card-full {
-		overflow: hidden;
-		transition: all 0.2s ease;
-		border-color: rgba(245, 158, 11, 0.1);
-	}
-	.upcoming-card-full:hover {
-		transform: translateY(-3px);
-		box-shadow: 0 12px 40px rgba(245, 158, 11, 0.1);
-		border-color: rgba(245, 158, 11, 0.25);
-	}
-
-	.card-countdown-upcoming {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		padding: 8px 16px;
-		background: rgba(245, 158, 11, 0.06);
-		border-bottom: 1px solid rgba(245, 158, 11, 0.1);
-	}
-
-	/* Graduated cards */
-	.graduated-card {
-		transition: all 0.2s ease;
-	}
-	.graduated-card:hover {
-		transform: translateY(-2px);
-		border-color: rgba(16, 185, 129, 0.2);
-	}
-
-	/* Empty hero */
-	.empty-hero {
-		background: var(--bg-surface);
-		border-style: dashed;
-	}
-
-	/* Featured Partners */
-	.partner-section-header {
-		position: relative;
-		background: rgba(139, 92, 246, 0.04);
-		border: 1px solid rgba(139, 92, 246, 0.15);
-		border-radius: 14px;
-		margin-bottom: 16px;
-		overflow: hidden;
-	}
-	.partner-section-glow {
-		position: absolute;
-		inset: 0;
-		background: radial-gradient(ellipse at 20% 50%, rgba(139, 92, 246, 0.12), transparent 60%);
-		pointer-events: none;
-	}
-	.partner-section-icon {
-		width: 36px;
-		height: 36px;
-		border-radius: 10px;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		background: linear-gradient(135deg, #8b5cf6, #a78bfa);
-		color: white;
-		font-size: 16px;
-		font-weight: 800;
-		font-family: 'Syne', sans-serif;
-		flex-shrink: 0;
-	}
-
-	/* partner-scroll kept for backward compat but grid is used now */
-
-	.partner-launch-card {
-		overflow: hidden;
-		transition: all 0.2s ease;
-		border-color: rgba(139, 92, 246, 0.12);
-	}
-	.partner-launch-card:hover {
-		transform: translateY(-3px);
-		border-color: rgba(139, 92, 246, 0.3);
-		box-shadow: 0 12px 40px rgba(139, 92, 246, 0.12);
-	}
-
-	.partner-accent {
-		height: 3px;
-		background: linear-gradient(90deg, #8b5cf6, #a78bfa, #c4b5fd);
-	}
-
-	.partner-avatar {
-		width: 38px;
-		height: 38px;
-		border-radius: 50%;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		background: rgba(139, 92, 246, 0.1);
-		color: #a78bfa;
-		font-size: 15px;
-		font-weight: 700;
-		font-family: 'Syne', sans-serif;
-		border: 1px solid rgba(139, 92, 246, 0.2);
-		flex-shrink: 0;
-	}
-
-	.partner-verified {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		width: 15px;
-		height: 15px;
-		border-radius: 50%;
-		background: #8b5cf6;
-		color: white;
-		font-size: 8px;
-		font-weight: 700;
-		flex-shrink: 0;
-	}
-
-	.partner-pill {
-		display: inline-block;
-		padding: 2px 8px;
-		border-radius: 999px;
-		font-size: 9px;
-		font-family: 'Space Mono', monospace;
-		font-weight: 600;
-		color: #c4b5fd;
-		background: rgba(139, 92, 246, 0.08);
-		border: 1px solid rgba(139, 92, 246, 0.12);
-	}
-
-	.partner-cta {
-		background: rgba(139, 92, 246, 0.03);
-		border-color: rgba(139, 92, 246, 0.12);
-		border-style: dashed;
 	}
 
 	.btn-partner {
@@ -1118,162 +812,6 @@
 		box-shadow: 0 6px 28px rgba(139, 92, 246, 0.35);
 	}
 
-	/* ── Trust Bar ── */
-	.trust-bar {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		gap: 16px;
-		flex-wrap: wrap;
-		padding: 14px 20px;
-		background: var(--bg-surface);
-		border: 1px solid var(--border-subtle);
-		border-radius: 12px;
-	}
-	.trust-badge {
-		display: inline-flex;
-		align-items: center;
-		gap: 8px;
-	}
-	.trust-badge-icon {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		color: #10b981;
-	}
-	.trust-badge-icon.fire { color: #f59e0b; }
-	.trust-badge-icon.refund { color: #00d2ff; }
-	.trust-badge-icon.lock { color: #a78bfa; }
-	.trust-badge-text {
-		font-family: 'Space Mono', monospace;
-		font-size: 11px;
-		font-weight: 700;
-		color: var(--text);
-		letter-spacing: 0.02em;
-	}
-	.trust-sep {
-		width: 1px;
-		height: 16px;
-		background: var(--border-subtle);
-		flex-shrink: 0;
-	}
-	@media (max-width: 640px) {
-		.trust-bar { gap: 10px; padding: 12px 14px; }
-		.trust-sep { display: none; }
-		.trust-badge-text { font-size: 10px; }
-	}
-
-	/* ── How It Works ── */
-	.how-it-works {
-		display: flex; align-items: stretch; gap: 0;
-		background: var(--bg-surface);
-		border: 1px solid var(--border);
-		border-radius: 14px; overflow: hidden;
-	}
-	.hiw-step {
-		flex: 1; display: flex; flex-direction: column; align-items: center;
-		gap: 10px; padding: 20px 16px; text-align: center;
-	}
-	.hiw-num {
-		position: relative;
-		width: 52px; height: 52px; border-radius: 50%;
-		display: flex; align-items: center; justify-content: center;
-		flex-shrink: 0;
-	}
-	.hiw-num-cyan { background: rgba(0,210,255,0.1); color: #00d2ff; border: 1px solid rgba(0,210,255,0.25); }
-	.hiw-num-amber { background: rgba(245,158,11,0.1); color: #f59e0b; border: 1px solid rgba(245,158,11,0.25); }
-	.hiw-num-emerald { background: rgba(16,185,129,0.1); color: #10b981; border: 1px solid rgba(16,185,129,0.25); }
-	.hiw-step-num {
-		position: absolute; top: -6px; right: -6px;
-		min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
-		display: inline-flex; align-items: center; justify-content: center;
-		font-family: 'Syne', sans-serif; font-size: 10px; font-weight: 800;
-		background: var(--bg); color: currentColor; border: 1px solid currentColor;
-	}
-	.hiw-body { flex: 1; }
-	.hiw-title { font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700; color: var(--text-heading); margin: 0 0 4px; }
-	.hiw-desc { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text-dim); line-height: 1.6; margin: 0; }
-	.hiw-line {
-		width: 24px; height: 2px; flex-shrink: 0;
-		align-self: center;
-		background: repeating-linear-gradient(90deg, var(--text-dim) 0, var(--text-dim) 4px, transparent 4px, transparent 8px);
-		opacity: 0.4;
-	}
-	@media (max-width: 640px) {
-		.how-it-works { flex-direction: column; }
-		.hiw-line {
-			width: 2px; height: 20px; align-self: center;
-			background: repeating-linear-gradient(180deg, var(--text-dim) 0, var(--text-dim) 4px, transparent 4px, transparent 8px);
-		}
-		.hiw-step { padding: 16px; flex-direction: row; text-align: left; gap: 14px; }
-	}
-
-	/* ── Feature Clusters ── */
-	.feature-cluster { margin-bottom: 20px; }
-	.feature-cluster:last-child { margin-bottom: 0; }
-	.feature-cluster-header {
-		display: flex; align-items: center; gap: 8px;
-		margin-bottom: 10px;
-	}
-	.feature-cluster-dot {
-		width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
-	}
-	.feature-cluster-dot.emerald { background: #10b981; }
-	.feature-cluster-dot.amber { background: #f59e0b; }
-	.feature-cluster-dot.cyan { background: #00d2ff; }
-	.feature-cluster-dot.purple { background: #a78bfa; }
-	.feature-cluster-label {
-		font-family: 'Space Mono', monospace;
-		font-size: 11px; font-weight: 700;
-		color: var(--text-secondary);
-		text-transform: uppercase;
-		letter-spacing: 0.06em;
-	}
-
-	/* ── Feature Cards ── */
-	.features-grid {
-		display: grid; grid-template-columns: repeat(3, 1fr);
-		gap: 12px;
-	}
-	@media (max-width: 768px) {
-		.features-grid { grid-template-columns: repeat(2, 1fr); }
-	}
-	@media (max-width: 480px) {
-		.features-grid { grid-template-columns: 1fr; }
-	}
-	.feature-card {
-		display: flex; flex-direction: column; gap: 8px;
-		padding: 18px; border-radius: 12px;
-		background: var(--bg-surface);
-		border: 1px solid var(--border-subtle);
-		transition: all 0.15s;
-	}
-	.feature-card:hover { border-color: rgba(0,210,255,0.15); }
-	.feature-name { font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700; color: var(--text-heading); margin: 0; }
-	.feature-desc { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text-dim); line-height: 1.6; margin: 0; }
-
-	/* ── Affiliate Banner ── */
-	.affiliate-banner {
-		background: rgba(16, 185, 129, 0.03);
-		border-color: rgba(16, 185, 129, 0.15);
-	}
-	.affiliate-icon-sm {
-		display: flex; align-items: center; justify-content: center;
-		color: #10b981;
-	}
-	.affiliate-streams {
-		display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-		margin-top: 8px;
-	}
-	.affiliate-stream {
-		font-family: 'Space Mono', monospace; font-size: 11px; color: var(--text-dim);
-	}
-	.affiliate-stream-pct {
-		font-weight: 700; color: #10b981;
-	}
-	.affiliate-stream-sep {
-		color: var(--text-dim); font-size: 11px;
-	}
 	.btn-affiliate {
 		background: linear-gradient(135deg, #10b981, #059669);
 		color: white; font-family: 'Syne', sans-serif;
@@ -1283,21 +821,5 @@
 	.btn-affiliate:hover {
 		transform: translateY(-1px);
 		box-shadow: 0 6px 28px rgba(16, 185, 129, 0.35);
-	}
-
-	/* ── CTA Banner ── */
-	.cta-banner {
-		background: rgba(0, 210, 255, 0.03);
-		border-color: rgba(0, 210, 255, 0.12);
-	}
-	.cta-inner {
-		display: flex; align-items: center; justify-content: space-between; gap: 20px;
-		flex-wrap: wrap;
-	}
-	.cta-text { flex: 1; min-width: 240px; }
-	.cta-actions { display: flex; gap: 10px; flex-shrink: 0; flex-wrap: wrap; }
-	@media (max-width: 640px) {
-		.cta-inner { flex-direction: column; align-items: stretch; text-align: center; }
-		.cta-actions { justify-content: center; }
 	}
 </style>

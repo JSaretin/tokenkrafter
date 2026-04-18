@@ -139,43 +139,43 @@
 
 {#if chainsLoading}
 	<div class="flex items-center justify-center py-20">
-		<div class="spinner w-10 h-10 rounded-full border-2 border-white/10 border-t-cyan-400"></div>
+		<div class="spinner w-10 h-10 rounded-full border-2 border-line-input border-t-brand-cyan"></div>
 	</div>
 {:else}
 	<!-- KPI Strip — all data from on-chain getState() -->
-	<div class="kpi-grid mb-6">
-		<div class="kpi-card">
-			<div class="kpi-label">Total Revenue</div>
-			<div class="kpi-value text-emerald-400">${onChainTotalRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-			<div class="kpi-bar bg-emerald-400/20"><div class="kpi-bar-fill bg-emerald-400" style="width: 100%"></div></div>
+	<div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3 mb-6">
+		<div class="bg-surface border border-line rounded-xl p-4 transition-colors hover:border-placeholder min-w-0">
+			<div class="text-xs text-dim font-numeric font-medium uppercase tracking-[0.08em]">Total Revenue</div>
+			<div class="font-numeric text-[28px] font-bold leading-[1.1] mt-1 break-words text-emerald-400">${onChainTotalRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+			<div class="h-[3px] rounded-sm mt-2.5 overflow-hidden bg-emerald-400/20"><div class="h-full rounded-sm transition-[width] duration-500 bg-emerald-400" style="width: 100%"></div></div>
 		</div>
-		<div class="kpi-card">
-			<div class="kpi-label">Creation Fees</div>
-			<div class="kpi-value text-amber-400">${onChainTokenFees.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-			<div class="kpi-bar bg-amber-400/20"><div class="kpi-bar-fill bg-amber-400" style="width: {onChainTotalRevenue > 0 ? (onChainTokenFees / onChainTotalRevenue * 100) : 0}%"></div></div>
+		<div class="bg-surface border border-line rounded-xl p-4 transition-colors hover:border-placeholder min-w-0">
+			<div class="text-xs text-dim font-numeric font-medium uppercase tracking-[0.08em]">Creation Fees</div>
+			<div class="font-numeric text-[28px] font-bold leading-[1.1] mt-1 break-words text-amber-400">${onChainTokenFees.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+			<div class="h-[3px] rounded-sm mt-2.5 overflow-hidden bg-amber-400/20"><div class="h-full rounded-sm transition-[width] duration-500 bg-amber-400" style="width: {onChainTotalRevenue > 0 ? (onChainTokenFees / onChainTotalRevenue * 100) : 0}%"></div></div>
 		</div>
-		<div class="kpi-card">
-			<div class="kpi-label">Tokens Created</div>
-			<div class="kpi-value text-cyan-400">{onChainTokens}</div>
-			<div class="kpi-bar bg-cyan-400/20"><div class="kpi-bar-fill bg-cyan-400" style="width: {Math.min(100, onChainTokens * 2)}%"></div></div>
+		<div class="bg-surface border border-line rounded-xl p-4 transition-colors hover:border-placeholder min-w-0">
+			<div class="text-xs text-dim font-numeric font-medium uppercase tracking-[0.08em]">Tokens Created</div>
+			<div class="font-numeric text-[28px] font-bold leading-[1.1] mt-1 break-words text-cyan-400">{onChainTokens}</div>
+			<div class="h-[3px] rounded-sm mt-2.5 overflow-hidden bg-cyan-400/20"><div class="h-full rounded-sm transition-[width] duration-500 bg-cyan-400" style="width: {Math.min(100, onChainTokens * 2)}%"></div></div>
 		</div>
-		<div class="kpi-card">
-			<div class="kpi-label">Launches</div>
-			<div class="kpi-value text-blue-400">{onChainLaunches}</div>
-			<div class="kpi-bar bg-blue-400/20"><div class="kpi-bar-fill bg-blue-400" style="width: {Math.min(100, onChainLaunches * 5)}%"></div></div>
+		<div class="bg-surface border border-line rounded-xl p-4 transition-colors hover:border-placeholder min-w-0">
+			<div class="text-xs text-dim font-numeric font-medium uppercase tracking-[0.08em]">Launches</div>
+			<div class="font-numeric text-[28px] font-bold leading-[1.1] mt-1 break-words text-blue-400">{onChainLaunches}</div>
+			<div class="h-[3px] rounded-sm mt-2.5 overflow-hidden bg-blue-400/20"><div class="h-full rounded-sm transition-[width] duration-500 bg-blue-400" style="width: {Math.min(100, onChainLaunches * 5)}%"></div></div>
 		</div>
-		<div class="kpi-card">
-			<div class="kpi-label">Launch Fees</div>
-			<div class="kpi-value text-purple-400">${onChainLaunchFees.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-			<div class="kpi-bar bg-purple-400/20"><div class="kpi-bar-fill bg-purple-400" style="width: {onChainTotalRevenue > 0 ? (onChainLaunchFees / onChainTotalRevenue * 100) : 0}%"></div></div>
+		<div class="bg-surface border border-line rounded-xl p-4 transition-colors hover:border-placeholder min-w-0">
+			<div class="text-xs text-dim font-numeric font-medium uppercase tracking-[0.08em]">Launch Fees</div>
+			<div class="font-numeric text-[28px] font-bold leading-[1.1] mt-1 break-words text-purple-400">${onChainLaunchFees.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+			<div class="h-[3px] rounded-sm mt-2.5 overflow-hidden bg-purple-400/20"><div class="h-full rounded-sm transition-[width] duration-500 bg-purple-400" style="width: {onChainTotalRevenue > 0 ? (onChainLaunchFees / onChainTotalRevenue * 100) : 0}%"></div></div>
 		</div>
 	</div>
 
 	<!-- Chain Overview -->
 	{#if allChainData.length > 0}
-		<div class="chart-card mb-4">
-			<div class="chart-header">
-				<h3 class="chart-title">Chain Overview</h3>
+		<div class="bg-surface border border-line rounded-[14px] overflow-hidden relative mb-4">
+			<div class="flex justify-between items-center pt-3.5 px-4">
+				<h3 class="font-numeric text-[15px] font-semibold text-heading tracking-[0.02em]">Chain Overview</h3>
 				<span class="text-[10px] text-gray-600 font-mono">{allChainData.length} active chain{allChainData.length > 1 ? 's' : ''}</span>
 			</div>
 			<div class="p-4">
@@ -220,14 +220,14 @@
 
 	<!-- Charts — all data from on-chain getState() -->
 	<div class="flex items-center justify-between mb-3">
-		<span class="chart-title" style="margin: 0;">Charts</span>
+		<span class="font-numeric text-[15px] font-semibold text-heading tracking-[0.02em]">Charts</span>
 		<ChartTypeToggle />
 	</div>
 	<div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
 		<!-- Revenue Breakdown (bar) -->
-		<div class="chart-card">
-			<div class="chart-header">
-				<h3 class="chart-title">Revenue Breakdown</h3>
+		<div class="bg-surface border border-line rounded-[14px] overflow-hidden relative">
+			<div class="flex justify-between items-center pt-3.5 px-4">
+				<h3 class="font-numeric text-[15px] font-semibold text-heading tracking-[0.02em]">Revenue Breakdown</h3>
 			</div>
 			{#if onChainTotalRevenue > 0}
 				<Chart option={{
@@ -241,14 +241,14 @@
 					legend: { data: ['Creation', 'Launch'], top: 4, right: 12, textStyle: { color: '#64748b', fontSize: 10 } }
 				}} />
 			{:else}
-				<div class="chart-empty">No revenue yet</div>
+				<div class="absolute inset-0 flex items-center justify-center text-dim text-[11px] font-mono">No revenue yet</div>
 			{/if}
 		</div>
 
 		<!-- Token Types (donut) — from on-chain countPerType[8] -->
-		<div class="chart-card">
-			<div class="chart-header">
-				<h3 class="chart-title">Token Types</h3>
+		<div class="bg-surface border border-line rounded-[14px] overflow-hidden relative">
+			<div class="flex justify-between items-center pt-3.5 px-4">
+				<h3 class="font-numeric text-[15px] font-semibold text-heading tracking-[0.02em]">Token Types</h3>
 			</div>
 			{#each [dashTokenTypeDistribution.filter(tp => tp.count > 0)] as pieData}
 				{#if pieData.length > 0}
@@ -265,7 +265,7 @@
 						}]
 					}} />
 				{:else}
-					<div class="chart-empty">No tokens created yet</div>
+					<div class="absolute inset-0 flex items-center justify-center text-dim text-[11px] font-mono">No tokens created yet</div>
 				{/if}
 			{/each}
 		</div>
@@ -274,42 +274,42 @@
 	<!-- Revenue Summary + Per-chain Breakdown -->
 	<div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
 		<!-- Revenue summary card -->
-		<div class="chart-card">
-			<div class="chart-header">
-				<h3 class="chart-title">Revenue Summary</h3>
+		<div class="bg-surface border border-line rounded-[14px] overflow-hidden relative">
+			<div class="flex justify-between items-center pt-3.5 px-4">
+				<h3 class="font-numeric text-[15px] font-semibold text-heading tracking-[0.02em]">Revenue Summary</h3>
 			</div>
 			<div class="p-4">
 				{#each [onChainTotalRevenue || 1] as revTotal}
-				<div class="rev-row">
-					<div class="rev-label">
-						<span class="legend-dot bg-emerald-400"></span>
+				<div class="grid grid-cols-[1fr_auto] gap-2 items-center py-2">
+					<div class="flex items-center gap-2 text-[11px] text-muted font-mono">
+						<span class="inline-block w-[7px] h-[7px] rounded-full mr-1 shrink-0 bg-emerald-400"></span>
 						<span>Creation Fees</span>
 					</div>
-					<span class="rev-amount text-emerald-400">${onChainTokenFees.toFixed(2)}</span>
-					<div class="rev-bar"><div class="rev-bar-fill bg-emerald-400" style="width: {(onChainTokenFees / revTotal) * 100}%"></div></div>
+					<span class="text-xs font-mono font-semibold text-right text-emerald-400">${onChainTokenFees.toFixed(2)}</span>
+					<div class="col-span-2 h-[3px] bg-surface-input rounded-sm overflow-hidden"><div class="h-full rounded-sm transition-[width] duration-500 bg-emerald-400" style="width: {(onChainTokenFees / revTotal) * 100}%"></div></div>
 				</div>
-				<div class="rev-row">
-					<div class="rev-label">
-						<span class="legend-dot bg-cyan-400"></span>
+				<div class="grid grid-cols-[1fr_auto] gap-2 items-center py-2">
+					<div class="flex items-center gap-2 text-[11px] text-muted font-mono">
+						<span class="inline-block w-[7px] h-[7px] rounded-full mr-1 shrink-0 bg-cyan-400"></span>
 						<span>Launch Fees</span>
 					</div>
-					<span class="rev-amount text-cyan-400">${onChainLaunchFees.toFixed(2)}</span>
-					<div class="rev-bar"><div class="rev-bar-fill bg-cyan-400" style="width: {(onChainLaunchFees / revTotal) * 100}%"></div></div>
+					<span class="text-xs font-mono font-semibold text-right text-cyan-400">${onChainLaunchFees.toFixed(2)}</span>
+					<div class="col-span-2 h-[3px] bg-surface-input rounded-sm overflow-hidden"><div class="h-full rounded-sm transition-[width] duration-500 bg-cyan-400" style="width: {(onChainLaunchFees / revTotal) * 100}%"></div></div>
 				</div>
-				<div class="rev-row mt-3 pt-3" style="border-top: 1px solid var(--border);">
-					<div class="rev-label font-bold">
+				<div class="grid grid-cols-[1fr_auto] gap-2 items-center py-2 mt-3 pt-3 border-t border-line">
+					<div class="flex items-center gap-2 text-[11px] text-muted font-mono font-bold">
 						<span>Total</span>
 					</div>
-					<span class="rev-amount text-white font-bold">${onChainTotalRevenue.toFixed(2)}</span>
+					<span class="text-xs font-mono font-semibold text-right text-white font-bold">${onChainTotalRevenue.toFixed(2)}</span>
 				</div>
 				{/each}
 			</div>
 		</div>
 
 		<!-- Recent Tokens -->
-		<div class="chart-card">
-			<div class="chart-header">
-				<h3 class="chart-title">Recent Tokens</h3>
+		<div class="bg-surface border border-line rounded-[14px] overflow-hidden relative">
+			<div class="flex justify-between items-center pt-3.5 px-4">
+				<h3 class="font-numeric text-[15px] font-semibold text-heading tracking-[0.02em]">Recent Tokens</h3>
 				<span class="text-[10px] text-gray-600 font-mono">{recentTokens.length} token{recentTokens.length !== 1 ? 's' : ''}</span>
 			</div>
 			<div class="p-4 max-h-[280px] overflow-y-auto" style="scrollbar-width: thin;">
@@ -317,11 +317,11 @@
 					<p class="text-gray-600 text-xs font-mono text-center py-6">No tokens created yet</p>
 				{:else}
 					{#each recentTokens.slice(0, 10) as token}
-						<a href="/explore/{chainSlug(token.chain_id ?? 56)}/{token.address}" class="activity-row">
+						<a href="/explore/{chainSlug(token.chain_id ?? 56)}/{token.address}" class="flex items-center gap-2.5 py-2 border-b border-line-subtle last:border-b-0 no-underline transition-colors hover:bg-surface">
 							{#if token.logo_url}
-								<img src={token.logo_url} alt="" class="activity-logo" />
+								<img src={token.logo_url} alt="" class="w-7 h-7 rounded-full object-cover shrink-0 border border-line" />
 							{:else}
-								<div class="activity-icon" style="background: {token.is_partner ? 'rgba(167,139,250,0.15)' : token.is_taxable ? 'rgba(239,68,68,0.15)' : 'rgba(0,210,255,0.15)'}">
+								<div class="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold text-white font-display shrink-0" style="background: {token.is_partner ? 'rgba(167,139,250,0.15)' : token.is_taxable ? 'rgba(239,68,68,0.15)' : 'rgba(0,210,255,0.15)'}">
 									{(token.symbol || '?').charAt(0)}
 								</div>
 							{/if}
@@ -345,9 +345,9 @@
 	<!-- Recent Launches (on-chain via AdminLens) -->
 	{#if recentLaunches.length > 0}
 		{@const usdtDec = allChainData[0]?.usdtDecimals || 18}
-		<div class="chart-card mt-4">
-			<div class="chart-header">
-				<h3 class="chart-title">Recent Launches</h3>
+		<div class="bg-surface border border-line rounded-[14px] overflow-hidden relative mt-4">
+			<div class="flex justify-between items-center pt-3.5 px-4">
+				<h3 class="font-numeric text-[15px] font-semibold text-heading tracking-[0.02em]">Recent Launches</h3>
 				<span class="text-[10px] text-gray-600 font-mono">{recentLaunches.length} launch{recentLaunches.length !== 1 ? 'es' : ''}</span>
 			</div>
 			<div class="p-4 max-h-70 overflow-y-auto" style="scrollbar-width: thin;">
@@ -356,8 +356,8 @@
 					{@const sc = parseFloat(ethers.formatUnits(launch.softCap, usdtDec))}
 					{@const hc = parseFloat(ethers.formatUnits(launch.hardCap, usdtDec))}
 					{@const pct = hc > 0 ? Math.min(100, (raised / hc) * 100) : 0}
-					<a href="/launchpad/{chainSlug(launch.chain_id)}/{launch.launch}" class="activity-row">
-						<div class="activity-icon" style="background: {launch.state === 2 ? 'rgba(16,185,129,0.15)' : launch.state === 1 ? 'rgba(0,210,255,0.15)' : 'rgba(245,158,11,0.15)'}">
+					<a href="/launchpad/{chainSlug(launch.chain_id)}/{launch.launch}" class="flex items-center gap-2.5 py-2 border-b border-line-subtle last:border-b-0 no-underline transition-colors hover:bg-surface">
+						<div class="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold text-white font-display shrink-0" style="background: {launch.state === 2 ? 'rgba(16,185,129,0.15)' : launch.state === 1 ? 'rgba(0,210,255,0.15)' : 'rgba(245,158,11,0.15)'}">
 							{(launch.tokenSymbol || '?').charAt(0)}
 						</div>
 						<div class="flex-1 min-w-0">
@@ -368,8 +368,8 @@
 								· HC ${hc.toLocaleString(undefined, { maximumFractionDigits: 0 })}
 								· {launch.totalBuyers} buyer{launch.totalBuyers !== 1 ? 's' : ''}
 							</div>
-							<div class="launch-progress-bar">
-								<div class="launch-progress-fill" style="width: {pct}%; background: {launch.state === 2 ? '#10b981' : '#00d2ff'};"></div>
+							<div class="h-[3px] bg-surface-hover rounded-full overflow-hidden mt-1">
+								<div class="h-full rounded-full transition-[width] duration-300" style="width: {pct}%; background: {launch.state === 2 ? '#10b981' : '#00d2ff'};"></div>
 							</div>
 						</div>
 						<div class="text-right">
@@ -382,180 +382,3 @@
 		</div>
 	{/if}
 {/if}
-
-<style>
-	.kpi-grid {
-		display: grid;
-		grid-template-columns: 1fr 1fr;
-		gap: 12px;
-	}
-	@media (min-width: 768px) {
-		.kpi-grid {
-			grid-template-columns: repeat(3, 1fr);
-		}
-	}
-	@media (min-width: 1280px) {
-		.kpi-grid {
-			grid-template-columns: repeat(5, 1fr);
-		}
-	}
-	.kpi-card {
-		background: var(--bg-surface);
-		border: 1px solid var(--border);
-		border-radius: 12px;
-		padding: 16px;
-		transition: border-color 0.2s;
-		min-width: 0;
-	}
-	.kpi-card:hover { border-color: var(--placeholder); }
-	.kpi-value {
-		font-family: 'Rajdhani', sans-serif;
-		font-size: 28px;
-		font-weight: 700;
-		line-height: 1.1;
-		margin-top: 4px;
-		word-break: break-word;
-	}
-	.kpi-label {
-		font-size: 12px;
-		color: var(--text-dim);
-		font-family: 'Rajdhani', sans-serif;
-		font-weight: 500;
-		text-transform: uppercase;
-		letter-spacing: 0.08em;
-	}
-	.kpi-bar {
-		height: 3px;
-		border-radius: 2px;
-		margin-top: 10px;
-		overflow: hidden;
-	}
-	.kpi-bar-fill {
-		height: 100%;
-		border-radius: 2px;
-		transition: width 0.6s ease;
-	}
-
-	.chart-card {
-		background: var(--bg-surface);
-		border: 1px solid var(--border);
-		border-radius: 14px;
-		overflow: hidden;
-		position: relative;
-	}
-	.chart-header {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		padding: 14px 16px 0;
-	}
-	.chart-title {
-		font-family: 'Rajdhani', sans-serif;
-		font-size: 15px;
-		font-weight: 600;
-		color: var(--text-heading);
-		letter-spacing: 0.02em;
-	}
-	.chart-empty {
-		position: absolute;
-		inset: 0;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		color: var(--text-dim);
-		font-size: 11px;
-		font-family: 'Space Mono', monospace;
-	}
-	.legend-dot {
-		display: inline-block;
-		width: 7px;
-		height: 7px;
-		border-radius: 50%;
-		margin-right: 4px;
-		flex-shrink: 0;
-	}
-
-	.rev-row {
-		display: grid;
-		grid-template-columns: 1fr auto;
-		gap: 8px;
-		align-items: center;
-		padding: 8px 0;
-	}
-	.rev-label {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		font-size: 11px;
-		color: var(--text-muted);
-		font-family: 'Space Mono', monospace;
-	}
-	.rev-amount {
-		font-size: 12px;
-		font-family: 'Space Mono', monospace;
-		font-weight: 600;
-		text-align: right;
-	}
-	.rev-bar {
-		grid-column: 1 / -1;
-		height: 3px;
-		background: var(--bg-surface-input);
-		border-radius: 2px;
-		overflow: hidden;
-	}
-	.rev-bar-fill {
-		height: 100%;
-		border-radius: 2px;
-		transition: width 0.5s ease;
-	}
-
-	.activity-row {
-		display: flex;
-		align-items: center;
-		gap: 10px;
-		padding: 8px 0;
-		border-bottom: 1px solid var(--border-subtle);
-		text-decoration: none;
-		transition: background 0.15s;
-	}
-	.activity-row:last-child { border-bottom: none; }
-	.activity-row:hover { background: var(--bg-surface); }
-	.activity-icon {
-		width: 28px;
-		height: 28px;
-		border-radius: 50%;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		font-size: 11px;
-		font-weight: 700;
-		color: white;
-		font-family: 'Syne', sans-serif;
-		flex-shrink: 0;
-	}
-	.activity-logo {
-		width: 28px;
-		height: 28px;
-		border-radius: 50%;
-		object-fit: cover;
-		flex-shrink: 0;
-		border: 1px solid var(--border);
-	}
-	.launch-progress-bar {
-		height: 3px;
-		background: var(--bg-surface-hover);
-		border-radius: 999px;
-		overflow: hidden;
-		margin-top: 4px;
-	}
-	.launch-progress-fill {
-		height: 100%;
-		border-radius: 999px;
-		transition: width 0.3s;
-	}
-
-	.spinner {
-		animation: spin 0.8s linear infinite;
-	}
-	@keyframes spin { to { transform: rotate(360deg); } }
-</style>

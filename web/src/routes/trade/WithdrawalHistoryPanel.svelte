@@ -141,9 +141,9 @@
 
 <div
 	id="trade-history"
-	class="bg-[var(--bg-surface)] border border-[var(--border)] rounded-[20px] p-4 mt-3"
+	class="bg-(--bg-surface) border border-(--border) rounded-[20px] p-4 mt-3"
 >
-	<h3 class="syne text-md font-bold text-[var(--text-heading)] m-0 mb-2">{$t('trade.withdrawalHistory')}</h3>
+	<h3 class="syne text-[15px] font-bold text-(--text-heading) m-0 mb-2">{$t('trade.withdrawalHistory')}</h3>
 	<HistoryFilterBar bind:filter {counts} />
 	<HistoryList {withdrawals} {filter} {loading} {usdtDecimals} {onselect} />
 </div>

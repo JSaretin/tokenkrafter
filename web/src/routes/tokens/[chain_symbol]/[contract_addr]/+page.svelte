@@ -288,16 +288,16 @@
 			</div>
 		</div>
 	{:else if error}
-		<div class="error-state text-center py-20">
+		<div class="text-center py-20">
 			<div class="text-5xl mb-4">⚠️</div>
-			<h2 class="syne text-2xl font-bold text-white mb-2">
+			<h2 class="font-display text-2xl font-bold text-heading mb-2">
 				{error === 'unsupported_network'
 					? 'Unsupported Network'
 					: error === 'contract_not_found'
 						? 'Contract Not Found'
 						: 'Contract Error'}
 			</h2>
-			<p class="text-gray-400 font-mono text-sm mb-6">
+			<p class="text-muted font-mono text-sm mb-6">
 				{error === 'unsupported_network'
 					? 'This network is not supported. Check the URL.'
 					: error === 'contract_not_found'
@@ -308,18 +308,18 @@
 		</div>
 	{:else if tokenInfo}
 		<!-- Token Header -->
-		<div class="token-header mb-8">
+		<div class="mb-8">
 			<div class="flex items-start justify-between flex-wrap gap-4">
 				<div class="flex items-center gap-4">
-					<div class="token-avatar syne">
+					<div class="font-display w-[60px] h-[60px] rounded-2xl border border-line-input flex items-center justify-center text-xl font-extrabold text-heading flex-shrink-0 bg-[linear-gradient(135deg,rgba(0,210,255,0.2),rgba(99,102,241,0.2))]">
 						{tokenInfo.symbol.slice(0, 2).toUpperCase()}
 					</div>
 					<div>
-						<h1 class="syne text-2xl sm:text-3xl font-bold text-white">{tokenInfo.name}</h1>
+						<h1 class="font-display text-2xl sm:text-3xl font-bold text-heading">{tokenInfo.name}</h1>
 						<div class="flex items-center gap-2 mt-1 flex-wrap">
-							<span class="text-gray-400 font-mono text-sm">{tokenInfo.symbol}</span>
-							<span class="text-gray-600">•</span>
-							<span class="text-gray-400 font-mono text-xs">{network?.name}</span>
+							<span class="text-muted font-mono text-sm">{tokenInfo.symbol}</span>
+							<span class="text-dim">•</span>
+							<span class="text-muted font-mono text-xs">{network?.name}</span>
 							{#if tokenInfo.isMintable}
 								<span class="badge badge-cyan">Mintable</span>
 							{/if}
@@ -336,46 +336,46 @@
 			</div>
 
 			<!-- Contract Address -->
-			<div class="contract-addr-bar mt-4 font-mono">
-				<span class="text-gray-500 text-xs">Contract:</span>
-				<span class="text-cyan-400 text-xs ml-2">{contractAddress}</span>
+			<div class="mt-4 font-mono px-3.5 py-2.5 bg-surface border border-surface-hover rounded-lg overflow-x-auto whitespace-nowrap">
+				<span class="text-dim text-xs">Contract:</span>
+				<span class="text-brand-cyan text-xs ml-2">{contractAddress}</span>
 			</div>
 		</div>
 
 		<!-- Stats Row -->
-		<div class="stats-row mb-8 grid grid-cols-2 sm:grid-cols-4 gap-3">
-			<div class="stat-card card p-4">
-				<div class="stat-label">Total Supply</div>
-				<div class="stat-value syne">{Number(tokenInfo.totalSupply).toLocaleString()}</div>
-				<div class="stat-unit">{tokenInfo.symbol}</div>
+		<div class="mb-8 grid grid-cols-2 sm:grid-cols-4 gap-3">
+			<div class="card p-4">
+				<div class="text-[11px] text-dim font-mono uppercase tracking-[0.05em]">Total Supply</div>
+				<div class="font-display text-xl font-extrabold text-heading mt-1 mb-0.5">{Number(tokenInfo.totalSupply).toLocaleString()}</div>
+				<div class="text-[11px] text-dim font-mono">{tokenInfo.symbol}</div>
 			</div>
-			<div class="stat-card card p-4">
-				<div class="stat-label">Decimals</div>
-				<div class="stat-value syne">{tokenInfo.decimals}</div>
-				<div class="stat-unit">precision</div>
+			<div class="card p-4">
+				<div class="text-[11px] text-dim font-mono uppercase tracking-[0.05em]">Decimals</div>
+				<div class="font-display text-xl font-extrabold text-heading mt-1 mb-0.5">{tokenInfo.decimals}</div>
+				<div class="text-[11px] text-dim font-mono">precision</div>
 			</div>
 			{#if tokenInfo.userBalance !== undefined}
-				<div class="stat-card card p-4">
-					<div class="stat-label">Your Balance</div>
-					<div class="stat-value syne">{Number(tokenInfo.userBalance).toLocaleString()}</div>
-					<div class="stat-unit">{tokenInfo.symbol}</div>
+				<div class="card p-4">
+					<div class="text-[11px] text-dim font-mono uppercase tracking-[0.05em]">Your Balance</div>
+					<div class="font-display text-xl font-extrabold text-heading mt-1 mb-0.5">{Number(tokenInfo.userBalance).toLocaleString()}</div>
+					<div class="text-[11px] text-dim font-mono">{tokenInfo.symbol}</div>
 				</div>
 			{/if}
 			{#if tokenInfo.isTaxable && tokenInfo.buyTax !== undefined}
-				<div class="stat-card card p-4">
-					<div class="stat-label">Buy/Sell Tax</div>
-					<div class="stat-value syne">{tokenInfo.buyTax}% / {tokenInfo.sellTax}%</div>
-					<div class="stat-unit">current rates</div>
+				<div class="card p-4">
+					<div class="text-[11px] text-dim font-mono uppercase tracking-[0.05em]">Buy/Sell Tax</div>
+					<div class="font-display text-xl font-extrabold text-heading mt-1 mb-0.5">{tokenInfo.buyTax}% / {tokenInfo.sellTax}%</div>
+					<div class="text-[11px] text-dim font-mono">current rates</div>
 				</div>
 			{/if}
 		</div>
 
 		<!-- Tabs -->
-		<div class="tabs-bar mb-6 flex gap-1 overflow-x-auto pb-1">
+		<div class="mb-6 flex gap-1 overflow-x-auto pb-1 border-b border-surface-hover">
 			{#each tabs.filter(isTabVisible) as tab}
 				<button
 					onclick={() => (activeTab = tab.id as typeof activeTab)}
-					class="tab-btn font-mono {activeTab === tab.id ? 'active' : ''} cursor-pointer"
+					class={'font-mono cursor-pointer flex items-center gap-1.5 px-4 py-2 rounded-t-lg text-[13px] bg-transparent border-0 border-b-2 whitespace-nowrap -mb-px transition-all duration-[150ms] ' + (activeTab === tab.id ? 'text-brand-cyan border-brand-cyan bg-brand-cyan/5' : 'text-dim border-transparent hover:text-foreground')}
 				>
 					<span>{tab.icon}</span>
 					<span>{tab.label}</span>
@@ -384,13 +384,13 @@
 		</div>
 
 		<!-- Tab Content -->
-		<div class="tab-content">
+		<div>
 
 			<!-- OVERVIEW TAB -->
 			{#if activeTab === 'overview'}
-				<div class="panel">
-					<h3 class="syne text-lg font-bold text-white mb-4">Token Information</h3>
-					<div class="info-table">
+				<div class="bg-surface border border-line rounded-2xl p-6">
+					<h3 class="font-display text-lg font-bold text-heading mb-4">Token Information</h3>
+					<div class="flex flex-col">
 						{#each [
 							['Name', tokenInfo.name],
 							['Symbol', tokenInfo.symbol],
@@ -402,9 +402,9 @@
 							...(tokenInfo.owner ? [['Owner', shortAddr(tokenInfo.owner)]] : []),
 							...(tokenInfo.isTaxable && tokenInfo.taxWallet ? [['Tax Wallet', shortAddr(tokenInfo.taxWallet)]] : [])
 						] as [label, value]}
-							<div class="info-row">
-								<span class="info-key">{label}</span>
-								<span class="info-val font-mono">{value}</span>
+							<div class="flex justify-between items-center py-2.5 gap-3 border-b border-surface-hover last:border-b-0">
+								<span class="text-xs text-dim font-mono flex-shrink-0">{label}</span>
+								<span class="font-mono text-[13px] text-foreground text-right break-all">{value}</span>
 							</div>
 						{/each}
 					</div>
@@ -413,36 +413,36 @@
 
 			<!-- MINT TAB -->
 			{#if activeTab === 'mint'}
-				<div class="panel">
-					<div class="panel-header">
+				<div class="bg-surface border border-line rounded-2xl p-6">
+					<div class="flex justify-between items-start mb-5 gap-3 flex-wrap">
 						<div>
-							<h3 class="syne text-lg font-bold text-white">Mint Tokens</h3>
-							<p class="text-sm text-gray-500 font-mono mt-1">Create new tokens and send to an address.</p>
+							<h3 class="font-display text-lg font-bold text-heading">Mint Tokens</h3>
+							<p class="text-sm text-dim font-mono mt-1">Create new tokens and send to an address.</p>
 						</div>
 						<span class="badge badge-cyan">Owner Only</span>
 					</div>
 
 					{#if !isOwner}
-						<div class="owner-warning">
+						<div class="flex items-center gap-2 px-3.5 py-2.5 bg-amber-500/6 border border-amber-500/15 rounded-lg mb-1">
 							<span class="text-amber-400">⚠️</span>
 							<span class="text-amber-300 text-sm font-mono">Only the token owner can mint tokens.</span>
 						</div>
 					{/if}
 
-					<div class="form-fields">
+					<div class="flex flex-col gap-4">
 						<div class="field-group">
 							<label class="label-text" for="mint-amount">Amount to Mint</label>
-							<div class="input-with-badge">
+							<div class="relative">
 								<input
 									id="mint-amount"
-									class="input-field"
+									class="input-field pr-[72px]"
 									type="number"
 									min="0"
 									bind:value={mintAmount}
 									placeholder="1000000"
 									disabled={!isOwner}
 								/>
-								<span class="input-badge">{tokenInfo.symbol}</span>
+								<span class="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-mono text-dim bg-surface-hover px-2 py-0.5 rounded">{tokenInfo.symbol}</span>
 							</div>
 						</div>
 						<div class="field-group">
@@ -457,14 +457,14 @@
 							{#if userAddress}
 								<button
 									onclick={() => (mintTo = userAddress!)}
-									class="field-hint-btn font-mono cursor-pointer"
+									class="font-mono cursor-pointer text-[11px] text-brand-cyan bg-transparent border-0 p-0 underline opacity-70 hover:opacity-100 transition-opacity self-start"
 								>Use my wallet</button>
 							{/if}
 						</div>
 						<button
 							onclick={doMint}
 							disabled={!isOwner || actionLoading || !mintAmount}
-							class="action-btn mint-btn syne cursor-pointer"
+							class="font-display cursor-pointer w-full py-3.5 font-bold text-sm rounded-xl border-0 transition-all duration-200 mt-1 text-white bg-[linear-gradient(135deg,#00d2ff,#3a7bd5)] hover:-translate-y-px hover:shadow-[0_8px_28px_rgba(0,210,255,0.3)] disabled:opacity-40 disabled:cursor-not-allowed disabled:translate-y-0 disabled:shadow-none"
 						>
 							{actionLoading ? 'Minting...' : '🔨 Mint Tokens'}
 						</button>
@@ -474,35 +474,35 @@
 
 			<!-- BURN TAB -->
 			{#if activeTab === 'burn'}
-				<div class="panel">
-					<div class="panel-header">
+				<div class="bg-surface border border-line rounded-2xl p-6">
+					<div class="flex justify-between items-start mb-5 gap-3 flex-wrap">
 						<div>
-							<h3 class="syne text-lg font-bold text-white">Burn Tokens</h3>
-							<p class="text-sm text-gray-500 font-mono mt-1">Permanently destroy tokens from your wallet.</p>
+							<h3 class="font-display text-lg font-bold text-heading">Burn Tokens</h3>
+							<p class="text-sm text-dim font-mono mt-1">Permanently destroy tokens from your wallet.</p>
 						</div>
 						<span class="badge badge-amber">Irreversible</span>
 					</div>
 
-					<div class="form-fields">
+					<div class="flex flex-col gap-4">
 						<div class="field-group">
 							<label class="label-text" for="burn-amount">Amount to Burn</label>
-							<div class="input-with-badge">
+							<div class="relative">
 								<input
 									id="burn-amount"
-									class="input-field"
+									class="input-field pr-[72px]"
 									type="number"
 									min="0"
 									bind:value={burnAmount}
 									placeholder="0"
 								/>
-								<span class="input-badge">{tokenInfo.symbol}</span>
+								<span class="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-mono text-dim bg-surface-hover px-2 py-0.5 rounded">{tokenInfo.symbol}</span>
 							</div>
 							{#if tokenInfo.userBalance}
-								<span class="field-hint font-mono">Balance: {Number(tokenInfo.userBalance).toLocaleString()} {tokenInfo.symbol}</span>
+								<span class="text-[11px] text-dim font-mono">Balance: {Number(tokenInfo.userBalance).toLocaleString()} {tokenInfo.symbol}</span>
 							{/if}
 						</div>
 
-						<div class="burn-warning">
+						<div class="flex items-start gap-2 px-3.5 py-2.5 bg-red-500/5 border border-red-500/15 rounded-lg">
 							<span class="text-red-400">🔥</span>
 							<span class="text-red-300 text-sm font-mono">Burned tokens are permanently removed from supply. This cannot be undone.</span>
 						</div>
@@ -510,7 +510,7 @@
 						<button
 							onclick={doBurn}
 							disabled={actionLoading || !burnAmount}
-							class="action-btn burn-btn syne cursor-pointer"
+							class="font-display cursor-pointer w-full py-3.5 font-bold text-sm rounded-xl border-0 transition-all duration-200 mt-1 text-white bg-[linear-gradient(135deg,#ef4444,#b91c1c)] hover:-translate-y-px hover:shadow-[0_8px_28px_rgba(239,68,68,0.3)] disabled:opacity-40 disabled:cursor-not-allowed disabled:translate-y-0 disabled:shadow-none"
 						>
 							{actionLoading ? 'Burning...' : '🔥 Burn Tokens'}
 						</button>
@@ -520,30 +520,30 @@
 
 			<!-- TAX TAB -->
 			{#if activeTab === 'tax'}
-				<div class="panel">
-					<div class="panel-header">
+				<div class="bg-surface border border-line rounded-2xl p-6">
+					<div class="flex justify-between items-start mb-5 gap-3 flex-wrap">
 						<div>
-							<h3 class="syne text-lg font-bold text-white">Tax Settings</h3>
-							<p class="text-sm text-gray-500 font-mono mt-1">Configure buy/sell tax rates and recipient wallet.</p>
+							<h3 class="font-display text-lg font-bold text-heading">Tax Settings</h3>
+							<p class="text-sm text-dim font-mono mt-1">Configure buy/sell tax rates and recipient wallet.</p>
 						</div>
 						<span class="badge badge-cyan">Owner Only</span>
 					</div>
 
 					{#if !isOwner}
-						<div class="owner-warning">
+						<div class="flex items-center gap-2 px-3.5 py-2.5 bg-amber-500/6 border border-amber-500/15 rounded-lg mb-1">
 							<span class="text-amber-400">⚠️</span>
 							<span class="text-amber-300 text-sm font-mono">Only the token owner can modify tax settings.</span>
 						</div>
 					{/if}
 
-					<div class="form-fields">
+					<div class="flex flex-col gap-4">
 						<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 							<div class="field-group">
 								<label class="label-text" for="buy-tax">Buy Tax (%)</label>
-								<div class="input-with-badge">
+								<div class="relative">
 									<input
 										id="buy-tax"
-										class="input-field"
+										class="input-field pr-[72px]"
 										type="number"
 										min="0"
 										max="100"
@@ -551,18 +551,18 @@
 										placeholder="0"
 										disabled={!isOwner}
 									/>
-									<span class="input-badge">%</span>
+									<span class="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-mono text-dim bg-surface-hover px-2 py-0.5 rounded">%</span>
 								</div>
 								{#if tokenInfo.buyTax !== undefined}
-									<span class="field-hint font-mono">Current: {tokenInfo.buyTax}%</span>
+									<span class="text-[11px] text-dim font-mono">Current: {tokenInfo.buyTax}%</span>
 								{/if}
 							</div>
 							<div class="field-group">
 								<label class="label-text" for="sell-tax">Sell Tax (%)</label>
-								<div class="input-with-badge">
+								<div class="relative">
 									<input
 										id="sell-tax"
-										class="input-field"
+										class="input-field pr-[72px]"
 										type="number"
 										min="0"
 										max="100"
@@ -570,10 +570,10 @@
 										placeholder="0"
 										disabled={!isOwner}
 									/>
-									<span class="input-badge">%</span>
+									<span class="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-mono text-dim bg-surface-hover px-2 py-0.5 rounded">%</span>
 								</div>
 								{#if tokenInfo.sellTax !== undefined}
-									<span class="field-hint font-mono">Current: {tokenInfo.sellTax}%</span>
+									<span class="text-[11px] text-dim font-mono">Current: {tokenInfo.sellTax}%</span>
 								{/if}
 							</div>
 						</div>
@@ -588,19 +588,19 @@
 								disabled={!isOwner}
 							/>
 							{#if tokenInfo.taxWallet}
-								<span class="field-hint font-mono">Current: {shortAddr(tokenInfo.taxWallet)}</span>
+								<span class="text-[11px] text-dim font-mono">Current: {shortAddr(tokenInfo.taxWallet)}</span>
 							{/if}
 							{#if userAddress}
 								<button
 									onclick={() => (taxWalletInput = userAddress!)}
-									class="field-hint-btn font-mono cursor-pointer"
+									class="font-mono cursor-pointer text-[11px] text-brand-cyan bg-transparent border-0 p-0 underline opacity-70 hover:opacity-100 transition-opacity self-start"
 								>Use my wallet</button>
 							{/if}
 						</div>
 
-						<div class="tax-info-box">
-							<div class="text-xs text-gray-400 font-mono leading-relaxed">
-								<strong class="text-white">How tax works:</strong> A percentage of each buy/sell transaction
+						<div class="px-3.5 py-3 bg-surface border border-surface-hover rounded-lg">
+							<div class="text-xs text-muted font-mono leading-relaxed">
+								<strong class="text-foreground">How tax works:</strong> A percentage of each buy/sell transaction
 								is sent to the tax wallet. Set to 0 to disable. Maximum recommended: 10%.
 							</div>
 						</div>
@@ -608,7 +608,7 @@
 						<button
 							onclick={doSetTax}
 							disabled={!isOwner || actionLoading}
-							class="action-btn tax-btn syne cursor-pointer"
+							class="font-display cursor-pointer w-full py-3.5 font-bold text-sm rounded-xl border-0 transition-all duration-200 mt-1 text-white bg-[linear-gradient(135deg,#f59e0b,#d97706)] hover:-translate-y-px hover:shadow-[0_8px_28px_rgba(245,158,11,0.3)] disabled:opacity-40 disabled:cursor-not-allowed disabled:translate-y-0 disabled:shadow-none"
 						>
 							{actionLoading ? 'Saving...' : '💸 Update Tax Settings'}
 						</button>
@@ -618,18 +618,18 @@
 
 			<!-- LIQUIDITY TAB -->
 			{#if activeTab === 'liquidity'}
-				<div class="panel">
-					<div class="panel-header">
+				<div class="bg-surface border border-line rounded-2xl p-6">
+					<div class="flex justify-between items-start mb-5 gap-3 flex-wrap">
 						<div>
-							<h3 class="syne text-lg font-bold text-white">Add Liquidity</h3>
-							<p class="text-sm text-gray-500 font-mono mt-1">
+							<h3 class="font-display text-lg font-bold text-heading">Add Liquidity</h3>
+							<p class="text-sm text-dim font-mono mt-1">
 								Add your token + {network?.symbol ?? 'ETH'} to a DEX liquidity pool.
 							</p>
 						</div>
 						<span class="badge badge-purple">DEX</span>
 					</div>
 
-					<div class="form-fields">
+					<div class="flex flex-col gap-4">
 						<!-- Router Selection -->
 						<div class="field-group">
 							<label class="label-text" for="dex-router">DEX Router</label>
@@ -643,45 +643,45 @@
 						<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 							<div class="field-group">
 								<label class="label-text" for="liq-token">Token Amount</label>
-								<div class="input-with-badge">
+								<div class="relative">
 									<input
 										id="liq-token"
-										class="input-field"
+										class="input-field pr-[72px]"
 										type="number"
 										min="0"
 										bind:value={liqTokenAmount}
 										placeholder="100000"
 									/>
-									<span class="input-badge">{tokenInfo.symbol}</span>
+									<span class="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-mono text-dim bg-surface-hover px-2 py-0.5 rounded">{tokenInfo.symbol}</span>
 								</div>
 							</div>
 							<div class="field-group">
 								<label class="label-text" for="liq-eth">{network?.symbol ?? 'ETH'} Amount</label>
-								<div class="input-with-badge">
+								<div class="relative">
 									<input
 										id="liq-eth"
-										class="input-field"
+										class="input-field pr-[72px]"
 										type="number"
 										min="0"
 										bind:value={liqEthAmount}
 										placeholder="0.5"
 									/>
-									<span class="input-badge">{network?.symbol ?? 'ETH'}</span>
+									<span class="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-mono text-dim bg-surface-hover px-2 py-0.5 rounded">{network?.symbol ?? 'ETH'}</span>
 								</div>
 							</div>
 						</div>
 
-						<div class="liq-info-box">
-							<div class="liq-info-row">
-								<span class="text-gray-500 font-mono text-xs">Slippage Tolerance</span>
+						<div class="p-3.5 bg-violet-500/5 border border-violet-500/15 rounded-[10px] flex flex-col gap-2">
+							<div class="flex justify-between items-center">
+								<span class="text-dim font-mono text-xs">Slippage Tolerance</span>
 								<span class="text-cyan-300 font-mono text-xs">5%</span>
 							</div>
-							<div class="liq-info-row">
-								<span class="text-gray-500 font-mono text-xs">Transaction Deadline</span>
+							<div class="flex justify-between items-center">
+								<span class="text-dim font-mono text-xs">Transaction Deadline</span>
 								<span class="text-cyan-300 font-mono text-xs">20 minutes</span>
 							</div>
-							<div class="liq-info-row">
-								<span class="text-gray-500 font-mono text-xs">LP Tokens go to</span>
+							<div class="flex justify-between items-center">
+								<span class="text-dim font-mono text-xs">LP Tokens go to</span>
 								<span class="text-cyan-300 font-mono text-xs">{userAddress ? shortAddr(userAddress) : 'Your wallet'}</span>
 							</div>
 						</div>
@@ -689,7 +689,7 @@
 						<button
 							onclick={doAddLiquidity}
 							disabled={actionLoading || !liqTokenAmount || !liqEthAmount}
-							class="action-btn liq-btn syne cursor-pointer"
+							class="font-display cursor-pointer w-full py-3.5 font-bold text-sm rounded-xl border-0 transition-all duration-200 mt-1 text-white bg-[linear-gradient(135deg,#8b5cf6,#6d28d9)] hover:-translate-y-px hover:shadow-[0_8px_28px_rgba(139,92,246,0.3)] disabled:opacity-40 disabled:cursor-not-allowed disabled:translate-y-0 disabled:shadow-none"
 						>
 							{actionLoading ? 'Adding Liquidity...' : '💧 Add Liquidity to DEX'}
 						</button>
@@ -700,238 +700,3 @@
 	{/if}
 </div>
 
-<style>
-	.spinner { animation: spin 0.8s linear infinite; }
-	@keyframes spin { to { transform: rotate(360deg); } }
-
-	.syne { font-family: 'Syne', sans-serif; }
-
-	.token-avatar {
-		width: 60px; height: 60px;
-		border-radius: 16px;
-		background: linear-gradient(135deg, rgba(0,210,255,0.2), rgba(99,102,241,0.2));
-		border: 1px solid var(--border-input);
-		display: flex; align-items: center; justify-content: center;
-		font-size: 20px; font-weight: 800; color: var(--text-heading);
-		flex-shrink: 0;
-	}
-
-	.contract-addr-bar {
-		padding: 10px 14px;
-		background: var(--bg-surface);
-		border: 1px solid var(--bg-surface-hover);
-		border-radius: 8px;
-		overflow-x: auto;
-		white-space: nowrap;
-	}
-
-	.stat-card {
-		background: var(--bg-surface);
-		border: 1px solid var(--border);
-		border-radius: 12px;
-	}
-	.stat-label { font-size: 11px; color: var(--text-dim); font-family: 'Space Mono', monospace; text-transform: uppercase; letter-spacing: 0.05em; }
-	.stat-value { font-size: 20px; font-weight: 800; color: var(--text-heading); margin: 4px 0 2px; }
-	.stat-unit { font-size: 11px; color: var(--text-dim); font-family: 'Space Mono', monospace; }
-
-	.tabs-bar {
-		border-bottom: 1px solid var(--bg-surface-hover);
-		padding-bottom: 0;
-	}
-
-	.tab-btn {
-		display: flex; align-items: center; gap: 6px;
-		padding: 8px 16px;
-		border-radius: 8px 8px 0 0;
-		font-size: 13px;
-		color: var(--text-dim);
-		background: transparent;
-		border: none;
-		border-bottom: 2px solid transparent;
-		transition: all 0.15s;
-		white-space: nowrap;
-		margin-bottom: -1px;
-	}
-	.tab-btn:hover { color: var(--text); }
-	.tab-btn.active {
-		color: #00d2ff;
-		border-bottom-color: #00d2ff;
-		background: rgba(0,210,255,0.05);
-	}
-
-	.panel {
-		background: var(--bg-surface);
-		border: 1px solid var(--border);
-		border-radius: 16px;
-		padding: 24px;
-	}
-
-	.panel-header {
-		display: flex;
-		justify-content: space-between;
-		align-items: flex-start;
-		margin-bottom: 20px;
-		gap: 12px;
-		flex-wrap: wrap;
-	}
-
-	.form-fields { display: flex; flex-direction: column; gap: 16px; }
-
-	.field-group { display: flex; flex-direction: column; gap: 6px; }
-
-	.input-with-badge { position: relative; }
-	.input-with-badge .input-field { padding-right: 72px; }
-	.input-badge {
-		position: absolute;
-		right: 12px;
-		top: 50%;
-		transform: translateY(-50%);
-		font-size: 11px;
-		font-family: 'Space Mono', monospace;
-		color: var(--text-dim);
-		background: var(--bg-surface-hover);
-		padding: 2px 8px;
-		border-radius: 4px;
-	}
-
-	.field-hint { font-size: 11px; color: var(--text-dim); font-family: 'Space Mono', monospace; }
-	.field-hint-btn {
-		font-size: 11px;
-		color: #00d2ff;
-		background: none;
-		border: none;
-		padding: 0;
-		text-decoration: underline;
-		opacity: 0.7;
-		transition: opacity 0.15s;
-		align-self: flex-start;
-	}
-	.field-hint-btn:hover { opacity: 1; }
-
-	.info-table { display: flex; flex-direction: column; gap: 0; }
-	.info-row {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		padding: 10px 0;
-		border-bottom: 1px solid var(--bg-surface-hover);
-		gap: 12px;
-	}
-	.info-row:last-child { border-bottom: none; }
-	.info-key { font-size: 12px; color: var(--text-dim); font-family: 'Space Mono', monospace; flex-shrink: 0; }
-	.info-val { font-size: 13px; color: var(--text); text-align: right; word-break: break-all; }
-
-	.owner-warning {
-		display: flex; align-items: center;
-		gap: 8px;
-		padding: 10px 14px;
-		background: rgba(245,158,11,0.06);
-		border: 1px solid rgba(245,158,11,0.15);
-		border-radius: 8px;
-		margin-bottom: 4px;
-	}
-
-	.burn-warning {
-		display: flex; align-items: flex-start; gap: 8px;
-		padding: 10px 14px;
-		background: rgba(239,68,68,0.05);
-		border: 1px solid rgba(239,68,68,0.15);
-		border-radius: 8px;
-	}
-
-	.tax-info-box {
-		padding: 12px 14px;
-		background: var(--bg-surface);
-		border: 1px solid var(--bg-surface-hover);
-		border-radius: 8px;
-	}
-
-	.liq-info-box {
-		padding: 14px;
-		background: rgba(139,92,246,0.05);
-		border: 1px solid rgba(139,92,246,0.15);
-		border-radius: 10px;
-		display: flex; flex-direction: column; gap: 8px;
-	}
-	.liq-info-row { display: flex; justify-content: space-between; align-items: center; }
-
-	.action-btn {
-		padding: 14px;
-		width: 100%;
-		font-weight: 700;
-		font-size: 14px;
-		border: none;
-		border-radius: 12px;
-		transition: all 0.2s;
-		margin-top: 4px;
-	}
-	.action-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none !important; }
-
-	.mint-btn {
-		background: linear-gradient(135deg, #00d2ff, #3a7bd5);
-		color: white;
-	}
-	.mint-btn:hover:not(:disabled) {
-		transform: translateY(-1px);
-		box-shadow: 0 8px 28px rgba(0,210,255,0.3);
-	}
-
-	.burn-btn {
-		background: linear-gradient(135deg, #ef4444, #b91c1c);
-		color: white;
-	}
-	.burn-btn:hover:not(:disabled) {
-		transform: translateY(-1px);
-		box-shadow: 0 8px 28px rgba(239,68,68,0.3);
-	}
-
-	.tax-btn {
-		background: linear-gradient(135deg, #f59e0b, #d97706);
-		color: white;
-	}
-	.tax-btn:hover:not(:disabled) {
-		transform: translateY(-1px);
-		box-shadow: 0 8px 28px rgba(245,158,11,0.3);
-	}
-
-	.liq-btn {
-		background: linear-gradient(135deg, #8b5cf6, #6d28d9);
-		color: white;
-	}
-	.liq-btn:hover:not(:disabled) {
-		transform: translateY(-1px);
-		box-shadow: 0 8px 28px rgba(139,92,246,0.3);
-	}
-
-	.badge { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
-	.badge-cyan { background: rgba(0,210,255,0.1); color: #00d2ff; border: 1px solid rgba(0,210,255,0.2); }
-	.badge-amber { background: rgba(245,158,11,0.1); color: #f59e0b; border: 1px solid rgba(245,158,11,0.2); }
-	.badge-emerald { background: rgba(16,185,129,0.1); color: #10b981; border: 1px solid rgba(16,185,129,0.2); }
-	.badge-purple { background: rgba(139,92,246,0.1); color: #8b5cf6; border: 1px solid rgba(139,92,246,0.2); }
-
-	.label-text { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); display: block; margin-bottom: 6px; }
-
-	.no-underline { text-decoration: none; }
-	a.no-underline { text-decoration: none; }
-
-	select option { background: var(--select-bg); }
-
-	.input-field {
-		width: 100%;
-		background: var(--bg-surface-hover);
-		border: 1px solid var(--border-input);
-		border-radius: 10px;
-		padding: 12px 16px;
-		color: var(--text);
-		font-family: 'Space Mono', monospace;
-		font-size: 14px;
-		transition: all 0.2s;
-		outline: none;
-	}
-	.input-field:focus {
-		border-color: rgba(0,210,255,0.5);
-		box-shadow: 0 0 0 3px rgba(0,210,255,0.08);
-	}
-	.input-field:disabled { opacity: 0.4; cursor: not-allowed; }
-	.input-field::placeholder { color: var(--placeholder); }
-</style>

@@ -289,11 +289,11 @@
 	});
 </script>
 
-<div class="basic-info">
+<div class="flex flex-col gap-[1.1rem]">
 	<!-- Network (hidden if only one) -->
 	{#if availableNetworks.length > 1}
-		<div class="field-group">
-			<label class="label" for="bi-network">Network</label>
+		<div class="flex flex-col gap-[0.3rem]">
+			<label class="font-mono text-[0.82rem] text-foreground tracking-[0.02em]" for="bi-network">Network</label>
 			<select id="bi-network" class="input-field" bind:value={chainId} required>
 				<option value={undefined} disabled>Select network</option>
 				{#each availableNetworks as n (n.chain_id)}
@@ -302,31 +302,31 @@
 			</select>
 		</div>
 	{:else if availableNetworks.length === 1}
-		<div class="network-badge">
-			<span class="network-badge-dot"></span>
-			<span class="network-badge-name">{availableNetworks[0].name}</span>
+		<div class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-cyan/4 border border-brand-cyan/10 font-mono text-[11px] text-brand-cyan">
+			<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+			<span class="font-semibold">{availableNetworks[0].name}</span>
 		</div>
 	{/if}
 
 	{#if !useExistingToken}
 		<!-- Existing token toggle for launch mode -->
 	{:else}
-		<div class="field-group">
-			<label class="label" for="bi-addr">Token Address</label>
+		<div class="flex flex-col gap-[0.3rem]">
+			<label class="font-mono text-[0.82rem] text-foreground tracking-[0.02em]" for="bi-addr">Token Address</label>
 			<input id="bi-addr" class="input-field" type="text" placeholder="0x..." bind:value={existingTokenAddress} required pattern="^0x[a-fA-F0-9]{'{40}'}$" />
 			{#if loading}
-				<span class="hint accent">Fetching token info...</span>
+				<span class="font-mono text-[0.72rem] text-brand-cyan">Fetching token info...</span>
 			{:else if fetchError}
-				<span class="hint error">{fetchError}</span>
+				<span class="font-mono text-[0.72rem] text-[#ff5e5e]">{fetchError}</span>
 			{:else if name && existingTokenAddress}
-				<span class="hint accent">{name} ({symbol}) &mdash; {Number(totalSupply).toLocaleString('en-US')} supply</span>
+				<span class="font-mono text-[0.72rem] text-brand-cyan">{name} ({symbol}) &mdash; {Number(totalSupply).toLocaleString('en-US')} supply</span>
 			{/if}
 		</div>
 	{/if}
 
 	{#if !useExistingToken}
 		<!-- Load preset from contract -->
-		<button class="preset-trigger" type="button" onclick={() => showPresetLoader = true}>
+		<button class="inline-flex items-center gap-1.5 font-mono text-[0.75rem] text-brand-cyan/70 bg-transparent border border-dashed border-brand-cyan/20 rounded-lg px-3.5 py-2 cursor-pointer transition-all duration-200 hover:border-brand-cyan/40 hover:text-brand-cyan hover:bg-brand-cyan/3" type="button" onclick={() => showPresetLoader = true}>
 			<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg>
 			Load from existing token
 		</button>
@@ -334,21 +334,21 @@
 		{#if showPresetLoader}
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<!-- svelte-ignore a11y_click_events_have_key_events -->
-			<div class="preset-overlay" onclick={(e) => { if (e.target === e.currentTarget) { showPresetLoader = false; presetError = ''; } }}>
-				<div class="preset-modal">
-					<button class="preset-close" type="button" onclick={() => { showPresetLoader = false; presetError = ''; }}>
+			<div class="preset-overlay fixed inset-0 z-[90] bg-black/65 backdrop-blur-[8px] flex items-center justify-center p-4" onclick={(e) => { if (e.target === e.currentTarget) { showPresetLoader = false; presetError = ''; } }}>
+				<div class="preset-modal bg-background border border-brand-cyan/[0.12] rounded-2xl px-6 py-7 w-full max-w-[380px] shadow-[0_0_60px_rgba(0,210,255,0.06),0_24px_48px_rgba(0,0,0,0.5)] text-center relative">
+					<button class="absolute top-3.5 right-3.5 bg-transparent border-0 text-dim cursor-pointer p-1 rounded-md transition-all duration-[150ms] hover:text-white hover:bg-surface-hover" type="button" onclick={() => { showPresetLoader = false; presetError = ''; }} aria-label="Close">
 						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
 					</button>
-					<div class="preset-icon">
+					<div class="w-12 h-12 rounded-xl bg-brand-cyan/8 border border-brand-cyan/15 flex items-center justify-center mx-auto mb-3.5 text-brand-cyan">
 						<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg>
 					</div>
-					<h3 class="syne preset-title">Load from Contract</h3>
-					<p class="preset-desc">Paste a token address to auto-fill name, symbol, supply, and tax settings.</p>
-					<div class="preset-input-wrap">
-						<input class="preset-input" type="text" placeholder="0x..." bind:value={presetAddress} onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); loadPreset(); } }} />
+					<h3 class="font-display text-[1.05rem] font-bold text-white m-0 mb-1.5">Load from Contract</h3>
+					<p class="font-mono text-[0.7rem] text-dim m-0 mb-4 leading-[1.6]">Paste a token address to auto-fill name, symbol, supply, and tax settings.</p>
+					<div class="mb-1.5">
+						<input class="w-full box-border font-mono text-[0.82rem] text-white bg-surface-input border border-line rounded-[10px] px-3.5 py-3 outline-none transition-[border-color] duration-200 focus:border-brand-cyan/40 placeholder:text-placeholder" type="text" placeholder="0x..." bind:value={presetAddress} onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); loadPreset(); } }} />
 					</div>
-					{#if presetError}<span class="preset-error">{presetError}</span>{/if}
-					<button class="btn-primary preset-btn" type="button" disabled={presetLoading} onclick={loadPreset}>
+					{#if presetError}<span class="block font-mono text-[0.72rem] text-[#ff5e5e] mb-1">{presetError}</span>{/if}
+					<button class="flex items-center justify-center gap-2 w-full py-[11px] mt-2 rounded-[10px] border-0 bg-[linear-gradient(135deg,#0891b2,#1d4ed8)] text-white font-display text-[13px] font-bold cursor-pointer transition-all duration-[150ms] hover:-translate-y-px hover:shadow-[0_4px_16px_rgba(8,145,178,0.3)] disabled:opacity-50 disabled:cursor-not-allowed disabled:translate-y-0 disabled:shadow-none" type="button" disabled={presetLoading} onclick={loadPreset}>
 						{#if presetLoading}
 							<span class="spinner-sm"></span> Loading...
 						{:else}
@@ -360,111 +360,111 @@
 		{/if}
 
 		<!-- Logo upload -->
-		<div class="field-group">
-			<input type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" class="hidden-file" bind:this={logoFileInput} onchange={handleLogoUpload} />
+		<div class="flex flex-col gap-[0.3rem]">
+			<input type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" class="hidden" bind:this={logoFileInput} onchange={handleLogoUpload} />
 			{#if tokenLogoUrl}
 				<!-- Logo uploaded — show size previews -->
-				<div class="logo-preview-row">
-					<div class="logo-sizes">
-						<div class="logo-size">
-							<img src={tokenLogoUrl} alt="Logo" class="logo-sz logo-sz-lg" />
-							<span class="logo-sz-label">Profile</span>
+				<div class="flex items-center gap-2.5 px-3.5 py-3 rounded-[10px] bg-surface border border-line">
+					<div class="flex items-end gap-3 flex-1">
+						<div class="flex flex-col items-center gap-[3px]">
+							<img src={tokenLogoUrl} alt="Logo" class="rounded-full object-cover border border-line w-12 h-12" />
+							<span class="text-[8px] text-placeholder font-mono">Profile</span>
 						</div>
-						<div class="logo-size">
-							<img src={tokenLogoUrl} alt="Logo" class="logo-sz logo-sz-md" />
-							<span class="logo-sz-label">Card</span>
+						<div class="flex flex-col items-center gap-[3px]">
+							<img src={tokenLogoUrl} alt="Logo" class="rounded-full object-cover border border-line w-8 h-8" />
+							<span class="text-[8px] text-placeholder font-mono">Card</span>
 						</div>
-						<div class="logo-size">
-							<img src={tokenLogoUrl} alt="Logo" class="logo-sz logo-sz-sm" />
-							<span class="logo-sz-label">List</span>
+						<div class="flex flex-col items-center gap-[3px]">
+							<img src={tokenLogoUrl} alt="Logo" class="rounded-full object-cover border border-line w-5 h-5" />
+							<span class="text-[8px] text-placeholder font-mono">List</span>
 						</div>
 					</div>
-					<button class="logo-change-btn" type="button" onclick={() => logoFileInput?.click()}>
+					<button class="flex items-center gap-1 px-2.5 py-1.5 rounded-md border border-line bg-transparent text-brand-cyan font-mono text-[10px] cursor-pointer transition-all duration-[120ms] flex-shrink-0 hover:bg-brand-cyan/6" type="button" onclick={() => logoFileInput?.click()}>
 						<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
 						Change
 					</button>
-					<button class="logo-remove-btn" type="button" onclick={() => { tokenLogoUrl = ''; delete (window as any).__pendingLogoFile; }}>
+					<button class="w-[26px] h-[26px] rounded-md border-0 bg-red-400/8 text-red-400 cursor-pointer flex items-center justify-center flex-shrink-0 transition-[background] duration-[120ms] hover:bg-red-400/15" type="button" onclick={() => { tokenLogoUrl = ''; delete (window as any).__pendingLogoFile; }} aria-label="Remove logo">
 						<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
 					</button>
 				</div>
 			{:else}
-				<button class="logo-upload-btn" type="button" onclick={() => logoFileInput?.click()}>
-					<div class="logo-upload-placeholder">
+				<button class="flex items-center gap-3 w-full px-3.5 py-3 rounded-[10px] bg-surface border border-dashed border-white/8 text-dim cursor-pointer transition-all duration-[150ms] font-mono text-[0.75rem] hover:border-brand-cyan/20 hover:bg-brand-cyan/2" type="button" onclick={() => logoFileInput?.click()}>
+					<div class="w-10 h-10 rounded-full flex-shrink-0 bg-surface border border-line flex items-center justify-center text-dim">
 						<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
 					</div>
-					<div class="logo-upload-text">
+					<div class="flex flex-col gap-0.5">
 						<span>Upload token logo</span>
-						<span class="logo-upload-sub">Optional — you can add it later</span>
+						<span class="text-[0.6rem] text-dim">Optional — you can add it later</span>
 					</div>
 				</button>
 			{/if}
 		</div>
 
 		<!-- Name + Symbol row -->
-		<div class="name-symbol-row">
-			<div class="field-group" style="flex: 2;">
-				<label class="label" for="bi-name">Token Name</label>
+		<div class="flex gap-3 max-[500px]:flex-col">
+			<div class="flex flex-col gap-[0.3rem] flex-[2]">
+				<label class="font-mono text-[0.82rem] text-foreground tracking-[0.02em]" for="bi-name">Token Name</label>
 				<input id="bi-name" class="input-field" type="text" placeholder="e.g. My Token" bind:value={name} required minlength="1" maxlength="50" />
 			</div>
-			<div class="field-group" style="flex: 1;">
-				<label class="label" for="bi-symbol">Symbol</label>
+			<div class="flex flex-col gap-[0.3rem] flex-1">
+				<label class="font-mono text-[0.82rem] text-foreground tracking-[0.02em]" for="bi-symbol">Symbol</label>
 				<input id="bi-symbol" class="input-field" type="text" placeholder="e.g. MTK" value={symbol} oninput={handleSymbolInput} required minlength="1" maxlength="11" />
 			</div>
 		</div>
 
 		<!-- Total Supply -->
-		<div class="field-group">
-			<label class="label" for="bi-supply">Total Supply</label>
+		<div class="flex flex-col gap-[0.3rem]">
+			<label class="font-mono text-[0.82rem] text-foreground tracking-[0.02em]" for="bi-supply">Total Supply</label>
 			<input id="bi-supply" class="input-field" type="number" placeholder="e.g. 1000000000" bind:value={totalSupply} min="1" required />
-			<div class="supply-quick">
+			<div class="flex gap-1 mt-1">
 				{#each supplyPresets as p}
-					<button type="button" class="supply-pill" class:active={totalSupply === p.value} tabindex="-1" onclick={() => (totalSupply = p.value)}>{p.label}</button>
+					<button type="button" class={'font-mono text-[0.68rem] px-2.5 py-[3px] rounded-full border bg-surface cursor-pointer transition-all duration-[120ms] ' + (totalSupply === p.value ? 'border-brand-cyan/30 text-brand-cyan bg-brand-cyan/6' : 'border-line text-dim hover:border-brand-cyan/20 hover:text-muted')} tabindex="-1" onclick={() => (totalSupply = p.value)}>{p.label}</button>
 				{/each}
 			</div>
 			{#if formattedSupply()}
-				<span class="hint">{formattedSupply()}</span>
+				<span class="font-mono text-[0.72rem] text-muted">{formattedSupply()}</span>
 			{/if}
 		</div>
 
 		<!-- Decimals -->
-		<div class="field-group decimals-row">
-			<label class="label small" for="bi-decimals">Decimals</label>
-			<input id="bi-decimals" class="input-field small-input" type="number" bind:value={decimals} min="0" max="18" />
+		<div class="flex flex-row items-center gap-2">
+			<label class="font-mono text-[0.72rem] text-muted tracking-[0.02em]" for="bi-decimals">Decimals</label>
+			<input id="bi-decimals" class="input-field w-16 text-center" type="number" bind:value={decimals} min="0" max="18" />
 		</div>
 
 		<!-- About (collapsible) — dashed card so users read it as "optional but valuable" -->
-		<p class="meta-inline-hint">Adding a description, logo, and links makes your token show up well on Explore.</p>
-		<div class="meta-card" class:meta-card-open={showMetadata}>
-			<button class="meta-toggle" onclick={() => showMetadata = !showMetadata} type="button" aria-expanded={showMetadata}>
-				<span class="meta-toggle-label">About this token <span class="meta-optional">optional</span></span>
-				<svg class="meta-toggle-chev" class:meta-open={showMetadata} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+		<p class="font-mono text-[0.72rem] leading-[1.4] text-white/45 my-1">Adding a description, logo, and links makes your token show up well on Explore.</p>
+		<div class={'rounded-xl p-3 transition-[border-color,background] duration-[150ms] ' + (showMetadata ? 'bg-brand-cyan/4 border border-solid border-brand-cyan/20' : 'bg-brand-cyan/[0.025] border border-dashed border-brand-cyan/[0.22] hover:border-brand-cyan/35')}>
+			<button class="flex items-center gap-2 w-full py-1 px-0.5 bg-transparent border-0 cursor-pointer font-inherit text-inherit text-left" onclick={() => showMetadata = !showMetadata} type="button" aria-expanded={showMetadata}>
+				<span class="font-display text-[0.82rem] font-semibold text-foreground flex-1 inline-flex items-center gap-2">About this token <span class="font-mono text-[0.6rem] font-normal text-brand-cyan/70 bg-brand-cyan/8 px-[7px] py-0.5 rounded-full uppercase tracking-[0.05em]">optional</span></span>
+				<svg class={'text-placeholder transition-transform duration-[150ms] flex-shrink-0 ' + (showMetadata ? 'rotate-180' : '')} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
 			</button>
 
 			{#if !showMetadata}
-				<div class="meta-chips">
-					<span class="meta-chip">📝 Description</span>
-					<span class="meta-chip">🖼 Logo</span>
-					<span class="meta-chip">🔗 Links</span>
+				<div class="flex flex-wrap gap-1.5 mt-2">
+					<span class="font-mono text-[0.65rem] px-2.5 py-[3px] rounded-full bg-white/3 border border-white/6 text-white/55">📝 Description</span>
+					<span class="font-mono text-[0.65rem] px-2.5 py-[3px] rounded-full bg-white/3 border border-white/6 text-white/55">🖼 Logo</span>
+					<span class="font-mono text-[0.65rem] px-2.5 py-[3px] rounded-full bg-white/3 border border-white/6 text-white/55">🔗 Links</span>
 				</div>
 			{/if}
 
 		{#if showMetadata}
-			<div class="meta-fields">
-				<div class="field-group">
-					<label class="label small" for="bi-desc">Description</label>
-					<textarea id="bi-desc" class="input-field" rows="2" placeholder="What is this token about?" bind:value={tokenDescription} style="resize: vertical;"></textarea>
+			<div class="flex flex-col gap-3 pt-3 mt-2 border-t border-dashed border-white/6">
+				<div class="flex flex-col gap-[0.3rem]">
+					<label class="font-mono text-[0.72rem] text-muted tracking-[0.02em]" for="bi-desc">Description</label>
+					<textarea id="bi-desc" class="input-field resize-y" rows="2" placeholder="What is this token about?" bind:value={tokenDescription}></textarea>
 				</div>
-				<div class="field-group">
-					<label class="label small" for="bi-web">Website</label>
+				<div class="flex flex-col gap-[0.3rem]">
+					<label class="font-mono text-[0.72rem] text-muted tracking-[0.02em]" for="bi-web">Website</label>
 					<input id="bi-web" class="input-field" type="url" placeholder="https://yourtoken.com" bind:value={tokenWebsite} />
 				</div>
-				<div class="meta-row">
-					<div class="field-group">
-						<label class="label small" for="bi-tw">Twitter / X</label>
+				<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+					<div class="flex flex-col gap-[0.3rem]">
+						<label class="font-mono text-[0.72rem] text-muted tracking-[0.02em]" for="bi-tw">Twitter / X</label>
 						<input id="bi-tw" class="input-field" type="text" placeholder="@handle" bind:value={tokenTwitter} />
 					</div>
-					<div class="field-group">
-						<label class="label small" for="bi-tg">Telegram</label>
+					<div class="flex flex-col gap-[0.3rem]">
+						<label class="font-mono text-[0.72rem] text-muted tracking-[0.02em]" for="bi-tg">Telegram</label>
 						<input id="bi-tg" class="input-field" type="text" placeholder="@group" bind:value={tokenTelegram} />
 					</div>
 				</div>
@@ -475,220 +475,9 @@
 </div>
 
 <style>
-	.basic-info { display: flex; flex-direction: column; gap: 1.1rem; }
-
-	/* Preset loader */
-	.preset-trigger {
-		display: inline-flex; align-items: center; gap: 6px;
-		font-family: 'Space Mono', monospace; font-size: 0.75rem; color: rgba(0,210,255,0.7);
-		background: none; border: 1px dashed rgba(0,210,255,0.2); border-radius: 8px;
-		padding: 8px 14px; cursor: pointer; transition: all 0.2s;
-	}
-	.preset-trigger:hover { border-color: rgba(0,210,255,0.4); color: #00d2ff; background: rgba(0,210,255,0.03); }
-
-	.preset-overlay {
-		position: fixed; inset: 0; z-index: 90;
-		background: rgba(0,0,0,0.65); backdrop-filter: blur(8px);
-		display: flex; align-items: center; justify-content: center;
-		padding: 16px; animation: fadeIn 0.15s ease-out;
-	}
+	/* Modal entrance animations — keyframes cannot be utilities */
+	.preset-overlay { animation: fadeIn 0.15s ease-out; }
+	.preset-modal { animation: slideUp 0.2s ease-out; }
 	@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-
-	.preset-modal {
-		background: var(--bg); border: 1px solid rgba(0,210,255,0.12);
-		border-radius: 16px; padding: 28px 24px; width: 100%; max-width: 380px;
-		box-shadow: 0 0 60px rgba(0,210,255,0.06), 0 24px 48px rgba(0,0,0,0.5);
-		text-align: center; position: relative;
-		animation: slideUp 0.2s ease-out;
-	}
 	@keyframes slideUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
-
-	.preset-close {
-		position: absolute; top: 14px; right: 14px;
-		background: none; border: none; color: var(--text-dim); cursor: pointer;
-		padding: 4px; border-radius: 6px; transition: all 0.15s;
-	}
-	.preset-close:hover { color: white; background: var(--bg-surface-hover); }
-
-	.preset-icon {
-		width: 48px; height: 48px; border-radius: 12px;
-		background: rgba(0,210,255,0.08); border: 1px solid rgba(0,210,255,0.15);
-		display: flex; align-items: center; justify-content: center;
-		margin: 0 auto 14px; color: #00d2ff;
-	}
-
-	.preset-title { font-size: 1.05rem; font-weight: 700; color: white; margin: 0 0 6px; }
-	.preset-desc {
-		font-family: 'Space Mono', monospace; font-size: 0.7rem;
-		color: var(--text-dim); margin: 0 0 18px; line-height: 1.6;
-	}
-
-	.preset-input-wrap { margin-bottom: 6px; }
-	.preset-input {
-		width: 100%; box-sizing: border-box;
-		font-family: 'Space Mono', monospace; font-size: 0.82rem; color: white;
-		background: var(--bg-surface-input); border: 1px solid var(--border);
-		border-radius: 10px; padding: 12px 14px; outline: none; transition: border-color 0.2s;
-	}
-	.preset-input::placeholder { color: var(--placeholder); }
-	.preset-input:focus { border-color: rgba(0,210,255,0.4); }
-
-	.preset-error {
-		display: block; font-family: 'Space Mono', monospace;
-		font-size: 0.72rem; color: #ff5e5e; margin-bottom: 4px;
-	}
-
-	.preset-btn {
-		display: flex; align-items: center; justify-content: center; gap: 8px;
-		width: 100%; padding: 11px; margin-top: 8px; border-radius: 10px; border: none;
-		background: linear-gradient(135deg, #0891b2, #1d4ed8); color: white;
-		font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700;
-		cursor: pointer; transition: all 0.15s;
-	}
-	.preset-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(8,145,178,0.3); }
-	.preset-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
-
-	.spinner-sm {
-		width: 14px; height: 14px;
-		border: 2px solid var(--border-input); border-top-color: #00d2ff;
-		border-radius: 50%; animation: spin 0.6s linear infinite;
-	}
-	@keyframes spin { to { transform: rotate(360deg); } }
-	.field-group { display: flex; flex-direction: column; gap: 0.3rem; }
-	.label { font-family: 'Space Mono', monospace; font-size: 0.82rem; color: var(--text); letter-spacing: 0.02em; }
-	.label.small { font-size: 0.72rem; color: var(--text-muted); }
-	.hint { font-family: 'Space Mono', monospace; font-size: 0.72rem; color: var(--text-muted); }
-	.hint.accent { color: #00d2ff; }
-	.hint.error { color: #ff5e5e; }
-	.clone-hint { color: #10b981; }
-	.network-badge {
-		display: inline-flex; align-items: center; gap: 6px;
-		padding: 6px 12px; border-radius: 8px;
-		background: rgba(0,210,255,0.04); border: 1px solid rgba(0,210,255,0.1);
-		font-family: 'Space Mono', monospace; font-size: 11px; color: #00d2ff;
-	}
-	.network-badge-dot { width: 6px; height: 6px; border-radius: 50%; background: #10b981; }
-	.network-badge-name { font-weight: 600; }
-
-	.preset-row { display: flex; gap: 0.4rem; margin-top: 0.25rem; flex-wrap: wrap; }
-	/* duplicate preset-btn removed — defined above */
-
-	.decimals-row { flex-direction: row; align-items: center; gap: 0.5rem; }
-	.small-input { width: 4rem; text-align: center; }
-
-	/* Toggle */
-	.toggle-row {
-		display: flex; align-items: center; gap: 0.6rem;
-		background: none; border: none; cursor: pointer; padding: 0.2rem 0;
-	}
-	.toggle-label { font-family: 'Space Mono', monospace; font-size: 0.78rem; color: var(--text-muted); }
-	.toggle-track {
-		width: 2.2rem; height: 1.2rem; border-radius: 0.6rem;
-		background: var(--toggle-track); position: relative; transition: background 0.2s;
-		flex-shrink: 0; border: 1px solid var(--border);
-	}
-	.toggle-track.active { background: #00d2ff; border-color: rgba(0,210,255,0.5); }
-	.toggle-thumb {
-		position: absolute; top: 1px; left: 1px;
-		width: 0.85rem; height: 0.85rem; border-radius: 50%;
-		background: var(--toggle-thumb-off); transition: transform 0.2s;
-		box-shadow: 0 1px 3px rgba(0,0,0,0.2);
-	}
-	.toggle-track.active .toggle-thumb { transform: translateX(1rem); background: var(--toggle-thumb); }
-
-	/* Metadata */
-	.meta-inline-hint {
-		font-family: 'Space Mono', monospace; font-size: 0.72rem; line-height: 1.4;
-		color: rgba(255,255,255,0.45); margin: 0.25rem 0 0.15rem;
-	}
-	.meta-card {
-		border: 1px dashed rgba(0,210,255,0.22);
-		border-radius: 12px;
-		background: rgba(0,210,255,0.025);
-		padding: 10px 12px;
-		transition: border-color 0.15s, background 0.15s;
-	}
-	.meta-card:hover { border-color: rgba(0,210,255,0.35); }
-	.meta-card-open { background: rgba(0,210,255,0.04); border-style: solid; border-color: rgba(0,210,255,0.2); }
-	.meta-toggle {
-		display: flex; align-items: center; gap: 8px; width: 100%;
-		padding: 4px 2px; background: transparent; border: none;
-		cursor: pointer; font-family: inherit; color: inherit; text-align: left;
-	}
-	.meta-toggle-label { font-family: 'Syne', sans-serif; font-size: 0.82rem; font-weight: 600; color: var(--text); flex: 1; display: inline-flex; align-items: center; gap: 8px; }
-	.meta-optional {
-		font-family: 'Space Mono', monospace; font-size: 0.6rem; font-weight: 400;
-		color: rgba(0,210,255,0.7); background: rgba(0,210,255,0.08);
-		padding: 2px 7px; border-radius: 99px; text-transform: uppercase; letter-spacing: 0.05em;
-	}
-	.meta-toggle-chev { color: var(--placeholder); transition: transform 0.15s; flex-shrink: 0; }
-	.meta-toggle-chev.meta-open { transform: rotate(180deg); }
-	.meta-chips {
-		display: flex; flex-wrap: wrap; gap: 6px;
-		margin-top: 8px;
-	}
-	.meta-chip {
-		font-family: 'Space Mono', monospace; font-size: 0.65rem;
-		padding: 3px 9px; border-radius: 99px;
-		background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
-		color: rgba(255,255,255,0.55);
-	}
-	.meta-fields { display: flex; flex-direction: column; gap: 0.75rem; padding-top: 0.75rem; margin-top: 0.5rem; border-top: 1px dashed rgba(255,255,255,0.06); }
-	.meta-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
-	.name-symbol-row { display: flex; gap: 0.75rem; }
-	@media (max-width: 500px) { .name-symbol-row { flex-direction: column; } }
-	.supply-quick { display: flex; gap: 4px; margin-top: 4px; }
-	.supply-pill {
-		font-family: 'Space Mono', monospace; font-size: 0.68rem;
-		padding: 3px 10px; border-radius: 99px;
-		border: 1px solid var(--border); background: var(--bg-surface);
-		color: var(--text-dim); cursor: pointer; transition: all 0.12s;
-	}
-	.supply-pill:hover { border-color: rgba(0,210,255,0.2); color: var(--text-muted); }
-	.supply-pill.active { border-color: rgba(0,210,255,0.3); color: #00d2ff; background: rgba(0,210,255,0.06); }
-
-	.hidden-file { display: none; }
-	.logo-upload-btn {
-		display: flex; align-items: center; gap: 12px; width: 100%;
-		padding: 12px 14px; border-radius: 10px;
-		background: var(--bg-surface); border: 1px dashed rgba(255,255,255,0.08);
-		color: var(--text-dim); cursor: pointer; transition: all 0.15s;
-		font-family: 'Space Mono', monospace; font-size: 0.75rem;
-	}
-	.logo-upload-btn:hover { border-color: rgba(0,210,255,0.2); background: rgba(0,210,255,0.02); }
-	.logo-preview-row {
-		display: flex; align-items: center; gap: 10px;
-		padding: 12px 14px; border-radius: 10px;
-		background: var(--bg-surface); border: 1px solid var(--border);
-	}
-	.logo-sizes { display: flex; align-items: flex-end; gap: 12px; flex: 1; }
-	.logo-size { display: flex; flex-direction: column; align-items: center; gap: 3px; }
-	.logo-sz { border-radius: 50%; object-fit: cover; border: 1px solid var(--border); }
-	.logo-sz-lg { width: 48px; height: 48px; }
-	.logo-sz-md { width: 32px; height: 32px; }
-	.logo-sz-sm { width: 20px; height: 20px; }
-	.logo-sz-label { font-size: 8px; color: var(--placeholder); font-family: 'Space Mono', monospace; }
-	.logo-change-btn {
-		display: flex; align-items: center; gap: 4px; padding: 5px 10px; border-radius: 6px;
-		border: 1px solid var(--border); background: transparent;
-		color: #00d2ff; font-family: 'Space Mono', monospace; font-size: 10px;
-		cursor: pointer; transition: all 0.12s; flex-shrink: 0;
-	}
-	.logo-change-btn:hover { background: rgba(0,210,255,0.06); }
-	.logo-remove-btn {
-		width: 26px; height: 26px; border-radius: 6px; border: none;
-		background: rgba(248,113,113,0.08); color: #f87171; cursor: pointer;
-		display: flex; align-items: center; justify-content: center;
-		flex-shrink: 0; transition: background 0.12s;
-	}
-	.logo-remove-btn:hover { background: rgba(248,113,113,0.15); }
-	.logo-upload-placeholder {
-		width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0;
-		background: var(--bg-surface); border: 1px solid var(--border);
-		display: flex; align-items: center; justify-content: center; color: var(--text-dim);
-	}
-	.logo-upload-text { display: flex; flex-direction: column; gap: 2px; }
-	.logo-upload-change { color: #00d2ff; font-size: 0.72rem; }
-	.logo-upload-sub { font-size: 0.6rem; color: var(--text-dim); }
-	@media (max-width: 500px) { .meta-row { grid-template-columns: 1fr; } }
 </style>

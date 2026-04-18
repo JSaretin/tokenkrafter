@@ -14,39 +14,19 @@
 	} = $props();
 </script>
 
-<div class="empty-state">
+<div class="min-h-[300px] flex flex-col items-center justify-center text-center px-4 py-10">
 	{#if icon}
-		<div class="empty-icon">{icon}</div>
+		<div class="text-[48px] opacity-20 mb-4">{icon}</div>
 	{/if}
 	{#if title}
-		<h3 class="syne text-lg font-bold text-white mb-2">{title}</h3>
+		<h3 class="font-display text-lg font-bold text-white mb-2">{title}</h3>
 	{/if}
 	{#if description}
 		<p class="text-gray-500 font-mono text-sm max-w-sm mx-auto">{description}</p>
 	{/if}
 	{#if action}
-		<div class="empty-action">
+		<div class="mt-6">
 			{@render action()}
 		</div>
 	{/if}
 </div>
-
-<style>
-	.empty-state {
-		min-height: 300px;
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		justify-content: center;
-		text-align: center;
-		padding: 40px 16px;
-	}
-	.empty-icon {
-		font-size: 48px;
-		opacity: 0.2;
-		margin-bottom: 16px;
-	}
-	.empty-action {
-		margin-top: 24px;
-	}
-</style>

@@ -761,23 +761,20 @@
 
 </script>
 
-<div class="wz">
+<div class="max-w-[640px] mx-auto">
 	<!-- Step indicator -->
-	<div class="wz-steps">
+	<div class="flex items-center gap-0 mb-6 px-2">
 		{#each steps as step, i}
 			<button type="button"
-				class="wz-step"
-				class:wz-step-done={i < currentStepIdx}
-				class:wz-step-active={step.id === wizardStep}
-				class:wz-step-locked={i > maxReachedStepIdx}
+				class={'wz-step flex flex-col items-center gap-1 bg-none border-none cursor-pointer p-0 ' + (i > maxReachedStepIdx ? 'cursor-not-allowed opacity-50 ' : '') + (i < currentStepIdx ? 'wz-step-done ' : '') + (step.id === wizardStep ? 'wz-step-active' : '')}
 				tabindex="-1"
 				onclick={() => jumpToStep(i)}
 			>
-				<span class="wz-step-num">{i < currentStepIdx ? '✓' : i + 1}</span>
-				<span class="wz-step-label">{step.label}</span>
+				<span class="wz-step-num w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold font-mono border-2 border-line-input text-dim bg-transparent transition-all duration-200">{i < currentStepIdx ? '✓' : i + 1}</span>
+				<span class="wz-step-label text-[9px] text-dim font-mono uppercase tracking-wider whitespace-nowrap">{step.label}</span>
 			</button>
 			{#if i < steps.length - 1}
-				<div class="wz-step-line" class:wz-step-line-done={i < currentStepIdx}></div>
+				<div class={'flex-1 h-0.5 min-w-[20px] mx-1 mb-4 ' + (i < currentStepIdx ? 'bg-emerald-500' : 'bg-surface-hover')}></div>
 			{/if}
 		{/each}
 	</div>
@@ -787,15 +784,15 @@
 	     calls nextStep() — failed validation auto-focuses the first invalid
 	     input, no manual checks or alerts needed. -->
 	<form bind:this={wzFormEl} onsubmit={(e) => { e.preventDefault(); nextStep(); }}>
-	<div class="wz-content">
+	<div class="bg-surface border border-line rounded-2xl p-6 mb-4 max-[500px]:p-4">
 		{#if wizardStep === 'basics'}
 			{#if launchEnabled}
 				<!-- New / Existing tab switcher -->
-				<div class="token-src-tabs">
-					<button type="button" class="token-src-tab" class:token-src-active={!useExistingToken} onclick={() => { useExistingToken = false; existingTokenAddress = ''; }}>
+				<div class="flex gap-0 mb-5 bg-white/[0.02] rounded-[10px] border border-white/[0.04] overflow-hidden">
+					<button type="button" class={'flex-1 px-4 py-2.5 border-none bg-transparent font-display text-xs font-semibold cursor-pointer transition border-r border-white/[0.04] last:border-r-0 ' + (!useExistingToken ? 'text-brand-cyan bg-brand-cyan/[0.06] shadow-[inset_0_-2px_0_#00d2ff]' : 'text-slate-500 hover:text-slate-400 hover:bg-white/[0.02]')} onclick={() => { useExistingToken = false; existingTokenAddress = ''; }}>
 						Create new token
 					</button>
-					<button type="button" class="token-src-tab" class:token-src-active={useExistingToken} onclick={() => useExistingToken = true}>
+					<button type="button" class={'flex-1 px-4 py-2.5 border-none bg-transparent font-display text-xs font-semibold cursor-pointer transition border-r border-white/[0.04] last:border-r-0 ' + (useExistingToken ? 'text-brand-cyan bg-brand-cyan/[0.06] shadow-[inset_0_-2px_0_#00d2ff]' : 'text-slate-500 hover:text-slate-400 hover:bg-white/[0.02]')} onclick={() => useExistingToken = true}>
 						Use existing token
 					</button>
 				</div>
@@ -805,9 +802,9 @@
 				<BasicInfo bind:name bind:symbol bind:totalSupply bind:decimals bind:chainId bind:useExistingToken bind:existingTokenAddress bind:tokenLogoUrl bind:tokenDescription bind:tokenWebsite bind:tokenTwitter bind:tokenTelegram {supportedNetworks} {getNetworkProviders} isCreateOnly={!launchEnabled && !listingEnabled} onPresetLoaded={handlePresetLoaded} />
 			{:else}
 				<!-- Existing token: address + network -->
-				<div class="existing-token-form">
+				<div class="p-5 rounded-xl bg-white/[0.015] border border-white/[0.04]">
 					<div class="field-group mb-4">
-						<label class="wz-label" for="existing-token-addr">Token contract address</label>
+						<label class="block text-[11px] font-bold text-dim uppercase tracking-wider font-mono mb-1.5" for="existing-token-addr">Token contract address</label>
 						<input
 							id="existing-token-addr"
 							class="input-field"
@@ -819,7 +816,7 @@
 						{/if}
 					</div>
 					<div class="field-group">
-						<label class="wz-label" for="existing-token-network">Network</label>
+						<label class="block text-[11px] font-bold text-dim uppercase tracking-wider font-mono mb-1.5" for="existing-token-network">Network</label>
 						<select id="existing-token-network" class="input-field" bind:value={chainId}>
 							<option value="">Select network</option>
 							{#each supportedNetworks.filter((n) => n.platform_address && n.platform_address.length > 2) as n (n.chain_id)}
@@ -827,7 +824,7 @@
 							{/each}
 						</select>
 					</div>
-					<p class="text-gray-600 text-[10px] font-mono mt-3">
+					<p class="text-muted text-[10px] font-mono mt-3">
 						Your token must be owned by your connected wallet. The router will temporarily take ownership to configure the launch, then return it.
 					</p>
 				</div>
@@ -840,9 +837,9 @@
 			<TaxStep bind:buyTaxPct bind:sellTaxPct bind:transferTaxPct bind:taxWallets {isPartner} />
 
 		{:else if wizardStep === 'protection'}
-			<div class="wz-section">
-				<h2 class="wz-title">Protection</h2>
-				<p class="wz-hint">Anti-whale limits and pool pre-registration — permanent safeguards for your token.</p>
+			<div>
+				<h2 class="font-display text-xl font-extrabold text-heading m-0 mb-1">Protection</h2>
+				<p class="text-xs text-dim font-mono m-0 mb-4">Anti-whale limits and pool pre-registration — permanent safeguards for your token.</p>
 				<ProtectionStep bind:protectionEnabled bind:maxWalletPct bind:maxTransactionPct bind:cooldownSeconds bind:blacklistWindowSeconds />
 
 				<!-- Base-token pre-registration. Every checked base gets a pool
@@ -852,24 +849,25 @@
 				     open e.g. the WBNB pair with a malicious initial price and
 				     drain it as soon as trading flips on. -->
 				{#if baseOptions.length > 0 || selectedNetwork}
-				<div style="margin-top: 18px;">
-					<h3 class="wz-subtitle">Protect Liquidity Pool</h3>
-					<p class="wz-hint" style="margin-bottom: 10px;">
+				<div class="mt-[18px]">
+					<h3 class="font-display text-sm font-bold text-foreground m-0 mb-1.5">Protect Liquidity Pool</h3>
+					<p class="text-xs text-dim font-mono m-0 mb-2.5">
 						Pre-register DEX pools against these base tokens. Blocks grifters from opening a pair at a malicious price before you list.
 					</p>
-					<div class="base-grid">
+					<div class="flex flex-wrap gap-2 mb-3">
 						{#each baseOptions as b (b.address.toLowerCase())}
-							<label class="base-pill" class:base-pill-on={baseSelection[b.address.toLowerCase()]} title={b.name || b.symbol}>
+							<label class={'base-pill inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[10px] border bg-transparent font-mono text-[11px] cursor-pointer transition ' + (baseSelection[b.address.toLowerCase()] ? 'border-brand-cyan/40 text-brand-cyan bg-brand-cyan/[0.08]' : 'border-line-input text-dim hover:border-brand-cyan/30 hover:text-foreground')} title={b.name || b.symbol}>
 								<input
 									type="checkbox"
+									class="absolute opacity-0 pointer-events-none"
 									checked={!!baseSelection[b.address.toLowerCase()]}
 									onchange={() => toggleBase(b.address)}
 								/>
-								<span class="base-sym">{b.symbol}</span>
+								<span class="font-bold">{b.symbol}</span>
 								{#if b.custom}
 									<button
 										type="button"
-										class="base-remove"
+										class="bg-none border-none text-inherit cursor-pointer text-sm leading-none px-0.5 opacity-60 hover:opacity-100"
 										onclick={(e) => { e.preventDefault(); removeCustomBase(b.address); }}
 										title="Remove"
 									>×</button>
@@ -877,9 +875,9 @@
 							</label>
 						{/each}
 					</div>
-					<div class="base-add-row">
+					<div class="grid grid-cols-[1fr_auto] gap-2">
 						<input
-							class="input-field base-add-addr"
+							class="input-field text-[11px]"
 							type="text"
 							placeholder="0x… add custom base"
 							bind:value={newBaseAddress}
@@ -887,41 +885,41 @@
 						/>
 						<button
 							type="button"
-							class="base-add-btn"
+							class="px-4 py-2 rounded-[10px] border border-brand-cyan/40 bg-brand-cyan/[0.08] text-brand-cyan font-mono text-[11px] cursor-pointer transition hover:bg-brand-cyan/[0.15] disabled:opacity-40 disabled:cursor-not-allowed"
 							onclick={addCustomBase}
 							disabled={!newBaseAddress.trim() || baseLookupBusy}
 						>{baseLookupBusy ? '…' : 'Add'}</button>
 					</div>
 					{#if baseLookupError}
-						<p class="base-error">{baseLookupError}</p>
+						<p class="text-[11px] text-red-400 font-mono mt-1.5">{baseLookupError}</p>
 					{/if}
 				</div>
 				{/if}
 			</div>
 
 		{:else if wizardStep === 'launch'}
-			<div class="wz-section">
-				<h2 class="wz-title">Bonding Curve Launch</h2>
-				<div class="wz-field">
-					<label class="wz-label">
+			<div>
+				<h2 class="font-display text-xl font-extrabold text-heading m-0 mb-1">Bonding Curve Launch</h2>
+				<div class="mb-3.5">
+					<label class="block text-[11px] font-bold text-dim uppercase tracking-wider font-mono mb-1.5">
 						Tokens for launch ({launchTokensPct}%{#if launchTokenAmount > 0} — {formatTokenAmount(launchTokenAmount)} {symbol || 'tokens'}{/if})
 					</label>
-					<input type="range" class="wz-slider" min="20" max="90" step="5" bind:value={launchTokensPct} />
+					<input type="range" class="wz-slider w-full h-1.5 bg-surface-hover rounded-sm outline-none" min="20" max="90" step="5" bind:value={launchTokensPct} />
 					{#if launchTokenAmount > 0}
-						<span class="wz-field-hint">Remaining {formatTokenAmount(supplyNum - launchTokenAmount)} {symbol || 'tokens'} goes to: LP seeding (on graduation) + creator allocation (if any) + burn</span>
+						<span class="block text-[10px] text-dim font-mono mt-0.5">Remaining {formatTokenAmount(supplyNum - launchTokenAmount)} {symbol || 'tokens'} goes to: LP seeding (on graduation) + creator allocation (if any) + burn</span>
 					{/if}
 				</div>
-				<div class="wz-field">
-					<label class="wz-label">Curve type</label>
+				<div class="mb-3.5">
+					<label class="block text-[11px] font-bold text-dim uppercase tracking-wider font-mono mb-1.5">Curve type</label>
 					<CurveTypePicker bind:value={launchCurveType} />
 				</div>
-				<div class="wz-row">
-					<div class="wz-field"><label class="wz-label" for="launchSoftCap">Soft cap ($)</label><input id="launchSoftCap" class="input-field" type="number" min="1" step="any" required bind:value={launchSoftCap} placeholder="50,000" /></div>
-					<div class="wz-field"><label class="wz-label" for="launchHardCap">Hard cap ($)</label><input id="launchHardCap" class="input-field" type="number" min="1" step="any" required bind:value={launchHardCap} placeholder="100,000" /></div>
+				<div class="grid grid-cols-1 min-[501px]:grid-cols-2 gap-3">
+					<div class="mb-3.5"><label class="block text-[11px] font-bold text-dim uppercase tracking-wider font-mono mb-1.5" for="launchSoftCap">Soft cap ($)</label><input id="launchSoftCap" class="input-field" type="number" min="1" step="any" required bind:value={launchSoftCap} placeholder="50,000" /></div>
+					<div class="mb-3.5"><label class="block text-[11px] font-bold text-dim uppercase tracking-wider font-mono mb-1.5" for="launchHardCap">Hard cap ($)</label><input id="launchHardCap" class="input-field" type="number" min="1" step="any" required bind:value={launchHardCap} placeholder="100,000" /></div>
 				</div>
-				<div class="wz-row">
-					<div class="wz-field">
-						<label class="wz-label" for="launchDuration">Duration</label>
+				<div class="grid grid-cols-1 min-[501px]:grid-cols-2 gap-3">
+					<div class="mb-3.5">
+						<label class="block text-[11px] font-bold text-dim uppercase tracking-wider font-mono mb-1.5" for="launchDuration">Duration</label>
 						<select id="launchDuration" class="input-field" bind:value={launchDurationDays}>
 							<option value="7">7 days</option>
 							<option value="14">14 days</option>
@@ -930,8 +928,8 @@
 							<option value="90">90 days</option>
 						</select>
 					</div>
-					<div class="wz-field">
-						<label class="wz-label" for="launchStart">Start date (optional)</label>
+					<div class="mb-3.5">
+						<label class="block text-[11px] font-bold text-dim uppercase tracking-wider font-mono mb-1.5" for="launchStart">Start date (optional)</label>
 						<input
 							id="launchStart"
 							type="datetime-local"
@@ -939,12 +937,12 @@
 							bind:value={launchStartDateLocal}
 							min={new Date(Date.now() + 60000).toISOString().slice(0, 16)}
 						/>
-						<span class="wz-field-hint">{launchStartDateLocal ? 'Launch opens at this local time' : 'Leave empty to start immediately after deploy'}</span>
+						<span class="block text-[10px] text-dim font-mono mt-0.5">{launchStartDateLocal ? 'Launch opens at this local time' : 'Leave empty to start immediately after deploy'}</span>
 					</div>
 				</div>
-				<div class="wz-row">
-					<div class="wz-field">
-						<label class="wz-label">Creator allocation</label>
+				<div class="grid grid-cols-1 min-[501px]:grid-cols-2 gap-3">
+					<div class="mb-3.5">
+						<label class="block text-[11px] font-bold text-dim uppercase tracking-wider font-mono mb-1.5">Creator allocation</label>
 						<select class="input-field" bind:value={launchCreatorAllocPct}>
 							<option value="0">None</option>
 							<option value="1">1% of supply</option>
@@ -953,37 +951,37 @@
 							<option value="4">4% of supply</option>
 							<option value="5">5% of supply (max)</option>
 						</select>
-						<span class="wz-field-hint">Tokens reserved for you (vested). Contract caps at 5%.</span>
+						<span class="block text-[10px] text-dim font-mono mt-0.5">Tokens reserved for you (vested). Contract caps at 5%.</span>
 					</div>
-					<div class="wz-field">
-						<label class="wz-label">Vesting period</label>
+					<div class="mb-3.5">
+						<label class="block text-[11px] font-bold text-dim uppercase tracking-wider font-mono mb-1.5">Vesting period</label>
 						<select class="input-field" bind:value={launchVestingDays}>
 							<option value="0">No vesting</option>
 							<option value="30">30 days</option>
 							<option value="60">60 days</option>
 							<option value="90">90 days</option>
 						</select>
-						<span class="wz-field-hint">Lock period for creator tokens (7-day cliff before any vest starts).</span>
+						<span class="block text-[10px] text-dim font-mono mt-0.5">Lock period for creator tokens (7-day cliff before any vest starts).</span>
 					</div>
 				</div>
 
 				<!-- Launchpad anti-whale protection -->
-				<div class="wz-toggle-card" class:wz-toggle-on={launchProtectionEnabled}>
-					<label class="wz-toggle-row">
+				<div class={'border rounded-xl p-0 mt-3.5 overflow-hidden transition ' + (launchProtectionEnabled ? 'border-amber-500/25' : 'border-line')}>
+					<label class="flex items-center justify-between py-3 px-3.5 cursor-pointer gap-3">
 						<div>
-							<span class="wz-toggle-title">Launchpad Anti-Whale Protection</span>
-							<span class="wz-toggle-desc">Applies during the bonding curve only</span>
+							<span class="block text-[13px] font-bold text-foreground font-display">Launchpad Anti-Whale Protection</span>
+							<span class="block text-[10px] text-dim font-mono mt-px">Applies during the bonding curve only</span>
 						</div>
-						<div class="wz-switch" class:wz-switch-on={launchProtectionEnabled}>
-							<div class="wz-switch-thumb"></div>
+						<div class={'w-10 h-[22px] rounded-[11px] border relative shrink-0 transition-[background] duration-200 ' + (launchProtectionEnabled ? 'bg-amber-500 border-amber-500/50' : 'bg-[var(--toggle-track)] border-line')}>
+							<div class={'w-4 h-4 rounded-full shadow-[0_1px_3px_rgba(0,0,0,0.2)] absolute top-0.5 left-0.5 transition-transform duration-200 ' + (launchProtectionEnabled ? 'translate-x-[18px] bg-[var(--toggle-thumb)]' : 'bg-[var(--toggle-thumb-off)]')}></div>
 						</div>
 						<input type="checkbox" bind:checked={launchProtectionEnabled} class="sr-only" />
 					</label>
 					{#if launchProtectionEnabled}
-						<div class="wz-toggle-body">
-							<div class="wz-row">
-								<div class="wz-field">
-									<label class="wz-label">Max buy per wallet</label>
+						<div class="px-3.5 pb-3.5">
+							<div class="grid grid-cols-1 min-[501px]:grid-cols-2 gap-3">
+								<div class="mb-3.5">
+									<label class="block text-[11px] font-bold text-dim uppercase tracking-wider font-mono mb-1.5">Max buy per wallet</label>
 									<select class="input-field" bind:value={launchMaxBuyPct}>
 										<option value="0.5">0.5% of hard cap</option>
 										<option value="1">1% of hard cap</option>
@@ -991,24 +989,24 @@
 										<option value="3">3% of hard cap</option>
 										<option value="5">5% of hard cap</option>
 									</select>
-									<span class="wz-field-hint">
+									<span class="block text-[10px] text-dim font-mono mt-0.5">
 										One wallet can't buy more than this share of the total raise
 										{#if launchMaxBuyUsdt > 0} — ${launchMaxBuyUsdt.toLocaleString(undefined, { maximumFractionDigits: 2 })} at your hard cap{/if}
 									</span>
 								</div>
-								<div class="wz-field">
-									<label class="wz-label" for="launchMinBuyUsdt">Min buy (USDT)</label>
+								<div class="mb-3.5">
+									<label class="block text-[11px] font-bold text-dim uppercase tracking-wider font-mono mb-1.5" for="launchMinBuyUsdt">Min buy (USDT)</label>
 									<input id="launchMinBuyUsdt" class="input-field" type="text" bind:value={launchMinBuyUsdt} placeholder="1" />
-									<span class="wz-field-hint">Anti-dust floor per buy. Must be &gt; 0 and ≤ soft cap.</span>
+									<span class="block text-[10px] text-dim font-mono mt-0.5">Anti-dust floor per buy. Must be &gt; 0 and ≤ soft cap.</span>
 								</div>
 							</div>
 							{#if minBuyExceedsMaxBuy}
-								<div class="wz-warn-box">
+								<div class="mt-2 px-2.5 py-2 rounded-md bg-red-400/[0.08] border border-red-400/25 text-red-300 text-[11px] font-mono leading-normal">
 									⚠ Your min buy (${launchMinBuyNum}) exceeds the max-wallet allowance (${launchMaxBuyUsdt.toLocaleString(undefined, { maximumFractionDigits: 2 })}) — no one will be able to buy. Either lower min buy, raise hard cap, or increase max-buy %.
 								</div>
 							{/if}
-							<div class="wz-field">
-								<label class="wz-label" for="launchLockDurationMinutes">Anti-snipe delay (minutes)</label>
+							<div class="mb-3.5">
+								<label class="block text-[11px] font-bold text-dim uppercase tracking-wider font-mono mb-1.5" for="launchLockDurationMinutes">Anti-snipe delay (minutes)</label>
 								<select id="launchLockDurationMinutes" class="input-field" bind:value={launchLockDurationMinutes}>
 									<option value="0">None (open immediately)</option>
 									<option value="5">5 min</option>
@@ -1019,7 +1017,7 @@
 									<option value="720">12 hours</option>
 									<option value="1440">24 hours (max)</option>
 								</select>
-								<span class="wz-field-hint">How long DEX trading stays locked after graduation — blocks snipers from front-running the listing block.</span>
+								<span class="block text-[10px] text-dim font-mono mt-0.5">How long DEX trading stays locked after graduation — blocks snipers from front-running the listing block.</span>
 							</div>
 						</div>
 					{/if}
@@ -1029,31 +1027,31 @@
 			</div>
 
 		{:else if wizardStep === 'listing'}
-			<div class="wz-section">
-				<h2 class="wz-title">DEX Listing</h2>
-				<p class="wz-hint">Add liquidity and your token is instantly tradable.</p>
+			<div>
+				<h2 class="font-display text-xl font-extrabold text-heading m-0 mb-1">DEX Listing</h2>
+				<p class="text-xs text-dim font-mono m-0 mb-4">Add liquidity and your token is instantly tradable.</p>
 				<ListingStep bind:symbol bind:totalSupply bind:poolPct={listingPoolPct} bind:pairs={listingPairs} bind:pricePerToken={listingPricePerToken} {nativeCoin} {bnbPriceUsd} />
 
 				<!-- Burn LP toggle -->
-				<div class="burn-lp-card mt-6" class:burn-on={burnLp} class:burn-off={!burnLp}>
-					<label class="burn-lp-toggle">
-						<div class="burn-lp-left">
-							<span class="burn-lp-icon">{burnLp ? '🔥' : '⚠️'}</span>
+				<div class={'py-3.5 px-4 rounded-xl transition-all duration-200 mt-6 ' + (burnLp ? 'bg-emerald-500/[0.04] border-[1.5px] border-emerald-500/20' : 'bg-amber-500/[0.04] border-[1.5px] border-amber-500/20')}>
+					<label class="flex items-center justify-between gap-3 cursor-pointer">
+						<div class="flex items-center gap-2.5">
+							<span class="text-xl shrink-0">{burnLp ? '🔥' : '⚠️'}</span>
 							<div>
-								<span class="burn-lp-title syne">{burnLp ? 'LP Burned (Permanent)' : 'LP NOT Burned (Removable)'}</span>
-								<span class="burn-lp-desc">{burnLp ? 'Liquidity is permanent. Investors see this as safe.' : 'You can remove liquidity anytime. No SAFU badge.'}</span>
+								<span class="block text-[13px] font-bold text-heading font-display">{burnLp ? 'LP Burned (Permanent)' : 'LP NOT Burned (Removable)'}</span>
+								<span class="block text-[10px] text-muted font-mono mt-0.5">{burnLp ? 'Liquidity is permanent. Investors see this as safe.' : 'You can remove liquidity anytime. No SAFU badge.'}</span>
 							</div>
 						</div>
-						<div class="wz-switch" class:wz-switch-on={burnLp}>
-							<div class="wz-switch-thumb"></div>
+						<div class={'w-10 h-[22px] rounded-[11px] border relative shrink-0 transition-[background] duration-200 ' + (burnLp ? 'bg-amber-500 border-amber-500/50' : 'bg-[var(--toggle-track)] border-line')}>
+							<div class={'w-4 h-4 rounded-full shadow-[0_1px_3px_rgba(0,0,0,0.2)] absolute top-0.5 left-0.5 transition-transform duration-200 ' + (burnLp ? 'translate-x-[18px] bg-[var(--toggle-thumb)]' : 'bg-[var(--toggle-thumb-off)]')}></div>
 						</div>
 						<input type="checkbox" bind:checked={burnLp} class="sr-only" />
 					</label>
 				</div>
 
 				<!-- Anti-snipe delay for direct listings -->
-				<div class="wz-field mt-6">
-					<label class="wz-label" for="listingTradingDelaySeconds">Anti-snipe delay (seconds)</label>
+				<div class="mt-6 mb-3.5">
+					<label class="block text-[11px] font-bold text-dim uppercase tracking-wider font-mono mb-1.5" for="listingTradingDelaySeconds">Anti-snipe delay (seconds)</label>
 					<select id="listingTradingDelaySeconds" class="input-field" bind:value={listingTradingDelaySeconds}>
 						<option value="0">None (open immediately)</option>
 						<option value="30">30 sec</option>
@@ -1062,29 +1060,29 @@
 						<option value="900">15 min</option>
 						<option value="3600">1 hour</option>
 					</select>
-					<span class="wz-field-hint">Blocks public swaps for this many seconds after your listing transaction confirms. Stops MEV bots from front-running your seed tx with a buy in the same block.</span>
+					<span class="block text-[10px] text-dim font-mono mt-0.5">Blocks public swaps for this many seconds after your listing transaction confirms. Stops MEV bots from front-running your seed tx with a buy in the same block.</span>
 				</div>
 			</div>
 
 		{:else if wizardStep === 'review'}
-			<div class="wz-section">
-				<h2 class="wz-title">Review</h2>
-				<p class="wz-hint">Confirm your settings before deploying.</p>
+			<div>
+				<h2 class="font-display text-xl font-extrabold text-heading m-0 mb-1">Review</h2>
+				<p class="text-xs text-dim font-mono m-0 mb-4">Confirm your settings before deploying.</p>
 				<Review {name} {symbol} {totalSupply} {decimals} network={selectedNetwork} {isMintable} {isTaxable} {isPartner} {launchEnabled} {listingEnabled} {buyTaxPct} {sellTaxPct} {transferTaxPct} {taxWallets} {protectionEnabled} {maxWalletPct} {maxTransactionPct} {cooldownSeconds} {launchTokensPct} {launchCurveType} {launchSoftCap} {launchHardCap} {launchDurationDays} launchMaxBuyPct={launchMaxBuyPct} launchCreatorAllocPct={launchCreatorAllocPct} {launchVestingDays} {listingPoolPct} {listingPairs} {autoPrice} {totalLiquidityUsd} {nativeCoin} {useExistingToken} {existingTokenAddress} />
 			</div>
 		{/if}
 	</div>
 
 	<!-- Navigation -->
-	<div class="wz-nav">
+	<div class="flex justify-between">
 		{#if currentStepIdx > 0}
-			<button type="button" class="wz-btn wz-btn-back" onclick={prevStep}>Back</button>
+			<button type="button" class="px-7 py-3 rounded-xl border-none cursor-pointer font-display text-sm font-bold transition-all duration-200 bg-surface-hover text-dim hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed disabled:grayscale-[0.4]" onclick={prevStep}>Back</button>
 		{:else}
 			<div></div>
 		{/if}
 		<button
 			type="submit"
-			class="wz-btn wz-btn-next"
+			class="px-7 py-3 rounded-xl border-none cursor-pointer font-display text-sm font-bold transition-all duration-200 bg-gradient-to-br from-brand-cyan to-brand-blue text-white hover:-translate-y-px hover:shadow-[0_6px_28px_rgba(0,210,255,0.3)] disabled:opacity-40 disabled:cursor-not-allowed disabled:grayscale-[0.4] disabled:hover:translate-y-0 disabled:hover:shadow-none"
 			disabled={(wizardStep === 'launch' || wizardStep === 'review') && minBuyExceedsMaxBuy}
 		>
 			{wizardStep === 'review' ? (launchEnabled ? (isRealExistingToken ? 'Continue to Payment' : 'Deploy & Launch') : listingEnabled ? 'Deploy & List' : 'Deploy Token') : 'Next →'}
@@ -1095,146 +1093,29 @@
 
 
 <style>
-	.wz { max-width: 640px; margin: 0 auto; }
-
-	/* Token source tabs (new vs existing) */
-	.token-src-tabs {
-		display: flex; gap: 0; margin-bottom: 20px;
-		background: rgba(255,255,255,0.02); border-radius: 10px;
-		border: 1px solid rgba(255,255,255,0.04); overflow: hidden;
-	}
-	.token-src-tab {
-		flex: 1; padding: 10px 16px; border: none; background: transparent;
-		font-family: 'Syne', sans-serif; font-size: 12px; font-weight: 600;
-		color: #475569; cursor: pointer; transition: all 0.15s;
-		border-right: 1px solid rgba(255,255,255,0.04);
-	}
-	.token-src-tab:last-child { border-right: none; }
-	.token-src-tab:hover { color: #94a3b8; background: rgba(255,255,255,0.02); }
-	.token-src-active {
-		color: #00d2ff; background: rgba(0,210,255,0.06);
-		box-shadow: inset 0 -2px 0 #00d2ff;
-	}
-	.existing-token-form {
-		padding: 20px; border-radius: 12px;
-		background: rgba(255,255,255,0.015); border: 1px solid rgba(255,255,255,0.04);
-	}
-
-	/* Burn LP toggle card */
-	.burn-lp-card {
-		padding: 14px 16px; border-radius: 12px; transition: all 0.2s;
-	}
-	.burn-on {
-		background: rgba(16,185,129,0.04); border: 1.5px solid rgba(16,185,129,0.2);
-	}
-	.burn-off {
-		background: rgba(245,158,11,0.04); border: 1.5px solid rgba(245,158,11,0.2);
-	}
-	.burn-lp-toggle {
-		display: flex; align-items: center; justify-content: space-between; gap: 12px; cursor: pointer;
-	}
-	.burn-lp-left { display: flex; align-items: center; gap: 10px; }
-	.burn-lp-icon { font-size: 20px; flex-shrink: 0; }
-	.burn-lp-title { display: block; font-size: 13px; font-weight: 700; color: #fff; }
-	.burn-lp-desc { display: block; font-size: 10px; color: #64748b; font-family: 'Space Mono', monospace; margin-top: 2px; }
-
-	/* Steps indicator */
-	.wz-steps { display: flex; align-items: center; gap: 0; margin-bottom: 24px; padding: 0 8px; }
-	.wz-step { display: flex; flex-direction: column; align-items: center; gap: 4px; background: none; border: none; cursor: pointer; padding: 0; }
-	.wz-step-num { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; font-family: 'Space Mono', monospace; border: 2px solid var(--border-input); color: var(--text-dim); background: transparent; transition: all 200ms; }
+	/* Step-active / step-done states — applied via class toggles on the
+	   parent button, so descendant styles need to stay in CSS. */
 	.wz-step-active .wz-step-num { border-color: #00d2ff; color: #00d2ff; background: rgba(0,210,255,0.1); }
 	.wz-step-done .wz-step-num { border-color: #10b981; color: #10b981; background: rgba(16,185,129,0.1); }
-	.wz-step-label { font-size: 9px; color: var(--text-dim); font-family: 'Space Mono', monospace; text-transform: uppercase; letter-spacing: 0.05em; white-space: nowrap; }
 	.wz-step-active .wz-step-label { color: #00d2ff; }
 	.wz-step-done .wz-step-label { color: #10b981; }
-	.wz-step-locked { cursor: not-allowed; opacity: 0.5; }
-	.wz-step-line { flex: 1; height: 2px; background: var(--bg-surface-hover); min-width: 20px; margin: 0 4px; margin-bottom: 16px; }
-	.wz-step-line-done { background: #10b981; }
 
-	/* Content */
-	.wz-content { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 16px; padding: 24px; margin-bottom: 16px; }
-	.wz-section {}
-	.wz-title { font-family: 'Syne', sans-serif; font-size: 20px; font-weight: 800; color: var(--text-heading); margin: 0 0 4px; }
-	.wz-hint { font-size: 12px; color: var(--text-dim); font-family: 'Space Mono', monospace; margin: 0 0 16px; }
-
-	.wz-field { margin-bottom: 14px; }
-	.wz-label { display: block; font-size: 11px; font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; font-family: 'Space Mono', monospace; margin-bottom: 6px; }
-	.wz-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-	.wz-slider { width: 100%; -webkit-appearance: none; height: 6px; background: var(--bg-surface-hover); border-radius: 3px; outline: none; }
-	.wz-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px; border-radius: 50%; background: #00d2ff; cursor: pointer; border: 2px solid var(--bg); }
-	.wz-radio-row { display: flex; gap: 6px; flex-wrap: wrap; }
-	.wz-radio { padding: 6px 14px; border-radius: 8px; border: 1px solid var(--border); background: transparent; color: var(--text-dim); font-family: 'Space Mono', monospace; font-size: 11px; cursor: pointer; transition: all 150ms; }
-	.wz-radio:hover { border-color: rgba(0,210,255,0.3); color: var(--text); }
-	.wz-radio-active { border-color: rgba(0,210,255,0.4); color: #00d2ff; background: rgba(0,210,255,0.08); }
-
-	.wz-field-hint { display: block; font-size: 10px; color: var(--text-dim); font-family: 'Space Mono', monospace; margin-top: 3px; }
-	.wz-warn-box {
-		margin-top: 8px; padding: 8px 10px; border-radius: 6px;
-		background: rgba(248,113,113,0.08); border: 1px solid rgba(248,113,113,0.25);
-		color: #fca5a5; font-size: 11px; font-family: 'Space Mono', monospace; line-height: 1.5;
+	/* Slider thumb pseudo-element — can't be a utility */
+	.wz-slider { -webkit-appearance: none; appearance: none; }
+	.wz-slider::-webkit-slider-thumb {
+		-webkit-appearance: none;
+		width: 18px; height: 18px; border-radius: 50%;
+		background: #00d2ff; cursor: pointer;
+		border: 2px solid var(--bg);
 	}
-	.wz-subtitle { font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700; color: var(--text); margin: 0 0 6px; }
-	.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
 
-	/* Base-token multi-select */
-	.base-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
-	.base-pill {
-		display: inline-flex; align-items: center; gap: 6px;
-		padding: 7px 12px; border-radius: 10px;
-		border: 1px solid var(--border-input);
-		background: transparent; color: var(--text-dim);
-		font-family: 'Space Mono', monospace; font-size: 11px;
-		cursor: pointer; transition: all 150ms;
-	}
-	.base-pill input { position: absolute; opacity: 0; pointer-events: none; }
-	.base-pill:hover { border-color: rgba(0,210,255,0.3); color: var(--text); }
-	.base-pill-on { border-color: rgba(0,210,255,0.4); color: #00d2ff; background: rgba(0,210,255,0.08); }
-	.base-sym { font-weight: 700; }
-	.base-remove {
-		background: none; border: none; color: inherit; cursor: pointer;
-		font-size: 14px; line-height: 1; padding: 0 2px;
-		opacity: 0.6;
-	}
-	.base-remove:hover { opacity: 1; }
-	.base-add-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
-	.base-add-addr { font-size: 11px; }
-	.base-error { font-size: 11px; color: #f87171; font-family: 'Space Mono', monospace; margin-top: 6px; }
-	.base-add-btn {
-		padding: 8px 16px; border-radius: 10px;
-		border: 1px solid rgba(0,210,255,0.4); background: rgba(0,210,255,0.08);
-		color: #00d2ff; font-family: 'Space Mono', monospace; font-size: 11px;
-		cursor: pointer; transition: all 150ms;
-	}
-	.base-add-btn:hover:not(:disabled) { background: rgba(0,210,255,0.15); }
-	.base-add-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-
-	/* Toggle card */
-	.wz-toggle-card { border: 1px solid var(--border); border-radius: 12px; padding: 0; margin-top: 14px; overflow: hidden; transition: border-color 200ms; }
-	.wz-toggle-on { border-color: rgba(245,158,11,0.25); }
-	.wz-toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; cursor: pointer; gap: 12px; }
-	.wz-toggle-title { display: block; font-size: 13px; font-weight: 700; color: var(--text); font-family: 'Syne', sans-serif; }
-	.wz-toggle-desc { display: block; font-size: 10px; color: var(--text-dim); font-family: 'Space Mono', monospace; margin-top: 1px; }
-	.wz-toggle-body { padding: 0 14px 14px; }
-	.wz-switch { width: 40px; height: 22px; border-radius: 11px; background: var(--toggle-track); border: 1px solid var(--border); position: relative; flex-shrink: 0; transition: background 200ms; }
-	.wz-switch-on { background: #f59e0b; border-color: rgba(245,158,11,0.5); }
-	.wz-switch-thumb { width: 16px; height: 16px; border-radius: 50%; background: var(--toggle-thumb-off); box-shadow: 0 1px 3px rgba(0,0,0,0.2); position: absolute; top: 2px; left: 2px; transition: transform 200ms; }
-	.wz-switch-on .wz-switch-thumb { transform: translateX(18px); background: var(--toggle-thumb); }
-
-	/* Nav */
-	.wz-nav { display: flex; justify-content: space-between; }
-	.wz-btn { padding: 12px 28px; border-radius: 12px; border: none; cursor: pointer; font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700; transition: all 200ms; }
-	.wz-btn-back { background: var(--bg-surface-hover); color: var(--text-dim); }
-	.wz-btn-back:hover { background: var(--bg-surface-hover); color: var(--text); }
-	.wz-btn-next { background: linear-gradient(135deg, #00d2ff, #3a7bd5); color: white; }
-	.wz-btn-next:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 28px rgba(0,210,255,0.3); }
-	.wz-btn:disabled { opacity: 0.4; cursor: not-allowed; filter: grayscale(0.4); }
-	.wz-warn-box { margin-top: 16px; padding: 12px 14px; border-radius: 10px; background: rgba(251, 191, 36, 0.08); border: 1px solid rgba(251, 191, 36, 0.35); color: #fcd34d; font-size: 13px; line-height: 1.5; }
-	.wz-warn-box strong { display: block; color: #fde68a; margin-bottom: 4px; font-family: 'Syne', sans-serif; }
-
-	/* Curve picker button */
+	/* Extra breakpoint for the step label on very narrow screens */
 	@media (max-width: 500px) {
-		.wz-content { padding: 16px; }
-		.wz-row { grid-template-columns: 1fr; }
 		.wz-step-label { font-size: 8px; }
 	}
+
+	/* `sr-only` is used to hide the checkbox input — standard Tailwind
+	   `sr-only` utility covers it but since the project mixes usages,
+	   keep a local definition as a safety net. */
+	.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
 </style>

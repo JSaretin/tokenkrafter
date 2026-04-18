@@ -127,7 +127,7 @@
 
 {#if loading}
 	<div class="flex items-center justify-center py-20">
-		<div class="spinner w-10 h-10 rounded-full border-2 border-white/10 border-t-cyan-400"></div>
+		<div class="spinner w-10 h-10 rounded-full border-2 border-line-input border-t-brand-cyan"></div>
 	</div>
 {:else if !selectedNetwork?.trade_router_address}
 	<div class="card p-8 text-center">
@@ -144,37 +144,37 @@
 		<div class="card p-4">
 			<h3 class="text-white text-sm font-semibold mb-3">TradeRouter Status</h3>
 			<div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-				<div class="stat-box">
-					<span class="stat-label">Status</span>
-					<span class="stat-value" class:text-red-400={isPaused} class:text-emerald-400={!isPaused}>
+				<div class="bg-surface border border-line-subtle rounded-[10px] px-3 py-2.5">
+					<span class="block text-[10px] font-mono text-dim uppercase tracking-[0.05em]">Status</span>
+					<span class={'block text-sm font-bold font-mono mt-0.5 ' + (isPaused ? 'text-red-400' : 'text-emerald-400')}>
 						{isPaused ? 'PAUSED' : 'ACTIVE'}
 					</span>
 				</div>
-				<div class="stat-box">
-					<span class="stat-label">Fee</span>
-					<span class="stat-value text-cyan-400">{feeBps / 100}%</span>
+				<div class="bg-surface border border-line-subtle rounded-[10px] px-3 py-2.5">
+					<span class="block text-[10px] font-mono text-dim uppercase tracking-[0.05em]">Fee</span>
+					<span class="block text-sm font-bold font-mono mt-0.5 text-cyan-400">{feeBps / 100}%</span>
 				</div>
-				<div class="stat-box">
-					<span class="stat-label">Timeout</span>
-					<span class="stat-value text-amber-400">{payoutTimeout}s ({Math.round(payoutTimeout / 60)}m)</span>
+				<div class="bg-surface border border-line-subtle rounded-[10px] px-3 py-2.5">
+					<span class="block text-[10px] font-mono text-dim uppercase tracking-[0.05em]">Timeout</span>
+					<span class="block text-sm font-bold font-mono mt-0.5 text-amber-400">{payoutTimeout}s ({Math.round(payoutTimeout / 60)}m)</span>
 				</div>
-				<div class="stat-box">
-					<span class="stat-label">Pending</span>
-					<span class="stat-value text-purple-400">{pendingCount}</span>
+				<div class="bg-surface border border-line-subtle rounded-[10px] px-3 py-2.5">
+					<span class="block text-[10px] font-mono text-dim uppercase tracking-[0.05em]">Pending</span>
+					<span class="block text-sm font-bold font-mono mt-0.5 text-purple-400">{pendingCount}</span>
 				</div>
 			</div>
 			<div class="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-3">
-				<div class="stat-box">
-					<span class="stat-label">Total Escrow</span>
-					<span class="stat-value text-amber-400">${parseFloat(ethers.formatUnits(totalEscrow, usdtDecimals)).toFixed(2)}</span>
+				<div class="bg-surface border border-line-subtle rounded-[10px] px-3 py-2.5">
+					<span class="block text-[10px] font-mono text-dim uppercase tracking-[0.05em]">Total Escrow</span>
+					<span class="block text-sm font-bold font-mono mt-0.5 text-amber-400">${parseFloat(ethers.formatUnits(totalEscrow, usdtDecimals)).toFixed(2)}</span>
 				</div>
-				<div class="stat-box">
-					<span class="stat-label">Earnings (USDT)</span>
-					<span class="stat-value text-emerald-400">${parseFloat(ethers.formatUnits(usdtEarnings, usdtDecimals)).toFixed(2)}</span>
+				<div class="bg-surface border border-line-subtle rounded-[10px] px-3 py-2.5">
+					<span class="block text-[10px] font-mono text-dim uppercase tracking-[0.05em]">Earnings (USDT)</span>
+					<span class="block text-sm font-bold font-mono mt-0.5 text-emerald-400">${parseFloat(ethers.formatUnits(usdtEarnings, usdtDecimals)).toFixed(2)}</span>
 				</div>
-				<div class="stat-box">
-					<span class="stat-label">Total Withdrawals</span>
-					<span class="stat-value text-cyan-400">{totalWithdrawals}</span>
+				<div class="bg-surface border border-line-subtle rounded-[10px] px-3 py-2.5">
+					<span class="block text-[10px] font-mono text-dim uppercase tracking-[0.05em]">Total Withdrawals</span>
+					<span class="block text-sm font-bold font-mono mt-0.5 text-cyan-400">{totalWithdrawals}</span>
 				</div>
 			</div>
 		</div>
@@ -184,12 +184,12 @@
 			<h3 class="text-white text-sm font-semibold mb-3">Emergency Controls</h3>
 			<div class="flex gap-2">
 				{#if isPaused}
-					<button class="btn-action btn-emerald" disabled={processing}
+					<button class="px-3.5 py-1.5 rounded-lg border-none cursor-pointer font-mono text-[11px] font-bold transition bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 disabled:opacity-40 disabled:cursor-not-allowed" disabled={processing}
 						onclick={() => execTx('Unpause', (r: any) => r.unpause())}>
 						Unpause Trading
 					</button>
 				{:else}
-					<button class="btn-action btn-red" disabled={processing}
+					<button class="px-3.5 py-1.5 rounded-lg border-none cursor-pointer font-mono text-[11px] font-bold transition bg-red-500/15 text-red-400 hover:bg-red-500/25 disabled:opacity-40 disabled:cursor-not-allowed" disabled={processing}
 						onclick={() => execTx('Pause', (r: any) => r.pause())}>
 						Pause Trading
 					</button>
@@ -204,7 +204,7 @@
 				<div class="flex items-center gap-2">
 					<label class="text-gray-400 text-xs font-mono">Fee (bps)</label>
 					<input class="input-field w-24" type="number" bind:value={newFeeBps} placeholder="10" />
-					<button class="btn-action btn-cyan" disabled={processing || !newFeeBps}
+					<button class="px-3.5 py-1.5 rounded-lg border-none cursor-pointer font-mono text-[11px] font-bold transition bg-cyan-500/15 text-cyan-400 hover:bg-cyan-500/25 disabled:opacity-40 disabled:cursor-not-allowed" disabled={processing || !newFeeBps}
 						onclick={() => execTx('Set fee', (r: any) => r.setFeeBps(parseInt(newFeeBps)))}>
 						Set
 					</button>
@@ -212,7 +212,7 @@
 				<div class="flex items-center gap-2">
 					<label class="text-gray-400 text-xs font-mono">Timeout (sec)</label>
 					<input class="input-field w-24" type="number" bind:value={newTimeout} placeholder="300" />
-					<button class="btn-action btn-cyan" disabled={processing || !newTimeout}
+					<button class="px-3.5 py-1.5 rounded-lg border-none cursor-pointer font-mono text-[11px] font-bold transition bg-cyan-500/15 text-cyan-400 hover:bg-cyan-500/25 disabled:opacity-40 disabled:cursor-not-allowed" disabled={processing || !newTimeout}
 						onclick={() => execTx('Set timeout', (r: any) => r.setPayoutTimeout(parseInt(newTimeout)))}>
 						Set
 					</button>
@@ -220,7 +220,7 @@
 				<div class="flex items-center gap-2">
 					<label class="text-gray-400 text-xs font-mono">Max slippage (bps)</label>
 					<input class="input-field w-24" type="number" bind:value={newMaxSlippage} placeholder="500" />
-					<button class="btn-action btn-cyan" disabled={processing || !newMaxSlippage}
+					<button class="px-3.5 py-1.5 rounded-lg border-none cursor-pointer font-mono text-[11px] font-bold transition bg-cyan-500/15 text-cyan-400 hover:bg-cyan-500/25 disabled:opacity-40 disabled:cursor-not-allowed" disabled={processing || !newMaxSlippage}
 						onclick={() => execTx('Set max slippage', (r: any) => r.setMaxSlippage(parseInt(newMaxSlippage)))}>
 						Set
 					</button>
@@ -235,7 +235,7 @@
 			<p class="text-xs text-gray-500 font-mono mb-2">Current: {platformWallet}</p>
 			<div class="flex gap-2">
 				<input class="input-field flex-1" bind:value={newPlatformWallet} placeholder="0x..." />
-				<button class="btn-action btn-cyan" disabled={processing || !newPlatformWallet}
+				<button class="px-3.5 py-1.5 rounded-lg border-none cursor-pointer font-mono text-[11px] font-bold transition bg-cyan-500/15 text-cyan-400 hover:bg-cyan-500/25 disabled:opacity-40 disabled:cursor-not-allowed" disabled={processing || !newPlatformWallet}
 					onclick={() => execTx('Set wallet', (r: any) => r.setPlatformWallet(newPlatformWallet))}>
 					Update
 				</button>
@@ -251,7 +251,7 @@
 			</p>
 			<div class="flex gap-2">
 				<input class="input-field flex-1" type="number" step="any" min="0" bind:value={newMinWithdraw} placeholder="10" />
-				<button class="btn-action btn-cyan" disabled={processing || newMinWithdraw === ''}
+				<button class="px-3.5 py-1.5 rounded-lg border-none cursor-pointer font-mono text-[11px] font-bold transition bg-cyan-500/15 text-cyan-400 hover:bg-cyan-500/25 disabled:opacity-40 disabled:cursor-not-allowed" disabled={processing || newMinWithdraw === ''}
 					onclick={() => execTx('Set min withdraw', (r: any) => r.setMinWithdrawUsdt(ethers.parseUnits(String(newMinWithdraw || '0'), usdtDecimals)))}>
 					Update
 				</button>
@@ -270,7 +270,7 @@
 					<span class="text-xs font-mono {affiliateEnabled ? 'text-emerald-400' : 'text-gray-500'}">
 						{affiliateEnabled ? 'ENABLED' : 'DISABLED'}
 					</span>
-					<button class="btn-action btn-cyan" disabled={processing}
+					<button class="px-3.5 py-1.5 rounded-lg border-none cursor-pointer font-mono text-[11px] font-bold transition bg-cyan-500/15 text-cyan-400 hover:bg-cyan-500/25 disabled:opacity-40 disabled:cursor-not-allowed" disabled={processing}
 						onclick={() => execTx(affiliateEnabled ? 'Disable affiliate' : 'Enable affiliate', (r: any) => r.setAffiliateEnabled(!affiliateEnabled))}>
 						{affiliateEnabled ? 'Disable' : 'Enable'}
 					</button>
@@ -278,7 +278,7 @@
 				<div class="flex items-center gap-2">
 					<label class="text-gray-400 text-xs font-mono">Share (bps)</label>
 					<input class="input-field w-24" type="number" min="0" max="10000" bind:value={newAffiliateShareBps} placeholder="1000" />
-					<button class="btn-action btn-cyan" disabled={processing || newAffiliateShareBps === ''}
+					<button class="px-3.5 py-1.5 rounded-lg border-none cursor-pointer font-mono text-[11px] font-bold transition bg-cyan-500/15 text-cyan-400 hover:bg-cyan-500/25 disabled:opacity-40 disabled:cursor-not-allowed" disabled={processing || newAffiliateShareBps === ''}
 						onclick={() => execTx('Set affiliate share', (r: any) => r.setAffiliateShare(parseInt(newAffiliateShareBps)))}>
 						Set
 					</button>
@@ -311,7 +311,7 @@
 			</div>
 
 			{#if withdrawMode === 'all'}
-				<button class="btn-action btn-emerald w-full" disabled={processing}
+				<button class="w-full px-3.5 py-1.5 rounded-lg border-none cursor-pointer font-mono text-[11px] font-bold transition bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 disabled:opacity-40 disabled:cursor-not-allowed" disabled={processing}
 					onclick={() => execTx('Withdraw all USDT', (r) => r['withdraw()']())}>
 					Withdraw All → Platform Wallet
 				</button>
@@ -319,7 +319,7 @@
 			{:else if withdrawMode === 'to'}
 				<div class="flex gap-2">
 					<input class="input-field flex-1" bind:value={withdrawTo} placeholder="Recipient 0x..." />
-					<button class="btn-action btn-emerald" disabled={processing || !withdrawTo}
+					<button class="px-3.5 py-1.5 rounded-lg border-none cursor-pointer font-mono text-[11px] font-bold transition bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 disabled:opacity-40 disabled:cursor-not-allowed" disabled={processing || !withdrawTo}
 						onclick={() => execTx('Withdraw USDT', (r) => r['withdraw(address)'](withdrawTo))}>
 						Withdraw
 					</button>
@@ -331,14 +331,14 @@
 				</div>
 				<div class="flex gap-2">
 					<input class="input-field flex-1" type="text" bind:value={withdrawAmount} placeholder="Amount (e.g. 100)" />
-					<button class="btn-action btn-emerald" disabled={processing || !withdrawTo || !withdrawAmount}
+					<button class="px-3.5 py-1.5 rounded-lg border-none cursor-pointer font-mono text-[11px] font-bold transition bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 disabled:opacity-40 disabled:cursor-not-allowed" disabled={processing || !withdrawTo || !withdrawAmount}
 						onclick={() => execTx('Withdraw amount', (r) => r['withdraw(address,uint256)'](withdrawTo, ethers.parseUnits(withdrawAmount, usdtDecimals)))}>
 						Withdraw
 					</button>
 				</div>
 
 			{:else if withdrawMode === 'eth'}
-				<button class="btn-action btn-cyan w-full" disabled={processing}
+				<button class="w-full px-3.5 py-1.5 rounded-lg border-none cursor-pointer font-mono text-[11px] font-bold transition bg-cyan-500/15 text-cyan-400 hover:bg-cyan-500/25 disabled:opacity-40 disabled:cursor-not-allowed" disabled={processing}
 					onclick={() => execTx('Withdraw BNB', (r) => r.withdrawETH())}>
 					Withdraw All BNB → Platform Wallet
 				</button>
@@ -346,7 +346,7 @@
 			{:else if withdrawMode === 'rescue'}
 				<div class="flex gap-2">
 					<input class="input-field flex-1" bind:value={withdrawToken} placeholder="Token address to rescue" />
-					<button class="btn-action btn-cyan" disabled={processing || !withdrawToken}
+					<button class="px-3.5 py-1.5 rounded-lg border-none cursor-pointer font-mono text-[11px] font-bold transition bg-cyan-500/15 text-cyan-400 hover:bg-cyan-500/25 disabled:opacity-40 disabled:cursor-not-allowed" disabled={processing || !withdrawToken}
 						onclick={() => execTx('Rescue token', (r) => r.rescueToken(withdrawToken))}>
 						Rescue
 					</button>
@@ -374,7 +374,7 @@
 			</div>
 			<div class="flex gap-2">
 				<input class="input-field flex-1" bind:value={newAdmin} placeholder="0x..." />
-				<button class="btn-action btn-cyan" disabled={processing || !newAdmin}
+				<button class="px-3.5 py-1.5 rounded-lg border-none cursor-pointer font-mono text-[11px] font-bold transition bg-cyan-500/15 text-cyan-400 hover:bg-cyan-500/25 disabled:opacity-40 disabled:cursor-not-allowed" disabled={processing || !newAdmin}
 					onclick={() => execTx('Add admin', (r: any) => r.addAdmin(newAdmin))}>
 					Add Admin
 				</button>
@@ -392,26 +392,3 @@
 		</div>
 	</div>
 {/if}
-
-<style>
-	.stat-box {
-		background: var(--bg-surface); border: 1px solid var(--border-subtle);
-		border-radius: 10px; padding: 10px 12px;
-	}
-	.stat-label { display: block; font-size: 10px; font-family: 'Space Mono', monospace; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; }
-	.stat-value { display: block; font-size: 14px; font-weight: 700; font-family: 'Space Mono', monospace; margin-top: 2px; }
-	.btn-action {
-		padding: 6px 14px; border-radius: 8px; border: none; cursor: pointer;
-		font-family: 'Space Mono', monospace; font-size: 11px; font-weight: 700;
-		transition: all 150ms;
-	}
-	.btn-action:disabled { opacity: 0.4; cursor: not-allowed; }
-	.btn-cyan { background: rgba(0,210,255,0.15); color: #00d2ff; }
-	.btn-cyan:hover:not(:disabled) { background: rgba(0,210,255,0.25); }
-	.btn-emerald { background: rgba(16,185,129,0.15); color: #10b981; }
-	.btn-emerald:hover:not(:disabled) { background: rgba(16,185,129,0.25); }
-	.btn-red { background: rgba(239,68,68,0.15); color: #f87171; }
-	.btn-red:hover:not(:disabled) { background: rgba(239,68,68,0.25); }
-	.spinner { animation: spin 0.8s linear infinite; }
-	@keyframes spin { to { transform: rotate(360deg); } }
-</style>

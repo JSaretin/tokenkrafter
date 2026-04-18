@@ -83,39 +83,21 @@
 		alt={symbol || 'Token'}
 		width={size}
 		height={size}
-		class="tl-img"
+		class="rounded-full object-cover shrink-0"
 		style="width: {size}px; height: {size}px;"
 		onerror={() => { errored = true; }}
 	/>
 {:else if loading}
-	<div class="tl-shimmer" style="width: {size}px; height: {size}px;"></div>
+	<div class="tl-shimmer rounded-full shrink-0" style="width: {size}px; height: {size}px;"></div>
 {:else}
 	<div
-		class="tl-fallback"
+		class="rounded-full flex items-center justify-center text-white font-display font-bold shrink-0 select-none"
 		style="width: {size}px; height: {size}px; font-size: {Math.max(size * 0.42, 10)}px; background: {fallbackColor};"
 	>{fallbackLetter}</div>
 {/if}
 
 <style>
-	.tl-img {
-		border-radius: 50%;
-		object-fit: cover;
-		flex-shrink: 0;
-	}
-	.tl-fallback {
-		border-radius: 50%;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		color: white;
-		font-family: 'Syne', sans-serif;
-		font-weight: 700;
-		flex-shrink: 0;
-		user-select: none;
-	}
 	.tl-shimmer {
-		border-radius: 50%;
-		flex-shrink: 0;
 		background: linear-gradient(110deg, rgba(255,255,255,0.04) 30%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 70%);
 		background-size: 200% 100%;
 		animation: shimmer 1.2s ease-in-out infinite;

@@ -85,9 +85,7 @@
 {/if}
 
 <style>
-	.ticker-fade {
-		animation: ticker-in 0.4s ease-out;
-	}
+	.ticker-fade { animation: ticker-in 0.4s ease-out; }
 	@keyframes ticker-in {
 		0% { opacity: 0; transform: translateY(8px); }
 		100% { opacity: 1; transform: translateY(0); }

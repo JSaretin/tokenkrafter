@@ -1404,7 +1404,7 @@
 </svelte:head>
 
 <div class="page-container max-w-6xl mx-auto px-4 sm:px-6 py-10">
-	<a href="/manage-tokens" class="back-link">&larr; Back to Manage Tokens</a>
+	<a href="/manage-tokens" class="inline-block mb-6 font-mono text-[12px] text-dim no-underline transition-colors duration-150 hover:text-[#00d2ff]">&larr; Back to Manage Tokens</a>
 
 	{#if isLoading}
 		<div class="flex items-center justify-center min-h-[50vh]">
@@ -1438,9 +1438,9 @@
 			<div class="flex items-start justify-between flex-wrap gap-4">
 				<div class="flex items-center gap-4">
 					{#if metaLogoUrl || metaLogoPreview}
-						<img src={metaLogoPreview || metaLogoUrl} alt={tokenInfo.symbol} class="token-avatar-img" />
+						<img src={metaLogoPreview || metaLogoUrl} alt={tokenInfo.symbol} class="w-[60px] h-[60px] rounded-2xl object-cover border border-line-input shrink-0" />
 					{:else}
-						<div class="token-avatar syne">
+						<div class="w-[60px] h-[60px] rounded-2xl bg-[linear-gradient(135deg,rgba(0,210,255,0.2),rgba(99,102,241,0.2))] border border-line-input flex items-center justify-center text-[20px] font-extrabold text-heading shrink-0 font-display">
 							{tokenInfo.symbol.slice(0, 2).toUpperCase()}
 						</div>
 					{/if}
@@ -1468,7 +1468,7 @@
 				<a href="/manage-tokens" class="btn-secondary text-xs px-3 py-2 no-underline">&lt;- {$t('mt.back')}</a>
 			</div>
 
-			<div class="contract-addr-bar mt-4 font-mono">
+			<div class="mt-4 font-mono px-[14px] py-[10px] bg-surface border border-surface-hover rounded-lg overflow-x-auto whitespace-nowrap">
 				<span class="text-gray-500 text-xs">{$t('mt.contract')}:</span>
 				<span class="text-cyan-400 text-xs ml-2">{contractAddress}</span>
 			</div>
@@ -1476,40 +1476,40 @@
 
 		<!-- Stats Row -->
 		<div class="stats-row mb-8 grid grid-cols-2 sm:grid-cols-4 gap-3">
-			<div class="stat-card card p-4">
-				<div class="stat-label">{$t('mt.totalSupply')}</div>
-				<div class="stat-value rajdhani">{fmtSupply(tokenInfo.totalSupply)}</div>
-				<div class="stat-unit">{tokenInfo.symbol}</div>
+			<div class="card p-4 bg-surface border border-line rounded-xl">
+				<div class="text-[11px] text-dim font-mono uppercase tracking-[0.05em]">{$t('mt.totalSupply')}</div>
+				<div class="text-[22px] font-bold text-heading mt-1 mb-0.5 font-numeric">{fmtSupply(tokenInfo.totalSupply)}</div>
+				<div class="text-[11px] text-dim font-mono">{tokenInfo.symbol}</div>
 			</div>
-			<div class="stat-card card p-4">
-				<div class="stat-label">{$t('mt.decimals')}</div>
-				<div class="stat-value rajdhani">{tokenInfo.decimals}</div>
-				<div class="stat-unit">{$t('mt.precision')}</div>
+			<div class="card p-4 bg-surface border border-line rounded-xl">
+				<div class="text-[11px] text-dim font-mono uppercase tracking-[0.05em]">{$t('mt.decimals')}</div>
+				<div class="text-[22px] font-bold text-heading mt-1 mb-0.5 font-numeric">{tokenInfo.decimals}</div>
+				<div class="text-[11px] text-dim font-mono">{$t('mt.precision')}</div>
 			</div>
 			{#if tokenInfo.userBalance !== undefined}
-				<div class="stat-card card p-4">
-					<div class="stat-label">{$t('mt.yourBalance')}</div>
-					<div class="stat-value rajdhani">{fmtSupply(tokenInfo.userBalance)}</div>
-					<div class="stat-unit">{tokenInfo.symbol}</div>
+				<div class="card p-4 bg-surface border border-line rounded-xl">
+					<div class="text-[11px] text-dim font-mono uppercase tracking-[0.05em]">{$t('mt.yourBalance')}</div>
+					<div class="text-[22px] font-bold text-heading mt-1 mb-0.5 font-numeric">{fmtSupply(tokenInfo.userBalance)}</div>
+					<div class="text-[11px] text-dim font-mono">{tokenInfo.symbol}</div>
 				</div>
 			{/if}
 			{#if tokenInfo.isTaxable && tokenInfo.buyTaxBps !== undefined}
-				<div class="stat-card stat-card-tax card p-4">
-					<div class="stat-label">Tax Rates</div>
-					<div class="tax-rates-row">
-						<div class="tax-rate-item">
-							<span class="tax-rate-val rajdhani">{(tokenInfo.buyTaxBps / 100).toFixed(1)}%</span>
-							<span class="tax-rate-type">Buy</span>
+				<div class="card p-4 bg-surface border border-line rounded-xl col-span-1">
+					<div class="text-[11px] text-dim font-mono uppercase tracking-[0.05em]">Tax Rates</div>
+					<div class="flex items-center gap-1 sm:gap-1.5 mt-1 mb-0.5 flex-wrap">
+						<div class="flex flex-col items-center gap-0 min-w-0">
+							<span class="text-[14px] sm:text-[20px] font-bold text-heading leading-[1.2] font-numeric">{(tokenInfo.buyTaxBps / 100).toFixed(1)}%</span>
+							<span class="text-[8px] sm:text-[9px] text-dim font-mono uppercase tracking-[0.04em]">Buy</span>
 						</div>
-						<span class="tax-rate-sep">/</span>
-						<div class="tax-rate-item">
-							<span class="tax-rate-val rajdhani">{((tokenInfo.sellTaxBps ?? 0) / 100).toFixed(1)}%</span>
-							<span class="tax-rate-type">Sell</span>
+						<span class="text-dim text-[12px] sm:text-[16px] -mt-1">/</span>
+						<div class="flex flex-col items-center gap-0 min-w-0">
+							<span class="text-[14px] sm:text-[20px] font-bold text-heading leading-[1.2] font-numeric">{((tokenInfo.sellTaxBps ?? 0) / 100).toFixed(1)}%</span>
+							<span class="text-[8px] sm:text-[9px] text-dim font-mono uppercase tracking-[0.04em]">Sell</span>
 						</div>
-						<span class="tax-rate-sep">/</span>
-						<div class="tax-rate-item">
-							<span class="tax-rate-val rajdhani">{((tokenInfo.transferTaxBps ?? 0) / 100).toFixed(1)}%</span>
-							<span class="tax-rate-type">Transfer</span>
+						<span class="text-dim text-[12px] sm:text-[16px] -mt-1">/</span>
+						<div class="flex flex-col items-center gap-0 min-w-0">
+							<span class="text-[14px] sm:text-[20px] font-bold text-heading leading-[1.2] font-numeric">{((tokenInfo.transferTaxBps ?? 0) / 100).toFixed(1)}%</span>
+							<span class="text-[8px] sm:text-[9px] text-dim font-mono uppercase tracking-[0.04em]">Transfer</span>
 						</div>
 					</div>
 				</div>
@@ -1517,11 +1517,11 @@
 		</div>
 
 		<!-- Tabs -->
-		<div class="tabs-bar mb-6 flex gap-1 overflow-x-auto pb-1">
+		<div class="mb-6 flex gap-1 overflow-x-auto pb-1 border-b border-surface-hover">
 			{#each tabs.filter(isTabVisible) as tab}
 				<button
 					onclick={() => (activeTab = tab.id as typeof activeTab)}
-					class="tab-btn font-mono {activeTab === tab.id ? 'active' : ''} cursor-pointer"
+					class={'flex items-center gap-1.5 px-4 py-2 rounded-t-lg text-[13px] bg-transparent border-none border-b-2 border-b-transparent -mb-px whitespace-nowrap transition-all duration-150 font-mono cursor-pointer ' + (activeTab === tab.id ? 'text-[#00d2ff] border-b-[#00d2ff] bg-[rgba(0,210,255,0.05)] ' : 'text-dim hover:text-foreground ')}
 				>
 					<span>{tab.icon}</span>
 					<span>{$t(tab.labelKey)}</span>
@@ -1731,23 +1731,23 @@
 		onclick={closeDepositModal}
 	>
 		<div
-			class="deposit-modal w-full max-w-md rounded-2xl border shadow-2xl overflow-hidden" style="border-color: var(--border-input); background: var(--bg)"
+			class="deposit-modal w-full max-w-md rounded-2xl border border-line-input bg-background shadow-2xl overflow-hidden"
 			onclick={(e) => e.stopPropagation()}
 		>
 			<!-- Header -->
-			<div class="deposit-modal-header">
+			<div class="flex justify-between items-center px-6 py-5 border-b border-surface-hover">
 				<div class="flex items-center gap-3">
-					<div class="deposit-icon-circle">
+					<div class="w-10 h-10 rounded-xl bg-[rgba(245,158,11,0.15)] text-[#f59e0b] flex items-center justify-center shrink-0">
 						<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 							<path d="M12 2v20M2 12h20"/>
 						</svg>
 					</div>
 					<div>
-						<h2 class="syne text-lg font-bold text-white">{$t('mt.depositRequired')}</h2>
+						<h2 class="font-display text-lg font-bold text-white">{$t('mt.depositRequired')}</h2>
 						<p class="text-gray-500 text-[11px] font-mono">{depositInfo.networkName} Network</p>
 					</div>
 				</div>
-				<button onclick={closeDepositModal} class="deposit-close-btn cursor-pointer">
+				<button onclick={closeDepositModal} class="w-8 h-8 rounded-lg border-none bg-surface-hover text-dim flex items-center justify-center transition-all duration-150 hover:bg-[var(--border-input)] hover:text-heading cursor-pointer">
 					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 						<path d="M18 6L6 18M6 6l12 12"/>
 					</svg>
@@ -1755,42 +1755,42 @@
 			</div>
 
 			<!-- Amount Summary -->
-			<div class="deposit-amount-section">
-				<div class="deposit-amount-row">
+			<div class="px-6 py-5 flex flex-col gap-2.5">
+				<div class="flex justify-between items-center">
 					<span class="text-gray-500 text-xs font-mono">{$t('mt.required')}</span>
 					<span class="text-white text-sm font-mono font-bold">{Number(depositInfo.required).toLocaleString()} {depositInfo.symbol}</span>
 				</div>
-				<div class="deposit-amount-row">
+				<div class="flex justify-between items-center">
 					<span class="text-gray-500 text-xs font-mono">{$t('mt.yourBalance')}</span>
 					<span class="text-gray-300 text-sm font-mono">{Number(depositInfo.userBalance).toLocaleString()} {depositInfo.symbol}</span>
 				</div>
-				<div class="deposit-divider"></div>
-				<div class="deposit-amount-row">
+				<hr class="border-none border-t border-dashed border-line my-1" />
+				<div class="flex justify-between items-center">
 					<span class="text-amber-400 text-xs font-mono font-bold">{$t('mt.amountToDeposit')}</span>
 					<span class="text-amber-300 text-lg font-mono font-bold">{Number(depositInfo.deficit).toLocaleString()} {depositInfo.symbol}</span>
 				</div>
 			</div>
 
 			<!-- QR Code -->
-			<div class="deposit-qr-section">
-				<div class="deposit-qr-frame">
+			<div class="flex justify-center px-6 pb-5">
+				<div class="p-3 bg-surface border border-line rounded-2xl">
 					<QrCode data={userAddress || ''} width={200} colorDark="#00d2ff" colorLight="#0d0d14" alt="Deposit address" />
 				</div>
 			</div>
 
 			<!-- Address -->
-			<div class="deposit-address-section">
+			<div class="px-6 pb-4 flex flex-col gap-1.5">
 				<label class="text-gray-500 text-[10px] font-mono uppercase tracking-wider">{$t('mt.depositAddress')}</label>
-				<div class="deposit-address-row">
+				<div class="flex items-center gap-2 px-3 py-2.5 bg-surface border border-line rounded-[10px]">
 					<span class="text-cyan-400 text-xs font-mono break-all flex-1">{userAddress}</span>
-					<button onclick={copyAddress} class="deposit-copy-btn cursor-pointer">
+					<button onclick={copyAddress} class="px-3 py-1 rounded-md border border-[rgba(0,210,255,0.3)] bg-[rgba(0,210,255,0.08)] text-[#00d2ff] text-[11px] font-mono font-semibold transition-all duration-150 whitespace-nowrap shrink-0 hover:bg-[rgba(0,210,255,0.15)] hover:border-[rgba(0,210,255,0.5)] cursor-pointer">
 						{addressCopied ? $t('mt.copied') : $t('mt.copy')}
 					</button>
 				</div>
 			</div>
 
 			<!-- Warning -->
-			<div class="deposit-warning">
+			<div class="flex gap-2 mx-6 mb-4 px-[14px] py-2.5 bg-[rgba(245,158,11,0.06)] border border-[rgba(245,158,11,0.15)] rounded-[10px] text-[#f59e0b]">
 				<svg class="flex-shrink-0 mt-0.5" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 					<path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
 					<line x1="12" y1="9" x2="12" y2="13"/>
@@ -1802,7 +1802,7 @@
 			</div>
 
 			<!-- Footer -->
-			<div class="deposit-footer">
+			<div class="flex justify-between items-center px-6 py-4 border-t border-surface-hover bg-surface">
 				<div class="flex items-center gap-2">
 					<div class="spinner-sm w-3.5 h-3.5 rounded-full border-2 border-white/10 border-t-cyan-400"></div>
 					<span class="text-gray-500 text-[11px] font-mono">{$t('mt.monitoringDeposit')}</span>
@@ -1814,70 +1814,6 @@
 {/if}
 
 <style>
-	.back-link {
-		display: inline-block; margin-bottom: 1.5rem;
-		font-family: 'Space Mono', monospace; font-size: 12px;
-		color: var(--text-dim); text-decoration: none; transition: color 0.15s;
-	}
-	.back-link:hover { color: #00d2ff; }
-
-	.spinner { animation: spin 0.8s linear infinite; }
-	@keyframes spin { to { transform: rotate(360deg); } }
-
-	.syne { font-family: 'Syne', sans-serif; }
-	.rajdhani { font-family: 'Rajdhani', sans-serif; font-variant-numeric: tabular-nums; }
-
-	.token-avatar {
-		width: 60px; height: 60px;
-		border-radius: 16px;
-		background: linear-gradient(135deg, rgba(0,210,255,0.2), rgba(99,102,241,0.2));
-		border: 1px solid var(--border-input);
-		display: flex; align-items: center; justify-content: center;
-		font-size: 20px; font-weight: 800; color: var(--text-heading);
-		flex-shrink: 0;
-	}
-
-	.contract-addr-bar {
-		padding: 10px 14px;
-		background: var(--bg-surface);
-		border: 1px solid var(--bg-surface-hover);
-		border-radius: 8px;
-		overflow-x: auto;
-		white-space: nowrap;
-	}
-
-	.stat-card {
-		background: var(--bg-surface);
-		border: 1px solid var(--border);
-		border-radius: 12px;
-	}
-	.stat-label { font-size: 11px; color: var(--text-dim); font-family: 'Space Mono', monospace; text-transform: uppercase; letter-spacing: 0.05em; }
-	.stat-value { font-size: 22px; font-weight: 700; color: var(--text-heading); margin: 4px 0 2px; font-family: 'Rajdhani', sans-serif; font-variant-numeric: tabular-nums; }
-	.stat-unit { font-size: 11px; color: var(--text-dim); font-family: 'Space Mono', monospace; }
-
-	/* Tax rates in stat card */
-	.stat-card-tax { grid-column: span 1; }
-	.tax-rates-row { display: flex; align-items: center; gap: 4px; margin: 4px 0 2px; flex-wrap: wrap; }
-	.tax-rate-item { display: flex; flex-direction: column; align-items: center; gap: 0; min-width: 0; }
-	.tax-rate-val { font-size: 14px; font-weight: 700; color: var(--text-heading); line-height: 1.2; font-family: 'Rajdhani', sans-serif; font-variant-numeric: tabular-nums; }
-	.tax-rate-type { font-size: 8px; color: var(--text-dim); font-family: 'Space Mono', monospace; text-transform: uppercase; letter-spacing: 0.04em; }
-	.tax-rate-sep { color: var(--text-dim); font-size: 12px; margin-top: -4px; }
-	@media (min-width: 640px) {
-		.tax-rate-val { font-size: 20px; }
-		.tax-rate-type { font-size: 9px; }
-		.tax-rate-sep { font-size: 16px; }
-		.tax-rates-row { gap: 6px; }
-	}
-
-	/* Token avatar (logo) */
-	.token-avatar-img {
-		width: 60px; height: 60px;
-		border-radius: 16px;
-		object-fit: cover;
-		border: 1px solid var(--border-input);
-		flex-shrink: 0;
-	}
-
 	/* About section logo upload */
 	:global(.about-form) { display: flex; flex-direction: column; gap: 14px; }
 	:global(.about-logo-section) { display: flex; flex-direction: column; gap: 8px; }
@@ -1910,31 +1846,6 @@
 	:global(.liq-empty-state) {
 		display: flex; flex-direction: column; align-items: center; gap: 6px;
 		padding: 24px 16px; text-align: center;
-	}
-
-	.tabs-bar {
-		border-bottom: 1px solid var(--bg-surface-hover);
-		padding-bottom: 0;
-	}
-
-	.tab-btn {
-		display: flex; align-items: center; gap: 6px;
-		padding: 8px 16px;
-		border-radius: 8px 8px 0 0;
-		font-size: 13px;
-		color: var(--text-dim);
-		background: transparent;
-		border: none;
-		border-bottom: 2px solid transparent;
-		transition: all 0.15s;
-		white-space: nowrap;
-		margin-bottom: -1px;
-	}
-	.tab-btn:hover { color: var(--text); }
-	.tab-btn.active {
-		color: #00d2ff;
-		border-bottom-color: #00d2ff;
-		background: rgba(0,210,255,0.05);
 	}
 
 	/* Shared tab styles — :global() so they apply inside child components
@@ -2231,9 +2142,6 @@
 
 	:global(.label-text) { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); display: block; margin-bottom: 6px; font-family: 'Space Mono', monospace; }
 
-	.no-underline { text-decoration: none; }
-	a.no-underline { text-decoration: none; }
-
 	:global(select option) { background: var(--select-bg); }
 
 	:global(.input-field) {
@@ -2292,138 +2200,6 @@
 		to { opacity: 1; transform: scale(1) translateY(0); }
 	}
 
-	.deposit-modal-header {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		padding: 20px 24px;
-		border-bottom: 1px solid var(--bg-surface-hover);
-	}
-
-	.deposit-icon-circle {
-		width: 40px;
-		height: 40px;
-		border-radius: 12px;
-		background: rgba(245,158,11,0.15);
-		color: #f59e0b;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		flex-shrink: 0;
-	}
-
-	.deposit-close-btn {
-		width: 32px;
-		height: 32px;
-		border-radius: 8px;
-		border: none;
-		background: var(--bg-surface-hover);
-		color: var(--text-dim);
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		transition: all 0.15s;
-	}
-	.deposit-close-btn:hover {
-		background: var(--border-input);
-		color: var(--text-heading);
-	}
-
-	.deposit-amount-section {
-		padding: 20px 24px;
-		display: flex;
-		flex-direction: column;
-		gap: 10px;
-	}
-
-	.deposit-amount-row {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-	}
-
-	.deposit-divider {
-		border: none;
-		border-top: 1px dashed var(--border);
-		margin: 4px 0;
-	}
-
-	.deposit-qr-section {
-		display: flex;
-		justify-content: center;
-		padding: 0 24px 20px;
-	}
-
-	.deposit-qr-frame {
-		padding: 12px;
-		background: var(--bg-surface);
-		border: 1px solid var(--border);
-		border-radius: 16px;
-	}
-
-	.deposit-qr-img {
-		width: 180px;
-		height: 180px;
-		border-radius: 8px;
-	}
-
-	.deposit-address-section {
-		padding: 0 24px 16px;
-		display: flex;
-		flex-direction: column;
-		gap: 6px;
-	}
-
-	.deposit-address-row {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		padding: 10px 12px;
-		background: var(--bg-surface);
-		border: 1px solid var(--border);
-		border-radius: 10px;
-	}
-
-	.deposit-copy-btn {
-		padding: 4px 12px;
-		border-radius: 6px;
-		border: 1px solid rgba(0,210,255,0.3);
-		background: rgba(0,210,255,0.08);
-		color: #00d2ff;
-		font-size: 11px;
-		font-family: 'Space Mono', monospace;
-		font-weight: 600;
-		transition: all 0.15s;
-		white-space: nowrap;
-		flex-shrink: 0;
-	}
-	.deposit-copy-btn:hover {
-		background: rgba(0,210,255,0.15);
-		border-color: rgba(0,210,255,0.5);
-	}
-
-	.deposit-warning {
-		display: flex;
-		gap: 8px;
-		margin: 0 24px 16px;
-		padding: 10px 14px;
-		background: rgba(245,158,11,0.06);
-		border: 1px solid rgba(245,158,11,0.15);
-		border-radius: 10px;
-		color: #f59e0b;
-	}
-
-	.deposit-footer {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		padding: 16px 24px;
-		border-top: 1px solid var(--bg-surface-hover);
-		background: var(--bg-surface);
-	}
-
-	.spinner-sm { animation: spin 0.8s linear infinite; }
-
 	/* Launchpad section */
 	:global(.launchpad-status) {
 		display: flex;
@@ -2442,24 +2218,5 @@
 	:global(.launchpad-create) {
 		border-style: dashed;
 		border-color: rgba(0, 210, 255, 0.2);
-	}
-	.nav-cta {
-		display: inline-flex;
-		align-items: center;
-		gap: 5px;
-		background: linear-gradient(135deg, #00d2ff, #3a7bd5);
-		color: white;
-		font-weight: 600;
-		padding: 6px 14px;
-		border-radius: 8px;
-		border: none;
-		cursor: pointer;
-		transition: all 0.2s;
-		font-family: 'Syne', sans-serif;
-		font-size: 13px;
-	}
-	.nav-cta:hover {
-		transform: translateY(-1px);
-		box-shadow: 0 4px 16px rgba(0, 210, 255, 0.3);
 	}
 </style>

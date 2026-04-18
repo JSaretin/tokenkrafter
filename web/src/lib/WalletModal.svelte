@@ -254,93 +254,99 @@
 <svelte:window onkeydown={handleKeydown} />
 
 {#if open}
-	<div class="wm-overlay" onclick={close} role="presentation">
-		<div class="wm-modal" onclick={(e) => e.stopPropagation()} role="dialog" aria-label="Connect wallet" tabindex="-1" onkeydown={handleModalKeydown}>
+	<div class="fixed inset-0 z-[9999] bg-black/70 backdrop-blur-[4px] flex items-center justify-center p-4 max-[480px]:items-end max-[480px]:p-0" onclick={close} role="presentation">
+		<div class="bg-background border border-line rounded-2xl p-6 w-full max-w-[380px] flex flex-col gap-3 max-[480px]:rounded-t-2xl max-[480px]:rounded-b-none max-[480px]:max-h-[85vh] max-[480px]:max-w-full" onclick={(e) => e.stopPropagation()} role="dialog" aria-label="Connect wallet" tabindex="-1" onkeydown={handleModalKeydown}>
 
 			<!-- 3-step progress indicator: Method → Secure → Backup. Hidden on
 			     paths that don't fit the funnel (returning unlock, recovery). -->
 			{#if stepperPos > 0}
-				<div class="wm-stepper">
+				<div class="flex items-center gap-1 px-1 pb-2">
 					{#each [$t('wallet.stepMethod'), $t('wallet.stepSecure'), $t('wallet.stepBackup')] as label, i}
 						{@const idx = i + 1}
 						{@const state = idx < stepperPos ? 'done' : idx === stepperPos ? 'active' : 'todo'}
-						<div class="wm-step wm-step-{state}">
-							<div class="wm-step-dot">
+						<div class="flex items-center gap-1.5">
+							<div class={'w-[22px] h-[22px] rounded-full flex items-center justify-center font-display text-[11px] font-extrabold border transition ' +
+								(state === 'active' ? 'bg-cyan-500/[0.12] text-brand-cyan border-cyan-500/[0.35] shadow-[0_0_0_3px_rgba(0,210,255,0.08)]' :
+								 state === 'done' ? 'bg-emerald-500/[0.12] text-[#10b981] border-emerald-500/30' :
+								 'bg-surface-input text-dim border-line')}>
 								{#if state === 'done'}
 									<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>
 								{:else}
 									{idx}
 								{/if}
 							</div>
-							<span class="wm-step-label">{label}</span>
+							<span class={'font-mono text-[10px] transition-colors ' +
+								(state === 'active' ? 'text-brand-cyan font-bold' :
+								 state === 'done' ? 'text-[#10b981]' :
+								 'text-dim')}>{label}</span>
 						</div>
 						{#if idx < 3}
-							<div class="wm-step-line wm-step-line-{idx < stepperPos ? 'done' : 'todo'}"></div>
+							<div class={'flex-1 h-0.5 rounded-sm transition-colors ' + (idx < stepperPos ? 'bg-emerald-500/30' : 'bg-surface-hover')}></div>
 						{/if}
 					{/each}
 				</div>
 			{/if}
 
 			{#if step === 'choose'}
-				<div class="wm-header">
-					<h2 class="wm-title">{$t('wallet.connectWallet')}</h2>
-					<button class="wm-close" aria-label="Close" onclick={close}>
+				<div class="flex items-center justify-between">
+					<h2 class="font-display text-lg font-extrabold text-heading m-0">{$t('wallet.connectWallet')}</h2>
+					<button class="w-8 h-8 rounded-lg border-none bg-surface-hover text-dim flex items-center justify-center cursor-pointer transition-colors shrink-0 hover:bg-line-input hover:text-heading" aria-label="Close" onclick={close}>
 						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
 					</button>
 				</div>
 
-				<button class="wm-option wm-option-primary" onclick={handleGoogleLogin}>
-					<span class="wm-rec-badge">
+				<button class="relative flex items-center gap-3 p-3.5 bg-cyan-500/[0.04] border border-cyan-500/20 rounded-xl cursor-pointer transition text-left font-[inherit] text-[inherit] hover:border-cyan-500/50" onclick={handleGoogleLogin}>
+					<span class="absolute -top-2 right-2.5 inline-flex items-center gap-1 text-[8px] px-2 py-0.5 rounded bg-gradient-to-br from-[#00d2ff] to-[#3a7bd5] text-white font-mono font-bold uppercase tracking-[0.05em] shadow-[0_2px_8px_rgba(0,210,255,0.3)]">
 						<svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
 						{$t('wallet.recommended')}
 					</span>
-					<div class="wm-option-icon">
+					<div class="w-10 h-10 rounded-[10px] bg-surface-hover flex items-center justify-center shrink-0">
 						<svg width="20" height="20" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
 					</div>
-					<div class="wm-option-info">
-						<span class="wm-option-title">{$t('wallet.quickWallet')}</span>
-						<span class="wm-option-desc">{$t('wallet.quickWalletDesc')}</span>
+					<div class="flex-1 flex flex-col gap-0.5">
+						<span class="text-sm font-semibold text-heading font-display">{$t('wallet.quickWallet')}</span>
+						<span class="text-[10px] text-dim font-mono">{$t('wallet.quickWalletDesc')}</span>
 					</div>
 				</button>
 
-				<button class="wm-option" onclick={() => { onWalletConnect(); close(); }}>
-					<div class="wm-option-icon wm-option-icon-wc">
+				<button class="relative flex items-center gap-3 p-3.5 bg-surface border border-line rounded-xl cursor-pointer transition text-left font-[inherit] text-[inherit] hover:border-cyan-500/30" onclick={() => { onWalletConnect(); close(); }}>
+					<div class="w-10 h-10 rounded-[10px] flex items-center justify-center shrink-0 bg-[rgba(59,153,252,0.08)]">
 						<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M6.09 8.95a8.5 8.5 0 0 1 11.82 0l.39.38a.4.4 0 0 1 0 .58l-1.34 1.31a.21.21 0 0 1-.3 0l-.54-.53a5.93 5.93 0 0 0-8.24 0l-.58.56a.21.21 0 0 1-.3 0L5.67 9.94a.4.4 0 0 1 0-.58l.42-.41zm14.6 2.72 1.2 1.17a.4.4 0 0 1 0 .58l-5.38 5.27a.42.42 0 0 1-.59 0l-3.82-3.74a.1.1 0 0 0-.15 0l-3.82 3.74a.42.42 0 0 1-.59 0L2.16 13.42a.4.4 0 0 1 0-.58l1.2-1.17a.42.42 0 0 1 .59 0l3.82 3.74a.1.1 0 0 0 .15 0l3.82-3.74a.42.42 0 0 1 .59 0l3.82 3.74a.1.1 0 0 0 .15 0l3.82-3.74a.42.42 0 0 1 .59 0z" fill="#3B99FC"/></svg>
 					</div>
-					<div class="wm-option-info">
-						<span class="wm-option-title">{$t('wallet.walletConnect')}</span>
-						<span class="wm-option-desc">{$t('wallet.walletConnectDesc')}</span>
+					<div class="flex-1 flex flex-col gap-0.5">
+						<span class="text-sm font-semibold text-heading font-display">{$t('wallet.walletConnect')}</span>
+						<span class="text-[10px] text-dim font-mono">{$t('wallet.walletConnectDesc')}</span>
 					</div>
 				</button>
 
 			{:else if step === 'google-loading'}
-				<div class="wm-header"><h2 class="wm-title">{$t('wallet.signingIn')}</h2></div>
-				<div class="wm-center">
-					<div class="wm-spinner"></div>
-					<p class="wm-hint">{$t('wallet.redirectingGoogle')}</p>
+				<div class="flex items-center justify-between"><h2 class="font-display text-lg font-extrabold text-heading m-0">{$t('wallet.signingIn')}</h2></div>
+				<div class="flex flex-col items-center gap-3 py-6">
+					<div class="w-8 h-8 border-2 border-line-input border-t-brand-cyan rounded-full animate-[spin_0.8s_linear_infinite]"></div>
+					<p class="text-xs text-dim font-mono m-0 leading-[1.5]">{$t('wallet.redirectingGoogle')}</p>
 				</div>
 
 			{:else if step === 'completing-signin'}
-				<div class="wm-header"><h2 class="wm-title">{$t('wallet.signingIn')}</h2></div>
-				<div class="wm-center">
-					<div class="wm-spinner"></div>
-					<p class="wm-hint">Completing sign-in…</p>
+				<div class="flex items-center justify-between"><h2 class="font-display text-lg font-extrabold text-heading m-0">{$t('wallet.signingIn')}</h2></div>
+				<div class="flex flex-col items-center gap-3 py-6">
+					<div class="w-8 h-8 border-2 border-line-input border-t-brand-cyan rounded-full animate-[spin_0.8s_linear_infinite]"></div>
+					<p class="text-xs text-dim font-mono m-0 leading-[1.5]">Completing sign-in…</p>
 				</div>
 
 			{:else if step === 'pin-setup'}
-				<h2 class="wm-title">{$t('wallet.secureWallet')}</h2>
+				<h2 class="font-display text-lg font-extrabold text-heading m-0">{$t('wallet.secureWallet')}</h2>
 
 				<!-- Explicit tabs replace the easy-to-miss inline toggle. -->
-				<div class="wm-mode-tabs">
-					<button class="wm-mode-tab" class:active={!isImporting} onclick={() => { isImporting = false; error = ''; }}>
+				<div class="flex gap-1 p-[3px] bg-surface-input border border-line rounded-[10px]">
+					<button class={'flex-1 py-2.5 border-none bg-transparent cursor-pointer rounded-[7px] font-display text-xs font-bold transition-all duration-[120ms] hover:text-muted ' + (!isImporting ? 'bg-cyan-500/10 text-brand-cyan shadow-[0_0_0_1px_rgba(0,210,255,0.2)]' : 'text-dim')} onclick={() => { isImporting = false; error = ''; }}>
 						{$t('wallet.createNew')}
 					</button>
-					<button class="wm-mode-tab" class:active={isImporting} onclick={() => { isImporting = true; error = ''; }}>
+					<button class={'flex-1 py-2.5 border-none bg-transparent cursor-pointer rounded-[7px] font-display text-xs font-bold transition-all duration-[120ms] hover:text-muted ' + (isImporting ? 'bg-cyan-500/10 text-brand-cyan shadow-[0_0_0_1px_rgba(0,210,255,0.2)]' : 'text-dim')} onclick={() => { isImporting = true; error = ''; }}>
 						{$t('wallet.importExisting')}
 					</button>
 				</div>
 
-				<p class="wm-hint">
+				<p class="text-xs text-dim font-mono m-0 leading-[1.5]">
 					{#if isImporting}
 						{$t('wallet.importHint')}
 					{:else}
@@ -349,60 +355,60 @@
 				</p>
 
 				{#if isImporting}
-					<textarea class="wm-input wm-textarea" rows="3" placeholder={$t('wallet.recoveryPhrasePlaceholder')} bind:value={importMnemonic} autocomplete="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true"></textarea>
+					<textarea class="w-full px-3.5 py-3 rounded-[10px] bg-surface-input border border-line text-heading font-mono text-base outline-none transition-[border-color] focus:border-cyan-500/40 placeholder:text-dim resize-y leading-[1.5]" rows="3" placeholder={$t('wallet.recoveryPhrasePlaceholder')} bind:value={importMnemonic} autocomplete="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true"></textarea>
 				{/if}
 
-				<input class="wm-input" type="tel" inputmode="numeric" autocomplete="one-time-code" data-lpignore="true" data-1p-ignore="true" style="-webkit-text-security: disc; text-security: disc;" placeholder={$t('wallet.enterPin')} bind:value={pin} maxlength="8" />
-				<input class="wm-input" type="tel" inputmode="numeric" autocomplete="one-time-code" data-lpignore="true" data-1p-ignore="true" style="-webkit-text-security: disc; text-security: disc;" placeholder={$t('wallet.confirmPin')} bind:value={pinConfirm} maxlength="8"
+				<input class="w-full px-3.5 py-3 rounded-[10px] bg-surface-input border border-line text-heading font-mono text-base outline-none transition-[border-color] focus:border-cyan-500/40 placeholder:text-dim [-webkit-text-security:disc] [text-security:disc]" type="tel" inputmode="numeric" autocomplete="one-time-code" data-lpignore="true" data-1p-ignore="true" placeholder={$t('wallet.enterPin')} bind:value={pin} maxlength="8" />
+				<input class="w-full px-3.5 py-3 rounded-[10px] bg-surface-input border border-line text-heading font-mono text-base outline-none transition-[border-color] focus:border-cyan-500/40 placeholder:text-dim [-webkit-text-security:disc] [text-security:disc]" type="tel" inputmode="numeric" autocomplete="one-time-code" data-lpignore="true" data-1p-ignore="true" placeholder={$t('wallet.confirmPin')} bind:value={pinConfirm} maxlength="8"
 					onkeydown={(e) => { if (e.key === 'Enter') { isImporting ? handleImportFirstWallet() : handleCreateWallet(); } }} />
 
 				{#if isImporting}
-					<label class="wm-checkbox">
-						<input type="checkbox" bind:checked={importAck} />
+					<label class="flex items-center gap-2 text-[11px] text-muted font-mono cursor-pointer">
+						<input type="checkbox" bind:checked={importAck} class="accent-brand-cyan" />
 						<span>{$t('wallet.importAck')}</span>
 					</label>
 				{/if}
 
-				{#if error}<p class="wm-error">{error}</p>{/if}
+				{#if error}<p class="text-[11px] text-[#f87171] font-mono m-0 px-2.5 py-1.5 bg-[rgba(248,113,113,0.08)] rounded-md">{error}</p>{/if}
 
 				{#if isImporting}
-					<button class="wm-btn wm-btn-primary" onclick={handleImportFirstWallet} disabled={loading}>
+					<button class="p-3 rounded-[10px] border-none cursor-pointer font-display text-sm font-bold transition w-full bg-gradient-to-br from-[#00d2ff] to-[#3a7bd5] text-white hover:-translate-y-px hover:shadow-[0_4px_20px_rgba(0,210,255,0.3)] disabled:opacity-50 disabled:cursor-not-allowed disabled:translate-y-0 disabled:shadow-none" onclick={handleImportFirstWallet} disabled={loading}>
 						{loading ? $t('wallet.importing') : $t('wallet.importWallet')}
 					</button>
 				{:else}
-					<button class="wm-btn wm-btn-primary" onclick={handleCreateWallet} disabled={loading}>
+					<button class="p-3 rounded-[10px] border-none cursor-pointer font-display text-sm font-bold transition w-full bg-gradient-to-br from-[#00d2ff] to-[#3a7bd5] text-white hover:-translate-y-px hover:shadow-[0_4px_20px_rgba(0,210,255,0.3)] disabled:opacity-50 disabled:cursor-not-allowed disabled:translate-y-0 disabled:shadow-none" onclick={handleCreateWallet} disabled={loading}>
 						{loading ? $t('wallet.creating') : $t('wallet.createWallet')}
 					</button>
 				{/if}
 
 			{:else if step === 'pin-enter'}
-				<h2 class="wm-title">{$t('wallet.unlockWallet')}</h2>
-				<p class="wm-hint">{$t('wallet.enterPinToUnlock')}</p>
+				<h2 class="font-display text-lg font-extrabold text-heading m-0">{$t('wallet.unlockWallet')}</h2>
+				<p class="text-xs text-dim font-mono m-0 leading-[1.5]">{$t('wallet.enterPinToUnlock')}</p>
 
-				<input class="wm-input" type="tel" inputmode="numeric" autocomplete="one-time-code" data-lpignore="true" data-1p-ignore="true" style="-webkit-text-security: disc; text-security: disc;" placeholder={$t('wallet.pinPlaceholder')} bind:value={pin} maxlength="8" autofocus
+				<input class="w-full px-3.5 py-3 rounded-[10px] bg-surface-input border border-line text-heading font-mono text-base outline-none transition-[border-color] focus:border-cyan-500/40 placeholder:text-dim [-webkit-text-security:disc] [text-security:disc]" type="tel" inputmode="numeric" autocomplete="one-time-code" data-lpignore="true" data-1p-ignore="true" placeholder={$t('wallet.pinPlaceholder')} bind:value={pin} maxlength="8" autofocus
 					onkeydown={(e) => { if (e.key === 'Enter') handleUnlock(); }} />
 
-				{#if error}<p class="wm-error">{error}</p>{/if}
+				{#if error}<p class="text-[11px] text-[#f87171] font-mono m-0 px-2.5 py-1.5 bg-[rgba(248,113,113,0.08)] rounded-md">{error}</p>{/if}
 
-				<button class="wm-btn wm-btn-primary" onclick={handleUnlock} disabled={loading}>
+				<button class="p-3 rounded-[10px] border-none cursor-pointer font-display text-sm font-bold transition w-full bg-gradient-to-br from-[#00d2ff] to-[#3a7bd5] text-white hover:-translate-y-px hover:shadow-[0_4px_20px_rgba(0,210,255,0.3)] disabled:opacity-50 disabled:cursor-not-allowed disabled:translate-y-0 disabled:shadow-none" onclick={handleUnlock} disabled={loading}>
 					{loading ? $t('wallet.unlocking') : $t('wallet.unlock')}
 				</button>
-				<div class="wm-links">
-					<button class="wm-btn-link" onclick={() => { error = ''; step = 'forgot-pin'; }}>{$t('wallet.forgotPin')}</button>
-					<button class="wm-btn-link wm-btn-link-danger" onclick={() => { onDisconnect(); open = false; }}>{$t('wallet.disconnect')}</button>
+				<div class="flex justify-between">
+					<button class="bg-none border-none text-dim cursor-pointer font-mono text-[11px] underline p-1 hover:text-brand-cyan" onclick={() => { error = ''; step = 'forgot-pin'; }}>{$t('wallet.forgotPin')}</button>
+					<button class="bg-none border-none cursor-pointer font-mono text-[11px] underline p-1 text-[#f87171] hover:text-[#ef4444]" onclick={() => { onDisconnect(); open = false; }}>{$t('wallet.disconnect')}</button>
 				</div>
 
 			{:else if step === 'recovery-codes'}
-				<h2 class="wm-title">{$t('wallet.recoveryCodes')}</h2>
-				<p class="wm-hint">{$t('wallet.recoveryCodesHint')}</p>
+				<h2 class="font-display text-lg font-extrabold text-heading m-0">{$t('wallet.recoveryCodes')}</h2>
+				<p class="text-xs text-dim font-mono m-0 leading-[1.5]">{$t('wallet.recoveryCodesHint')}</p>
 
-				<div class="wm-codes">
+				<div class="flex flex-col gap-1.5 p-3 bg-emerald-500/[0.06] border border-emerald-500/[0.15] rounded-[10px]">
 					{#each recoveryCodes as code, i}
-						<div class="wm-code">{i + 1}. {code}</div>
+						<div class="font-mono text-[13px] text-[#10b981] tracking-[0.05em]">{i + 1}. {code}</div>
 					{/each}
 				</div>
 
-				<button class="wm-btn wm-btn-download" onclick={() => {
+				<button class="flex items-center justify-center gap-2 w-full p-2.5 rounded-[10px] border border-emerald-500/20 bg-emerald-500/[0.06] text-[#10b981] font-mono text-xs cursor-pointer transition hover:bg-emerald-500/[0.12] hover:border-emerald-500/30" onclick={() => {
 					const content = `TokenKrafter Wallet Recovery Codes\n${'='.repeat(40)}\n\nKeep these codes safe. Each can recover your wallet if you forget your PIN.\nDo NOT share these with anyone.\n\n${recoveryCodes.map((c, i) => `${i + 1}. ${c}`).join('\n')}\n\nGenerated: ${new Date().toISOString()}\n`;
 					const blob = new Blob([content], { type: 'text/plain' });
 					const url = URL.createObjectURL(blob);
@@ -415,40 +421,40 @@
 					{$t('wallet.saveToDevice')}
 				</button>
 
-				<label class="wm-checkbox">
-					<input type="checkbox" bind:checked={codesConfirmed} />
+				<label class="flex items-center gap-2 text-[11px] text-muted font-mono cursor-pointer">
+					<input type="checkbox" bind:checked={codesConfirmed} class="accent-brand-cyan" />
 					<span>{$t('wallet.savedCodes')}</span>
 				</label>
 
-				<button class="wm-btn wm-btn-primary" onclick={handleCodesConfirmed} disabled={!codesConfirmed}>
+				<button class="p-3 rounded-[10px] border-none cursor-pointer font-display text-sm font-bold transition w-full bg-gradient-to-br from-[#00d2ff] to-[#3a7bd5] text-white hover:-translate-y-px hover:shadow-[0_4px_20px_rgba(0,210,255,0.3)] disabled:opacity-50 disabled:cursor-not-allowed disabled:translate-y-0 disabled:shadow-none" onclick={handleCodesConfirmed} disabled={!codesConfirmed}>
 					{$t('wallet.done')}
 				</button>
 
 			{:else if step === 'forgot-pin'}
-				<h2 class="wm-title">{$t('wallet.recoverWallet')}</h2>
-				<p class="wm-hint">{$t('wallet.enterRecoveryCode')}</p>
+				<h2 class="font-display text-lg font-extrabold text-heading m-0">{$t('wallet.recoverWallet')}</h2>
+				<p class="text-xs text-dim font-mono m-0 leading-[1.5]">{$t('wallet.enterRecoveryCode')}</p>
 
-				<input class="wm-input" type="text" placeholder="XXXX-XXXX-XXXX-XXXX" bind:value={recoveryCode}
+				<input class="w-full px-3.5 py-3 rounded-[10px] bg-surface-input border border-line text-heading font-mono text-base outline-none transition-[border-color] focus:border-cyan-500/40 placeholder:text-dim" type="text" placeholder="XXXX-XXXX-XXXX-XXXX" bind:value={recoveryCode}
 					onkeydown={(e) => { if (e.key === 'Enter') handleRecover(); }} />
 
-				{#if error}<p class="wm-error">{error}</p>{/if}
+				{#if error}<p class="text-[11px] text-[#f87171] font-mono m-0 px-2.5 py-1.5 bg-[rgba(248,113,113,0.08)] rounded-md">{error}</p>{/if}
 
-				<button class="wm-btn wm-btn-primary" onclick={handleRecover} disabled={loading}>
+				<button class="p-3 rounded-[10px] border-none cursor-pointer font-display text-sm font-bold transition w-full bg-gradient-to-br from-[#00d2ff] to-[#3a7bd5] text-white hover:-translate-y-px hover:shadow-[0_4px_20px_rgba(0,210,255,0.3)] disabled:opacity-50 disabled:cursor-not-allowed disabled:translate-y-0 disabled:shadow-none" onclick={handleRecover} disabled={loading}>
 					{loading ? $t('wallet.verifying') : $t('wallet.recover')}
 				</button>
-				<button class="wm-btn-link" onclick={() => { error = ''; step = 'pin-enter'; }}>{$t('wallet.backToPin')}</button>
+				<button class="bg-none border-none text-dim cursor-pointer font-mono text-[11px] underline p-1 hover:text-brand-cyan" onclick={() => { error = ''; step = 'pin-enter'; }}>{$t('wallet.backToPin')}</button>
 
 			{:else if step === 'new-pin'}
-				<h2 class="wm-title">{$t('wallet.setNewPin')}</h2>
-				<p class="wm-hint">{$t('wallet.recoverySuccess')}</p>
+				<h2 class="font-display text-lg font-extrabold text-heading m-0">{$t('wallet.setNewPin')}</h2>
+				<p class="text-xs text-dim font-mono m-0 leading-[1.5]">{$t('wallet.recoverySuccess')}</p>
 
-				<input class="wm-input" type="tel" inputmode="numeric" autocomplete="one-time-code" data-lpignore="true" data-1p-ignore="true" style="-webkit-text-security: disc; text-security: disc;" placeholder={$t('wallet.newPin')} bind:value={pin} maxlength="8" />
-				<input class="wm-input" type="tel" inputmode="numeric" autocomplete="one-time-code" data-lpignore="true" data-1p-ignore="true" style="-webkit-text-security: disc; text-security: disc;" placeholder={$t('wallet.confirmPin')} bind:value={pinConfirm} maxlength="8"
+				<input class="w-full px-3.5 py-3 rounded-[10px] bg-surface-input border border-line text-heading font-mono text-base outline-none transition-[border-color] focus:border-cyan-500/40 placeholder:text-dim [-webkit-text-security:disc] [text-security:disc]" type="tel" inputmode="numeric" autocomplete="one-time-code" data-lpignore="true" data-1p-ignore="true" placeholder={$t('wallet.newPin')} bind:value={pin} maxlength="8" />
+				<input class="w-full px-3.5 py-3 rounded-[10px] bg-surface-input border border-line text-heading font-mono text-base outline-none transition-[border-color] focus:border-cyan-500/40 placeholder:text-dim [-webkit-text-security:disc] [text-security:disc]" type="tel" inputmode="numeric" autocomplete="one-time-code" data-lpignore="true" data-1p-ignore="true" placeholder={$t('wallet.confirmPin')} bind:value={pinConfirm} maxlength="8"
 					onkeydown={(e) => { if (e.key === 'Enter') handleSetNewPin(); }} />
 
-				{#if error}<p class="wm-error">{error}</p>{/if}
+				{#if error}<p class="text-[11px] text-[#f87171] font-mono m-0 px-2.5 py-1.5 bg-[rgba(248,113,113,0.08)] rounded-md">{error}</p>{/if}
 
-				<button class="wm-btn wm-btn-primary" onclick={handleSetNewPin} disabled={loading}>
+				<button class="p-3 rounded-[10px] border-none cursor-pointer font-display text-sm font-bold transition w-full bg-gradient-to-br from-[#00d2ff] to-[#3a7bd5] text-white hover:-translate-y-px hover:shadow-[0_4px_20px_rgba(0,210,255,0.3)] disabled:opacity-50 disabled:cursor-not-allowed disabled:translate-y-0 disabled:shadow-none" onclick={handleSetNewPin} disabled={loading}>
 					{loading ? $t('wallet.saving') : $t('wallet.setPinContinue')}
 				</button>
 			{/if}
@@ -457,188 +463,3 @@
 	</div>
 {/if}
 
-<style>
-	/* 3-step progress indicator */
-	.wm-stepper {
-		display: flex; align-items: center; gap: 4px;
-		padding: 0 4px 8px;
-	}
-	.wm-step { display: flex; align-items: center; gap: 6px; }
-	.wm-step-dot {
-		width: 22px; height: 22px; border-radius: 50%;
-		display: flex; align-items: center; justify-content: center;
-		font-family: 'Syne', sans-serif; font-size: 11px; font-weight: 800;
-		background: var(--bg-surface-input); color: var(--text-dim);
-		border: 1px solid var(--border);
-		transition: all 0.2s;
-	}
-	.wm-step-label {
-		font-family: 'Space Mono', monospace; font-size: 10px;
-		color: var(--text-dim); transition: color 0.2s;
-	}
-	.wm-step-active .wm-step-dot {
-		background: rgba(0,210,255,0.12); color: #00d2ff;
-		border-color: rgba(0,210,255,0.35);
-		box-shadow: 0 0 0 3px rgba(0,210,255,0.08);
-	}
-	.wm-step-active .wm-step-label { color: #00d2ff; font-weight: 700; }
-	.wm-step-done .wm-step-dot {
-		background: rgba(16,185,129,0.12); color: #10b981;
-		border-color: rgba(16,185,129,0.3);
-	}
-	.wm-step-done .wm-step-label { color: #10b981; }
-	.wm-step-line {
-		flex: 1; height: 2px; border-radius: 1px;
-		background: var(--bg-surface-hover); transition: background 0.2s;
-	}
-	.wm-step-line-done { background: rgba(16,185,129,0.3); }
-
-	/* Create / Import mode tabs (replaces inline link toggle) */
-	.wm-mode-tabs {
-		display: flex; gap: 4px; padding: 3px;
-		background: var(--bg-surface-input); border: 1px solid var(--border);
-		border-radius: 10px;
-	}
-	.wm-mode-tab {
-		flex: 1; padding: 9px; border: none; background: transparent;
-		color: var(--text-dim); cursor: pointer; border-radius: 7px;
-		font-family: 'Syne', sans-serif; font-size: 12px; font-weight: 700;
-		transition: all 0.12s;
-	}
-	.wm-mode-tab:hover { color: var(--text-muted); }
-	.wm-mode-tab.active {
-		background: rgba(0,210,255,0.1); color: #00d2ff;
-		box-shadow: 0 0 0 1px rgba(0,210,255,0.2);
-	}
-
-	.wm-overlay {
-		position: fixed; inset: 0; z-index: 9999;
-		background: rgba(0,0,0,0.7); backdrop-filter: blur(4px);
-		display: flex; align-items: center; justify-content: center;
-		padding: 16px;
-	}
-	.wm-modal {
-		background: var(--bg); border: 1px solid var(--border);
-		border-radius: 16px; padding: 24px; width: 100%; max-width: 380px;
-		display: flex; flex-direction: column; gap: 12px;
-	}
-	.wm-title {
-		font-family: 'Syne', sans-serif; font-size: 18px; font-weight: 800;
-		color: var(--text-heading); margin: 0;
-	}
-	.wm-hint {
-		font-size: 12px; color: var(--text-dim); font-family: 'Space Mono', monospace;
-		margin: 0; line-height: 1.5;
-	}
-	.wm-option {
-		position: relative;
-		display: flex; align-items: center; gap: 12px; padding: 14px;
-		background: var(--bg-surface); border: 1px solid var(--border);
-		border-radius: 12px; cursor: pointer; transition: all 0.15s;
-		text-align: left; font-family: inherit; color: inherit;
-	}
-	.wm-option:hover { border-color: rgba(0,210,255,0.3); }
-	.wm-option-primary { border-color: rgba(0,210,255,0.2); background: rgba(0,210,255,0.04); }
-	.wm-option-primary:hover { border-color: rgba(0,210,255,0.5); }
-	.wm-option-icon {
-		width: 40px; height: 40px; border-radius: 10px;
-		background: var(--bg-surface-hover); display: flex;
-		align-items: center; justify-content: center; flex-shrink: 0;
-	}
-	.wm-option-info { flex: 1; display: flex; flex-direction: column; gap: 2px; }
-	.wm-option-title { font-size: 14px; font-weight: 600; color: var(--text-heading); font-family: 'Syne', sans-serif; }
-	.wm-option-desc { font-size: 10px; color: var(--text-dim); font-family: 'Space Mono', monospace; }
-	.wm-option-icon-wc { background: rgba(59,153,252,0.08); }
-
-	/* Header with close button */
-	.wm-header { display: flex; align-items: center; justify-content: space-between; }
-	.wm-close {
-		width: 32px; height: 32px; border-radius: 8px; border: none;
-		background: var(--bg-surface-hover); color: var(--text-dim);
-		display: flex; align-items: center; justify-content: center;
-		cursor: pointer; transition: all 0.15s; flex-shrink: 0;
-	}
-	.wm-close:hover { background: var(--border-input); color: var(--text-heading); }
-
-	/* Recommended badge — absolute top-right of option */
-	.wm-rec-badge {
-		position: absolute; top: -8px; right: 10px;
-		display: inline-flex; align-items: center; gap: 4px;
-		font-size: 8px; padding: 2px 8px; border-radius: 4px;
-		background: linear-gradient(135deg, #00d2ff, #3a7bd5); color: white;
-		font-family: 'Space Mono', monospace; font-weight: 700;
-		text-transform: uppercase; letter-spacing: 0.05em;
-		box-shadow: 0 2px 8px rgba(0,210,255,0.3);
-	}
-	.wm-input {
-		width: 100%; padding: 12px 14px; border-radius: 10px;
-		background: var(--bg-surface-input); border: 1px solid var(--border);
-		color: var(--text-heading); font-family: 'Space Mono', monospace; font-size: 16px;
-		outline: none; transition: border-color 0.15s;
-	}
-	.wm-input:focus { border-color: rgba(0,210,255,0.4); }
-	.wm-input::placeholder { color: var(--text-dim); }
-	.wm-textarea { font-family: 'Space Mono', monospace; resize: vertical; line-height: 1.5; }
-	.wm-btn {
-		padding: 12px; border-radius: 10px; border: none; cursor: pointer;
-		font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700;
-		transition: all 0.15s; width: 100%;
-	}
-	.wm-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-	.wm-btn-primary {
-		background: linear-gradient(135deg, #00d2ff, #3a7bd5); color: white;
-	}
-	.wm-btn-primary:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 4px 20px rgba(0,210,255,0.3); }
-	.wm-links { display: flex; justify-content: space-between; }
-	.wm-btn-link {
-		background: none; border: none; color: var(--text-dim); cursor: pointer;
-		font-family: 'Space Mono', monospace; font-size: 11px;
-		text-decoration: underline; padding: 4px;
-	}
-	.wm-btn-link:hover { color: #00d2ff; }
-	.wm-btn-link-danger { color: #f87171; }
-	.wm-btn-link-danger:hover { color: #ef4444; }
-	.wm-error {
-		font-size: 11px; color: #f87171; font-family: 'Space Mono', monospace;
-		margin: 0; padding: 6px 10px; background: rgba(248,113,113,0.08);
-		border-radius: 6px;
-	}
-	.wm-codes {
-		display: flex; flex-direction: column; gap: 6px;
-		padding: 12px; background: rgba(16,185,129,0.06);
-		border: 1px solid rgba(16,185,129,0.15); border-radius: 10px;
-	}
-	.wm-code {
-		font-family: 'Space Mono', monospace; font-size: 13px;
-		color: #10b981; letter-spacing: 0.05em;
-	}
-	.wm-btn-download {
-		display: flex; align-items: center; justify-content: center; gap: 8px;
-		width: 100%; padding: 10px; border-radius: 10px;
-		border: 1px solid rgba(16,185,129,0.2); background: rgba(16,185,129,0.06);
-		color: #10b981; font-family: 'Space Mono', monospace; font-size: 12px;
-		cursor: pointer; transition: all 0.15s;
-	}
-	.wm-btn-download:hover { background: rgba(16,185,129,0.12); border-color: rgba(16,185,129,0.3); }
-	.wm-checkbox {
-		display: flex; align-items: center; gap: 8px;
-		font-size: 11px; color: var(--text-muted); font-family: 'Space Mono', monospace;
-		cursor: pointer;
-	}
-	.wm-checkbox input { accent-color: #00d2ff; }
-	.wm-center {
-		display: flex; flex-direction: column; align-items: center;
-		gap: 12px; padding: 24px 0;
-	}
-	.wm-spinner {
-		width: 32px; height: 32px; border: 2px solid var(--border-input);
-		border-top-color: #00d2ff; border-radius: 50%;
-		animation: spin 0.8s linear infinite;
-	}
-	@keyframes spin { to { transform: rotate(360deg); } }
-
-	@media (max-width: 480px) {
-		.wm-overlay { align-items: flex-end; padding: 0; }
-		.wm-modal { border-radius: 16px 16px 0 0; max-height: 85vh; width: 100%; max-width: 100%; }
-	}
-</style>

@@ -46,73 +46,73 @@
 	}
 </script>
 
-<div class="tc">
+<div class="flex flex-col gap-4">
 	<!-- Tax ceiling info -->
-	<div class="tc-info-box">
+	<div class="py-[10px] px-3 rounded-lg bg-[rgba(248,113,113,0.06)] border border-[rgba(248,113,113,0.22)] text-[#fca5a5] text-[11px] font-mono leading-[1.55]">
 		Tax rates are permanently capped at these values once trading starts. You can lower them later but never raise them above what you set here. Setting 0% means tax-free forever.
-		<div class="tc-limits-line">
+		<div class="mt-[6px] text-[10px] text-[#fca5a5] opacity-90 [&_strong]:text-[#fecaca] [&_strong]:font-bold">
 			Max allowed: <strong>Buy {MAX_BUY}%</strong> · <strong>Sell {MAX_SELL}%</strong> · <strong>Transfer {MAX_TRANSFER}%</strong> ({MAX_TOTAL}% combined){isPartner ? ' — partner tokens' : ''}
 		</div>
 	</div>
 
 	<!-- Tax Rate Rows -->
-	<div class="tc-rates">
+	<div class="flex flex-col gap-2">
 		<!-- Buy -->
-		<div class="tc-rate" class:tc-rate-error={buyOver}>
-			<div class="tc-rate-left">
-				<span class="tc-dot tc-dot-buy"></span>
-				<span class="tc-rate-name">Buy Tax</span>
-				<span class="tc-limit-hint" class:tc-limit-warn={buyOver}>max {MAX_BUY}%</span>
+		<div class={'tc-rate flex items-center justify-between gap-3 py-3 px-[14px] max-[500px]:py-[10px] max-[500px]:px-3 rounded-[10px] bg-surface border ' + (buyOver ? 'border-[rgba(248,113,113,0.25)]' : 'border-line-subtle')}>
+			<div class="flex items-center gap-2 shrink-0">
+				<span class="w-2 h-2 rounded-full shrink-0 bg-brand-cyan"></span>
+				<span class="font-display text-[13px] font-semibold text-foreground">Buy Tax</span>
+				<span class={'text-[9px] font-mono ml-auto uppercase tracking-[0.04em] ' + (buyOver ? 'text-[#f87171]' : 'text-dim')}>max {MAX_BUY}%</span>
 			</div>
-			<div class="tc-rate-right">
-				<div class="tc-presets">
+			<div class="flex items-center gap-2">
+				<div class="tc-presets flex gap-[3px]">
 					{#each presets as p}
-						<button type="button" class="tc-preset" class:active={num(buyTaxPct) === p} onclick={() => buyTaxPct = String(p)}>{p}%</button>
+						<button type="button" class={'py-[3px] px-2 rounded-md border bg-transparent font-mono text-[9px] cursor-pointer transition-all ' + (num(buyTaxPct) === p ? 'text-brand-cyan border-[rgba(0,210,255,0.3)] bg-[rgba(0,210,255,0.06)]' : 'text-dim border-line-subtle hover:text-muted hover:border-line-input')} onclick={() => buyTaxPct = String(p)}>{p}%</button>
 					{/each}
 				</div>
-				<div class="tc-rate-input-wrap" class:tc-input-error={buyOver}>
-					<input class="tc-rate-input" type="text" inputmode="decimal" bind:value={buyTaxPct} placeholder="0" />
-					<span class="tc-pct">%</span>
+				<div class={'flex items-center gap-px w-14 py-1 px-2 rounded-md bg-surface-input border ' + (buyOver ? 'border-[rgba(248,113,113,0.4)]' : 'border-line')}>
+					<input class={'w-full bg-transparent border-none outline-none font-numeric text-base font-bold text-right p-0 tabular-nums placeholder:text-placeholder ' + (buyOver ? 'text-[#f87171]' : 'text-heading')} type="text" inputmode="decimal" bind:value={buyTaxPct} placeholder="0" />
+					<span class="font-mono text-[10px] text-dim">%</span>
 				</div>
 			</div>
 		</div>
 
 		<!-- Sell -->
-		<div class="tc-rate" class:tc-rate-error={sellOver}>
-			<div class="tc-rate-left">
-				<span class="tc-dot tc-dot-sell"></span>
-				<span class="tc-rate-name">Sell Tax</span>
-				<span class="tc-limit-hint" class:tc-limit-warn={sellOver}>max {MAX_SELL}%</span>
+		<div class={'tc-rate flex items-center justify-between gap-3 py-3 px-[14px] max-[500px]:py-[10px] max-[500px]:px-3 rounded-[10px] bg-surface border ' + (sellOver ? 'border-[rgba(248,113,113,0.25)]' : 'border-line-subtle')}>
+			<div class="flex items-center gap-2 shrink-0">
+				<span class="w-2 h-2 rounded-full shrink-0 bg-[#f59e0b]"></span>
+				<span class="font-display text-[13px] font-semibold text-foreground">Sell Tax</span>
+				<span class={'text-[9px] font-mono ml-auto uppercase tracking-[0.04em] ' + (sellOver ? 'text-[#f87171]' : 'text-dim')}>max {MAX_SELL}%</span>
 			</div>
-			<div class="tc-rate-right">
-				<div class="tc-presets">
+			<div class="flex items-center gap-2">
+				<div class="tc-presets flex gap-[3px]">
 					{#each presets as p}
-						<button type="button" class="tc-preset" class:active={num(sellTaxPct) === p} onclick={() => sellTaxPct = String(p)}>{p}%</button>
+						<button type="button" class={'py-[3px] px-2 rounded-md border bg-transparent font-mono text-[9px] cursor-pointer transition-all ' + (num(sellTaxPct) === p ? 'text-brand-cyan border-[rgba(0,210,255,0.3)] bg-[rgba(0,210,255,0.06)]' : 'text-dim border-line-subtle hover:text-muted hover:border-line-input')} onclick={() => sellTaxPct = String(p)}>{p}%</button>
 					{/each}
 				</div>
-				<div class="tc-rate-input-wrap" class:tc-input-error={sellOver}>
-					<input class="tc-rate-input" type="text" inputmode="decimal" bind:value={sellTaxPct} placeholder="0" />
-					<span class="tc-pct">%</span>
+				<div class={'flex items-center gap-px w-14 py-1 px-2 rounded-md bg-surface-input border ' + (sellOver ? 'border-[rgba(248,113,113,0.4)]' : 'border-line')}>
+					<input class={'w-full bg-transparent border-none outline-none font-numeric text-base font-bold text-right p-0 tabular-nums placeholder:text-placeholder ' + (sellOver ? 'text-[#f87171]' : 'text-heading')} type="text" inputmode="decimal" bind:value={sellTaxPct} placeholder="0" />
+					<span class="font-mono text-[10px] text-dim">%</span>
 				</div>
 			</div>
 		</div>
 
 		<!-- Transfer -->
-		<div class="tc-rate" class:tc-rate-error={transferOver}>
-			<div class="tc-rate-left">
-				<span class="tc-dot tc-dot-transfer"></span>
-				<span class="tc-rate-name">Transfer Tax</span>
-				<span class="tc-limit-hint" class:tc-limit-warn={transferOver}>max {MAX_TRANSFER}%</span>
+		<div class={'tc-rate flex items-center justify-between gap-3 py-3 px-[14px] max-[500px]:py-[10px] max-[500px]:px-3 rounded-[10px] bg-surface border ' + (transferOver ? 'border-[rgba(248,113,113,0.25)]' : 'border-line-subtle')}>
+			<div class="flex items-center gap-2 shrink-0">
+				<span class="w-2 h-2 rounded-full shrink-0 bg-[#a78bfa]"></span>
+				<span class="font-display text-[13px] font-semibold text-foreground">Transfer Tax</span>
+				<span class={'text-[9px] font-mono ml-auto uppercase tracking-[0.04em] ' + (transferOver ? 'text-[#f87171]' : 'text-dim')}>max {MAX_TRANSFER}%</span>
 			</div>
-			<div class="tc-rate-right">
-				<div class="tc-presets">
+			<div class="flex items-center gap-2">
+				<div class="tc-presets flex gap-[3px]">
 					{#each presets.filter(p => p <= MAX_TRANSFER) as p}
-						<button type="button" class="tc-preset" class:active={num(transferTaxPct) === p} onclick={() => transferTaxPct = String(p)}>{p}%</button>
+						<button type="button" class={'py-[3px] px-2 rounded-md border bg-transparent font-mono text-[9px] cursor-pointer transition-all ' + (num(transferTaxPct) === p ? 'text-brand-cyan border-[rgba(0,210,255,0.3)] bg-[rgba(0,210,255,0.06)]' : 'text-dim border-line-subtle hover:text-muted hover:border-line-input')} onclick={() => transferTaxPct = String(p)}>{p}%</button>
 					{/each}
 				</div>
-				<div class="tc-rate-input-wrap" class:tc-input-error={transferOver}>
-					<input class="tc-rate-input" type="text" inputmode="decimal" bind:value={transferTaxPct} placeholder="0" />
-					<span class="tc-pct">%</span>
+				<div class={'flex items-center gap-px w-14 py-1 px-2 rounded-md bg-surface-input border ' + (transferOver ? 'border-[rgba(248,113,113,0.4)]' : 'border-line')}>
+					<input class={'w-full bg-transparent border-none outline-none font-numeric text-base font-bold text-right p-0 tabular-nums placeholder:text-placeholder ' + (transferOver ? 'text-[#f87171]' : 'text-heading')} type="text" inputmode="decimal" bind:value={transferTaxPct} placeholder="0" />
+					<span class="font-mono text-[10px] text-dim">%</span>
 				</div>
 			</div>
 		</div>
@@ -120,52 +120,52 @@
 
 	<!-- Total bar -->
 	{#if totalTax > 0}
-		<div class="tc-total-bar">
-			<div class="tc-total-segments">
-				{#if num(buyTaxPct) > 0}<div class="tc-seg tc-seg-buy" style="width: {(num(buyTaxPct) / MAX_TOTAL) * 100}%"></div>{/if}
-				{#if num(sellTaxPct) > 0}<div class="tc-seg tc-seg-sell" style="width: {(num(sellTaxPct) / MAX_TOTAL) * 100}%"></div>{/if}
-				{#if num(transferTaxPct) > 0}<div class="tc-seg tc-seg-transfer" style="width: {(num(transferTaxPct) / MAX_TOTAL) * 100}%"></div>{/if}
+		<div class="px-[2px]">
+			<div class="flex h-1 rounded-[2px] overflow-hidden bg-surface-input gap-px">
+				{#if num(buyTaxPct) > 0}<div class="h-full rounded-[2px] transition-[width] duration-200 bg-brand-cyan" style="width: {(num(buyTaxPct) / MAX_TOTAL) * 100}%"></div>{/if}
+				{#if num(sellTaxPct) > 0}<div class="h-full rounded-[2px] transition-[width] duration-200 bg-[#f59e0b]" style="width: {(num(sellTaxPct) / MAX_TOTAL) * 100}%"></div>{/if}
+				{#if num(transferTaxPct) > 0}<div class="h-full rounded-[2px] transition-[width] duration-200 bg-[#a78bfa]" style="width: {(num(transferTaxPct) / MAX_TOTAL) * 100}%"></div>{/if}
 			</div>
-			<div class="tc-total-info">
-				<span class="tc-total-val" class:tc-over={totalTax > MAX_TOTAL || buyOver || sellOver || transferOver}>{totalTax}% total</span>
-				{#if totalTax > MAX_TOTAL}<span class="tc-total-warn">Max {MAX_TOTAL}%</span>{/if}
+			<div class="flex items-center gap-2 mt-1">
+				<span class={'font-mono text-[10px] ' + ((totalTax > MAX_TOTAL || buyOver || sellOver || transferOver) ? 'text-[#f87171]' : 'text-dim')}>{totalTax}% total</span>
+				{#if totalTax > MAX_TOTAL}<span class="text-[9px] text-[#f87171] font-mono">Max {MAX_TOTAL}%</span>{/if}
 			</div>
 		</div>
 	{/if}
 
 	<!-- Tax Wallets -->
 	{#if totalTax > 0}
-		<div class="tc-section">
-			<div class="tc-section-head">
-				<span class="tc-section-title">Revenue Wallets</span>
-				<span class="tc-section-hint">Where collected tax goes</span>
+		<div class="flex flex-col gap-2">
+			<div class="flex items-baseline gap-2">
+				<span class="font-display text-[13px] font-bold text-muted">Revenue Wallets</span>
+				<span class="text-[10px] text-dim font-mono">Where collected tax goes</span>
 			</div>
 			{#each taxWallets as wallet, i}
-				<div class="tc-wallet">
-					<input class="tc-wallet-addr" bind:value={wallet.address} placeholder="0x... wallet address" />
-					<div class="tc-wallet-share">
-						<input class="tc-wallet-pct" type="text" inputmode="numeric" bind:value={wallet.sharePct} placeholder="100" />
-						<span class="tc-wallet-pct-sign">%</span>
+				<div class="tc-wallet flex items-center gap-[6px] py-2 px-[10px] max-[500px]:flex-wrap rounded-lg bg-surface border border-line-subtle">
+					<input class="tc-wallet-addr flex-1 min-w-0 bg-transparent border-none outline-none font-mono text-[11px] max-[500px]:basis-full max-[500px]:text-[10px] text-foreground p-0 placeholder:text-dim" bind:value={wallet.address} placeholder="0x... wallet address" />
+					<div class="flex items-center gap-px w-[52px] shrink-0 py-[2px] px-[6px] rounded bg-surface-input">
+						<input class="w-full bg-transparent border-none outline-none font-numeric text-sm font-semibold text-heading text-right p-0" type="text" inputmode="numeric" bind:value={wallet.sharePct} placeholder="100" />
+						<span class="text-[10px] text-dim font-mono">%</span>
 					</div>
 					{#if taxWallets.length > 1}
-						<button type="button" class="tc-wallet-rm" onclick={() => removeWallet(i)}>
+						<button type="button" class="w-6 h-6 rounded-md border-none bg-[rgba(248,113,113,0.08)] text-[#f87171] cursor-pointer flex items-center justify-center shrink-0 transition-colors hover:bg-[rgba(248,113,113,0.15)]" onclick={() => removeWallet(i)}>
 							<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
 						</button>
 					{/if}
 				</div>
 			{/each}
-			<div class="tc-wallet-footer">
+			<div class="flex items-center gap-[10px]">
 				{#if taxWallets.length < 10}
-					<button type="button" class="tc-wallet-add" onclick={addWallet}>+ Add wallet</button>
+					<button type="button" class="py-[6px] px-3 rounded-md border border-dashed border-line bg-transparent text-dim font-mono text-[10px] cursor-pointer transition-all hover:text-brand-cyan hover:border-[rgba(0,210,255,0.2)]" onclick={addWallet}>+ Add wallet</button>
 				{/if}
 				{#if totalShares > 100}
-					<span class="tc-wallet-warn">Shares total {totalShares}% — max 100%</span>
+					<span class="text-[10px] text-[#f87171] font-mono">Shares total {totalShares}% — max 100%</span>
 				{:else if sharesBurned > 0 && totalShares > 0}
-					<span class="tc-wallet-burn">{sharesBurned}% will be burned</span>
+					<span class="text-[10px] text-dim font-mono">{sharesBurned}% will be burned</span>
 				{/if}
 			</div>
 			{#if taxWithoutWallet}
-				<div class="tc-burn-warning">
+				<div class="mt-[10px] py-2 px-[10px] rounded-lg bg-[rgba(245,158,11,0.08)] border border-[rgba(245,158,11,0.2)] text-[#fbbf24] text-[11px] font-mono leading-[1.5]">
 					No valid wallet address set. All collected tax ({totalTax}%) will be permanently burned (sent to address zero) on every trade.
 				</div>
 			{/if}
@@ -175,120 +175,9 @@
 </div>
 
 <style>
-	.tc { display: flex; flex-direction: column; gap: 16px; }
-	.tc-info-box { padding: 10px 12px; border-radius: 8px; background: rgba(248,113,113,0.06); border: 1px solid rgba(248,113,113,0.22); color: #fca5a5; font-size: 11px; font-family: 'Space Mono', monospace; line-height: 1.55; }
-	.tc-info-box-warn { background: rgba(245,158,11,0.06); border-color: rgba(245,158,11,0.2); color: #fbbf24; }
-	.tc-limits-line { margin-top: 6px; font-size: 10px; color: #fca5a5; opacity: 0.9; }
-	.tc-limits-line strong { color: #fecaca; font-weight: 700; }
-
-	/* ── Tax Rate Rows ── */
-	.tc-rates { display: flex; flex-direction: column; gap: 8px; }
-	.tc-rate {
-		display: flex; align-items: center; justify-content: space-between; gap: 12px;
-		padding: 12px 14px; border-radius: 10px;
-		background: var(--bg-surface); border: 1px solid var(--border-subtle);
-	}
-	.tc-rate-left { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-	.tc-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-	.tc-dot-buy { background: #00d2ff; }
-	.tc-dot-sell { background: #f59e0b; }
-	.tc-dot-transfer { background: #a78bfa; }
-	.tc-rate-name { font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 600; color: var(--text); }
-	.tc-rate-right { display: flex; align-items: center; gap: 8px; }
-	.tc-presets { display: flex; gap: 3px; }
-	.tc-preset {
-		padding: 3px 8px; border-radius: 6px; border: 1px solid var(--border-subtle);
-		background: transparent; color: var(--text-dim); font-family: 'Space Mono', monospace;
-		font-size: 9px; cursor: pointer; transition: all 0.1s;
-	}
-	.tc-preset:hover { color: var(--text-muted); border-color: var(--border-input); }
-	.tc-preset.active { color: #00d2ff; border-color: rgba(0,210,255,0.3); background: rgba(0,210,255,0.06); }
-	.tc-rate-input-wrap {
-		display: flex; align-items: center; gap: 1px;
-		width: 56px; padding: 4px 8px; border-radius: 6px;
-		background: var(--bg-surface-input); border: 1px solid var(--border);
-	}
-	.tc-rate-input {
-		width: 100%; background: transparent; border: none; outline: none;
-		font-family: 'Rajdhani', sans-serif; font-size: 16px; font-weight: 700;
-		color: var(--text-heading); font-variant-numeric: tabular-nums; text-align: right; padding: 0;
-	}
-	.tc-rate-input::placeholder { color: var(--placeholder); }
-	.tc-pct { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text-dim); }
-
+	/* Hide presets on small screens (retained because arbitrary media query
+	   with display toggle on a utility class is noisy to inline). */
 	@media (max-width: 500px) {
 		.tc-presets { display: none; }
-		.tc-rate { padding: 10px 12px; }
 	}
-
-	/* ── Total Bar ── */
-	.tc-total-bar { padding: 0 2px; }
-	.tc-total-segments {
-		display: flex; height: 4px; border-radius: 2px; overflow: hidden;
-		background: var(--bg-surface-input); gap: 1px;
-	}
-	.tc-seg { height: 100%; border-radius: 2px; transition: width 0.2s; }
-	.tc-seg-buy { background: #00d2ff; }
-	.tc-seg-sell { background: #f59e0b; }
-	.tc-seg-transfer { background: #a78bfa; }
-	.tc-total-info { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
-	.tc-total-val { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text-dim); }
-	.tc-total-val.tc-over { color: #f87171; }
-	.tc-total-warn { font-size: 9px; color: #f87171; font-family: 'Space Mono', monospace; }
-
-	/* ── Sections ── */
-	.tc-section { display: flex; flex-direction: column; gap: 8px; }
-	.tc-section-head { display: flex; align-items: baseline; gap: 8px; }
-	.tc-section-title { font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700; color: var(--text-muted); }
-	.tc-section-hint { font-size: 10px; color: var(--text-dim); font-family: 'Space Mono', monospace; }
-
-	/* ── Wallets ── */
-	.tc-wallet {
-		display: flex; align-items: center; gap: 6px;
-		padding: 8px 10px; border-radius: 8px;
-		background: var(--bg-surface); border: 1px solid var(--border-subtle);
-	}
-	.tc-wallet-addr {
-		flex: 1; min-width: 0; background: transparent; border: none; outline: none;
-		font-family: 'Space Mono', monospace; font-size: 11px; color: var(--text); padding: 0;
-	}
-	.tc-wallet-addr::placeholder { color: var(--text-dim); }
-	.tc-wallet-share {
-		display: flex; align-items: center; gap: 1px; width: 52px; flex-shrink: 0;
-		padding: 2px 6px; border-radius: 4px; background: var(--bg-surface-input);
-	}
-	.tc-wallet-pct {
-		width: 100%; background: transparent; border: none; outline: none;
-		font-family: 'Rajdhani', sans-serif; font-size: 14px; font-weight: 600;
-		color: var(--text-heading); text-align: right; padding: 0;
-	}
-	.tc-wallet-pct-sign { font-size: 10px; color: var(--text-dim); font-family: 'Space Mono', monospace; }
-	.tc-wallet-rm {
-		width: 24px; height: 24px; border-radius: 6px; border: none;
-		background: rgba(248,113,113,0.08); color: #f87171; cursor: pointer;
-		display: flex; align-items: center; justify-content: center;
-		flex-shrink: 0; transition: background 0.12s;
-	}
-	.tc-wallet-rm:hover { background: rgba(248,113,113,0.15); }
-	.tc-wallet-footer { display: flex; align-items: center; gap: 10px; }
-	.tc-wallet-add {
-		padding: 6px 12px; border-radius: 6px; border: 1px dashed var(--border);
-		background: transparent; color: var(--text-dim); font-family: 'Space Mono', monospace;
-		font-size: 10px; cursor: pointer; transition: all 0.12s;
-	}
-	.tc-wallet-add:hover { color: #00d2ff; border-color: rgba(0,210,255,0.2); }
-	.tc-wallet-warn { font-size: 10px; color: #f87171; font-family: 'Space Mono', monospace; }
-	.tc-wallet-burn { font-size: 10px; color: var(--text-dim); font-family: 'Space Mono', monospace; }
-	.tc-burn-warning { margin-top: 10px; padding: 8px 10px; border-radius: 8px; background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.2); color: #fbbf24; font-size: 11px; font-family: 'Space Mono', monospace; line-height: 1.5; }
-	.tc-rate-error { border-color: rgba(248,113,113,0.25); }
-	.tc-input-error { border-color: rgba(248,113,113,0.4); }
-	.tc-input-error .tc-rate-input { color: #f87171; }
-	.tc-limit-hint { font-size: 9px; color: var(--text-dim); font-family: 'Space Mono', monospace; margin-left: auto; text-transform: uppercase; letter-spacing: 0.04em; }
-	.tc-limit-warn { color: #f87171; }
-
-	@media (max-width: 500px) {
-		.tc-wallet { flex-wrap: wrap; }
-		.tc-wallet-addr { flex-basis: 100%; font-size: 10px; }
-	}
-
 </style>

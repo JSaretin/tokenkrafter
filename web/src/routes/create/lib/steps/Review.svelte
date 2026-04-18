@@ -54,35 +54,35 @@
 	let totalTax = $derived(Number(buyTaxPct || 0) + Number(sellTaxPct || 0) + Number(transferTaxPct || 0));
 </script>
 
-<div class="rv">
+<div class="flex flex-col gap-3">
 	<!-- Token -->
-	<div class="rv-section">
-		<div class="rv-section-title">Token</div>
+	<div class="bg-surface border border-line rounded-xl p-3.5">
+		<div class="font-display text-[13px] font-bold text-[#00d2ff] uppercase tracking-[0.05em] mb-2">Token</div>
 		{#if useExistingToken && existingTokenAddress}
-			<div class="rv-row"><span>Address</span><span class="rv-mono">{fmtAddr(existingTokenAddress)}</span></div>
+			<div class="flex justify-between items-center py-1 text-xs font-mono"><span class="text-dim">Address</span><span class="text-foreground font-semibold text-[11px]">{fmtAddr(existingTokenAddress)}</span></div>
 		{:else}
-			<div class="rv-row"><span>Name</span><span>{name} ({symbol})</span></div>
-			<div class="rv-row"><span>Supply</span><span>{Number(totalSupply).toLocaleString()}</span></div>
-			<div class="rv-row"><span>Decimals</span><span>{decimals}</span></div>
+			<div class="flex justify-between items-center py-1 text-xs font-mono"><span class="text-dim">Name</span><span class="text-foreground font-semibold">{name} ({symbol})</span></div>
+			<div class="flex justify-between items-center py-1 text-xs font-mono"><span class="text-dim">Supply</span><span class="text-foreground font-semibold">{Number(totalSupply).toLocaleString()}</span></div>
+			<div class="flex justify-between items-center py-1 text-xs font-mono"><span class="text-dim">Decimals</span><span class="text-foreground font-semibold">{decimals}</span></div>
 		{/if}
-		<div class="rv-row"><span>Network</span><span>{network?.name || '—'}</span></div>
+		<div class="flex justify-between items-center py-1 text-xs font-mono"><span class="text-dim">Network</span><span class="text-foreground font-semibold">{network?.name || '—'}</span></div>
 		{#if features.length > 0}
-			<div class="rv-row"><span>Features</span><span class="rv-badges">{#each features as f}<span class="rv-badge">{f}</span>{/each}</span></div>
+			<div class="flex justify-between items-center py-1 text-xs font-mono"><span class="text-dim">Features</span><span class="flex gap-1 flex-wrap">{#each features as f}<span class="text-[10px] px-2 py-0.5 rounded bg-[rgba(0,210,255,0.08)] text-[#00d2ff] border border-[rgba(0,210,255,0.15)]">{f}</span>{/each}</span></div>
 		{/if}
 	</div>
 
 	<!-- Tax -->
 	{#if isTaxable || isPartner}
-		<div class="rv-section">
-			<div class="rv-section-title">Tax</div>
-			<div class="rv-row"><span>Buy</span><span>{buyTaxPct || '0'}%</span></div>
-			<div class="rv-row"><span>Sell</span><span>{sellTaxPct || '0'}%</span></div>
-			<div class="rv-row"><span>Transfer</span><span>{transferTaxPct || '0'}%</span></div>
+		<div class="bg-surface border border-line rounded-xl p-3.5">
+			<div class="font-display text-[13px] font-bold text-[#00d2ff] uppercase tracking-[0.05em] mb-2">Tax</div>
+			<div class="flex justify-between items-center py-1 text-xs font-mono"><span class="text-dim">Buy</span><span class="text-foreground font-semibold">{buyTaxPct || '0'}%</span></div>
+			<div class="flex justify-between items-center py-1 text-xs font-mono"><span class="text-dim">Sell</span><span class="text-foreground font-semibold">{sellTaxPct || '0'}%</span></div>
+			<div class="flex justify-between items-center py-1 text-xs font-mono"><span class="text-dim">Transfer</span><span class="text-foreground font-semibold">{transferTaxPct || '0'}%</span></div>
 			{#each taxWallets.filter(w => w.address) as w}
-				<div class="rv-row rv-sub"><span>{fmtAddr(w.address)}</span><span>{w.sharePct}%</span></div>
+				<div class="flex justify-between items-center py-1 pl-3 text-xs font-mono"><span class="text-muted text-[10px]">{fmtAddr(w.address)}</span><span class="text-foreground font-semibold">{w.sharePct}%</span></div>
 			{/each}
 			{#if totalTax === 0 && (launchEnabled || listingEnabled)}
-				<div class="rv-warn rv-warn-strong">
+				<div class="mt-2 px-2.5 py-2 rounded-lg bg-[rgba(248,113,113,0.08)] border border-[rgba(248,113,113,0.25)] text-[#fca5a5] text-[11px] font-mono leading-[1.5] font-semibold">
 					&#9888; You're launching with 0% tax. This is permanent — you will never be able to add tax to this token after trading starts.
 				</div>
 			{/if}
@@ -91,73 +91,50 @@
 
 	<!-- Protection -->
 	{#if protectionEnabled}
-		<div class="rv-section">
-			<div class="rv-section-title">Protection</div>
-			<div class="rv-row"><span>Max wallet</span><span>{maxWalletPct}% of supply</span></div>
-			<div class="rv-row"><span>Max transaction</span><span>{maxTransactionPct}% of supply</span></div>
+		<div class="bg-surface border border-line rounded-xl p-3.5">
+			<div class="font-display text-[13px] font-bold text-[#00d2ff] uppercase tracking-[0.05em] mb-2">Protection</div>
+			<div class="flex justify-between items-center py-1 text-xs font-mono"><span class="text-dim">Max wallet</span><span class="text-foreground font-semibold">{maxWalletPct}% of supply</span></div>
+			<div class="flex justify-between items-center py-1 text-xs font-mono"><span class="text-dim">Max transaction</span><span class="text-foreground font-semibold">{maxTransactionPct}% of supply</span></div>
 			{#if Number(cooldownSeconds) > 0}
-				<div class="rv-row"><span>Cooldown</span><span>{cooldownSeconds}s</span></div>
+				<div class="flex justify-between items-center py-1 text-xs font-mono"><span class="text-dim">Cooldown</span><span class="text-foreground font-semibold">{cooldownSeconds}s</span></div>
 			{/if}
 		</div>
 	{/if}
 
 	<!-- Launch -->
 	{#if launchEnabled}
-		<div class="rv-section">
-			<div class="rv-section-title">Bonding Curve Launch</div>
-			<div class="rv-row"><span>Tokens for launch</span><span>{launchTokensPct}%</span></div>
-			<div class="rv-row"><span>Curve</span><span>{curveLabels[launchCurveType] || 'Linear'}</span></div>
-			<div class="rv-row"><span>Soft cap</span><span>${launchSoftCap}</span></div>
-			<div class="rv-row"><span>Hard cap</span><span>${launchHardCap}</span></div>
-			<div class="rv-row"><span>Duration</span><span>{launchDurationDays} days</span></div>
-			<div class="rv-row"><span>Max buy per wallet</span><span>{launchMaxBuyPct}% of hard cap</span></div>
+		<div class="bg-surface border border-line rounded-xl p-3.5">
+			<div class="font-display text-[13px] font-bold text-[#00d2ff] uppercase tracking-[0.05em] mb-2">Bonding Curve Launch</div>
+			<div class="flex justify-between items-center py-1 text-xs font-mono"><span class="text-dim">Tokens for launch</span><span class="text-foreground font-semibold">{launchTokensPct}%</span></div>
+			<div class="flex justify-between items-center py-1 text-xs font-mono"><span class="text-dim">Curve</span><span class="text-foreground font-semibold">{curveLabels[launchCurveType] || 'Linear'}</span></div>
+			<div class="flex justify-between items-center py-1 text-xs font-mono"><span class="text-dim">Soft cap</span><span class="text-foreground font-semibold">${launchSoftCap}</span></div>
+			<div class="flex justify-between items-center py-1 text-xs font-mono"><span class="text-dim">Hard cap</span><span class="text-foreground font-semibold">${launchHardCap}</span></div>
+			<div class="flex justify-between items-center py-1 text-xs font-mono"><span class="text-dim">Duration</span><span class="text-foreground font-semibold">{launchDurationDays} days</span></div>
+			<div class="flex justify-between items-center py-1 text-xs font-mono"><span class="text-dim">Max buy per wallet</span><span class="text-foreground font-semibold">{launchMaxBuyPct}% of hard cap</span></div>
 			{#if Number(launchCreatorAllocPct) > 0}
-				<div class="rv-row"><span>Creator allocation</span><span>{launchCreatorAllocPct}%</span></div>
-				<div class="rv-row"><span>Vesting</span><span>{launchVestingDays} days</span></div>
+				<div class="flex justify-between items-center py-1 text-xs font-mono"><span class="text-dim">Creator allocation</span><span class="text-foreground font-semibold">{launchCreatorAllocPct}%</span></div>
+				<div class="flex justify-between items-center py-1 text-xs font-mono"><span class="text-dim">Vesting</span><span class="text-foreground font-semibold">{launchVestingDays} days</span></div>
 			{/if}
-			<div class="rv-note">Unsold tokens from the bonding curve and unused LP allocation are burned on graduation.</div>
+			<div class="mt-2 px-2.5 py-2 rounded-lg bg-[rgba(0,210,255,0.05)] border border-[rgba(0,210,255,0.12)] text-[rgba(0,210,255,0.7)] text-[10px] font-mono leading-[1.5]">Unsold tokens from the bonding curve and unused LP allocation are burned on graduation.</div>
 		</div>
 	{/if}
 
 	<!-- Listing -->
 	{#if listingEnabled}
-		<div class="rv-section">
-			<div class="rv-section-title">DEX Listing</div>
-			<div class="rv-row"><span>Tokens for pools</span><span>{listingPoolPct}% ({(Number(totalSupply) * listingPoolPct / 100).toLocaleString(undefined, { maximumFractionDigits: 0 })})</span></div>
+		<div class="bg-surface border border-line rounded-xl p-3.5">
+			<div class="font-display text-[13px] font-bold text-[#00d2ff] uppercase tracking-[0.05em] mb-2">DEX Listing</div>
+			<div class="flex justify-between items-center py-1 text-xs font-mono"><span class="text-dim">Tokens for pools</span><span class="text-foreground font-semibold">{listingPoolPct}% ({(Number(totalSupply) * listingPoolPct / 100).toLocaleString(undefined, { maximumFractionDigits: 0 })})</span></div>
 			{#if autoPrice > 0}
-				<div class="rv-row"><span>Starting price</span><span>{autoPrice >= 0.01 ? '$' + autoPrice.toFixed(4) : '$' + autoPrice.toFixed(12).replace(/0+$/, '').replace(/\.$/, '')}</span></div>
-				<div class="rv-row rv-highlight"><span>Market cap</span><span>${(autoPrice * Number(totalSupply)).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span></div>
+				<div class="flex justify-between items-center py-1 text-xs font-mono"><span class="text-dim">Starting price</span><span class="text-foreground font-semibold">{autoPrice >= 0.01 ? '$' + autoPrice.toFixed(4) : '$' + autoPrice.toFixed(12).replace(/0+$/, '').replace(/\.$/, '')}</span></div>
+				<div class="flex justify-between items-center py-1.5 text-xs font-mono"><span class="text-dim">Market cap</span><span class="text-emerald-500 font-semibold text-sm">${(autoPrice * Number(totalSupply)).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span></div>
 			{/if}
 			{#each listingPairs.filter(p => Number(p.amount) > 0) as pair}
-				<div class="rv-row rv-pool">
-					<span class="rv-pool-dot" style="background:{pair.base === 'native' ? '#f59e0b' : pair.base === 'usdt' ? '#10b981' : '#3b82f6'}"></span>
-					<span>{symbol}/{getLabel(pair.base)}</span>
-					<span>{pair.amount} {getLabel(pair.base)} ↔ {pairTokens(pair)} {symbol}</span>
+				<div class="flex justify-between items-center py-1 gap-2 text-xs font-mono">
+					<span class="w-2 h-2 rounded-full shrink-0" style="background:{pair.base === 'native' ? '#f59e0b' : pair.base === 'usdt' ? '#10b981' : '#3b82f6'}"></span>
+					<span class="flex-none whitespace-nowrap text-foreground font-bold">{symbol}/{getLabel(pair.base)}</span>
+					<span class="flex-1 text-right text-dim text-[10px]">{pair.amount} {getLabel(pair.base)} ↔ {pairTokens(pair)} {symbol}</span>
 				</div>
 			{/each}
 		</div>
 	{/if}
 </div>
-
-<style>
-	.rv { display: flex; flex-direction: column; gap: 12px; }
-	.rv-section { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px; }
-	.rv-section-title { font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700; color: #00d2ff; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
-	.rv-row { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; font-size: 12px; font-family: 'Space Mono', monospace; }
-	.rv-row span:first-child { color: var(--text-dim); }
-	.rv-row span:last-child { color: var(--text); font-weight: 600; }
-	.rv-sub { padding-left: 12px; }
-	.rv-sub span:first-child { color: var(--text-muted); font-size: 10px; }
-	.rv-mono { font-size: 11px; }
-	.rv-highlight span:last-child { color: #10b981; font-size: 14px; }
-	.rv-badges { display: flex; gap: 4px; flex-wrap: wrap; }
-	.rv-badge { font-size: 10px; padding: 2px 8px; border-radius: 4px; background: rgba(0,210,255,0.08); color: #00d2ff; border: 1px solid rgba(0,210,255,0.15); }
-	.rv-pool { gap: 8px; }
-	.rv-pool-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-	.rv-pool span:nth-child(2) { flex: 0; white-space: nowrap; color: var(--text); font-weight: 700; }
-	.rv-pool span:nth-child(3) { color: var(--text-dim); font-size: 10px; text-align: right; flex: 1; }
-	.rv-note { margin-top: 8px; padding: 8px 10px; border-radius: 8px; background: rgba(0,210,255,0.05); border: 1px solid rgba(0,210,255,0.12); color: rgba(0,210,255,0.7); font-size: 10px; font-family: 'Space Mono', monospace; line-height: 1.5; }
-	.rv-warn { margin-top: 8px; padding: 8px 10px; border-radius: 8px; background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.2); color: #fbbf24; font-size: 11px; font-family: 'Space Mono', monospace; line-height: 1.5; }
-	.rv-warn strong { color: #f59e0b; }
-	.rv-warn-strong { background: rgba(248,113,113,0.08); border-color: rgba(248,113,113,0.25); color: #fca5a5; font-weight: 600; }
-</style>

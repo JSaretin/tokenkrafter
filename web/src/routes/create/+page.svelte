@@ -1604,18 +1604,19 @@
 </svelte:head>
 
 <!-- Review Modal -->
+
 {#if showPreview && tokenInfo}
 	<div
-		class="modal-backdrop fixed inset-0 z-[80] flex items-end sm:items-center justify-center sm:p-4"
+		class="fixed inset-0 z-[80] flex items-end sm:items-center justify-center sm:p-4 bg-black/70 backdrop-blur-[6px]"
 		onclick={closePreview}
 	>
 		<div
-			class="review-modal w-full sm:max-w-md max-h-[100dvh] sm:max-h-[90vh] overflow-y-auto"
+			class="review-modal w-full sm:max-w-md max-h-[100dvh] sm:max-h-[90vh] overflow-y-auto bg-background border border-line-input rounded-t-[20px] sm:rounded-[20px] p-4 sm:p-6 pb-[calc(16px+env(safe-area-inset-bottom,0px))] sm:pb-6 min-h-[60vh] sm:min-h-0 [scrollbar-width:none] [-ms-overflow-style:none]"
 			onclick={(e) => e.stopPropagation()}
 		>
 			<!-- Mobile drag indicator -->
-			<div class="drag-indicator sm:hidden" onclick={closePreview}>
-				<div class="drag-bar"></div>
+			<div class="sm:hidden flex justify-center pt-2 pb-1 cursor-pointer" onclick={closePreview}>
+				<div class="w-9 h-1 bg-[var(--border)] rounded-sm"></div>
 			</div>
 			{#if step === 'done'}
 				<SuccessScreen
@@ -1632,9 +1633,9 @@
 
 			{:else if step === 'waiting-deposit'}
 				<div class="flex flex-col gap-3">
-					<div class="modal-header mb-2">
-						<h2 class="syne text-lg font-bold text-white">Deposit to Continue</h2>
-						<button onclick={closePreview} class="close-btn cursor-pointer">x</button>
+					<div class="flex justify-between items-center mb-2">
+						<h2 class="font-display text-lg font-bold text-white">Deposit to Continue</h2>
+						<button onclick={closePreview} class="w-8 h-8 rounded-lg bg-surface-hover border-none text-muted flex items-center justify-center transition-all duration-150 text-sm hover:bg-surface-hover hover:text-heading cursor-pointer">x</button>
 					</div>
 					<DepositInfo
 						address={userAddress ?? ''}
@@ -1659,17 +1660,17 @@
 
 			{:else}
 				<!-- Payment-focused review -->
-				<div class="modal-header">
-					<h2 class="syne text-xl font-bold text-white">Confirm Payment</h2>
-					<button onclick={closePreview} class="close-btn cursor-pointer">x</button>
+				<div class="flex justify-between items-center mb-5">
+					<h2 class="font-display text-xl font-bold text-white">Confirm Payment</h2>
+					<button onclick={closePreview} class="w-8 h-8 rounded-lg bg-surface-hover border-none text-muted flex items-center justify-center transition-all duration-150 text-sm hover:bg-surface-hover hover:text-heading cursor-pointer">x</button>
 				</div>
 
 				<!-- Token identifier (one line) -->
-				<div class="review-id">
-					<span class="review-token-name">{tokenInfo.name} ({tokenInfo.symbol})</span>
-					<span class="review-token-chain">{tokenInfo.network.name}</span>
+				<div class="flex items-baseline gap-2 mb-1">
+					<span class="font-display text-[15px] font-bold text-heading">{tokenInfo.name} ({tokenInfo.symbol})</span>
+					<span class="text-[10px] text-[#00d2ff] font-mono">{tokenInfo.network.name}</span>
 				</div>
-				<div class="review-badges">
+				<div class="flex gap-1 flex-wrap mb-3">
 					{#if tokenInfo.isMintable}<span class="badge badge-cyan">Mintable</span>{/if}
 					{#if tokenInfo.isTaxable}<span class="badge badge-amber">Taxable</span>{/if}
 					{#if tokenInfo.isPartner}<span class="badge badge-purple">Partner</span>{/if}
@@ -1679,34 +1680,34 @@
 				</div>
 
 				<!-- Cost Breakdown -->
-				<div class="modal-section fee-section">
-					<div class="receipt">
-						<div class="receipt-row">
-							<span class="receipt-label">Creation fee (USDT)</span>
-							<span class="receipt-value">{feeLoading ? '...' : `$${feeUsdAmount}`}</span>
+				<div class="mb-4 pb-4 border-b border-surface-hover bg-[rgba(0,210,255,0.03)] rounded-[10px] p-[14px] border border-[rgba(0,210,255,0.1)]">
+					<div class="flex flex-col gap-0">
+						<div class="flex justify-between items-center py-1.5 font-mono text-[11px]">
+							<span class="text-dim">Creation fee (USDT)</span>
+							<span class="text-foreground font-semibold font-numeric text-[13px] text-right">{feeLoading ? '...' : `$${feeUsdAmount}`}</span>
 						</div>
 
 						{#if tokenInfo.listing?.enabled}
 							{#each (tokenInfo.listing.pairs || []).filter(p => Number(p.amount) > 0) as pair}
 								{@const baseLabel = pair.base === 'native' ? tokenInfo.network.native_coin : pair.base.toUpperCase()}
-								<div class="receipt-row">
-									<span class="receipt-label">Liquidity ({tokenInfo.symbol}/{baseLabel})</span>
-									<span class="receipt-value">{pair.amount} {baseLabel}</span>
+								<div class="flex justify-between items-center py-1.5 font-mono text-[11px]">
+									<span class="text-dim">Liquidity ({tokenInfo.symbol}/{baseLabel})</span>
+									<span class="text-foreground font-semibold font-numeric text-[13px] text-right">{pair.amount} {baseLabel}</span>
 								</div>
 							{/each}
 						{/if}
 
 						{#if tokenInfo.launch?.enabled}
-							<div class="receipt-row">
-								<span class="receipt-label">Launch fee (on graduation)</span>
-								<span class="receipt-value receipt-note">1% of raised</span>
+							<div class="flex justify-between items-center py-1.5 font-mono text-[11px]">
+								<span class="text-dim">Launch fee (on graduation)</span>
+								<span class="text-dim font-normal text-[10px] font-mono text-right">1% of raised</span>
 							</div>
 						{/if}
 
-						<div class="receipt-divider"></div>
-						<div class="receipt-row receipt-total">
-							<span class="receipt-label">You pay now</span>
-							<span class="receipt-value">
+						<div class="h-px bg-surface-hover my-1.5"></div>
+						<div class="flex justify-between items-center py-1.5 font-mono text-[11px]">
+							<span class="text-heading font-bold">You pay now</span>
+							<span class="text-[#00d2ff] text-[15px] font-bold font-numeric text-right">
 								{#if feeLoading}...
 								{:else}
 									{@const payAddr = selectedPayment?.address?.toLowerCase() || ''}
@@ -1723,22 +1724,22 @@
 							</span>
 						</div>
 					</div>
-						<p class="receipt-hint">Fee is denominated in USDT. Pay with any token — it's auto-converted.</p>
+						<p class="text-[9px] text-dim font-mono mt-1.5 opacity-70">Fee is denominated in USDT. Pay with any token — it's auto-converted.</p>
 
 					{#if !feeLoading && paymentOptions.length > 0}
-						<div class="pay-method-section mt-3">
-							<span class="pay-method-label">Pay with</span>
-							<button class="pay-method-card" onclick={() => { showPaymentModal = true; loadPaymentQuotes(); }}>
+						<div class="flex flex-col gap-1.5 mt-3">
+							<span class="text-[9px] text-dim font-mono uppercase tracking-[0.04em]">Pay with</span>
+							<button class="flex items-center gap-2.5 w-full px-3 py-2.5 rounded-[10px] bg-surface border border-line cursor-pointer transition-colors duration-[120ms] font-[inherit] text-[inherit] text-left hover:border-[rgba(0,210,255,0.2)]" onclick={() => { showPaymentModal = true; loadPaymentQuotes(); }}>
 								{#if COIN_LOGOS[selectedPayment?.symbol?.toUpperCase()]}
-								<img src={COIN_LOGOS[selectedPayment.symbol.toUpperCase()]} alt={selectedPayment.symbol} class="pay-method-logo" />
+								<img src={COIN_LOGOS[selectedPayment.symbol.toUpperCase()]} alt={selectedPayment.symbol} class="w-8 h-8 rounded-full object-cover shrink-0" />
 							{:else}
-								<span class="pay-method-icon">{selectedPayment?.symbol?.charAt(0) || '?'}</span>
+								<span class="w-8 h-8 rounded-full bg-[rgba(0,210,255,0.08)] border border-[rgba(0,210,255,0.15)] flex items-center justify-center font-display text-[12px] font-extrabold text-[#00d2ff] shrink-0">{selectedPayment?.symbol?.charAt(0) || '?'}</span>
 							{/if}
-								<div class="pay-method-info">
-									<span class="pay-method-name">{selectedPayment?.symbol}</span>
-									<span class="pay-method-amount">{selectedFeeDisplay} {selectedPayment?.symbol}</span>
+								<div class="flex-1">
+									<span class="block font-display text-[13px] font-bold text-heading">{selectedPayment?.symbol}</span>
+									<span class="block font-numeric text-[12px] text-dim">{selectedFeeDisplay} {selectedPayment?.symbol}</span>
 								</div>
-								<svg class="pay-method-chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+								<svg class="text-dim shrink-0" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
 							</button>
 						</div>
 
@@ -1762,15 +1763,15 @@
 					: 0}
 				{@const _minBuyExceedsMaxBuy = tokenInfo.launch?.enabled && _minBuy > 0 && _maxBuyPerWalletUsd > 0 && _minBuy > _maxBuyPerWalletUsd}
 				{#if _minBuyExceedsMaxBuy}
-					<div class="wz-warn-box" style="margin: 8px 0 12px;">
-						<strong>Min buy exceeds max buy per wallet.</strong>
+					<div class="my-2 mb-3 px-[14px] py-3 rounded-[10px] bg-[rgba(251,191,36,0.08)] border border-[rgba(251,191,36,0.35)] text-[#fcd34d] text-[13px] leading-[1.5]">
+						<strong class="block text-[#fde68a] mb-1 font-display">Min buy exceeds max buy per wallet.</strong>
 						With hard cap ${tokenInfo.launch.hardCap} × max wallet {(parseFloat(String(tokenInfo.launch.maxBuyBps)) / 100).toFixed(2)}% = ${_maxBuyPerWalletUsd.toFixed(2)} max buy, but min buy is ${tokenInfo.launch.minBuyUsdt}. Go back and fix the launch config.
 					</div>
 				{/if}
 				<button
 					onclick={confirmAndDeploy}
 					disabled={feeLoading || paymentOptions.length === 0 || _minBuyExceedsMaxBuy}
-					class="create-btn w-full syne cursor-pointer"
+					class="w-full font-display cursor-pointer p-[14px] bg-[linear-gradient(135deg,#00d2ff,#3a7bd5)] text-heading font-bold text-[15px] border-none rounded-xl transition-all duration-200 mt-2 disabled:opacity-50 disabled:cursor-not-allowed enabled:hover:-translate-y-px enabled:hover:shadow-[0_8px_32px_rgba(0,210,255,0.3)]"
 				>
 					{feeLoading ? $t('ct.calculatingFee') : tokenInfo.existingTokenAddress ? 'Create Launch' : tokenInfo.listing?.enabled ? $t('ct.deployAndList') : tokenInfo.launch?.enabled ? 'Deploy & Launch' : $t('ct.confirmDeploy')}
 				</button>
@@ -1788,21 +1789,21 @@
 
 	{:else}
 		<!-- ═══════ TOKEN CREATION WIZARD ═══════ -->
-		<div class="create-split">
-			<div class="form-wrapper">
-				<button class="back-link" onclick={() => selectMode(null)} title="Change create mode">
+		<div class="flex flex-col lg:flex-row gap-7 items-start">
+			<div class="flex-1 min-w-0 max-w-[640px] mx-auto lg:max-w-none lg:mx-0">
+				<button class="inline-flex items-center gap-1.5 text-muted text-[13px] font-mono bg-transparent border-none cursor-pointer p-0 transition-colors duration-150 hover:text-[#00d2ff]" onclick={() => selectMode(null)} title="Change create mode">
 					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
 					Change mode
 				</button>
-				<div class="form-header">
+				<div class="mt-4 mb-5">
 					<span class="badge badge-cyan">{mode === 'token' ? $t('ci.titleToken') : mode === 'launch' ? $t('ci.titleLaunch') : mode === 'list' ? 'Create & List' : $t('ci.titleBoth')}</span>
-					<h1 class="syne text-2xl sm:text-3xl font-bold text-white mt-3 mb-1">{pageTitle}</h1>
+					<h1 class="font-display text-2xl sm:text-3xl font-bold text-white mt-3 mb-1">{pageTitle}</h1>
 					<p class="text-gray-500 font-mono text-sm">{mode === 'token' ? $t('ci.metaToken') : mode === 'launch' ? $t('ci.metaLaunch') : mode === 'list' ? 'Create and list your token on a DEX.' : $t('ci.metaBoth')}</p>
 				</div>
 				<TokenForm {supportedNetworks} {addFeedback} {updateTokenInfo} onPreviewChange={handlePreviewChange} initialData={initialFormData} initialMode={mode} onModeChange={handleModeChange} {resetSignal} />
 			</div>
 			{#if previewState}
-				<div class="create-preview-col">
+				<div class="create-preview-col hidden lg:block w-[320px] shrink-0 sticky top-20 max-h-[calc(100vh-100px)] overflow-y-auto overflow-x-hidden [scrollbar-width:thin]">
 					<DisplayPreview
 						name={previewState.name}
 						symbol={previewState.symbol}
@@ -1837,556 +1838,20 @@
 </div>
 
 <style>
-	.create-split { display: flex; gap: 28px; align-items: flex-start; }
-	.create-split > .form-wrapper { flex: 1; min-width: 0; max-width: none; }
-	.create-preview-col {
-		width: 320px; flex-shrink: 0;
-		position: sticky; top: 80px;
-		max-height: calc(100vh - 100px);
-		overflow-y: auto; overflow-x: hidden;
-		scrollbar-width: thin;
-		scrollbar-color: rgba(255,255,255,0.1) transparent;
-	}
 	.create-preview-col::-webkit-scrollbar { width: 4px; }
 	.create-preview-col::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
-	@media (max-width: 1000px) { .create-preview-col { display: none; } .create-split { display: block; } }
 
-	.page-grid {
-		display: grid;
-		grid-template-columns: 1fr;
-		gap: 32px;
-	}
-	@media (min-width: 1024px) {
-		.page-grid {
-			grid-template-columns: 1fr;
-		}
-		.info-col {
-			align-self: stretch;
-			position: relative;
-			
-		}
-	}
-
-	.modal-backdrop {
-		background: rgba(0,0,0,0.7);
-		backdrop-filter: blur(6px);
-	}
-
-	.review-modal {
-		background: var(--bg);
-		border: 1px solid var(--border-input);
-		border-radius: 20px 20px 0 0;
-		padding: 16px;
-		padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
-		animation: modalSlideUp 0.25s ease-out;
-		scrollbar-width: none;
-		-ms-overflow-style: none;
-		min-height: 60vh;
-	}
+	.review-modal { animation: modalSlideUp 0.25s ease-out; }
 	.review-modal::-webkit-scrollbar { display: none; }
 	@media (min-width: 640px) {
-		.review-modal {
-			padding: 24px;
-			border-radius: 20px;
-			min-height: auto;
-			animation: modalIn 0.2s ease-out;
-		}
+		.review-modal { animation: modalIn 0.2s ease-out; }
 	}
 	@keyframes modalSlideUp {
 		from { opacity: 0; transform: translateY(100%); }
 		to   { opacity: 1; transform: translateY(0); }
 	}
-
-	.drag-indicator {
-		display: flex;
-		justify-content: center;
-		padding: 8px 0 4px;
-		cursor: pointer;
-	}
-	.drag-bar {
-		width: 36px;
-		height: 4px;
-		background: var(--border);
-		border-radius: 2px;
-	}
 	@keyframes modalIn {
 		from { opacity:0; transform: scale(0.95) translateY(8px); }
 		to   { opacity:1; transform: scale(1) translateY(0); }
-	}
-
-	.modal-header {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		margin-bottom: 20px;
-	}
-
-	.close-btn {
-		width: 32px; height: 32px;
-		border-radius: 8px;
-		background: var(--bg-surface-hover);
-		border: none;
-		color: var(--text-muted);
-		display: flex; align-items: center; justify-content: center;
-		transition: all 0.15s;
-		font-size: 14px;
-	}
-	.close-btn:hover { background: var(--bg-surface-hover); color: var(--text-heading); }
-
-	.modal-section { margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px solid var(--bg-surface-hover); }
-
-	.fee-section { background: rgba(0,210,255,0.03); border-radius: 10px; padding: 14px; border-color: rgba(0,210,255,0.1); }
-
-	/* Review payment modal */
-	.review-id {
-		display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px;
-	}
-	.review-token-name { font-family: 'Syne', sans-serif; font-size: 15px; font-weight: 700; color: var(--text-heading); }
-	.review-token-chain { font-size: 10px; color: #00d2ff; font-family: 'Space Mono', monospace; }
-	.review-badges { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 12px; }
-
-	/* Deploy progress stepper */
-	.deploy-progress { padding: 8px 0; }
-	.dp-header { text-align: center; margin-bottom: 20px; }
-	.dp-title { font-family: 'Syne', sans-serif; font-size: 18px; font-weight: 800; color: var(--text-heading); margin: 0; }
-	.dp-sub { font-size: 11px; color: var(--text-dim); font-family: 'Space Mono', monospace; margin: 4px 0 0; }
-	.dp-steps { display: flex; flex-direction: column; gap: 0; padding: 0 8px; }
-	.dp-step {
-		display: flex; align-items: center; gap: 12px; padding: 10px 0;
-	}
-	.dp-step-icon {
-		width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
-		display: flex; align-items: center; justify-content: center;
-		border: 2px solid var(--border); background: transparent;
-		transition: all 0.3s;
-	}
-	.dp-done .dp-step-icon { border-color: #10b981; color: #10b981; background: rgba(16,185,129,0.1); }
-	.dp-active .dp-step-icon { border-color: #00d2ff; background: rgba(0,210,255,0.1); }
-	.dp-pending .dp-step-icon { border-color: var(--border); }
-	.dp-num { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text-dim); }
-	.dp-spinner {
-		width: 14px; height: 14px; border: 2px solid rgba(0,210,255,0.2);
-		border-top-color: #00d2ff; border-radius: 50%; animation: spin 0.8s linear infinite;
-	}
-	@keyframes spin { to { transform: rotate(360deg); } }
-	.dp-step-info { flex: 1; }
-	.dp-step-label { font-family: 'Space Mono', monospace; font-size: 12px; color: var(--text); }
-	.dp-done .dp-step-label { color: #10b981; }
-	.dp-active .dp-step-label { color: #00d2ff; }
-	.dp-pending .dp-step-label { color: var(--text-dim); }
-	.dp-skipped { font-size: 9px; color: var(--text-dim); font-family: 'Space Mono', monospace; margin-left: 6px; }
-	.dp-line { width: 2px; height: 16px; background: var(--bg-surface-input); margin-left: 13px; transition: background 0.3s; }
-	.dp-line-done { background: #10b981; }
-	.dp-tx-link {
-		display: block; text-align: center; margin-top: 16px; padding: 8px;
-		font-size: 11px; color: #00d2ff; font-family: 'Space Mono', monospace;
-		text-decoration: none; transition: opacity 0.12s;
-	}
-	.dp-tx-link:hover { opacity: 0.7; }
-
-	/* Payment method card + modal */
-	.pay-method-section { display: flex; flex-direction: column; gap: 6px; }
-	.pay-method-label { font-size: 9px; color: var(--text-dim); font-family: 'Space Mono', monospace; text-transform: uppercase; letter-spacing: 0.04em; }
-	.pay-method-card {
-		display: flex; align-items: center; gap: 10px; width: 100%;
-		padding: 10px 12px; border-radius: 10px;
-		background: var(--bg-surface); border: 1px solid var(--border);
-		cursor: pointer; transition: border-color 0.12s; font-family: inherit; color: inherit; text-align: left;
-	}
-	.pay-method-card:hover { border-color: rgba(0,210,255,0.2); }
-	.pay-method-icon {
-		width: 32px; height: 32px; border-radius: 50%;
-		background: rgba(0,210,255,0.08); border: 1px solid rgba(0,210,255,0.15);
-		display: flex; align-items: center; justify-content: center;
-		font-family: 'Syne', sans-serif; font-size: 12px; font-weight: 800; color: #00d2ff; flex-shrink: 0;
-	}
-	.pay-method-logo { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
-	.pay-method-info { flex: 1; }
-	.pay-method-name { display: block; font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700; color: var(--text-heading); }
-	.pay-method-amount { display: block; font-family: 'Rajdhani', sans-serif; font-size: 12px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
-	.pay-method-chev { color: var(--text-dim); flex-shrink: 0; }
-
-	/* ═══ PAYMENT MODAL (trade-page style) ═══ */
-	.pm-backdrop {
-		position: fixed; inset: 0; z-index: 100; background: rgba(0,0,0,0.7);
-		backdrop-filter: blur(4px); display: flex; align-items: flex-start;
-		justify-content: center; padding: 60px 16px;
-	}
-	.pm-modal {
-		width: 100%; max-width: 420px; max-height: 80vh;
-		background: var(--bg, #0a0b10); border: 1px solid var(--border, rgba(255,255,255,0.06));
-		border-radius: 20px; overflow: hidden; display: flex; flex-direction: column;
-	}
-	.pm-header {
-		display: flex; justify-content: space-between; align-items: center;
-		padding: 16px 20px; border-bottom: 1px solid var(--border, rgba(255,255,255,0.06));
-	}
-	.pm-header h3 {
-		font-family: 'Syne', sans-serif; font-size: 16px; font-weight: 700;
-		color: var(--text-heading, #fff); margin: 0;
-	}
-	.pm-close {
-		background: none; border: none; color: var(--text-muted, #64748b); cursor: pointer;
-		padding: 4px; border-radius: 8px; transition: all 150ms;
-	}
-	.pm-close:hover { color: var(--text, #e2e8f0); background: var(--bg-surface-hover, rgba(255,255,255,0.04)); }
-	.pm-search { margin: 12px 16px; width: calc(100% - 32px); }
-	.pm-import-error { font-size: 11px; color: #f87171; font-family: 'Space Mono', monospace; padding: 0 16px 8px; margin: 0; }
-	.pm-import-row { padding: 0 16px 10px; }
-	.pm-import-btn {
-		width: 100%; padding: 8px; border-radius: 10px; border: 1px solid rgba(139,92,246,0.2);
-		background: rgba(139,92,246,0.1); color: #a78bfa; cursor: pointer;
-		font-family: 'Space Mono', monospace; font-size: 12px; font-weight: 700;
-		transition: all 150ms;
-	}
-	.pm-import-btn:hover { background: rgba(139,92,246,0.2); }
-	.pm-import-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-	.pm-list {
-		overflow-y: auto; padding: 0 8px 8px; flex: 1;
-		scrollbar-width: thin; scrollbar-color: var(--bg-surface-hover, rgba(255,255,255,0.04)) transparent;
-	}
-	.pm-loading {
-		display: flex; align-items: center; justify-content: center; gap: 8px;
-		padding: 16px; color: var(--text-muted, #64748b);
-		font-family: 'Space Mono', monospace; font-size: 11px;
-	}
-	.pm-spinner {
-		width: 16px; height: 16px; border: 2px solid var(--border, rgba(255,255,255,0.06));
-		border-top-color: #00d2ff; border-radius: 50%; animation: spin 0.8s linear infinite;
-	}
-	@keyframes spin { to { transform: rotate(360deg); } }
-	.pm-item {
-		display: flex; align-items: center; gap: 10px; width: 100%;
-		padding: 10px 12px; border-radius: 12px; border: 1px solid transparent;
-		background: transparent; cursor: pointer; transition: all 150ms; text-align: left;
-	}
-	.pm-item:hover { background: var(--bg-surface-hover, rgba(255,255,255,0.03)); }
-	.pm-item-active { border-color: rgba(0,210,255,0.2); background: rgba(0,210,255,0.03); }
-	.pm-logo { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
-	.pm-logo-placeholder {
-		width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
-		display: flex; align-items: center; justify-content: center;
-		background: rgba(0,210,255,0.08); color: #00d2ff; border: 1px solid rgba(0,210,255,0.15);
-		font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700;
-	}
-	.pm-info { flex: 1; min-width: 0; }
-	.pm-sym { display: block; font-family: 'Space Mono', monospace; font-size: 13px; font-weight: 700; color: var(--text-heading, #e2e8f0); }
-	.pm-name { display: block; font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text-muted, #475569); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-	.pm-right { text-align: right; flex-shrink: 0; }
-	.pm-fee { display: block; font-family: 'Rajdhani', sans-serif; font-size: 14px; font-weight: 600; color: var(--text-heading, #e2e8f0); font-variant-numeric: tabular-nums; }
-	.pm-bal { display: block; font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text-dim, #374151); }
-	.pm-check { color: #10b981; font-size: 14px; flex-shrink: 0; margin-left: 4px; }
-	@media (max-width: 640px) {
-		.pm-backdrop { padding: 0; align-items: flex-end; }
-		.pm-modal { max-width: 100%; border-radius: 20px 20px 0 0; max-height: 85vh; }
-	}
-
-	.receipt { display: flex; flex-direction: column; gap: 0; }
-	.receipt-row {
-		display: flex; justify-content: space-between; align-items: center;
-		padding: 6px 0; font-family: 'Space Mono', monospace; font-size: 11px;
-	}
-	.receipt-label { color: var(--text-dim); }
-	.receipt-value { color: var(--text); font-weight: 600; font-family: 'Rajdhani', sans-serif; font-size: 13px; font-variant-numeric: tabular-nums; text-align: right; }
-	.receipt-note { color: var(--text-dim); font-weight: 400; font-size: 10px; font-family: 'Space Mono', monospace; }
-	.receipt-divider { height: 1px; background: var(--bg-surface-hover); margin: 6px 0; }
-	.receipt-total .receipt-label { color: var(--text-heading); font-weight: 700; }
-	.receipt-total .receipt-value { color: #00d2ff; font-size: 15px; font-weight: 700; }
-	.receipt-hint { font-size: 9px; color: var(--text-dim); font-family: 'Space Mono', monospace; margin-top: 6px; opacity: 0.7; }
-
-	.payment-summary {
-		padding: 10px 12px;
-		background: rgba(0,210,255,0.05);
-		border: 1px solid rgba(0,210,255,0.15);
-		border-radius: 8px;
-	}
-
-	.create-btn {
-		width: 100%;
-		padding: 14px;
-		background: linear-gradient(135deg, #00d2ff, #3a7bd5);
-		color: var(--text-heading);
-		font-weight: 700;
-		font-size: 15px;
-		border: none;
-		border-radius: 12px;
-		cursor: pointer;
-		transition: all 0.2s;
-		margin-top: 8px;
-	}
-	.create-btn:hover:not(:disabled) {
-		transform: translateY(-1px);
-		box-shadow: 0 8px 32px rgba(0,210,255,0.3);
-	}
-	.create-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-
-	.wz-warn-box { padding: 12px 14px; border-radius: 10px; background: rgba(251, 191, 36, 0.08); border: 1px solid rgba(251, 191, 36, 0.35); color: #fcd34d; font-size: 13px; line-height: 1.5; }
-	.wz-warn-box strong { display: block; color: #fde68a; margin-bottom: 4px; font-family: 'Syne', sans-serif; }
-
-	.insufficient-box {
-		padding: 14px;
-		background: rgba(245,158,11,0.08);
-		border: 1px solid rgba(245,158,11,0.2);
-		border-radius: 10px;
-	}
-
-	/* Deposit screen */
-	.deposit-screen { display: flex; flex-direction: column; gap: 12px; }
-	.deposit-amount { text-align: center; padding: 10px; background: rgba(0,210,255,0.04); border: 1px solid rgba(0,210,255,0.1); border-radius: 10px; }
-	.deposit-amount-label { display: block; font-size: 10px; color: var(--text-dim); font-family: 'Space Mono', monospace; }
-	.deposit-amount-value { display: block; font-family: 'Rajdhani', sans-serif; font-size: 26px; font-weight: 700; color: #00d2ff; font-variant-numeric: tabular-nums; }
-	.deposit-amount-bal { display: block; font-size: 9px; color: #f59e0b; font-family: 'Space Mono', monospace; }
-	.deposit-qr-row { display: flex; align-items: center; gap: 14px; padding: 12px; background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 10px; }
-	.deposit-amount-copy {
-		display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
-		transition: opacity 0.12s; justify-content: center;
-	}
-	.deposit-amount-copy:hover { opacity: 0.8; }
-	.deposit-amount-copy svg { color: var(--text-dim); }
-	.deposit-addr-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; cursor: pointer; transition: opacity 0.12s; }
-	.deposit-addr-info:hover { opacity: 0.8; }
-	.deposit-addr-label { font-size: 9px; color: var(--text-dim); font-family: 'Space Mono', monospace; text-transform: uppercase; letter-spacing: 0.04em; }
-	.deposit-addr { font-size: 10px; color: var(--text); font-family: 'Space Mono', monospace; word-break: break-all; line-height: 1.5; }
-	.deposit-addr-actions { display: flex; align-items: center; gap: 8px; }
-	.deposit-copy-btn { display: inline-flex; align-items: center; gap: 3px; font-size: 9px; color: #00d2ff; font-family: 'Space Mono', monospace; }
-	.deposit-network { font-size: 9px; color: #f59e0b; font-family: 'Space Mono', monospace; }
-	.deposit-status { display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 10px; color: var(--text-dim); font-family: 'Space Mono', monospace; }
-
-	.qr-section { display: flex; flex-direction: column; align-items: center; }
-	.qr-placeholder {
-		padding: 8px;
-		background: #fff;
-		border-radius: 10px;
-		display: inline-block;
-	}
-	.qr-img {
-		width: 120px;
-		height: 120px;
-		border-radius: 4px;
-		display: block;
-	}
-	.address-box {
-		padding: 8px 14px;
-		background: rgba(0,210,255,0.05);
-		border: 1px solid rgba(0,210,255,0.15);
-		border-radius: 8px;
-		max-width: 100%;
-		word-break: break-all;
-	}
-
-	.deposit-notice {
-		padding: 10px 14px;
-		background: rgba(245,158,11,0.06);
-		border: 1px solid rgba(245,158,11,0.15);
-		border-radius: 8px;
-		text-align: left;
-		display: flex;
-		flex-direction: column;
-		gap: 4px;
-	}
-
-	.deployed-address-box {
-		padding: 12px 14px;
-		background: rgba(0,210,255,0.04);
-		border: 1px solid rgba(0,210,255,0.15);
-		border-radius: 10px;
-		text-align: center;
-	}
-
-	select option { background: var(--select-bg); color: var(--text-heading); }
-
-	/* ─── Intent Selection Grid ─── */
-	/* ── Selection screen ── */
-	.sel-header { text-align: center; margin-bottom: 28px; }
-	.sel-title { font-family: 'Syne', sans-serif; font-size: 28px; font-weight: 800; color: var(--text-heading); margin: 0; }
-	.sel-sub { font-size: 13px; color: var(--text-muted); font-family: 'Rajdhani', sans-serif; margin: 4px 0 0; }
-
-	.sel-grid { display: grid; grid-template-columns: 1fr; gap: 10px; max-width: 720px; margin: 0 auto; }
-	@media (min-width: 640px) { .sel-grid { grid-template-columns: 1fr 1fr 1fr; } }
-
-	.sel-card {
-		position: relative; border-radius: 14px; overflow: hidden;
-		background: var(--bg-surface); border: 1px solid var(--border-subtle);
-		cursor: pointer; transition: all 0.2s; text-align: left;
-		font-family: inherit; color: inherit;
-	}
-	.sel-card:hover { border-color: rgba(0,210,255,0.2); transform: translateY(-2px); box-shadow: 0 8px 30px rgba(0,0,0,0.2); }
-	.sel-card-inner { padding: 18px; display: flex; flex-direction: column; gap: 8px; position: relative; z-index: 1; height: 100%; }
-	.sel-card-body { flex: 1; min-width: 0; }
-
-	.sel-featured { grid-column: 1 / -1; border-color: rgba(0,210,255,0.15); }
-	.sel-featured .sel-card-inner { flex-direction: row; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
-	.sel-featured .sel-name { font-size: 18px; }
-	.sel-featured .sel-card-body { flex: 1; min-width: 200px; }
-	.sel-featured:hover { border-color: rgba(0,210,255,0.4); box-shadow: 0 0 40px rgba(0,210,255,0.08), 0 8px 30px rgba(0,0,0,0.2); }
-	.sel-card-glow {
-		position: absolute; inset: 0; z-index: 0;
-		background: radial-gradient(ellipse at 30% 50%, rgba(0,210,255,0.06), transparent 60%);
-		pointer-events: none;
-	}
-
-	.sel-tag {
-		position: absolute; top: 10px; right: 12px; z-index: 2;
-		display: inline-flex; align-items: center; gap: 4px;
-		font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
-		padding: 4px 10px; border-radius: 6px;
-		background: rgba(0,210,255,0.15); color: #00d2ff; font-family: 'Rajdhani', sans-serif;
-		border: 1px solid rgba(0,210,255,0.25);
-	}
-
-	.sel-icon {
-		width: 42px; height: 42px; border-radius: 12px; flex-shrink: 0;
-		display: flex; align-items: center; justify-content: center;
-	}
-	.sel-icon-cyan { background: rgba(0,210,255,0.1); color: #00d2ff; border: 1px solid rgba(0,210,255,0.15); }
-	.sel-icon-amber { background: rgba(245,158,11,0.1); color: #f59e0b; border: 1px solid rgba(245,158,11,0.15); }
-	.sel-icon-emerald { background: rgba(16,185,129,0.1); color: #10b981; border: 1px solid rgba(16,185,129,0.15); }
-	.sel-icon-purple { background: rgba(139,92,246,0.1); color: #a78bfa; border: 1px solid rgba(139,92,246,0.15); }
-
-	.sel-name { font-family: 'Syne', sans-serif; font-size: 15px; font-weight: 700; color: var(--text-heading); margin: 0; }
-	.sel-desc { font-size: 12px; color: var(--text-muted); font-family: 'Rajdhani', sans-serif; line-height: 1.4; margin: 0; }
-	.sel-features { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 4px; }
-	.sel-features span {
-		font-size: 9px; padding: 2px 8px; border-radius: 99px;
-		background: var(--bg-surface-hover); border: 1px solid var(--border);
-		color: var(--text-muted); font-family: 'Rajdhani', sans-serif; font-weight: 600;
-	}
-	.sel-features-featured span {
-		background: rgba(0,210,255,0.08); border-color: rgba(0,210,255,0.2); color: #00d2ff;
-	}
-
-	/* CTA arrow */
-	.sel-cta {
-		display: inline-flex; align-items: center; gap: 4px; margin-top: auto; padding-top: 10px;
-		font-family: 'Rajdhani', sans-serif; font-size: 12px; font-weight: 700;
-		color: var(--text-dim); transition: color 150ms;
-	}
-	.sel-card:hover .sel-cta { color: #00d2ff; }
-	.sel-cta-featured { color: #00d2ff; font-size: 13px; }
-
-	/* Comparison table */
-	.sel-compare {
-		max-width: 720px; margin: 28px auto 0;
-	}
-	.sel-compare-title {
-		font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 800;
-		color: var(--text-heading); margin: 0 0 10px; text-align: center;
-	}
-	.sel-compare-table {
-		border: 1px solid var(--border-subtle); border-radius: 12px; overflow: hidden;
-	}
-	.sel-compare-row {
-		display: grid; grid-template-columns: 1.4fr repeat(4, 1fr);
-		border-bottom: 1px solid var(--border-subtle);
-	}
-	.sel-compare-row:last-child { border-bottom: none; }
-	.sel-compare-row span {
-		padding: 8px 10px; font-family: 'Rajdhani', sans-serif; font-size: 11px;
-		color: var(--text-muted); display: flex; align-items: center;
-	}
-	.sel-compare-row span:first-child {
-		color: var(--text-dim); font-weight: 600;
-		background: var(--bg-surface);
-	}
-	.sel-compare-header {
-		background: var(--bg-surface);
-	}
-	.sel-compare-header span {
-		font-family: 'Syne', sans-serif; font-size: 10px; font-weight: 700;
-		color: var(--text-heading); text-align: center; justify-content: center;
-	}
-	.sel-compare-header span:first-child { background: transparent; }
-	.sel-check { color: #10b981 !important; font-weight: 700; justify-content: center !important; }
-	.sel-check-amber { color: #f59e0b !important; }
-	.sel-dash { color: var(--text-dim) !important; opacity: 0.3; justify-content: center !important; }
-	.sel-note { font-size: 10px !important; color: var(--text-muted) !important; justify-content: center !important; text-align: center; }
-
-	@media (max-width: 640px) {
-		.sel-compare-table { font-size: 9px; }
-		.sel-compare-row { grid-template-columns: 1.2fr repeat(4, 1fr); }
-		.sel-compare-row span { padding: 6px 4px; font-size: 9px; }
-		.sel-compare-header span { font-size: 8px; }
-	}
-
-	/* Legacy — keep for backward compat */
-	.intent-grid {
-		display: grid;
-		grid-template-columns: 1fr;
-		gap: 16px;
-		max-width: 800px;
-		margin: 0 auto;
-	}
-	@media (min-width: 640px) {
-		.intent-grid {
-			grid-template-columns: 1fr 1.3fr 1fr;
-			gap: 20px;
-			align-items: stretch;
-		}
-	}
-	.intent-card {
-		display: flex; flex-direction: column; align-items: center; text-align: center;
-		padding: 28px 20px; cursor: pointer; transition: all 0.25s;
-		border: 1px solid var(--border); background: var(--bg-surface);
-		border-radius: 16px; position: relative;
-	}
-	.intent-card:hover {
-		transform: translateY(-3px); box-shadow: 0 12px 40px rgba(0,0,0,0.3);
-		border-color: rgba(0,210,255,0.2); background: rgba(0,210,255,0.03);
-	}
-	.intent-card-featured {
-		padding: 36px 24px; border: 1.5px solid rgba(0, 210, 255, 0.3);
-		background: var(--bg-surface); position: relative; overflow: hidden;
-	}
-	.intent-card-featured::before {
-		content: ''; position: absolute; inset: 0;
-		background: radial-gradient(ellipse at 50% 0%, rgba(0, 210, 255, 0.08), transparent 70%);
-		pointer-events: none;
-	}
-	.intent-card-featured:hover {
-		border-color: rgba(0, 210, 255, 0.5);
-		box-shadow: 0 0 40px rgba(0, 210, 255, 0.15), 0 12px 40px rgba(0, 0, 0, 0.3);
-		background: rgba(0, 210, 255, 0.03);
-	}
-	.intent-badge-top { margin-bottom: 12px; }
-	.intent-icon {
-		width: 56px; height: 56px; display: flex; align-items: center;
-		justify-content: center; border-radius: 14px;
-	}
-	.intent-icon.cyan { background: rgba(0,210,255,0.1); color: #00d2ff; border: 1px solid rgba(0,210,255,0.2); }
-	.intent-icon.emerald { background: rgba(16,185,129,0.1); color: #10b981; border: 1px solid rgba(16,185,129,0.2); }
-
-	.back-link {
-		display: inline-flex;
-		align-items: center;
-		gap: 6px;
-		color: var(--text-muted);
-		font-size: 13px;
-		font-family: 'Space Mono', monospace;
-		background: none;
-		border: none;
-		cursor: pointer;
-		padding: 0;
-		transition: color 0.15s;
-	}
-	.back-link:hover {
-		color: #00d2ff;
-	}
-
-	.form-wrapper {
-		max-width: 640px;
-		margin: 0 auto;
-	}
-
-	.form-header {
-		margin: 16px 0 20px;
-	}
-
-	.form-box {
-		border-radius: 16px;
-	}
-
-	.launch-form {
-		display: flex;
-		flex-direction: column;
 	}
 </style>

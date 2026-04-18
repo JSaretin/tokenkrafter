@@ -121,14 +121,14 @@
 
 {#if loading}
 	<div class="card p-8 text-center">
-		<div class="spinner mx-auto mb-3"></div>
+		<div class="spinner mx-auto mb-3 w-6 h-6 rounded-full border-2 border-line border-t-brand-cyan"></div>
 		<span class="text-gray-500 font-mono text-xs">Loading config...</span>
 	</div>
 {:else}
 	<div class="space-y-6">
 		<!-- Site Info -->
 		<div class="card p-5">
-			<h3 class="section-title mb-4">Site Info</h3>
+			<h3 class="font-numeric text-lg font-semibold text-heading mb-4">Site Info</h3>
 			<div class="space-y-3">
 				<div>
 					<label class="label-text">Site Name</label>
@@ -150,7 +150,7 @@
 
 		<!-- Social Links -->
 		<div class="card p-5">
-			<h3 class="section-title mb-4">Social Links</h3>
+			<h3 class="font-numeric text-lg font-semibold text-heading mb-4">Social Links</h3>
 			<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
 				<div>
 					<label class="label-text">Twitter / X</label>
@@ -185,7 +185,7 @@
 		<!-- Networks -->
 		<div class="card p-5">
 			<div class="flex justify-between items-center mb-4">
-				<h3 class="section-title mb-0">Supported Networks ({networks.length})</h3>
+				<h3 class="font-numeric text-lg font-semibold text-heading mb-0">Supported Networks ({networks.length})</h3>
 				<button class="btn-primary text-xs px-3 py-1.5 cursor-pointer" onclick={() => (showAddNetwork = !showAddNetwork)}>
 					{showAddNetwork ? 'Cancel' : '+ Add Network'}
 				</button>
@@ -193,7 +193,7 @@
 
 			<!-- Add network form -->
 			{#if showAddNetwork}
-				<div class="add-network-form mb-4">
+				<div class="mb-4 bg-surface-input border border-[rgba(0,210,255,0.15)] rounded-xl p-4">
 					<div class="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-3">
 						<div>
 							<label class="label-text">Chain ID</label>
@@ -292,7 +292,7 @@
 
 			<!-- Existing networks -->
 			{#each networks as net, i}
-				<div class="network-card mb-3">
+				<div class="mb-3 bg-surface-input border border-line rounded-[10px] p-3">
 					<div class="flex justify-between items-center mb-2">
 						<div>
 							<span class="text-sm font-bold text-white font-mono">{net.name}</span>
@@ -389,23 +389,3 @@
 		</div>
 	</div>
 {/if}
-
-<style>
-	.section-title {
-		font-family: 'Rajdhani', sans-serif; font-size: 18px; font-weight: 600; color: var(--text-heading);
-	}
-	.add-network-form {
-		background: var(--bg-surface-input); border: 1px solid rgba(0,210,255,0.15);
-		border-radius: 12px; padding: 16px;
-	}
-	.network-card {
-		background: var(--bg-surface-input); border: 1px solid var(--border);
-		border-radius: 10px; padding: 12px;
-	}
-	.spinner {
-		width: 24px; height: 24px; border: 2px solid var(--border);
-		border-top-color: #00d2ff; border-radius: 50%;
-		animation: spin 0.8s linear infinite;
-	}
-	@keyframes spin { to { transform: rotate(360deg); } }
-</style>

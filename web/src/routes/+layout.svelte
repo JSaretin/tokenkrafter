@@ -616,18 +616,18 @@
 <!-- Skip to content -->
 <a
 	href="#main-content"
-	class="skip-to-content"
+	class="absolute -left-[9999px] top-auto w-px h-px overflow-hidden focus:fixed focus:top-2 focus:left-2 focus:w-auto focus:h-auto focus:py-2 focus:px-4 focus:bg-surface focus:text-foreground focus:border focus:border-line focus:rounded-lg focus:z-[200] focus:font-mono focus:text-[13px]"
 >Skip to main content</a>
 
 
 <!-- Navigation loading bar -->
 {#if navigating.to}
-	<div class="nav-progress"><div class="nav-progress-bar"></div></div>
+	<div class="fixed top-0 left-0 right-0 h-0.5 z-[9999] bg-transparent overflow-hidden"><div class="h-full origin-left animate-[nav-load_1.5s_ease-in-out_infinite]" style="background: linear-gradient(90deg, #00d2ff, #3a7bd5);"></div></div>
 {/if}
 
 <!-- Offline Banner -->
 {#if isOffline}
-	<div class="offline-banner">
+	<div class="fixed top-0 left-0 right-0 z-[110] flex items-center justify-center gap-1.5 py-1.5 px-3 font-mono text-[11px] font-semibold animate-[slideDown_0.3s_ease-out]" style="background: #7f1d1d; color: #fca5a5;">
 		<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="1" y1="1" x2="23" y2="23"/><path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"/><path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"/><path d="M10.71 5.05A16 16 0 0 1 22.56 9"/><path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
 		<span>You're offline</span>
 	</div>
@@ -635,18 +635,18 @@
 
 <!-- PWA Install Banner -->
 {#if showInstallBanner}
-	<div class="install-banner">
-		<div class="install-banner-content">
-			<div class="install-banner-icon">
+	<div class="fixed bottom-0 left-0 right-0 z-[90] flex items-center justify-between gap-3 px-4 py-3 bg-surface border-t border-cyan-400/15 shadow-[0_-4px_24px_rgba(0,0,0,0.4)] animate-[slideUpBanner_0.3s_ease-out]">
+		<div class="flex items-center gap-2.5 flex-1 min-w-0">
+			<div class="w-9 h-9 rounded-[10px] shrink-0 flex items-center justify-center bg-cyan-400/10 text-cyan-400">
 				<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
 			</div>
-			<div class="install-banner-text">
-				<span class="install-banner-title">Install TokenKrafter</span>
-				<span class="install-banner-desc">Add to home screen for a faster experience</span>
+			<div class="flex flex-col gap-px min-w-0">
+				<span class="syne text-[13px] font-bold text-white">Install TokenKrafter</span>
+				<span class="text-[11px] text-dim">Add to home screen for a faster experience</span>
 			</div>
 		</div>
-		<div class="install-banner-actions">
-			<button class="install-banner-btn install-banner-install" onclick={async () => {
+		<div class="flex items-center gap-2 shrink-0">
+			<button class="syne text-xs font-bold text-white border-none rounded-lg px-4 py-2 cursor-pointer transition-all duration-150 hover:shadow-[0_4px_16px_rgba(0,210,255,0.3)]" style="background: linear-gradient(135deg, #00d2ff, #3a7bd5);" onclick={async () => {
 				if (installPrompt) {
 					installPrompt.prompt();
 					const result = await installPrompt.userChoice;
@@ -656,7 +656,7 @@
 					installPrompt = null;
 				}
 			}}>Install</button>
-			<button class="install-banner-btn install-banner-dismiss" onclick={() => {
+			<button class="bg-transparent border-none text-dim cursor-pointer p-1 rounded-md transition-all duration-150 hover:text-white hover:bg-surface-hover" onclick={() => {
 				showInstallBanner = false;
 				localStorage.setItem('pwa_install_dismissed', '1');
 			}}>
@@ -667,10 +667,10 @@
 {/if}
 
 <!-- Toast Notifications -->
-<div class="toast-container">
+<div class="fixed top-4 right-4 z-[100] flex flex-col gap-2 max-w-[380px] w-[calc(100%-32px)] pointer-events-none">
 	{#each feedbacks as feedback (feedback.id)}
-		<div class="toast toast-{feedback.type}">
-			<div class="toast-icon">
+		<div class="toast toast-{feedback.type} pointer-events-auto relative overflow-hidden flex items-start gap-2.5 py-3 px-3.5 rounded-xl bg-surface border border-line animate-[toastIn_0.3s_ease-out]" style="box-shadow: 0 8px 32px rgba(0,0,0,0.4), 0 0 0 1px rgba(0,0,0,0.2);">
+			<div class="toast-icon w-7 h-7 rounded-lg shrink-0 flex items-center justify-center">
 				{#if feedback.type === 'success'}
 					<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M20 6L9 17l-5-5"/></svg>
 				{:else if feedback.type === 'error'}
@@ -679,11 +679,11 @@
 					<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
 				{/if}
 			</div>
-			<span class="toast-msg">{feedback.message}</span>
-			<button class="toast-close" onclick={() => hideFeedback(feedback.id)} aria-label="Dismiss">
+			<span class="flex-1 font-mono text-xs text-foreground leading-normal pt-1">{feedback.message}</span>
+			<button class="shrink-0 bg-transparent border-none cursor-pointer text-dim p-0.5 rounded transition-all duration-150 hover:text-muted hover:bg-surface-hover" onclick={() => hideFeedback(feedback.id)} aria-label="Dismiss">
 				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
 			</button>
-			<div class="toast-progress"></div>
+			<div class="toast-progress absolute bottom-0 left-0 h-0.5 animate-[toastProgress_5s_linear_forwards]"></div>
 		</div>
 	{/each}
 </div>
@@ -740,11 +740,11 @@
 			<!-- Right side: actions -->
 			<div class="flex items-center gap-2">
 				<!-- Nav search -->
-				<div class="nav-search hidden md:flex">
-					<svg class="nav-search-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+				<div class="nav-search hidden md:flex items-center gap-1.5 py-[5px] px-2.5 rounded-lg bg-surface border border-line transition-colors duration-150 focus-within:border-cyan-400/30">
+					<svg class="text-dim shrink-0" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
 					<input
 						type="text"
-						class="nav-search-input"
+						class="bg-transparent border-none outline-none text-foreground font-mono text-[11px] w-[120px] focus:w-[180px] transition-[width] duration-200 placeholder:text-dim"
 						placeholder="Search tokens..."
 						bind:value={navSearch}
 						onkeydown={handleNavSearch}
@@ -753,7 +753,7 @@
 
 				<!-- Theme toggle -->
 				<button
-					class="theme-toggle-nav"
+					class="flex items-center justify-center w-8 h-8 rounded-lg bg-transparent border border-line text-dim cursor-pointer transition-all duration-150 hover:border-cyan-400/30 hover:text-cyan-400 hover:bg-cyan-400/5"
 					onclick={toggleTheme}
 					title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
 					aria-label="Toggle theme"
@@ -791,7 +791,7 @@
 	{#if mobileMenuOpen}
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div
-			class="mobile-backdrop fixed inset-0 z-40 md:hidden"
+			class="fixed inset-0 z-40 md:hidden bg-black/60 backdrop-blur-[4px] animate-[fadeIn_0.25s_ease-out]"
 			onclick={() => (mobileMenuOpen = false)}
 			onkeydown={(e) => { if (e.key === 'Escape') mobileMenuOpen = false; }}
 		></div>
@@ -885,7 +885,7 @@
 	</main>
 
 	<!-- Footer -->
-	<footer class="footer border-t mt-auto" style="border-color: var(--border-subtle)">
+	<footer class="bg-footer border-t mt-auto" style="border-color: var(--border-subtle)">
 		<div class="max-w-7xl mx-auto px-4 sm:px-6 py-12">
 			<div class="grid grid-cols-1 sm:grid-cols-3 gap-10 sm:gap-8">
 				<!-- Brand -->
@@ -921,11 +921,11 @@
 								href={social.href}
 								target="_blank"
 								rel="noopener noreferrer"
-								class="social-link flex items-center gap-2 px-3 py-2 rounded-lg border border-white/7 bg-white/3 hover:border-cyan-500/30 hover:bg-cyan-500/5 transition text-sm font-mono text-gray-400 hover:text-cyan-400"
+								class="no-underline flex items-center gap-2 px-3 py-2 rounded-lg border border-white/7 bg-white/3 hover:border-cyan-500/30 hover:bg-cyan-500/5 transition text-sm font-mono text-gray-400 hover:text-cyan-400"
 								title={social.label}
 								aria-label={social.label}
 							>
-								<svg class="social-svg" viewBox="0 0 24 24" fill="currentColor">{@html social.svg}</svg>
+								<svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="currentColor">{@html social.svg}</svg>
 								<span class="hidden sm:inline">{social.label}</span>
 							</a>
 						{/each}
@@ -943,24 +943,24 @@
 	</div>
 
 	<!-- Mobile Bottom Tab Bar -->
-	<div class="bottom-tabs">
-		<a href="/explore" class="bottom-tab" class:bottom-tab-active={page.url.pathname.startsWith('/explore')}>
+	<div class="fixed bottom-0 left-0 right-0 z-40 md:hidden flex items-stretch h-[60px] bg-background border-t border-line" style="padding-bottom: env(safe-area-inset-bottom, 0px);">
+		<a href="/explore" class="bottom-tab flex-1 flex flex-col items-center justify-center gap-0.5 border-none bg-none no-underline font-mono text-[10px] cursor-pointer transition-colors duration-150 hover:text-foreground active:text-foreground {page.url.pathname.startsWith('/explore') ? 'text-cyan-400' : 'text-dim'}">
 			<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
 			<span>Explore</span>
 		</a>
-		<a href="/launchpad" class="bottom-tab" class:bottom-tab-active={page.url.pathname.startsWith('/launchpad')}>
+		<a href="/launchpad" class="bottom-tab flex-1 flex flex-col items-center justify-center gap-0.5 border-none bg-none no-underline font-mono text-[10px] cursor-pointer transition-colors duration-150 hover:text-foreground active:text-foreground {page.url.pathname.startsWith('/launchpad') ? 'text-cyan-400' : 'text-dim'}">
 			<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
 			<span>Launchpad</span>
 		</a>
-		<a href="/trade" class="bottom-tab" class:bottom-tab-active={page.url.pathname.startsWith('/trade')}>
+		<a href="/trade" class="bottom-tab flex-1 flex flex-col items-center justify-center gap-0.5 border-none bg-none no-underline font-mono text-[10px] cursor-pointer transition-colors duration-150 hover:text-foreground active:text-foreground {page.url.pathname.startsWith('/trade') ? 'text-cyan-400' : 'text-dim'}">
 			<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4"/></svg>
 			<span>Trade</span>
 		</a>
-		<a href="/create" onclick={() => createMode.set(null)} class="bottom-tab" class:bottom-tab-active={page.url.pathname.startsWith('/create')}>
+		<a href="/create" onclick={() => createMode.set(null)} class="bottom-tab flex-1 flex flex-col items-center justify-center gap-0.5 border-none bg-none no-underline font-mono text-[10px] cursor-pointer transition-colors duration-150 hover:text-foreground active:text-foreground {page.url.pathname.startsWith('/create') ? 'text-cyan-400' : 'text-dim'}">
 			<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
 			<span>Create</span>
 		</a>
-		<button class="bottom-tab" onclick={() => (mobileMenuOpen = !mobileMenuOpen)}>
+		<button class="flex-1 flex flex-col items-center justify-center gap-0.5 border-none bg-none font-mono text-[10px] cursor-pointer transition-colors duration-150 text-dim hover:text-foreground active:text-foreground" onclick={() => (mobileMenuOpen = !mobileMenuOpen)}>
 			<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
 			<span>More</span>
 		</button>
@@ -1011,31 +1011,43 @@
 
 <style>
 	:global(*) { box-sizing: border-box; }
-
-	/* Navigation loading bar */
-	.nav-progress {
-		position: fixed; top: 0; left: 0; right: 0; height: 2px; z-index: 9999;
-		background: transparent; overflow: hidden;
-	}
-	.nav-progress-bar {
-		height: 100%; background: linear-gradient(90deg, #00d2ff, #3a7bd5);
-		animation: nav-load 1.5s ease-in-out infinite;
-		transform-origin: left;
-	}
-	@keyframes nav-load {
-		0% { transform: scaleX(0) translateX(0); }
-		50% { transform: scaleX(0.6) translateX(20%); }
-		100% { transform: scaleX(0) translateX(100%); }
-	}
 	:global(body) {
 		background: var(--bg);
 		color: var(--text);
 		font-family: 'Space Mono', monospace;
 		margin: 0;
 	}
-	.syne { font-family: 'Syne', sans-serif; }
 	:global(.syne) { font-family: 'Syne', sans-serif; }
 
+	/* Keyframes — referenced via `animate-[name_...]` utilities in markup */
+	@keyframes nav-load {
+		0% { transform: scaleX(0) translateX(0); }
+		50% { transform: scaleX(0.6) translateX(20%); }
+		100% { transform: scaleX(0) translateX(100%); }
+	}
+	@keyframes slideDown { from { transform: translateY(-100%); } to { transform: translateY(0); } }
+	@keyframes slideUpBanner { from { transform: translateY(100%); } to { transform: translateY(0); } }
+	@keyframes toastIn {
+		from { opacity: 0; transform: translateY(-8px) scale(0.96); }
+		to   { opacity: 1; transform: translateY(0) scale(1); }
+	}
+	@keyframes toastProgress {
+		from { width: 100%; }
+		to { width: 0%; }
+	}
+	@keyframes spin { to { transform: rotate(360deg); } }
+	@keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+	@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+	/* Toast type-colors — attribute-keyed variants keep tight scoping */
+	.toast-success .toast-icon { background: rgba(16,185,129,0.12); color: #10b981; }
+	.toast-error .toast-icon { background: rgba(239,68,68,0.12); color: #ef4444; }
+	.toast-info .toast-icon { background: rgba(0,210,255,0.12); color: #00d2ff; }
+	.toast-success .toast-progress { background: #10b981; }
+	.toast-error .toast-progress { background: #ef4444; }
+	.toast-info .toast-progress { background: #00d2ff; }
+
+	/* Background decoration layers (radial gradients from CSS vars) */
 	.grid-bg {
 		background-image:
 			linear-gradient(var(--grid-line) 1px, transparent 1px),
@@ -1058,39 +1070,9 @@
 	@media (max-width: 767px) {
 		.nav-bar { position: fixed !important; left: 0; right: 0; }
 	}
-	/* Desktop/mobile visibility */
-	.lang-desktop, .wallet-desktop { display: none; }
-	@media (min-width: 768px) {
-		.lang-desktop { display: block; }
-		.wallet-desktop { display: block; }
-	}
 
-	/* Nav search */
-	.nav-search {
-		align-items: center; gap: 6px;
-		padding: 5px 10px; border-radius: 8px;
-		background: var(--bg-surface); border: 1px solid var(--border);
-		transition: border-color 0.15s;
-	}
-	.nav-search:focus-within { border-color: rgba(0,210,255,0.3); }
-	.nav-search-icon { color: var(--text-dim); flex-shrink: 0; }
-	.nav-search-input {
-		background: transparent; border: none; outline: none;
-		color: var(--text); font-family: 'Space Mono', monospace; font-size: 11px;
-		width: 120px; transition: width 0.2s;
-	}
-	.nav-search-input:focus { width: 180px; }
-	.nav-search-input::placeholder { color: var(--text-dim); }
-
-	/* Theme toggle in nav */
-	.theme-toggle-nav {
-		display: flex; align-items: center; justify-content: center;
-		width: 32px; height: 32px; border-radius: 8px;
-		background: transparent; border: 1px solid var(--border);
-		color: var(--text-dim); cursor: pointer; transition: all 0.15s;
-	}
-	.theme-toggle-nav:hover { border-color: rgba(0,210,255,0.3); color: #00d2ff; background: rgba(0,210,255,0.05); }
-
+	/* Wallet button — base + variants. Kept as named class because it's
+	   referenced from many template branches. */
 	.wallet-btn {
 		display: inline-flex; align-items: center; gap: 6px;
 		padding: 6px 12px; border-radius: 8px;
@@ -1111,161 +1093,25 @@
 	.show-mobile { display: none; }
 	@media (max-width: 640px) { .hide-mobile { display: none; } .show-mobile { display: inline; } }
 	.wallet-skeleton { width: 100px; cursor: default; }
-	.wallet-spinner {
-		width: 12px; height: 12px; border: 2px solid rgba(255,255,255,0.3);
-		border-top-color: #fff; border-radius: 50%;
-		animation: spin 0.7s linear infinite; flex-shrink: 0;
-	}
 	.skeleton-bar {
 		display: block; width: 100%; height: 10px; border-radius: 4px;
 		background: linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.06) 50%, rgba(255,255,255,0.03) 75%);
 		background-size: 200% 100%; animation: shimmer 1.5s infinite;
 	}
-	@keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 	.wallet-dot {
 		width: 7px; height: 7px; border-radius: 50%; background: #10b981; flex-shrink: 0;
 	}
 	.wallet-dot-locked { background: #fbbf24; }
-	/* Offline Banner */
-	.offline-banner {
-		position: fixed; top: 0; left: 0; right: 0; z-index: 110;
-		display: flex; align-items: center; justify-content: center; gap: 6px;
-		padding: 6px 12px;
-		background: #7f1d1d; color: #fca5a5;
-		font-family: 'Space Mono', monospace; font-size: 11px; font-weight: 600;
-		animation: slideDown 0.3s ease-out;
-	}
-	@keyframes slideDown { from { transform: translateY(-100%); } to { transform: translateY(0); } }
 
-	/* PWA Install Banner */
-	.install-banner {
-		position: fixed; bottom: 0; left: 0; right: 0; z-index: 90;
-		display: flex; align-items: center; justify-content: space-between; gap: 12px;
-		padding: 12px 16px;
-		background: var(--bg-surface); border-top: 1px solid rgba(0,210,255,0.15);
-		box-shadow: 0 -4px 24px rgba(0,0,0,0.4);
-		animation: slideUpBanner 0.3s ease-out;
-	}
-	@keyframes slideUpBanner { from { transform: translateY(100%); } to { transform: translateY(0); } }
-	.install-banner-content { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
-	.install-banner-icon {
-		width: 36px; height: 36px; border-radius: 10px; flex-shrink: 0;
-		display: flex; align-items: center; justify-content: center;
-		background: rgba(0,210,255,0.1); color: #00d2ff;
-	}
-	.install-banner-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-	.install-banner-title { font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700; color: white; }
-	.install-banner-desc { font-size: 11px; color: var(--text-dim); }
-	.install-banner-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-	.install-banner-install {
-		font-family: 'Syne', sans-serif; font-size: 12px; font-weight: 700; color: white;
-		background: linear-gradient(135deg, #00d2ff, #3a7bd5); border: none; border-radius: 8px;
-		padding: 8px 16px; cursor: pointer; transition: all 0.15s;
-	}
-	.install-banner-install:hover { box-shadow: 0 4px 16px rgba(0,210,255,0.3); }
-	.install-banner-dismiss {
-		background: none; border: none; color: var(--text-dim); cursor: pointer;
-		padding: 4px; border-radius: 6px; transition: all 0.15s;
-	}
-	.install-banner-dismiss:hover { color: white; background: var(--bg-surface-hover); }
-
-	/* Toast notifications */
-	.toast-container {
-		position: fixed; top: 16px; right: 16px; z-index: 100;
-		display: flex; flex-direction: column; gap: 8px;
-		max-width: 380px; width: calc(100% - 32px);
-		pointer-events: none;
-	}
-	.toast {
-		pointer-events: auto; position: relative; overflow: hidden;
-		display: flex; align-items: flex-start; gap: 10px;
-		padding: 12px 14px; border-radius: 12px;
-		background: var(--bg-surface); border: 1px solid var(--border);
-		box-shadow: 0 8px 32px rgba(0,0,0,0.4), 0 0 0 1px rgba(0,0,0,0.2);
-		animation: toastIn 0.3s ease-out;
-	}
-	@keyframes toastIn {
-		from { opacity: 0; transform: translateY(-8px) scale(0.96); }
-		to   { opacity: 1; transform: translateY(0) scale(1); }
-	}
-	.toast-icon {
-		width: 28px; height: 28px; border-radius: 8px; flex-shrink: 0;
-		display: flex; align-items: center; justify-content: center;
-	}
-	.toast-success .toast-icon { background: rgba(16,185,129,0.12); color: #10b981; }
-	.toast-error .toast-icon { background: rgba(239,68,68,0.12); color: #ef4444; }
-	.toast-info .toast-icon { background: rgba(0,210,255,0.12); color: #00d2ff; }
-	.toast-msg {
-		flex: 1; font-family: 'Space Mono', monospace; font-size: 12px;
-		color: var(--text); line-height: 1.5; padding-top: 4px;
-	}
-	.toast-close {
-		flex-shrink: 0; background: none; border: none; cursor: pointer;
-		color: var(--text-dim); padding: 2px; border-radius: 4px;
-		transition: all 0.15s;
-	}
-	.toast-close:hover { color: var(--text-muted); background: var(--bg-surface-hover); }
-	.toast-progress {
-		position: absolute; bottom: 0; left: 0; height: 2px;
-		animation: toastProgress 5s linear forwards;
-	}
-	.toast-success .toast-progress { background: #10b981; }
-	.toast-error .toast-progress { background: #ef4444; }
-	.toast-info .toast-progress { background: #00d2ff; }
-	@keyframes toastProgress {
-		from { width: 100%; }
-		to { width: 0%; }
-	}
-	.spinner { animation: spin 0.8s linear infinite; }
-	@keyframes spin { to { transform: rotate(360deg); } }
-
-	.footer { background: var(--bg-footer); }
-	.social-link {
-		text-decoration: none;
-	}
-	.social-svg {
-		width: 16px;
-		height: 16px;
-		flex-shrink: 0;
-	}
-	.social-svg-sm {
-		width: 14px;
-		height: 14px;
-	}
-
-	/* ─── Mobile Drawer ─── */
-	/* Bottom Tab Bar — mobile only */
-	.bottom-tabs {
-		position: fixed; bottom: 0; left: 0; right: 0; z-index: 40;
-		display: flex; align-items: stretch;
-		height: 60px;
-		background: var(--bg);
-		border-top: 1px solid var(--border);
-		padding-bottom: env(safe-area-inset-bottom, 0px);
-	}
+	/* Lang/wallet desktop visibility toggles */
+	.lang-desktop, .wallet-desktop { display: none; }
 	@media (min-width: 768px) {
-		.bottom-tabs { display: none; }
+		.lang-desktop { display: block; }
+		.wallet-desktop { display: block; }
 	}
-	.bottom-tab {
-		flex: 1; display: flex; flex-direction: column; align-items: center;
-		justify-content: center; gap: 2px; border: none; background: none;
-		color: var(--text-dim); text-decoration: none;
-		font-family: 'Space Mono', monospace; font-size: 10px;
-		transition: color 0.15s; cursor: pointer;
-	}
-	.bottom-tab:hover, .bottom-tab:active { color: var(--text); }
-	.bottom-tab-active { color: #00d2ff; }
-	.bottom-tab-active svg { stroke: #00d2ff; }
 
-	.mobile-backdrop {
-		background: rgba(0, 0, 0, 0.6);
-		backdrop-filter: blur(4px);
-		animation: fadeIn 0.25s ease-out;
-	}
-	@keyframes fadeIn {
-		from { opacity: 0; }
-		to   { opacity: 1; }
-	}
+	/* Mobile drawer — translateX transition, can't cleanly express the
+	   preset cubic-bezier as a Tailwind arbitrary, so kept custom. */
 	.mobile-drawer {
 		width: 280px;
 		max-width: 85vw;
@@ -1280,30 +1126,5 @@
 		transform: translateX(0);
 		pointer-events: auto;
 	}
-	.mobile-nav-link {
-		font-family: 'Space Mono', monospace;
-	}
-	.skip-to-content {
-		position: absolute;
-		left: -9999px;
-		top: auto;
-		width: 1px;
-		height: 1px;
-		overflow: hidden;
-	}
-	.skip-to-content:focus {
-		position: fixed;
-		top: 8px;
-		left: 8px;
-		width: auto;
-		height: auto;
-		padding: 8px 16px;
-		background: var(--bg-surface);
-		color: var(--text);
-		border: 1px solid var(--border);
-		border-radius: 8px;
-		z-index: 200;
-		font-family: 'Space Mono', monospace;
-		font-size: 13px;
-	}
+	.mobile-nav-link { font-family: 'Space Mono', monospace; }
 </style>

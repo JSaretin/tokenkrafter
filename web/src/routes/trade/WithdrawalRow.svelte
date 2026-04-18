@@ -37,31 +37,31 @@
 	let timerText = $derived(remaining > 0 ? `${Math.floor(remaining / 60)}m ${remaining % 60}s` : $t('trade.timedOut'));
 
 	let statusColorClass = $derived(
-		statusColor === 'amber' ? 'text-warning'
-			: statusColor === 'emerald' ? 'text-success'
-			: statusColor === 'red' ? 'text-danger-light'
+		statusColor === 'amber' ? 'text-[#f59e0b]'
+			: statusColor === 'emerald' ? 'text-[#10b981]'
+			: statusColor === 'red' ? 'text-[#f87171]'
 			: 'text-(--text-muted)'
 	);
 </script>
 
 <button class="p-2.5 bg-(--bg-surface-input) rounded-[10px] mb-1.5 w-full border border-transparent cursor-pointer text-left transition-all duration-150 hover:border-[rgba(0,210,255,0.2)] hover:bg-[rgba(0,210,255,0.03)]" {onclick}>
 	<div class="flex justify-between items-center">
-		<span class="font-mono text-sm2 font-bold text-(--text-heading)">${amount}</span>
-		<span class={"font-mono text-xs2 font-bold uppercase " + statusColorClass}>{statusText}</span>
+		<span class="font-mono text-[13px] font-bold text-(--text-heading)">${amount}</span>
+		<span class={"font-mono text-[10px] font-bold uppercase " + statusColorClass}>{statusText}</span>
 	</div>
 	<div class="flex justify-between items-center mt-1">
-		{#if withdrawal.withdraw_id}<span class="font-mono text-xs2 text-(--text-muted) font-semibold">#{withdrawal.withdraw_id}</span>{/if}
-		<span class="font-mono text-xs2 text-(--text-dim)">{createdDate}</span>
+		{#if withdrawal.withdraw_id}<span class="font-mono text-[10px] text-(--text-muted) font-semibold">#{withdrawal.withdraw_id}</span>{/if}
+		<span class="font-mono text-[10px] text-(--text-dim)">{createdDate}</span>
 		{#if canCancel}
-			<span class="font-mono text-xs2 text-danger-light">{$t('trade.tapToCancel')}</span>
+			<span class="font-mono text-[10px] text-[#f87171]">{$t('trade.tapToCancel')}</span>
 		{/if}
 	</div>
 	{#if hasPendingTimer}
 		<div class="mt-1.5">
-			<div class="w-full h-0.75 bg-(--bg-surface-hover) rounded-xs overflow-hidden mb-0.5">
-				<div class="h-full rounded-xs transition-[width] duration-300 bg-[linear-gradient(90deg,#f59e0b,#d97706)]" style="width: {progressPct}%"></div>
+			<div class="w-full h-[3px] bg-(--bg-surface-hover) rounded-[2px] overflow-hidden mb-0.5">
+				<div class="h-full rounded-[2px] transition-[width] duration-300 bg-[linear-gradient(90deg,#f59e0b,#d97706)]" style="width: {progressPct}%"></div>
 			</div>
-			<span class="font-mono text-xxs text-[rgba(245,158,11,0.7)]">{timerText}</span>
+			<span class="font-mono text-[9px] text-[rgba(245,158,11,0.7)]">{timerText}</span>
 		</div>
 	{/if}
 </button>

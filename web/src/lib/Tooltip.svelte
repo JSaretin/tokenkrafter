@@ -61,78 +61,21 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <span
-	class="tooltip-wrap"
+	class="relative inline-flex items-center ml-[5px] align-middle"
 	onmouseenter={show}
 	onmouseleave={hide}
 >
 	<button
 		type="button"
-		class="tooltip-trigger"
+		class="w-[14px] h-[14px] rounded-full bg-cyan-500/15 text-cyan-400 border border-cyan-500/30 hover:bg-cyan-500/25 hover:border-cyan-500/50 text-[9px] font-bold leading-none inline-flex items-center justify-center cursor-help p-0 shrink-0 font-mono transition-[background,border-color] duration-150"
 		bind:this={triggerEl}
 		onclick={toggle}
 		aria-label="Help"
 	>?</button>
 	{#if visible}
-		<div class="tooltip-bubble {placement}" style={tooltipStyle} bind:this={tooltipEl}>
+		<div class="fixed bg-surface text-foreground text-xs font-mono font-normal leading-[1.5] text-left px-3 py-2.5 rounded-[10px] min-w-[160px] w-max z-[9999] pointer-events-auto border border-cyan-500/15 shadow-[0_8px_24px_rgba(0,0,0,0.5)] max-w-[min(280px,calc(100vw-32px))]" style={tooltipStyle} bind:this={tooltipEl}>
 			{text}
 			<div class="tooltip-arrow"></div>
 		</div>
 	{/if}
 </span>
-
-<style>
-	.tooltip-wrap {
-		position: relative;
-		display: inline-flex;
-		align-items: center;
-		margin-left: 5px;
-		vertical-align: middle;
-	}
-
-	.tooltip-trigger {
-		width: 14px;
-		height: 14px;
-		border-radius: 50%;
-		background: rgba(6, 182, 212, 0.15);
-		color: rgb(34, 211, 238);
-		border: 1px solid rgba(6, 182, 212, 0.3);
-		font-size: 9px;
-		font-weight: 700;
-		line-height: 1;
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		cursor: help;
-		padding: 0;
-		flex-shrink: 0;
-		font-family: 'Space Mono', monospace;
-		transition: background 0.15s, border-color 0.15s;
-	}
-
-	.tooltip-trigger:hover {
-		background: rgba(6, 182, 212, 0.25);
-		border-color: rgba(6, 182, 212, 0.5);
-	}
-
-	.tooltip-bubble {
-		position: fixed;
-		background: var(--bg-surface);
-		color: var(--text);
-		font-size: 12px;
-		font-family: 'Space Mono', monospace;
-		font-weight: 400;
-		line-height: 1.5;
-		letter-spacing: 0;
-		text-transform: none;
-		text-align: left;
-		padding: 10px 12px;
-		border-radius: 10px;
-		max-width: min(280px, calc(100vw - 32px));
-		min-width: 160px;
-		width: max-content;
-		z-index: 9999;
-		pointer-events: auto;
-		border: 1px solid rgba(6, 182, 212, 0.15);
-		box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
-	}
-</style>

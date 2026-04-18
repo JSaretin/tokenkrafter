@@ -21,7 +21,7 @@
 		{#if logo}<img src={logo} alt="" class="w-5 h-5 rounded-full object-cover" />{/if}
 		<span class="font-mono text-sm font-bold text-(--text-heading)">{symbol}</span>
 	{:else}
-		<span class="font-mono text-sm2 text-cyan">{$t('trade.selectToken')}</span>
+		<span class="font-mono text-[13px] text-[#00d2ff]">{$t('trade.selectToken')}</span>
 	{/if}
 	<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M6 9l6 6 6-6"/></svg>
 </button>

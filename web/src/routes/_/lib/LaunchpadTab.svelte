@@ -237,7 +237,7 @@
 
 {#if loading}
 	<div class="flex items-center justify-center py-20">
-		<div class="spinner w-10 h-10 rounded-full border-2 border-white/10 border-t-cyan-400"></div>
+		<div class="spinner w-10 h-10 rounded-full border-2 border-line-input border-t-brand-cyan"></div>
 	</div>
 {:else if !selectedNetwork.launchpad_address || selectedNetwork.launchpad_address === '0x'}
 	<div class="card p-8 text-center">
@@ -247,15 +247,15 @@
 	<!-- Launchpad Stats -->
 	<div class="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-6">
 		<div class="card p-4 text-center">
-			<div class="text-2xl font-bold text-purple-400 syne">{lpTotalLaunches.toString()}</div>
+			<div class="text-2xl font-bold text-purple-400 font-display">{lpTotalLaunches.toString()}</div>
 			<div class="text-xs text-gray-500 mt-1">{$t('admin.totalLaunches')}</div>
 		</div>
 		<div class="card p-4 text-center">
-			<div class="text-2xl font-bold text-cyan-400 syne">${lpLaunchFee}</div>
+			<div class="text-2xl font-bold text-cyan-400 font-display">${lpLaunchFee}</div>
 			<div class="text-xs text-gray-500 mt-1">{$t('admin.launchFeeUsdt')}</div>
 		</div>
 		<div class="card p-4 text-center">
-			<div class="text-2xl font-bold text-emerald-400 syne">${ethers.formatUnits(lpTotalFeeUsdt, usdtDecimals)}</div>
+			<div class="text-2xl font-bold text-emerald-400 font-display">${ethers.formatUnits(lpTotalFeeUsdt, usdtDecimals)}</div>
 			<div class="text-xs text-gray-500 mt-1">{$t('admin.totalFeeEarned')}</div>
 		</div>
 	</div>
@@ -263,24 +263,24 @@
 	<!-- Launchpad Info -->
 	<div class="card p-5 mb-4">
 		<h3 class="section-title mb-3">{$t('admin.launchpadFactoryInfo')}</h3>
-		<div class="info-grid">
-			<div class="info-row">
+		<div class="flex flex-col gap-0.5">
+			<div class="flex justify-between items-center py-2 border-b border-surface last:border-b-0">
 				<span class="text-gray-500 text-xs">{$t('admin.contract')}</span>
 				<span class="text-white text-xs font-mono">{selectedNetwork.launchpad_address}</span>
 			</div>
-			<div class="info-row">
+			<div class="flex justify-between items-center py-2 border-b border-surface last:border-b-0">
 				<span class="text-gray-500 text-xs">{$t('admin.ownerLabel')}</span>
 				<span class="text-white text-xs font-mono">{lpOwner}</span>
 			</div>
-			<div class="info-row">
+			<div class="flex justify-between items-center py-2 border-b border-surface last:border-b-0">
 				<span class="text-gray-500 text-xs">{$t('admin.platformWallet')}</span>
 				<span class="text-cyan-400 text-xs font-mono">{formatAddress(lpPlatformWallet)}</span>
 			</div>
-			<div class="info-row">
+			<div class="flex justify-between items-center py-2 border-b border-surface last:border-b-0">
 				<span class="text-gray-500 text-xs">{$t('admin.dexRouter')}</span>
 				<span class="text-cyan-400 text-xs font-mono">{formatAddress(lpDexRouter)}</span>
 			</div>
-			<div class="info-row">
+			<div class="flex justify-between items-center py-2 border-b border-surface last:border-b-0">
 				<span class="text-gray-500 text-xs">USDT</span>
 				<span class="text-cyan-400 text-xs font-mono">{formatAddress(lpUsdtAddr)}</span>
 			</div>
@@ -301,7 +301,7 @@
 	<!-- Platform Wallet -->
 	<div class="card p-5 mb-4">
 		<h3 class="section-title mb-3">{$t('admin.platformWalletTitle')}</h3>
-		<div class="info-row mb-3">
+		<div class="flex justify-between items-center py-2 mb-3">
 			<span class="text-gray-500 text-xs">{$t('admin.current')}</span>
 			<span class="text-cyan-400 text-xs font-mono">{lpPlatformWallet}</span>
 		</div>
@@ -378,22 +378,3 @@
 		</div>
 	</div>
 {/if}
-
-<style>
-	.info-grid { display: flex; flex-direction: column; gap: 2px; }
-	.info-row {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		padding: 8px 0;
-		border-bottom: 1px solid var(--bg-surface);
-	}
-	.info-row:last-child { border-bottom: none; }
-
-	select option { background: var(--select-bg); }
-
-	.spinner {
-		animation: spin 0.8s linear infinite;
-	}
-	@keyframes spin { to { transform: rotate(360deg); } }
-</style>

@@ -1458,7 +1458,7 @@
 		<!-- Header -->
 		<div class="flex justify-between items-start mb-5">
 			<div>
-				<h1 class="font-[Syne,sans-serif] text-2xl2 font-extrabold text-(--text-heading) m-0">{$t('trade.title')}</h1>
+				<h1 class="font-[Syne,sans-serif] text-[28px] font-extrabold text-(--text-heading) m-0 leading-tight">{$t('trade.title')}</h1>
 				<p class="font-mono text-xs text-(--text-muted) mt-1 mb-0">{$t('trade.subtitle')}</p>
 			</div>
 			<div class="flex gap-1.5">
@@ -1602,7 +1602,7 @@
 		</SwapCardShell>
 
 		<!-- Buy crypto banner -->
-		<div class="flex items-center gap-2 px-3.5 py-2.5 mt-2.5 rounded-xl bg-(--bg-surface) border border-(--border) font-mono text-xs3 text-(--text-muted)">
+		<div class="flex items-center gap-2 px-3.5 py-2.5 mt-2.5 rounded-xl bg-(--bg-surface) border border-(--border) font-mono text-[11px] text-(--text-muted)">
 			<svg class="shrink-0 text-cyan" width="14" height="14" viewBox="0 0 512 512" fill="#00d2ff"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM169.8 165.3c7.9-22.3 29.1-37.3 52.8-37.3h58.3c34.9 0 63.1 28.3 63.1 63.1c0 22.6-12.1 43.5-31.7 54.8L280 264.4c-.2 13-10.9 23.6-24 23.6c-13.3 0-24-10.7-24-24V250.5c0-8.6 4.6-16.5 12.1-20.8l44.3-25.4c4.7-2.7 7.6-7.7 7.6-13.1c0-8.4-6.8-15.1-15.1-15.1H222.6c-3.4 0-6.4 2.1-7.5 5.3l-.4 1.2c-4.4 12.5-18.2 19-30.6 14.6s-19-18.2-14.6-30.6l.4-1.2zM224 352a32 32 0 1 1 64 0 32 32 0 1 1-64 0z"/></svg>
 			<span class="flex-1">{$t('trade.buyCrypto')}</span>
 			<button class="py-1.5 px-3.5 rounded-lg border-0 cursor-pointer bg-[linear-gradient(135deg,#00d2ff,#3a7bd5)] text-white font-[Syne,sans-serif] text-xs font-bold whitespace-nowrap transition-all duration-150 shrink-0 hover:-translate-y-px hover:shadow-[0_4px_16px_rgba(0,210,255,0.3)]" onclick={() => addFeedback({ message: $t('trade.comingSoon'), type: 'info' })}>
@@ -1702,21 +1702,21 @@
 				rightLabel={outputMode === 'token' ? $t('trade.receive') : $t('trade.to')}
 			>
 				{#snippet leftSide()}
-					<span class="block font-[Rajdhani,sans-serif] text-lg2 font-bold text-(--text-heading) leading-[1.3] tabular-nums">{amountIn} <span class="text-sm text-(--text-muted) font-semibold">{tokenInSymbol}</span></span>
-					{#if tokenInHasTax}<span class="inline-block mt-[3px] font-mono text-xxs text-warning bg-[rgba(245,158,11,0.08)] py-px px-1.5 rounded-[3px]">-{tokenInTaxSell / 100}% tax</span>{/if}
+					<span class="block font-[Rajdhani,sans-serif] text-[22px] font-bold text-(--text-heading) leading-[1.3] tabular-nums">{amountIn} <span class="text-sm text-(--text-muted) font-semibold">{tokenInSymbol}</span></span>
+					{#if tokenInHasTax}<span class="inline-block mt-[3px] font-mono text-[9px] text-[#f59e0b] bg-[rgba(245,158,11,0.08)] py-px px-1.5 rounded-[3px]">-{tokenInTaxSell / 100}% tax</span>{/if}
 				{/snippet}
 				{#snippet rightSide()}
 					{#if outputMode === 'token'}
-						<span class="block font-[Rajdhani,sans-serif] text-lg2 font-bold text-(--text-heading) leading-[1.3] tabular-nums">{displayAmountOut || '0'} <span class="text-sm text-(--text-muted) font-semibold">{tokenOutSymbol}</span></span>
-						{#if tokenOutHasTax}<span class="inline-block mt-[3px] font-mono text-xxs text-warning bg-[rgba(245,158,11,0.08)] py-px px-1.5 rounded-[3px]">-{tokenOutTaxBuy / 100}% tax</span>{/if}
+						<span class="block font-[Rajdhani,sans-serif] text-[22px] font-bold text-(--text-heading) leading-[1.3] tabular-nums">{displayAmountOut || '0'} <span class="text-sm text-(--text-muted) font-semibold">{tokenOutSymbol}</span></span>
+						{#if tokenOutHasTax}<span class="inline-block mt-[3px] font-mono text-[9px] text-[#f59e0b] bg-[rgba(245,158,11,0.08)] py-px px-1.5 rounded-[3px]">-{tokenOutTaxBuy / 100}% tax</span>{/if}
 					{:else}
-						<span class="block syne text-sm2 font-bold text-(--text-heading) leading-[1.3]">{paymentMethod === 'bank' ? bankBankName : paymentMethod === 'paypal' ? 'PayPal' : 'Wise'}</span>
+						<span class="block syne text-[13px] font-bold text-(--text-heading) leading-[1.3]">{paymentMethod === 'bank' ? bankBankName : paymentMethod === 'paypal' ? 'PayPal' : 'Wise'}</span>
 						{#if paymentMethod === 'bank' && bankResolved}
-							<span class="block font-mono text-xs2 text-success font-semibold mt-0.5">{bankName}</span>
+							<span class="block font-mono text-[10px] text-[#10b981] font-semibold mt-0.5">{bankName}</span>
 						{:else if paymentMethod === 'paypal'}
-							<span class="block font-mono text-xs2 text-success font-semibold mt-0.5">{paypalEmail}</span>
+							<span class="block font-mono text-[10px] text-[#10b981] font-semibold mt-0.5">{paypalEmail}</span>
 						{:else if paymentMethod === 'wise'}
-							<span class="block font-mono text-xs2 text-success font-semibold mt-0.5">{wiseEmail}</span>
+							<span class="block font-mono text-[10px] text-[#10b981] font-semibold mt-0.5">{wiseEmail}</span>
 						{/if}
 					{/if}
 				{/snippet}
@@ -1742,7 +1742,7 @@
 					{/if}
 					{#if fiatEquivalent}
 						<DetailLine label={$t('trade.youReceive')}>
-							<span class="font-[Rajdhani,sans-serif] text-base font-bold text-success tabular-nums">{fiatEquivalent}</span>
+							<span class="font-[Rajdhani,sans-serif] text-base font-bold text-[#10b981] tabular-nums">{fiatEquivalent}</span>
 						</DetailLine>
 						{#if ngnRate > 0}
 							<DetailLine label={$t('trade.rate')}>1 USD = ₦{ngnRate.toFixed(2)}</DetailLine>
@@ -1752,7 +1752,7 @@
 						<DetailLine label={$t('trade.processingLabel')}>{$t('trade.processingTime').replace('{min}', String(payoutTimeoutMins))}</DetailLine>
 					{/if}
 					<DetailLine label={$t('trade.escrow')}>
-						<span class="text-success">{$t('trade.escrowHeldBySc')}</span>
+						<span class="text-[#10b981] text-[10px]">{$t('trade.escrowHeldBySc')}</span>
 					</DetailLine>
 				{/if}
 			</TradeReviewDetails>

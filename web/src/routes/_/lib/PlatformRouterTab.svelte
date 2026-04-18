@@ -133,27 +133,25 @@
 		<div class="card p-4">
 			<h3 class="text-white text-sm font-semibold mb-3">PlatformRouter Status</h3>
 			<div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
-				<div class="stat-box">
-					<span class="stat-label">Status</span>
+				<div class="bg-white/[0.02] border border-line rounded-lg py-2.5 px-3">
+					<span class="block text-[10px] font-mono text-dim uppercase tracking-[0.05em]">Status</span>
 					<span
-						class="stat-value"
-						class:text-red-400={isPaused}
-						class:text-emerald-400={!isPaused}
+						class={'block text-sm font-bold font-mono mt-0.5 ' + (isPaused ? 'text-red-400' : 'text-emerald-400')}
 					>
 						{isPaused ? 'PAUSED' : 'ACTIVE'}
 					</span>
 				</div>
-				<div class="stat-box">
-					<span class="stat-label">Min Liquidity</span>
-					<span class="stat-value text-cyan-400">
+				<div class="bg-white/[0.02] border border-line rounded-lg py-2.5 px-3">
+					<span class="block text-[10px] font-mono text-dim uppercase tracking-[0.05em]">Min Liquidity</span>
+					<span class="block text-sm font-bold font-mono mt-0.5 text-cyan-400">
 						{minLiquidity > 0n
 							? parseFloat(ethers.formatUnits(minLiquidity, usdtDecimals)).toLocaleString()
 							: 'disabled'}
 					</span>
 				</div>
-				<div class="stat-box">
-					<span class="stat-label">Address</span>
-					<span class="stat-value text-xs text-gray-400 font-mono">
+				<div class="bg-white/[0.02] border border-line rounded-lg py-2.5 px-3">
+					<span class="block text-[10px] font-mono text-dim uppercase tracking-[0.05em]">Address</span>
+					<span class="block text-xs font-bold font-mono mt-0.5 text-gray-400">
 						{selectedNetwork.router_address.slice(0, 6)}…{selectedNetwork.router_address.slice(-4)}
 					</span>
 				</div>
@@ -244,27 +242,3 @@
 		</div>
 	</div>
 {/if}
-
-<style>
-	.stat-box {
-		background: rgba(255, 255, 255, 0.02);
-		border: 1px solid var(--border);
-		border-radius: 8px;
-		padding: 10px 12px;
-	}
-	.stat-label {
-		display: block;
-		font-size: 10px;
-		font-family: 'Space Mono', monospace;
-		color: var(--text-dim);
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-	}
-	.stat-value {
-		display: block;
-		font-size: 14px;
-		font-weight: 700;
-		font-family: 'Space Mono', monospace;
-		margin-top: 2px;
-	}
-</style>

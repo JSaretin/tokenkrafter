@@ -35,31 +35,31 @@
 	let visible = $derived(realtime.transactions.slice(0, maxItems));
 </script>
 
-<div class="market-flow">
+<div class="bg-surface border border-line rounded-[14px] overflow-hidden max-h-[calc(100vh-100px)] flex flex-col">
 	<!-- Header -->
-	<div class="mf-header">
-		<div class="mf-title">
-			<span class="mf-dot"></span>
+	<div class="flex justify-between items-center px-4 py-3.5 border-b border-line">
+		<div class="flex items-center gap-2 font-display text-sm font-bold text-heading">
+			<span class="mf-dot w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]"></span>
 			Recent Activity
 		</div>
 		{#if realtime.connected}
-			<span class="mf-live">LIVE</span>
+			<span class="text-[9px] font-bold font-mono tracking-[0.1em] text-emerald-500 bg-emerald-500/10 px-2 py-[3px] rounded border border-emerald-500/20">LIVE</span>
 		{/if}
 	</div>
 
 	<!-- Transaction list -->
-	<div class="mf-list">
+	<div class="mf-list flex-1 overflow-y-auto">
 		{#each visible as tx (tx.id)}
-			<a href="/launchpad/{chainSlug(tx.chain_id ?? 56)}/{tx.launch_address}" class="mf-item">
-				<div class="mf-item-icon">
-					<span class="mf-buy-arrow">↑</span>
+			<a href="/launchpad/{chainSlug(tx.chain_id ?? 56)}/{tx.launch_address}" class="flex items-center gap-2.5 px-4 py-2.5 border-b border-line-subtle no-underline transition-[background] duration-150 hover:bg-surface">
+				<div class="w-7 h-7 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center shrink-0">
+					<span class="text-emerald-500 text-xs font-bold">↑</span>
 				</div>
-				<div class="mf-item-body">
-					<div class="mf-item-top">
-						<span class="mf-buyer">{truncAddr(tx.buyer)}</span>
-						<span class="mf-time">{timeAgo(tx.created_at)}</span>
+				<div class="flex-1 min-w-0">
+					<div class="flex justify-between items-center mb-0.5">
+						<span class="text-[11px] font-mono text-muted">{truncAddr(tx.buyer)}</span>
+						<span class="text-[10px] text-dim font-mono">{timeAgo(tx.created_at)}</span>
 					</div>
-					<div class="mf-item-detail">
+					<div class="text-xs font-mono">
 						<span class="text-white font-semibold">{formatAmount(tx.base_amount, tx.base_decimals)} {tx.base_symbol}</span>
 						<span class="text-gray-500"> → </span>
 						<span class="text-cyan-400 font-semibold">{tx.token_symbol}</span>
@@ -67,133 +67,19 @@
 				</div>
 			</a>
 		{:else}
-			<div class="mf-empty">No transactions yet</div>
+			<div class="px-4 py-10 text-center text-dim text-xs font-mono">No transactions yet</div>
 		{/each}
 	</div>
 </div>
 
 <style>
-	.market-flow {
-		background: var(--bg-surface);
-		border: 1px solid var(--border);
-		border-radius: 14px;
-		overflow: hidden;
-		max-height: calc(100vh - 100px);
-		display: flex;
-		flex-direction: column;
-	}
-
-	.mf-header {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		padding: 14px 16px;
-		border-bottom: 1px solid var(--border);
-	}
-
-	.mf-title {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		font-family: 'Syne', sans-serif;
-		font-size: 14px;
-		font-weight: 700;
-		color: var(--text-heading);
-	}
-
-	.mf-dot {
-		width: 8px;
-		height: 8px;
-		border-radius: 50%;
-		background: #10b981;
-		box-shadow: 0 0 8px rgba(16, 185, 129, 0.5);
-		animation: pulse-dot 2s ease-in-out infinite;
-	}
+	.mf-dot { animation: pulse-dot 2s ease-in-out infinite; }
 	@keyframes pulse-dot {
 		0%, 100% { opacity: 1; }
 		50% { opacity: 0.4; }
 	}
-
-	.mf-live {
-		font-size: 9px;
-		font-weight: 700;
-		font-family: 'Space Mono', monospace;
-		letter-spacing: 0.1em;
-		color: #10b981;
-		background: rgba(16, 185, 129, 0.1);
-		padding: 3px 8px;
-		border-radius: 4px;
-		border: 1px solid rgba(16, 185, 129, 0.2);
-	}
-
-
 	.mf-list {
-		flex: 1;
-		overflow-y: auto;
 		scrollbar-width: thin;
 		scrollbar-color: var(--bg-surface-hover) transparent;
-	}
-
-	.mf-item {
-		display: flex;
-		align-items: center;
-		gap: 10px;
-		padding: 10px 16px;
-		border-bottom: 1px solid var(--border-subtle);
-		text-decoration: none;
-		transition: background 0.15s;
-	}
-	.mf-item:hover {
-		background: var(--bg-surface);
-	}
-
-	.mf-item-icon {
-		width: 28px;
-		height: 28px;
-		border-radius: 50%;
-		background: rgba(16, 185, 129, 0.1);
-		border: 1px solid rgba(16, 185, 129, 0.2);
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		flex-shrink: 0;
-	}
-	.mf-buy-arrow {
-		color: #10b981;
-		font-size: 12px;
-		font-weight: 700;
-	}
-
-	.mf-item-body {
-		flex: 1;
-		min-width: 0;
-	}
-	.mf-item-top {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		margin-bottom: 2px;
-	}
-	.mf-buyer {
-		font-size: 11px;
-		font-family: 'Space Mono', monospace;
-		color: var(--text-muted);
-	}
-	.mf-time {
-		font-size: 10px;
-		color: var(--text-dim);
-		font-family: 'Space Mono', monospace;
-	}
-	.mf-item-detail {
-		font-size: 12px;
-		font-family: 'Space Mono', monospace;
-	}
-
-	.mf-empty {
-		padding: 40px 16px;
-		text-align: center;
-		color: var(--text-dim);
-		font-size: 12px;
-		font-family: 'Space Mono', monospace;
 	}
 </style>
