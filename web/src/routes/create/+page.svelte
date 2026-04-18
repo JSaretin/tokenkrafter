@@ -1669,7 +1669,7 @@
 										.reduce((sum, p) => sum + Number(p.amount), 0)}
 									{@const separatePairs = listPairs
 										.filter((p) => getBaseTokenAddress(tokenInfo.network, p.base).toLowerCase() !== payAddr)}
-									{@const feeNum = parseFloat(selectedFeeDisplay || '0')}
+									{@const feeNum = parseFloat(feeDisplay.selectedFeeFormatted || '0')}
 									{@const total = feeNum + mergedLpAmount}
 									{parseFloat(total.toFixed(6))} {selectedPayment?.symbol}{#each separatePairs as pair}{@const sym = getBaseSymbol(tokenInfo.network, pair.base)} + {parseFloat(Number(pair.amount).toFixed(6))} {sym}{/each}
 								{/if}
@@ -1689,7 +1689,7 @@
 							{/if}
 								<div class="flex-1">
 									<span class="block font-display text-[13px] font-bold text-heading">{selectedPayment?.symbol}</span>
-									<span class="block font-numeric text-[12px] text-dim">{selectedFeeDisplay} {selectedPayment?.symbol}</span>
+									<span class="block font-numeric text-[12px] text-dim">{feeDisplay.selectedFeeFormatted} {selectedPayment?.symbol}</span>
 								</div>
 								<svg class="text-dim shrink-0" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
 							</button>
