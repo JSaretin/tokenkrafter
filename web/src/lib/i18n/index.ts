@@ -42,7 +42,7 @@ locale.subscribe((val) => {
  * Usage in components: $t('nav.home')
  */
 export const t = derived(locale, ($locale) => {
-	return (key: TranslationKey): string => {
-		return translations[$locale]?.[key] ?? translations.en[key] ?? key;
+	return (key: TranslationKey | string): string => {
+		return translations[$locale]?.[key as string] ?? translations.en[key as TranslationKey] ?? (key as string);
 	};
 });

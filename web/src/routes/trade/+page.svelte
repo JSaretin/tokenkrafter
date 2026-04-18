@@ -2,23 +2,48 @@
 	import { ethers } from 'ethers';
 	import { getContext, onMount } from 'svelte';
 	import { page } from '$app/state';
-	import { supabase } from '$lib/supabaseClient';
-	import type { SupportedNetwork } from '$lib/structure';
+	import type { SupportedNetwork, TradePageServerData, PlatformTokenRow, WithdrawalView, MergedWithdrawal } from '$lib/structure';
 	import type { WsProviderManager, EventSubscription } from '$lib/wsProvider';
-
-	let { data: serverData }: { data: any } = $props();
 	import { ERC20_ABI, ZERO_ADDRESS } from '$lib/tokenCrafter';
 	import { friendlyError } from '$lib/errorDecoder';
 	import { ERC20_DECIMALS_ABI } from '$lib/commonABIs';
-	import { TRADE_ROUTER_ABI, withdrawStatusLabel, withdrawStatusColor } from '$lib/tradeRouter';
+	import { WithdrawStatus, withdrawStatusLabel } from '$lib/structure/tradeRouter';
+	import { TradeRouterClient } from '$lib/TradeRouterClient';
 	import WithdrawalStatusModal from '$lib/WithdrawalStatusModal.svelte';
-	import { formatUsdt } from '$lib/launchpad';
 	import { apiFetch } from '$lib/apiFetch';
 	import { queryTradeLens, getInstantQuote, getWeth, isCacheLoaded, getUsdValue, getCachedToken, findBestRoute as findBestRouteLocal, type TaxInfo, type SwapRoute } from '$lib/tradeLens';
+	import { toTokenSlotView, toTradeAmountsView, toTradeActionView, formatAmount } from '$lib/structure/views/tradeView';
 	import { findBestRoute as findBestRouteOnChain } from '$lib/routeFinder';
 	import { pushPreferences } from '$lib/embeddedWallet';
 	import { resolveTokenLogo } from '$lib/tokenLogo';
 	import { t } from '$lib/i18n';
+	import SwapCardShell from './SwapCardShell.svelte';
+	import TokenInput from './TokenInput.svelte';
+	import FlipButton from './FlipButton.svelte';
+	import SpotRatePreview from './SpotRatePreview.svelte';
+	import TradeDetails from './TradeDetails.svelte';
+	import DetailLine from './DetailLine.svelte';
+	import NoLiquidityNotice from './NoLiquidityNotice.svelte';
+	import SwapActionButton from './SwapActionButton.svelte';
+	import PayoutPreviewCard from './PayoutPreviewCard.svelte';
+	import BankSelectorButton from './BankSelectorButton.svelte';
+	import BankAccountField from './BankAccountField.svelte';
+	import BankResolveStatus from './BankResolveStatus.svelte';
+	import TrustCard from './TrustCard.svelte';
+	import TrustItem from './TrustItem.svelte';
+	import SlippageSetter from '$lib/SlippageSetter.svelte';
+	import TokenSelectorModal from './TokenSelectorModal.svelte';
+	import BankSelectorModal from './BankSelectorModal.svelte';
+	import ConfirmModalShell from './ConfirmModalShell.svelte';
+	import TradeStepperList, { type StepDef } from './TradeStepperList.svelte';
+	import TradeStepperHeader from './TradeStepperHeader.svelte';
+	import TradeCompletion from './TradeCompletion.svelte';
+	import TradeReviewRow from './TradeReviewRow.svelte';
+	import TradeReviewDetails from './TradeReviewDetails.svelte';
+	import WithdrawalHistoryPanel from './WithdrawalHistoryPanel.svelte';
+	import OutputModeToggle from './OutputModeToggle.svelte';
+
+	let { data: serverData }: { data: TradePageServerData } = $props();
 
 	let getSigner: () => ethers.Signer | null = getContext('signer');
 	let getUserAddress: () => string | null = getContext('userAddress');
@@ -34,7 +59,7 @@
 	let networkProviders = $derived(getNetworkProviders());
 
 	let tradeNetworks = $derived(supportedNetworks.filter(
-		(n: any) => n.trade_router_address && n.trade_router_address !== ''
+		(n: SupportedNetwork) => n.trade_router_address && n.trade_router_address !== ''
 	));
 
 	// ── Core State ──────────────────────────────────────────────
@@ -70,10 +95,6 @@
 	// Token tax detection (from TradeLens simulation)
 	let tokenInTax = $state<TaxInfo | null>(null);
 	let tokenOutTax = $state<TaxInfo | null>(null);
-	// Platform tokens can never be honeypots — suppress false positives
-	let platformTokenAddrs = $derived(new Set(platformTokens.map(t => t.address.toLowerCase())));
-	let tokenInIsPlatform = $derived(!!tokenInAddr && platformTokenAddrs.has(tokenInAddr.toLowerCase()));
-	let tokenOutIsPlatform = $derived(!!tokenOutAddr && platformTokenAddrs.has(tokenOutAddr.toLowerCase()));
 
 	// Amounts
 	let amountIn = $state('');
@@ -82,32 +103,9 @@
 	let noLiquidity = $state(false);
 	let swapRoute = $state<SwapRoute | null>(null);
 
-	// Settings — slippage persists across reloads so users keep their
-	// preferred tolerance instead of resetting to 0.5% every session.
-	const SLIPPAGE_KEY = 'trade_slippage_bps';
-	const CUSTOM_SLIP_KEY = 'trade_custom_slippage';
+	// Slippage — managed by SlippageSetter, shared via localStorage
 	let slippageBps = $state(50);
-	let customSlippage = $state('');
 	let showSettings = $state(false);
-
-	if (typeof localStorage !== 'undefined') {
-		try {
-			const savedBps = localStorage.getItem(SLIPPAGE_KEY);
-			if (savedBps) {
-				const n = parseInt(savedBps);
-				if (n > 0 && n <= 5000) slippageBps = n;
-			}
-			const savedCustom = localStorage.getItem(CUSTOM_SLIP_KEY);
-			if (savedCustom) customSlippage = savedCustom;
-		} catch {}
-	}
-	$effect(() => {
-		if (typeof localStorage === 'undefined') return;
-		try {
-			localStorage.setItem(SLIPPAGE_KEY, String(slippageBps));
-			localStorage.setItem(CUSTOM_SLIP_KEY, customSlippage);
-		} catch {}
-	});
 
 	// Swap state
 	let isSwapping = $state(false);
@@ -142,16 +140,7 @@
 		const provider = networkProviders.get(selectedNetwork.chain_id);
 		if (!provider) return;
 		const token = new ethers.Contract(selectedNetwork.usdt_address, ERC20_DECIMALS_ABI, provider);
-		token.decimals().then((d: any) => { usdtDecimals = Number(d); }).catch(() => {});
-	});
-
-	let fiatEquivalent = $derived.by(() => {
-		if (!amountIn || ngnRate === 0 || outputMode !== 'bank') return '';
-		// Always use previewNet (after fee) for NGN display — that's what the user actually receives
-		if (previewNet <= 0n) return '';
-		const usdtVal = parseFloat(ethers.formatUnits(previewNet, usdtDecimals));
-		const ngn = usdtVal * ngnRate;
-		return ngn > 0 ? `NGN ${ngn.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '';
+		token.decimals().then((d: bigint) => { usdtDecimals = Number(d); }).catch(() => {});
 	});
 
 	// Bank details
@@ -177,15 +166,34 @@
 	let tokenModalTarget = $state<'in' | 'out'>('in');
 	let tokenSearch = $state('');
 	let platformTokens: { address: string; symbol: string; name: string; decimals: number; logo_url?: string }[] = $state(serverData?.platformTokens || []);
+	// Platform tokens can never be honeypots — suppress false positives
+	let platformTokenAddrs = $derived(new Set(platformTokens.map(t => t.address.toLowerCase())));
 
 	// History
 	let showHistory = $state(false);
-	let activeWithdrawal: any = $state(null);
-	let withdrawals: any[] = $state([]);
-	let historyLoading = $state(false);
-	let historyFilter = $state<'all' | 'pending' | 'completed' | 'timeout' | 'cancelled'>('all');
+	let historyPanel = $state<WithdrawalHistoryPanel | undefined>();
+	let activeWithdrawal: WithdrawalView | null = $state(null);
 
 	let selectedNetwork = $derived(tradeNetworks[selectedNetworkIdx]);
+
+	function toWithdrawalView(w: MergedWithdrawal): WithdrawalView {
+		const timedOut = w.status === WithdrawStatus.Pending && w.expiresAt > 0 && Date.now() / 1000 > w.expiresAt;
+		return {
+			id: w.id,
+			withdraw_id: w.withdraw_id,
+			chain_id: w.chain_id || selectedNetwork?.chain_id,
+			wallet_address: userAddress || '',
+			status: timedOut ? 'timeout' : withdrawStatusLabel(w.status).toLowerCase(),
+			net_amount: w.netAmount?.toString() || w.grossAmount?.toString() || '0',
+			fee: w.fee?.toString() || '0',
+			gross_amount: w.grossAmount?.toString() || '0',
+			payment_method: w.payment_method || 'bank',
+			payment_details: w.payment_details || {},
+			tx_hash: w.tx_hash || '',
+			created_at: new Date(Number(w.createdAt) * 1000).toISOString(),
+			expiresAt: w.expiresAt || 0,
+		};
+	}
 
 	// ── Lock body scroll when any modal is open ──────────────
 	let anyModalOpen = $derived(showTokenModal || showConfirmModal || showBankModal || !!activeWithdrawal);
@@ -319,9 +327,9 @@
 				const res = await fetch(`/api/created-tokens?search=${encodeURIComponent(query)}&limit=20`);
 				if (res.ok) {
 					const rows = await res.json();
-					dbSearchResults = rows
-						.filter((t: any) => t.address && t.symbol)
-						.map((t: any) => ({
+					dbSearchResults = (rows as PlatformTokenRow[])
+						.filter(t => t.address && t.symbol)
+						.map(t => ({
 							address: t.address,
 							symbol: t.symbol,
 							name: t.name || t.symbol,
@@ -466,21 +474,21 @@
 			// Prices only, no tax simulation (address(0) skips simulation)
 			// Pass all base tokens so each token is checked against BNB, USDT, USDC pools
 			const bases = [net.usdt_address, net.usdc_address].filter(a => a && a !== ZERO_ADDRESS);
-			const result = await queryTradeLens(provider as any, net.dex_router, tokenAddrs, ethers.ZeroAddress, ethers.parseEther('0.001'), userAddress || ethers.ZeroAddress, net.chain_id, bases);
+			const result = await queryTradeLens(provider, net.dex_router, tokenAddrs, ethers.ZeroAddress, ethers.parseEther('0.001'), userAddress || ethers.ZeroAddress, net.chain_id, bases);
 			wethAddr = result.weth;
 			pricesLoaded = true;
 
 			// Load payout timeout + min withdrawal from TradeRouter
 			if (net.trade_router_address) {
 				try {
-					const router = new ethers.Contract(net.trade_router_address, TRADE_ROUTER_ABI, provider);
+					const router = new TradeRouterClient(net.trade_router_address, provider);
 					const [timeout, minW] = await Promise.all([
 						router.payoutTimeout(),
-						router.minWithdrawUsdt().catch(() => 0n),
+						router.minWithdrawUsdt(),
 					]);
-					payoutTimeoutMins = Math.ceil(Number(timeout) / 60);
+					payoutTimeoutMins = Math.ceil(timeout / 60);
 					payoutTimeoutLoaded = true;
-					minWithdrawUsdt = BigInt(minW);
+					minWithdrawUsdt = minW;
 				} catch {}
 			}
 
@@ -502,7 +510,7 @@
 				nativeBalance = result.nativeBalance;
 			}
 		} catch (e) {
-			console.warn('Price refresh failed:', (e as any)?.message?.slice(0, 80));
+			console.warn('Price refresh failed:', (e instanceof Error ? e.message : String(e)).slice(0, 80));
 		}
 	}
 
@@ -633,11 +641,11 @@
 					bankResolved = true;
 					bankError = '';
 				} else {
-					bankError = data.error || 'Account not found';
+					bankError = data.error || $t('trade.accountNotFound');
 					bankName = '';
 				}
 			} catch {
-				bankError = 'Failed to verify account';
+				bankError = $t('trade.failedVerifyAccount');
 			} finally {
 				bankResolving = false;
 			}
@@ -685,7 +693,7 @@
 	}
 
 	// ── Select token (optimistic — close modal instantly, fetch in background) ──
-	function selectToken(target: 'in' | 'out', token: { address: string; symbol: string; name: string; decimals: number; isNative?: boolean }) {
+	function selectToken(target: 'in' | 'out', token: { address: string; symbol: string; name: string; decimals: number; isNative?: boolean; logo_url?: string }) {
 		const isNative = !!token.isNative;
 		const addr = token.address;
 
@@ -706,7 +714,7 @@
 			tokenInTaxBuy = 0;
 			tokenInTaxSell = 0;
 			tokenInHasTax = false;
-			tokenInLogo = (token as any).logo_url || TOKEN_LOGOS[token.symbol.toUpperCase()] || '';
+			tokenInLogo = token.logo_url || TOKEN_LOGOS[token.symbol.toUpperCase()] || '';
 			if (!tokenInLogo && !isNative && addr) {
 				resolveTokenLogo(addr, selectedNetwork?.chain_id || 56).then(url => { if (url && tokenInAddr === addr) tokenInLogo = url; });
 			}
@@ -722,7 +730,7 @@
 			tokenOutTaxBuy = 0;
 			tokenOutTaxSell = 0;
 			tokenOutHasTax = false;
-			tokenOutLogo = (token as any).logo_url || TOKEN_LOGOS[token.symbol.toUpperCase()] || '';
+			tokenOutLogo = token.logo_url || TOKEN_LOGOS[token.symbol.toUpperCase()] || '';
 			if (!tokenOutLogo && !isNative && addr) {
 				resolveTokenLogo(addr, selectedNetwork?.chain_id || 56).then(url => { if (url && tokenOutAddr === addr) tokenOutLogo = url; });
 			}
@@ -760,7 +768,7 @@
 				if (!allAddrs.find(a => a.toLowerCase() === addr.toLowerCase())) allAddrs.push(addr);
 
 				const taxBases = [selectedNetwork.usdt_address, selectedNetwork.usdc_address].filter(a => a && a !== ZERO_ADDRESS);
-				queryTradeLens(provider as any, selectedNetwork.dex_router, allAddrs, addr, ethers.parseEther('0.001'), userAddress || ethers.ZeroAddress, selectedNetwork.chain_id, taxBases).then(result => {
+				queryTradeLens(provider, selectedNetwork.dex_router, allAddrs, addr, ethers.parseEther('0.001'), userAddress || ethers.ZeroAddress, selectedNetwork.chain_id, taxBases).then(result => {
 					pricesLoaded = true;
 					wethAddr = result.weth;
 
@@ -797,7 +805,7 @@
 						tokenOutHasTax = tax.buyTaxBps > 0 || tax.sellTaxBps > 0;
 					}
 				}).catch(e => {
-					console.warn(`TradeLens failed:`, (e as any)?.message?.slice(0, 200));
+					console.warn(`TradeLens failed:`, (e instanceof Error ? e.message : String(e)).slice(0, 200));
 				});
 			}
 		}
@@ -908,7 +916,7 @@
 				if (weth) bases.push(weth);
 				if (net.usdt_address) bases.push(net.usdt_address);
 				if (net.usdc_address) bases.push(net.usdc_address);
-				for (const b of (net as any).default_bases || []) {
+				for (const b of net.default_bases || []) {
 					if (b.address && !bases.some((x: string) => x.toLowerCase() === b.address.toLowerCase())) {
 						bases.push(b.address);
 					}
@@ -946,7 +954,7 @@
 			try {
 				const provider = networkProviders.get(net.chain_id);
 				if (!provider) return;
-				const router = new ethers.Contract(net.trade_router_address, TRADE_ROUTER_ABI, provider);
+				const router = new TradeRouterClient(net.trade_router_address, provider);
 				const sanitizedAmt = parseFloat(amt).toFixed(tokenInDecimals);
 				const parsedAmt = ethers.parseUnits(sanitizedAmt, tokenInDecimals);
 
@@ -978,146 +986,45 @@
 					usdtAmount = (usdtAmount * BigInt(10000 - slippageBps)) / 10000n;
 				}
 
-				const [fee, netAmt] = await router.previewDeposit(usdtAmount);
+				const { fee, netAmount: netAmt } = await router.previewDeposit(usdtAmount);
 				previewFee = fee;
 				previewNet = netAmt;
 			} catch { previewFee = 0n; previewNet = 0n; }
 		})();
 	});
 
-	// ── Derived helpers ────────────────────────────────────────
-	let effectiveTax = $derived.by(() => {
-		// Transfer tax: triggers on transferFrom (user → router/DEX)
-		// Sell tax: triggers when input token enters a DEX pool
-		// Buy tax: triggers when output token leaves a DEX pool
-		const transfer = tokenInTax?.transferTaxBps || 0;
-		const sell = tokenInHasTax ? tokenInTaxSell : 0;
-		const buy = tokenOutHasTax ? tokenOutTaxBuy : 0;
-		return transfer + sell + buy;
-	});
+	// ── View-model: derived display strings for amounts / USD / rate / fiat ──
+	// One pure function replaces ~12 individual $derived fallback chains.
+	let tokenInSlot = $derived(toTokenSlotView({
+		addr: tokenInAddr, symbol: tokenInSymbol, name: tokenInName, decimals: tokenInDecimals,
+		balance: tokenInBalance, isNative: tokenInIsNative, hasTax: tokenInHasTax,
+		taxBuy: tokenInTaxBuy, taxSell: tokenInTaxSell, taxInfo: tokenInTax,
+		logo: tokenInLogo, loading: tokenInLoading,
+	}, platformTokenAddrs));
+	let tokenOutSlot = $derived(toTokenSlotView({
+		addr: tokenOutAddr, symbol: tokenOutSymbol, name: tokenOutName, decimals: tokenOutDecimals,
+		balance: tokenOutBalance, isNative: tokenOutIsNative, hasTax: tokenOutHasTax,
+		taxBuy: tokenOutTaxBuy, taxSell: tokenOutTaxSell, taxInfo: tokenOutTax,
+		logo: tokenOutLogo, loading: tokenOutLoading,
+	}, platformTokenAddrs));
 
-	let hasTaxEither = $derived(tokenInHasTax || tokenOutHasTax || (tokenInTax?.transferTaxBps || 0) > 0);
+	let amounts = $derived(toTradeAmountsView({
+		amountIn, amountOut, noLiquidity, slippageBps, outputMode,
+		previewNet, usdtDecimals, ngnRate,
+		tokenIn: tokenInSlot, tokenOut: tokenOutSlot,
+		pricesLoaded, wethAddr, network: selectedNetwork,
+	}));
 
-	/** Format token amount for display — stablecoins get 2dp, others get 4-6dp */
-	function formatAmount(value: string, decimals: number, symbol: string): string {
-		if (!value) return '';
-		const num = parseFloat(value);
-		if (isNaN(num)) return value;
-		const isStable = ['USDT', 'USDC', 'BUSD', 'DAI', 'TUSD'].includes(symbol.toUpperCase());
-		if (isStable) return num.toFixed(2);
-		if (num >= 1000) return num.toFixed(2);
-		if (num >= 1) return num.toFixed(4);
-		return num.toFixed(6);
-	}
+	let withdrawSteps = $derived<StepDef[]>([
+		{ n: 1, title: $t('trade.saveDetails'), desc: $t('trade.savingPaymentInfo'), activeDesc: $t('trade.savingDetails') },
+		{ n: 2, title: $t('trade.approveToken'), desc: tokenInIsNative ? $t('trade.skippedForNative') : $t('trade.allowToken').replace('{symbol}', tokenInSymbol), activeDesc: tokenInIsNative ? $t('trade.skipping') : $t('trade.confirmInWallet') },
+		{ n: 3, title: $t('trade.executeTrade'), desc: $t('trade.depositToContract'), activeDesc: $t('trade.confirmInWallet') }
+	]);
 
-	// Apply all applicable taxes to output amount for accurate post-tax display
-	let postTaxAmountOut = $derived.by(() => {
-		if (!amountOut) return '';
-		if (effectiveTax <= 0) return amountOut;
-		const raw = parseFloat(amountOut);
-		return String(raw * (1 - effectiveTax / 10000));
-	});
-	let displayAmountOut = $derived(formatAmount(postTaxAmountOut || amountOut, tokenOutDecimals, tokenOutSymbol));
-
-	// USD values for both fields
-	// Use the swap output to derive USD — more accurate than spot price for large amounts
-	const stablecoins = ['USDT', 'USDC', 'BUSD', 'DAI', 'TUSD'];
-
-	let usdValueIn = $derived.by(() => {
-		if (!amountIn || !tokenInAddr || parseFloat(amountIn) <= 0) return '';
-		try {
-			// If input IS a stablecoin, USD = amount
-			if (stablecoins.includes(tokenInSymbol.toUpperCase())) {
-				const val = parseFloat(amountIn);
-				return `≈$${val.toFixed(2)} USD`;
-			}
-			// Otherwise, use the output value (if output is stablecoin, that's the USD value)
-			if (stablecoins.includes(tokenOutSymbol.toUpperCase()) && displayAmountOut) {
-				const val = parseFloat(displayAmountOut);
-				if (val > 0) return `≈$${val.toFixed(2)} USD`;
-			}
-			// Fallback: use reserves spot price
-			if (!selectedNetwork?.usdt_address || !pricesLoaded) return '';
-			const parsed = ethers.parseUnits(parseFloat(amountIn).toFixed(tokenInDecimals), tokenInDecimals);
-			const addr = tokenInIsNative ? (wethAddr || getWeth()) : tokenInAddr;
-			const usd = getUsdValue(addr, parsed, tokenInDecimals, selectedNetwork.usdt_address);
-			if (usd === null || usd === 0) return '';
-			return `≈$${usd < 0.01 ? usd.toFixed(4) : usd.toFixed(2)} USD`;
-		} catch { return ''; }
-	});
-
-	let usdValueOut = $derived.by(() => {
-		const raw = postTaxAmountOut || amountOut;
-		if (!raw || !tokenOutAddr || parseFloat(raw) <= 0) return '';
-		try {
-			// If output IS a stablecoin, USD = the post-tax amount directly
-			if (stablecoins.includes(tokenOutSymbol.toUpperCase())) {
-				const val = parseFloat(raw);
-				return `≈$${val.toFixed(2)} USD`;
-			}
-			// Otherwise, derive USD from the input value minus tax
-			// This reflects the actual dollar value the user receives
-			if (stablecoins.includes(tokenInSymbol.toUpperCase()) && amountIn) {
-				const inputVal = parseFloat(amountIn);
-				const buyTax = tokenOutTax?.buyTaxBps || tokenOutTaxBuy || 0;
-				const sellTax = tokenInTax?.sellTaxBps || tokenInTaxSell || 0;
-				const totalTax = buyTax + sellTax;
-				const afterTax = totalTax > 0 ? inputVal * (1 - totalTax / 10000) : inputVal;
-				// Also subtract slippage (DEX fee already in the quote)
-				if (afterTax > 0) return `≈$${afterTax.toFixed(2)} USD`;
-			}
-			// Fallback: use reserves spot price
-			if (!selectedNetwork?.usdt_address || !pricesLoaded) return '';
-			try {
-				const rawNum = parseFloat(raw);
-				const decimals = tokenOutDecimals || 18;
-				const truncated = rawNum.toFixed(Math.min(decimals, 8)); // avoid massive precision strings
-				const parsed = ethers.parseUnits(truncated, decimals);
-				const addr = tokenOutIsNative ? (wethAddr || getWeth()) : tokenOutAddr;
-				const usd = getUsdValue(addr, parsed, decimals, selectedNetwork.usdt_address);
-				if (usd === null || usd === 0 || !isFinite(usd)) return '';
-				// Sanity: if input is worth $X, output shouldn't be worth 100x that
-				const inputUsd = parseFloat(usdValueIn?.replace(/[^0-9.]/g, '') || '0');
-				if (inputUsd > 0 && usd > inputUsd * 10) return `≈$${inputUsd.toFixed(2)} USD`;
-				return `≈$${usd < 0.01 ? usd.toFixed(4) : usd.toFixed(2)} USD`;
-			} catch { return ''; }
-		} catch { return ''; }
-	});
-
-	let rate = $derived.by(() => {
-		if (!amountIn || !amountOut || parseFloat(amountIn) <= 0 || noLiquidity) return '';
-		const r = parseFloat(amountOut) / parseFloat(amountIn);
-		return formatAmount(String(r), tokenOutDecimals, tokenOutSymbol);
-	});
-
-	// Spot rate preview (shown before amounts are entered)
-	let spotRate = $derived.by(() => {
-		if (rate) return ''; // already showing computed rate
-		if (!tokenInSymbol || !tokenOutSymbol || !pricesLoaded || !selectedNetwork?.usdt_address) return '';
-		try {
-			const inAddr = tokenInIsNative ? (wethAddr || getWeth()) : tokenInAddr;
-			const outAddr = tokenOutIsNative ? (wethAddr || getWeth()) : tokenOutAddr;
-			if (!inAddr || !outAddr) return '';
-			const oneUnit = ethers.parseUnits('1', tokenInDecimals);
-			const inUsd = getUsdValue(inAddr, oneUnit, tokenInDecimals, selectedNetwork.usdt_address);
-			const outUsd = getUsdValue(outAddr, ethers.parseUnits('1', tokenOutDecimals), tokenOutDecimals, selectedNetwork.usdt_address);
-			if (!inUsd || !outUsd || outUsd === 0) return '';
-			const r = inUsd / outUsd;
-			return `1 ${tokenInSymbol} ≈ ${r >= 1 ? r.toFixed(2) : r.toFixed(6)} ${tokenOutSymbol}`;
-		} catch { return ''; }
-	});
-
-	let minReceived = $derived.by(() => {
-		if (!postTaxAmountOut || noLiquidity) return '';
-		const out = parseFloat(postTaxAmountOut);
-		const min = out * (1 - slippageBps / 10000);
-		return formatAmount(String(min), tokenOutDecimals, tokenOutSymbol);
-	});
-
-	let priceImpactPct = $derived.by(() => {
-		if (effectiveTax > 0) return (effectiveTax / 100).toFixed(1);
-		return '';
-	});
+	let swapSteps = $derived<StepDef[]>([
+		{ n: 1, title: $t('trade.approveToken'), desc: tokenInIsNative ? $t('trade.skippedForNative') : $t('trade.allowToken').replace('{symbol}', tokenInSymbol), activeDesc: tokenInIsNative ? $t('trade.skipping') : $t('trade.confirmInWallet') },
+		{ n: 2, title: $t('trade.executeSwap'), desc: $t('trade.tradeArrow').replace('{symbolIn}', tokenInSymbol).replace('{symbolOut}', tokenOutSymbol), activeDesc: $t('trade.confirmInWallet') }
+	]);
 
 	// ── Swap handler ───────────────────────────────────────────
 	async function handleSwap() {
@@ -1126,7 +1033,7 @@
 
 		isSwapping = true;
 		try {
-			const router = new ethers.Contract(selectedNetwork.trade_router_address, TRADE_ROUTER_ABI, signer);
+			const router = new TradeRouterClient(selectedNetwork.trade_router_address, signer);
 			// Sanitize amounts — truncate to max decimal places for the token
 			const sanitizedIn = parseFloat(amountIn).toFixed(tokenInDecimals);
 			const parsedIn = ethers.parseUnits(sanitizedIn, tokenInDecimals);
@@ -1160,16 +1067,16 @@
 				// ── 3-step off-ramp flow ──────────────────────────
 				const usdtGrossCheck = previewFee + previewNet;
 				if (minWithdrawUsdt > 0n && usdtGrossCheck < minWithdrawUsdt) {
-					addFeedback({ message: `Minimum withdrawal is ${parseFloat(ethers.formatUnits(minWithdrawUsdt, usdtDecimals)).toFixed(2)} USDT`, type: 'error' });
+					addFeedback({ message: $t('trade.minimumWithdrawal').replace('{amount}', parseFloat(ethers.formatUnits(minWithdrawUsdt, usdtDecimals)).toFixed(2)), type: 'error' });
 					isSwapping = false;
 					return;
 				}
-				let paymentDetails: any = {};
+				let paymentDetails: Record<string, unknown> = {};
 				let bankRef: string;
 
 				if (paymentMethod === 'bank') {
 					if (!bankResolved || !bankAccount || !bankCode) {
-						addFeedback({ message: 'Verify your bank account first', type: 'error' });
+						addFeedback({ message: $t('trade.verifyBankFirst'), type: 'error' });
 						isSwapping = false;
 						return;
 					}
@@ -1177,7 +1084,7 @@
 					bankRef = ethers.id(`bank:${bankCode}:${bankAccount}:${bankName}`);
 				} else if (paymentMethod === 'paypal') {
 					if (!paypalEmail) {
-						addFeedback({ message: 'Enter your PayPal email', type: 'error' });
+						addFeedback({ message: $t('trade.enterPaypalEmail'), type: 'error' });
 						isSwapping = false;
 						return;
 					}
@@ -1185,7 +1092,7 @@
 					bankRef = ethers.id(`paypal:${paypalEmail}`);
 				} else {
 					if (!wiseEmail) {
-						addFeedback({ message: 'Enter your Wise email', type: 'error' });
+						addFeedback({ message: $t('trade.enterWiseEmail'), type: 'error' });
 						isSwapping = false;
 						return;
 					}
@@ -1215,8 +1122,8 @@
 					})
 				});
 				if (!preRes.ok) {
-					const errData = await preRes.json().catch(() => ({ message: 'Failed to save payment details' }));
-					throw new Error(errData.message || 'Failed to save payment details');
+					const errData = await preRes.json().catch(() => ({ message: $t('trade.failedSavePayment') }));
+					throw new Error(errData.message || $t('trade.failedSavePayment'));
 				}
 				const preData = await preRes.json();
 
@@ -1235,6 +1142,7 @@
 				const referrer = ethers.ZeroAddress; // TODO: get from URL param or localStorage
 				const weth = wethAddr || getWeth();
 				const usdtAddr = selectedNetwork.usdt_address;
+				let result;
 				if (tokenInIsNative) {
 					// ETH → USDT: build path through best intermediary
 					const ethPath = swapRoute?.path.length
@@ -1244,11 +1152,9 @@
 					if (ethPath[ethPath.length - 1].toLowerCase() !== usdtAddr.toLowerCase()) {
 						ethPath.push(usdtAddr);
 					}
-					const est = await router.depositETH.estimateGas(ethPath, minOut, bankRef, referrer, { value: parsedIn });
-					tx = await router.depositETH(ethPath, minOut, bankRef, referrer, { value: parsedIn, gasLimit: est * 130n / 100n });
+					result = await router.depositETH(ethPath, minOut, bankRef, referrer, parsedIn);
 				} else if (tokenInAddr.toLowerCase() === usdtAddr.toLowerCase()) {
-					const est = await router.deposit.estimateGas(parsedIn, bankRef, referrer);
-					tx = await router.deposit(parsedIn, bankRef, referrer, { gasLimit: est * 130n / 100n });
+					result = await router.deposit(parsedIn, bankRef, referrer);
 				} else {
 					// Token → USDT: use best route path
 					const tokenPath = swapRoute?.path.length
@@ -1258,31 +1164,13 @@
 					if (tokenPath[tokenPath.length - 1].toLowerCase() !== usdtAddr.toLowerCase()) {
 						tokenPath.push(usdtAddr);
 					}
-					const est = await router.depositAndSwap.estimateGas(tokenPath, parsedIn, minOut, true, bankRef, referrer);
-					tx = await router.depositAndSwap(tokenPath, parsedIn, minOut, true, bankRef, referrer, { gasLimit: est * 130n / 100n });
+					result = await router.depositAndSwap(tokenPath, parsedIn, minOut, true, bankRef, referrer);
 				}
-				const receipt = await tx.wait();
-
-				// Parse WithdrawRequested event for withdraw_id + expiresAt
-				let withdrawId = 0;
-				let onChainFee = previewFee;
-				let onChainNet = previewNet;
-				let onChainExpiresAt = 0;
-				try {
-					const iface = new ethers.Interface(TRADE_ROUTER_ABI);
-					for (const log of receipt?.logs || []) {
-						try {
-							const parsed = iface.parseLog({ topics: [...log.topics], data: log.data });
-							if (parsed?.name === 'WithdrawRequested') {
-								withdrawId = Number(parsed.args.id);
-								onChainFee = parsed.args.fee;
-								onChainNet = parsed.args.netAmount;
-								onChainExpiresAt = Number(parsed.args.expiresAt);
-								break;
-							}
-						} catch {}
-					}
-				} catch {}
+				const receipt = result.receipt;
+				const withdrawId = result.withdrawId;
+				const onChainFee = result.fee || previewFee;
+				const onChainNet = result.netAmount || previewNet;
+				const onChainExpiresAt = result.expiresAt;
 
 				// Verify on-chain and link to DB record (session cookie authenticates)
 				try {
@@ -1310,7 +1198,7 @@
 					gross_amount: usdtGross.toString(),
 					payment_method: paymentMethod,
 					payment_details: paymentDetails,
-					tx_hash: receipt?.hash,
+					tx_hash: receipt?.hash || '',
 					created_at: new Date().toISOString(),
 					expiresAt: onChainExpiresAt,
 				};
@@ -1375,14 +1263,14 @@
 				}
 				const swapReceipt = await tx.wait();
 				swapStep = 3; // done
-				addFeedback({ message: `Swapped ${amountIn} ${tokenInSymbol} → ${displayAmountOut} ${tokenOutSymbol}`, type: 'success' });
+				addFeedback({ message: $t('trade.swappedSuccess').replace('{amountIn}', amountIn).replace('{symbolIn}', tokenInSymbol).replace('{amountOut}', displayAmountOut).replace('{symbolOut}', tokenOutSymbol), type: 'success' });
 				showConfirmModal = false;
 
 				// Auto-import "to" token to wallet portfolio
 				if (tokenOutAddr && tokenOutAddr !== ZERO_ADDRESS && tokenOutSymbol) {
 					try {
 						const saved = JSON.parse(localStorage.getItem('imported_tokens') || '[]');
-						const exists = saved.some((t: any) => t.address?.toLowerCase() === tokenOutAddr.toLowerCase());
+						const exists = saved.some((t: { address?: string }) => t.address?.toLowerCase() === tokenOutAddr.toLowerCase());
 						if (!exists) {
 							saved.push({
 								address: tokenOutAddr.toLowerCase(),
@@ -1396,7 +1284,7 @@
 						}
 					} catch {}
 				}
-				} catch (swapErr: any) {
+				} catch (swapErr: unknown) {
 					console.error('Swap error:', swapErr);
 					addFeedback({ message: friendlyError(swapErr), type: 'error' });
 					swapStep = 0;
@@ -1408,7 +1296,7 @@
 			// Refresh balance
 			const meta = await fetchMeta(tokenInAddr, tokenInIsNative);
 			tokenInBalance = meta.balance;
-		} catch (e: any) {
+		} catch (e: unknown) {
 			addFeedback({ message: friendlyError(e), type: 'error' });
 		} finally {
 			isSwapping = false;
@@ -1418,107 +1306,22 @@
 	}
 
 	// ── History (from Supabase + Realtime) ────────────────────
-	function safeBigInt(val: any): bigint {
+	function safeBigInt(val: unknown): bigint {
 		try {
-			if (!val) return 0n;
+			if (val === undefined || val === null || val === '') return 0n;
 			const s = String(val).split('.')[0]; // strip decimals if any
 			return BigInt(s);
 		} catch { return 0n; }
 	}
 
-	async function loadHistory() {
-		if (!userAddress) return;
-		historyLoading = true;
-		try {
-			// Fetch from both DB and on-chain, merge results
-			const net = selectedNetwork;
-
-			// 1. DB records (has payment details, status tracking)
-			let dbRecords: any[] = [];
-			try {
-				const res = await apiFetch(`/api/withdrawals?wallet=${userAddress.toLowerCase()}`);
-				if (res.ok) dbRecords = await res.json();
-			} catch {}
-
-			// 2. On-chain records (source of truth for actual withdrawals)
-			let chainRecords: any[] = [];
-			if (net?.trade_router_address) {
-				try {
-					const provider = networkProviders.get(net.chain_id);
-					if (provider) {
-						const router = new ethers.Contract(net.trade_router_address, TRADE_ROUTER_ABI, provider);
-						const [result, withdrawIds, total] = await router.getUserWithdrawals(userAddress, 0, 50);
-						chainRecords = result.map((r: any, i: number) => ({
-							withdraw_id: Number(withdrawIds[i]),
-							user: r.user?.toLowerCase(),
-							grossAmount: r.grossAmount,
-							fee: r.fee,
-							netAmount: r.netAmount,
-							createdAt: Number(r.createdAt),
-							expiresAt: Number(r.expiresAt || 0),
-							status: Number(r.status),
-							bankRef: r.bankRef,
-							referrer: r.referrer?.toLowerCase() || ethers.ZeroAddress,
-						}));
-					}
-				} catch {}
-			}
-
-			// 3. Merge: on-chain is source of truth, enrich with DB data
-			// Match by withdraw_id OR bankRef
-			const usedDbIds = new Set<number>();
-			const merged: any[] = [];
-
-			for (const chain of chainRecords) {
-				// Match DB record strictly by withdraw_id — it's the unique
-				// on-chain key. Previous code fell back to wallet_address match
-				// which caused cross-contamination when the same user had
-				// multiple withdrawals (cancelled one's DB record matched the
-				// pending on-chain record).
-				let db = dbRecords.find((r: any) =>
-					!usedDbIds.has(r.id) &&
-					r.withdraw_id === chain.withdraw_id &&
-					r.withdraw_id != null &&
-					r.withdraw_id > 0
-				);
-				if (db) usedDbIds.add(db.id);
-
-				merged.push({
-					id: db?.id || chain.withdraw_id,
-					withdraw_id: chain.withdraw_id,
-					user: chain.user,
-					token: db?.token_in || '',
-					grossAmount: chain.grossAmount,
-					fee: chain.fee,
-					netAmount: chain.netAmount,
-					createdAt: chain.createdAt,
-					expiresAt: chain.expiresAt,
-					status: chain.status,
-					bankRef: chain.bankRef,
-					payment_method: db?.payment_method || 'bank',
-					payment_details: db?.payment_details || {},
-					chain_id: db?.chain_id || net?.chain_id,
-					tx_hash: db?.tx_hash || '',
-					db_status: chain.status === 1 ? 'confirmed' : chain.status === 2 ? 'cancelled' : 'pending',
-				});
-			}
-
-			withdrawals = merged;
-		} catch (e) {
-			console.error('loadHistory error:', e);
-			withdrawals = [];
-		}
-		finally { historyLoading = false; }
-	}
-
 	async function handleCancel(id: number) {
 		if (!signer || !selectedNetwork) return;
 		try {
-			const router = new ethers.Contract(selectedNetwork.trade_router_address, TRADE_ROUTER_ABI, signer);
-			await (await router.cancel(id)).wait();
-			addFeedback({ message: 'Cancelled. Funds returned.', type: 'success' });
-			loadHistory();
-		} catch (e: any) {
+			const router = new TradeRouterClient(selectedNetwork.trade_router_address, signer);
+			await router.cancel(id);
+			addFeedback({ message: $t('trade.cancelledFundsReturned'), type: 'success' });
+			historyPanel?.refresh();
+		} catch (e: unknown) {
 			addFeedback({ message: friendlyError(e), type: 'error' });
 		}
 	}
@@ -1530,23 +1333,6 @@
 		}
 		if (userAddress && tokenOutAddr) {
 			fetchMeta(tokenOutAddr, tokenOutIsNative).then(meta => { tokenOutBalance = meta.balance; });
-		}
-	});
-
-	// Realtime sub for withdrawal updates
-	let withdrawChannel: any;
-	$effect(() => {
-		if (showHistory && userAddress) {
-			loadHistory();
-			// Subscribe to changes for this wallet
-			if (withdrawChannel) supabase.removeChannel(withdrawChannel);
-			withdrawChannel = supabase
-				.channel(`trade-history-${userAddress}`)
-				.on('postgres_changes', {
-					event: '*', schema: 'public', table: 'withdrawal_requests',
-					filter: `wallet_address=eq.${userAddress.toLowerCase()}`
-				}, () => loadHistory())
-				.subscribe();
 		}
 	});
 
@@ -1611,12 +1397,12 @@
 		if (outputMode === 'bank') {
 			if (belowMinWithdraw) {
 				const min = parseFloat(ethers.formatUnits(minWithdrawUsdt, usdtDecimals)).toFixed(2);
-				return `Minimum withdrawal is ${min} USDT`;
+				return $t('trade.minimumWithdrawal').replace('{amount}', min);
 			}
 			if (paymentMethod === 'bank' && (!bankResolved || !bankAccount || !bankCode)) return $t('trade.verifyBank');
-			if (paymentMethod === 'paypal' && !paypalEmail) return 'Enter PayPal email';
-			if (paymentMethod === 'wise' && !wiseEmail) return 'Enter Wise email';
-			const methodLabel = paymentMethod === 'bank' ? 'Bank' : paymentMethod === 'paypal' ? 'PayPal' : 'Wise';
+			if (paymentMethod === 'paypal' && !paypalEmail) return $t('trade.enterPaypalEmail');
+			if (paymentMethod === 'wise' && !wiseEmail) return $t('trade.enterWiseEmail');
+			const methodLabel = paymentMethod === 'bank' ? $t('trade.bankPayment') : paymentMethod === 'paypal' ? $t('trade.paypalPayment') : $t('trade.wisePayment');
 			return `${$t('common.sell')} ${tokenInSymbol} → ${methodLabel}`;
 		}
 		if (!tokenOutAddr) return $t('trade.selectOutputToken');
@@ -1635,81 +1421,59 @@
 			(paymentMethod === 'wise' && !wiseEmail)
 		))
 	);
+
+	// ── SwapCard composition helpers ─────────────────────────────
+	let slippagePct = $derived((slippageBps / 100).toFixed(slippageBps % 100 === 0 ? 0 : slippageBps % 10 === 0 ? 1 : 2));
+	let minUsd = $derived(
+		usdValueOut && displayAmountOut && parseFloat(displayAmountOut) > 0 && minReceived
+			? (parseFloat(usdValueOut.replace(/[^0-9.]/g, '')) * parseFloat(minReceived) / parseFloat(displayAmountOut)).toFixed(2)
+			: ''
+	);
+	let buttonVariant = $derived<'primary' | 'bank' | 'error'>(
+		insufficientBalance || noGas ? 'error' : outputMode === 'bank' ? 'bank' : 'primary'
+	);
+	let contractUrl = $derived(
+		selectedNetwork?.trade_router_address
+			? `${selectedNetwork.explorer_url || 'https://bscscan.com'}/address/${selectedNetwork.trade_router_address}`
+			: ''
+	);
 </script>
 
 <svelte:head>
-	<title>Trade | TokenKrafter</title>
+	<title>{$t('trade.pageTitle')}</title>
 </svelte:head>
 
-<div class="trade-page">
-	<div class="trade-container">
+<div class="min-h-[calc(100vh-140px)] flex items-start justify-center px-4 pt-10 pb-15 max-sm:px-3 max-sm:pt-4 max-sm:pb-10">
+	<div class="w-full max-w-115">
 
 		<!-- Header -->
-		<div class="trade-header">
+		<div class="flex justify-between items-start mb-5">
 			<div>
-				<h1 class="trade-title">{$t('trade.title')}</h1>
-				<p class="trade-sub">{$t('trade.subtitle')}</p>
+				<h1 class="font-[Syne,sans-serif] text-2xl2 font-extrabold text-(--text-heading) m-0">{$t('trade.title')}</h1>
+				<p class="font-mono text-xs text-(--text-muted) mt-1 mb-0">{$t('trade.subtitle')}</p>
 			</div>
-			<div class="header-actions">
+			<div class="flex gap-1.5">
 				{#if userAddress}
-					<button class="icon-btn" class:icon-btn-active={showHistory} onclick={() => { showHistory = !showHistory; if (!showHistory) return; setTimeout(() => document.getElementById('trade-history')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100); }} title="Withdrawal History">
+					<button class={"w-9 h-9 rounded-[10px] border bg-(--bg-surface) cursor-pointer flex items-center justify-center transition-all duration-150 ease-in-out hover:text-cyan hover:border-[rgba(0,210,255,0.3)] hover:bg-[rgba(0,210,255,0.05)] " + (showHistory ? "text-cyan border-[rgba(0,210,255,0.3)] bg-[rgba(0,210,255,0.08)]" : "text-(--text-muted) border-(--border)")} onclick={() => { showHistory = !showHistory; if (!showHistory) return; setTimeout(() => document.getElementById('trade-history')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100); }} title={$t('trade.withdrawalHistoryTitle')}>
 						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
 					</button>
 				{/if}
-				<button class="icon-btn" class:icon-btn-active={showSettings} onclick={() => (showSettings = !showSettings)} title="Settings">
+				<button class={"w-9 h-9 rounded-[10px] border bg-(--bg-surface) cursor-pointer flex items-center justify-center transition-all duration-150 ease-in-out hover:text-cyan hover:border-[rgba(0,210,255,0.3)] hover:bg-[rgba(0,210,255,0.05)] " + (showSettings ? "text-cyan border-[rgba(0,210,255,0.3)] bg-[rgba(0,210,255,0.08)]" : "text-(--text-muted) border-(--border)")} onclick={() => (showSettings = !showSettings)} title={$t('trade.settings')}>
 					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
 				</button>
 			</div>
 		</div>
 
-		<!-- Settings panel -->
 		{#if showSettings}
-			<div class="settings-panel">
-				<span class="settings-label">{$t('trade.slippageTolerance')}</span>
-				<div class="slippage-row">
-					{#each [50, 100, 200, 500] as bps}
-						<button
-							class="slippage-btn" class:slippage-active={slippageBps === bps && !customSlippage}
-							onclick={() => { slippageBps = bps; customSlippage = ''; }}
-						>{bps / 100}%</button>
-					{/each}
-					<div class="slippage-custom" class:slippage-active={!!customSlippage}>
-						<input
-							class="slippage-custom-input"
-							type="text"
-							inputmode="decimal"
-							placeholder={$t('trade.custom')}
-							bind:value={customSlippage}
-							oninput={() => {
-								const v = parseFloat(customSlippage);
-								if (!isNaN(v) && v > 0 && v <= 20) {
-									slippageBps = Math.round(v * 100);
-								}
-							}}
-							max="20"
-						/>
-						<span class="slippage-custom-pct">%</span>
-						<span class="slippage-custom-hint" style="font-size: 10px; color: #888; margin-left: 4px;">Max: 20%</span>
-					</div>
-				</div>
-				{#if customSlippage}
-					{@const v = parseFloat(customSlippage)}
-					{#if v > 5}
-						<p class="slippage-warn">{$t('trade.slippageHigh')}</p>
-					{:else if v < 0.1}
-						<p class="slippage-warn">{$t('trade.slippageLow')}</p>
-					{/if}
-				{/if}
-			</div>
+			<SlippageSetter bind:slippageBps />
 		{/if}
 
 		<!-- Network selector (only if multiple trade networks) -->
 		{#if tradeNetworks.length > 1}
-			<div class="network-selector">
+			<div class="flex gap-1 p-1 bg-(--bg-surface) border border-(--border) rounded-[14px] mb-2">
 				{#each tradeNetworks as net, i}
 					<button
-						class="network-btn"
-						class:network-active={selectedNetworkIdx === i}
+						class={"flex-1 py-2 px-0 rounded-[10px] border-0 font-mono text-xs font-bold cursor-pointer transition-all duration-150 hover:text-(--text) " + (selectedNetworkIdx === i ? "bg-[rgba(0,210,255,0.1)] text-cyan" : "bg-transparent text-(--text-muted)")}
 						onclick={() => {
 							if (selectedNetworkIdx !== i) {
 								selectedNetworkIdx = i;
@@ -1726,745 +1490,281 @@
 		{/if}
 
 		<!-- Output mode toggle -->
-		<div class="mode-toggle">
-			<button class="mode-btn" class:mode-active={outputMode === 'token'} onclick={() => (outputMode = 'token')}>
-				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4"/></svg>
-				{$t('trade.swap')}
-			</button>
-			<button class="mode-btn" class:mode-active={outputMode === 'bank'} onclick={() => (outputMode = 'bank')}>
-				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M3 10h18M5 6l7-3 7 3M4 10v11M20 10v11M8 14v3M12 14v3M16 14v3"/></svg>
-				{$t('trade.sellToBank')}
-			</button>
-		</div>
+		<OutputModeToggle bind:selected={outputMode} />
 
 		<!-- ═══ SWAP CARD ═══ -->
-		<div class="swap-card">
+		<SwapCardShell>
+			<TokenInput
+				label={$t('trade.youPay')}
+				tokenSymbol={tokenInSymbol}
+				tokenLogo={tokenInLogo}
+				bind:amount={amountIn}
+				balance={tokenInBalance}
+				decimals={tokenInDecimals}
+				isNative={tokenInIsNative}
+				hasTax={tokenInHasTax}
+				taxBuy={tokenInTaxBuy}
+				taxSell={tokenInTaxSell}
+				taxInfo={tokenInTax}
+				isPlatform={tokenInIsPlatform}
+				usdValue={usdValueIn}
+				{estimatedGasCost}
+				onSelectToken={() => { tokenModalTarget = 'in'; showTokenModal = true; }}
+			/>
 
-			<!-- FROM section -->
-			<div class="token-section">
-				<div class="token-section-header">
-					<span class="section-label">{$t('trade.youPay')}</span>
-					<button class="token-selector" onclick={() => { tokenModalTarget = 'in'; showTokenModal = true; }}>
-						{#if tokenInSymbol}
-							{#if tokenInLogo}<img src={tokenInLogo} alt="" class="token-selector-logo" />{/if}
-							<span class="token-selector-symbol">{tokenInSymbol}</span>
-						{:else}
-							<span class="token-selector-placeholder">{$t('trade.selectToken')}</span>
-						{/if}
-						<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M6 9l6 6 6-6"/></svg>
-					</button>
-				</div>
-				<div class="token-input-row">
-					<input
-						type="text"
-						inputmode="decimal"
-						class="amount-input"
-						placeholder="0.00"
-						bind:value={amountIn}
-					/>
-					{#if tokenInSymbol && tokenInBalance > 0n}
-						<button class="max-btn" onclick={() => {
-							let raw: string;
-							if (tokenInIsNative) {
-								const gasBuffer = estimatedGasCost * 12n / 10n; // +20% safety
-								const maxAmount = tokenInBalance > gasBuffer ? tokenInBalance - gasBuffer : 0n;
-								raw = ethers.formatUnits(maxAmount, tokenInDecimals);
-							} else {
-								raw = ethers.formatUnits(tokenInBalance, tokenInDecimals);
-							}
-							// Truncate to 8 decimals (no rounding — exact floor)
-							const dot = raw.indexOf('.');
-							amountIn = dot === -1 ? raw : raw.slice(0, dot + 9);
-						}}>
-							{$t('trade.max')}
-						</button>
-					{/if}
-				</div>
-				<div class="token-balance-row">
-					{#if tokenInSymbol && tokenInBalance > 0n}
-						<span>Balance: {parseFloat(ethers.formatUnits(tokenInBalance, tokenInDecimals)).toLocaleString(undefined, { maximumFractionDigits: 4 })} {tokenInSymbol}</span>
-					{:else if tokenInSymbol}
-						<span>Balance: 0 {tokenInSymbol}</span>
-					{/if}
-					{#if usdValueIn}<span class="usd-value">{usdValueIn}</span>{/if}
-				</div>
-				{#if tokenInTax && !tokenInTax.canSell && !tokenInIsNative && !tokenInIsPlatform}
-					<div class="honeypot-badge">
-						<span class="tax-dot" style="background: #f87171;"></span>
-						{$t('trade.honeypot')}
-					</div>
-				{:else if tokenInHasTax || (tokenInTax && tokenInTax.transferTaxBps > 0)}
-					{@const totalTaxIn = (tokenInTaxSell + (tokenInTax?.transferTaxBps || 0)) / 100}
-					<div class="tax-badge">
-						<span class="tax-dot tax-dot-amber"></span>
-						Tax: {tokenInTaxBuy / 100}% buy / {tokenInTaxSell / 100}% sell{#if tokenInTax?.transferTaxBps} / {tokenInTax.transferTaxBps / 100}% transfer{/if}
-					</div>
-					{#if totalTaxIn > 0}
-						<p class="slippage-warn" style="margin-top: 4px;">&#x26A0; {totalTaxIn}% tax will be deducted from the output.</p>
-					{/if}
+			{#if outputMode === 'token'}
+				<FlipButton onclick={flipTokens} />
+
+				<TokenInput
+					label={$t('trade.youReceive')}
+					tokenSymbol={tokenOutSymbol}
+					tokenLogo={tokenOutLogo}
+					amount={displayAmountOut}
+					readonly
+					balance={tokenOutBalance}
+					decimals={tokenOutDecimals}
+					isNative={tokenOutIsNative}
+					hasTax={tokenOutHasTax}
+					taxBuy={tokenOutTaxBuy}
+					taxSell={tokenOutTaxSell}
+					taxInfo={tokenOutTax}
+					isPlatform={tokenOutIsPlatform}
+					usdValue={usdValueOut}
+					{previewLoading}
+					onSelectToken={() => { tokenModalTarget = 'out'; showTokenModal = true; }}
+				/>
+
+				{#if spotRate}
+					<SpotRatePreview text={spotRate} />
 				{/if}
-			</div>
 
-			<!-- Flip button -->
-			{#if outputMode === 'token'}
-				<div class="flip-row">
-					<button class="flip-btn" onclick={flipTokens}>
-						<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-							<path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4"/>
-						</svg>
-					</button>
-				</div>
+				{#if rate}
+					<TradeDetails>
+						<DetailLine label={$t('trade.rate')}>1 {tokenInSymbol} = {rate} {tokenOutSymbol}</DetailLine>
+						{#if minReceived}
+							<DetailLine label={$t('trade.minReceived')}>
+								{minReceived} {tokenOutSymbol}{#if minUsd} <span class="text-(--text-muted) text-xs font-[Rajdhani,sans-serif] font-medium tabular-nums">(≈${minUsd})</span>{/if}
+							</DetailLine>
+						{/if}
+						<DetailLine label={$t('trade.slippage')}>{slippagePct}%</DetailLine>
+						{#if tokenInTaxSell > 0}
+							<DetailLine label="{$t('trade.sellTax')} ({tokenInSymbol})" warn>{(tokenInTaxSell / 100).toFixed(1)}%</DetailLine>
+						{/if}
+						{#if tokenOutTaxBuy > 0}
+							<DetailLine label="{$t('trade.buyTax')} ({tokenOutSymbol})" warn>{(tokenOutTaxBuy / 100).toFixed(1)}%</DetailLine>
+						{/if}
+					</TradeDetails>
+				{/if}
+
+				{#if noLiquidity}
+					<NoLiquidityNotice />
+				{/if}
 			{/if}
 
-			<!-- TO section (token mode) -->
-			{#if outputMode === 'token'}
-				<div class="token-section token-section-out">
-					<div class="token-section-header">
-						<span class="section-label">{$t('trade.youReceive')}</span>
-						<button class="token-selector" onclick={() => { tokenModalTarget = 'out'; showTokenModal = true; }}>
-							{#if tokenOutSymbol}
-								{#if tokenOutLogo}<img src={tokenOutLogo} alt="" class="token-selector-logo" />{/if}
-								<span class="token-selector-symbol">{tokenOutSymbol}</span>
-							{:else}
-								<span class="token-selector-placeholder">{$t('trade.selectToken')}</span>
-							{/if}
-							<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M6 9l6 6 6-6"/></svg>
-						</button>
-					</div>
-					<div class="token-input-row">
-						<input
-							type="text"
-							inputmode="decimal"
-							class="amount-input amount-input-out"
-							placeholder="0.00"
-							value={previewLoading ? '' : displayAmountOut}
-							readonly
-						/>
-						{#if previewLoading}
-							<div class="preview-shimmer"></div>
-						{/if}
-					</div>
-					<div class="token-balance-row">
-						{#if tokenOutSymbol && tokenOutBalance > 0n}
-							<span>Balance: {parseFloat(ethers.formatUnits(tokenOutBalance, tokenOutDecimals)).toLocaleString(undefined, { maximumFractionDigits: 4 })} {tokenOutSymbol}</span>
-						{:else if tokenOutSymbol}
-							<span>Balance: 0 {tokenOutSymbol}</span>
-						{/if}
-						{#if usdValueOut}<span class="usd-value">{usdValueOut}</span>{/if}
-					</div>
-					{#if tokenOutTax && !tokenOutTax.canSell && !tokenOutIsNative && !tokenOutIsPlatform}
-						<div class="honeypot-badge">
-							<span class="tax-dot" style="background: #f87171;"></span>
-							{$t('trade.honeypot')}
-						</div>
-					{:else if tokenOutHasTax || (tokenOutTax && tokenOutTax.transferTaxBps > 0)}
-						{@const totalTaxOut = (tokenOutTaxBuy + (tokenOutTax?.transferTaxBps || 0)) / 100}
-						<div class="tax-badge">
-							<span class="tax-dot tax-dot-amber"></span>
-							Tax: {tokenOutTaxBuy / 100}% buy / {tokenOutTaxSell / 100}% sell{#if tokenOutTax?.transferTaxBps} / {tokenOutTax.transferTaxBps / 100}% transfer{/if}
-						</div>
-						{#if totalTaxOut > 0}
-							<p class="slippage-warn" style="margin-top: 4px;">&#x26A0; {totalTaxOut}% tax will be deducted from the output.</p>
-						{/if}
-					{/if}
-				</div>
-			{/if}
-
-			<!-- Payout details (bank mode) -->
 			{#if outputMode === 'bank'}
-				<!-- Payout preview -->
-				{#if fiatEquivalent || previewNet > 0n}
-					<div class="bank-payout-card">
-						{#if fiatEquivalent}
-							<div class="bank-payout-highlight">
-								<span class="bank-payout-ngn">{fiatEquivalent}</span>
-								<span class="bank-payout-usd">≈${parseFloat(ethers.formatUnits(previewNet, usdtDecimals)).toFixed(2)} USD</span>
-							</div>
-						{/if}
-						{#if previewNet > 0n}
-							<div class="bank-payout-breakdown">
-								<div class="bank-payout-row">
-									<span>Fee ({previewFee > 0n && previewNet > 0n ? ((Number(previewFee) / Number(previewFee + previewNet)) * 100).toFixed(1) : '1'}%)</span>
-									<span>${parseFloat(ethers.formatUnits(previewFee, usdtDecimals)).toFixed(2)}</span>
-								</div>
-								<div class="bank-payout-row bank-payout-net">
-									<span>{$t('trade.youReceive')}</span>
-									<span>${parseFloat(ethers.formatUnits(previewNet, usdtDecimals)).toFixed(2)}</span>
-								</div>
-							</div>
-						{/if}
-					</div>
-				{/if}
+				<PayoutPreviewCard {fiatEquivalent} {previewFee} {previewNet} {usdtDecimals} />
 
-				<!-- Bank fields -->
-				<div class="bank-section-compact">
-					<div class="field-group">
-						<label class="field-label">{$t('trade.bank')}</label>
-						<button class="bank-selector-btn" onclick={() => { showBankModal = true; bankSearchQuery = ''; }}>
-							{#if bankBankName}
-								<span class="bank-selector-name">{bankBankName}</span>
-							{:else}
-								<span class="bank-selector-placeholder">{$t('trade.selectBank')}</span>
-							{/if}
-							<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M6 9l6 6 6-6"/></svg>
-						</button>
+				<div class="flex flex-col gap-2.5 mb-2 px-0.5">
+					<div class="flex flex-col">
+						<span class="font-mono text-xs2 font-semibold uppercase tracking-[0.05em] text-(--text-muted) mb-1">{$t('trade.bank')}</span>
+						<BankSelectorButton bankName={bankBankName} onclick={() => { showBankModal = true; bankSearchQuery = ''; }} />
 					</div>
-					<div class="field-group">
-						<label class="field-label">{$t('trade.accountNumber')}</label>
-						<input
-							class="input-field"
-							placeholder="10-digit account number"
-							bind:value={bankAccount}
-							maxlength="10"
-							inputmode="numeric"
-							pattern="[0-9]*"
-							oninput={(e) => { bankAccount = bankAccount.replace(/\D/g, ''); }}
-						/>
-					</div>
-					{#if bankResolving}
-						<div class="resolve-status resolve-loading">
-							<div class="resolve-spinner"></div>
-							{$t('trade.verifying')}
-						</div>
-					{:else if bankResolved}
-						<div class="resolve-status resolve-success">
-							<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-							{bankName}
-						</div>
-					{:else if bankError}
-						<div class="resolve-status resolve-error">
-							<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-							{bankError}
-						</div>
-					{/if}
+					<BankAccountField bind:value={bankAccount} />
+					<BankResolveStatus resolving={bankResolving} resolved={bankResolved} {bankName} error={bankError} />
 				</div>
 
-				<div class="bank-trust-card">
-					<div class="bank-trust-header">
-						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-						<span>On-Chain Escrow</span>
-					</div>
-					<div class="bank-trust-items">
-						<div class="bank-trust-item">
-							<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-							<span>Held in smart contract, not by TokenKrafter</span>
-						</div>
-						<div class="bank-trust-item">
-							<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-							<span>{#if payoutTimeoutLoaded}Auto-refund after {payoutTimeoutMins}min if payout fails{:else}Auto-refund if bank payout fails{/if}</span>
-						</div>
-						<div class="bank-trust-item">
-							<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-							<span>Cancel anytime before confirmation</span>
-						</div>
-						<div class="bank-trust-item">
-							<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-							<span>No KYC required</span>
-						</div>
-					</div>
-					{#if selectedNetwork?.trade_router_address}
-						<a href="{selectedNetwork.explorer_url || 'https://bscscan.com'}/address/{selectedNetwork.trade_router_address}" target="_blank" rel="noopener" class="bank-trust-contract">
-							Verify contract →
-						</a>
-					{/if}
-				</div>
+				<TrustCard title={$t('trade.onChainEscrow')} {contractUrl}>
+					<TrustItem>{$t('trade.heldInSmartContract')}</TrustItem>
+					<TrustItem>
+						{#if payoutTimeoutLoaded}{$t('trade.autoRefundAfter').replace('{min}', String(payoutTimeoutMins))}{:else}{$t('trade.autoRefundIfFails')}{/if}
+					</TrustItem>
+					<TrustItem>{$t('trade.cancelBeforeConfirmation')}</TrustItem>
+					<TrustItem>{$t('trade.noKycRequired')}</TrustItem>
+				</TrustCard>
 			{/if}
 
-			<!-- Trade details -->
-			<!-- Route is handled automatically by findBestRoute — no display needed -->
-
-			{#if spotRate && outputMode === 'token'}
-				<div class="spot-rate-preview">
-					<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
-					{spotRate}
-				</div>
-			{/if}
-
-			{#if rate && outputMode === 'token'}
-				<div class="trade-details">
-					<div class="detail-line">
-						<span>{$t('trade.rate')}</span>
-						<span>1 {tokenInSymbol} = {rate} {tokenOutSymbol}</span>
-					</div>
-					{#if minReceived}
-						{@const minUsd = usdValueOut && displayAmountOut && parseFloat(displayAmountOut) > 0
-							? (parseFloat(usdValueOut.replace(/[^0-9.]/g, '')) * parseFloat(minReceived) / parseFloat(displayAmountOut)).toFixed(2)
-							: ''}
-						<div class="detail-line">
-							<span>{$t('trade.minReceived')}</span>
-							<span>{minReceived} {tokenOutSymbol}{#if minUsd} <span class="usd-value">(≈${minUsd})</span>{/if}</span>
-						</div>
-					{/if}
-					<div class="detail-line">
-						<span>{$t('trade.slippage')}</span>
-						<span>{(slippageBps / 100).toFixed(slippageBps % 100 === 0 ? 0 : slippageBps % 10 === 0 ? 1 : 2)}%</span>
-					</div>
-					{#if tokenInTaxSell > 0}
-						<div class="detail-line detail-line-warn">
-							<span>{$t('trade.sellTax')} ({tokenInSymbol})</span>
-							<span>{(tokenInTaxSell / 100).toFixed(1)}%</span>
-						</div>
-					{/if}
-					{#if tokenOutTaxBuy > 0}
-						<div class="detail-line detail-line-warn">
-							<span>{$t('trade.buyTax')} ({tokenOutSymbol})</span>
-							<span>{(tokenOutTaxBuy / 100).toFixed(1)}%</span>
-						</div>
-					{/if}
-				</div>
-			{/if}
-
-			{#if noLiquidity && outputMode === 'token'}
-				<div class="no-liquidity">
-					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-					{$t('trade.noLiquidity')}
-				</div>
-			{/if}
-
-			<!-- Action button -->
-			<button
-				class="swap-btn"
-				class:swap-btn-bank={outputMode === 'bank' && !insufficientBalance && !noGas}
-				class:swap-btn-error={insufficientBalance || noGas}
+			<SwapActionButton
+				variant={buttonVariant}
 				disabled={buttonDisabled && !!userAddress}
 				onclick={() => { if (!userAddress) connectWallet(); else showConfirmModal = true; }}
 			>
 				{buttonLabel}
-			</button>
-
-		</div>
+			</SwapActionButton>
+		</SwapCardShell>
 
 		<!-- Buy crypto banner -->
-		<div class="buy-crypto-strip">
-			<svg width="14" height="14" viewBox="0 0 512 512" fill="#00d2ff"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM169.8 165.3c7.9-22.3 29.1-37.3 52.8-37.3h58.3c34.9 0 63.1 28.3 63.1 63.1c0 22.6-12.1 43.5-31.7 54.8L280 264.4c-.2 13-10.9 23.6-24 23.6c-13.3 0-24-10.7-24-24V250.5c0-8.6 4.6-16.5 12.1-20.8l44.3-25.4c4.7-2.7 7.6-7.7 7.6-13.1c0-8.4-6.8-15.1-15.1-15.1H222.6c-3.4 0-6.4 2.1-7.5 5.3l-.4 1.2c-4.4 12.5-18.2 19-30.6 14.6s-19-18.2-14.6-30.6l.4-1.2zM224 352a32 32 0 1 1 64 0 32 32 0 1 1-64 0z"/></svg>
-			<span>{$t('trade.buyCrypto')}</span>
-			<button class="buy-crypto-btn" onclick={() => addFeedback({ message: $t('trade.comingSoon'), type: 'info' })}>
+		<div class="flex items-center gap-2 px-3.5 py-2.5 mt-2.5 rounded-xl bg-(--bg-surface) border border-(--border) font-mono text-xs3 text-(--text-muted)">
+			<svg class="shrink-0 text-cyan" width="14" height="14" viewBox="0 0 512 512" fill="#00d2ff"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM169.8 165.3c7.9-22.3 29.1-37.3 52.8-37.3h58.3c34.9 0 63.1 28.3 63.1 63.1c0 22.6-12.1 43.5-31.7 54.8L280 264.4c-.2 13-10.9 23.6-24 23.6c-13.3 0-24-10.7-24-24V250.5c0-8.6 4.6-16.5 12.1-20.8l44.3-25.4c4.7-2.7 7.6-7.7 7.6-13.1c0-8.4-6.8-15.1-15.1-15.1H222.6c-3.4 0-6.4 2.1-7.5 5.3l-.4 1.2c-4.4 12.5-18.2 19-30.6 14.6s-19-18.2-14.6-30.6l.4-1.2zM224 352a32 32 0 1 1 64 0 32 32 0 1 1-64 0z"/></svg>
+			<span class="flex-1">{$t('trade.buyCrypto')}</span>
+			<button class="py-1.5 px-3.5 rounded-lg border-0 cursor-pointer bg-[linear-gradient(135deg,#00d2ff,#3a7bd5)] text-white font-[Syne,sans-serif] text-xs font-bold whitespace-nowrap transition-all duration-150 shrink-0 hover:-translate-y-px hover:shadow-[0_4px_16px_rgba(0,210,255,0.3)]" onclick={() => addFeedback({ message: $t('trade.comingSoon'), type: 'info' })}>
 				{$t('trade.getItNow')}
 			</button>
 		</div>
 
 		<!-- History panel -->
-		{#if showHistory}
-			<div class="history-panel" id="trade-history">
-				<h3 class="history-title">{$t('trade.withdrawalHistory')}</h3>
-				{#if true}
-				{@const allW = [...withdrawals].sort((a, b) => Number(b.createdAt) - Number(a.createdAt))}
-				{@const nowTs = Math.floor(Date.now() / 1000)}
-				{@const counts = {
-					all: allW.length,
-					pending: allW.filter(w => w.status === 0 && !(w.expiresAt > 0 && nowTs > w.expiresAt)).length,
-					completed: allW.filter(w => w.status === 1).length,
-					timeout: allW.filter(w => w.status === 0 && w.expiresAt > 0 && nowTs > w.expiresAt).length,
-					cancelled: allW.filter(w => w.status === 2).length,
+		{#if showHistory && userAddress}
+			<WithdrawalHistoryPanel
+				bind:this={historyPanel}
+				network={selectedNetwork}
+				{userAddress}
+				{networkProviders}
+				{usdtDecimals}
+				onselect={(w) => {
+					showConfirmModal = false;
+					activeWithdrawal = toWithdrawalView(w);
 				}}
-				<div class="history-filters">
-					{#each ['all', 'pending', 'completed', 'timeout', 'cancelled'] as f}
-						{@const count = counts[f as keyof typeof counts]}
-						<button class="history-filter" class:active={historyFilter === f} onclick={() => historyFilter = f}>
-							{f === 'all' ? $t('trade.all') : f === 'pending' ? $t('trade.pending') : f === 'completed' ? $t('trade.completed') : f === 'timeout' ? $t('trade.timeout') : $t('trade.cancelled')}
-							{#if count > 0}<span class="history-filter-count">{count}</span>{/if}
-						</button>
-					{/each}
-				</div>
-				{#if historyLoading}
-					<div class="history-loading"><div class="spinner"></div></div>
-				{:else if withdrawals.length === 0}
-					<p class="history-empty">{$t('trade.noWithdrawals')}</p>
-				{:else}
-					{#each [...withdrawals].sort((a, b) => Number(b.createdAt) - Number(a.createdAt)).filter(w => {
-						if (historyFilter === 'all') return true;
-						const to = w.status === 0 && w.expiresAt > 0 && Date.now() / 1000 > w.expiresAt;
-						if (historyFilter === 'timeout') return to;
-						if (historyFilter === 'pending') return w.status === 0 && !to;
-						if (historyFilter === 'completed') return w.status === 1;
-						if (historyFilter === 'cancelled') return w.status === 2;
-						return true;
-					}) as w, i}
-						{@const timedOut = w.status === 0 && w.expiresAt > 0 && Date.now() / 1000 > w.expiresAt}
-						{@const sc = timedOut ? 'red' : withdrawStatusColor(w.status)}
-						{@const canCancel = timedOut}
-						<button class="history-row" onclick={() => {
-							showConfirmModal = false;
-							activeWithdrawal = {
-								id: w.id,
-								withdraw_id: w.withdraw_id,
-								chain_id: w.chain_id || selectedNetwork?.chain_id,
-								wallet_address: userAddress,
-								status: timedOut ? 'timeout' : withdrawStatusLabel(w.status).toLowerCase(),
-								net_amount: w.netAmount?.toString() || w.grossAmount?.toString() || '0',
-								fee: w.fee?.toString() || '0',
-								gross_amount: w.grossAmount?.toString() || '0',
-								payment_method: w.payment_method || 'bank',
-								payment_details: w.payment_details || {},
-								tx_hash: w.tx_hash || '',
-								created_at: new Date(Number(w.createdAt) * 1000).toISOString(),
-								expiresAt: w.expiresAt || 0,
-							};
-						}}>
-							<div class="history-row-top">
-								<span class="history-amount">${parseFloat(ethers.formatUnits(w.grossAmount, usdtDecimals)).toFixed(2)}</span>
-								<span class="history-status status-{sc}">{timedOut ? $t('trade.timedOut') : withdrawStatusLabel(w.status)}</span>
-							</div>
-							<div class="history-row-bottom">
-								{#if w.withdraw_id}<span class="history-ref">#{w.withdraw_id}</span>{/if}
-								<span class="history-date">{new Date(Number(w.createdAt) * 1000).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
-								{#if canCancel}
-									<span class="cancel-hint">{$t('trade.tapToCancel')}</span>
-								{/if}
-							</div>
-							{#if w.status === 0 && w.expiresAt > 0}
-								{@const now = Math.floor(Date.now() / 1000)}
-								{@const totalDuration = w.expiresAt - Number(w.createdAt)}
-								{@const elapsed = now - Number(w.createdAt)}
-								{@const remaining = Math.max(0, w.expiresAt - now)}
-								<div class="history-progress">
-									<div class="progress-track"><div class="progress-fill progress-amber" style="width: {totalDuration > 0 ? Math.max(0, (remaining / totalDuration) * 100) : 0}%"></div></div>
-									<span class="history-timer">{remaining > 0 ? `${Math.floor(remaining / 60)}m ${remaining % 60}s` : $t('trade.timedOut')}</span>
-								</div>
-							{/if}
-						</button>
-					{/each}
-				{/if}
-			{/if}
-			</div>
+			/>
 		{/if}
 	</div>
 </div>
 
 <!-- ═══ TOKEN SELECTOR MODAL ═══ -->
 {#if showTokenModal}
-	<div class="modal-backdrop" onclick={() => { showTokenModal = false; tokenSearch = ''; }}
-		role="dialog" aria-modal="true"
-	>
-		<div class="token-modal" onclick={(e) => e.stopPropagation()}>
-			<div class="modal-header">
-				<h3>{$t('trade.selectAToken')}</h3>
-				<button class="modal-close" onclick={() => { showTokenModal = false; tokenSearch = ''; }}>
-					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-				</button>
-			</div>
-
-			<input
-				class="input-field modal-search"
-				placeholder={$t('trade.searchTokens')}
-				bind:value={tokenSearch}
-				autofocus
-			/>
-
-			<!-- Quick select built-ins -->
-			<div class="quick-tokens">
-				{#each builtInTokens as t}
-					<button class="quick-token-btn" onclick={() => selectToken(tokenModalTarget, t)}>
-						{#if t.logo_url}<img src={t.logo_url} alt="" class="quick-token-logo" />{/if}
-						{t.symbol}
-					</button>
-				{/each}
-			</div>
-
-			<div class="token-list">
-				{#if ethers.isAddress(tokenSearch.trim()) && !filteredTokens.find(t => t.address.toLowerCase() === tokenSearch.trim().toLowerCase())}
-					{#if pastedTokenLoading}
-						<div class="token-list-item" style="cursor: default; opacity: 0.6;">
-							<div class="token-list-icon token-list-icon-custom">
-								<div class="token-list-spinner"></div>
-							</div>
-							<div class="token-list-info">
-								<span class="token-list-symbol">{$t('trade.loading')}</span>
-								<span class="token-list-addr">{tokenSearch.trim().slice(0, 6)}...{tokenSearch.trim().slice(-4)}</span>
-							</div>
-						</div>
-					{:else if pastedTokenMeta}
-						<button class="token-list-item" onclick={handleCustomAddress}>
-							{#if pastedTokenMeta.logo_url}
-								<img src={pastedTokenMeta.logo_url} alt="" class="token-list-icon" />
-							{:else}
-								<div class="token-list-icon token-list-icon-custom">{pastedTokenMeta.symbol.charAt(0)}</div>
-							{/if}
-							<div class="token-list-info">
-								<span class="token-list-symbol">{pastedTokenMeta.symbol}</span>
-								<span class="token-list-name">{pastedTokenMeta.name}</span>
-							</div>
-							<span class="token-list-import">{$t('trade.import')}</span>
-						</button>
-					{:else}
-						<button class="token-list-item" onclick={handleCustomAddress}>
-							<div class="token-list-icon token-list-icon-custom">?</div>
-							<div class="token-list-info">
-								<span class="token-list-symbol">{$t('trade.importToken')}</span>
-								<span class="token-list-addr">{tokenSearch.trim().slice(0, 6)}...{tokenSearch.trim().slice(-4)}</span>
-							</div>
-					</button>
-					{/if}
-				{/if}
-
-				{#each filteredTokens as t}
-					<button class="token-list-item" onclick={() => selectToken(tokenModalTarget, t)}>
-						{#if t.logo_url}
-							<img src={t.logo_url} alt="" class="token-list-icon" />
-						{:else}
-							<div class="token-list-icon token-list-icon-placeholder">
-								{t.symbol.charAt(0)}
-							</div>
-						{/if}
-						<div class="token-list-info">
-							<span class="token-list-symbol">{t.symbol}</span>
-							<span class="token-list-name">{t.name}</span>
-						</div>
-						{#if t.address !== ZERO_ADDRESS}
-							<div class="token-list-actions">
-								<span class="token-list-addr">{t.address.slice(0, 6)}...{t.address.slice(-4)}</span>
-								<button class="token-action-btn" title="Copy address" onclick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(t.address); addFeedback({ message: 'Address copied', type: 'success' }); }}>
-									<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-								</button>
-								{#if selectedNetwork?.explorer_url}
-									<a class="token-action-btn" title="View on explorer" href="{selectedNetwork.explorer_url}/address/{t.address}" target="_blank" rel="noopener" onclick={(e) => e.stopPropagation()}>
-										<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-									</a>
-								{/if}
-							</div>
-						{/if}
-					</button>
-				{/each}
-
-				{#if dbSearchLoading}
-					<div class="token-list-item" style="cursor: default; opacity: 0.5; justify-content: center;">
-						<span class="token-list-name">{$t('trade.searching')}</span>
-					</div>
-				{:else if filteredTokens.length === 0 && !ethers.isAddress(tokenSearch.trim())}
-					<p class="token-list-empty">{$t('trade.noTokensFound')}</p>
-				{/if}
-			</div>
-		</div>
-	</div>
+	<TokenSelectorModal
+		{builtInTokens}
+		{filteredTokens}
+		bind:tokenSearch
+		{pastedTokenMeta}
+		{pastedTokenLoading}
+		{dbSearchLoading}
+		explorerUrl={selectedNetwork?.explorer_url || ''}
+		onSelect={(token) => selectToken(tokenModalTarget, token)}
+		onImport={handleCustomAddress}
+		onClose={() => { showTokenModal = false; tokenSearch = ''; }}
+		onCopyAddress={(addr) => { navigator.clipboard.writeText(addr); addFeedback({ message: $t('trade.addressCopied'), type: 'success' }); }}
+	/>
 {/if}
 
 <!-- ═══ BANK SELECTOR MODAL ═══ -->
 {#if showBankModal}
-	<div class="modal-backdrop" onclick={() => { showBankModal = false; bankSearchQuery = ''; }}
-		role="dialog" aria-modal="true"
-	>
-		<div class="token-modal" onclick={(e) => e.stopPropagation()}>
-			<div class="modal-header">
-				<h3>{$t('trade.selectBank')}</h3>
-				<button class="modal-close" onclick={() => { showBankModal = false; bankSearchQuery = ''; }}>
-					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-				</button>
-			</div>
-
-			<input
-				class="input-field modal-search"
-				placeholder={$t('trade.searchBank')}
-				bind:value={bankSearchQuery}
-				autofocus
-			/>
-
-			<div class="token-list">
-				{#each filteredBanks as bank}
-					<button class="token-list-item" onclick={() => { selectBank(bank); showBankModal = false; bankSearchQuery = ''; }}>
-						<div class="bank-list-initial">{bank.name.charAt(0)}</div>
-						<span class="bank-list-name">{bank.name}</span>
-					</button>
-				{/each}
-
-				{#if filteredBanks.length === 0}
-					<p class="token-list-empty">{$t('trade.noBanksFound')}</p>
-				{/if}
-			</div>
-		</div>
-	</div>
+	<BankSelectorModal
+		banks={ngBanks}
+		bind:searchQuery={bankSearchQuery}
+		onSelect={(bank) => { selectBank(bank); showBankModal = false; bankSearchQuery = ''; }}
+		onClose={() => { showBankModal = false; bankSearchQuery = ''; }}
+	/>
 {/if}
 
 <!-- ═══ CONFIRM TRADE MODAL ═══ -->
 {#if showConfirmModal}
-	<div class="modal-backdrop" onclick={() => { if (!isSwapping) showConfirmModal = false; }}
-		role="dialog" aria-modal="true"
+	<ConfirmModalShell
+		title={outputMode === 'bank' ? $t('trade.confirmWithdrawal') : $t('trade.confirmSwap')}
+		closable={!isSwapping}
+		onClose={() => { if (!isSwapping) showConfirmModal = false; }}
 	>
-		<div class="confirm-modal" onclick={(e) => e.stopPropagation()}>
-			<div class="modal-header">
-				<h3>{outputMode === 'bank' ? $t('trade.confirmWithdrawal') : $t('trade.confirmSwap')}</h3>
-				{#if !isSwapping}
-					<button class="modal-close" onclick={() => (showConfirmModal = false)}>
-						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-					</button>
-				{/if}
-			</div>
-
-			<div class="confirm-body">
-				{#if isSwapping}
-					<!-- ═══ STEPPER (replaces review) ═══ -->
-					{#if outputMode === 'bank' && withdrawStep > 0}
-						{#if withdrawStep >= 5}
-							<div class="ws-complete">
-								<div class="ws-complete-icon">
-									<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-								</div>
-								<span class="ws-complete-text">{$t('trade.withdrawalSubmitted')}</span>
-								<span class="ws-complete-sub">{$t('trade.withdrawalSubmittedDesc')}</span>
-								<button class="swap-btn swap-btn-bank" style="margin: 12px 0 0; width: 100%;" onclick={() => { showConfirmModal = false; }}>
-									{$t('trade.viewStatus')}
-								</button>
-							</div>
-						{:else}
-							<div class="ws-stepper-header">
-								<span class="ws-stepper-amount">{amountIn} {tokenInSymbol}</span>
-								{#if fiatEquivalent}
-									<span class="ws-stepper-fiat">→ {fiatEquivalent}</span>
-								{/if}
-							</div>
-							<div class="withdraw-steps">
-								{#each [
-									{ n: 1, title: $t('trade.saveDetails'), desc: $t('trade.savingPaymentInfo'), activeDesc: $t('trade.savingDetails') },
-									{ n: 2, title: $t('trade.approveToken'), desc: tokenInIsNative ? $t('trade.skippedForNative') : `Allow ${tokenInSymbol}`, activeDesc: tokenInIsNative ? 'Skipping...' : $t('trade.confirmInWallet') },
-									{ n: 3, title: $t('trade.executeTrade'), desc: $t('trade.depositToContract'), activeDesc: $t('trade.confirmInWallet') }
-								] as step}
-									{@const isDone = withdrawStep > step.n}
-									{@const isActive = withdrawStep === step.n}
-									{@const isPending = withdrawStep < step.n}
-									<div class="withdraw-step" class:ws-done={isDone} class:ws-active={isActive} class:ws-pending={isPending}>
-										<div class="ws-indicator" class:ws-indicator-done={isDone} class:ws-indicator-active={isActive}>
-											{#if isDone}
-												<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-											{:else if isActive}
-												<div class="ws-spinner"></div>
-											{:else}
-												<span>{step.n}</span>
-											{/if}
-										</div>
-										<div class="ws-text">
-											<span class="ws-title">{step.title}</span>
-											<span class="ws-desc">{isActive ? step.activeDesc : step.desc}</span>
-										</div>
-										{#if isDone}
-											<span class="ws-check-label">{$t('trade.done')}</span>
-										{/if}
-									</div>
-								{/each}
-							</div>
-						{/if}
-					{:else if outputMode === 'token'}
-						{#if swapStep >= 3}
-							<div class="ws-complete">
-								<div class="ws-complete-icon">
-									<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-								</div>
-								<span class="ws-complete-text">{$t('trade.swapComplete')}</span>
-								<span class="ws-complete-sub">{tokenInSymbol} → {tokenOutSymbol}</span>
-								<button class="swap-btn" style="margin: 12px 0 0; width: 100%;" onclick={() => { showConfirmModal = false; swapStep = 0; amountIn = ''; amountOut = ''; }}>
-									Done
-								</button>
-							</div>
-						{:else}
-							<div class="withdraw-steps">
-								{#each [
-									{ n: 1, title: $t('trade.approveToken'), desc: tokenInIsNative ? $t('trade.skippedForNative') : `Allow ${tokenInSymbol}`, activeDesc: tokenInIsNative ? 'Skipping...' : $t('trade.confirmInWallet') },
-									{ n: 2, title: $t('trade.executeSwap'), desc: `${tokenInSymbol} → ${tokenOutSymbol}`, activeDesc: $t('trade.confirmInWallet') }
-								] as step}
-									{@const isDone = swapStep > step.n}
-									{@const isActive = swapStep === step.n}
-									{@const isPending = swapStep < step.n}
-									<div class="withdraw-step" class:ws-done={isDone} class:ws-active={isActive} class:ws-pending={isPending}>
-										<div class="ws-indicator" class:ws-indicator-done={isDone} class:ws-indicator-active={isActive}>
-											{#if isDone}
-												<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-											{:else if isActive}
-												<div class="ws-spinner"></div>
-											{:else}
-												<span>{step.n}</span>
-											{/if}
-										</div>
-										<div class="ws-text">
-											<span class="ws-title">{step.title}</span>
-											<span class="ws-desc">{isActive ? step.activeDesc : step.desc}</span>
-										</div>
-										{#if isDone}
-											<span class="ws-check-label">{$t('trade.done')}</span>
-										{/if}
-									</div>
-								{/each}
-							</div>
-						{/if}
-					{/if}
+		{#if isSwapping}
+			<!-- ═══ BANK MODE STEPPER / COMPLETION ═══ -->
+			{#if outputMode === 'bank' && withdrawStep > 0}
+				{#if withdrawStep >= 5}
+					<TradeCompletion title={$t('trade.withdrawalSubmitted')} subtitle={$t('trade.withdrawalSubmittedDesc')}>
+						{#snippet action()}
+							<SwapActionButton variant="bank" onclick={() => {
+								showConfirmModal = false;
+								if (outputMode === 'token') { swapStep = 0; amountIn = ''; amountOut = ''; }
+							}}>
+								{$t('trade.viewStatus')}
+							</SwapActionButton>
+						{/snippet}
+					</TradeCompletion>
 				{:else}
-				<!-- ═══ REVIEW (before clicking confirm) ═══ -->
-				<div class="cr-swap-row">
-					<div class="cr-side">
-						<span class="cr-label">{$t('trade.pay')}</span>
-						<span class="cr-amount">{amountIn} <span class="cr-sym">{tokenInSymbol}</span></span>
-						{#if tokenInHasTax}<span class="cr-tax">-{tokenInTaxSell / 100}% tax</span>{/if}
-					</div>
-					<div class="cr-arrow">
-						<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14m0 0l-4-4m4 4l4-4"/></svg>
-					</div>
-					<div class="cr-side cr-side-right">
-						{#if outputMode === 'token'}
-							<span class="cr-label">{$t('trade.receive')}</span>
-							<span class="cr-amount">{displayAmountOut || '0'} <span class="cr-sym">{tokenOutSymbol}</span></span>
-							{#if tokenOutHasTax}<span class="cr-tax">-{tokenOutTaxBuy / 100}% tax</span>{/if}
-						{:else}
-							<span class="cr-label">{$t('trade.to')}</span>
-							<span class="cr-bank-name">{paymentMethod === 'bank' ? bankBankName : paymentMethod === 'paypal' ? 'PayPal' : 'Wise'}</span>
-							{#if paymentMethod === 'bank' && bankResolved}
-								<span class="cr-bank-holder">{bankName}</span>
-							{:else if paymentMethod === 'paypal'}
-								<span class="cr-bank-holder">{paypalEmail}</span>
-							{:else if paymentMethod === 'wise'}
-								<span class="cr-bank-holder">{wiseEmail}</span>
-							{/if}
-						{/if}
-					</div>
-				</div>
-
-				<div class="cr-details">
-					{#if outputMode === 'token' && rate}
-						{@const confirmMinUsd = usdValueOut && displayAmountOut && parseFloat(displayAmountOut) > 0
-							? (parseFloat(usdValueOut.replace(/[^0-9.]/g, '')) * parseFloat(minReceived) / parseFloat(displayAmountOut)).toFixed(2)
-							: ''}
-						<div class="cr-row"><span>{$t('trade.rate')}</span><span>1 {tokenInSymbol} = {rate}</span></div>
-						<div class="cr-row"><span>{$t('trade.minReceived')}</span><span>{minReceived} {tokenOutSymbol}{#if confirmMinUsd} <span class="usd-value">(≈${confirmMinUsd})</span>{/if}</span></div>
-						<div class="cr-row"><span>{$t('trade.slippage')}</span><span>{(slippageBps / 100).toFixed(slippageBps % 100 === 0 ? 0 : slippageBps % 10 === 0 ? 1 : 2)}%</span></div>
-						{#if tokenInTaxSell > 0}<div class="cr-row cr-row-warn"><span>{$t('trade.sellTax')} ({tokenInSymbol})</span><span>{(tokenInTaxSell / 100).toFixed(1)}%</span></div>{/if}
-						{#if tokenOutTaxBuy > 0}<div class="cr-row cr-row-warn"><span>{$t('trade.buyTax')} ({tokenOutSymbol})</span><span>{(tokenOutTaxBuy / 100).toFixed(1)}%</span></div>{/if}
-					{:else if outputMode === 'bank'}
-						{#if previewFee > 0n}
-							<div class="cr-row"><span>Fee ({((Number(previewFee) / Number(previewFee + previewNet)) * 100).toFixed(1)}%)</span><span>${parseFloat(ethers.formatUnits(previewFee, usdtDecimals)).toFixed(2)}</span></div>
-							<div class="cr-row"><span>Net amount</span><span>${parseFloat(ethers.formatUnits(previewNet, usdtDecimals)).toFixed(2)}</span></div>
-						{/if}
-						{#if fiatEquivalent}
-							<div class="cr-row cr-row-highlight"><span>{$t('trade.youReceive')}</span><span class="cr-ngn">{fiatEquivalent}</span></div>
-							{#if ngnRate > 0}<div class="cr-row"><span>{$t('trade.rate')}</span><span>1 USD = ₦{ngnRate.toFixed(2)}</span></div>{/if}
-						{/if}
-						{#if payoutTimeoutLoaded}<div class="cr-row"><span>Processing</span><span>Usually under {payoutTimeoutMins} min</span></div>{/if}
-						<div class="cr-row cr-row-escrow">
-							<span>Escrow</span>
-							<span>Held by smart contract, not admin</span>
-						</div>
-					{/if}
-				</div>
-
-				<button
-					class="swap-btn" class:swap-btn-bank={outputMode === 'bank'}
-					style="margin: 0; width: 100%;"
-					onclick={async () => {
-						// Freeze the NGN rate shown at confirm time so the processing
-						// modal displays the same figure (audit #5/#28).
-						if (outputMode === 'bank' && ngnRate > 0) {
-							lockedNgnRate = ngnRate;
-							// Use NET amount (after fee) — matches the "You receive" line
-							// on the confirm screen. Gross would overstate what the user gets.
-							const netVal = previewNet > 0n
-								? parseFloat(ethers.formatUnits(previewNet, usdtDecimals))
-								: 0;
-							lockedNgnAmount = netVal * ngnRate;
-						}
-						await handleSwap();
-					}}
-				>
-					{outputMode === 'bank' ? $t('trade.confirmWithdrawal') : $t('trade.confirmSwap')}
-				</button>
+					<TradeStepperHeader amount={amountIn} symbol={tokenInSymbol} {fiatEquivalent} />
+					<TradeStepperList steps={withdrawSteps} currentStep={withdrawStep} />
 				{/if}
-			</div>
-		</div>
-	</div>
+			{:else if outputMode === 'token'}
+				{#if swapStep >= 3}
+					<TradeCompletion title={$t('trade.swapComplete')} subtitle="{tokenInSymbol} → {tokenOutSymbol}">
+						{#snippet action()}
+							<SwapActionButton variant="primary" onclick={() => {
+								showConfirmModal = false;
+								swapStep = 0; amountIn = ''; amountOut = '';
+							}}>
+								{$t('trade.done')}
+							</SwapActionButton>
+						{/snippet}
+					</TradeCompletion>
+				{:else}
+					<TradeStepperList steps={swapSteps} currentStep={swapStep} />
+				{/if}
+			{/if}
+		{:else}
+			<!-- ═══ REVIEW ═══ -->
+			<TradeReviewRow
+				leftLabel={$t('trade.pay')}
+				rightLabel={outputMode === 'token' ? $t('trade.receive') : $t('trade.to')}
+			>
+				{#snippet leftSide()}
+					<span class="block font-[Rajdhani,sans-serif] text-lg2 font-bold text-(--text-heading) leading-[1.3] tabular-nums">{amountIn} <span class="text-sm text-(--text-muted) font-semibold">{tokenInSymbol}</span></span>
+					{#if tokenInHasTax}<span class="inline-block mt-[3px] font-mono text-xxs text-warning bg-[rgba(245,158,11,0.08)] py-px px-1.5 rounded-[3px]">-{tokenInTaxSell / 100}% tax</span>{/if}
+				{/snippet}
+				{#snippet rightSide()}
+					{#if outputMode === 'token'}
+						<span class="block font-[Rajdhani,sans-serif] text-lg2 font-bold text-(--text-heading) leading-[1.3] tabular-nums">{displayAmountOut || '0'} <span class="text-sm text-(--text-muted) font-semibold">{tokenOutSymbol}</span></span>
+						{#if tokenOutHasTax}<span class="inline-block mt-[3px] font-mono text-xxs text-warning bg-[rgba(245,158,11,0.08)] py-px px-1.5 rounded-[3px]">-{tokenOutTaxBuy / 100}% tax</span>{/if}
+					{:else}
+						<span class="block syne text-sm2 font-bold text-(--text-heading) leading-[1.3]">{paymentMethod === 'bank' ? bankBankName : paymentMethod === 'paypal' ? 'PayPal' : 'Wise'}</span>
+						{#if paymentMethod === 'bank' && bankResolved}
+							<span class="block font-mono text-xs2 text-success font-semibold mt-0.5">{bankName}</span>
+						{:else if paymentMethod === 'paypal'}
+							<span class="block font-mono text-xs2 text-success font-semibold mt-0.5">{paypalEmail}</span>
+						{:else if paymentMethod === 'wise'}
+							<span class="block font-mono text-xs2 text-success font-semibold mt-0.5">{wiseEmail}</span>
+						{/if}
+					{/if}
+				{/snippet}
+			</TradeReviewRow>
+
+			<TradeReviewDetails>
+				{#if outputMode === 'token' && rate}
+					<DetailLine label={$t('trade.rate')}>1 {tokenInSymbol} = {rate}</DetailLine>
+					<DetailLine label={$t('trade.minReceived')}>
+						{minReceived} {tokenOutSymbol}{#if confirmMinUsd} <span class="text-(--text-muted) text-xs font-[Rajdhani,sans-serif] font-medium tabular-nums">(≈${confirmMinUsd})</span>{/if}
+					</DetailLine>
+					<DetailLine label={$t('trade.slippage')}>{(slippageBps / 100).toFixed(slippageBps % 100 === 0 ? 0 : slippageBps % 10 === 0 ? 1 : 2)}%</DetailLine>
+					{#if tokenInTaxSell > 0}
+						<DetailLine label="{$t('trade.sellTax')} ({tokenInSymbol})" warn>{(tokenInTaxSell / 100).toFixed(1)}%</DetailLine>
+					{/if}
+					{#if tokenOutTaxBuy > 0}
+						<DetailLine label="{$t('trade.buyTax')} ({tokenOutSymbol})" warn>{(tokenOutTaxBuy / 100).toFixed(1)}%</DetailLine>
+					{/if}
+				{:else if outputMode === 'bank'}
+					{#if previewFee > 0n}
+						<DetailLine label={$t('trade.feeWithPct').replace('{pct}', ((Number(previewFee) / Number(previewFee + previewNet)) * 100).toFixed(1))}>${parseFloat(ethers.formatUnits(previewFee, usdtDecimals)).toFixed(2)}</DetailLine>
+						<DetailLine label={$t('trade.netAmount')}>${parseFloat(ethers.formatUnits(previewNet, usdtDecimals)).toFixed(2)}</DetailLine>
+					{/if}
+					{#if fiatEquivalent}
+						<DetailLine label={$t('trade.youReceive')}>
+							<span class="font-[Rajdhani,sans-serif] text-base font-bold text-success tabular-nums">{fiatEquivalent}</span>
+						</DetailLine>
+						{#if ngnRate > 0}
+							<DetailLine label={$t('trade.rate')}>1 USD = ₦{ngnRate.toFixed(2)}</DetailLine>
+						{/if}
+					{/if}
+					{#if payoutTimeoutLoaded}
+						<DetailLine label={$t('trade.processingLabel')}>{$t('trade.processingTime').replace('{min}', String(payoutTimeoutMins))}</DetailLine>
+					{/if}
+					<DetailLine label={$t('trade.escrow')}>
+						<span class="text-success">{$t('trade.escrowHeldBySc')}</span>
+					</DetailLine>
+				{/if}
+			</TradeReviewDetails>
+
+			<SwapActionButton
+				variant={outputMode === 'bank' ? 'bank' : 'primary'}
+				onclick={async () => {
+					if (outputMode === 'bank' && ngnRate > 0) {
+						lockedNgnRate = ngnRate;
+						const netVal = previewNet > 0n
+							? parseFloat(ethers.formatUnits(previewNet, usdtDecimals))
+							: 0;
+						lockedNgnAmount = netVal * ngnRate;
+					}
+					await handleSwap();
+				}}
+			>
+				{outputMode === 'bank' ? $t('trade.confirmWithdrawal') : $t('trade.confirmSwap')}
+			</SwapActionButton>
+		{/if}
+	</ConfirmModalShell>
 {/if}
 
 <!-- ═══ WITHDRAWAL STATUS MODAL ═══ -->
@@ -2480,679 +1780,3 @@
 	/>
 {/if}
 
-<style>
-	.trade-page {
-		min-height: calc(100vh - 140px);
-		display: flex;
-		align-items: flex-start;
-		justify-content: center;
-		padding: 40px 16px 60px;
-	}
-	.trade-container { width: 100%; max-width: 460px; }
-
-	/* Network selector */
-	.network-selector {
-		display: flex; gap: 4px; padding: 4px; background: var(--bg-surface);
-		border: 1px solid var(--border); border-radius: 14px; margin-bottom: 8px;
-	}
-	.network-btn {
-		flex: 1; padding: 8px 0; border-radius: 10px; border: none; background: transparent;
-		color: var(--text-muted); font-family: 'Space Mono', monospace; font-size: 12px;
-		font-weight: 700; cursor: pointer; transition: all 150ms;
-	}
-	.network-btn:hover { color: var(--text); }
-	.network-active { background: rgba(0,210,255,0.1); color: #00d2ff; }
-
-	/* Header */
-	.trade-header {
-		display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px;
-	}
-	.trade-title {
-		font-family: 'Syne', sans-serif; font-size: 28px; font-weight: 800;
-		color: var(--text-heading); margin: 0;
-	}
-	.trade-sub {
-		font-family: 'Space Mono', monospace; font-size: 12px; color: var(--text-muted); margin: 4px 0 0;
-	}
-	.header-actions { display: flex; gap: 6px; }
-	.icon-btn {
-		width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--border);
-		background: var(--bg-surface); color: var(--text-muted); cursor: pointer;
-		display: flex; align-items: center; justify-content: center;
-		transition: all 150ms ease;
-	}
-	.icon-btn:hover { color: #00d2ff; border-color: rgba(0,210,255,0.3); background: rgba(0,210,255,0.05); }
-	.icon-btn-active { color: #00d2ff; border-color: rgba(0,210,255,0.3); background: rgba(0,210,255,0.08); }
-
-	/* Settings */
-	.settings-panel {
-		background: var(--bg-surface); border: 1px solid var(--border); border-radius: 14px;
-		padding: 14px 16px; margin-bottom: 12px;
-	}
-	.settings-label {
-		font-family: 'Space Mono', monospace; font-size: 11px; font-weight: 600;
-		text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-muted); display: block; margin-bottom: 8px;
-	}
-	.slippage-row { display: flex; gap: 6px; }
-	.slippage-btn {
-		flex: 1; padding: 8px 0; border-radius: 8px; border: 1px solid var(--border);
-		background: transparent; color: var(--text-muted); font-family: 'Space Mono', monospace;
-		font-size: 12px; font-weight: 600; cursor: pointer; transition: all 150ms ease;
-	}
-	.slippage-btn:hover { border-color: rgba(0,210,255,0.3); color: #00d2ff; }
-	.slippage-active { border-color: rgba(0,210,255,0.4); background: rgba(0,210,255,0.1); color: #00d2ff; }
-	.slippage-custom {
-		flex: 1.2; display: flex; align-items: center; border-radius: 8px;
-		border: 1px solid var(--border); background: transparent; padding: 0 8px;
-		transition: all 150ms ease;
-	}
-	.slippage-custom:focus-within { border-color: rgba(0,210,255,0.4); }
-	.slippage-custom-input {
-		width: 100%; border: none; background: transparent; outline: none;
-		color: var(--text); font-family: 'Space Mono', monospace; font-size: 12px;
-		font-weight: 600; padding: 8px 0; text-align: right;
-	}
-	.slippage-custom-input::placeholder { color: var(--text-dim); font-weight: 400; }
-	.slippage-custom-pct {
-		font-family: 'Space Mono', monospace; font-size: 11px; color: var(--text-muted);
-		margin-left: 2px; flex-shrink: 0;
-	}
-	.slippage-warn {
-		font-family: 'Space Mono', monospace; font-size: 10px; color: #fbbf24;
-		margin: 6px 0 0; padding: 0;
-	}
-
-	/* Mode toggle */
-	.mode-toggle {
-		display: flex; gap: 4px; padding: 4px; background: var(--bg-surface);
-		border: 1px solid var(--border); border-radius: 14px; margin-bottom: 8px;
-	}
-	.mode-btn {
-		flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px;
-		padding: 10px 0; border-radius: 10px; border: none; background: transparent;
-		color: var(--text-muted); font-family: 'Space Mono', monospace; font-size: 12px;
-		font-weight: 600; cursor: pointer; transition: all 150ms ease;
-	}
-	.mode-btn:hover { color: var(--text); }
-	.mode-active { background: rgba(0,210,255,0.1); color: #00d2ff; }
-	.mode-btn:last-child.mode-active { background: rgba(16,185,129,0.1); color: #10b981; }
-
-	/* Swap card */
-	.swap-card {
-		background: var(--bg-surface); border: 1px solid var(--border); border-radius: 20px;
-		padding: 4px 4px 12px;
-	}
-
-	/* Token section */
-	.token-section {
-		background: var(--bg-surface-input); border-radius: 16px; padding: 14px 16px;
-	}
-	.token-section-out { margin-top: 4px; }
-	.token-section-header {
-		display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;
-	}
-	.section-label {
-		font-family: 'Space Mono', monospace; font-size: 11px; font-weight: 600;
-		color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;
-	}
-	/* balance-btn and balance-display removed — replaced by MAX btn + token-balance-row */
-
-	.token-input-row { display: flex; align-items: center; gap: 8px; position: relative; }
-	.max-btn {
-		padding: 4px 10px; border-radius: 6px; border: 1px solid rgba(0,210,255,0.25);
-		background: rgba(0,210,255,0.08); color: #00d2ff; cursor: pointer;
-		font-family: 'Space Mono', monospace; font-size: 11px; font-weight: 700;
-		transition: all 150ms; flex-shrink: 0;
-	}
-	.max-btn:hover { background: rgba(0,210,255,0.15); border-color: rgba(0,210,255,0.4); }
-	.token-balance-row {
-		margin-top: 6px; font-family: 'Space Mono', monospace; font-size: 11px; color: var(--text-dim);
-		display: flex; justify-content: space-between; align-items: center;
-	}
-	.usd-value {
-		color: var(--text-muted); font-size: 12px;
-		font-family: 'Rajdhani', sans-serif; font-weight: 500;
-		font-variant-numeric: tabular-nums;
-	}
-	.amount-input {
-		flex: 1; background: transparent; border: none; outline: none;
-		color: var(--text-heading); font-family: 'Rajdhani', sans-serif;
-		font-size: 30px; font-weight: 700; padding: 0; min-width: 0;
-		font-variant-numeric: tabular-nums;
-	}
-	.amount-input::placeholder { color: var(--text-muted); opacity: 0.6; }
-	.amount-input-out { color: var(--text-muted); }
-
-	.preview-shimmer {
-		position: absolute; left: 0; top: 50%; transform: translateY(-50%);
-		width: 120px; height: 28px; border-radius: 6px;
-		background: linear-gradient(90deg, var(--bg-surface-hover), rgba(0,210,255,0.05), var(--bg-surface-hover));
-		background-size: 200% 100%; animation: shimmer 1.5s infinite;
-	}
-	@keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
-
-	.token-selector {
-		display: flex; align-items: center; gap: 6px; padding: 8px 12px;
-		border-radius: 20px; border: 1px solid var(--border);
-		background: var(--bg-surface); cursor: pointer; transition: all 150ms;
-		flex-shrink: 0;
-	}
-	.token-selector:hover { border-color: rgba(0,210,255,0.3); background: rgba(0,210,255,0.05); }
-	.token-selector-logo { width: 20px; height: 20px; border-radius: 50%; object-fit: cover; }
-	.token-selector-symbol {
-		font-family: 'Space Mono', monospace; font-size: 14px; font-weight: 700; color: var(--text-heading);
-	}
-	.token-selector-placeholder {
-		font-family: 'Space Mono', monospace; font-size: 13px; color: #00d2ff;
-	}
-
-	.honeypot-badge {
-		display: inline-flex; align-items: center; gap: 5px; margin-top: 8px;
-		font-family: 'Space Mono', monospace; font-size: 10px; color: #f87171;
-		background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.15);
-		border-radius: 6px; padding: 4px 8px; font-weight: 700;
-	}
-	.tax-badge {
-		display: inline-flex; align-items: center; gap: 5px; margin-top: 8px;
-		font-family: 'Space Mono', monospace; font-size: 10px; color: #f59e0b;
-		background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.15);
-		border-radius: 6px; padding: 4px 8px;
-	}
-	.tax-dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
-	.tax-dot-amber { background: #f59e0b; }
-
-	/* Flip */
-	.flip-row { display: flex; justify-content: center; margin: -8px 0; position: relative; z-index: 2; }
-	.flip-btn {
-		width: 42px; height: 42px; border-radius: 12px;
-		border: 3px solid var(--bg-surface); background: var(--bg-surface-hover);
-		color: var(--text-muted); cursor: pointer; display: flex;
-		align-items: center; justify-content: center; transition: all 200ms;
-		box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-	}
-	.flip-btn:hover { color: #00d2ff; background: rgba(0,210,255,0.1); transform: rotate(180deg); box-shadow: 0 4px 16px rgba(0,210,255,0.15); }
-
-	/* Bank section */
-	.bank-trust-card {
-		margin-top: 12px; padding: 12px 14px; border-radius: 10px;
-		background: rgba(16,185,129,0.04); border: 1px solid rgba(16,185,129,0.12);
-	}
-	.bank-trust-header {
-		display: flex; align-items: center; gap: 6px; margin-bottom: 8px;
-		font-family: 'Syne', sans-serif; font-size: 12px; font-weight: 700;
-		color: #10b981;
-	}
-	.bank-trust-items { display: flex; flex-direction: column; gap: 5px; }
-	.bank-trust-item {
-		display: flex; align-items: center; gap: 7px;
-		font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text-muted);
-	}
-	.bank-trust-item svg { flex-shrink: 0; }
-	.bank-trust-contract {
-		display: block; margin-top: 8px; padding-top: 8px;
-		border-top: 1px solid rgba(16,185,129,0.08);
-		font-family: 'Space Mono', monospace; font-size: 9px;
-		color: rgba(16,185,129,0.6); text-decoration: none;
-		transition: color 0.15s;
-	}
-	.bank-trust-contract:hover { color: #10b981; }
-	.bank-payout-card {
-		background: rgba(16,185,129,0.05); border: 1px solid rgba(16,185,129,0.1);
-		border-radius: 10px; padding: 14px; margin: 12px 0 10px;
-	}
-	.bank-payout-highlight {
-		text-align: center;
-	}
-	.bank-payout-ngn {
-		display: block; font-family: 'Rajdhani', sans-serif; font-size: 28px; font-weight: 700;
-		color: #10b981; line-height: 1.2; font-variant-numeric: tabular-nums;
-	}
-	.bank-payout-usd {
-		display: block; font-family: 'Space Mono', monospace; font-size: 10px;
-		color: var(--text-dim); margin-top: 4px;
-	}
-	.bank-payout-breakdown {
-		margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border-subtle);
-		display: flex; flex-direction: column; gap: 4px;
-	}
-	.bank-payout-row {
-		display: flex; justify-content: space-between;
-		font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text-dim);
-	}
-	.bank-payout-net span:last-child { color: #10b981; font-weight: 700; }
-
-	.bank-section-compact { display: flex; flex-direction: column; gap: 10px; margin-bottom: 8px; padding: 0 2px; }
-	.field-group { display: flex; flex-direction: column; }
-	.field-label {
-		font-family: 'Space Mono', monospace; font-size: 10px; font-weight: 600;
-		text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted);
-		margin-bottom: 4px;
-	}
-
-	.pay-method-note {
-		font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text-dim);
-		line-height: 1.5; padding: 0 2px;
-	}
-
-	/* Resolve status */
-	.resolve-status {
-		display: flex; align-items: center; gap: 8px; padding: 10px 12px;
-		border-radius: 8px; font-family: 'Space Mono', monospace; font-size: 12px;
-	}
-	.resolve-loading {
-		color: var(--text-muted); background: var(--bg-surface-input);
-	}
-	.resolve-success {
-		color: #10b981; background: rgba(16,185,129,0.08);
-		border: 1px solid rgba(16,185,129,0.2); font-weight: 700;
-	}
-	.resolve-error {
-		color: #f87171; background: rgba(239,68,68,0.06);
-		border: 1px solid rgba(239,68,68,0.15);
-	}
-	.resolve-spinner {
-		width: 14px; height: 14px; border: 2px solid var(--border);
-		border-top-color: #00d2ff; border-radius: 50%;
-		animation: spin 0.8s linear infinite;
-	}
-
-	.bank-list-initial {
-		width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0;
-		display: flex; align-items: center; justify-content: center;
-		background: rgba(16,185,129,0.08); color: #10b981;
-		border: 1px solid rgba(16,185,129,0.15);
-		font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700;
-	}
-	.bank-list-name {
-		font-family: 'Space Mono', monospace; font-size: 13px; color: var(--text);
-	}
-
-	/* Bank selector button */
-	.bank-selector-btn {
-		width: 100%; display: flex; align-items: center; justify-content: space-between;
-		padding: 11px 14px; border-radius: 10px; border: 1px solid var(--border-input);
-		background: var(--bg-surface-input); cursor: pointer; transition: all 150ms;
-	}
-	.bank-selector-btn:hover { border-color: rgba(0,210,255,0.3); }
-	.bank-selector-name {
-		font-family: 'Space Mono', monospace; font-size: 13px; font-weight: 600; color: var(--text);
-	}
-	.bank-selector-placeholder {
-		font-family: 'Space Mono', monospace; font-size: 13px; color: var(--placeholder);
-	}
-
-	/* Trade details */
-	.spot-rate-preview {
-		display: flex; align-items: center; justify-content: center; gap: 6px;
-		padding: 8px 12px; border-radius: 8px;
-		background: rgba(0, 210, 255, 0.04); border: 1px solid rgba(0, 210, 255, 0.08);
-		font-family: 'Space Mono', monospace; font-size: 11px; color: var(--text-muted);
-		margin-bottom: 4px;
-	}
-	.spot-rate-preview svg { color: #00d2ff; flex-shrink: 0; }
-
-	.trade-details { padding: 10px 12px; }
-	.detail-line {
-		display: flex; justify-content: space-between; padding: 3px 0;
-		font-family: 'Space Mono', monospace; font-size: 11px;
-	}
-	.detail-line span:first-child { color: var(--text-muted); }
-	.detail-line span:last-child { color: var(--text); }
-	.detail-line-warn span:last-child { color: #f59e0b; }
-
-	.no-liquidity {
-		display: flex; align-items: center; justify-content: center; gap: 6px;
-		padding: 10px; margin: 0 12px;
-		font-family: 'Space Mono', monospace; font-size: 11px; color: #f59e0b;
-		background: rgba(245,158,11,0.06); border-radius: 10px;
-	}
-
-	/* Swap button */
-	.swap-btn {
-		width: calc(100% - 8px); margin: 8px 4px 4px; padding: 16px 0;
-		border-radius: 16px; border: none; cursor: pointer;
-		background: linear-gradient(135deg, #00d2ff, #3a7bd5);
-		color: white; font-family: 'Syne', sans-serif; font-size: 15px; font-weight: 700;
-		transition: all 200ms; letter-spacing: 0.02em;
-	}
-	.swap-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 28px rgba(0,210,255,0.3); }
-	.swap-btn:disabled { opacity: 0.85; cursor: not-allowed; }
-	.swap-btn-error:disabled { background: rgba(239,68,68,0.12) !important; color: #f87171 !important; box-shadow: none !important; transform: none !important; }
-	.buy-crypto-strip {
-		display: flex; align-items: center; gap: 8px; padding: 10px 14px;
-		margin-top: 10px; border-radius: 12px;
-		background: var(--bg-surface); border: 1px solid var(--border);
-		font-family: 'Space Mono', monospace; font-size: 11px; color: var(--text-muted);
-	}
-	.buy-crypto-strip svg { flex-shrink: 0; color: #00d2ff; }
-	.buy-crypto-strip span { flex: 1; }
-	.buy-crypto-btn {
-		padding: 6px 14px; border-radius: 8px; border: none; cursor: pointer;
-		background: linear-gradient(135deg, #00d2ff, #3a7bd5); color: white;
-		font-family: 'Syne', sans-serif; font-size: 12px; font-weight: 700;
-		white-space: nowrap; transition: all 150ms; flex-shrink: 0;
-	}
-	.buy-crypto-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(0,210,255,0.3); }
-	.swap-btn-bank { background: linear-gradient(135deg, #10b981, #059669); }
-	.swap-btn-bank:hover:not(:disabled) { box-shadow: 0 6px 28px rgba(16,185,129,0.3); }
-
-	/* History */
-	.history-panel {
-		background: var(--bg-surface); border: 1px solid var(--border);
-		border-radius: 20px; padding: 16px; margin-top: 12px;
-	}
-	.history-title {
-		font-family: 'Syne', sans-serif; font-size: 15px; font-weight: 700;
-		color: var(--text-heading); margin: 0 0 8px;
-	}
-	.history-filters { display: flex; gap: 4px; margin-bottom: 10px; }
-	.history-filter {
-		padding: 4px 10px; border-radius: 99px; border: 1px solid var(--border);
-		background: transparent; color: var(--text-dim); font-family: 'Space Mono', monospace;
-		font-size: 10px; cursor: pointer; transition: all 0.12s; text-transform: capitalize;
-	}
-	.history-filter:hover { color: var(--text-muted); border-color: var(--border-input); }
-	.history-filter.active { color: #00d2ff; border-color: rgba(0,210,255,0.25); background: rgba(0,210,255,0.06); }
-	.history-loading { display: flex; justify-content: center; padding: 20px; }
-	.history-empty { text-align: center; color: var(--text-muted); font-family: 'Space Mono', monospace; font-size: 12px; padding: 20px; }
-	.history-row {
-		padding: 10px; background: var(--bg-surface-input); border-radius: 10px; margin-bottom: 6px;
-		width: 100%; border: 1px solid transparent; cursor: pointer; text-align: left;
-		transition: all 150ms;
-	}
-	.history-row:hover { border-color: rgba(0,210,255,0.2); background: rgba(0,210,255,0.03); }
-	.cancel-hint { font-family: 'Space Mono', monospace; font-size: 10px; color: #f87171; }
-	.history-row-top { display: flex; justify-content: space-between; align-items: center; }
-	.history-amount { font-family: 'Space Mono', monospace; font-size: 13px; font-weight: 700; color: var(--text-heading); }
-	.history-status { font-family: 'Space Mono', monospace; font-size: 10px; font-weight: 700; text-transform: uppercase; }
-	.status-amber { color: #f59e0b; }
-	.status-emerald { color: #10b981; }
-	.status-red { color: #f87171; }
-	.history-row-bottom { display: flex; justify-content: space-between; align-items: center; margin-top: 4px; }
-	.history-ref { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text-muted); font-weight: 600; }
-	.history-date { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text-dim); }
-	.history-filter-count {
-		display: inline-flex; align-items: center; justify-content: center;
-		min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px;
-		font-size: 9px; font-weight: 700;
-		background: rgba(0,210,255,0.1); color: #00d2ff;
-		margin-left: 3px;
-	}
-	.history-progress { margin-top: 6px; }
-	.history-timer { font-family: 'Space Mono', monospace; font-size: 9px; color: rgba(245,158,11,0.7); }
-
-	/* Progress */
-	.progress-track { width: 100%; height: 3px; background: var(--bg-surface-hover); border-radius: 2px; overflow: hidden; margin-bottom: 2px; }
-	.progress-fill { height: 100%; border-radius: 2px; transition: width 300ms; }
-	.progress-amber { background: linear-gradient(90deg, #f59e0b, #d97706); }
-
-	/* Spinner */
-	.spinner { width: 24px; height: 24px; border: 2px solid var(--border); border-top-color: #00d2ff; border-radius: 50%; animation: spin 0.8s linear infinite; }
-	@keyframes spin { to { transform: rotate(360deg); } }
-
-	/* ═══ TOKEN MODAL ═══ */
-	.modal-backdrop {
-		position: fixed; inset: 0; z-index: 100; background: rgba(0,0,0,0.7);
-		backdrop-filter: blur(4px); display: flex; align-items: flex-start;
-		justify-content: center; padding: 60px 16px;
-	}
-	.token-modal {
-		width: 100%; max-width: 420px; max-height: 70vh;
-		background: var(--bg); border: 1px solid var(--border);
-		border-radius: 20px; overflow: hidden; display: flex; flex-direction: column;
-	}
-	.modal-header {
-		display: flex; justify-content: space-between; align-items: center;
-		padding: 16px 20px; border-bottom: 1px solid var(--border);
-	}
-	.modal-header h3 {
-		font-family: 'Syne', sans-serif; font-size: 16px; font-weight: 700;
-		color: var(--text-heading); margin: 0;
-	}
-	.modal-close {
-		background: none; border: none; color: var(--text-muted); cursor: pointer;
-		padding: 4px; border-radius: 8px; transition: all 150ms;
-	}
-	.modal-close:hover { color: var(--text); background: var(--bg-surface-hover); }
-	.modal-search { margin: 12px 16px; width: calc(100% - 32px); }
-
-	.quick-tokens { display: flex; gap: 6px; padding: 0 16px 12px; flex-wrap: wrap; }
-	.quick-token-logo { width: 16px; height: 16px; border-radius: 50%; object-fit: cover; vertical-align: -2px; }
-	.quick-token-btn {
-		display: inline-flex; align-items: center; gap: 5px;
-		padding: 6px 14px; border-radius: 20px; border: 1px solid var(--border);
-		background: var(--bg-surface); color: var(--text); cursor: pointer;
-		font-family: 'Space Mono', monospace; font-size: 12px; font-weight: 700;
-		transition: all 150ms;
-	}
-	.quick-token-btn:hover { border-color: rgba(0,210,255,0.3); color: #00d2ff; background: rgba(0,210,255,0.05); }
-
-	.token-list {
-		overflow-y: auto; padding: 0 8px 8px;
-		scrollbar-width: thin; scrollbar-color: var(--bg-surface-hover) transparent;
-		height: 60vh;
-	}
-	@media (min-width: 640px) {
-		.token-list { height: 80vh; }
-	}
-	.token-list-item {
-		display: flex; align-items: center; gap: 10px; width: 100%;
-		padding: 10px 12px; border-radius: 12px; border: none;
-		background: transparent; cursor: pointer; transition: all 150ms; text-align: left;
-	}
-	.token-list-item:hover { background: var(--bg-surface-hover); }
-	.token-list-icon {
-		width: 36px; height: 36px; border-radius: 50%; object-fit: cover; flex-shrink: 0;
-	}
-	.token-list-icon-placeholder {
-		display: flex; align-items: center; justify-content: center;
-		background: rgba(0,210,255,0.08); color: #00d2ff; border: 1px solid rgba(0,210,255,0.15);
-		font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700;
-	}
-	.token-list-icon-custom {
-		display: flex; align-items: center; justify-content: center;
-		background: rgba(139,92,246,0.1); color: #a78bfa; border: 1px solid rgba(139,92,246,0.2);
-		font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700;
-	}
-	.token-list-spinner {
-		width: 16px; height: 16px; border: 2px solid rgba(139,92,246,0.2);
-		border-top-color: #a78bfa; border-radius: 50%; animation: spin 0.8s linear infinite;
-	}
-	.token-list-import {
-		font-family: 'Space Mono', monospace; font-size: 10px; font-weight: 700;
-		color: #a78bfa; background: rgba(139,92,246,0.1); border: 1px solid rgba(139,92,246,0.2);
-		padding: 3px 8px; border-radius: 6px; flex-shrink: 0;
-	}
-	.token-list-info { flex: 1; min-width: 0; }
-	.token-list-symbol {
-		display: block; font-family: 'Space Mono', monospace; font-size: 13px;
-		font-weight: 700; color: var(--text-heading);
-	}
-	.token-list-name {
-		display: block; font-family: 'Space Mono', monospace; font-size: 10px;
-		color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-	}
-	.token-list-actions {
-		display: flex; align-items: center; gap: 4px; flex-shrink: 0;
-	}
-	.token-list-addr {
-		font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text-dim);
-	}
-	.token-action-btn {
-		display: flex; align-items: center; justify-content: center;
-		width: 22px; height: 22px; border-radius: 5px; border: none;
-		background: var(--bg-surface-input); color: var(--text-dim);
-		cursor: pointer; transition: all 0.15s; text-decoration: none;
-	}
-	.token-action-btn:hover { background: rgba(0,210,255,0.1); color: #00d2ff; }
-	.token-list-empty {
-		text-align: center; padding: 20px; color: var(--text-muted);
-		font-family: 'Space Mono', monospace; font-size: 12px;
-	}
-
-	/* Confirm modal */
-	.confirm-modal {
-		width: 100%; max-width: 420px; max-height: 80vh; background: var(--bg);
-		border: 1px solid var(--border); border-radius: 20px; overflow: hidden;
-		display: flex; flex-direction: column;
-	}
-	.confirm-body { padding: 14px 16px 16px; overflow-y: auto; flex: 1; }
-
-	/* Confirm review */
-	.cr-swap-row {
-		display: flex; flex-direction: column;
-		background: var(--bg-surface-input); border-radius: 12px; overflow: hidden;
-	}
-	.cr-side { padding: 10px 14px; }
-	.cr-side-right { border-top: 1px solid var(--border); }
-	.cr-arrow {
-		width: 28px; height: 28px; border-radius: 50%;
-		background: var(--bg); border: 1px solid var(--border);
-		display: flex; align-items: center; justify-content: center;
-		color: var(--text-dim); margin: -14px auto; z-index: 1;
-	}
-	.cr-label {
-		display: block; font-family: 'Space Mono', monospace; font-size: 9px; font-weight: 600;
-		text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 2px;
-	}
-	.cr-amount {
-		display: block; font-family: 'Rajdhani', sans-serif; font-size: 22px; font-weight: 700;
-		color: var(--text-heading); line-height: 1.3; font-variant-numeric: tabular-nums;
-	}
-	.cr-sym { font-size: 14px; color: var(--text-muted); font-weight: 600; }
-	.cr-tax {
-		display: inline-block; margin-top: 3px; font-family: 'Space Mono', monospace;
-		font-size: 9px; color: #f59e0b; background: rgba(245,158,11,0.08);
-		padding: 1px 6px; border-radius: 3px;
-	}
-	.cr-bank-name {
-		display: block; font-family: 'Syne', sans-serif; font-size: 13px;
-		font-weight: 700; color: var(--text-heading); line-height: 1.3;
-	}
-	.cr-bank-holder {
-		display: block; font-family: 'Space Mono', monospace; font-size: 10px;
-		color: #10b981; font-weight: 600; margin-top: 2px;
-	}
-
-	.cr-details {
-		margin: 10px 0 12px; padding: 10px 12px;
-		border: 1px solid var(--border); border-radius: 10px;
-	}
-	.cr-row {
-		display: flex; justify-content: space-between; padding: 3px 0;
-		font-family: 'Space Mono', monospace; font-size: 10px;
-	}
-	.cr-row span:first-child { color: var(--text-muted); }
-	.cr-row span:last-child { color: var(--text); }
-	.cr-row-warn span:last-child { color: #f59e0b; }
-	.cr-row-escrow span:last-child { color: #10b981; font-size: 10px; }
-	.cr-row-highlight { padding: 6px 0; }
-	.cr-ngn { font-family: 'Rajdhani', sans-serif; font-size: 16px; font-weight: 700; color: #10b981; font-variant-numeric: tabular-nums; }
-	.confirm-processing {
-		display: flex; align-items: center; justify-content: center; gap: 10px;
-		padding: 16px; font-family: 'Space Mono', monospace; font-size: 13px; color: var(--text-muted);
-	}
-
-	/* ═══ WITHDRAW STEPS ═══ */
-	.withdraw-steps {
-		display: flex; flex-direction: column; gap: 0; margin: 4px 0 12px;
-	}
-	.withdraw-step {
-		display: flex; align-items: center; gap: 12px; padding: 12px 14px;
-		border-left: 2px solid var(--border); position: relative;
-		transition: all 300ms ease;
-	}
-	.withdraw-step:first-child { border-top-left-radius: 8px; }
-	.withdraw-step:last-child { border-bottom-left-radius: 8px; }
-	.withdraw-step.ws-done { border-left-color: #10b981; }
-	.withdraw-step.ws-active { border-left-color: #00d2ff; background: rgba(0,210,255,0.03); }
-	.ws-indicator {
-		width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
-		display: flex; align-items: center; justify-content: center;
-		border: 2px solid var(--border); background: var(--bg-surface);
-		font-family: 'Space Mono', monospace; font-size: 11px; font-weight: 700;
-		color: var(--text-dim); transition: all 300ms ease;
-	}
-	.ws-indicator-done {
-		border-color: #10b981; background: rgba(16,185,129,0.15); color: #10b981;
-	}
-	.ws-indicator-active {
-		border-color: #00d2ff; background: rgba(0,210,255,0.1); color: #00d2ff;
-	}
-	.ws-spinner {
-		width: 14px; height: 14px; border: 2px solid rgba(0,210,255,0.2);
-		border-top-color: #00d2ff; border-radius: 50%;
-		animation: spin 0.8s linear infinite;
-	}
-	.ws-text { flex: 1; min-width: 0; }
-	.ws-title {
-		display: block; font-family: 'Space Mono', monospace; font-size: 12px;
-		font-weight: 700; color: var(--text-heading);
-	}
-	.ws-pending .ws-title { color: var(--text-dim); }
-	.ws-done .ws-title { color: #10b981; }
-	.ws-active .ws-title { color: #00d2ff; }
-	.ws-desc {
-		display: block; font-family: 'Space Mono', monospace; font-size: 10px;
-		color: var(--text-muted); margin-top: 1px;
-	}
-	.ws-active .ws-desc { color: rgba(0,210,255,0.7); }
-	.ws-check-label {
-		font-family: 'Space Mono', monospace; font-size: 10px; font-weight: 700;
-		color: #10b981; flex-shrink: 0;
-	}
-	.ws-stepper-header { padding: 4px 0 12px; }
-	.ws-swap-summary {
-		display: flex; align-items: center; gap: 8px;
-		background: var(--bg-surface-input); border-radius: 10px; padding: 10px 12px;
-	}
-	.ws-swap-side { flex: 1; min-width: 0; }
-	.ws-swap-side-right { text-align: right; }
-	.ws-swap-amount {
-		display: block; font-family: 'Rajdhani', sans-serif; font-size: 18px; font-weight: 700;
-		color: var(--text-heading); line-height: 1.2; font-variant-numeric: tabular-nums;
-		overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-	}
-	.ws-swap-sym {
-		font-family: 'Space Mono', monospace; font-size: 10px; font-weight: 600;
-		color: var(--text-muted); text-transform: uppercase;
-	}
-	.ws-swap-arrow { flex-shrink: 0; color: var(--text-dim); }
-	.ws-complete {
-		text-align: center; padding: 16px 0 8px;
-	}
-	.ws-complete-icon {
-		width: 56px; height: 56px; border-radius: 50%; margin: 0 auto 12px;
-		display: flex; align-items: center; justify-content: center;
-		background: rgba(16,185,129,0.1); border: 2px solid rgba(16,185,129,0.3);
-		animation: scaleIn 0.3s ease;
-	}
-	@keyframes scaleIn { from { transform: scale(0.5); opacity: 0; } to { transform: scale(1); opacity: 1; } }
-	.ws-complete-text {
-		display: block; font-family: 'Syne', sans-serif; font-size: 18px; font-weight: 700;
-		color: #10b981; margin-bottom: 4px;
-	}
-	.ws-complete-sub {
-		display: block; font-family: 'Space Mono', monospace; font-size: 12px;
-		color: var(--text-muted);
-	}
-
-	/* Mobile */
-	@media (max-width: 640px) {
-		.trade-page { padding: 16px 12px 40px; }
-		.amount-input { font-size: 24px; }
-
-		/* Token selector & bank selector modals: bottom-sheet style */
-		.modal-backdrop { align-items: flex-end; padding: 0; }
-		.token-modal { max-width: 100%; border-radius: 20px 20px 0 0; max-height: 85vh; }
-
-		/* Confirm trade modal: bottom sheet */
-		.modal-backdrop:has(.confirm-modal) { padding: 0; align-items: flex-end; }
-		.confirm-modal {
-			max-width: 100%; width: 100%; height: 80vh;
-			border-radius: 20px 20px 0 0;
-			display: flex; flex-direction: column;
-		}
-		.confirm-body { flex: 1; overflow-y: auto; }
-	}
-</style>

@@ -19,7 +19,15 @@
 	import { SwapRouter } from '$lib/swapRouter.svelte';
 	import { findBestRoute, isCacheLoaded, getWeth } from '$lib/tradeLens';
 	import TokenForm from './lib/TokenForm.svelte';
-	import type { ListingConfig, ListingPairConfig, TokenFormData, PreviewState } from './lib/TokenForm.svelte';
+	import type { ListingConfig, TokenFormData, PreviewState } from './lib/TokenForm.svelte';
+	import {
+		toUrlIntentView,
+		toInitialFormData,
+		toFeeDisplayView,
+		toDepositView,
+		toDeployStepsView,
+		type IntentMode,
+	} from '$lib/structure/views/createView';
 
 	let resetSignal = $state(0);
 	import DisplayPreview from './lib/DisplayPreview.svelte';
@@ -28,14 +36,10 @@
 	import { createMode, type CreateMode } from '$lib/createModeStore';
 
 	// ─── Intent mode state (synced with global store) ───
-	type IntentMode = 'token' | 'launch' | 'both' | 'list';
 	let mode: IntentMode | null = $state(null);
 
-	// Read URL params for pre-filling
-	let modeFromUrl = $derived(page.url.searchParams.get('mode') as IntentMode | null);
-	let launchFromUrl = $derived(page.url.searchParams.get('launch') === 'true');
-	let tokenFromUrl = $derived(page.url.searchParams.get('token') || '');
-	let chainFromUrl = $derived(page.url.searchParams.get('chain') || '');
+	// URL intent — mode/launch/token/chain querystring, grouped into one view.
+	let urlIntent = $derived(toUrlIntentView(page.url.searchParams));
 
 	// Resolve mode from URL params on mount
 	// Also auto-restore last-used mode from localStorage (tk_last_create_mode)
@@ -43,11 +47,12 @@
 	// wizard header to switch back.
 	$effect(() => {
 		if (mode !== null) return;
+		const { modeFromUrl, launchFromUrl, tokenFromUrl } = urlIntent;
 		let resolved: IntentMode | null = null;
 		if (tokenFromUrl) {
 			resolved = 'launch';
 			launchTokenAddress = tokenFromUrl;
-		} else if (modeFromUrl === 'token' || modeFromUrl === 'launch' || modeFromUrl === 'both' || modeFromUrl === 'list') {
+		} else if (modeFromUrl) {
 			resolved = modeFromUrl;
 		} else if (launchFromUrl) {
 			resolved = 'both';
@@ -112,18 +117,6 @@
 		// no-op — mode is managed by selectMode and store
 	}
 
-	let initialFormData = $derived.by(() => {
-		const data: any = {};
-		if (tokenFromUrl) {
-			data.existingTokenAddress = tokenFromUrl;
-		}
-		if (chainFromUrl) {
-			const net = supportedNetworks.find(n => n.symbol === chainFromUrl || String(n.chain_id) === chainFromUrl);
-			if (net) data.chainId = net.chain_id;
-		}
-		return Object.keys(data).length > 0 ? data : undefined;
-	});
-
 	// Derived page title
 	let pageTitle = $derived(
 		mode === 'token' ? $t('ci.titleToken') :
@@ -134,7 +127,7 @@
 	);
 
 	// ─── Launch Existing Token form state ───
-	let launchTokenAddress = $state(tokenFromUrl || '');
+	let launchTokenAddress = $state(urlIntent.tokenFromUrl || '');
 	let launchTokenName = $state('');
 	let launchTokenSymbol = $state('');
 	let launchTokenDecimals = $state(18);
@@ -160,6 +153,9 @@
 
 	let launchNetwork = $derived(supportedNetworks.find((n) => n.chain_id == launchChainId));
 	let launchNetworks = $derived(supportedNetworks.filter((n) => n.launchpad_address && n.launchpad_address !== '0x'));
+
+	// Depends on both urlIntent and supportedNetworks — hoisted below both.
+	let initialFormData = $derived(toInitialFormData(urlIntent, supportedNetworks));
 
 	// Auto-fetch token info when address + network change
 	let launchTokenTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -497,36 +493,22 @@
 
 	let tokenInfo: (TokenFormData & { listing: ListingConfig }) | null = $state(null);
 
-	// Derived: selected payment option
+	// Single-source picks — used in both display + tx-building paths, so kept flat.
 	let selectedPayment = $derived(paymentOptions[selectedPaymentIndex]);
 	let selectedFee = $derived(feeAmounts[selectedPaymentIndex] ?? 0n);
-	let selectedFeeFormatted = $derived(
-		selectedPayment && selectedFee
-			? parseFloat(ethers.formatUnits(selectedFee, selectedPayment.decimals)).toFixed(4)
-			: '0'
-	);
-	let feeUsdAmount = $derived(
-		feeAmounts.length > 0 && paymentOptions.length > 0
-			? parseFloat(ethers.formatUnits(feeAmounts[0], paymentOptions[0]?.decimals ?? 6)).toFixed(4) // USDT is always first
-			: '0'
-	);
 	let isNativePayment = $derived(selectedPayment?.address === ZERO_ADDRESS);
-	let selectedQuote = $derived(paymentQuotes[selectedPaymentIndex] ?? 0n);
-	// USDT direct: no swap, no slippage — show the exact fee.
-	// Non-USDT: add 1% buffer because the swap may cost slightly more
-	// than the quote by the time the tx lands. Excess is refunded.
-	let isDirectUsdt = $derived(
-		!!selectedPayment && !!tokenInfo &&
-		selectedPayment.address.toLowerCase() === tokenInfo.network?.usdt_address?.toLowerCase()
-	);
-	let selectedFeeWithSlippage = $derived(
-		isDirectUsdt ? selectedFee : (selectedQuote > 0n ? selectedQuote * 101n / 100n : selectedFee)
-	);
-	let selectedFeeDisplay = $derived(
-		selectedPayment && selectedFeeWithSlippage > 0n
-			? parseFloat(ethers.formatUnits(selectedFeeWithSlippage, selectedPayment.decimals)).toFixed(6)
-			: selectedFeeFormatted
-	);
+
+	// All compound display-only derivations (USD amount, slippage-padded fee,
+	// formatted strings, isDirectUsdt) live together in one view object.
+	let feeDisplay = $derived(toFeeDisplayView({
+		selectedPayment,
+		selectedFee,
+		selectedPaymentIndex,
+		feeAmounts,
+		paymentOptions,
+		paymentQuotes,
+		usdtAddress: tokenInfo?.network?.usdt_address ?? null,
+	}));
 
 	/// Fetch balances + fee quotes for every payment option.
 	/// Phase 1: instant quotes from TradeLens cache (no RPC) for snappy render.
@@ -743,27 +725,20 @@
 		}
 	}
 
-	// Calculate total native needed (creation fee + liquidity if native pairs)
-	let totalNativeNeeded = $derived.by(() => {
-		let total = isNativePayment ? selectedFee * 108n / 100n : 0n; // fee with 8% buffer
-		if (tokenInfo?.listing?.enabled && tokenInfo.listing.pairs) {
-			for (const pair of tokenInfo.listing.pairs) {
-				if (pair.base === 'native' && Number(pair.amount) > 0) {
-					total += ethers.parseEther(String(pair.amount));
-				}
-			}
-		}
-		return total;
+	// Deposit-modal view: total native needed (fee + native LP legs), required wei,
+	// shortfall vs. the user's balance, and a ready-to-render formatted string.
+	let depositListingPairs = $derived.by(() => {
+		const ti = tokenInfo;
+		return ti && ti.listing?.enabled ? ti.listing.pairs : undefined;
 	});
-
-	// Deposit modal: show the shortfall (need − balance), not the total needed.
-	let depositNeededWei = $derived.by(() => {
-		const dec = selectedPayment?.decimals ?? 18;
-		if (isNativePayment) return totalNativeNeeded;
-		try { return ethers.parseUnits(String(selectedFeeFormatted || '0'), dec); } catch { return 0n; }
-	});
-	let depositShortWei = $derived(depositNeededWei > userBalance ? depositNeededWei - userBalance : 0n);
-	let depositShortFmt = $derived(parseFloat(ethers.formatUnits(depositShortWei, selectedPayment?.decimals ?? 18)).toFixed(4));
+	let deposit = $derived(toDepositView({
+		selectedPayment,
+		selectedFee,
+		selectedFeeFormatted: feeDisplay.selectedFeeFormatted,
+		isNativePayment,
+		userBalance,
+		listingPairs: depositListingPairs,
+	}));
 
 	async function checkBalance(): Promise<boolean> {
 		if (!userAddress || !tokenInfo || !selectedPayment) return false;
@@ -779,7 +754,7 @@
 		}
 
 		// For native payment: check fee + liquidity amounts
-		if (isNativePayment) return userBalance >= totalNativeNeeded;
+		if (isNativePayment) return userBalance >= deposit.totalNativeNeeded;
 		return userBalance >= selectedFee;
 	}
 
@@ -1677,8 +1652,8 @@
 					<div class="deposit-amount">
 						<span class="deposit-amount-label">Send at least</span>
 						<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-						<div class="deposit-amount-copy" onclick={() => { navigator.clipboard.writeText(depositShortFmt); addFeedback({ message: 'Amount copied', type: 'success' }); }}>
-							<span class="deposit-amount-value">{depositShortFmt} {selectedPayment?.symbol}</span>
+						<div class="deposit-amount-copy" onclick={() => { navigator.clipboard.writeText(deposit.depositShortFmt); addFeedback({ message: 'Amount copied', type: 'success' }); }}>
+							<span class="deposit-amount-value">{deposit.depositShortFmt} {selectedPayment?.symbol}</span>
 							<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
 						</div>
 						<span class="deposit-amount-bal">Balance: {parseFloat(ethers.formatUnits(userBalance, selectedPayment?.decimals ?? 18)).toFixed(4)} {selectedPayment?.symbol}</span>
