@@ -8,7 +8,7 @@
 	import type { SupportedNetwork, PaymentOption } from '$lib/structure';
 	import type { WsProviderManager, EventSubscription } from '$lib/wsProvider';
 	import { transferFilter } from '$lib/wsProvider';
-	import { ROUTER_ABI, ERC20_ABI, ZERO_ADDRESS } from '$lib/tokenCrafter';
+	import { ERC20_ABI, ZERO_ADDRESS } from '$lib/tokenCrafter';
 	import { LAUNCH_INSTANCE_ABI, CURVE_TYPES, type CurveType } from '$lib/launchpad';
 	import { TokenFactoryClient } from '$lib/contracts/tokenFactory';
 	import { LaunchpadFactoryClient } from '$lib/contracts/launchpadFactory';
@@ -495,11 +495,6 @@
 	let balanceCheckInterval: ReturnType<typeof setInterval> | null = null;
 	let requiredAmount: bigint = $state(0n);
 
-	// DEX router addresses per chain
-	const DEX_ROUTERS: Record<number, string> = {
-		1: '0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D',   // Uniswap V2
-		56: '0x10ED43C718714eb63d5aA57B78B54704E256024E'     // PancakeSwap V2
-	};
 
 	let tokenInfo: (TokenFormData & { listing: ListingConfig }) | null = $state(null);
 
@@ -1350,120 +1345,9 @@
 	}
 
 	// Base coin helpers moved to ./lib/deploy/helpers.ts — import at top.
-
-	async function addListingLiquidity(tokenAddress: string) {
-		if (!tokenInfo || !signer || !userAddress) return;
-		const listing = tokenInfo.listing;
-		const network = tokenInfo.network;
-		const routerAddress = DEX_ROUTERS[network.chain_id];
-		if (!routerAddress) {
-			addFeedback({ message: 'DEX router not configured for this network. Add liquidity manually from Manage Tokens.', type: 'error' });
-			return;
-		}
-
-		const pairs = listing.pairs?.length > 0 ? listing.pairs : [{ base: listing.baseCoin, amount: listing.baseAmount || listing.listBaseAmount }];
-		const price = Number(listing.pricePerToken);
-
-		if (!price || price <= 0) {
-			addFeedback({ message: 'Invalid token price. Add liquidity manually.', type: 'error' });
-			return;
-		}
-
-		const router = new ethers.Contract(routerAddress, ROUTER_ABI, signer);
-		const tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI, signer);
-		const deadline = Math.floor(Date.now() / 1000) + 1200;
-
-		try {
-			// Step 1: Check balances for all pairs
-			step = 'approving-listing';
-			for (const pair of pairs) {
-				const baseAmt = Number(pair.amount);
-				if (!baseAmt || baseAmt <= 0) continue;
-
-				const baseSymbol = getBaseSymbol(network, pair.base);
-				if (pair.base !== 'native') {
-					const baseAddress = getBaseTokenAddress(network, pair.base);
-					const baseDecimals = getBaseDecimals(network, pair.base);
-					const parsedBaseAmount = ethers.parseUnits(String(baseAmt), baseDecimals);
-
-					// Check and approve base token
-					const baseContract = new ethers.Contract(baseAddress, ERC20_ABI, signer);
-					const balance = await baseContract.balanceOf(userAddress);
-					if (balance < parsedBaseAmount) {
-						addFeedback({ message: `Insufficient ${baseSymbol} balance. Need ${baseAmt} ${baseSymbol}.`, type: 'error' });
-						return;
-					}
-					const allowance = await baseContract.allowance(userAddress, routerAddress);
-					if (allowance < parsedBaseAmount) {
-						addFeedback({ message: `Approving ${baseSymbol} for DEX router...`, type: 'info' });
-						const tx = await baseContract.approve(routerAddress, parsedBaseAmount);
-						await tx.wait();
-					}
-				}
-			}
-
-			// Step 2: Calculate total tokens needed and approve. Use pre-computed
-			// pair.tokenAmount (USD-normalized) — never re-derive from baseAmt/price,
-			// which mixes units across BNB/USDT/USDC and mispriced the pools.
-			let totalTokensNeeded = 0n;
-			for (const pair of pairs) {
-				const baseAmt = Number(pair.amount);
-				if (!baseAmt || baseAmt <= 0) continue;
-				const tokensForPair = Number(pair.tokenAmount ?? 0);
-				if (tokensForPair <= 0) {
-					addFeedback({ message: `Missing token amount for ${pair.base} pair.`, type: 'error' });
-					return;
-				}
-				totalTokensNeeded += ethers.parseUnits(tokensForPair.toFixed(6), tokenInfo.decimals);
-			}
-
-			const tokenAllowance = await tokenContract.allowance(userAddress, routerAddress);
-			if (tokenAllowance < totalTokensNeeded) {
-				addFeedback({ message: `Approving ${tokenInfo.symbol} for DEX router...`, type: 'info' });
-				const tx = await tokenContract.approve(routerAddress, totalTokensNeeded);
-				await tx.wait();
-			}
-
-			// Step 3: Add liquidity for each pair
-			step = 'adding-liquidity';
-			for (const pair of pairs) {
-				const baseAmt = Number(pair.amount);
-				if (!baseAmt || baseAmt <= 0) continue;
-
-				const tokensForPair = Number(pair.tokenAmount ?? 0);
-				if (tokensForPair <= 0) continue;
-				const parsedTokenAmount = ethers.parseUnits(tokensForPair.toFixed(6), tokenInfo.decimals);
-				const baseSymbol = getBaseSymbol(network, pair.base);
-
-				if (pair.base === 'native') {
-					const ethAmount = ethers.parseEther(String(baseAmt));
-					addFeedback({ message: `Adding ${tokenInfo.symbol}/${baseSymbol} liquidity...`, type: 'info' });
-					const tx = await router.addLiquidityETH(
-						tokenAddress, parsedTokenAmount, 0n, 0n, userAddress, deadline,
-						{ value: ethAmount }
-					);
-					await tx.wait();
-				} else {
-					const baseAddress = getBaseTokenAddress(network, pair.base);
-					const baseDecimals = getBaseDecimals(network, pair.base);
-					const parsedBaseAmount = ethers.parseUnits(String(baseAmt), baseDecimals);
-
-					addFeedback({ message: `Adding ${tokenInfo.symbol}/${baseSymbol} liquidity...`, type: 'info' });
-					const tx = await router.addLiquidity(
-						tokenAddress, baseAddress,
-						parsedTokenAmount, parsedBaseAmount, 0n, 0n, userAddress, deadline
-					);
-					await tx.wait();
-				}
-
-				addFeedback({ message: `${tokenInfo.symbol}/${baseSymbol} pair created!`, type: 'success' });
-			}
-
-			addFeedback({ message: `All ${pairs.length} liquidity pair${pairs.length > 1 ? 's' : ''} added!`, type: 'success' });
-		} catch (e: any) {
-			addFeedback({ message: `Liquidity failed: ${friendlyError(e)}. You can add remaining pairs manually.`, type: 'error' });
-		}
-	}
+	// Note: liquidity seeding is handled atomically by PlatformRouter.createAndList.
+	// Users who want to add additional pools post-creation do so from /manage-tokens,
+	// which has its own NewPoolForm + router.addLiquidity flow (see PoolsTab).
 
 	async function confirmAndDeploy() {
 		if (!tokenInfo) return;

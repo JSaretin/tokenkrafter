@@ -12,6 +12,8 @@ const DEX_ROUTER_ABI = [
 	...SHARED_DEX_ROUTER_ABI,
 	'function factory() view returns (address)',
 	'function getAmountsIn(uint256 amountOut, address[] path) view returns (uint256[])',
+	'function addLiquidity(address tokenA, address tokenB, uint256 amountADesired, uint256 amountBDesired, uint256 amountAMin, uint256 amountBMin, address to, uint256 deadline) returns (uint256 amountA, uint256 amountB, uint256 liquidity)',
+	'function addLiquidityETH(address token, uint256 amountTokenDesired, uint256 amountTokenMin, uint256 amountETHMin, address to, uint256 deadline) payable returns (uint256 amountToken, uint256 amountETH, uint256 liquidity)',
 ] as const;
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -212,6 +214,88 @@ export class DexRouterClient {
 		}
 		if (!best) throw new Error('findBestRouteQuote: no candidate path produced a valid quote');
 		return best;
+	}
+
+	// ── Liquidity ───────────────────────────────────────────
+
+	/**
+	 * Add liquidity to a token/token pair. Creates the pair if it doesn't
+	 * exist. Requires prior approval of both `tokenA` and `tokenB` to this
+	 * router for at least the desired amounts. The `amountAMin` / `amountBMin`
+	 * slippage floors protect the caller if the pool ratio moves between
+	 * quote and execution; pass `0n` on pair creation when no ratio exists yet.
+	 */
+	async addLiquidity(params: {
+		tokenA: string;
+		tokenB: string;
+		amountADesired: bigint;
+		amountBDesired: bigint;
+		amountAMin?: bigint;
+		amountBMin?: bigint;
+		to: string;
+		deadline: number;
+		gasBufferBps?: number;
+	}): Promise<TxResult> {
+		const gas = await this.contract.addLiquidity.estimateGas(
+			params.tokenA,
+			params.tokenB,
+			params.amountADesired,
+			params.amountBDesired,
+			params.amountAMin ?? 0n,
+			params.amountBMin ?? 0n,
+			params.to,
+			params.deadline,
+		);
+		const tx = await this.contract.addLiquidity(
+			params.tokenA,
+			params.tokenB,
+			params.amountADesired,
+			params.amountBDesired,
+			params.amountAMin ?? 0n,
+			params.amountBMin ?? 0n,
+			params.to,
+			params.deadline,
+			{ gasLimit: this._withBuffer(gas, params.gasBufferBps) },
+		);
+		const receipt = await tx.wait();
+		return { tx, receipt };
+	}
+
+	/**
+	 * Add liquidity to a token/native pair. The native amount is `msg.value`;
+	 * pass it via `opts.value`. Requires prior approval of `token` to this
+	 * router for at least `amountTokenDesired`.
+	 */
+	async addLiquidityETH(params: {
+		token: string;
+		amountTokenDesired: bigint;
+		amountETH: bigint;
+		amountTokenMin?: bigint;
+		amountETHMin?: bigint;
+		to: string;
+		deadline: number;
+		gasBufferBps?: number;
+	}): Promise<TxResult> {
+		const gas = await this.contract.addLiquidityETH.estimateGas(
+			params.token,
+			params.amountTokenDesired,
+			params.amountTokenMin ?? 0n,
+			params.amountETHMin ?? 0n,
+			params.to,
+			params.deadline,
+			{ value: params.amountETH },
+		);
+		const tx = await this.contract.addLiquidityETH(
+			params.token,
+			params.amountTokenDesired,
+			params.amountTokenMin ?? 0n,
+			params.amountETHMin ?? 0n,
+			params.to,
+			params.deadline,
+			{ value: params.amountETH, gasLimit: this._withBuffer(gas, params.gasBufferBps) },
+		);
+		const receipt = await tx.wait();
+		return { tx, receipt };
 	}
 
 	// ── Internals ──────────────────────────────────────────
