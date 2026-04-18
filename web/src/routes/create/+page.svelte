@@ -16,6 +16,7 @@
 	import { apiFetch } from '$lib/apiFetch';
 	import { friendlyError } from '$lib/errorDecoder';
 	import QrCode from '$lib/QrCode.svelte';
+	import FixedOverlay from '$lib/FixedOverlay.svelte';
 	import { TOKEN_READ_ABI, ERC20_DECIMALS_ABI, ROUTER_ABI_LITE } from '$lib/commonABIs';
 	import * as deployHelpers from './lib/deploy/helpers';
 	import { getBaseTokenAddress, getBaseDecimals, getBaseSymbol, feeCacheKey } from './lib/deploy/helpers';
@@ -1557,14 +1558,10 @@
 
 <!-- Review Modal -->
 
-{#if showPreview && tokenInfo}
-	<div
-		class="fixed inset-0 z-[80] flex items-end sm:items-center justify-center sm:p-4 bg-black/70 backdrop-blur-[6px]"
-		onclick={closePreview}
-	>
+<FixedOverlay bind:show={showPreview} onclose={closePreview}>
+	{#if tokenInfo}
 		<div
 			class="review-modal w-full sm:max-w-md max-h-[100dvh] sm:max-h-[90vh] overflow-y-auto bg-background border border-line-input rounded-t-[20px] sm:rounded-[20px] p-4 sm:p-6 pb-[calc(16px+env(safe-area-inset-bottom,0px))] sm:pb-6 min-h-[60vh] sm:min-h-0 [scrollbar-width:none] [-ms-overflow-style:none]"
-			onclick={(e) => e.stopPropagation()}
 		>
 			<!-- Mobile drag indicator -->
 			<div class="sm:hidden flex justify-center pt-2 pb-1 cursor-pointer" onclick={closePreview}>
@@ -1636,7 +1633,7 @@
 					<div class="flex flex-col gap-0">
 						<div class="flex justify-between items-center py-1.5 font-mono text-[11px]">
 							<span class="text-dim">Creation fee (USDT)</span>
-							<span class="text-foreground font-semibold font-numeric text-[13px] text-right">{feeLoading ? '...' : `$${feeUsdAmount}`}</span>
+							<span class="text-foreground font-semibold font-numeric text-[13px] text-right">{feeLoading ? '...' : `$${feeDisplay.feeUsdAmount}`}</span>
 						</div>
 
 						{#if tokenInfo.listing?.enabled}
@@ -1662,16 +1659,17 @@
 							<span class="text-[#00d2ff] text-[15px] font-bold font-numeric text-right">
 								{#if feeLoading}...
 								{:else}
+									{@const net = tokenInfo.network}
 									{@const payAddr = selectedPayment?.address?.toLowerCase() || ''}
 									{@const listPairs = tokenInfo.listing?.enabled ? (tokenInfo.listing.pairs || []).filter((p) => Number(p.amount) > 0) : []}
 									{@const mergedLpAmount = listPairs
-										.filter((p) => getBaseTokenAddress(tokenInfo.network, p.base).toLowerCase() === payAddr)
+										.filter((p) => getBaseTokenAddress(net, p.base).toLowerCase() === payAddr)
 										.reduce((sum, p) => sum + Number(p.amount), 0)}
 									{@const separatePairs = listPairs
-										.filter((p) => getBaseTokenAddress(tokenInfo.network, p.base).toLowerCase() !== payAddr)}
+										.filter((p) => getBaseTokenAddress(net, p.base).toLowerCase() !== payAddr)}
 									{@const feeNum = parseFloat(feeDisplay.selectedFeeFormatted || '0')}
 									{@const total = feeNum + mergedLpAmount}
-									{parseFloat(total.toFixed(6))} {selectedPayment?.symbol}{#each separatePairs as pair}{@const sym = getBaseSymbol(tokenInfo.network, pair.base)} + {parseFloat(Number(pair.amount).toFixed(6))} {sym}{/each}
+									{parseFloat(total.toFixed(6))} {selectedPayment?.symbol}{#each separatePairs as pair}{@const sym = getBaseSymbol(net, pair.base)} + {parseFloat(Number(pair.amount).toFixed(6))} {sym}{/each}
 								{/if}
 							</span>
 						</div>
@@ -1729,8 +1727,8 @@
 				</button>
 			{/if}
 		</div>
-	</div>
-{/if}
+	{/if}
+</FixedOverlay>
 
 <!-- Page -->
 <div class="page-container max-w-6xl mx-auto px-3 sm:px-6 py-6 sm:py-12">
