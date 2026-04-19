@@ -65,9 +65,10 @@ import type {
 // ════════════════════════════════════════════════════════════════════════════
 
 const LAUNCH_INSTANCE_CLIENT_ABI = [
-	// ── Writes (buy variants use overloads — include both) ────
+	// ── Writes (buy variants use overloads — include all three) ────
 	'function buy(address[] path, uint256 amountIn, uint256 minUsdtOut, uint256 minTokensOut) external payable',
 	'function buy(address[] path, uint256 amountIn, uint256 minUsdtOut, uint256 minTokensOut, address ref) external payable',
+	'function buy(address[] path, uint256 amountIn, uint256 minUsdtOut, uint256 minTokensOut, address ref, uint256 deadline) external payable',
 	'function depositTokens(uint256 amount) external',
 	'function activate() external',
 	'function withdrawPendingTokens() external',
@@ -221,11 +222,21 @@ export interface PausedChangedResult extends WriteResult {
 export interface BuyOpts {
 	value?: bigint;
 	gasLimit?: bigint;
+	/**
+	 * Unix-seconds deadline forwarded to the DEX swap inside the buy. When
+	 * omitted, the contract uses its default `block.timestamp + 300` (5 min).
+	 * Set this when block production is congested or when you want the swap
+	 * deadline to align with a wallet retry window.
+	 */
+	deadline?: bigint;
 }
 
 // Explicit signatures for the overloaded `buy` — ethers v6 requires these.
 const BUY_4ARG_SIG = 'buy(address[],uint256,uint256,uint256)';
 const BUY_5ARG_SIG = 'buy(address[],uint256,uint256,uint256,address)';
+const BUY_6ARG_SIG = 'buy(address[],uint256,uint256,uint256,address,uint256)';
+
+const ZERO_ADDR = '0x0000000000000000000000000000000000000000';
 
 // ════════════════════════════════════════════════════════════════════════════
 //  Client
@@ -492,8 +503,10 @@ export class LaunchInstanceClient {
 	// ════════════════════════════════════════════════════════
 
 	/**
-	 * Buy without a referrer. Uses the 4-arg `buy(address[],uint256,uint256,uint256)`
-	 * overload via explicit signature syntax (ethers can't resolve overloads by arity alone).
+	 * Buy without a referrer. Routes to the 4-arg `buy(address[],uint256,uint256,uint256)`
+	 * overload by default (contract picks `block.timestamp + 300` for the
+	 * inner DEX swap). When `opts.deadline` is supplied, routes to the 6-arg
+	 * `buy(...,address ref,uint256 deadline)` overload with `ref = address(0)`.
 	 *
 	 * Native payments: set `opts.value = amountIn` — the contract checks
 	 * `msg.value === amountIn` and reverts otherwise. ERC20 payments must leave
@@ -506,18 +519,25 @@ export class LaunchInstanceClient {
 		minTokensOut: bigint,
 		opts: BuyOpts = {},
 	): Promise<BuyResult> {
-		const fn = this.contract.getFunction(BUY_4ARG_SIG);
 		const overrides: ethers.Overrides = {};
 		if (opts.value !== undefined) overrides.value = opts.value;
 		if (opts.gasLimit !== undefined) overrides.gasLimit = opts.gasLimit;
-		const tx = (await fn(path, amountIn, minUsdtOut, minTokensOut, overrides)) as ethers.TransactionResponse;
+		let tx: ethers.TransactionResponse;
+		if (opts.deadline !== undefined) {
+			const fn = this.contract.getFunction(BUY_6ARG_SIG);
+			tx = (await fn(path, amountIn, minUsdtOut, minTokensOut, ZERO_ADDR, opts.deadline, overrides)) as ethers.TransactionResponse;
+		} else {
+			const fn = this.contract.getFunction(BUY_4ARG_SIG);
+			tx = (await fn(path, amountIn, minUsdtOut, minTokensOut, overrides)) as ethers.TransactionResponse;
+		}
 		return this._parseBuyReceipt(tx);
 	}
 
 	/**
-	 * Buy with an attributed referrer. Uses the 5-arg
-	 * `buy(address[],uint256,uint256,uint256,address)` overload. Same
-	 * native-vs-ERC20 `value` rules as {@link buy}.
+	 * Buy with an attributed referrer. Routes to the 5-arg
+	 * `buy(...,address ref)` overload by default; when `opts.deadline` is
+	 * supplied, routes to the 6-arg `buy(...,address ref,uint256 deadline)`
+	 * overload. Same native-vs-ERC20 `value` rules as {@link buy}.
 	 */
 	async buyWithRef(
 		path: string[],
@@ -527,11 +547,17 @@ export class LaunchInstanceClient {
 		ref: string,
 		opts: BuyOpts = {},
 	): Promise<BuyResult> {
-		const fn = this.contract.getFunction(BUY_5ARG_SIG);
 		const overrides: ethers.Overrides = {};
 		if (opts.value !== undefined) overrides.value = opts.value;
 		if (opts.gasLimit !== undefined) overrides.gasLimit = opts.gasLimit;
-		const tx = (await fn(path, amountIn, minUsdtOut, minTokensOut, ref, overrides)) as ethers.TransactionResponse;
+		let tx: ethers.TransactionResponse;
+		if (opts.deadline !== undefined) {
+			const fn = this.contract.getFunction(BUY_6ARG_SIG);
+			tx = (await fn(path, amountIn, minUsdtOut, minTokensOut, ref, opts.deadline, overrides)) as ethers.TransactionResponse;
+		} else {
+			const fn = this.contract.getFunction(BUY_5ARG_SIG);
+			tx = (await fn(path, amountIn, minUsdtOut, minTokensOut, ref, overrides)) as ethers.TransactionResponse;
+		}
 		return this._parseBuyReceipt(tx);
 	}
 

@@ -577,23 +577,23 @@ contract LaunchInstance is ReentrancyGuard {
     /// @param amountIn     Amount of path[0] to spend (must equal msg.value for native)
     /// @param minUsdtOut   Minimum USDT to receive from the swap (slippage protection)
     /// @param minTokensOut Minimum launch tokens to receive from the curve
-    /// @notice Buy with no referrer. Delegates to {buy} with `ref = address(0)`.
+    /// @notice Buy with no referrer and the default 5-minute swap deadline.
+    ///         Convenience entry-point — internally forwards to the
+    ///         deadline-aware variant with `ref = address(0)` and
+    ///         `deadline = block.timestamp + 300`.
     function buy(
         address[] calldata path,
         uint256 amountIn,
         uint256 minUsdtOut,
         uint256 minTokensOut
     ) external payable {
-        // Forward to the referrer-aware variant. Solidity doesn't let us
-        // call the overload on `this` without re-entering nonReentrant,
-        // so we duplicate the entrypoint via a thin wrapper that delegates
-        // by setting ref=address(0) inline. Cheaper than an external self-call.
-        _buyWithRef(path, amountIn, minUsdtOut, minTokensOut, address(0));
+        _buyWithRef(path, amountIn, minUsdtOut, minTokensOut, address(0), block.timestamp + 300);
     }
 
-    /// @notice Buy with an attributed referrer. The referrer earns a share of
-    ///         the buy fee via the platform Affiliate contract (sticky after
-    ///         first non-zero `ref` ever supplied for `msg.sender`).
+    /// @notice Buy with an attributed referrer and the default 5-minute swap
+    ///         deadline. The referrer earns a share of the buy fee via the
+    ///         platform Affiliate contract (sticky after first non-zero `ref`
+    ///         ever supplied for `msg.sender`).
     ///
     ///         NOTE: Stickiness is enforced inside the Affiliate contract,
     ///         not here. Each buy passes the caller-supplied `ref` straight
@@ -609,7 +609,24 @@ contract LaunchInstance is ReentrancyGuard {
         uint256 minTokensOut,
         address ref
     ) external payable {
-        _buyWithRef(path, amountIn, minUsdtOut, minTokensOut, ref);
+        _buyWithRef(path, amountIn, minUsdtOut, minTokensOut, ref, block.timestamp + 300);
+    }
+
+    /// @notice Buy with an attributed referrer and an explicit swap deadline.
+    ///         Use this variant when block production is congested and the
+    ///         default 300s window is too tight, or when the frontend wants
+    ///         to align the deadline with its own retry strategy. Pass
+    ///         `ref = address(0)` for an attribution-less buy with a custom
+    ///         deadline — no separate no-ref overload is needed.
+    function buy(
+        address[] calldata path,
+        uint256 amountIn,
+        uint256 minUsdtOut,
+        uint256 minTokensOut,
+        address ref,
+        uint256 deadline
+    ) external payable {
+        _buyWithRef(path, amountIn, minUsdtOut, minTokensOut, ref, deadline);
     }
 
     function _buyWithRef(
@@ -617,7 +634,8 @@ contract LaunchInstance is ReentrancyGuard {
         uint256 amountIn,
         uint256 minUsdtOut,
         uint256 minTokensOut,
-        address ref
+        address ref,
+        uint256 deadline
     ) internal nonReentrant {
         if (paused || ILaunchpadFactory(factory).globalPause()) revert LaunchPaused();
         _autoResolve();
@@ -652,7 +670,7 @@ contract LaunchInstance is ReentrancyGuard {
                 minUsdtOut,
                 fullPath,
                 address(this),
-                block.timestamp + 300
+                deadline
             );
             usdtAmount = IERC20(address(usdt)).balanceOf(address(this)) - usdtBefore;
         } else {
@@ -671,7 +689,7 @@ contract LaunchInstance is ReentrancyGuard {
                     minUsdtOut,
                     path,
                     address(this),
-                    block.timestamp + 300
+                    deadline
                 );
                 usdtAmount = IERC20(address(usdt)).balanceOf(address(this)) - usdtBefore;
             }
