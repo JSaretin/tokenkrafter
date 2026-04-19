@@ -23,7 +23,7 @@
 <div class="py-2">
 	<div class="text-center mb-5">
 		<h2 class="syne text-lg font-extrabold text-(--text-heading) m-0">{title}</h2>
-		<p class="text-xs2 text-(--text-dim) font-mono mt-1 mb-0">{subtitle}</p>
+		<p class="text-xs2 text-(--text-dim) syne mt-1 mb-0">{subtitle}</p>
 	</div>
 
 	<div class="flex flex-col gap-0 px-2">
@@ -52,7 +52,7 @@
 				</div>
 				<div class="flex-1 flex items-baseline gap-1.5">
 					<span
-						class={"font-mono text-xs2 "
+						class={"syne text-xs2 font-semibold "
 							+ (status === 'done' ? "text-emerald-500 "
 							: status === 'active' ? "text-cyan-400 "
 							: status === 'error' ? "text-red-500 "
@@ -60,7 +60,7 @@
 							: "text-(--text-dim) ")}
 					>{s.label}</span>
 					{#if status === 'skipped'}
-						<span class="text-4xs text-(--text-dim) font-mono">Skipped</span>
+						<span class="text-4xs text-(--text-dim) syne uppercase tracking-[0.06em]">Skipped</span>
 					{/if}
 				</div>
 			</div>

@@ -49,7 +49,7 @@
 
 <FixedOverlay bind:show onclose={handleClose}>
 	<div
-		class="w-full max-w-[420px] max-h-[80vh] bg-(--bg) border border-(--border) rounded-[20px] overflow-hidden flex flex-col max-sm:max-w-full max-sm:rounded-t-[20px] max-sm:rounded-b-none max-sm:max-h-[85vh]"
+		class="w-full max-w-[420px] max-h-[80vh] bg-(--bg) border border-(--border) rounded-[20px] overflow-hidden flex flex-col max-sm:max-w-full max-sm:rounded-t-[20px] max-sm:rounded-b-none max-sm:h-[80vh] max-sm:max-h-[80vh]"
 	>
 		<div class="flex justify-between items-center py-4 px-5 border-b border-(--border)">
 			<h3 class="syne text-base font-bold text-(--text-heading) m-0">Select payment</h3>
@@ -70,12 +70,12 @@
 			onkeydown={(e) => { if (e.key === 'Enter') handleImport(); }}
 		/>
 		{#if importError}
-			<p class="text-xs2 text-red-400 font-mono px-4 pb-2 m-0">{importError}</p>
+			<p class="text-xs2 text-red-400 syne px-4 pb-2 m-0">{importError}</p>
 		{/if}
 		{#if importAddr.trim() && ethers.isAddress(importAddr.trim())}
 			<div class="px-4 pb-2.5">
 				<button
-					class="w-full p-2 rounded-[10px] border border-purple-400/20 bg-purple-400/10 text-purple-300 cursor-pointer font-mono text-xs2 font-bold transition-all hover:bg-purple-400/20 disabled:opacity-50 disabled:cursor-not-allowed"
+					class="w-full p-2 rounded-[10px] border border-purple-400/20 bg-purple-400/10 text-purple-300 cursor-pointer syne text-xs2 font-bold transition-all hover:bg-purple-400/20 disabled:opacity-50 disabled:cursor-not-allowed"
 					disabled={importBusy}
 					onclick={handleImport}
 				>
@@ -86,7 +86,7 @@
 
 		<div class="overflow-y-auto px-2 pb-2 flex-1">
 			{#if loading}
-				<div class="flex items-center justify-center gap-2 p-4 text-(--text-muted) font-mono text-xs2">
+				<div class="flex items-center justify-center gap-2 p-4 text-(--text-muted) syne text-xs2">
 					<div class="w-4 h-4 border-2 border-(--border) border-t-cyan-400 rounded-full animate-spin"></div>
 					<span>Loading quotes...</span>
 				</div>
@@ -106,12 +106,12 @@
 						</div>
 					{/if}
 					<div class="flex-1 min-w-0 flex flex-col">
-						<span class="block font-mono text-xs3 font-bold text-(--text-heading)">{opt.symbol}</span>
-						<span class="block font-mono text-3xs text-(--text-muted) whitespace-nowrap overflow-hidden text-ellipsis">{opt.name}</span>
+						<span class="block syne text-xs3 font-bold text-(--text-heading)">{opt.symbol}</span>
+						<span class="block syne text-3xs text-(--text-muted) whitespace-nowrap overflow-hidden text-ellipsis">{opt.name}</span>
 					</div>
 					<div class="text-right shrink-0">
 						<span class="block font-['Rajdhani',sans-serif] text-sm font-semibold text-(--text-heading) tabular-nums">{opt.quoteDisplay ?? '—'}</span>
-						<span class="block font-mono text-3xs text-(--text-dim)">{opt.balanceDisplay ?? '—'}</span>
+						<span class="block font-['Rajdhani',sans-serif] text-3xs text-(--text-dim) tabular-nums">{opt.balanceDisplay ?? '—'}</span>
 					</div>
 					{#if active}
 						<span class="text-emerald-500 text-sm shrink-0 ml-1">&#10003;</span>

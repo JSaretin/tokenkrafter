@@ -116,7 +116,7 @@
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div class="fixed inset-0 z-[100] bg-black/70 backdrop-blur-[4px] flex items-start justify-center py-[60px] px-4 max-[639px]:items-end max-[639px]:p-0" onclick={close} role="dialog" aria-modal="true">
-		<div class="w-full max-w-[420px] max-h-[70vh] bg-background border border-line rounded-[20px] overflow-hidden flex flex-col max-[639px]:max-w-full max-[639px]:rounded-t-[20px] max-[639px]:rounded-b-none max-[639px]:max-h-[85vh]" onclick={(e) => e.stopPropagation()}>
+		<div class="w-full max-w-[420px] max-h-[70vh] bg-background border border-line rounded-[20px] overflow-hidden flex flex-col max-[639px]:max-w-full max-[639px]:rounded-t-[20px] max-[639px]:rounded-b-none max-[639px]:h-[80vh] max-[639px]:max-h-[80vh]" onclick={(e) => e.stopPropagation()}>
 			<div class="flex justify-between items-center py-4 px-5 border-b border-line">
 				<h3 class="font-display text-base font-bold text-heading m-0">{title}</h3>
 				<button class="bg-none border-none text-muted cursor-pointer p-1 rounded-lg transition-all hover:text-foreground hover:bg-surface-hover" onclick={close}>
@@ -140,7 +140,7 @@
 								<div class="w-4 h-4 border-2 border-[rgba(139,92,246,0.2)] border-t-[#a78bfa] rounded-full animate-spin"></div>
 							</div>
 							<div class="flex-1 min-w-0">
-								<span class="block font-mono text-[13px] font-bold text-heading">Loading...</span>
+								<span class="block font-display text-[13px] font-bold text-heading">Loading...</span>
 								<span class="block font-mono text-[10px] text-dim shrink-0">{search.trim().slice(0, 6)}...{search.trim().slice(-4)}</span>
 							</div>
 						</div>
@@ -152,16 +152,16 @@
 								<div class="w-9 h-9 rounded-full shrink-0 flex items-center justify-center bg-[rgba(139,92,246,0.1)] text-[#a78bfa] border border-[rgba(139,92,246,0.2)] font-display text-sm font-bold">{pastedMeta.symbol.charAt(0)}</div>
 							{/if}
 							<div class="flex-1 min-w-0">
-								<span class="block font-mono text-[13px] font-bold text-heading">{pastedMeta.symbol}</span>
-								<span class="block font-mono text-[10px] text-muted whitespace-nowrap overflow-hidden text-ellipsis">{pastedMeta.name}</span>
+								<span class="block font-display text-[13px] font-bold text-heading">{pastedMeta.symbol}</span>
+								<span class="block font-display text-[10px] text-muted whitespace-nowrap overflow-hidden text-ellipsis">{pastedMeta.name}</span>
 							</div>
-							<span class="font-mono text-[10px] font-bold text-[#a78bfa] bg-[rgba(139,92,246,0.1)] border border-[rgba(139,92,246,0.2)] py-[3px] px-2 rounded-md shrink-0">Import</span>
+							<span class="font-display text-[10px] font-bold text-[#a78bfa] bg-[rgba(139,92,246,0.1)] border border-[rgba(139,92,246,0.2)] py-[3px] px-2 rounded-md shrink-0">Import</span>
 						</button>
 					{:else}
 						<button class="flex items-center gap-[10px] w-full py-[10px] px-3 rounded-xl border-none bg-transparent cursor-pointer transition-all text-left hover:bg-surface-hover" onclick={importPasted}>
 							<div class="w-9 h-9 rounded-full shrink-0 flex items-center justify-center bg-[rgba(139,92,246,0.1)] text-[#a78bfa] border border-[rgba(139,92,246,0.2)] font-display text-sm font-bold">?</div>
 							<div class="flex-1 min-w-0">
-								<span class="block font-mono text-[13px] font-bold text-heading">Import Token</span>
+								<span class="block font-display text-[13px] font-bold text-heading">Import Token</span>
 								<span class="block font-mono text-[10px] text-dim shrink-0">{search.trim().slice(0, 6)}...{search.trim().slice(-4)}</span>
 							</div>
 						</button>
@@ -178,11 +178,11 @@
 							</div>
 						{/if}
 						<div class="flex-1 min-w-0">
-							<span class="block font-mono text-[13px] font-bold text-heading">{token.symbol}</span>
-							<span class="block font-mono text-[10px] text-muted whitespace-nowrap overflow-hidden text-ellipsis">{token.name}</span>
+							<span class="block font-display text-[13px] font-bold text-heading">{token.symbol}</span>
+							<span class="block font-display text-[10px] text-muted whitespace-nowrap overflow-hidden text-ellipsis">{token.name}</span>
 						</div>
 						{#if token.balance !== undefined && token.balance > 0n}
-							<span class="font-mono text-[11px] font-bold text-foreground shrink-0">{formatBalance(token.balance, token.decimals)}</span>
+							<span class="font-['Rajdhani',sans-serif] text-[11px] font-bold text-foreground shrink-0 tabular-nums">{formatBalance(token.balance, token.decimals)}</span>
 						{/if}
 						{#if token.address !== ethers.ZeroAddress}
 							<span class="font-mono text-[10px] text-dim shrink-0">{token.address.slice(0, 6)}...{token.address.slice(-4)}</span>
@@ -191,7 +191,7 @@
 				{/each}
 
 				{#if filtered.length === 0 && !ethers.isAddress(search.trim())}
-					<p class="text-center p-5 text-muted font-mono text-xs">No tokens found</p>
+					<p class="text-center p-5 text-muted font-display text-xs">No tokens found</p>
 				{/if}
 			</div>
 		</div>
