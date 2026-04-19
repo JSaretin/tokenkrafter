@@ -111,17 +111,18 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
     address public affiliate;
     event AffiliateUpdated(address indexed previous, address indexed current);
 
-    /// @notice Owner-only. Points at the (new) Affiliate contract and grants
-    ///         it max USDT-token allowance for pull-on-report. Revokes any
-    ///         prior approval first to dodge the Ethereum USDT zero-then-set
-    ///         quirk via SafeERC20.forceApprove.
+    /// @notice Owner-only. Points at the (new) Affiliate contract. Approvals
+    ///         are now granted per-call inside `_confirm` for exactly the fee
+    ///         amount, so this function only needs to revoke any leftover
+    ///         allowance on the outgoing affiliate.
     function setAffiliate(address aff) external onlyOwner {
         address prev = affiliate;
         if (prev != address(0)) {
-            // Revoke approval on every token we've ever taken fees in.
-            // Caller can specify additional tokens later via setAffiliateTokens
-            // if the platform expands beyond USDT — for now, a no-op since
-            // approvals are managed lazily on first report below.
+            // Defense-in-depth: a rotated/compromised affiliate must not keep
+            // any standing USDT allowance. Per-call approvals in `_confirm`
+            // already minimise the window, but stale approvals from older
+            // contract versions (or future fee tokens) get cleared here.
+            usdt.forceApprove(prev, 0);
         }
         affiliate = aff;
         emit AffiliateUpdated(prev, aff);
@@ -139,7 +140,7 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
     uint256 public totalEscrow;                             // total user funds held
     mapping(address => uint256) public platformEarnings;    // per token
 
-    uint256 public constant MAX_FEE_BPS = 1000; // max 10%
+    uint256 public constant MAX_FEE_BPS = 500; // max 5% — hard ceiling so a compromised owner can't suddenly charge 10%
     uint256 public constant MIN_TIMEOUT = 300;  // min 5 minutes
     uint256 public constant MAX_TIMEOUT = 86400; // max 24 hours
     uint256 public maxSlippageBps = 500;         // max 5% slippage (configurable)
@@ -173,6 +174,8 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
     event MaxSlippageUpdated(uint256 oldBps, uint256 newBps);
     event MinWithdrawUpdated(uint256 oldMin, uint256 newMin);
     event AffiliatePaid(uint256 indexed id, address indexed referrer, uint256 amount);
+    event AffiliateEnabledUpdated(bool enabled);
+    event AffiliateShareUpdated(uint256 oldBps, uint256 newBps);
 
     // ── Errors ──────────────────────────────────────────────────────
     error NotAdmin();
@@ -192,6 +195,9 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
     error CannotRemoveSelf();
     error SlippageTooHigh();
     error SlippageConfigTooHigh();
+    error SlippageRequired();
+    error SlippageQuoteUnavailable();
+    error AffiliateOverpull();
     error EmptyPending();
     error TooManyAdmins();
 
@@ -402,8 +408,7 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
         id = _createWithdrawRequest(msg.sender, address(usdt), amount, bankRef, referrer);
     }
 
-    /// @notice Swap any token → USDT and deposit for fiat withdrawal
-    /// @notice Swap token → USDT and deposit for fiat withdrawal with caller-specified path
+    /// @notice Swap token → USDT and deposit for fiat withdrawal (default 5min deadline)
     function depositAndSwap(
         address[] calldata path,
         uint256 amountIn,
@@ -412,6 +417,31 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
         bytes32 bankRef,
         address referrer
     ) external nonReentrant whenNotPaused returns (uint256 id) {
+        return _depositAndSwap(path, amountIn, minUsdtOut, hasTax, bankRef, referrer, block.timestamp + 300);
+    }
+
+    /// @notice Swap token → USDT and deposit for fiat withdrawal with explicit deadline
+    function depositAndSwap(
+        address[] calldata path,
+        uint256 amountIn,
+        uint256 minUsdtOut,
+        bool hasTax,
+        bytes32 bankRef,
+        address referrer,
+        uint256 deadline
+    ) external nonReentrant whenNotPaused returns (uint256 id) {
+        return _depositAndSwap(path, amountIn, minUsdtOut, hasTax, bankRef, referrer, deadline);
+    }
+
+    function _depositAndSwap(
+        address[] calldata path,
+        uint256 amountIn,
+        uint256 minUsdtOut,
+        bool hasTax,
+        bytes32 bankRef,
+        address referrer,
+        uint256 deadline
+    ) internal returns (uint256 id) {
         if (amountIn == 0) revert ZeroAmount();
         require(path.length >= 2 && path[path.length - 1] == address(usdt), "Path must end with USDT");
 
@@ -422,11 +452,11 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
         uint256 balBefore = usdt.balanceOf(address(this));
         if (hasTax) {
             dexRouter.swapExactTokensForTokensSupportingFeeOnTransferTokens(
-                amountIn, minUsdtOut, path, address(this), block.timestamp + 300
+                amountIn, minUsdtOut, path, address(this), deadline
             );
         } else {
             dexRouter.swapExactTokensForTokens(
-                amountIn, minUsdtOut, path, address(this), block.timestamp + 300
+                amountIn, minUsdtOut, path, address(this), deadline
             );
         }
         uint256 usdtReceived = usdt.balanceOf(address(this)) - balBefore;
@@ -435,13 +465,34 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
         id = _createWithdrawRequest(msg.sender, address(usdt), usdtReceived, bankRef, referrer);
     }
 
-    /// @notice Swap ETH → USDT and deposit for fiat withdrawal with caller-specified path
+    /// @notice Swap ETH → USDT and deposit for fiat withdrawal (default 5min deadline)
     function depositETH(
         address[] calldata path,
         uint256 minUsdtOut,
         bytes32 bankRef,
         address referrer
     ) external payable nonReentrant whenNotPaused returns (uint256 id) {
+        return _depositETH(path, minUsdtOut, bankRef, referrer, block.timestamp + 300);
+    }
+
+    /// @notice Swap ETH → USDT and deposit for fiat withdrawal with explicit deadline
+    function depositETH(
+        address[] calldata path,
+        uint256 minUsdtOut,
+        bytes32 bankRef,
+        address referrer,
+        uint256 deadline
+    ) external payable nonReentrant whenNotPaused returns (uint256 id) {
+        return _depositETH(path, minUsdtOut, bankRef, referrer, deadline);
+    }
+
+    function _depositETH(
+        address[] calldata path,
+        uint256 minUsdtOut,
+        bytes32 bankRef,
+        address referrer,
+        uint256 deadline
+    ) internal returns (uint256 id) {
         if (msg.value == 0) revert ZeroAmount();
         require(path.length >= 2 && path[0] == weth && path[path.length - 1] == address(usdt), "Path must be WETH -> ... -> USDT");
 
@@ -449,7 +500,7 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
 
         uint256 balBefore = usdt.balanceOf(address(this));
         dexRouter.swapExactETHForTokensSupportingFeeOnTransferTokens{value: msg.value}(
-            minUsdtOut, path, address(this), block.timestamp + 300
+            minUsdtOut, path, address(this), deadline
         );
         uint256 usdtReceived = usdt.balanceOf(address(this)) - balBefore;
         if (usdtReceived < minUsdtOut) revert SlippageTooHigh();
@@ -489,19 +540,33 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
         uint256 platformFee = req.fee;
         if (affiliate != address(0)) {
             if (req.token == address(usdt) && req.fee > 0) {
-                if (usdt.allowance(address(this), affiliate) < req.fee) {
-                    usdt.forceApprove(affiliate, type(uint256).max);
-                }
+                // Approve exactly req.fee — never grant a standing allowance
+                // that a compromised affiliate could drain. forceApprove
+                // handles the USDT zero-then-set quirk; we set 0 again at
+                // the end so leftover allowance can never linger.
+                usdt.forceApprove(affiliate, req.fee);
                 uint256 balBefore = usdt.balanceOf(address(this));
                 try IAffiliateReporter(affiliate).report(req.user, req.referrer, req.fee) {
                     uint256 pulled = balBefore - usdt.balanceOf(address(this));
-                    if (pulled <= req.fee) platformFee = req.fee - pulled;
+                    // Affiliate must not pull more than the fee it was told
+                    // about. Anything above that is escrow theft, so we
+                    // revert the whole confirm rather than silently absorbing
+                    // the loss. The revert rolls back the forceApprove above
+                    // too, so no stale allowance leaks; user can re-confirm
+                    // after the owner rotates the affiliate.
+                    if (pulled > req.fee) revert AffiliateOverpull();
+                    platformFee = req.fee - pulled;
                 } catch {}
+                usdt.forceApprove(affiliate, 0);
             }
         } else if (affiliateEnabled && req.referrer != address(0) && req.referrer != req.user) {
             uint256 referralCut = (req.fee * affiliateShareBps) / 10000;
             if (referralCut > 0) {
                 platformFee -= referralCut;
+                // CEI ok: status was set to Confirmed above, totalEscrow was
+                // already decremented, _removePendingId already swap-popped.
+                // Reentry into _confirm via this transfer hits NotPending.
+                // nonReentrant on the entry-point is the outer guard.
                 IERC20(req.token).safeTransfer(req.referrer, referralCut);
                 emit AffiliatePaid(id, req.referrer, referralCut);
             }
@@ -519,7 +584,10 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
             uint256 id = ids[i];
             if (id >= withdrawals.length) continue;
             if (withdrawals[id].status != WithdrawStatus.Pending) continue;
-            if (block.timestamp >= withdrawals[id].createdAt + payoutTimeout) continue;
+            // Use the per-request snapshot, not the live config. payoutTimeout
+            // is mutable; expiresAt is locked in at deposit time. Otherwise a
+            // shortened payoutTimeout would silently skip still-valid ids.
+            if (block.timestamp >= withdrawals[id].expiresAt) continue;
 
             _confirm(id, platformWallet);
             confirmed++;
@@ -659,10 +727,12 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
 
     function setAffiliateEnabled(bool enabled) external onlyOwner {
         affiliateEnabled = enabled;
+        emit AffiliateEnabledUpdated(enabled);
     }
 
     function setAffiliateShare(uint256 bps) external onlyOwner {
         if (bps > 5000) revert InvalidFee(); // max 50% of fee to affiliate
+        emit AffiliateShareUpdated(affiliateShareBps, bps);
         affiliateShareBps = bps;
     }
 
@@ -743,12 +813,11 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
 
         uint256 amount = customAmount > 0 && customAmount <= available ? customAmount : available;
 
-        // Clear platform earnings tracking (we're withdrawing everything available)
-        if (amount >= platformEarnings[address(usdt)]) {
-            platformEarnings[address(usdt)] = 0;
-        } else {
-            platformEarnings[address(usdt)] -= amount;
-        }
+        // Decrement only the earnings portion. Anything above platformEarnings
+        // is unaccounted dust (rounding, accidental sends) — it leaves the
+        // contract but should never have been counted as fee income.
+        uint256 earned = platformEarnings[address(usdt)];
+        platformEarnings[address(usdt)] = amount >= earned ? 0 : earned - amount;
 
         usdt.safeTransfer(to, amount);
         emit FeesWithdrawn(address(usdt), amount, to);
@@ -773,11 +842,11 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
             // For USDT: only withdraw what's above escrow
             withdrawable = balance > totalEscrow ? balance - totalEscrow : 0;
             if (withdrawable == 0) revert InsufficientEarnings();
-            if (withdrawable >= platformEarnings[token]) {
-                platformEarnings[token] = 0;
-            } else {
-                platformEarnings[token] -= withdrawable;
-            }
+            // Decrement only the earnings portion. Dust (anything above
+            // platformEarnings) is rescued without polluting the earnings
+            // counter — keep that as a faithful record of fees collected.
+            uint256 earned = platformEarnings[token];
+            platformEarnings[token] = withdrawable >= earned ? 0 : earned - withdrawable;
         } else {
             // For any other token: withdraw everything
             withdrawable = balance;
@@ -842,16 +911,19 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
     }
 
     /// @dev Validate that slippage tolerance isn't too loose
-    /// Compares amountOutMin against expected output from DEX quote
+    /// Compares amountOutMin against expected output from DEX quote.
+    /// Fail-closed: amountOutMin == 0 and missing/zero quotes both revert,
+    /// so the maxSlippageBps cap can't be bypassed by opting out or by
+    /// pointing at a manipulated pool that returns 0.
     function _validateSlippage(address[] calldata path, uint256 amountIn, uint256 amountOutMin) internal view {
-        if (amountOutMin == 0) return; // user opted out of slippage protection
+        if (amountOutMin == 0) revert SlippageRequired();
         try dexRouter.getAmountsOut(amountIn, path) returns (uint256[] memory amounts) {
             uint256 expected = amounts[amounts.length - 1];
-            if (expected == 0) return; // no quote available, skip check
+            if (expected == 0) revert SlippageQuoteUnavailable();
             uint256 minAllowed = (expected * (10000 - maxSlippageBps)) / 10000;
             if (amountOutMin < minAllowed) revert SlippageTooHigh();
         } catch {
-            // DEX quote failed (no liquidity etc.) — let the swap itself handle it
+            revert SlippageQuoteUnavailable();
         }
     }
 

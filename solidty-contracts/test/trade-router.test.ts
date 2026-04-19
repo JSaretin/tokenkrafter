@@ -22,7 +22,7 @@ const DEFAULT_FEE_BPS = 100n; // 1%
 const DEFAULT_TIMEOUT = 600n; // 10 min
 const MIN_TIMEOUT = 300n;
 const MAX_TIMEOUT = 86400n;
-const MAX_FEE_BPS = 1000n;
+const MAX_FEE_BPS = 500n;
 const MAX_SLIPPAGE_CAP = 2000n;
 
 const BANK_REF_A = ethers.keccak256(ethers.toUtf8Bytes("bank-a"));
