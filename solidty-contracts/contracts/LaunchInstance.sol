@@ -179,6 +179,10 @@ contract LaunchInstance is ReentrancyGuard {
     error FeeOnTransferNotSupported();
     error InvalidCurveParams();
     error InvalidTotalTokens();
+    error AffiliateOverpull();
+    error Unauthorized();
+    error ExceedsTokensRequired();
+    error CurveOverflow();
 
     // ── Enums ──────────────────────────────────────────────────
     enum CurveType { Linear, SquareRoot, Quadratic, Exponential }
@@ -368,6 +372,24 @@ contract LaunchInstance is ReentrancyGuard {
         } else {
             if (curveParam1_ == 0) revert InvalidCurveParams();
         }
+        // Cap totalTokensForLaunch_ so curve math stays inside uint256 with
+        // headroom across all four curves. 1e36 = 1e18 (token decimals) *
+        // 1e18 (full tokens) — i.e. 10^18 whole tokens, plenty for any
+        // realistic supply and well below where quadratic/exponential
+        // curves start risking overflow.
+        if (totalTokensForLaunch_ > 1e36) revert InvalidTotalTokens();
+        // Exponential curves use a 6th-order Taylor series accurate only up
+        // to kx ≈ 7. Beyond that the approximation diverges from e^kx and
+        // late buyers get wildly wrong prices. Compute the maximum kx the
+        // curve will ever see (at supply = curveTokens) and reject the
+        // launch if it would exceed the safe band.
+        if (curveType_ == CurveType.Exponential) {
+            uint256 curveTokens_ = (totalTokensForLaunch_ * 7000) / BPS;
+            // kx_max = curveParam2 (kFactor) * curveTokens / 1e18 (PRECISION).
+            // Require kx_max <= 7 * 1e18.
+            uint256 kxMax = Math.mulDiv(curveParam2_, curveTokens_, 1e18);
+            if (kxMax > 7 * 1e18) revert InvalidCurveParams();
+        }
 
         factory = payable(msg.sender);
         creator = creator_;
@@ -507,6 +529,12 @@ contract LaunchInstance is ReentrancyGuard {
         if (msg.sender != factory) revert OnlyFactory();
         if (state != LaunchState.Pending) revert NotPending();
         if (amount == 0) revert ZeroAmount();
+        // Hard cap before incrementing — defends against a buggy / double-
+        // calling factory inflating totalTokensDeposited past totalTokens
+        // Required. The balance check below would also catch it eventually,
+        // but only if no other tokens happened to be in the contract; this
+        // makes the invariant explicit at the call site.
+        if (totalTokensDeposited + amount > totalTokensRequired) revert ExceedsTokensRequired();
 
         totalTokensDeposited += amount;
 
@@ -566,6 +594,14 @@ contract LaunchInstance is ReentrancyGuard {
     /// @notice Buy with an attributed referrer. The referrer earns a share of
     ///         the buy fee via the platform Affiliate contract (sticky after
     ///         first non-zero `ref` ever supplied for `msg.sender`).
+    ///
+    ///         NOTE: Stickiness is enforced inside the Affiliate contract,
+    ///         not here. Each buy passes the caller-supplied `ref` straight
+    ///         through to `IAffiliateReporter.report(user, ref, fee)`; if
+    ///         the affiliate side ignores `ref` for users who already have
+    ///         a recorded referrer, stickiness holds. If it doesn't, a
+    ///         buyer can rotate referrers per-buy. Audit the Affiliate
+    ///         contract before trusting this guarantee.
     function buy(
         address[] calldata path,
         uint256 amountIn,
@@ -699,14 +735,25 @@ contract LaunchInstance is ReentrancyGuard {
             uint256 platformShare = buyFee;
 
             if (aff != address(0)) {
-                if (usdt.allowance(address(this), aff) < buyFee) {
-                    usdt.forceApprove(aff, type(uint256).max);
-                }
+                // Approve exactly buyFee — never grant a standing allowance
+                // that a compromised affiliate could drain. The launch holds
+                // ALL buyer escrow until graduation; an unbounded allowance
+                // here is a launch-killer.
+                usdt.forceApprove(aff, buyFee);
                 uint256 balBefore = usdt.balanceOf(address(this));
-                try IAffiliateReporter(aff).report(buyer, ref, buyFee) {
-                    uint256 pulled = balBefore - usdt.balanceOf(address(this));
-                    if (pulled <= buyFee) platformShare = buyFee - pulled;
-                } catch {}
+                // Intentionally NOT wrapped in try/catch: a misbehaving
+                // affiliate must surface loudly. Silent absorption (the old
+                // behaviour) lets a buggy affiliate quietly mis-account fees
+                // forever. If the affiliate reverts, the buy reverts; the
+                // factory owner can rotate `affiliate` to recover.
+                IAffiliateReporter(aff).report(buyer, ref, buyFee);
+                uint256 pulled = balBefore - usdt.balanceOf(address(this));
+                // Anything above buyFee is escrow theft. Revert the whole
+                // buy — the post-call zero-approval below is rolled back too,
+                // so no stale allowance leaks.
+                if (pulled > buyFee) revert AffiliateOverpull();
+                platformShare = buyFee - pulled;
+                usdt.forceApprove(aff, 0);
             }
 
             if (platformShare > 0) usdt.safeTransfer(_platformWallet, platformShare);
@@ -840,21 +887,25 @@ contract LaunchInstance is ReentrancyGuard {
             pair = IUniswapV2Factory(dexFactory).createPair(address(token), address(usdt));
         }
 
+        // Open the anti-snipe window BEFORE seeding the pair. Otherwise the
+        // pair holds reserves between the token transfer and enableTrading,
+        // and a sniper watching mempool could swap against it. Calling
+        // enableTrading first means the token's pool-lock takes effect from
+        // graduation timestamp, blocking any DEX trade for
+        // lockDurationAfterListing seconds — including ones racing the seed.
+        // External (non-platform) tokens don't implement this and silently
+        // skip; they're already tradeable, so there's no window to protect.
+        try ILaunchToken(address(token)).enableTrading(lockDurationAfterListing) {} catch {}
+
         // Transfer LP amounts directly to the pair. _transferExact reverts
-        // if the token charges a hidden fee — protects the LP ratio.
+        // if the token charges a hidden fee — protects the LP ratio. The
+        // launch contract is an authorized launcher, so its transfers are
+        // permitted even while the lock window is active.
         _transferExact(pair, tokensForDexLP);
         usdt.safeTransfer(pair, usdtForLP);
 
         // Mint LP tokens and burn them — permanent liquidity
         IUniswapV2Pair(pair).mint(address(0xdead));
-
-        // Open public trading after the anti-snipe window. Only platform tokens
-        // expose `enableTrading` and only when the creator authorized this launch
-        // instance via `setAuthorizedLauncher`. External Ownable ERC20s (already
-        // tradeable) don't implement this — silently skip in that case. Missing
-        // authorization on a platform token is non-fatal here: the creator can
-        // still call `token.enableTrading(0)` themselves after graduation.
-        try ILaunchToken(address(token)).enableTrading(lockDurationAfterListing) {} catch {}
 
         // Send remaining USDT to platform (graduation = no refunds)
         uint256 usdtBal = usdt.balanceOf(address(this));
@@ -884,6 +935,12 @@ contract LaunchInstance is ReentrancyGuard {
     ///      the deadline has passed, and soft cap was not reached. Called
     ///      internally before any state-dependent operation so users never
     ///      need to trigger a separate transaction.
+    ///
+    ///      NOTE: There is no auto-transition to Graduated. If the deadline
+    ///      passes with soft cap met but graduate() was never called, the
+    ///      launch is stuck Active and buy() reverts with LaunchExpired.
+    ///      Anyone (not just the creator) can unstick it by calling
+    ///      graduate() — see the `msg.sender != creator` carve-out there.
     function _autoResolve() internal {
         if (
             state == LaunchState.Active &&
@@ -895,7 +952,12 @@ contract LaunchInstance is ReentrancyGuard {
 
             // Unlock the tax ceiling so the creator can adjust rates and
             // relaunch. This instance is an authorized launcher on the token,
-            // which is the only role permitted to unlock.
+            // which is the only role permitted to unlock. Best-effort and
+            // non-retriable — if the token reverts here (e.g. plain ERC20
+            // without the function), the state still transitions but the
+            // creator's tax ceiling stays locked. Acceptable trade-off; the
+            // alternative is forcing every launch through a token that
+            // implements the function.
             try ILaunchToken(address(token)).unlockTaxCeiling() {} catch {}
 
             emit RefundingEnabled(address(token), totalBaseRaised, softCap);
@@ -950,10 +1012,10 @@ contract LaunchInstance is ReentrancyGuard {
         grossPaid[msg.sender] -= grossRefund;
         tokensBought[msg.sender] = buyerTokens - tokensToReturn;
 
-        // Buyer must hold + have approved the tokens they're returning
-        uint256 balance = token.balanceOf(msg.sender);
-        uint256 allowance = token.allowance(msg.sender, address(this));
-        if (balance < tokensToReturn || allowance < tokensToReturn) revert ReturnTokensToRefund();
+        // Pull tokens — _transferFromExact (via SafeERC20.safeTransferFrom)
+        // already enforces the balance + allowance preconditions and
+        // reverts loudly. A separate pre-check would just duplicate the
+        // assertion with a less specific error.
         _transferFromExact(msg.sender, tokensToReturn);
 
         usdt.safeTransfer(msg.sender, refundBase);
@@ -980,6 +1042,13 @@ contract LaunchInstance is ReentrancyGuard {
     function creatorWithdrawAvailable() external onlyCreator nonReentrant {
         _autoResolve();
         if (state != LaunchState.Refunding) revert NotRefunding();
+        // Trust assumption: in Refunding, every token sitting in the contract
+        // is fair game for the creator to claim. Buyers who want their USDT
+        // back must refund first (which moves their tokens INTO this contract
+        // and pulls USDT OUT). A buyer who delays refunding while the creator
+        // sweeps may find the curve reserve gone — the design treats this as
+        // "active buyers refund promptly, abandoned buyers forfeit their
+        // returnable tokens." Document this in the launch UX.
         uint256 available = token.balanceOf(address(this));
         if (available == 0) revert NoTokens();
 
@@ -1010,13 +1079,19 @@ contract LaunchInstance is ReentrancyGuard {
 
     function sweepStrandedUsdt() external {
         if (state != LaunchState.Refunding) revert NotRefunding();
-        if (block.timestamp < refundStartTimestamp + STRANDED_SWEEP_DELAY) revert StrandedSweepTooEarly();
+        // Anchor the clock to max(deadline, refundStartTimestamp). Normal
+        // path: refundStartTimestamp ≈ deadline so the max is a no-op. But
+        // if a future admin cancellation path forces Refunding pre-deadline,
+        // we still want buyers to get the full sweep window measured from
+        // their original expectation, not from the cancellation moment.
+        uint256 anchor = deadline > refundStartTimestamp ? deadline : refundStartTimestamp;
+        if (block.timestamp < anchor + STRANDED_SWEEP_DELAY) revert StrandedSweepTooEarly();
         address _platformWallet = ILaunchpadFactory(factory).platformWallet();
         // Platform-only. The creator used to be allowed here too, but the
         // funds always land in `platformWallet` — leaving creator in the
         // access list was cosmetic (no incentive to call) and encouraged
         // confused-deputy expectations.
-        if (msg.sender != _platformWallet) revert NotCreator();
+        if (msg.sender != _platformWallet) revert Unauthorized();
         uint256 bal = usdt.balanceOf(address(this));
         if (bal == 0) revert NoTokens();
         usdt.safeTransfer(_platformWallet, bal);
@@ -1076,10 +1151,19 @@ contract LaunchInstance is ReentrancyGuard {
             if (tokensSold >= 1e18) {
                 return _getCostForTokensAt(tokensSold - 1e18, 1e18);
             }
-            return _getCostForTokensAt(0, tokensSold);
+            // Sub-1e18 tokensSold edge case (only reachable with a tiny
+            // tokensForCurve). _getCostForTokensAt(0, tokensSold) returns
+            // the *total* cost of all sold tokens, not a per-token price —
+            // scale to per-1e18-unit so the LP-seeding ratio in _graduate
+            // stays correct.
+            uint256 totalCost = _getCostForTokensAt(0, tokensSold);
+            return tokensSold > 0 ? Math.mulDiv(totalCost, 1e18, tokensSold) : 0;
         }
         uint256 amount = remaining < 1e18 ? remaining : 1e18;
-        return _getCostForTokens(amount);
+        // For sub-1e18 amount (final dust), normalise to per-1e18-unit
+        // pricing the same way as the sell-out branch.
+        uint256 cost = _getCostForTokens(amount);
+        return amount < 1e18 && amount > 0 ? Math.mulDiv(cost, 1e18, amount) : cost;
     }
 
     /// @notice Cost in base coin to buy `amount` tokens.
@@ -1305,13 +1389,20 @@ contract LaunchInstance is ReentrancyGuard {
         uint256 low = 0;
         uint256 high = remaining;
         uint256 bestAmount = 0;
+        bool anyProbeReturnedOk = false;
 
         for (uint256 i = 0; i < 128; i++) {
             if (low > high) break;
             uint256 mid = (low + high) / 2;
             if (mid == 0) break;
-            // Use _tryCurveCost to handle overflow for extreme curve params
+            // Use _tryCurveCost to handle overflow for extreme curve params.
+            // For monotonic curves (linear, sqrt, quadratic, exponential)
+            // overflow only happens above some threshold, so treating it as
+            // "cost too high" still converges. The initialize() bounds on
+            // totalTokensForLaunch (1e36) and exponential kx (≤7) keep us
+            // well clear of overflow under any sane parameters.
             (bool ok, uint256 cost) = _tryCurveCost(mid);
+            if (ok) anyProbeReturnedOk = true;
             if (!ok || cost > scaledBase) {
                 if (mid == 0) break;
                 high = mid - 1;
@@ -1320,6 +1411,12 @@ contract LaunchInstance is ReentrancyGuard {
                 low = mid + 1;
             }
         }
+        // Surface curve-bricking parameter combos (every probe overflowed)
+        // as a distinct error, so users see CurveOverflow instead of the
+        // misleading "AmountTooSmall" downstream. Budget-too-low cases
+        // still return 0 naturally — those had ok=true probes but none
+        // fit scaledBase.
+        if (!anyProbeReturnedOk) revert CurveOverflow();
         return bestAmount;
     }
 
@@ -1343,7 +1440,7 @@ contract LaunchInstance is ReentrancyGuard {
     ///         Sends to creator first; if that fails (e.g. contract creator
     ///         that reverts on receive), falls back to platformWallet.
     function recoverETH() external nonReentrant {
-        if (msg.sender != creator && msg.sender != ILaunchpadFactory(factory).platformWallet()) revert NotCreator();
+        if (msg.sender != creator && msg.sender != ILaunchpadFactory(factory).platformWallet()) revert Unauthorized();
         uint256 bal = address(this).balance;
         if (bal == 0) revert NoETH();
         (bool ok, ) = creator.call{value: bal}("");
