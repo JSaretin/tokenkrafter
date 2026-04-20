@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/access/Ownable2Step.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
@@ -21,7 +21,13 @@ import "./shared/IAffiliate.sol";
 ///         PlatformRouter handles all input-token swapping before calling
 ///         this contract, so the factory is intentionally unaware of any
 ///         payment token besides USDT.
-contract LaunchpadFactory is Ownable, ReentrancyGuard {
+///
+///         Uses Ownable2Step so the owner key can only rotate via a
+///         two-transaction handoff (transferOwnership + acceptOwnership).
+///         For a contract that controls the launch implementation pointer
+///         and holds platform fees, single-tx transfer is too easy to fat-
+///         finger or compromise.
+contract LaunchpadFactory is Ownable2Step, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     // ── Custom errors ──────────────────────────────────────────
@@ -41,6 +47,9 @@ contract LaunchpadFactory is Ownable, ReentrancyGuard {
     error NoBalance();
     error OnlyLaunch();
     error OnlyAuthorizedRouter();
+    error UsdtLocked();
+    error NoPendingImplementation();
+    error TimelockNotReached();
 
     // ── Structs ────────────────────────────────────────────────
 
@@ -70,14 +79,31 @@ contract LaunchpadFactory is Ownable, ReentrancyGuard {
         uint256 hardCap,
         uint256 totalTokens,
         uint256 param1,
-        uint256 param2
+        uint256 param2,
+        uint256 durationDays,
+        uint256 maxBuyBps,
+        uint256 creatorAllocationBps,
+        uint256 vestingDays,
+        uint256 minBuyUsdt
     );
     event PlatformWalletUpdated(address newWallet);
     event DexRouterUpdated(address newRouter);
     event CurveDefaultsUpdated();
     event LaunchFeeUpdated(uint256 newFee);
-    event LaunchFeePaid(address indexed payer, uint256 amount);
+    /// @dev `payer` is the attributed creator (off-chain accounting / affiliate
+    ///      attribution); `source` is the actual EOA/contract that the USDT
+    ///      was pulled from (msg.sender — equals payer on direct calls,
+    ///      equals the authorized router on routerCreateLaunch). Including
+    ///      both keeps indexers honest when the router fronts the fee.
+    event LaunchFeePaid(address indexed payer, address indexed source, uint256 amount);
     event AuthorizedRouterUpdated(address newRouter);
+    event UsdtUpdated(address indexed previous, address indexed current);
+    event UsdtLockedEvent();
+    event LaunchImplementationProposed(address indexed previous, address indexed proposed, uint256 applyAt);
+    event LaunchImplementationApplied(address indexed previous, address indexed current);
+    event AffiliateAuthorizationFailed(address indexed launch, address indexed affiliate_);
+    event LaunchCancelled(address indexed launch, address indexed token, address indexed creator);
+    event FeesWithdrawn(address indexed token, address indexed to, uint256 amount);
 
     // ── State variables ────────────────────────────────────────
 
@@ -98,6 +124,22 @@ contract LaunchpadFactory is Ownable, ReentrancyGuard {
     uint256 public totalLaunchFeeEarnedUsdt;
 
     address public authorizedRouter;
+
+    /// @notice Once any launch has been created, USDT becomes immutable.
+    ///         Existing clones bake the USDT address into their initialize()
+    ///         call, so swapping it factory-side after launches exist would
+    ///         create a confusing two-tier system. Locked on first
+    ///         _createLaunchInternal — owner can no longer reach setUsdt().
+    bool public usdtLocked;
+
+    /// @notice Two-stage timelock for swapping the launch clone implementation.
+    ///         A malicious or fat-fingered impl swap would compromise every
+    ///         future launch (and could silently re-route user USDT). The
+    ///         48-hour delay gives off-chain monitoring + users time to react
+    ///         to the proposal event before the change takes effect.
+    address public pendingLaunchImplementation;
+    uint256 public pendingLaunchImplementationApplyAt;
+    uint256 public constant LAUNCH_IMPL_TIMELOCK = 48 hours;
 
     /// @notice Shared Affiliate contract reporters across the platform write
     ///         to. address(0) disables affiliate accrual on launch buys.
@@ -191,7 +233,9 @@ contract LaunchpadFactory is Ownable, ReentrancyGuard {
 
     /// @dev Pulls the launch fee in USDT from msg.sender (creator on direct
     ///      calls, router on routerCreateLaunch — router is responsible for
-    ///      pre-swapping the user's input token to USDT).
+    ///      pre-swapping the user's input token to USDT). The event reports
+    ///      both the attributed `payer` and the actual `source` so off-chain
+    ///      indexers can tell when a router fronted the fee for a creator.
     function _collectLaunchFee(address payer) internal {
         if (launchFee == 0) return;
 
@@ -201,7 +245,7 @@ contract LaunchpadFactory is Ownable, ReentrancyGuard {
         dailyLaunchStats[day].totalFeeUsdt += launchFee;
         totalLaunchFeeEarnedUsdt += launchFee;
 
-        emit LaunchFeePaid(payer, launchFee);
+        emit LaunchFeePaid(payer, msg.sender, launchFee);
     }
 
     function _getCurveParams(LaunchInstance.CurveType curveType_)
@@ -217,27 +261,6 @@ contract LaunchpadFactory is Ownable, ReentrancyGuard {
             return (curveDefaults.expBase, curveDefaults.expKFactor);
         }
         return (0, 0);
-    }
-
-    /// @dev Salt layout for CREATE2 launch clones. Deterministic addresses
-    ///      let creators preflight a 3rd-party token against a predicted
-    ///      launch address before paying gas to create the clone.
-    function _launchSalt(address creator_, address token_, uint256 userSalt) internal pure returns (bytes32) {
-        return keccak256(abi.encodePacked(creator_, token_, userSalt));
-    }
-
-    /// @notice Predict the address of a launch clone for (creator, token, salt).
-    ///         Valid only while `launchImplementation` is unchanged.
-    function predictLaunchAddress(
-        address creator_,
-        address token_,
-        uint256 userSalt
-    ) external view returns (address) {
-        return Clones.predictDeterministicAddress(
-            launchImplementation,
-            _launchSalt(creator_, token_, userSalt),
-            address(this)
-        );
     }
 
     /// @dev Shared logic for deploying a LaunchInstance and recording it.
@@ -261,6 +284,14 @@ contract LaunchpadFactory is Ownable, ReentrancyGuard {
         if (token_ == address(0)) revert InvalidToken();
         if (totalTokens_ == 0) revert ZeroTokens();
         if (address(tokenToLaunch[token_]) != address(0)) revert TokenAlreadyHasLaunch();
+
+        // Lock USDT on the first ever launch so the address can't drift
+        // out from under the existing clones (each clone bakes USDT into
+        // its initialize call).
+        if (!usdtLocked) {
+            usdtLocked = true;
+            emit UsdtLockedEvent();
+        }
 
         address cloneAddr = Clones.clone(launchImplementation);
         LaunchInstance launch = LaunchInstance(payable(cloneAddr));
@@ -290,8 +321,13 @@ contract LaunchpadFactory is Ownable, ReentrancyGuard {
 
         // Auto-whitelist the new clone on the Affiliate contract so its
         // buy() calls to report() are accepted. No-op if affiliate unset.
+        // We swallow the revert so a misconfigured Affiliate doesn't block
+        // launch creation, but emit a dedicated event so monitoring catches
+        // the dropped attribution before weeks of buy fees go un-credited.
         if (affiliate != address(0)) {
-            try IAffiliate(affiliate).setAuthorized(cloneAddr, true) {} catch {}
+            try IAffiliate(affiliate).setAuthorized(cloneAddr, true) {} catch {
+                emit AffiliateAuthorizationFailed(cloneAddr, affiliate);
+            }
         }
 
         uint256 day = block.timestamp / 1 days;
@@ -306,7 +342,12 @@ contract LaunchpadFactory is Ownable, ReentrancyGuard {
             hardCap_,
             totalTokens_,
             param1_,
-            param2_
+            param2_,
+            durationDays_,
+            maxBuyBps_,
+            creatorAllocationBps_,
+            vestingDays_,
+            minBuyUsdt_
         );
 
         return address(launch);
@@ -505,13 +546,47 @@ contract LaunchpadFactory is Ownable, ReentrancyGuard {
         emit DexRouterUpdated(router_);
     }
 
-    function setLaunchImplementation(address impl_) external onlyOwner {
+    /// @notice Stage a new launch implementation. Takes effect after
+    ///         `LAUNCH_IMPL_TIMELOCK` (48 h) when {applyLaunchImplementation}
+    ///         is called. Two-stage with a public proposal event so users and
+    ///         off-chain monitoring can see the change well before any new
+    ///         clone is spawned from the new pointer. Calling again before
+    ///         apply overwrites the pending proposal and resets the clock.
+    function proposeLaunchImplementation(address impl_) external onlyOwner {
         if (impl_ == address(0)) revert InvalidAddress();
-        launchImplementation = impl_;
+        pendingLaunchImplementation = impl_;
+        pendingLaunchImplementationApplyAt = block.timestamp + LAUNCH_IMPL_TIMELOCK;
+        emit LaunchImplementationProposed(launchImplementation, impl_, pendingLaunchImplementationApplyAt);
     }
 
+    /// @notice Apply a previously-proposed launch implementation after the
+    ///         timelock has elapsed.
+    function applyLaunchImplementation() external onlyOwner {
+        if (pendingLaunchImplementation == address(0)) revert NoPendingImplementation();
+        if (block.timestamp < pendingLaunchImplementationApplyAt) revert TimelockNotReached();
+        address prev = launchImplementation;
+        launchImplementation = pendingLaunchImplementation;
+        pendingLaunchImplementation = address(0);
+        pendingLaunchImplementationApplyAt = 0;
+        emit LaunchImplementationApplied(prev, launchImplementation);
+    }
+
+    /// @notice Cancel a pending launch implementation proposal before apply.
+    function cancelPendingLaunchImplementation() external onlyOwner {
+        if (pendingLaunchImplementation == address(0)) revert NoPendingImplementation();
+        pendingLaunchImplementation = address(0);
+        pendingLaunchImplementationApplyAt = 0;
+    }
+
+    /// @notice Set the USDT address. Only callable BEFORE the first launch
+    ///         is created (after that, `usdtLocked` is true and existing
+    ///         clones have already baked the address into their state).
+    ///         Intended for one-shot fixup during deployment, not runtime
+    ///         migration — clones can't re-initialize.
     function setUsdt(address usdt_) external onlyOwner {
+        if (usdtLocked) revert UsdtLocked();
         if (usdt_ == address(0)) revert InvalidUsdt();
+        emit UsdtUpdated(usdt, usdt_);
         usdt = usdt_;
     }
 
@@ -529,26 +604,49 @@ contract LaunchpadFactory is Ownable, ReentrancyGuard {
         emit CurveDefaultsUpdated();
     }
 
+    /// @notice Set the singular authorized router. Pass address(0) to
+    ///         explicitly disable the router path — the zero address still
+    ///         emits the event so off-chain monitoring can flag the change.
+    ///         (No silent typo guard: zeroing is the documented "kill the
+    ///         router" pattern. If you didn't mean it, propose a new router
+    ///         in a follow-up tx.)
     function setAuthorizedRouter(address router_) external onlyOwner {
         authorizedRouter = router_;
         emit AuthorizedRouterUpdated(router_);
     }
 
-    /// @notice Cancel a pending (not yet activated) launch to clear the tokenToLaunch mapping.
-    ///         Only callable by the launch creator or factory owner.
+    /// @notice Cancel a pending (not yet activated) launch to clear the
+    ///         tokenToLaunch mapping AND notify the clone so it can return
+    ///         any deposited tokens to the creator and lock itself out.
+    ///         Without notifying the clone, the orphan would still hold
+    ///         deposited tokens (recoverable via the clone's own
+    ///         `withdrawPendingTokens`) AND retain whatever token-side
+    ///         authorisations were granted at launch creation, which a
+    ///         malicious creator could later misuse if the same token gets
+    ///         relaunched. Only callable by the launch creator or factory owner.
     function cancelPendingLaunch(address token_) external {
         LaunchInstance launch = tokenToLaunch[token_];
         if (address(launch) == address(0)) revert InvalidToken();
         if (launch.state() != LaunchInstance.LaunchState.Pending) revert NotRegisteredLaunch();
-        if (msg.sender != launch.creator() && msg.sender != owner()) revert NotLaunchCreator();
+        address launchCreator = launch.creator();
+        if (msg.sender != launchCreator && msg.sender != owner()) revert NotLaunchCreator();
         delete tokenToLaunch[token_];
+        // Notify the clone — moves it to Cancelled, returns deposited
+        // tokens to the creator, and bricks every future operation on it
+        // (so its dangling token-side authorisations are inert).
+        launch.cancelFromFactory();
+        emit LaunchCancelled(address(launch), token_, launchCreator);
     }
 
-    /// @notice Withdraws accumulated fees of an arbitrary token to the platform wallet.
+    /// @notice Withdraws accumulated fees of an arbitrary token to the
+    ///         platform wallet. Emits FeesWithdrawn for audit trail —
+    ///         previously this was a silent transfer, which made
+    ///         post-incident accounting harder than it needed to be.
     function withdrawFees(address token_) external onlyOwner {
         if (token_ == address(0)) revert InvalidAddress();
         uint256 bal = IERC20(token_).balanceOf(address(this));
         if (bal == 0) revert NoBalance();
         IERC20(token_).safeTransfer(platformWallet, bal);
+        emit FeesWithdrawn(token_, platformWallet, bal);
     }
 }

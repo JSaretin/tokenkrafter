@@ -1279,8 +1279,8 @@
 	// Derived state for the reclaim/sweep UI.
 	// Sweep delay is read from the on-chain constant STRANDED_SWEEP_DELAY
 	// (currently 5 years / 1825 days). Reading dynamically means any future
-	// impl bump via setLaunchImplementation auto-propagates to the UI
-	// without a frontend redeploy.
+	// impl bump via the factory's timelocked propose/applyLaunchImplementation
+	// flow auto-propagates to the UI without a frontend redeploy.
 	let strandedSweepDelay = $state(0n); // loaded alongside refund state
 	let sweepWindowOpen = $derived.by(() => {
 		if (!launch || launch.state !== 3 || refundStartTimestamp === 0n || strandedSweepDelay === 0n) return false;

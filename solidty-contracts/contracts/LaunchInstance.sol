@@ -183,10 +183,16 @@ contract LaunchInstance is ReentrancyGuard {
     error Unauthorized();
     error ExceedsTokensRequired();
     error CurveOverflow();
+    error AlreadyCancelled();
 
     // ── Enums ──────────────────────────────────────────────────
     enum CurveType { Linear, SquareRoot, Quadratic, Exponential }
-    enum LaunchState { Pending, Active, Graduated, Refunding }
+    /// @dev Cancelled is appended (existing values keep their indices, so the
+    ///      enum change is ABI-additive). A clone enters Cancelled when the
+    ///      factory calls cancelFromFactory() — this returns any deposited
+    ///      launch tokens to the creator and permanently bricks the clone so
+    ///      its dangling token-side authorisations can never be misused.
+    enum LaunchState { Pending, Active, Graduated, Refunding, Cancelled }
 
     // ── Storage (set once via initialize, replaces immutables for clone pattern) ──
     bool private _initialized;
@@ -291,6 +297,7 @@ contract LaunchInstance is ReentrancyGuard {
     event CreatorWithdraw(address indexed creator, uint256 tokenAmount);
     event CreatorReclaim(address indexed creator, uint256 tokenAmount);
     event PausedChanged(bool paused);
+    event CancelledByFactory(address indexed creator, uint256 returnedAmount);
 
     // ── Modifiers ──────────────────────────────────────────────
     modifier onlyActive() {
@@ -366,11 +373,23 @@ contract LaunchInstance is ReentrancyGuard {
 
         // Curve param validation — curveParam1=0 on multiplicative curves
         // (sqrt/quad/exp) makes tokens free and rugs the curve. Linear
-        // needs at least one of slope/intercept nonzero.
+        // needs at least one of slope/intercept nonzero. The magnitude
+        // ceilings mirror LaunchpadFactory.setCurveDefaults so launches
+        // created via createLaunchCustomCurve can't bypass them by passing
+        // pathological values that would overflow _curveCost downstream.
         if (curveType_ == CurveType.Linear) {
             if (curveParam1_ == 0 && curveParam2_ == 0) revert InvalidCurveParams();
-        } else {
+            if (curveParam1_ > 1e30 || curveParam2_ > 1e30) revert InvalidCurveParams();
+        } else if (curveType_ == CurveType.SquareRoot) {
             if (curveParam1_ == 0) revert InvalidCurveParams();
+            if (curveParam1_ > 1e30) revert InvalidCurveParams();
+        } else if (curveType_ == CurveType.Quadratic) {
+            if (curveParam1_ == 0) revert InvalidCurveParams();
+            if (curveParam1_ > 1e30) revert InvalidCurveParams();
+        } else {
+            // Exponential
+            if (curveParam1_ == 0) revert InvalidCurveParams();
+            if (curveParam1_ > 1e22 || curveParam2_ > 1e18) revert InvalidCurveParams();
         }
         // Cap totalTokensForLaunch_ so curve math stays inside uint256 with
         // headroom across all four curves. 1e36 = 1e18 (token decimals) *
@@ -557,6 +576,27 @@ contract LaunchInstance is ReentrancyGuard {
         token.safeTransfer(creator, deposited);
 
         emit CreatorWithdraw(creator, deposited);
+    }
+
+    /// @notice Factory-only. Permanently transitions a Pending clone to
+    ///         Cancelled, returning any deposited launch tokens to the
+    ///         creator. Called by LaunchpadFactory.cancelPendingLaunch so
+    ///         the clone can't be reused — every state-bearing operation
+    ///         checks state strictly, so Cancelled bricks the clone in
+    ///         place. Important for orphan-authorisation safety: a clone
+    ///         that was granted token-side `isAuthorizedLauncher` at launch
+    ///         creation can no longer USE that authorisation once Cancelled.
+    function cancelFromFactory() external {
+        if (msg.sender != factory) revert OnlyFactory();
+        if (state != LaunchState.Pending) revert NotPending();
+
+        state = LaunchState.Cancelled;
+        uint256 deposited = totalTokensDeposited;
+        totalTokensDeposited = 0;
+        if (deposited > 0) {
+            token.safeTransfer(creator, deposited);
+        }
+        emit CancelledByFactory(creator, deposited);
     }
 
     // ── Buy ────────────────────────────────────────────────────

@@ -16,6 +16,7 @@ export enum LaunchState {
 	Active = 1,
 	Graduated = 2,
 	Refunding = 3,
+	Cancelled = 4,
 }
 
 export const CURVE_LABELS: Record<CurveType, string> = {
@@ -30,6 +31,7 @@ export const STATE_LABELS: Record<LaunchState, string> = {
 	[LaunchState.Active]: 'Active',
 	[LaunchState.Graduated]: 'Graduated',
 	[LaunchState.Refunding]: 'Refunding',
+	[LaunchState.Cancelled]: 'Cancelled',
 };
 
 export function curveLabel(curve: number | bigint): string {

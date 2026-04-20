@@ -133,6 +133,11 @@ export interface LaunchCreatedEventRaw {
 	totalTokens: bigint;
 	param1: bigint;
 	param2: bigint;
+	durationDays: bigint;
+	maxBuyBps: bigint;
+	creatorAllocationBps: bigint;
+	vestingDays: bigint;
+	minBuyUsdt: bigint;
 }
 export interface LaunchCreatedEventView {
 	launch: string;
@@ -145,6 +150,11 @@ export interface LaunchCreatedEventView {
 	totalTokens: string;
 	param1: string;
 	param2: string;
+	durationDays: number;
+	maxBuyBps: number;
+	creatorAllocationBps: number;
+	vestingDays: number;
+	minBuyUsdt: string;
 }
 
 export interface PlatformWalletUpdatedEventRaw { newWallet: string; }
@@ -159,8 +169,10 @@ export type CurveDefaultsUpdatedEventView = CurveDefaultsUpdatedEventRaw;
 export interface LaunchFeeUpdatedEventRaw { newFee: bigint; }
 export interface LaunchFeeUpdatedEventView { newFee: string; }
 
-export interface LaunchFeePaidEventRaw { payer: string; amount: bigint; }
-export interface LaunchFeePaidEventView { payer: string; amount: string; }
+/** `payer` is the attributed creator; `source` is the actual `msg.sender` that the
+ *  USDT was pulled from (router on routerCreateLaunch, creator on direct calls). */
+export interface LaunchFeePaidEventRaw { payer: string; source: string; amount: bigint; }
+export interface LaunchFeePaidEventView { payer: string; source: string; amount: string; }
 
 export interface AuthorizedRouterUpdatedEventRaw { newRouter: string; }
 export type AuthorizedRouterUpdatedEventView = AuthorizedRouterUpdatedEventRaw;
@@ -293,6 +305,11 @@ export function toLaunchCreatedEventView(
 		totalTokens: ethers.formatUnits(raw.totalTokens, td),
 		param1: ethers.formatUnits(raw.param1, 18),
 		param2: ethers.formatUnits(raw.param2, 18),
+		durationDays: Number(raw.durationDays),
+		maxBuyBps: Number(raw.maxBuyBps),
+		creatorAllocationBps: Number(raw.creatorAllocationBps),
+		vestingDays: Number(raw.vestingDays),
+		minBuyUsdt: ethers.formatUnits(raw.minBuyUsdt, ud),
 	};
 }
 
@@ -301,7 +318,7 @@ export function toLaunchFeeUpdatedEventView(raw: LaunchFeeUpdatedEventRaw, usdtD
 }
 
 export function toLaunchFeePaidEventView(raw: LaunchFeePaidEventRaw, usdtDecimals = 18): LaunchFeePaidEventView {
-	return { payer: raw.payer, amount: ethers.formatUnits(raw.amount, usdtDecimals) };
+	return { payer: raw.payer, source: raw.source, amount: ethers.formatUnits(raw.amount, usdtDecimals) };
 }
 
 export function toLaunchesPausedEventView(raw: LaunchesPausedEventRaw): LaunchesPausedEventView {
