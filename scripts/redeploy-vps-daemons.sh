@@ -33,21 +33,21 @@ echo "  Rebuilding daemon bundles..."
 echo "═══════════════════════════════════════════════"
 
 cd "$DAEMONS"
-bun build ws-indexer.ts \
+bun build src/ws-indexer.ts \
 	--outfile dist/tk-ws-indexer.mjs --target node --minify
-bun build activity-bot.ts \
+bun build src/activity-bot.ts \
 	--outfile dist/tk-activity.mjs --target node --minify
-bun build rate-updater.ts \
+bun build src/rate-updater.ts \
 	--outfile dist/rate-updater.mjs --target node --minify
-bun build safu-indexer.ts \
+bun build src/safu-indexer.ts \
 	--outfile dist/tk-safu.mjs --target node --minify
 
 echo
 echo "  Rebuilding payment server..."
 cd "$PAYMENT"
-bun build index.ts \
+bun build src/index.ts \
 	--outfile dist/tk-payment.mjs --target node --minify
-bun build withdrawal-processor.ts \
+bun build src/withdrawal-processor.ts \
 	--outfile dist/tk-processor.mjs --target node --minify
 
 echo

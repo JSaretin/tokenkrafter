@@ -4,10 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "ws-indexer": "bun run ws-indexer.ts",
-"safu-indexer": "bun run safu-indexer.ts",
-    "activity-bot": "bun run activity-bot.ts",
-    "rate-updater": "bun run rate-updater.ts"
+    "ws-indexer": "bun run src/ws-indexer.ts",
+    "safu-indexer": "bun run src/safu-indexer.ts",
+    "activity-bot": "bun run src/activity-bot.ts",
+    "rate-updater": "bun run src/rate-updater.ts"
   },
   "dependencies": {
     "ethers": "^6.16.0",

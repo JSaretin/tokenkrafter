@@ -48,7 +48,7 @@ import { ethers } from 'ethers';
 import { Database } from 'bun:sqlite';
 import * as fs from 'fs';
 import * as path from 'path';
-import { createManagedProvider, type ManagedProvider } from './lib/provider';
+import { createManagedProvider, type ManagedProvider } from '../lib/provider';
 
 // ── Config ─────────────────────────────────────────────────
 const RPC_URL = process.env.RPC_URL || 'https://bsc-dataseed.binance.org/';

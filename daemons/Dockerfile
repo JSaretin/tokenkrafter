@@ -3,10 +3,10 @@ WORKDIR /app
 COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile --production
 COPY . .
-RUN bun build ws-indexer.ts --outfile dist/ws-indexer.mjs --target node --minify && \
-    bun build safu-indexer.ts --outfile dist/safu-indexer.mjs --target node --minify && \
-    bun build activity-bot.ts --outfile dist/activity-bot.mjs --target node --minify && \
-    bun build rate-updater.ts --outfile dist/rate-updater.mjs --target node --minify
+RUN bun build src/ws-indexer.ts --outfile dist/ws-indexer.mjs --target node --minify && \
+    bun build src/safu-indexer.ts --outfile dist/safu-indexer.mjs --target node --minify && \
+    bun build src/activity-bot.ts --outfile dist/activity-bot.mjs --target node --minify && \
+    bun build src/rate-updater.ts --outfile dist/rate-updater.mjs --target node --minify
 
 FROM oven/bun:1-alpine
 WORKDIR /app

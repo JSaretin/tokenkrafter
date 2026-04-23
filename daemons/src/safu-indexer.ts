@@ -26,7 +26,7 @@
 import { ethers } from 'ethers';
 import * as fs from 'fs';
 import * as path from 'path';
-import { createManagedProvider } from './lib/provider';
+import { createManagedProvider } from '../lib/provider';
 
 // ── Config ─────────────────────────────────────────────────
 const RPC_URL = process.env.RPC_URL || 'https://bsc-dataseed.binance.org/';

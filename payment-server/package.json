@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "proxy": "bun run index.ts",
-    "processor": "bun run withdrawal-processor.ts"
+    "proxy": "bun run src/index.ts",
+    "processor": "bun run src/withdrawal-processor.ts"
   },
   "dependencies": {
     "ethers": "^6.16.0",

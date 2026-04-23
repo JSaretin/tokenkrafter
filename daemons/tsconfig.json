@@ -11,5 +11,5 @@
     "rootDir": ".",
     "resolveJsonModule": true
   },
-  "include": ["*.ts", "lib/**/*.ts"]
+  "include": ["*.ts", "lib/**/*.ts", "src/ws-indexer.ts", "src/activity-bot.ts"]
 }
