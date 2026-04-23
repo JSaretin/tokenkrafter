@@ -42,7 +42,7 @@
 				<p class="text-gray-500 text-xs3 font-mono">{depositInfo.networkName} Network</p>
 			</div>
 		</div>
-		<button onclick={onclose} class="w-8 h-8 rounded-lg border-none bg-(--bg-surface-hover) text-(--text-dim) flex items-center justify-center transition-all duration-150 cursor-pointer hover:bg-(--border-input) hover:text-(--text-heading)">
+		<button aria-label="Close" onclick={onclose} class="w-8 h-8 rounded-lg border-none bg-(--bg-surface-hover) text-(--text-dim) flex items-center justify-center transition-all duration-150 cursor-pointer hover:bg-(--border-input) hover:text-(--text-heading)">
 			<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 				<path d="M18 6L6 18M6 6l12 12"/>
 			</svg>
@@ -75,7 +75,7 @@
 
 	<!-- Address -->
 	<div class="flex flex-col gap-1.5 px-6 pb-4">
-		<label class="text-gray-500 text-xs2 font-mono uppercase tracking-wider">{$t('mt.depositAddress')}</label>
+		<span class="text-gray-500 text-xs2 font-mono uppercase tracking-wider">{$t('mt.depositAddress')}</span>
 		<div class="flex items-center gap-2 px-3 py-2.5 bg-(--bg-surface) border border-(--border) rounded-[10px]">
 			<span class="text-cyan-400 text-xs font-mono break-all flex-1">{userAddress}</span>
 			<button onclick={onCopyAddress} class="px-3 py-1 rounded-md border border-cyan/30 bg-cyan/10 text-cyan text-xs3 font-mono font-semibold whitespace-nowrap shrink-0 transition-all duration-150 cursor-pointer hover:bg-cyan/15 hover:border-cyan/50">

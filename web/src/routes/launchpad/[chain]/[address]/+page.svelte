@@ -1558,7 +1558,16 @@
 
 <!-- Deposit Modal -->
 {#if showDepositModal && userAddress && network}
-	<div class="fixed inset-0 z-[1000] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onclick={() => { showDepositModal = false; stopBalancePolling(); }}>
+	<div
+		class="fixed inset-0 z-[1000] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
+		onclick={() => { showDepositModal = false; stopBalancePolling(); }}
+		onkeydown={(e) => { if (e.key === 'Escape') { showDepositModal = false; stopBalancePolling(); } }}
+		role="dialog"
+		aria-modal="true"
+		tabindex="-1"
+	>
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<!-- svelte-ignore a11y_click_events_have_key_events -->
 		<div class="bg-select border border-line rounded-2xl p-6 max-w-[420px] w-full" onclick={(e) => e.stopPropagation()}>
 			<div class="flex justify-between items-center mb-4">
 				<h2 class="syne text-xl font-bold text-white">{$t('lpd.insufficientBalance').replace('{token}', paymentLabel)}</h2>
@@ -1871,35 +1880,35 @@
 						</div>
 
 						<div class="flex flex-col gap-4">
-							<div>
-								<label class="label-text" for="edit-desc">{$t('lpd.editDesc')}</label>
-								<textarea id="edit-desc" class="input-field" rows="5" placeholder="Tell users about your token, its utility, roadmap..." bind:value={editDescription}></textarea>
-							</div>
+							<label class="block">
+	<span class="label-text">{$t('lpd.editDesc')}</span>
+	<textarea id="edit-desc" class="input-field" rows="5" placeholder="Tell users about your token, its utility, roadmap..." bind:value={editDescription}></textarea>
+</label>
 
-							<div>
-								<label class="label-text" for="edit-video">{$t('lpd.editVideo')}</label>
-								<input id="edit-video" type="url" class="input-field" placeholder="https://youtube.com/watch?v=... or https://x.com/.../video" bind:value={editVideoUrl} />
-							</div>
+							<label class="block">
+	<span class="label-text">{$t('lpd.editVideo')}</span>
+	<input id="edit-video" type="url" class="input-field" placeholder="https://youtube.com/watch?v=... or https://x.com/.../video" bind:value={editVideoUrl} />
+</label>
 
 							<div class="grid grid-cols-2 gap-3">
-								<div>
-									<label class="label-text" for="edit-website">{$t('lpd.editWebsite')}</label>
-									<input id="edit-website" type="url" class="input-field" placeholder="https://..." bind:value={editWebsite} />
-								</div>
-								<div>
-									<label class="label-text" for="edit-twitter">{$t('lpd.editTwitter')}</label>
-									<input id="edit-twitter" class="input-field" placeholder="@handle or URL" bind:value={editTwitter} />
-								</div>
+								<label class="block">
+	<span class="label-text">{$t('lpd.editWebsite')}</span>
+	<input id="edit-website" type="url" class="input-field" placeholder="https://..." bind:value={editWebsite} />
+</label>
+								<label class="block">
+	<span class="label-text">{$t('lpd.editTwitter')}</span>
+	<input id="edit-twitter" class="input-field" placeholder="@handle or URL" bind:value={editTwitter} />
+</label>
 							</div>
 							<div class="grid grid-cols-2 gap-3">
-								<div>
-									<label class="label-text" for="edit-telegram">{$t('lpd.editTelegram')}</label>
-									<input id="edit-telegram" class="input-field" placeholder="@group or URL" bind:value={editTelegram} />
-								</div>
-								<div>
-									<label class="label-text" for="edit-discord">{$t('lpd.editDiscord')}</label>
-									<input id="edit-discord" class="input-field" placeholder="Invite code or URL" bind:value={editDiscord} />
-								</div>
+								<label class="block">
+	<span class="label-text">{$t('lpd.editTelegram')}</span>
+	<input id="edit-telegram" class="input-field" placeholder="@group or URL" bind:value={editTelegram} />
+</label>
+								<label class="block">
+	<span class="label-text">{$t('lpd.editDiscord')}</span>
+	<input id="edit-discord" class="input-field" placeholder="Invite code or URL" bind:value={editDiscord} />
+</label>
 							</div>
 
 							<div class="flex gap-3">
@@ -2889,7 +2898,7 @@
 
 						<!-- Payment method select -->
 						<div class="mb-3">
-							<label class="label-text">{$t('lpd.payWith')}</label>
+							<span class="label-text">{$t('lpd.payWith')}</span>
 							<button class="flex items-center gap-2 w-full py-2.5 px-3 rounded-[10px] cursor-pointer bg-surface border border-line text-foreground font-mono text-[13px] transition-colors hover:border-brand-cyan/30" type="button" onclick={() => showPayPicker = true}>
 								{#if getKnownLogo(paySymbol)}
 									<img src={getKnownLogo(paySymbol)} alt="" class="w-[22px] h-[22px] rounded-full object-cover shrink-0" />

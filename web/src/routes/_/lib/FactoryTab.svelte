@@ -634,8 +634,8 @@
 			</div>
 			<div class="card p-4 mt-3">
 				<div class="flex flex-col gap-2">
-					<label class="text-xs text-gray-500">Replace entire list (comma or whitespace separated)</label>
-					<input class="input-field text-xs" placeholder="0x..., 0x..., 0x..." bind:value={setBasesInput} />
+					<label for="ft-set-bases" class="text-xs text-gray-500">Replace entire list (comma or whitespace separated)</label>
+					<input id="ft-set-bases" class="input-field text-xs" placeholder="0x..., 0x..., 0x..." bind:value={setBasesInput} />
 					<button class="btn-primary text-xs px-4 py-1.5 cursor-pointer" disabled={busy} onclick={doSetBases}>{busy ? '...' : 'Replace All'}</button>
 				</div>
 			</div>

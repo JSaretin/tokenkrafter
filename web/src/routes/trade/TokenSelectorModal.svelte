@@ -72,7 +72,6 @@
 		class="input-field mx-4 my-3 w-[calc(100%-32px)]"
 		placeholder={$t('trade.searchTokens')}
 		bind:value={tokenSearch}
-		autofocus
 	/>
 
 	<div class="flex gap-1.5 px-4 pb-3 flex-wrap">

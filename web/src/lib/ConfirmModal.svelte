@@ -37,12 +37,21 @@
 </script>
 
 {#if show}
-	<div class="fixed inset-0 z-[1000] bg-black/70 backdrop-blur flex items-center justify-center p-4 max-[480px]:p-0 max-[480px]:items-end" onclick={() => { if (!processing) show = false; }} role="dialog" aria-modal="true">
+	<div
+		class="fixed inset-0 z-[1000] bg-black/70 backdrop-blur flex items-center justify-center p-4 max-[480px]:p-0 max-[480px]:items-end"
+		onclick={() => { if (!processing) show = false; }}
+		onkeydown={(e) => { if (e.key === 'Escape' && !processing) show = false; }}
+		role="dialog"
+		aria-modal="true"
+		tabindex="-1"
+	>
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<!-- svelte-ignore a11y_click_events_have_key_events -->
 		<div class="w-full max-w-[400px] max-[480px]:max-w-full bg-surface border border-white/[0.08] rounded-[20px] max-[480px]:rounded-b-none overflow-hidden flex flex-col shadow-[0_20px_60px_rgba(0,0,0,0.5)]" onclick={(e) => e.stopPropagation()}>
 			<div class="flex justify-between items-center px-4 pt-4">
 				<h3 class="font-display text-[15px] font-bold text-heading m-0">{title}</h3>
 				{#if !processing}
-					<button class="bg-none border-none text-dim cursor-pointer p-1 rounded-lg hover:text-heading hover:bg-white/5" onclick={() => { show = false; }}>
+					<button aria-label="Close" class="bg-none border-none text-dim cursor-pointer p-1 rounded-lg hover:text-heading hover:bg-white/5" onclick={() => { show = false; }}>
 						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
 					</button>
 				{/if}

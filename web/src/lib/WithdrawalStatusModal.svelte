@@ -183,7 +183,16 @@
 	});
 </script>
 
-<div class="modal-backdrop fixed inset-0 z-[100] bg-black/75 backdrop-blur-[4px] flex items-center justify-center p-4 max-[640px]:p-0 max-[640px]:items-stretch" onclick={onclose} role="dialog" aria-modal="true">
+<div
+	class="modal-backdrop fixed inset-0 z-[100] bg-black/75 backdrop-blur-[4px] flex items-center justify-center p-4 max-[640px]:p-0 max-[640px]:items-stretch"
+	onclick={onclose}
+	onkeydown={(e) => { if (e.key === 'Escape') onclose?.(); }}
+	role="dialog"
+	aria-modal="true"
+	tabindex="-1"
+>
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<div class="status-modal w-full max-w-[400px] bg-background border border-line rounded-[20px] overflow-hidden max-[640px]:max-w-full max-[640px]:w-full max-[640px]:h-screen max-[640px]:max-h-screen max-[640px]:rounded-none max-[640px]:flex max-[640px]:flex-col" onclick={(e) => e.stopPropagation()}>
 		<!-- Header -->
 		<div class="flex justify-between items-center px-5 py-4 border-b border-line">

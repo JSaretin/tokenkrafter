@@ -901,16 +901,16 @@
 			<div>
 				<h2 class="font-display text-xl font-extrabold text-heading m-0 mb-1">Bonding Curve Launch</h2>
 				<div class="mb-3.5">
-					<label class="block text-[11px] font-bold text-dim uppercase tracking-wider font-mono mb-1.5">
+					<label for="launchTokensPct" class="block text-[11px] font-bold text-dim uppercase tracking-wider font-mono mb-1.5">
 						Tokens for launch ({launchTokensPct}%{#if launchTokenAmount > 0} — {formatTokenAmount(launchTokenAmount)} {symbol || 'tokens'}{/if})
 					</label>
-					<input type="range" class="wz-slider w-full h-1.5 bg-surface-hover rounded-sm outline-none" min="20" max="90" step="5" bind:value={launchTokensPct} />
+					<input id="launchTokensPct" type="range" class="wz-slider w-full h-1.5 bg-surface-hover rounded-sm outline-none" min="20" max="90" step="5" bind:value={launchTokensPct} />
 					{#if launchTokenAmount > 0}
 						<span class="block text-[10px] text-dim font-mono mt-0.5">Remaining {formatTokenAmount(supplyNum - launchTokenAmount)} {symbol || 'tokens'} goes to: LP seeding (on graduation) + creator allocation (if any) + burn</span>
 					{/if}
 				</div>
 				<div class="mb-3.5">
-					<label class="block text-[11px] font-bold text-dim uppercase tracking-wider font-mono mb-1.5">Curve type</label>
+					<span class="block text-[11px] font-bold text-dim uppercase tracking-wider font-mono mb-1.5">Curve type</span>
 					<CurveTypePicker bind:value={launchCurveType} />
 				</div>
 				<div class="grid grid-cols-1 min-[501px]:grid-cols-2 gap-3">
@@ -942,8 +942,8 @@
 				</div>
 				<div class="grid grid-cols-1 min-[501px]:grid-cols-2 gap-3">
 					<div class="mb-3.5">
-						<label class="block text-[11px] font-bold text-dim uppercase tracking-wider font-mono mb-1.5">Creator allocation</label>
-						<select class="input-field" bind:value={launchCreatorAllocPct}>
+						<label for="launchCreatorAlloc" class="block text-[11px] font-bold text-dim uppercase tracking-wider font-mono mb-1.5">Creator allocation</label>
+						<select id="launchCreatorAlloc" class="input-field" bind:value={launchCreatorAllocPct}>
 							<option value="0">None</option>
 							<option value="1">1% of supply</option>
 							<option value="2">2% of supply</option>
@@ -954,8 +954,8 @@
 						<span class="block text-[10px] text-dim font-mono mt-0.5">Tokens reserved for you (vested). Contract caps at 5%.</span>
 					</div>
 					<div class="mb-3.5">
-						<label class="block text-[11px] font-bold text-dim uppercase tracking-wider font-mono mb-1.5">Vesting period</label>
-						<select class="input-field" bind:value={launchVestingDays}>
+						<label for="launchVesting" class="block text-[11px] font-bold text-dim uppercase tracking-wider font-mono mb-1.5">Vesting period</label>
+						<select id="launchVesting" class="input-field" bind:value={launchVestingDays}>
 							<option value="0">No vesting</option>
 							<option value="30">30 days</option>
 							<option value="60">60 days</option>
@@ -981,8 +981,8 @@
 						<div class="px-3.5 pb-3.5">
 							<div class="grid grid-cols-1 min-[501px]:grid-cols-2 gap-3">
 								<div class="mb-3.5">
-									<label class="block text-[11px] font-bold text-dim uppercase tracking-wider font-mono mb-1.5">Max buy per wallet</label>
-									<select class="input-field" bind:value={launchMaxBuyPct}>
+									<label for="launchMaxBuyPct" class="block text-[11px] font-bold text-dim uppercase tracking-wider font-mono mb-1.5">Max buy per wallet</label>
+									<select id="launchMaxBuyPct" class="input-field" bind:value={launchMaxBuyPct}>
 										<option value="0.5">0.5% of hard cap</option>
 										<option value="1">1% of hard cap</option>
 										<option value="2">2% of hard cap</option>

@@ -939,7 +939,7 @@
 	<!-- ═══ HEADER ═══ -->
 	<div class="flex items-center gap-2 pt-3.5 px-4 pb-2.5 relative min-h-[52px]">
 		{#if view !== 'main'}
-			<button class="w-[30px] h-[30px] rounded-lg border-none bg-(--bg-surface-input) text-(--text-muted) cursor-pointer flex items-center justify-center transition-all duration-100 shrink-0 hover:bg-(--bg-surface-hover) hover:text-(--text-heading)" onclick={() => { view = 'main'; resetExport(); }}>
+			<button aria-label="Back" class="w-[30px] h-[30px] rounded-lg border-none bg-(--bg-surface-input) text-(--text-muted) cursor-pointer flex items-center justify-center transition-all duration-100 shrink-0 hover:bg-(--bg-surface-hover) hover:text-(--text-heading)" onclick={() => { view = 'main'; resetExport(); }}>
 				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
 			</button>
 			<span class="font-display text-sm font-bold text-(--text) flex-1">
@@ -975,7 +975,7 @@
 			</button>
 		{/if}
 
-		<button class="w-7 h-7 rounded-lg border-none bg-(--bg-surface-input) text-(--text-dim) cursor-pointer flex items-center justify-center transition-all duration-100 shrink-0 ml-auto hover:bg-(--bg-surface-hover) hover:text-(--text-heading)" onclick={close}>
+		<button aria-label="Close" class="w-7 h-7 rounded-lg border-none bg-(--bg-surface-input) text-(--text-dim) cursor-pointer flex items-center justify-center transition-all duration-100 shrink-0 ml-auto hover:bg-(--bg-surface-hover) hover:text-(--text-heading)" onclick={close}>
 			<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
 		</button>
 	</div>
@@ -1158,8 +1158,13 @@
 			<div class="p-4 bg-(--bg-surface) border border-(--border) rounded-xl">
 				<QrCode data={userAddress} width={180} />
 			</div>
-			<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-			<div class="p-4 bg-(--bg-surface) border border-(--border) rounded-[10px] text-center cursor-pointer transition-colors duration-150 hover:border-[rgba(0,210,255,0.2)]" onclick={() => { copyText(userAddress); onAddFeedback({ message: $t('account.addressCopied'), type: 'success' }); }}>
+			<div
+				class="p-4 bg-(--bg-surface) border border-(--border) rounded-[10px] text-center cursor-pointer transition-colors duration-150 hover:border-[rgba(0,210,255,0.2)]"
+				onclick={() => { copyText(userAddress); onAddFeedback({ message: $t('account.addressCopied'), type: 'success' }); }}
+				onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); copyText(userAddress); onAddFeedback({ message: $t('account.addressCopied'), type: 'success' }); } }}
+				role="button"
+				tabindex="0"
+			>
 				<span class="block font-mono text-[10px] text-(--text-muted) break-all leading-[1.6]">{userAddress}</span>
 				<span class="block text-[9px] text-[#00d2ff] mt-1.5 font-mono">{copiedAddr ? $t('account.copied') : $t('account.tapToCopy')}</span>
 			</div>
@@ -1196,8 +1201,8 @@
 					</div>
 				</div>
 
-				<label class="text-[9px] text-(--text-dim) font-mono uppercase tracking-[0.05em]">{$t('account.enterPinContinue')}</label>
-				<input class="ap-input" type="tel" inputmode="numeric" style="-webkit-text-security: disc; text-security: disc;" placeholder="PIN" bind:value={exportPin}
+				<label for="ap-export-pin" class="text-[9px] text-(--text-dim) font-mono uppercase tracking-[0.05em]">{$t('account.enterPinContinue')}</label>
+				<input id="ap-export-pin" class="ap-input" type="tel" inputmode="numeric" style="-webkit-text-security: disc; text-security: disc;" placeholder="PIN" bind:value={exportPin}
 					{...INPUT_ATTRS}
 					onkeydown={(e) => { if (e.key === 'Enter') handleExport(view === 'export-key' ? 'key' : 'seed'); }} />
 
@@ -1207,7 +1212,13 @@
 					{view === 'export-key' ? $t('account.revealKey') : $t('account.revealPhrase')}
 				</button>
 			{:else}
-				<div class="p-3.5 bg-[rgba(248,113,113,0.04)] border border-[rgba(248,113,113,0.12)] rounded-[10px] font-mono text-[10px] text-[#f87171] break-all leading-[1.7] cursor-pointer transition-colors duration-100 hover:bg-[rgba(248,113,113,0.08)]" onclick={() => { navigator.clipboard.writeText(exportedValue); setTimeout(() => { try { navigator.clipboard.writeText(''); } catch {} }, 30000); onAddFeedback({ message: $t('account.copiedClipboard'), type: 'info' }); }}>
+				<div
+					class="p-3.5 bg-[rgba(248,113,113,0.04)] border border-[rgba(248,113,113,0.12)] rounded-[10px] font-mono text-[10px] text-[#f87171] break-all leading-[1.7] cursor-pointer transition-colors duration-100 hover:bg-[rgba(248,113,113,0.08)]"
+					onclick={() => { navigator.clipboard.writeText(exportedValue); setTimeout(() => { try { navigator.clipboard.writeText(''); } catch {} }, 30000); onAddFeedback({ message: $t('account.copiedClipboard'), type: 'info' }); }}
+					onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigator.clipboard.writeText(exportedValue); setTimeout(() => { try { navigator.clipboard.writeText(''); } catch {} }, 30000); onAddFeedback({ message: $t('account.copiedClipboard'), type: 'info' }); } }}
+					role="button"
+					tabindex="0"
+				>
 					{exportedValue}
 				</div>
 				<p class="text-center text-[9px] text-(--text-dim) font-mono m-0">{$t('account.doNotShare')}</p>
@@ -1224,12 +1235,12 @@
 			<div class="ap-picker ap-send-sheet" transition:fly={{ y: 400, duration: 220 }}>
 				<div class="ap-picker-header">
 					<span class="ap-picker-title">{$t('account.send')}</span>
-					<button class="ap-picker-close" type="button" disabled={sending} onclick={resetSend}>
+					<button aria-label="Close" class="ap-picker-close" type="button" disabled={sending} onclick={resetSend}>
 						<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
 					</button>
 				</div>
 				<div class="ap-send-body">
-					<label class="ap-label">{$t('account.asset')}</label>
+					<span class="ap-label">{$t('account.asset')}</span>
 					<button class="ap-asset-btn" type="button" onclick={() => showAssetPicker = true}>
 						{#if sendAsset === 'native'}
 							{#if getKnownLogo(nativeCoin)}
@@ -1251,9 +1262,9 @@
 						<svg class="ap-asset-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
 					</button>
 
-					<label class="ap-label">{$t('account.recipient')}</label>
+					<label for="ap-send-to" class="ap-label">{$t('account.recipient')}</label>
 					<div class="ap-recipient-row">
-						<input class="ap-input ap-recipient-input" type="text" placeholder="0x…" bind:value={sendTo} {...INPUT_ATTRS} />
+						<input id="ap-send-to" class="ap-input ap-recipient-input" type="text" placeholder="0x…" bind:value={sendTo} {...INPUT_ATTRS} />
 						{#if walletType === 'embedded' && addressBookEntries.length > 0}
 							<button class="ap-book-btn" type="button" title="My addresses" onclick={() => showAddressBook = !showAddressBook}>
 								<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1264,11 +1275,11 @@
 						{/if}
 					</div>
 
-					<label class="ap-label">{$t('account.amount')}</label>
+					<label for="ap-send-amount" class="ap-label">{$t('account.amount')}</label>
 					<!-- Amount input with inset MAX pill — mirrors the recipient
 					     row's address-book icon for structural consistency. -->
 					<div class="ap-recipient-row">
-						<input class="ap-input ap-recipient-input" type="text" inputmode="decimal" placeholder="0.0" bind:value={sendAmount} {...INPUT_ATTRS} />
+						<input id="ap-send-amount" class="ap-input ap-recipient-input" type="text" inputmode="decimal" placeholder="0.0" bind:value={sendAmount} {...INPUT_ATTRS} />
 						<button
 							class="ap-max-btn"
 							type="button"
@@ -1313,7 +1324,7 @@
 				<div class="ap-picker" transition:fly={{ y: 400, duration: 220 }}>
 					<div class="ap-picker-header">
 						<span class="ap-picker-title">{$t('account.selectAsset')}</span>
-						<button class="ap-picker-close" type="button" onclick={() => showAssetPicker = false}>
+						<button aria-label="Close" class="ap-picker-close" type="button" onclick={() => showAssetPicker = false}>
 							<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
 						</button>
 					</div>
@@ -1364,7 +1375,7 @@
 				<div class="ap-picker" transition:fly={{ y: 400, duration: 220 }}>
 					<div class="ap-picker-header">
 						<span class="ap-picker-title">{$t('account.myAddresses')}</span>
-						<button class="ap-picker-close" type="button" onclick={() => { showAddressBook = false; addressBookQuery = ''; }}>
+						<button aria-label="Close" class="ap-picker-close" type="button" onclick={() => { showAddressBook = false; addressBookQuery = ''; }}>
 							<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
 						</button>
 					</div>
@@ -1425,7 +1436,7 @@
 				<div class="ap-picker" transition:fly={{ y: 400, duration: 220 }}>
 					<div class="ap-picker-header">
 						<span class="ap-picker-title">{$t('account.confirmTransaction')}</span>
-						<button class="ap-picker-close" type="button" disabled={sending} onclick={() => { sendStep = 'form'; sendFeeEst = ''; }}>
+						<button aria-label="Back" class="ap-picker-close" type="button" disabled={sending} onclick={() => { sendStep = 'form'; sendFeeEst = ''; }}>
 							<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
 						</button>
 					</div>

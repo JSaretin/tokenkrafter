@@ -392,7 +392,7 @@
 				<h2 class="font-display text-lg font-extrabold text-heading m-0">{$t('wallet.unlockWallet')}</h2>
 				<p class="text-xs text-dim font-mono m-0 leading-[1.5]">{$t('wallet.enterPinToUnlock')}</p>
 
-				<input class="w-full px-3.5 py-3 rounded-[10px] bg-surface-input border border-line text-heading font-mono text-base outline-none transition-[border-color] focus:border-cyan-500/40 placeholder:text-dim [-webkit-text-security:disc] [text-security:disc]" type="tel" inputmode="numeric" autocomplete="one-time-code" data-lpignore="true" data-1p-ignore="true" placeholder={$t('wallet.pinPlaceholder')} bind:value={pin} maxlength="8" autofocus
+				<input class="w-full px-3.5 py-3 rounded-[10px] bg-surface-input border border-line text-heading font-mono text-base outline-none transition-[border-color] focus:border-cyan-500/40 placeholder:text-dim [-webkit-text-security:disc] [text-security:disc]" type="tel" inputmode="numeric" autocomplete="one-time-code" data-lpignore="true" data-1p-ignore="true" placeholder={$t('wallet.pinPlaceholder')} bind:value={pin} maxlength="8"
 					onkeydown={(e) => { if (e.key === 'Enter') handleUnlock(); }} />
 
 				{#if error}<p class="text-[11px] text-[#f87171] font-mono m-0 px-2.5 py-1.5 bg-[rgba(248,113,113,0.08)] rounded-md">{error}</p>{/if}

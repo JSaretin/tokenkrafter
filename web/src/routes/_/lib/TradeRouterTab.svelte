@@ -202,24 +202,24 @@
 			<h3 class="text-white text-sm font-semibold mb-3">Fee Settings</h3>
 			<div class="flex flex-wrap gap-3">
 				<div class="flex items-center gap-2">
-					<label class="text-gray-400 text-xs font-mono">Fee (bps)</label>
-					<input class="input-field w-24" type="number" bind:value={newFeeBps} placeholder="10" />
+					<label for="trt-fee-bps" class="text-gray-400 text-xs font-mono">Fee (bps)</label>
+					<input id="trt-fee-bps" class="input-field w-24" type="number" bind:value={newFeeBps} placeholder="10" />
 					<button class="px-3.5 py-1.5 rounded-lg border-none cursor-pointer font-mono text-[11px] font-bold transition bg-cyan-500/15 text-cyan-400 hover:bg-cyan-500/25 disabled:opacity-40 disabled:cursor-not-allowed" disabled={processing || !newFeeBps}
 						onclick={() => execTx('Set fee', (r: any) => r.setFeeBps(parseInt(newFeeBps)))}>
 						Set
 					</button>
 				</div>
 				<div class="flex items-center gap-2">
-					<label class="text-gray-400 text-xs font-mono">Timeout (sec)</label>
-					<input class="input-field w-24" type="number" bind:value={newTimeout} placeholder="300" />
+					<label for="trt-timeout" class="text-gray-400 text-xs font-mono">Timeout (sec)</label>
+					<input id="trt-timeout" class="input-field w-24" type="number" bind:value={newTimeout} placeholder="300" />
 					<button class="px-3.5 py-1.5 rounded-lg border-none cursor-pointer font-mono text-[11px] font-bold transition bg-cyan-500/15 text-cyan-400 hover:bg-cyan-500/25 disabled:opacity-40 disabled:cursor-not-allowed" disabled={processing || !newTimeout}
 						onclick={() => execTx('Set timeout', (r: any) => r.setPayoutTimeout(parseInt(newTimeout)))}>
 						Set
 					</button>
 				</div>
 				<div class="flex items-center gap-2">
-					<label class="text-gray-400 text-xs font-mono">Max slippage (bps)</label>
-					<input class="input-field w-24" type="number" bind:value={newMaxSlippage} placeholder="500" />
+					<label for="trt-max-slip" class="text-gray-400 text-xs font-mono">Max slippage (bps)</label>
+					<input id="trt-max-slip" class="input-field w-24" type="number" bind:value={newMaxSlippage} placeholder="500" />
 					<button class="px-3.5 py-1.5 rounded-lg border-none cursor-pointer font-mono text-[11px] font-bold transition bg-cyan-500/15 text-cyan-400 hover:bg-cyan-500/25 disabled:opacity-40 disabled:cursor-not-allowed" disabled={processing || !newMaxSlippage}
 						onclick={() => execTx('Set max slippage', (r: any) => r.setMaxSlippage(parseInt(newMaxSlippage)))}>
 						Set
@@ -276,8 +276,8 @@
 					</button>
 				</div>
 				<div class="flex items-center gap-2">
-					<label class="text-gray-400 text-xs font-mono">Share (bps)</label>
-					<input class="input-field w-24" type="number" min="0" max="10000" bind:value={newAffiliateShareBps} placeholder="1000" />
+					<label for="trt-aff-share" class="text-gray-400 text-xs font-mono">Share (bps)</label>
+					<input id="trt-aff-share" class="input-field w-24" type="number" min="0" max="10000" bind:value={newAffiliateShareBps} placeholder="1000" />
 					<button class="px-3.5 py-1.5 rounded-lg border-none cursor-pointer font-mono text-[11px] font-bold transition bg-cyan-500/15 text-cyan-400 hover:bg-cyan-500/25 disabled:opacity-40 disabled:cursor-not-allowed" disabled={processing || newAffiliateShareBps === ''}
 						onclick={() => execTx('Set affiliate share', (r: any) => r.setAffiliateShare(parseInt(newAffiliateShareBps)))}>
 						Set

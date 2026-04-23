@@ -132,8 +132,14 @@
 		class="w-full sm:max-w-md h-[85vh] sm:h-auto sm:max-h-[90vh] overflow-y-auto bg-(--bg) border border-(--border-input) p-4 sm:p-6 rounded-t-[20px] sm:rounded-[20px] animate-slide-up sm:animate-modal-in [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden pb-[calc(1rem+env(safe-area-inset-bottom,0px))]"
 	>
 		<!-- Mobile drag indicator -->
-		<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-		<div class="sm:hidden flex justify-center pt-2 pb-1 cursor-pointer" onclick={onClose}>
+		<div
+			class="sm:hidden flex justify-center pt-2 pb-1 cursor-pointer"
+			onclick={onClose}
+			onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClose(); } }}
+			role="button"
+			tabindex="0"
+			aria-label="Close"
+		>
 			<div class="w-9 h-1 bg-(--border) rounded-[2px]"></div>
 		</div>
 

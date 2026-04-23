@@ -33,7 +33,7 @@
 	<div class="w-full max-w-[420px] bg-(--bg) border border-(--border) rounded-[20px] overflow-hidden max-h-[70vh] max-sm:h-[85vh] max-sm:max-h-[85vh] max-sm:max-w-full max-sm:rounded-b-none flex flex-col">
 		<div class="flex justify-between items-center px-5 py-4 border-b border-(--border)">
 			<h3 class="font-[Syne,sans-serif] text-[16px] font-bold text-(--text-heading) m-0">{$t('trade.selectBank')}</h3>
-			<button class="bg-none border-0 text-(--text-muted) cursor-pointer p-1 rounded-lg transition-all duration-150 hover:text-(--text) hover:bg-(--bg-surface-hover)" onclick={onClose}>
+			<button aria-label="Close" class="bg-none border-0 text-(--text-muted) cursor-pointer p-1 rounded-lg transition-all duration-150 hover:text-(--text) hover:bg-(--bg-surface-hover)" onclick={onClose}>
 				<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
 			</button>
 		</div>
@@ -42,7 +42,6 @@
 			class="input-field mx-4 my-3 w-[calc(100%-32px)]"
 			placeholder={$t('trade.searchBank')}
 			bind:value={searchQuery}
-			autofocus
 		/>
 
 		<div class="px-2 pb-2 overflow-y-auto flex-1 [scrollbar-width:thin] [scrollbar-color:var(--bg-surface-hover)_transparent]">

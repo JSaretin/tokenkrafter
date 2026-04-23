@@ -664,7 +664,7 @@
 					installPrompt = null;
 				}
 			}}>Install</button>
-			<button class="bg-transparent border-none text-dim cursor-pointer p-1 rounded-md transition-all duration-150 hover:text-white hover:bg-surface-hover" onclick={() => {
+			<button aria-label="Dismiss install prompt" class="bg-transparent border-none text-dim cursor-pointer p-1 rounded-md transition-all duration-150 hover:text-white hover:bg-surface-hover" onclick={() => {
 				showInstallBanner = false;
 				localStorage.setItem('pwa_install_dismissed', '1');
 			}}>

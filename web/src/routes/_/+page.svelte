@@ -167,8 +167,8 @@
 
 			<!-- Network selector -->
 			<div class="flex flex-wrap items-center gap-3 mb-6">
-				<label class="label-text mb-0">{$t('admin.network')}</label>
-				<select class="input-field max-w-xs" bind:value={selectedNetworkIdx}>
+				<label for="admin-network" class="label-text mb-0">{$t('admin.network')}</label>
+				<select id="admin-network" class="input-field max-w-xs" bind:value={selectedNetworkIdx}>
 					{#each supportedNetworks as net, i}
 						{#if net.platform_address && net.platform_address !== '0x'}
 							<option value={i}>{net.name} ({net.symbol})</option>

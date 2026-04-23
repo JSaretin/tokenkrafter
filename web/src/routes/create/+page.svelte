@@ -1448,7 +1448,14 @@
 			class="review-modal w-full sm:max-w-md max-h-[100dvh] sm:max-h-[90vh] overflow-y-auto bg-background border border-line-input rounded-t-[20px] sm:rounded-[20px] p-4 sm:p-6 pb-[calc(16px+env(safe-area-inset-bottom,0px))] sm:pb-6 min-h-[60vh] sm:min-h-0 [scrollbar-width:none] [-ms-overflow-style:none]"
 		>
 			<!-- Mobile drag indicator -->
-			<div class="sm:hidden flex justify-center pt-2 pb-1 cursor-pointer" onclick={closePreview}>
+			<div
+				class="sm:hidden flex justify-center pt-2 pb-1 cursor-pointer"
+				onclick={closePreview}
+				onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); closePreview(); } }}
+				role="button"
+				tabindex="0"
+				aria-label="Close preview"
+			>
 				<div class="w-9 h-1 bg-[var(--border)] rounded-sm"></div>
 			</div>
 			{#if step === 'done'}

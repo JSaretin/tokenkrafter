@@ -130,18 +130,18 @@
 		<div class="card p-5">
 			<h3 class="font-numeric text-lg font-semibold text-heading mb-4">Site Info</h3>
 			<div class="space-y-3">
-				<div>
-					<label class="label-text">Site Name</label>
-					<input class="input-field" bind:value={site.name} />
-				</div>
-				<div>
-					<label class="label-text">Description</label>
-					<textarea class="input-field" rows="2" bind:value={site.description}></textarea>
-				</div>
-				<div>
-					<label class="label-text">Support Email</label>
-					<input class="input-field" bind:value={site.support_email} />
-				</div>
+				<label class="block">
+	<span class="label-text">Site Name</span>
+	<input class="input-field" bind:value={site.name} />
+</label>
+				<label class="block">
+	<span class="label-text">Description</span>
+	<textarea class="input-field" rows="2" bind:value={site.description}></textarea>
+</label>
+				<label class="block">
+	<span class="label-text">Support Email</span>
+	<input class="input-field" bind:value={site.support_email} />
+</label>
 				<button class="btn-primary text-xs px-4 py-2 cursor-pointer" disabled={saving} onclick={() => saveConfig('site', site)}>
 					{saving ? 'Saving...' : 'Save Site Info'}
 				</button>
@@ -152,30 +152,30 @@
 		<div class="card p-5">
 			<h3 class="font-numeric text-lg font-semibold text-heading mb-4">Social Links</h3>
 			<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-				<div>
-					<label class="label-text">Twitter / X</label>
-					<input class="input-field" placeholder="https://x.com/..." bind:value={socials.twitter} />
-				</div>
-				<div>
-					<label class="label-text">Telegram Group</label>
-					<input class="input-field" placeholder="https://t.me/..." bind:value={socials.telegram_group} />
-				</div>
-				<div>
-					<label class="label-text">Telegram Channel</label>
-					<input class="input-field" placeholder="https://t.me/..." bind:value={socials.telegram_channel} />
-				</div>
-				<div>
-					<label class="label-text">Discord</label>
-					<input class="input-field" placeholder="https://discord.gg/..." bind:value={socials.discord} />
-				</div>
-				<div>
-					<label class="label-text">Facebook</label>
-					<input class="input-field" placeholder="https://facebook.com/..." bind:value={socials.facebook} />
-				</div>
-				<div>
-					<label class="label-text">YouTube</label>
-					<input class="input-field" placeholder="https://youtube.com/..." bind:value={socials.youtube} />
-				</div>
+				<label class="block">
+	<span class="label-text">Twitter / X</span>
+	<input class="input-field" placeholder="https://x.com/..." bind:value={socials.twitter} />
+</label>
+				<label class="block">
+	<span class="label-text">Telegram Group</span>
+	<input class="input-field" placeholder="https://t.me/..." bind:value={socials.telegram_group} />
+</label>
+				<label class="block">
+	<span class="label-text">Telegram Channel</span>
+	<input class="input-field" placeholder="https://t.me/..." bind:value={socials.telegram_channel} />
+</label>
+				<label class="block">
+	<span class="label-text">Discord</span>
+	<input class="input-field" placeholder="https://discord.gg/..." bind:value={socials.discord} />
+</label>
+				<label class="block">
+	<span class="label-text">Facebook</span>
+	<input class="input-field" placeholder="https://facebook.com/..." bind:value={socials.facebook} />
+</label>
+				<label class="block">
+	<span class="label-text">YouTube</span>
+	<input class="input-field" placeholder="https://youtube.com/..." bind:value={socials.youtube} />
+</label>
 			</div>
 			<button class="btn-primary text-xs px-4 py-2 mt-4 cursor-pointer" disabled={saving} onclick={() => saveConfig('social_links', socials)}>
 				{saving ? 'Saving...' : 'Save Socials'}
@@ -195,74 +195,74 @@
 			{#if showAddNetwork}
 				<div class="mb-4 bg-surface-input border border-[rgba(0,210,255,0.15)] rounded-xl p-4">
 					<div class="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-3">
-						<div>
-							<label class="label-text">Chain ID</label>
-							<input class="input-field" type="number" placeholder="56" bind:value={newNetwork.chain_id} />
-						</div>
-						<div>
-							<label class="label-text">Name</label>
-							<input class="input-field" placeholder="BSC" bind:value={newNetwork.name} />
-						</div>
-						<div>
-							<label class="label-text">Symbol</label>
-							<input class="input-field" placeholder="BSC" bind:value={newNetwork.symbol} />
-						</div>
-						<div>
-							<label class="label-text">Native Coin</label>
-							<input class="input-field" placeholder="BNB" bind:value={newNetwork.native_coin} />
-						</div>
-						<div>
-							<label class="label-text">RPC URL</label>
-							<input class="input-field" placeholder="https://..." bind:value={newNetwork.rpc} />
-						</div>
-						<div>
-							<label class="label-text">WS RPC URL (public — frontend)</label>
-							<input class="input-field" placeholder="wss://..." bind:value={newNetwork.ws_rpc} />
-						</div>
-						<div>
-							<label class="label-text">Daemon RPC (private — server only)</label>
-							<input class="input-field" placeholder="wss://... or https://..." bind:value={newNetwork.daemon_rpc} />
-						</div>
-						<div>
-							<label class="label-text">USDT Address</label>
-							<input class="input-field" placeholder="0x..." bind:value={newNetwork.usdt_address} />
-						</div>
-						<div>
-							<label class="label-text">USDC Address</label>
-							<input class="input-field" placeholder="0x..." bind:value={newNetwork.usdc_address} />
-						</div>
-						<div>
-							<label class="label-text">Token Factory</label>
-							<input class="input-field" placeholder="0x..." bind:value={newNetwork.platform_address} />
-						</div>
-						<div>
-							<label class="label-text">Launchpad Factory</label>
-							<input class="input-field" placeholder="0x..." bind:value={newNetwork.launchpad_address} />
-						</div>
-						<div>
-							<label class="label-text">Platform Router</label>
-							<input class="input-field" placeholder="0x..." bind:value={newNetwork.router_address} />
-						</div>
-						<div>
-							<label class="label-text">DEX Router</label>
-							<input class="input-field" placeholder="0x..." bind:value={newNetwork.dex_router} />
-						</div>
-						<div>
-							<label class="label-text">Trade Router</label>
-							<input class="input-field" placeholder="0x..." bind:value={newNetwork.trade_router_address} />
-						</div>
-						<div>
-							<label class="label-text">TradeLens</label>
-							<input class="input-field" placeholder="0x..." bind:value={newNetwork.trade_lens_address} />
-						</div>
-						<div>
-							<label class="label-text">Explorer URL</label>
-							<input class="input-field" placeholder="https://bscscan.com" bind:value={newNetwork.explorer_url} />
-						</div>
-						<div>
-							<label class="label-text">Gecko Network</label>
-							<input class="input-field" placeholder="bsc" bind:value={newNetwork.gecko_network} />
-						</div>
+						<label class="block">
+	<span class="label-text">Chain ID</span>
+	<input class="input-field" type="number" placeholder="56" bind:value={newNetwork.chain_id} />
+</label>
+						<label class="block">
+	<span class="label-text">Name</span>
+	<input class="input-field" placeholder="BSC" bind:value={newNetwork.name} />
+</label>
+						<label class="block">
+	<span class="label-text">Symbol</span>
+	<input class="input-field" placeholder="BSC" bind:value={newNetwork.symbol} />
+</label>
+						<label class="block">
+	<span class="label-text">Native Coin</span>
+	<input class="input-field" placeholder="BNB" bind:value={newNetwork.native_coin} />
+</label>
+						<label class="block">
+	<span class="label-text">RPC URL</span>
+	<input class="input-field" placeholder="https://..." bind:value={newNetwork.rpc} />
+</label>
+						<label class="block">
+	<span class="label-text">WS RPC URL (public — frontend)</span>
+	<input class="input-field" placeholder="wss://..." bind:value={newNetwork.ws_rpc} />
+</label>
+						<label class="block">
+	<span class="label-text">Daemon RPC (private — server only)</span>
+	<input class="input-field" placeholder="wss://... or https://..." bind:value={newNetwork.daemon_rpc} />
+</label>
+						<label class="block">
+	<span class="label-text">USDT Address</span>
+	<input class="input-field" placeholder="0x..." bind:value={newNetwork.usdt_address} />
+</label>
+						<label class="block">
+	<span class="label-text">USDC Address</span>
+	<input class="input-field" placeholder="0x..." bind:value={newNetwork.usdc_address} />
+</label>
+						<label class="block">
+	<span class="label-text">Token Factory</span>
+	<input class="input-field" placeholder="0x..." bind:value={newNetwork.platform_address} />
+</label>
+						<label class="block">
+	<span class="label-text">Launchpad Factory</span>
+	<input class="input-field" placeholder="0x..." bind:value={newNetwork.launchpad_address} />
+</label>
+						<label class="block">
+	<span class="label-text">Platform Router</span>
+	<input class="input-field" placeholder="0x..." bind:value={newNetwork.router_address} />
+</label>
+						<label class="block">
+	<span class="label-text">DEX Router</span>
+	<input class="input-field" placeholder="0x..." bind:value={newNetwork.dex_router} />
+</label>
+						<label class="block">
+	<span class="label-text">Trade Router</span>
+	<input class="input-field" placeholder="0x..." bind:value={newNetwork.trade_router_address} />
+</label>
+						<label class="block">
+	<span class="label-text">TradeLens</span>
+	<input class="input-field" placeholder="0x..." bind:value={newNetwork.trade_lens_address} />
+</label>
+						<label class="block">
+	<span class="label-text">Explorer URL</span>
+	<input class="input-field" placeholder="https://bscscan.com" bind:value={newNetwork.explorer_url} />
+</label>
+						<label class="block">
+	<span class="label-text">Gecko Network</span>
+	<input class="input-field" placeholder="bsc" bind:value={newNetwork.gecko_network} />
+</label>
 					</div>
 
 					<!-- Default partner bases for the create wizard -->
@@ -304,58 +304,58 @@
 						</button>
 					</div>
 					<div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-						<div>
-							<label class="label-text text-[9px]">RPC</label>
-							<input class="input-field text-xs" bind:value={net.rpc} />
-						</div>
-						<div>
-							<label class="label-text text-[9px]">WS RPC (public)</label>
-							<input class="input-field text-xs" placeholder="wss://..." bind:value={net.ws_rpc} />
-						</div>
-						<div>
-							<label class="label-text text-[9px]">Daemon RPC (private)</label>
-							<input class="input-field text-xs" placeholder="wss:// or https://..." bind:value={net.daemon_rpc} />
-						</div>
-						<div>
-							<label class="label-text text-[9px]">USDT</label>
-							<input class="input-field text-xs" bind:value={net.usdt_address} />
-						</div>
-						<div>
-							<label class="label-text text-[9px]">Token Factory</label>
-							<input class="input-field text-xs" bind:value={net.platform_address} />
-						</div>
-						<div>
-							<label class="label-text text-[9px]">Launchpad</label>
-							<input class="input-field text-xs" bind:value={net.launchpad_address} />
-						</div>
-						<div>
-							<label class="label-text text-[9px]">Platform Router</label>
-							<input class="input-field text-xs" bind:value={net.router_address} />
-						</div>
-						<div>
-							<label class="label-text text-[9px]">Trade Router</label>
-							<input class="input-field text-xs" bind:value={net.trade_router_address} />
-						</div>
-						<div>
-							<label class="label-text text-[9px]">DEX Router</label>
-							<input class="input-field text-xs" bind:value={net.dex_router} />
-						</div>
-						<div>
-							<label class="label-text text-[9px]">USDC</label>
-							<input class="input-field text-xs" bind:value={net.usdc_address} />
-						</div>
-						<div>
-							<label class="label-text text-[9px]">TradeLens</label>
-							<input class="input-field text-xs" bind:value={net.trade_lens_address} />
-						</div>
-						<div>
-							<label class="label-text text-[9px]">Explorer URL</label>
-							<input class="input-field text-xs" bind:value={net.explorer_url} />
-						</div>
-						<div>
-							<label class="label-text text-[9px]">Gecko Network</label>
-							<input class="input-field text-xs" bind:value={net.gecko_network} />
-						</div>
+						<label class="block">
+	<span class="label-text text-[9px]">RPC</span>
+	<input class="input-field text-xs" bind:value={net.rpc} />
+</label>
+						<label class="block">
+	<span class="label-text text-[9px]">WS RPC (public)</span>
+	<input class="input-field text-xs" placeholder="wss://..." bind:value={net.ws_rpc} />
+</label>
+						<label class="block">
+	<span class="label-text text-[9px]">Daemon RPC (private)</span>
+	<input class="input-field text-xs" placeholder="wss:// or https://..." bind:value={net.daemon_rpc} />
+</label>
+						<label class="block">
+	<span class="label-text text-[9px]">USDT</span>
+	<input class="input-field text-xs" bind:value={net.usdt_address} />
+</label>
+						<label class="block">
+	<span class="label-text text-[9px]">Token Factory</span>
+	<input class="input-field text-xs" bind:value={net.platform_address} />
+</label>
+						<label class="block">
+	<span class="label-text text-[9px]">Launchpad</span>
+	<input class="input-field text-xs" bind:value={net.launchpad_address} />
+</label>
+						<label class="block">
+	<span class="label-text text-[9px]">Platform Router</span>
+	<input class="input-field text-xs" bind:value={net.router_address} />
+</label>
+						<label class="block">
+	<span class="label-text text-[9px]">Trade Router</span>
+	<input class="input-field text-xs" bind:value={net.trade_router_address} />
+</label>
+						<label class="block">
+	<span class="label-text text-[9px]">DEX Router</span>
+	<input class="input-field text-xs" bind:value={net.dex_router} />
+</label>
+						<label class="block">
+	<span class="label-text text-[9px]">USDC</span>
+	<input class="input-field text-xs" bind:value={net.usdc_address} />
+</label>
+						<label class="block">
+	<span class="label-text text-[9px]">TradeLens</span>
+	<input class="input-field text-xs" bind:value={net.trade_lens_address} />
+</label>
+						<label class="block">
+	<span class="label-text text-[9px]">Explorer URL</span>
+	<input class="input-field text-xs" bind:value={net.explorer_url} />
+</label>
+						<label class="block">
+	<span class="label-text text-[9px]">Gecko Network</span>
+	<input class="input-field text-xs" bind:value={net.gecko_network} />
+</label>
 					</div>
 
 					<!-- Default partner bases editor -->

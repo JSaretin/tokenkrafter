@@ -423,10 +423,10 @@
 		<h3 class="section-title mb-2">{$t('admin.withdrawLaunchpadFees')}</h3>
 		<p class="text-xs text-gray-500 mb-4">{$t('admin.withdrawLaunchpadDesc')}</p>
 		<div class="flex flex-col gap-4">
-			<div>
-				<label class="label-text">{$t('admin.tokenAddress')}</label>
+			<label class="block">
+				<span class="label-text">{$t('admin.tokenAddress')}</span>
 				<input class="input-field" placeholder={$t('admin.withdrawTokenPlaceholder').replace('{coin}', selectedNetwork.native_coin)} bind:value={lpWithdrawTokenAddr} />
-			</div>
+			</label>
 			<button class="btn-primary text-xs px-5 py-2 cursor-pointer" disabled={busy} onclick={lpWithdrawFees}>
 				{busy ? $t('admin.withdrawing') : $t('admin.withdrawAll')}
 			</button>

@@ -148,7 +148,7 @@
 						<span class="text-[10px] text-dim font-mono">%</span>
 					</div>
 					{#if taxWallets.length > 1}
-						<button type="button" class="w-6 h-6 rounded-md border-none bg-[rgba(248,113,113,0.08)] text-[#f87171] cursor-pointer flex items-center justify-center shrink-0 transition-colors hover:bg-[rgba(248,113,113,0.15)]" onclick={() => removeWallet(i)}>
+						<button type="button" aria-label="Remove tax wallet" class="w-6 h-6 rounded-md border-none bg-[rgba(248,113,113,0.08)] text-[#f87171] cursor-pointer flex items-center justify-center shrink-0 transition-colors hover:bg-[rgba(248,113,113,0.15)]" onclick={() => removeWallet(i)}>
 							<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
 						</button>
 					{/if}

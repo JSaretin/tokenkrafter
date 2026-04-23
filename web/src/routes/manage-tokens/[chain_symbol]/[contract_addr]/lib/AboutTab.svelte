@@ -52,7 +52,7 @@
 		<div class="about-form">
 			<!-- Logo Upload -->
 			<div class="about-logo-section">
-				<label class="label-text">Token Logo</label>
+				<span class="label-text">Token Logo</span>
 				<input type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" class="hidden-file" bind:this={fileInput} onchange={onLogoFileChosen} />
 				<div class="about-logo-row">
 					{#if metaLogoPreview || metaLogoUrl}
@@ -76,25 +76,25 @@
 				{/if}
 			</div>
 
-			<div>
-				<label class="label-text" for="meta-desc">Description</label>
-				<textarea id="meta-desc" class="input-field" rows="3" placeholder="What is this token about?" bind:value={metaDescription} style="resize: vertical;"></textarea>
-			</div>
+			<label class="block">
+	<span class="label-text">Description</span>
+	<textarea id="meta-desc" class="input-field" rows="3" placeholder="What is this token about?" bind:value={metaDescription} style="resize: vertical;"></textarea>
+</label>
 
-			<div>
-				<label class="label-text" for="meta-web">Website</label>
-				<input id="meta-web" class="input-field" type="url" placeholder="https://yourtoken.com" bind:value={metaWebsite} />
-			</div>
+			<label class="block">
+	<span class="label-text">Website</span>
+	<input id="meta-web" class="input-field" type="url" placeholder="https://yourtoken.com" bind:value={metaWebsite} />
+</label>
 
 			<div class="grid grid-cols-2 gap-3">
-				<div>
-					<label class="label-text" for="meta-tw">Twitter / X</label>
-					<input id="meta-tw" class="input-field" type="text" placeholder="@handle or URL" bind:value={metaTwitter} />
-				</div>
-				<div>
-					<label class="label-text" for="meta-tg">Telegram</label>
-					<input id="meta-tg" class="input-field" type="text" placeholder="@group or URL" bind:value={metaTelegram} />
-				</div>
+				<label class="block">
+	<span class="label-text">Twitter / X</span>
+	<input id="meta-tw" class="input-field" type="text" placeholder="@handle or URL" bind:value={metaTwitter} />
+</label>
+				<label class="block">
+	<span class="label-text">Telegram</span>
+	<input id="meta-tg" class="input-field" type="text" placeholder="@group or URL" bind:value={metaTelegram} />
+</label>
 			</div>
 
 			<button class="action-btn syne cursor-pointer w-full mt-2" disabled={metaSaving || metaLogoUploading} onclick={onSaveMetadata}>

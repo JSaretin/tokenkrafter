@@ -1729,7 +1729,13 @@
 	<div
 		class="fixed inset-0 z-[80] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
 		onclick={closeDepositModal}
+		onkeydown={(e) => { if (e.key === 'Escape') closeDepositModal(); }}
+		role="dialog"
+		aria-modal="true"
+		tabindex="-1"
 	>
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<!-- svelte-ignore a11y_click_events_have_key_events -->
 		<div
 			class="deposit-modal w-full max-w-md rounded-2xl border border-line-input bg-background shadow-2xl overflow-hidden"
 			onclick={(e) => e.stopPropagation()}
@@ -1747,7 +1753,7 @@
 						<p class="text-gray-500 text-[11px] font-mono">{depositInfo.networkName} Network</p>
 					</div>
 				</div>
-				<button onclick={closeDepositModal} class="w-8 h-8 rounded-lg border-none bg-surface-hover text-dim flex items-center justify-center transition-all duration-150 hover:bg-[var(--border-input)] hover:text-heading cursor-pointer">
+				<button aria-label="Close" onclick={closeDepositModal} class="w-8 h-8 rounded-lg border-none bg-surface-hover text-dim flex items-center justify-center transition-all duration-150 hover:bg-[var(--border-input)] hover:text-heading cursor-pointer">
 					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 						<path d="M18 6L6 18M6 6l12 12"/>
 					</svg>
@@ -1780,7 +1786,7 @@
 
 			<!-- Address -->
 			<div class="px-6 pb-4 flex flex-col gap-1.5">
-				<label class="text-gray-500 text-[10px] font-mono uppercase tracking-wider">{$t('mt.depositAddress')}</label>
+				<span class="text-gray-500 text-[10px] font-mono uppercase tracking-wider">{$t('mt.depositAddress')}</span>
 				<div class="flex items-center gap-2 px-3 py-2.5 bg-surface border border-line rounded-[10px]">
 					<span class="text-cyan-400 text-xs font-mono break-all flex-1">{userAddress}</span>
 					<button onclick={copyAddress} class="px-3 py-1 rounded-md border border-[rgba(0,210,255,0.3)] bg-[rgba(0,210,255,0.08)] text-[#00d2ff] text-[11px] font-mono font-semibold transition-all duration-150 whitespace-nowrap shrink-0 hover:bg-[rgba(0,210,255,0.15)] hover:border-[rgba(0,210,255,0.5)] cursor-pointer">

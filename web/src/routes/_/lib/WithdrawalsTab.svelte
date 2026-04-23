@@ -340,8 +340,8 @@
 				{/each}
 			</div>
 			<div class="flex items-center gap-2 ml-auto">
-				<label class="text-xs text-gray-500 font-mono">NGN Rate:</label>
-				<input class="input-field text-xs w-[100px]" type="number" bind:value={nairaRate} />
+				<label for="wt-ngn-rate" class="text-xs text-gray-500 font-mono">NGN Rate:</label>
+				<input id="wt-ngn-rate" class="input-field text-xs w-[100px]" type="number" bind:value={nairaRate} />
 			</div>
 			<button class="btn-secondary text-xs px-3 py-1.5 cursor-pointer" onclick={loadWithdrawals}>
 				Refresh
@@ -511,11 +511,20 @@
 	{@const w = confirmTarget}
 	{@const chainDec = usdtDecimalsMap[w.chain_id] || 18}
 	{@const netUsdt = parseFloat(ethers.formatUnits(w.net_amount || w.gross_amount || '0', chainDec))}
-	<div class="fixed inset-0 z-[100] bg-black/70 backdrop-blur-[4px] flex items-center justify-center p-4" onclick={() => { showConfirmModal = false; }} role="dialog" aria-modal="true">
+	<div
+		class="fixed inset-0 z-[100] bg-black/70 backdrop-blur-[4px] flex items-center justify-center p-4"
+		onclick={() => { showConfirmModal = false; }}
+		onkeydown={(e) => { if (e.key === 'Escape') showConfirmModal = false; }}
+		role="dialog"
+		aria-modal="true"
+		tabindex="-1"
+	>
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<!-- svelte-ignore a11y_click_events_have_key_events -->
 		<div class="w-full max-w-[440px] bg-background border border-line rounded-[20px] overflow-hidden" onclick={(e) => e.stopPropagation()}>
 			<div class="flex justify-between items-center px-5 py-4 border-b border-line">
 				<h3 class="font-display text-[15px] font-bold text-heading m-0">Confirm Withdrawal #{w.withdraw_id}</h3>
-				<button class="bg-none border-none text-muted cursor-pointer p-1 rounded-lg transition hover:text-foreground hover:bg-surface-hover" onclick={() => { showConfirmModal = false; }}>
+				<button aria-label="Close" class="bg-none border-none text-muted cursor-pointer p-1 rounded-lg transition hover:text-foreground hover:bg-surface-hover" onclick={() => { showConfirmModal = false; }}>
 					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
 				</button>
 			</div>
@@ -561,10 +570,10 @@
 
 				<!-- Custom fields -->
 				{#if confirmMode === 'custom-wallet'}
-					<div class="mb-3">
-						<label class="block mb-1 text-[10px] text-gray-500 font-mono uppercase">Recipient Address</label>
+					<label class="block mb-3">
+						<span class="block mb-1 text-[10px] text-gray-500 font-mono uppercase">Recipient Address</span>
 						<input class="input-field text-xs" bind:value={confirmTo} placeholder="0x..." />
-					</div>
+					</label>
 				{/if}
 
 				<!-- Execute button -->

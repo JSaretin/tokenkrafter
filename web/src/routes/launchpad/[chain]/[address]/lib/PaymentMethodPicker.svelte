@@ -17,7 +17,7 @@
 
 <!-- Payment method select -->
 <div class="mb-3">
-	<label class="label-text">{$t('lpd.payWith')}</label>
+	<span class="label-text">{$t('lpd.payWith')}</span>
 	<button
 		type="button"
 		onclick={onOpenPicker}

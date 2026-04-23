@@ -89,9 +89,9 @@
 
 <!-- Tokens for trading -->
 <div class="mb-4">
-	<label class="block text-[11px] font-bold text-dim uppercase tracking-[0.05em] font-mono mb-1.5">Tokens for trading</label>
+	<label for="lc-pool-pct" class="block text-[11px] font-bold text-dim uppercase tracking-[0.05em] font-mono mb-1.5">Tokens for trading</label>
 	<div class="flex items-center gap-3">
-		<input type="range" class="lc-slider flex-1 h-1.5 bg-surface-hover rounded-[3px] outline-none" min="10" max="100" step="5" bind:value={poolPct} />
+		<input id="lc-pool-pct" type="range" class="lc-slider flex-1 h-1.5 bg-surface-hover rounded-[3px] outline-none" min="10" max="100" step="5" bind:value={poolPct} />
 		<span class="text-base font-bold text-[#00d2ff] font-display min-w-[40px] text-right">{poolPct}%</span>
 	</div>
 	<div class="flex justify-between mt-1 text-[10px] text-dim font-mono">
@@ -102,7 +102,7 @@
 
 <!-- Liquidity pairs -->
 <div class="mb-4">
-	<label class="block text-[11px] font-bold text-dim uppercase tracking-[0.05em] font-mono mb-1.5">Add liquidity</label>
+	<span class="block text-[11px] font-bold text-dim uppercase tracking-[0.05em] font-mono mb-1.5">Add liquidity</span>
 	{#each pairs as pair, i}
 		<div class="border border-line rounded-xl p-3 mb-2 bg-surface">
 			<div class="flex justify-between items-center mb-2">
@@ -180,8 +180,8 @@
 </button>
 {#if advanced}
 	<div class="mb-4 mt-1.5">
-		<label class="block text-[11px] font-bold text-dim uppercase tracking-[0.05em] font-mono mb-1.5">Token price (USDT)</label>
-		<input class="input-field" type="text" bind:value={pricePerToken} placeholder="0.001" />
+		<label for="lc-price-per-token" class="block text-[11px] font-bold text-dim uppercase tracking-[0.05em] font-mono mb-1.5">Token price (USDT)</label>
+		<input id="lc-price-per-token" class="input-field" type="text" bind:value={pricePerToken} placeholder="0.001" />
 	</div>
 {/if}
 
