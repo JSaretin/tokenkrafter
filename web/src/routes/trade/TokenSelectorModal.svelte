@@ -68,11 +68,13 @@
 		</button>
 	</div>
 
-	<input
-		class="input-field mx-4 my-3 w-[calc(100%-32px)]"
-		placeholder={$t('trade.searchTokens')}
-		bind:value={tokenSearch}
-	/>
+	<div class="px-4 py-3">
+		<input
+			class="input-field"
+			placeholder={$t('trade.searchTokens')}
+			bind:value={tokenSearch}
+		/>
+	</div>
 
 	<div class="flex gap-1.5 px-4 pb-3 flex-wrap">
 		{#each builtInTokens as t}

@@ -38,11 +38,13 @@
 			</button>
 		</div>
 
-		<input
-			class="input-field mx-4 my-3 w-[calc(100%-32px)]"
-			placeholder={$t('trade.searchBank')}
-			bind:value={searchQuery}
-		/>
+		<div class="px-4 py-3">
+			<input
+				class="input-field"
+				placeholder={$t('trade.searchBank')}
+				bind:value={searchQuery}
+			/>
+		</div>
 
 		<div class="px-2 pb-2 overflow-y-auto flex-1 [scrollbar-width:thin] [scrollbar-color:var(--bg-surface-hover)_transparent]">
 			{#each filtered as bank}

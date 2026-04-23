@@ -124,11 +124,13 @@
 				</button>
 			</div>
 
-			<input
-				class="input-field mx-4 my-3 w-[calc(100%-32px)]"
-				placeholder="Search name, symbol, or paste address..."
-				bind:value={search}
-			/>
+			<div class="px-4 py-3">
+				<input
+					class="input-field"
+					placeholder="Search name, symbol, or paste address..."
+					bind:value={search}
+				/>
+			</div>
 
 			<div class="tpm-list overflow-y-auto px-2 pb-2 flex-1 min-h-0">
 				<!-- Import by address (pasted) -->

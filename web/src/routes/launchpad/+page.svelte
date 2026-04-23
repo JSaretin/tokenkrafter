@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { ethers } from 'ethers';
-	import { getContext, onMount } from 'svelte';
+	import { getContext, onMount, untrack } from 'svelte';
 	import { supabase } from '$lib/supabaseClient';
 	import { t } from '$lib/i18n';
 	import { favorites, toggleFavorite } from '$lib/favorites';
@@ -101,13 +101,21 @@
 		hoveredLaunch = null;
 	}
 
-	// Countdown ticker
+	// Countdown ticker — only runs when at least one launch has a time-sensitive
+	// state (live or scheduled). Idle pages with no launches would otherwise
+	// recompute nowBigInt/liveCount/upcomingCount every second for nothing.
 	let tickNow = $state(Date.now());
 	let tickInterval: ReturnType<typeof setInterval> | null = null;
+	let needsTick = $derived(
+		launches.some((l) => l.state === 1 || (l.state === 0 && l.startTimestamp > 0n))
+	);
 
 	$effect(() => {
-		if (!tickInterval) {
+		if (needsTick && !tickInterval) {
 			tickInterval = setInterval(() => { tickNow = Date.now(); }, 1000);
+		} else if (!needsTick && tickInterval) {
+			clearInterval(tickInterval);
+			tickInterval = null;
 		}
 		return () => { if (tickInterval) { clearInterval(tickInterval); tickInterval = null; } };
 	});
@@ -434,6 +442,7 @@
 
 	async function loadBadges() {
 		try {
+			if (launches.length === 0) return;
 			const { data: rows } = await supabase
 				.from('badges')
 				.select('launch_address, chain_id, badge_type');
@@ -466,8 +475,11 @@
 	// Realtime subscription for live updates
 	let launchChannel: any;
 
+	// Only fire on the providersReady flip; wrap the async call in untrack so
+	// reads inside loadLaunches (which reassigns `launches`) don't re-trigger
+	// this effect and cause an empty-result reload loop.
 	$effect(() => {
-		if (providersReady) loadLaunches();
+		if (providersReady) untrack(() => { loadLaunches(); });
 	});
 
 	onMount(() => {

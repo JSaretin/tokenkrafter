@@ -62,13 +62,15 @@
 			</button>
 		</div>
 
-		<input
-			class="input-field mx-4 my-3 w-[calc(100%-32px)]"
-			placeholder="0x... paste token address to import"
-			bind:value={importAddr}
-			disabled={importBusy}
-			onkeydown={(e) => { if (e.key === 'Enter') handleImport(); }}
-		/>
+		<div class="px-4 py-3">
+			<input
+				class="input-field"
+				placeholder="0x... paste token address to import"
+				bind:value={importAddr}
+				disabled={importBusy}
+				onkeydown={(e) => { if (e.key === 'Enter') handleImport(); }}
+			/>
+		</div>
 		{#if importError}
 			<p class="text-xs2 text-red-400 syne px-4 pb-2 m-0">{importError}</p>
 		{/if}
