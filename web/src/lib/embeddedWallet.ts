@@ -233,6 +233,7 @@ export async function checkSession(): Promise<boolean> {
 // of cache state by passing an explicit PIN to `unlockWallet`.
 
 const SESSION_KEY = '_wp';
+const SESSION_POLICY_KEY = '_wpp';
 
 export interface SessionPolicy {
 	idleMs: number;

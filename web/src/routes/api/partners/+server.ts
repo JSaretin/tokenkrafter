@@ -21,7 +21,7 @@ let cache: { data: any[]; timestamp: number } = { data: [], timestamp: 0 };
 const CACHE_TTL = 5 * 60 * 1000;
 
 /** Read networks from platform_config DB table */
-async function getNetworks(): Promise<Array<{ chain_id: number; name: string; rpc: string; factory_address: string }>> {
+async function getNetworks(): Promise<Array<{ chain_id: number; name: string; rpc: string; platform_address: string }>> {
 	const { data } = await supabaseAdmin
 		.from('platform_config')
 		.select('value')

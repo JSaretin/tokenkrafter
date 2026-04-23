@@ -83,8 +83,7 @@ export async function initAppKit(networks?: SupportedNetwork[]) {
 		allWallets: 'SHOW',
 		features: {
 			analytics: false,
-			allWallets: true,
-			networkSwitch: true
+			allWallets: true
 		},
 		allowUnsupportedChain: true,
 		themeMode: 'dark'

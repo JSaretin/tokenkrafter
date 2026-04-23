@@ -91,9 +91,10 @@ async function getV4Token(): Promise<string> {
 		throw new Error(`Flutterwave OAuth failed: ${data.error_description || data.error || 'Unknown'}`);
 	}
 
-	cachedToken = data.access_token;
+	const token = data.access_token as string;
+	cachedToken = token;
 	tokenExpiresAt = Date.now() + (data.expires_in * 1000);
-	return cachedToken;
+	return token;
 }
 
 async function v4Fetch(path: string, options: RequestInit = {}): Promise<any> {

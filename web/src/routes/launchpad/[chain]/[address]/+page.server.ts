@@ -73,15 +73,14 @@ export const load: PageServerLoad = async ({ params, setHeaders }) => {
 				tokenContract.decimals().catch(() => 18),
 			]);
 
-			// Check if token is in DB (platform token)
+			// Check if token is in DB (platform token). Supabase returns
+			// { data, error } rather than throwing, so no try/catch needed.
 			const { data: tokenData } = await supabaseAdmin
 				.from('created_tokens')
 				.select('name, symbol, decimals, is_safu, is_kyc, has_liquidity, lp_burned, lp_burned_pct, tax_ceiling_locked, owner_renounced, trading_enabled, buy_tax_bps, sell_tax_bps, is_taxable, is_mintable, is_partner, logo_url')
 				.eq('address', tokenAddress.toLowerCase())
 				.eq('chain_id', chainId)
-				.single()
-				.then(r => r)
-				.catch(() => ({ data: null }));
+				.single();
 
 			const rpcLaunch = {
 				address: launchAddress,

@@ -135,6 +135,18 @@
 	let launchTokensPct = $state(40);
 	let supplyNum = $derived(parseFloat((totalSupply || '').replace(/,/g, '')) || 0);
 	let launchTokenAmount = $derived(supplyNum > 0 ? (supplyNum * launchTokensPct) / 100 : 0);
+	let launchCurveType = $state(0);
+	let launchSoftCap = $state('');
+	let launchHardCap = $state('');
+	let launchDurationDays = $state('30');
+	let launchMaxBuyPct = $state('2');
+	let launchCreatorAllocPct = $state('0');
+	let launchVestingDays = $state('0');
+	// Anti-snipe window after graduation — creator-configurable, default 1 hour.
+	// Contract caps at 24h. UI displays as minutes.
+	let launchLockDurationMinutes = $state('60');
+	// Anti-dust floor per buy in whole USDT. Default 1 USDT.
+	let launchMinBuyUsdt = $state('1');
 	// Max buy per wallet in USDT = hardCap * maxBuyPct / 100. If the creator
 	// sets a min buy higher than this, no one can actually buy (first buy
 	// would exceed the wallet cap immediately). Surface the warning live.
@@ -155,18 +167,6 @@
 		if (n >= 1e3) return (n / 1e3).toFixed(n % 1e3 === 0 ? 0 : 1) + 'K';
 		return n.toLocaleString();
 	}
-	let launchCurveType = $state(0);
-	let launchSoftCap = $state('');
-	let launchHardCap = $state('');
-	let launchDurationDays = $state('30');
-	let launchMaxBuyPct = $state('2');
-	let launchCreatorAllocPct = $state('0');
-	let launchVestingDays = $state('0');
-	// Anti-snipe window after graduation — creator-configurable, default 1 hour.
-	// Contract caps at 24h. UI displays as minutes.
-	let launchLockDurationMinutes = $state('60');
-	// Anti-dust floor per buy in whole USDT. Default 1 USDT.
-	let launchMinBuyUsdt = $state('1');
 	// Scheduled start — datetime-local string or "" for immediate.
 	// Converted to unix seconds at submit time.
 	let launchStartDateLocal = $state('');

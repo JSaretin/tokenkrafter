@@ -85,6 +85,8 @@
 			usdtAddress: row.usdt_address || '',
 			totalTokensRequired: BigInt(row.total_tokens_required || '0'),
 			totalTokensDeposited: BigInt(row.total_tokens_deposited || '0'),
+			totalBuyers: row.total_buyers ?? 0,
+			totalPurchases: row.total_purchases ?? 0,
 			tokenName: row.token_name,
 			tokenSymbol: row.token_symbol,
 			tokenDecimals: row.token_decimals ?? 18,
@@ -107,12 +109,12 @@
 	let tokenTrust: any = $state(serverData?.tokenTrust || null);
 	let mobileAboutExpanded = $state(false);
 	let buyAmount = $state(''); // always in USDT
-	let buyPaymentMethod: 'usdt' | 'usdc' | 'native' | 'custom' = $state('usdt');
+	let buyPaymentMethod = $state<'usdt' | 'usdc' | 'native' | 'custom'>('usdt');
 	let slippagePct = $state(5); // default 5% slippage tolerance
 	let showSlippageMenu = $state(false);
 	let showPayPicker = $state(false);
-	let customPayToken: PickerToken | null = $state(null);
-	let preview: BuyPreview | null = $state(null);
+	let customPayToken = $state<PickerToken | null>(null);
+	let preview = $state<BuyPreview | null>(null);
 	let previewLoading = $state(false);
 	let isBuying = $state(false);
 	let isRefunding = $state(false);
@@ -1806,7 +1808,7 @@
 
 		<!-- Creator vesting claim (graduated + creator has allocation) -->
 		{#if launch.state === 2 && isCreator && launch.creatorAllocationBps > 0n && vestingDurationSeconds > 0n && graduationTimestamp > 0n}
-			{@const elapsed = BigInt(Math.floor(tickNow / 1000)) - graduationTimestamp}
+			{@const elapsed = BigInt(Math.floor(countdownNow / 1000)) - graduationTimestamp}
 			{@const pastCliff = elapsed >= vestingCliffSeconds}
 			{@const vestedTime = pastCliff ? elapsed - vestingCliffSeconds : 0n}
 			{@const totalVested = vestedTime >= vestingDurationSeconds ? creatorTotalTokens : (vestingDurationSeconds > 0n ? (creatorTotalTokens * vestedTime / vestingDurationSeconds) : 0n)}
@@ -1837,6 +1839,7 @@
 							if (!net) return;
 							const provider = networkProviders.get(net.chain_id);
 							if (!provider || !signer) { addFeedback({ message: 'Connect wallet first', type: 'error' }); return; }
+							if (!launch) return;
 							const s = (signer as any).connect ? (signer as any).connect(provider) : signer;
 							const launchClient = new LaunchInstanceClient(launch.address, s);
 							addFeedback({ message: 'Claiming vested tokens...', type: 'info' });

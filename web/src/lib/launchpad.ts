@@ -142,6 +142,8 @@ export interface LaunchInfo {
 	startTimestamp: bigint; // 0 = immediate, >0 = scheduled start
 	totalTokensRequired: bigint;
 	totalTokensDeposited: bigint;
+	totalBuyers: number;
+	totalPurchases: number;
 	// Token metadata (fetched separately)
 	tokenName?: string;
 	tokenSymbol?: string;

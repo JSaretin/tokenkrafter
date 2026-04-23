@@ -80,7 +80,7 @@
 		}
 		networks = [...networks, net];
 		showAddNetwork = false;
-		newNetwork = { chain_id: '', name: '', symbol: '', native_coin: '', usdt_address: '', usdc_address: '', platform_address: '', launchpad_address: '', router_address: '', dex_router: '', trade_router_address: '', trade_lens_address: '', rpc: '', explorer_url: '', gecko_network: '', default_bases: [] };
+		newNetwork = { chain_id: '', name: '', symbol: '', native_coin: '', usdt_address: '', usdc_address: '', platform_address: '', launchpad_address: '', router_address: '', dex_router: '', trade_router_address: '', trade_lens_address: '', rpc: '', ws_rpc: '', daemon_rpc: '', explorer_url: '', gecko_network: '', default_bases: [] };
 	}
 
 	function removeNetwork(idx: number) {

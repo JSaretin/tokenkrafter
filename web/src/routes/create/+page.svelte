@@ -496,7 +496,7 @@
 	let requiredAmount: bigint = $state(0n);
 
 
-	let tokenInfo: (TokenFormData & { listing: ListingConfig }) | null = $state(null);
+	let tokenInfo = $state<(TokenFormData & { listing: ListingConfig }) | null>(null);
 
 	// Single-source picks — used in both display + tx-building paths, so kept flat.
 	let selectedPayment = $derived(paymentOptions[selectedPaymentIndex]);

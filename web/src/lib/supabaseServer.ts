@@ -8,7 +8,12 @@ let _client: SupabaseClient | null = null;
 export const supabaseAdmin: SupabaseClient = new Proxy({} as SupabaseClient, {
 	get(_target, prop) {
 		if (!_client) {
-			_client = createClient(pubEnv.PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY);
+			const url = pubEnv.PUBLIC_SUPABASE_URL;
+			const key = env.SUPABASE_SERVICE_ROLE_KEY;
+			if (!url || !key) {
+				throw new Error('Supabase admin env vars missing: PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY');
+			}
+			_client = createClient(url, key);
 		}
 		return (_client as any)[prop];
 	}
