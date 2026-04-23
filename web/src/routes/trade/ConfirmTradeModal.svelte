@@ -91,7 +91,7 @@
 </script>
 
 <FixedOverlay show={true} onclose={() => { if (!isSwapping) onClose(); }}>
-	<div class="w-full max-w-[420px] bg-(--bg) border border-(--border) rounded-[20px] overflow-hidden max-h-[80vh] max-sm:max-h-[80vh] max-sm:max-w-full max-sm:rounded-b-none flex flex-col">
+	<div class="w-full max-w-[420px] bg-(--bg) border border-(--border) rounded-[20px] overflow-hidden max-h-[80vh] max-sm:h-[85vh] max-sm:max-h-[85vh] max-sm:max-w-full max-sm:rounded-b-none flex flex-col">
 		<div class="flex justify-between items-center px-5 py-4 border-b border-(--border)">
 			<h3 class="font-[Syne,sans-serif] text-base font-bold text-(--text-heading) m-0">{outputMode === 'bank' ? $t('trade.confirmWithdrawal') : $t('trade.confirmSwap')}</h3>
 			{#if !isSwapping}

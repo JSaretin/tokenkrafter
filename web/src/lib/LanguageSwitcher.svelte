@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { locale, locales, type Locale } from '$lib/i18n';
 
+	let { direction = 'down' }: { direction?: 'up' | 'down' } = $props();
+
 	let open = $state(false);
 
 	const currentLocale = $derived(locales.find((l) => l.code === $locale) ?? locales[0]);
@@ -36,14 +38,14 @@
 			stroke-width="2.5"
 			stroke-linecap="round"
 			stroke-linejoin="round"
-			class={'transition-transform ' + (open ? 'rotate-180' : '')}
+			class={'transition-transform ' + ((open !== (direction === 'up')) ? 'rotate-180' : '')}
 		>
 			<polyline points="6 9 12 15 18 9" />
 		</svg>
 	</button>
 
 	{#if open}
-		<div class="absolute right-0 top-full mt-1 rounded-lg border border-line bg-nav min-w-[140px] backdrop-blur-xl overflow-hidden z-[60]">
+		<div class={'absolute right-0 rounded-lg border border-line bg-nav min-w-[140px] backdrop-blur-xl overflow-hidden z-[60] ' + (direction === 'up' ? 'bottom-full mb-1' : 'top-full mt-1')}>
 			{#each locales as loc}
 				<button
 					onclick={() => select(loc.code)}

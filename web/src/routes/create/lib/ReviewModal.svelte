@@ -129,7 +129,7 @@
 
 <FixedOverlay bind:show onclose={onClose}>
 	<div
-		class="w-full sm:max-w-md h-[80vh] sm:h-auto sm:max-h-[90vh] overflow-y-auto bg-(--bg) border border-(--border-input) p-4 sm:p-6 rounded-t-[20px] sm:rounded-[20px] animate-slide-up sm:animate-modal-in [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden pb-[calc(1rem+env(safe-area-inset-bottom,0px))]"
+		class="w-full sm:max-w-md h-[85vh] sm:h-auto sm:max-h-[90vh] overflow-y-auto bg-(--bg) border border-(--border-input) p-4 sm:p-6 rounded-t-[20px] sm:rounded-[20px] animate-slide-up sm:animate-modal-in [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden pb-[calc(1rem+env(safe-area-inset-bottom,0px))]"
 	>
 		<!-- Mobile drag indicator -->
 		<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->

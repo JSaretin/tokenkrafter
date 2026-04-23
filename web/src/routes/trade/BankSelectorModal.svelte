@@ -30,7 +30,7 @@
 </script>
 
 <FixedOverlay show={true} onclose={onClose}>
-	<div class="w-full max-w-[420px] bg-(--bg) border border-(--border) rounded-[20px] overflow-hidden max-h-[70vh] max-sm:max-h-[85vh] max-sm:max-w-full max-sm:rounded-b-none flex flex-col">
+	<div class="w-full max-w-[420px] bg-(--bg) border border-(--border) rounded-[20px] overflow-hidden max-h-[70vh] max-sm:h-[85vh] max-sm:max-h-[85vh] max-sm:max-w-full max-sm:rounded-b-none flex flex-col">
 		<div class="flex justify-between items-center px-5 py-4 border-b border-(--border)">
 			<h3 class="font-[Syne,sans-serif] text-[16px] font-bold text-(--text-heading) m-0">{$t('trade.selectBank')}</h3>
 			<button class="bg-none border-0 text-(--text-muted) cursor-pointer p-1 rounded-lg transition-all duration-150 hover:text-(--text) hover:bg-(--bg-surface-hover)" onclick={onClose}>

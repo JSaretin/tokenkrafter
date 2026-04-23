@@ -49,7 +49,7 @@
 
 <FixedOverlay bind:show onclose={handleClose}>
 	<div
-		class="w-full max-w-[420px] max-h-[80vh] bg-(--bg) border border-(--border) rounded-[20px] overflow-hidden flex flex-col max-sm:max-w-full max-sm:rounded-t-[20px] max-sm:rounded-b-none max-sm:h-[80vh] max-sm:max-h-[80vh]"
+		class="w-full max-w-[420px] max-h-[85vh] bg-(--bg) border border-(--border) rounded-[20px] overflow-hidden flex flex-col max-sm:max-w-full max-sm:rounded-t-[20px] max-sm:rounded-b-none max-sm:h-[85vh] max-sm:max-h-[85vh]"
 	>
 		<div class="flex justify-between items-center py-4 px-5 border-b border-(--border)">
 			<h3 class="syne text-base font-bold text-(--text-heading) m-0">Select payment</h3>

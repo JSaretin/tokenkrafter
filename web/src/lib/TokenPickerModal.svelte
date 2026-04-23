@@ -116,7 +116,7 @@
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div class="fixed inset-0 z-[100] bg-black/70 backdrop-blur-[4px] flex items-start justify-center py-[60px] px-4 max-[639px]:items-end max-[639px]:p-0" onclick={close} role="dialog" aria-modal="true">
-		<div class="w-full max-w-[420px] max-h-[70vh] bg-background border border-line rounded-[20px] overflow-hidden flex flex-col max-[639px]:max-w-full max-[639px]:rounded-t-[20px] max-[639px]:rounded-b-none max-[639px]:h-[80vh] max-[639px]:max-h-[80vh]" onclick={(e) => e.stopPropagation()}>
+		<div class="w-full max-w-[420px] max-h-[70vh] bg-background border border-line rounded-[20px] overflow-hidden flex flex-col max-[639px]:max-w-full max-[639px]:rounded-t-[20px] max-[639px]:rounded-b-none max-[639px]:h-[85vh] max-[639px]:max-h-[85vh]" onclick={(e) => e.stopPropagation()}>
 			<div class="flex justify-between items-center py-4 px-5 border-b border-line">
 				<h3 class="font-display text-base font-bold text-heading m-0">{title}</h3>
 				<button class="bg-none border-none text-muted cursor-pointer p-1 rounded-lg transition-all hover:text-foreground hover:bg-surface-hover" onclick={close}>
@@ -131,7 +131,7 @@
 				autofocus
 			/>
 
-			<div class="tpm-list overflow-y-auto px-2 pb-2 h-[60vh] sm:h-[80vh]">
+			<div class="tpm-list overflow-y-auto px-2 pb-2 flex-1 min-h-0">
 				<!-- Import by address (pasted) -->
 				{#if ethers.isAddress(search.trim()) && !filtered.find(t => t.address.toLowerCase() === search.trim().toLowerCase())}
 					{#if pastedLoading}
