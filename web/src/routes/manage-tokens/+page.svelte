@@ -275,7 +275,7 @@
 	<!-- Header -->
 	<div class="flex items-start justify-between gap-4 mb-6 flex-wrap max-[500px]:flex-col">
 		<div>
-			<h1 class="font-display text-[28px] font-extrabold text-heading m-0">{$t('mt.pageTitle')}</h1>
+			<h1 class="font-display text-2xl sm:text-3xl font-extrabold text-heading m-0">{$t('mt.pageTitle')}</h1>
 			<p class="text-[13px] text-dim font-mono mt-1 mb-0">
 				{#if userAddress}
 					Tokens created by <span class="text-brand-cyan">{shortAddr(userAddress)}</span>

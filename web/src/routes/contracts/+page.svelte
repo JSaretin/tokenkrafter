@@ -37,7 +37,7 @@
 
 <div class="max-w-[800px] mx-auto px-4 pt-6 pb-[60px]">
 	<div class="mb-8">
-		<h1 class="font-display text-[28px] font-extrabold text-heading m-0 mb-1.5">Contracts</h1>
+		<h1 class="font-display text-2xl sm:text-3xl font-extrabold text-heading m-0 mb-1.5">Contracts</h1>
 		<p class="font-mono text-[13px] text-muted m-0">All smart contracts are verified and publicly accessible on the blockchain.</p>
 	</div>
 

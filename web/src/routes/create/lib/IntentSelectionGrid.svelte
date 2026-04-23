@@ -11,7 +11,7 @@
 </script>
 
 <div class="text-center mb-7">
-	<h1 class="syne text-[28px] font-extrabold text-(--text-heading) m-0">What do you want to build?</h1>
+	<h1 class="syne text-2xl sm:text-3xl font-extrabold text-(--text-heading) m-0">What do you want to build?</h1>
 	<p class="text-xs3 text-(--text-muted) font-['Rajdhani',sans-serif] mt-1 mb-0">Every option is non-custodial and on-chain</p>
 </div>
 
@@ -26,16 +26,18 @@
 			style="background: radial-gradient(ellipse at 30% 50%, rgba(0,210,255,0.06), transparent 60%);"
 		></div>
 		<div class="relative z-10 p-[18px] flex flex-row items-start gap-4 flex-wrap h-full">
-			<div class="absolute top-2.5 right-3 z-20 inline-flex items-center gap-1 text-4xs font-bold uppercase tracking-[0.06em] py-1 px-2.5 rounded-md bg-cyan-400/15 text-cyan-400 font-['Rajdhani',sans-serif] border border-cyan-400/25">
-				<svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-				Recommended
-			</div>
 			<div class="w-[42px] h-[42px] rounded-xl shrink-0 flex items-center justify-center bg-cyan-400/10 text-cyan-400 border border-cyan-400/15">
 				<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
 			</div>
 			<div class="flex-1 min-w-[200px]">
-				<h3 class="syne text-lg font-bold text-(--text-heading) m-0">Create & Launch</h3>
-				<p class="text-xs2 text-(--text-muted) font-['Rajdhani',sans-serif] leading-[1.4] m-0">Deploy your token with a bonding curve fundraise. Price rises with demand. Graduates to DEX with liquidity burned automatically.</p>
+				<div class="flex items-start justify-between gap-2">
+					<h3 class="syne text-lg font-bold text-(--text-heading) m-0">Create & Launch</h3>
+					<span class="shrink-0 inline-flex items-center gap-1 text-4xs font-bold uppercase tracking-[0.06em] py-1 px-2.5 rounded-md bg-cyan-400/15 text-cyan-400 font-['Rajdhani',sans-serif] border border-cyan-400/25">
+						<svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+						Recommended
+					</span>
+				</div>
+				<p class="text-xs2 text-(--text-muted) font-['Rajdhani',sans-serif] leading-[1.4] m-0 mt-1">Deploy your token with a bonding curve fundraise. Price rises with demand. Graduates to DEX with liquidity burned automatically.</p>
 				<div class="flex gap-1.5 flex-wrap mt-1">
 					<span class="text-4xs py-0.5 px-2 rounded-full bg-cyan-400/[0.08] border border-cyan-400/20 text-cyan-400 font-['Rajdhani',sans-serif] font-semibold">Bonding curve</span>
 					<span class="text-4xs py-0.5 px-2 rounded-full bg-cyan-400/[0.08] border border-cyan-400/20 text-cyan-400 font-['Rajdhani',sans-serif] font-semibold">Auto DEX listing</span>
