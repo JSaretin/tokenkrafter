@@ -654,8 +654,9 @@
 	let wzRootEl: HTMLDivElement | undefined = $state();
 
 	// Reset scroll whenever the visible step changes, so the user always
-	// lands at the top of the new step instead of stranded near the footer
-	// of the previous one. Skips the initial mount.
+	// lands at the very top of the page (steps bar + current form both in
+	// view) instead of stranded near the footer of the previous step.
+	// Skips the initial mount.
 	let scrollSuppress = true;
 	$effect(() => {
 		// Track the dependency.
@@ -664,13 +665,9 @@
 			scrollSuppress = false;
 			return;
 		}
-		queueMicrotask(() => {
-			if (wzRootEl) {
-				wzRootEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
-			} else if (typeof window !== 'undefined') {
-				window.scrollTo({ top: 0, behavior: 'smooth' });
-			}
-		});
+		if (typeof window !== 'undefined') {
+			queueMicrotask(() => window.scrollTo({ top: 0, behavior: 'smooth' }));
+		}
 	});
 
 	function nextStep() {
@@ -836,7 +833,7 @@
 	     calls nextStep() — failed validation auto-focuses the first invalid
 	     input, no manual checks or alerts needed. -->
 	<form bind:this={wzFormEl} onsubmit={(e) => { e.preventDefault(); nextStep(); }}>
-	<div class="bg-surface border border-line rounded-2xl p-6 mb-4 max-[500px]:p-4">
+	<div class="bg-surface border border-line rounded-2xl p-6 mb-4 max-[500px]:p-4 min-w-0 overflow-hidden">
 		{#if wizardStep === 'basics'}
 			{#if launchEnabled}
 				<!-- New / Existing tab switcher -->

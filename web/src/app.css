@@ -85,6 +85,12 @@
   --default-transition-timing-function: ease;
 }
 
+/* Declare the root color scheme so browsers (Brave in particular,
+   which otherwise auto-darkens "scheme-agnostic" pages) know we're
+   managing light/dark ourselves via the `.light` class. */
+:root { color-scheme: dark; }
+:root.light { color-scheme: light; }
+
 /* ─────────────────────────────────────────────────────────
    Legacy var aliases.
    Components and `<style>` blocks across the codebase still

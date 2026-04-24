@@ -951,7 +951,7 @@
 	</div>
 
 	<!-- Mobile Bottom Tab Bar -->
-	<div class="fixed bottom-0 left-0 right-0 z-40 md:hidden flex items-stretch h-[60px] bg-background border-t border-line" style="padding-bottom: env(safe-area-inset-bottom, 0px);">
+	<div class="fixed bottom-0 left-0 right-0 z-40 md:hidden flex items-stretch bg-background border-t border-line" style="height: calc(60px + env(safe-area-inset-bottom, 0px)); padding-bottom: env(safe-area-inset-bottom, 0px);">
 		<a href="/explore" aria-current={page.url.pathname.startsWith('/explore') ? 'page' : undefined} class="bottom-tab relative flex-1 flex flex-col items-center justify-center gap-0.5 border-none bg-none no-underline font-mono text-[10px] cursor-pointer transition-colors duration-150 hover:text-foreground active:text-foreground {page.url.pathname.startsWith('/explore') ? 'text-cyan-400 font-bold bg-cyan-400/5' : 'text-dim'}">
 			<span aria-hidden="true" class="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-[3px] rounded-b-full bg-cyan-400 transition-opacity duration-150 {page.url.pathname.startsWith('/explore') ? 'opacity-100' : 'opacity-0'}"></span>
 			<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
