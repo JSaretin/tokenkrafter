@@ -384,18 +384,44 @@
 		}, 500);
 	});
 
-	// BNB price for listing preview
+	// BNB/native price for listing preview. Try the chain's DEX router
+	// first (instant, free), and fall back to CoinGecko when that returns
+	// nothing — common on testnets where the WBNB/USDT pair has no
+	// liquidity, so the router call reverts silently.
+	const NATIVE_COINGECKO_IDS: Record<string, string> = {
+		BNB: 'binancecoin',
+		ETH: 'ethereum',
+		MATIC: 'matic-network',
+		POL: 'matic-network',
+		AVAX: 'avalanche-2',
+		FTM: 'fantom',
+		SOL: 'solana',
+	};
 	let bnbPriceUsd = $state(0);
 	$effect(() => {
-		if (!selectedNetwork?.dex_router || !selectedNetwork?.usdt_address) return;
+		bnbPriceUsd = 0;
+		if (!selectedNetwork) return;
 		const provider = getNetworkProviders?.()?.get(selectedNetwork.chain_id);
-		if (!provider) return;
-		const router = new ethers.Contract(selectedNetwork.dex_router, ROUTER_ABI_LITE, provider);
 		(async () => {
+			// DEX path
+			if (provider && selectedNetwork.dex_router && selectedNetwork.usdt_address) {
+				try {
+					const router = new ethers.Contract(selectedNetwork.dex_router, ROUTER_ABI_LITE, provider);
+					const weth = await router.WETH();
+					const amounts = await router.getAmountsOut(ethers.parseEther('1'), [weth, selectedNetwork.usdt_address]);
+					const px = parseFloat(ethers.formatUnits(amounts[1], 18));
+					if (px > 0) { bnbPriceUsd = px; return; }
+				} catch {}
+			}
+			// CoinGecko fallback
+			const coinId = NATIVE_COINGECKO_IDS[(selectedNetwork.native_coin || '').toUpperCase()];
+			if (!coinId) return;
 			try {
-				const weth = await router.WETH();
-				const amounts = await router.getAmountsOut(ethers.parseEther('1'), [weth, selectedNetwork.usdt_address]);
-				bnbPriceUsd = parseFloat(ethers.formatUnits(amounts[1], 18));
+				const res = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${coinId}&vs_currencies=usd`);
+				if (!res.ok) return;
+				const data = await res.json();
+				const px = Number(data?.[coinId]?.usd);
+				if (px > 0) bnbPriceUsd = px;
 			} catch {}
 		})();
 	});
