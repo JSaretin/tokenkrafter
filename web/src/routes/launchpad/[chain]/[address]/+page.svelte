@@ -16,7 +16,7 @@
 	import { chainSlug, type SupportedNetwork } from '$lib/structure';
 	import type { WsProviderManager, EventSubscription } from '$lib/wsProvider';
 	import { transferFilter } from '$lib/wsProvider';
-	import { ERC20_ABI, ZERO_ADDRESS } from '$lib/tokenCrafter';
+	import { ERC20_ABI, ZERO_ADDRESS, FACTORY_V2_ABI, PAIR_ABI } from '$lib/tokenCrafter';
 	import {
 		type LaunchInfo,
 		type LaunchState,
@@ -96,6 +96,14 @@
 	}
 	let launch: LaunchInfo | null = $state(ssrToLaunchInfo(ssrLaunch));
 	let network: SupportedNetwork | null = $state(serverData?.network || null);
+
+	// Post-graduation DEX-pair spot price (USDT-wei per 1 whole token).
+	// The curve's currentPrice goes to 0 after graduation, so we need a
+	// second source of truth to mark user positions to market. The pair's
+	// reserves ratio gives the fair spot price — AMM slippage output for a
+	// user's full bag would under-value a shallow pool (that's the swap
+	// page's job to show).
+	let poolPrice: bigint = $state(0n);
 	let tokenMeta = $state({
 		name: ssrLaunch?.token_name || 'Loading...',
 		symbol: ssrLaunch?.token_symbol || '...',
@@ -605,6 +613,7 @@
 					strandedSweepDelay = ssd;
 					platformWalletAddress = pw;
 				});
+				loadPoolPrice(prov, info.token, info.usdtAddress, net.dex_router);
 			}
 
 			// Load user position (non-blocking)
@@ -692,6 +701,49 @@
 		if (providersReady) {
 			loadLaunch();
 		}
+	});
+
+	// Fetch the DEX pair's spot price (reserves ratio) for graduated launches.
+	// `getLaunchInfo().currentPrice_` returns 0 post-graduation by design, so
+	// without this the "Value now" / "Price now" cells would either vanish or
+	// fall back to a stale number. Pool spot × bag gives a fair
+	// mark-to-market — AMM slippage on an actual sell is a separate concern
+	// handled by the swap page.
+	async function loadPoolPrice(
+		prov: ethers.Provider,
+		tokenAddr: string,
+		usdtAddr: string,
+		dexRouter: string,
+	) {
+		try {
+			const router = new ethers.Contract(dexRouter, ['function factory() view returns (address)'], prov);
+			const factoryAddr: string = await router.factory();
+			const factory = new ethers.Contract(factoryAddr, FACTORY_V2_ABI, prov);
+			const pairAddr: string = await factory.getPair(tokenAddr, usdtAddr);
+			if (!pairAddr || pairAddr === ZERO_ADDRESS) { poolPrice = 0n; return; }
+
+			const pair = new ethers.Contract(pairAddr, PAIR_ABI, prov);
+			const [reserves, token0] = await Promise.all([
+				pair.getReserves(),
+				pair.token0(),
+			]);
+			const tokenIsToken0 = String(token0).toLowerCase() === tokenAddr.toLowerCase();
+			const tokenRes: bigint = tokenIsToken0 ? reserves[0] : reserves[1];
+			const usdtRes: bigint = tokenIsToken0 ? reserves[1] : reserves[0];
+			if (tokenRes === 0n) { poolPrice = 0n; return; }
+
+			// USDT-wei per 1 whole token: (usdtReserve × 10^tokenDecimals) / tokenReserve
+			poolPrice = (usdtRes * BigInt(10 ** tokenMeta.decimals)) / tokenRes;
+		} catch {
+			poolPrice = 0n;
+		}
+	}
+
+	// Unified "price now" source. For graduated launches we trust the pool
+	// spot; otherwise the bonding curve's currentPrice.
+	let effectivePrice = $derived.by(() => {
+		if (launch?.state === 3 && poolPrice > 0n) return poolPrice;
+		return launch?.currentPrice ?? 0n;
 	});
 
 	// Re-fetch user position when wallet changes (switch account, connect, disconnect)
@@ -2828,7 +2880,7 @@
 				<!-- Your Bag -->
 				{#if userAddress && (userTokensBought > 0n || userBasePaid > 0n)}
 					{@const avgPrice = userTokensBought > 0n ? (userBasePaid * BigInt(10 ** tokenMeta.decimals)) / userTokensBought : 0n}
-					{@const currentVal = launch.currentPrice > 0n ? (userTokensBought * launch.currentPrice) / BigInt(10 ** tokenMeta.decimals) : 0n}
+					{@const currentVal = effectivePrice > 0n ? (userTokensBought * effectivePrice) / BigInt(10 ** tokenMeta.decimals) : 0n}
 					{@const pnl = currentVal > 0n ? currentVal - userBasePaid : 0n}
 					{@const pnlPct = userBasePaid > 0n ? Number((pnl * 10000n) / userBasePaid) / 100 : 0}
 					{@const isUp = pnl > 0n}
@@ -2866,7 +2918,7 @@
 							{/if}
 							<div class="pos-detail">
 								<span class="pos-detail-label">Price now</span>
-								<span class="pos-detail-val">{formatUsdt(launch.currentPrice, ud, 6)}</span>
+								<span class="pos-detail-val">{formatUsdt(effectivePrice, ud, 6)}</span>
 							</div>
 						</div>
 
