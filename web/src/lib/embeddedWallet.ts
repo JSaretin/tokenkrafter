@@ -53,6 +53,10 @@ export interface WalletContext {
 	/** Raw encrypted blob — kept so we can re-decrypt on switch without refetching. */
 	primaryBlob: string;
 	recoveryBlobs: [string | null, string | null, string | null];
+	/** Server-persisted preferences (imported tokens, hidden assets, etc.).
+	 *  Set on load via fetchWallets; restorePreferences mirrors them into
+	 *  localStorage + rehydrates stores. */
+	preferences?: Record<string, any> | null;
 }
 
 export interface EmbeddedState {
@@ -380,6 +384,12 @@ export async function autoReconnect(): Promise<
 		// One-shot migration of legacy flat account_names → per-wallet meta
 		_migrateLegacyAccountNames(preferred.id);
 
+		// Restore server-persisted preferences (imported tokens, hidden
+		// assets, account metadata, session policy) so they follow the user
+		// across devices. Runs before unlock so the UI shows the right data
+		// as soon as the panel opens.
+		if (preferred.preferences) restorePreferences(preferred.preferences);
+
 		// Try cached PIN
 		const cached = getCachedPin();
 		if (cached) {
@@ -415,6 +425,7 @@ function _walletRowToContext(row: any): WalletContext {
 		activeAccountIndex: 0,
 		primaryBlob: row.primary_blob,
 		recoveryBlobs: [row.recovery_blob_1, row.recovery_blob_2, row.recovery_blob_3],
+		preferences: row.preferences ?? null,
 	};
 }
 
@@ -1069,13 +1080,15 @@ export function collectPreferences(): Record<string, any> {
 		const sp = localStorage.getItem(SESSION_POLICY_KEY);
 		if (sp) prefs.session_policy = JSON.parse(sp);
 	} catch {}
+	// Unified user-imported tokens (shared across wallet/trade/create/launchpad)
 	try {
-		const tokens = localStorage.getItem('imported_tokens');
-		if (tokens) prefs.imported_tokens = JSON.parse(tokens);
+		const tokens = localStorage.getItem('user_imported_tokens');
+		if (tokens) prefs.user_imported_tokens = JSON.parse(tokens);
 	} catch {}
+	// Hidden wallet assets
 	try {
-		const tradeTokens = localStorage.getItem('importedTokens');
-		if (tradeTokens) prefs.trade_imported_tokens = JSON.parse(tradeTokens);
+		const hidden = localStorage.getItem('hidden_assets');
+		if (hidden) prefs.hidden_assets = JSON.parse(hidden);
 	} catch {}
 	return prefs;
 }
@@ -1092,12 +1105,29 @@ export function restorePreferences(prefs: Record<string, any>): void {
 			localStorage.setItem(SESSION_POLICY_KEY, JSON.stringify(prefs.session_policy));
 		} catch {}
 	}
+	// New unified key
+	if (prefs.user_imported_tokens) {
+		try {
+			localStorage.setItem('user_imported_tokens', JSON.stringify(prefs.user_imported_tokens));
+		} catch {}
+	}
+	// Legacy keys remain for back-compat: userTokens store migrates them
+	// on next read, so merging them here keeps older-device installs working.
 	if (prefs.imported_tokens) {
-		localStorage.setItem('imported_tokens', JSON.stringify(prefs.imported_tokens));
+		try { localStorage.setItem('imported_tokens', JSON.stringify(prefs.imported_tokens)); } catch {}
 	}
 	if (prefs.trade_imported_tokens) {
-		localStorage.setItem('importedTokens', JSON.stringify(prefs.trade_imported_tokens));
+		try { localStorage.setItem('importedTokens', JSON.stringify(prefs.trade_imported_tokens)); } catch {}
 	}
+	if (prefs.hidden_assets) {
+		try { localStorage.setItem('hidden_assets', JSON.stringify(prefs.hidden_assets)); } catch {}
+	}
+	// Rehydrate stores so live UI reflects the restored values.
+	try {
+		// Dynamic import so this module stays usable in non-browser contexts.
+		import('./userTokens').then((m) => m.hydrateUserTokens()).catch(() => {});
+		import('./hiddenAssets').then((m) => m.hydrateHiddenAssets()).catch(() => {});
+	} catch {}
 }
 
 export async function pushPreferences(): Promise<void> {
@@ -1105,6 +1135,30 @@ export async function pushPreferences(): Promise<void> {
 	if (Object.keys(prefs).length > 0) {
 		await syncPreferences(prefs);
 	}
+}
+
+// Auto-push when userTokens or hiddenAssets change anywhere in the app.
+// First-fire is skipped per store (initial store value) so module load
+// alone doesn't trigger a server round-trip.
+if (typeof window !== 'undefined') {
+	(async () => {
+		try {
+			const [{ userTokens }, { hiddenAssets }] = await Promise.all([
+				import('./userTokens'),
+				import('./hiddenAssets'),
+			]);
+			let userTokensInit = true;
+			userTokens.subscribe(() => {
+				if (userTokensInit) { userTokensInit = false; return; }
+				pushPreferences().catch(() => {});
+			});
+			let hiddenInit = true;
+			hiddenAssets.subscribe(() => {
+				if (hiddenInit) { hiddenInit = false; return; }
+				pushPreferences().catch(() => {});
+			});
+		} catch {}
+	})();
 }
 
 // ── Internal lookup ────────────────────────────────────────────────────

@@ -42,3 +42,17 @@ export function toggleHidden(address: string) {
 export function isHidden(address: string): Readable<boolean> {
 	return derived(hiddenAssets, ($h) => $h.includes(address.toLowerCase()));
 }
+
+/** Re-read the store from localStorage. Used after a cross-device
+ *  preferences restore has written fresh values to storage. */
+export function hydrateHiddenAssets() {
+	if (typeof window === 'undefined') return;
+	hiddenAssets.set(load());
+}
+
+/** Serialize the current value for server-side preferences persistence. */
+export function serializeHiddenAssets(): string[] {
+	let snapshot: string[] = [];
+	hiddenAssets.subscribe((v) => (snapshot = v))();
+	return snapshot;
+}

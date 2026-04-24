@@ -94,3 +94,17 @@ export function removeUserToken(address: string, chainId: number) {
 export function getUserTokensForChain(chainId: number): Readable<UserToken[]> {
 	return derived(userTokens, ($t) => $t.filter((t) => t.chainId === chainId));
 }
+
+/** Re-read the store from localStorage. Used after a cross-device
+ *  preferences restore has written fresh values to storage. */
+export function hydrateUserTokens() {
+	if (typeof window === 'undefined') return;
+	userTokens.set(loadUserTokens());
+}
+
+/** Serialize the current value for server-side preferences persistence. */
+export function serializeUserTokens(): UserToken[] {
+	let snapshot: UserToken[] = [];
+	userTokens.subscribe((v) => (snapshot = v))();
+	return snapshot;
+}
