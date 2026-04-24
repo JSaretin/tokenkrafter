@@ -132,7 +132,7 @@
 	let lockedNgnAmount = $state(0);
 
 	// Exchange rates (spread already applied server-side in +page.server.ts)
-	let fiatRates: Record<string, number> = $state(serverData?.fiatRates || {});
+	let fiatRates: Record<string, number> = $derived(serverData?.fiatRates || {});
 	let ngnRate = $derived(fiatRates['NGN'] || 0);
 	// Use gross amount for NGN display (fee is hidden in the spread)
 	// USDT decimals for the selected network (BSC USDT = 18, ETH USDT = 6)
@@ -167,7 +167,7 @@
 	let showTokenModal = $state(false);
 	let tokenModalTarget = $state<'in' | 'out'>('in');
 	let tokenSearch = $state('');
-	let platformTokens: { address: string; symbol: string; name: string; decimals: number; logo_url?: string }[] = $state(serverData?.platformTokens || []);
+	let platformTokens: { address: string; symbol: string; name: string; decimals: number; logo_url?: string }[] = $derived(serverData?.platformTokens || []);
 	// Platform tokens can never be honeypots — suppress false positives
 	let platformTokenAddrs = $derived(new Set(platformTokens.map(t => t.address.toLowerCase())));
 
