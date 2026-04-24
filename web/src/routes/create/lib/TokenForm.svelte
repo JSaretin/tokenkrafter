@@ -787,22 +787,27 @@
 
 </script>
 
-<div class="max-w-[640px] mx-auto">
-	<!-- Step indicator -->
-	<div class="flex items-center gap-0 mb-6 px-2">
+<div class="max-w-[640px] mx-auto min-w-0">
+	<!-- Step indicator. `min-w-0` on the flex container plus `overflow-x-hidden`
+	     on the wrapper stop the nowrap labels from dragging the parent column
+	     wider than the viewport when the step list grows (e.g. Taxable adds
+	     a TAX step, making 6 steps on mobile). -->
+	<div class="overflow-x-hidden -mx-2 mb-6">
+		<div class="flex items-center gap-0 px-2 min-w-0">
 		{#each steps as step, i}
 			<button type="button"
-				class={'wz-step flex flex-col items-center gap-1 bg-none border-none cursor-pointer p-0 ' + (i > maxReachedStepIdx ? 'cursor-not-allowed opacity-50 ' : '') + (i < currentStepIdx ? 'wz-step-done ' : '') + (step.id === wizardStep ? 'wz-step-active' : '')}
+				class={'wz-step flex flex-col items-center gap-1 bg-none border-none cursor-pointer p-0 min-w-0 ' + (i > maxReachedStepIdx ? 'cursor-not-allowed opacity-50 ' : '') + (i < currentStepIdx ? 'wz-step-done ' : '') + (step.id === wizardStep ? 'wz-step-active' : '')}
 				tabindex="-1"
 				onclick={() => jumpToStep(i)}
 			>
-				<span class="wz-step-num w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold font-mono border-2 border-line-input text-dim bg-transparent transition-all duration-200">{i < currentStepIdx ? '✓' : i + 1}</span>
-				<span class="wz-step-label text-[9px] text-dim font-mono uppercase tracking-wider whitespace-nowrap">{step.label}</span>
+				<span class="wz-step-num w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold font-mono border-2 border-line-input text-dim bg-transparent transition-all duration-200 shrink-0">{i < currentStepIdx ? '✓' : i + 1}</span>
+				<span class="wz-step-label text-[9px] text-dim font-mono uppercase tracking-wider truncate max-w-full">{step.label}</span>
 			</button>
 			{#if i < steps.length - 1}
-				<div class={'flex-1 h-0.5 min-w-[20px] mx-1 mb-4 ' + (i < currentStepIdx ? 'bg-emerald-500' : 'bg-surface-hover')}></div>
+				<div class={'flex-1 h-0.5 min-w-[12px] mx-1 mb-4 ' + (i < currentStepIdx ? 'bg-emerald-500' : 'bg-surface-hover')}></div>
 			{/if}
 		{/each}
+		</div>
 	</div>
 
 	<!-- Step content + nav wrapped in a form so native validation blocks
