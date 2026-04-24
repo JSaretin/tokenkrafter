@@ -17,9 +17,9 @@
 <div class="w-full">
 	{#if raised || hardCap}
 		<div class="flex justify-between items-baseline mb-1.5">
-			<span class={'font-mono font-bold text-heading ' + (size === 'sm' ? 'text-[10px]' : size === 'lg' ? 'text-[13px]' : 'text-[11px]')}>Raised {progress < 1 && progress > 0 ? progress.toFixed(1) : Math.round(progress)}%</span>
+			<span class={'font-mono font-bold text-heading ' + (size === 'sm' ? 'text-3xs' : size === 'lg' ? 'text-13' : 'text-xs2')}>Raised {progress < 1 && progress > 0 ? progress.toFixed(1) : Math.round(progress)}%</span>
 			{#if hardCap}
-				<span class={'font-mono text-dim ' + (size === 'sm' ? 'text-[9px]' : size === 'lg' ? 'text-[11px]' : 'text-[10px]')}>{hardCap}</span>
+				<span class={'font-mono text-dim ' + (size === 'sm' ? 'text-xs4' : size === 'lg' ? 'text-xs2' : 'text-3xs')}>{hardCap}</span>
 			{/if}
 		</div>
 	{/if}
@@ -30,12 +30,12 @@
 		{#if softCapPct > 0 && softCapPct < 100}
 			<div class="absolute top-0 -translate-x-1/2 flex flex-col items-center pointer-events-none" style="left: {softCapPct}%">
 				<div class={'w-0.5 bg-white/40 rounded-[1px] ' + (size === 'sm' ? 'h-2' : size === 'lg' ? 'h-4' : 'h-3')}></div>
-				<div class="text-[7px] font-mono text-white/35 mt-px tracking-[0.03em]">SC</div>
+				<div class="text-7 font-mono text-white/35 mt-px tracking-[0.03em]">SC</div>
 			</div>
 		{/if}
 	</div>
 	{#if raised}
-		<div class="flex justify-between mt-1 mb-1 font-mono text-[10px] text-dim">
+		<div class="flex justify-between mt-1 mb-1 font-mono text-3xs text-dim">
 			<span>{raised}{hardCap ? ` / ${hardCap}` : ''}</span>
 		</div>
 	{/if}

@@ -26,7 +26,7 @@
 			href={contractUrl}
 			target="_blank"
 			rel="noopener noreferrer"
-			class="block mt-2 pt-2 border-t border-[rgba(16,185,129,0.08)] font-mono text-[9px] text-[rgba(16,185,129,0.6)] no-underline transition-colors hover:text-[#10b981]"
+			class="block mt-2 pt-2 border-t border-[rgba(16,185,129,0.08)] font-mono text-xs4 text-[rgba(16,185,129,0.6)] no-underline transition-colors hover:text-[#10b981]"
 		>
 			{$t('trade.verifyContract')}
 		</a>

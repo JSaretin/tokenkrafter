@@ -40,9 +40,9 @@
 	{/if}
 
 	<div class="flex-1 min-w-0">
-		<span class="block font-mono text-[13px] font-bold text-(--text-heading)">{primary}</span>
+		<span class="block font-mono text-13 font-bold text-(--text-heading)">{primary}</span>
 		{#if secondary}
-			<span class="block font-mono text-[10px] text-(--text-muted) whitespace-nowrap overflow-hidden text-ellipsis">{secondary}</span>
+			<span class="block font-mono text-3xs text-(--text-muted) whitespace-nowrap overflow-hidden text-ellipsis">{secondary}</span>
 		{/if}
 	</div>
 

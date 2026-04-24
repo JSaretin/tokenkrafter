@@ -39,7 +39,7 @@
 				{registerPoolLoading ? '...' : 'Register'}
 			</button>
 		</div>
-		<span class="text-gray-600 text-[10px] font-mono">Pass a base ERC20 address. The contract resolves the pair through its DEX factory.</span>
+		<span class="text-gray-600 text-3xs font-mono">Pass a base ERC20 address. The contract resolves the pair through its DEX factory.</span>
 	</div>
 
 	<!-- By pool address (V3 / non-V2 DEXes) -->
@@ -61,6 +61,6 @@
 				{registerPoolLoading ? '...' : 'Register'}
 			</button>
 		</div>
-		<span class="text-amber-500/70 text-[10px] font-mono">Only callable after public trading has been enabled. Marking an address as a pool subjects its transfers to tax routing on taxable variants.</span>
+		<span class="text-amber-500/70 text-3xs font-mono">Only callable after public trading has been enabled. Marking an address as a pool subjects its transfers to tax routing on taxable variants.</span>
 	</div>
 </div>

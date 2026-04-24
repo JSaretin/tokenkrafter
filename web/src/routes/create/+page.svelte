@@ -1538,8 +1538,8 @@
 
 				<!-- Token identifier (one line) -->
 				<div class="flex items-baseline gap-2 mb-1">
-					<span class="font-display text-[15px] font-bold text-heading">{tokenInfo.name} ({tokenInfo.symbol})</span>
-					<span class="text-[10px] text-[#00d2ff] font-mono">{tokenInfo.network.name}</span>
+					<span class="font-display text-15 font-bold text-heading">{tokenInfo.name} ({tokenInfo.symbol})</span>
+					<span class="text-3xs text-[#00d2ff] font-mono">{tokenInfo.network.name}</span>
 				</div>
 				<div class="flex gap-1 flex-wrap mb-3">
 					{#if tokenInfo.isMintable}<span class="badge badge-cyan">Mintable</span>{/if}
@@ -1553,32 +1553,32 @@
 				<!-- Cost Breakdown -->
 				<div class="mb-4 pb-4 border-b border-surface-hover bg-[rgba(0,210,255,0.03)] rounded-[10px] p-[14px] border border-[rgba(0,210,255,0.1)]">
 					<div class="flex flex-col gap-0">
-						<div class="flex justify-between items-center py-1.5 font-mono text-[11px]">
+						<div class="flex justify-between items-center py-1.5 font-mono text-xs2">
 							<span class="text-dim">Creation fee (USDT)</span>
-							<span class="text-foreground font-semibold font-numeric text-[13px] text-right">{feeLoading ? '...' : `$${feeDisplay.feeUsdAmount}`}</span>
+							<span class="text-foreground font-semibold font-numeric text-13 text-right">{feeLoading ? '...' : `$${feeDisplay.feeUsdAmount}`}</span>
 						</div>
 
 						{#if tokenInfo.listing?.enabled}
 							{#each (tokenInfo.listing.pairs || []).filter(p => Number(p.amount) > 0) as pair}
 								{@const baseLabel = pair.base === 'native' ? tokenInfo.network.native_coin : pair.base.toUpperCase()}
-								<div class="flex justify-between items-center py-1.5 font-mono text-[11px]">
+								<div class="flex justify-between items-center py-1.5 font-mono text-xs2">
 									<span class="text-dim">Liquidity ({tokenInfo.symbol}/{baseLabel})</span>
-									<span class="text-foreground font-semibold font-numeric text-[13px] text-right">{pair.amount} {baseLabel}</span>
+									<span class="text-foreground font-semibold font-numeric text-13 text-right">{pair.amount} {baseLabel}</span>
 								</div>
 							{/each}
 						{/if}
 
 						{#if tokenInfo.launch?.enabled}
-							<div class="flex justify-between items-center py-1.5 font-mono text-[11px]">
+							<div class="flex justify-between items-center py-1.5 font-mono text-xs2">
 								<span class="text-dim">Launch fee (on graduation)</span>
-								<span class="text-dim font-normal text-[10px] font-mono text-right">1% of raised</span>
+								<span class="text-dim font-normal text-3xs font-mono text-right">1% of raised</span>
 							</div>
 						{/if}
 
 						<div class="h-px bg-surface-hover my-1.5"></div>
-						<div class="flex justify-between items-center py-1.5 font-mono text-[11px]">
+						<div class="flex justify-between items-center py-1.5 font-mono text-xs2">
 							<span class="text-heading font-bold">You pay now</span>
-							<span class="text-[#00d2ff] text-[15px] font-bold font-numeric text-right">
+							<span class="text-[#00d2ff] text-15 font-bold font-numeric text-right">
 								{#if feeLoading}...
 								{:else}
 									{@const net = tokenInfo.network}
@@ -1596,20 +1596,20 @@
 							</span>
 						</div>
 					</div>
-						<p class="text-[9px] text-dim font-mono mt-1.5 opacity-70">Fee is denominated in USDT. Pay with any token — it's auto-converted.</p>
+						<p class="text-xs4 text-dim font-mono mt-1.5 opacity-70">Fee is denominated in USDT. Pay with any token — it's auto-converted.</p>
 
 					{#if !feeLoading && paymentOptions.length > 0}
 						<div class="flex flex-col gap-1.5 mt-3">
-							<span class="text-[9px] text-dim font-mono uppercase tracking-[0.04em]">Pay with</span>
+							<span class="text-xs4 text-dim font-mono uppercase tracking-[0.04em]">Pay with</span>
 							<button class="flex items-center gap-2.5 w-full px-3 py-2.5 rounded-[10px] bg-surface border border-line cursor-pointer transition-colors duration-[120ms] font-[inherit] text-[inherit] text-left hover:border-[rgba(0,210,255,0.2)]" onclick={() => { showPaymentModal = true; loadPaymentQuotes(); }}>
 								{#if COIN_LOGOS[selectedPayment?.symbol?.toUpperCase()]}
 								<img src={COIN_LOGOS[selectedPayment.symbol.toUpperCase()]} alt={selectedPayment.symbol} class="w-8 h-8 rounded-full object-cover shrink-0" />
 							{:else}
-								<span class="w-8 h-8 rounded-full bg-[rgba(0,210,255,0.08)] border border-[rgba(0,210,255,0.15)] flex items-center justify-center font-display text-[12px] font-extrabold text-[#00d2ff] shrink-0">{selectedPayment?.symbol?.charAt(0) || '?'}</span>
+								<span class="w-8 h-8 rounded-full bg-[rgba(0,210,255,0.08)] border border-[rgba(0,210,255,0.15)] flex items-center justify-center font-display text-xs font-extrabold text-[#00d2ff] shrink-0">{selectedPayment?.symbol?.charAt(0) || '?'}</span>
 							{/if}
 								<div class="flex-1">
-									<span class="block font-display text-[13px] font-bold text-heading">{selectedPayment?.symbol}</span>
-									<span class="block font-numeric text-[12px] text-dim">{feeDisplay.selectedFeeFormatted} {selectedPayment?.symbol}</span>
+									<span class="block font-display text-13 font-bold text-heading">{selectedPayment?.symbol}</span>
+									<span class="block font-numeric text-xs text-dim">{feeDisplay.selectedFeeFormatted} {selectedPayment?.symbol}</span>
 								</div>
 								<svg class="text-dim shrink-0" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
 							</button>
@@ -1635,7 +1635,7 @@
 					: 0}
 				{@const _minBuyExceedsMaxBuy = tokenInfo.launch?.enabled && _minBuy > 0 && _maxBuyPerWalletUsd > 0 && _minBuy > _maxBuyPerWalletUsd}
 				{#if _minBuyExceedsMaxBuy}
-					<div class="my-2 mb-3 px-[14px] py-3 rounded-[10px] bg-[rgba(251,191,36,0.08)] border border-[rgba(251,191,36,0.35)] text-[#fcd34d] text-[13px] leading-[1.5]">
+					<div class="my-2 mb-3 px-[14px] py-3 rounded-[10px] bg-[rgba(251,191,36,0.08)] border border-[rgba(251,191,36,0.35)] text-[#fcd34d] text-13 leading-[1.5]">
 						<strong class="block text-[#fde68a] mb-1 font-display">Min buy exceeds max buy per wallet.</strong>
 						With hard cap ${tokenInfo.launch.hardCap} × max wallet {(parseFloat(String(tokenInfo.launch.maxBuyBps)) / 100).toFixed(2)}% = ${_maxBuyPerWalletUsd.toFixed(2)} max buy, but min buy is ${tokenInfo.launch.minBuyUsdt}. Go back and fix the launch config.
 					</div>
@@ -1643,7 +1643,7 @@
 				<button
 					onclick={confirmAndDeploy}
 					disabled={feeLoading || paymentOptions.length === 0 || _minBuyExceedsMaxBuy}
-					class="w-full font-display cursor-pointer p-[14px] bg-[linear-gradient(135deg,#00d2ff,#3a7bd5)] text-heading font-bold text-[15px] border-none rounded-xl transition-all duration-200 mt-2 disabled:opacity-50 disabled:cursor-not-allowed enabled:hover:-translate-y-px enabled:hover:shadow-[0_8px_32px_rgba(0,210,255,0.3)]"
+					class="w-full font-display cursor-pointer p-[14px] bg-[linear-gradient(135deg,#00d2ff,#3a7bd5)] text-heading font-bold text-15 border-none rounded-xl transition-all duration-200 mt-2 disabled:opacity-50 disabled:cursor-not-allowed enabled:hover:-translate-y-px enabled:hover:shadow-[0_8px_32px_rgba(0,210,255,0.3)]"
 				>
 					{feeLoading ? $t('ct.calculatingFee') : tokenInfo.existingTokenAddress ? 'Create Launch' : tokenInfo.listing?.enabled ? $t('ct.deployAndList') : tokenInfo.launch?.enabled ? 'Deploy & Launch' : $t('ct.confirmDeploy')}
 				</button>
@@ -1663,7 +1663,7 @@
 		<!-- ═══════ TOKEN CREATION WIZARD ═══════ -->
 		<div class="flex flex-col lg:flex-row gap-7 items-start">
 			<div class="flex-1 min-w-0 max-w-[640px] mx-auto lg:max-w-none lg:mx-0">
-				<button class="inline-flex items-center gap-1.5 text-muted text-[13px] font-mono bg-transparent border-none cursor-pointer p-0 transition-colors duration-150 hover:text-[#00d2ff]" onclick={() => selectMode(null)} title="Change create mode">
+				<button class="inline-flex items-center gap-1.5 text-muted text-13 font-mono bg-transparent border-none cursor-pointer p-0 transition-colors duration-150 hover:text-[#00d2ff]" onclick={() => selectMode(null)} title="Change create mode">
 					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
 					Change mode
 				</button>

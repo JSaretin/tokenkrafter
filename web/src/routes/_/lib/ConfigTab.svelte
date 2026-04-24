@@ -269,18 +269,18 @@
 					<div class="bases-editor mt-3">
 						<div class="flex justify-between items-center mb-2">
 							<span class="label-text mb-0">Default Pool Bases (pre-selected in wizard)</span>
-							<button type="button" class="btn-secondary text-[10px] px-2 py-1 cursor-pointer" onclick={addNewNetworkBaseRow}>+ Add Base</button>
+							<button type="button" class="btn-secondary text-3xs px-2 py-1 cursor-pointer" onclick={addNewNetworkBaseRow}>+ Add Base</button>
 						</div>
 						{#each newNetwork.default_bases as base, bi}
 							<div class="grid grid-cols-12 gap-2 mb-2">
 								<input class="input-field text-xs col-span-6" placeholder="0x... address" bind:value={base.address} />
 								<input class="input-field text-xs col-span-2" placeholder="SYMBOL" bind:value={base.symbol} />
 								<input class="input-field text-xs col-span-3" placeholder="Name (optional)" bind:value={base.name} />
-								<button type="button" class="btn-danger text-[10px] col-span-1 cursor-pointer" onclick={() => removeNewNetworkBaseRow(bi)}>×</button>
+								<button type="button" class="btn-danger text-3xs col-span-1 cursor-pointer" onclick={() => removeNewNetworkBaseRow(bi)}>×</button>
 							</div>
 						{/each}
 						{#if newNetwork.default_bases.length === 0}
-							<p class="text-gray-500 text-[10px] font-mono">No bases. Wizard will only show on-chain custom adds.</p>
+							<p class="text-gray-500 text-3xs font-mono">No bases. Wizard will only show on-chain custom adds.</p>
 						{/if}
 					</div>
 
@@ -299,61 +299,61 @@
 							<span class="text-xs text-gray-500 font-mono ml-2">Chain {net.chain_id}</span>
 							<span class="text-xs text-cyan-400 font-mono ml-2">{net.native_coin || net.symbol}</span>
 						</div>
-						<button class="btn-danger text-[10px] px-2 py-1 cursor-pointer" onclick={() => removeNetwork(i)}>
+						<button class="btn-danger text-3xs px-2 py-1 cursor-pointer" onclick={() => removeNetwork(i)}>
 							Remove
 						</button>
 					</div>
 					<div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
 						<label class="block">
-	<span class="label-text text-[9px]">RPC</span>
+	<span class="label-text text-xs4">RPC</span>
 	<input class="input-field text-xs" bind:value={net.rpc} />
 </label>
 						<label class="block">
-	<span class="label-text text-[9px]">WS RPC (public)</span>
+	<span class="label-text text-xs4">WS RPC (public)</span>
 	<input class="input-field text-xs" placeholder="wss://..." bind:value={net.ws_rpc} />
 </label>
 						<label class="block">
-	<span class="label-text text-[9px]">Daemon RPC (private)</span>
+	<span class="label-text text-xs4">Daemon RPC (private)</span>
 	<input class="input-field text-xs" placeholder="wss:// or https://..." bind:value={net.daemon_rpc} />
 </label>
 						<label class="block">
-	<span class="label-text text-[9px]">USDT</span>
+	<span class="label-text text-xs4">USDT</span>
 	<input class="input-field text-xs" bind:value={net.usdt_address} />
 </label>
 						<label class="block">
-	<span class="label-text text-[9px]">Token Factory</span>
+	<span class="label-text text-xs4">Token Factory</span>
 	<input class="input-field text-xs" bind:value={net.platform_address} />
 </label>
 						<label class="block">
-	<span class="label-text text-[9px]">Launchpad</span>
+	<span class="label-text text-xs4">Launchpad</span>
 	<input class="input-field text-xs" bind:value={net.launchpad_address} />
 </label>
 						<label class="block">
-	<span class="label-text text-[9px]">Platform Router</span>
+	<span class="label-text text-xs4">Platform Router</span>
 	<input class="input-field text-xs" bind:value={net.router_address} />
 </label>
 						<label class="block">
-	<span class="label-text text-[9px]">Trade Router</span>
+	<span class="label-text text-xs4">Trade Router</span>
 	<input class="input-field text-xs" bind:value={net.trade_router_address} />
 </label>
 						<label class="block">
-	<span class="label-text text-[9px]">DEX Router</span>
+	<span class="label-text text-xs4">DEX Router</span>
 	<input class="input-field text-xs" bind:value={net.dex_router} />
 </label>
 						<label class="block">
-	<span class="label-text text-[9px]">USDC</span>
+	<span class="label-text text-xs4">USDC</span>
 	<input class="input-field text-xs" bind:value={net.usdc_address} />
 </label>
 						<label class="block">
-	<span class="label-text text-[9px]">TradeLens</span>
+	<span class="label-text text-xs4">TradeLens</span>
 	<input class="input-field text-xs" bind:value={net.trade_lens_address} />
 </label>
 						<label class="block">
-	<span class="label-text text-[9px]">Explorer URL</span>
+	<span class="label-text text-xs4">Explorer URL</span>
 	<input class="input-field text-xs" bind:value={net.explorer_url} />
 </label>
 						<label class="block">
-	<span class="label-text text-[9px]">Gecko Network</span>
+	<span class="label-text text-xs4">Gecko Network</span>
 	<input class="input-field text-xs" bind:value={net.gecko_network} />
 </label>
 					</div>
@@ -361,19 +361,19 @@
 					<!-- Default partner bases editor -->
 					<div class="bases-editor mt-3">
 						<div class="flex justify-between items-center mb-2">
-							<span class="label-text text-[9px] mb-0">Default Pool Bases ({(net.default_bases || []).length})</span>
-							<button type="button" class="btn-secondary text-[10px] px-2 py-1 cursor-pointer" onclick={() => addBaseRow(net)}>+ Add Base</button>
+							<span class="label-text text-xs4 mb-0">Default Pool Bases ({(net.default_bases || []).length})</span>
+							<button type="button" class="btn-secondary text-3xs px-2 py-1 cursor-pointer" onclick={() => addBaseRow(net)}>+ Add Base</button>
 						</div>
 						{#each (net.default_bases || []) as base, bi}
 							<div class="grid grid-cols-12 gap-2 mb-2">
 								<input class="input-field text-xs col-span-6" placeholder="0x... address" bind:value={base.address} />
 								<input class="input-field text-xs col-span-2" placeholder="SYMBOL" bind:value={base.symbol} />
 								<input class="input-field text-xs col-span-3" placeholder="Name (optional)" bind:value={base.name} />
-								<button type="button" class="btn-danger text-[10px] col-span-1 cursor-pointer" onclick={() => removeBaseRow(net, bi)}>×</button>
+								<button type="button" class="btn-danger text-3xs col-span-1 cursor-pointer" onclick={() => removeBaseRow(net, bi)}>×</button>
 							</div>
 						{/each}
 						{#if !(net.default_bases?.length)}
-							<p class="text-gray-500 text-[10px] font-mono">No bases configured</p>
+							<p class="text-gray-500 text-3xs font-mono">No bases configured</p>
 						{/if}
 					</div>
 				</div>

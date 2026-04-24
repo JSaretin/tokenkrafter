@@ -62,7 +62,7 @@
 				<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
 			</div>
 			<div class="flex-1 min-w-0">
-				<h3 class="syne text-[15px] font-bold text-(--text-heading) m-0">Create & List on DEX</h3>
+				<h3 class="syne text-15 font-bold text-(--text-heading) m-0">Create & List on DEX</h3>
 				<p class="text-xs2 text-(--text-muted) font-['Rajdhani',sans-serif] leading-[1.4] m-0">Deploy token and add liquidity to PancakeSwap in one transaction. You set the initial price.</p>
 				<div class="flex gap-1.5 flex-wrap mt-1">
 					<span class="text-4xs py-0.5 px-2 rounded-full bg-(--bg-surface-hover) border border-(--border) text-(--text-muted) font-['Rajdhani',sans-serif] font-semibold">Instant trading</span>
@@ -87,7 +87,7 @@
 				<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v12M6 12h12"/></svg>
 			</div>
 			<div class="flex-1 min-w-0">
-				<h3 class="syne text-[15px] font-bold text-(--text-heading) m-0">Deploy Token Only</h3>
+				<h3 class="syne text-15 font-bold text-(--text-heading) m-0">Deploy Token Only</h3>
 				<p class="text-xs2 text-(--text-muted) font-['Rajdhani',sans-serif] leading-[1.4] m-0">Just the token contract. Add liquidity, launch, or integrate later on your terms.</p>
 				<div class="flex gap-1.5 flex-wrap mt-1">
 					<span class="text-4xs py-0.5 px-2 rounded-full bg-(--bg-surface-hover) border border-(--border) text-(--text-muted) font-['Rajdhani',sans-serif] font-semibold">Just the token</span>
@@ -111,7 +111,7 @@
 				<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="M12 15l-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/></svg>
 			</div>
 			<div class="flex-1 min-w-0">
-				<h3 class="syne text-[15px] font-bold text-(--text-heading) m-0">Launch Existing Token</h3>
+				<h3 class="syne text-15 font-bold text-(--text-heading) m-0">Launch Existing Token</h3>
 				<p class="text-xs2 text-(--text-muted) font-['Rajdhani',sans-serif] leading-[1.4] m-0">Already deployed a token? Add a bonding curve fundraise with refund guarantees.</p>
 				<div class="flex gap-1.5 flex-wrap mt-1">
 					<span class="text-4xs py-0.5 px-2 rounded-full bg-(--bg-surface-hover) border border-(--border) text-(--text-muted) font-['Rajdhani',sans-serif] font-semibold">Bring your token</span>
@@ -133,10 +133,10 @@
 	<div class="border border-(--border-subtle) rounded-xl overflow-hidden">
 		<div class="sel-compare-row grid grid-cols-[1.2fr_repeat(4,1fr)] sm:grid-cols-[1.4fr_repeat(4,1fr)] border-b border-(--border-subtle) bg-(--bg-surface)">
 			<span class="py-2 px-2 sm:py-2 sm:px-2.5 font-['Rajdhani',sans-serif] text-3xs text-(--text-dim) font-semibold flex items-center"></span>
-			<span class="py-2 px-1 sm:py-2 sm:px-2.5 syne text-[8px] sm:text-xs4 font-bold text-(--text-heading) flex items-center justify-center text-center">Create & Launch</span>
-			<span class="py-2 px-1 sm:py-2 sm:px-2.5 syne text-[8px] sm:text-xs4 font-bold text-(--text-heading) flex items-center justify-center text-center">Create & List</span>
-			<span class="py-2 px-1 sm:py-2 sm:px-2.5 syne text-[8px] sm:text-xs4 font-bold text-(--text-heading) flex items-center justify-center text-center">Deploy Only</span>
-			<span class="py-2 px-1 sm:py-2 sm:px-2.5 syne text-[8px] sm:text-xs4 font-bold text-(--text-heading) flex items-center justify-center text-center">Launch Existing</span>
+			<span class="py-2 px-1 sm:py-2 sm:px-2.5 syne text-4xs sm:text-xs4 font-bold text-(--text-heading) flex items-center justify-center text-center">Create & Launch</span>
+			<span class="py-2 px-1 sm:py-2 sm:px-2.5 syne text-4xs sm:text-xs4 font-bold text-(--text-heading) flex items-center justify-center text-center">Create & List</span>
+			<span class="py-2 px-1 sm:py-2 sm:px-2.5 syne text-4xs sm:text-xs4 font-bold text-(--text-heading) flex items-center justify-center text-center">Deploy Only</span>
+			<span class="py-2 px-1 sm:py-2 sm:px-2.5 syne text-4xs sm:text-xs4 font-bold text-(--text-heading) flex items-center justify-center text-center">Launch Existing</span>
 		</div>
 
 		{#each [
@@ -154,21 +154,21 @@
 			{ feature: 'Tax ceiling locked', values: ['check', 'check', 'check', 'check'] },
 		] as row, rowIdx}
 			<div class={"grid grid-cols-[1.2fr_repeat(4,1fr)] sm:grid-cols-[1.4fr_repeat(4,1fr)] " + (rowIdx < 11 ? "border-b border-(--border-subtle)" : "")}>
-				<span class="py-2 px-2 sm:py-2 sm:px-2.5 font-['Rajdhani',sans-serif] text-[9px] sm:text-xs2 text-(--text-dim) font-semibold bg-(--bg-surface) flex items-center">{row.feature}</span>
+				<span class="py-2 px-2 sm:py-2 sm:px-2.5 font-['Rajdhani',sans-serif] text-xs4 sm:text-xs2 text-(--text-dim) font-semibold bg-(--bg-surface) flex items-center">{row.feature}</span>
 				{#each row.values as v}
 					{@const parts = v.split(':')}
 					{@const kind = parts[0]}
 					{@const label = parts[1]}
 					{#if kind === 'check' && !label}
-						<span class="py-2 px-1 sm:py-2 sm:px-2.5 font-['Rajdhani',sans-serif] text-[9px] sm:text-xs2 text-emerald-500 font-bold flex items-center justify-center">&#10003;</span>
+						<span class="py-2 px-1 sm:py-2 sm:px-2.5 font-['Rajdhani',sans-serif] text-xs4 sm:text-xs2 text-emerald-500 font-bold flex items-center justify-center">&#10003;</span>
 					{:else if kind === 'check'}
-						<span class="py-2 px-1 sm:py-2 sm:px-2.5 font-['Rajdhani',sans-serif] text-[9px] sm:text-xs2 text-emerald-500 font-bold flex items-center justify-center text-center">{label}</span>
+						<span class="py-2 px-1 sm:py-2 sm:px-2.5 font-['Rajdhani',sans-serif] text-xs4 sm:text-xs2 text-emerald-500 font-bold flex items-center justify-center text-center">{label}</span>
 					{:else if kind === 'dash' && !label}
-						<span class="py-2 px-1 sm:py-2 sm:px-2.5 font-['Rajdhani',sans-serif] text-[9px] sm:text-xs2 text-(--text-dim) opacity-30 flex items-center justify-center">—</span>
+						<span class="py-2 px-1 sm:py-2 sm:px-2.5 font-['Rajdhani',sans-serif] text-xs4 sm:text-xs2 text-(--text-dim) opacity-30 flex items-center justify-center">—</span>
 					{:else if kind === 'dash'}
-						<span class="py-2 px-1 sm:py-2 sm:px-2.5 font-['Rajdhani',sans-serif] text-[9px] sm:text-3xs text-(--text-dim) opacity-70 flex items-center justify-center text-center">{label}</span>
+						<span class="py-2 px-1 sm:py-2 sm:px-2.5 font-['Rajdhani',sans-serif] text-xs4 sm:text-3xs text-(--text-dim) opacity-70 flex items-center justify-center text-center">{label}</span>
 					{:else if kind === 'note'}
-						<span class="py-2 px-1 sm:py-2 sm:px-2.5 font-['Rajdhani',sans-serif] text-[9px] sm:text-3xs text-(--text-muted) flex items-center justify-center text-center">{label}</span>
+						<span class="py-2 px-1 sm:py-2 sm:px-2.5 font-['Rajdhani',sans-serif] text-xs4 sm:text-3xs text-(--text-muted) flex items-center justify-center text-center">{label}</span>
 					{/if}
 				{/each}
 			</div>

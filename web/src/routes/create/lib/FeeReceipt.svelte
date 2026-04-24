@@ -29,7 +29,7 @@
 					class={"text-right tabular-nums "
 						+ (row.note
 							? "text-(--text-dim) font-normal text-3xs font-mono"
-							: "text-(--text) font-semibold font-['Rajdhani',sans-serif] text-[13px]")}
+							: "text-(--text) font-semibold font-['Rajdhani',sans-serif] text-13")}
 				>{row.amount}</span>
 			</div>
 		{/each}
@@ -38,7 +38,7 @@
 
 		<div class="flex justify-between items-center py-1.5 font-mono text-xs2">
 			<span class="text-(--text-heading) font-bold">{totalLabel}</span>
-			<span class="text-cyan-400 text-[15px] font-bold font-['Rajdhani',sans-serif] tabular-nums text-right">{total}</span>
+			<span class="text-cyan-400 text-15 font-bold font-['Rajdhani',sans-serif] tabular-nums text-right">{total}</span>
 		</div>
 	</div>
 

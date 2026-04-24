@@ -334,7 +334,7 @@
 					>
 						{tab.label}
 						{#if tab.count > 0}
-							<span class="ml-1 text-[9px] {tab.key === 'timeout' ? 'text-red-400' : ''}">{tab.count}</span>
+							<span class="ml-1 text-xs4 {tab.key === 'timeout' ? 'text-red-400' : ''}">{tab.count}</span>
 						{/if}
 					</button>
 				{/each}
@@ -382,20 +382,20 @@
 								<span class="font-mono text-sm font-bold text-white">
 									${usdtAmount.toFixed(2)}
 								</span>
-								<span class={'text-[10px] font-mono px-2 py-0.5 rounded-full ' +
+								<span class={'text-3xs font-mono px-2 py-0.5 rounded-full ' +
 									(w.status === 'pending' ? 'bg-amber-500/15 text-amber-400' :
 									 w.status === 'confirmed' ? 'bg-emerald-500/15 text-emerald-400' :
 									 w.status === 'processing' ? 'bg-cyan-500/15 text-cyan-400' :
 									 'bg-red-500/15 text-red-400')}
 								>{w.status}</span>
 							</div>
-							<span class="text-[10px] text-gray-600 font-mono">{w.wallet_address?.slice(0, 8)}...{w.wallet_address?.slice(-6)}</span>
+							<span class="text-3xs text-gray-600 font-mono">{w.wallet_address?.slice(0, 8)}...{w.wallet_address?.slice(-6)}</span>
 						</div>
 						<div class="text-right">
 							<span class="text-sm font-mono font-bold text-emerald-400">
 								NGN {ngnAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })}
 							</span>
-							<div class="text-[10px] text-gray-600 font-mono">
+							<div class="text-3xs text-gray-600 font-mono">
 								{new Date(w.created_at).toLocaleString()}
 							</div>
 						</div>
@@ -431,7 +431,7 @@
 					</div>
 
 					<!-- Fee breakdown -->
-					<div class="flex gap-4 text-[10px] font-mono text-gray-500 mb-3">
+					<div class="flex gap-4 text-3xs font-mono text-gray-500 mb-3">
 						<span>Gross: ${fmtUsdt(w.gross_amount, usdtDecimalsMap[w.chain_id] || 18)}</span>
 						<span>Fee: ${fmtUsdt(w.fee, usdtDecimalsMap[w.chain_id] || 18)}</span>
 						<span>Net: ${usdtAmount.toFixed(2)}</span>
@@ -448,11 +448,11 @@
 							</div>
 							<div class="flex justify-between items-center mt-1">
 								{#if timedOut}
-									<span class="text-[10px] font-mono text-red-400 font-bold">TIMED OUT — user can cancel</span>
+									<span class="text-3xs font-mono text-red-400 font-bold">TIMED OUT — user can cancel</span>
 								{:else}
-									<span class="text-[10px] font-mono text-amber-400">{Math.floor(remaining / 60)}:{String(remaining % 60).padStart(2, '0')} remaining</span>
+									<span class="text-3xs font-mono text-amber-400">{Math.floor(remaining / 60)}:{String(remaining % 60).padStart(2, '0')} remaining</span>
 								{/if}
-								<span class="text-[10px] font-mono text-gray-600">{elapsed}s elapsed</span>
+								<span class="text-3xs font-mono text-gray-600">{elapsed}s elapsed</span>
 							</div>
 						</div>
 						{#if timedOut}
@@ -473,7 +473,7 @@
 									Cancel (DB only)
 								</button>
 							</div>
-							<p class="text-[10px] font-mono text-gray-600 mt-1">Refund returns escrowed USDT to the user's wallet on-chain.</p>
+							<p class="text-3xs font-mono text-gray-600 mt-1">Refund returns escrowed USDT to the user's wallet on-chain.</p>
 						{:else}
 						<div class="flex gap-2">
 							<button
@@ -523,7 +523,7 @@
 		<!-- svelte-ignore a11y_click_events_have_key_events -->
 		<div class="w-full max-w-[440px] bg-background border border-line rounded-[20px] overflow-hidden" onclick={(e) => e.stopPropagation()}>
 			<div class="flex justify-between items-center px-5 py-4 border-b border-line">
-				<h3 class="font-display text-[15px] font-bold text-heading m-0">Confirm Withdrawal #{w.withdraw_id}</h3>
+				<h3 class="font-display text-15 font-bold text-heading m-0">Confirm Withdrawal #{w.withdraw_id}</h3>
 				<button aria-label="Close" class="bg-none border-none text-muted cursor-pointer p-1 rounded-lg transition hover:text-foreground hover:bg-surface-hover" onclick={() => { showConfirmModal = false; }}>
 					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
 				</button>
@@ -555,7 +555,7 @@
 						<span class={'w-8 h-8 rounded-lg shrink-0 flex items-center justify-center text-sm border ' + (confirmMode === 'default' ? 'bg-cyan-500/10 border-cyan-500/30 text-brand-cyan' : 'bg-surface border-line')}>→</span>
 						<div>
 							<span class="block font-mono text-xs font-bold text-heading">Default</span>
-							<span class="block font-mono text-[10px] text-muted mt-px">Send to platform wallet</span>
+							<span class="block font-mono text-3xs text-muted mt-px">Send to platform wallet</span>
 						</div>
 					</button>
 					<button class={'flex items-center gap-3 w-full px-3.5 py-2.5 rounded-[10px] border bg-transparent cursor-pointer text-left transition hover:border-cyan-500/20 hover:bg-cyan-500/5 ' + (confirmMode === 'custom-wallet' ? 'border-cyan-500/40 bg-cyan-500/[0.06]' : 'border-line')}
@@ -563,7 +563,7 @@
 						<span class={'w-8 h-8 rounded-lg shrink-0 flex items-center justify-center text-sm border ' + (confirmMode === 'custom-wallet' ? 'bg-cyan-500/10 border-cyan-500/30 text-brand-cyan' : 'bg-surface border-line')}>⇄</span>
 						<div>
 							<span class="block font-mono text-xs font-bold text-heading">Custom Wallet</span>
-							<span class="block font-mono text-[10px] text-muted mt-px">Send full amount to another address</span>
+							<span class="block font-mono text-3xs text-muted mt-px">Send full amount to another address</span>
 						</div>
 					</button>
 				</div>
@@ -571,13 +571,13 @@
 				<!-- Custom fields -->
 				{#if confirmMode === 'custom-wallet'}
 					<label class="block mb-3">
-						<span class="block mb-1 text-[10px] text-gray-500 font-mono uppercase">Recipient Address</span>
+						<span class="block mb-1 text-3xs text-gray-500 font-mono uppercase">Recipient Address</span>
 						<input class="input-field text-xs" bind:value={confirmTo} placeholder="0x..." />
 					</label>
 				{/if}
 
 				<!-- Execute button -->
-				<button class="w-full p-3 rounded-xl border-none cursor-pointer text-white font-display text-[13px] font-bold transition duration-200 bg-gradient-to-br from-[#10b981] to-[#059669] hover:-translate-y-px hover:shadow-[0_6px_20px_rgba(16,185,129,0.3)] disabled:opacity-40 disabled:cursor-not-allowed disabled:translate-y-0 disabled:shadow-none" onclick={executeConfirm}
+				<button class="w-full p-3 rounded-xl border-none cursor-pointer text-white font-display text-13 font-bold transition duration-200 bg-gradient-to-br from-[#10b981] to-[#059669] hover:-translate-y-px hover:shadow-[0_6px_20px_rgba(16,185,129,0.3)] disabled:opacity-40 disabled:cursor-not-allowed disabled:translate-y-0 disabled:shadow-none" onclick={executeConfirm}
 					disabled={confirmMode === 'custom-wallet' && !confirmTo}
 				>
 					{confirmMode === 'default' ? 'Confirm & Send to Platform Wallet' :

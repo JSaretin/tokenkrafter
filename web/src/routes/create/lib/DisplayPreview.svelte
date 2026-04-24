@@ -92,13 +92,13 @@
 	{#if hasMetadata}
 		<div class="mb-[14px]">
 			{#if description}
-				<p class="text-[11px] text-muted font-mono leading-[1.5] m-0 mb-[6px]">{description.length > 80 ? description.slice(0, 80) + '...' : description}</p>
+				<p class="text-xs2 text-muted font-mono leading-[1.5] m-0 mb-[6px]">{description.length > 80 ? description.slice(0, 80) + '...' : description}</p>
 			{/if}
 			{#if website || twitter || telegram}
 				<div class="flex gap-[6px] flex-wrap">
-					{#if website}<span class="text-[9px] px-[6px] py-[2px] rounded bg-surface border border-line text-dim font-mono">🌐 Website</span>{/if}
-					{#if twitter}<span class="text-[9px] px-[6px] py-[2px] rounded bg-surface border border-line text-dim font-mono">𝕏 Twitter</span>{/if}
-					{#if telegram}<span class="text-[9px] px-[6px] py-[2px] rounded bg-surface border border-line text-dim font-mono">✈ Telegram</span>{/if}
+					{#if website}<span class="text-xs4 px-[6px] py-[2px] rounded bg-surface border border-line text-dim font-mono">🌐 Website</span>{/if}
+					{#if twitter}<span class="text-xs4 px-[6px] py-[2px] rounded bg-surface border border-line text-dim font-mono">𝕏 Twitter</span>{/if}
+					{#if telegram}<span class="text-xs4 px-[6px] py-[2px] rounded bg-surface border border-line text-dim font-mono">✈ Telegram</span>{/if}
 				</div>
 			{/if}
 		</div>
@@ -107,20 +107,20 @@
 	<!-- Quick Stats -->
 	<div class="grid grid-cols-2 gap-2 mb-[14px]">
 		<div class="py-2 px-[10px] bg-surface rounded-lg border border-line-subtle">
-			<span class="block text-[10px] text-dim font-mono uppercase tracking-[0.04em] mb-[2px]">Supply</span>
-			<span class="block text-[13px] text-foreground font-mono font-semibold">{supplyFormatted()}</span>
+			<span class="block text-3xs text-dim font-mono uppercase tracking-[0.04em] mb-[2px]">Supply</span>
+			<span class="block text-13 text-foreground font-mono font-semibold">{supplyFormatted()}</span>
 		</div>
 		<div class="py-2 px-[10px] bg-surface rounded-lg border border-line-subtle">
-			<span class="block text-[10px] text-dim font-mono uppercase tracking-[0.04em] mb-[2px]">Decimals</span>
-			<span class="block text-[13px] text-foreground font-mono font-semibold">{decimals}</span>
+			<span class="block text-3xs text-dim font-mono uppercase tracking-[0.04em] mb-[2px]">Decimals</span>
+			<span class="block text-13 text-foreground font-mono font-semibold">{decimals}</span>
 		</div>
 		<div class="py-2 px-[10px] bg-surface rounded-lg border border-line-subtle">
-			<span class="block text-[10px] text-dim font-mono uppercase tracking-[0.04em] mb-[2px]">Network</span>
-			<span class="block text-[13px] text-brand-cyan font-mono font-semibold">{networkName || '—'}</span>
+			<span class="block text-3xs text-dim font-mono uppercase tracking-[0.04em] mb-[2px]">Network</span>
+			<span class="block text-13 text-brand-cyan font-mono font-semibold">{networkName || '—'}</span>
 		</div>
 		<div class="py-2 px-[10px] bg-surface rounded-lg border border-line-subtle">
-			<span class="block text-[10px] text-dim font-mono uppercase tracking-[0.04em] mb-[2px]">Type</span>
-			<span class="block text-[13px] text-foreground font-mono font-semibold">
+			<span class="block text-3xs text-dim font-mono uppercase tracking-[0.04em] mb-[2px]">Type</span>
+			<span class="block text-13 text-foreground font-mono font-semibold">
 				{#if isPartner && isTaxable}Partner+Tax
 				{:else if isPartner}Partner
 				{:else if isTaxable && isMintable}Tax+Mint
@@ -134,17 +134,17 @@
 	<!-- Feature Badges -->
 	{#if hasFeatures}
 		<div class="flex gap-[6px] flex-wrap mb-[14px]">
-			{#if isMintable}<span class="text-[10px] font-semibold uppercase tracking-[0.04em] px-2 py-[2px] rounded-full font-mono bg-[rgba(0,210,255,0.1)] text-brand-cyan border border-[rgba(0,210,255,0.2)]">Mintable</span>{/if}
-			{#if isTaxable}<span class="text-[10px] font-semibold uppercase tracking-[0.04em] px-2 py-[2px] rounded-full font-mono bg-[rgba(245,158,11,0.1)] text-[#f59e0b] border border-[rgba(245,158,11,0.2)]">Taxable</span>{/if}
-			{#if isPartner}<span class="text-[10px] font-semibold uppercase tracking-[0.04em] px-2 py-[2px] rounded-full font-mono bg-[rgba(139,92,246,0.1)] text-[#a78bfa] border border-[rgba(139,92,246,0.2)]">Partner</span>{/if}
-			{#if launchEnabled}<span class="text-[10px] font-semibold uppercase tracking-[0.04em] px-2 py-[2px] rounded-full font-mono bg-[rgba(16,185,129,0.1)] text-[#10b981] border border-[rgba(16,185,129,0.2)]">Launch</span>{/if}
+			{#if isMintable}<span class="text-3xs font-semibold uppercase tracking-[0.04em] px-2 py-[2px] rounded-full font-mono bg-[rgba(0,210,255,0.1)] text-brand-cyan border border-[rgba(0,210,255,0.2)]">Mintable</span>{/if}
+			{#if isTaxable}<span class="text-3xs font-semibold uppercase tracking-[0.04em] px-2 py-[2px] rounded-full font-mono bg-[rgba(245,158,11,0.1)] text-[#f59e0b] border border-[rgba(245,158,11,0.2)]">Taxable</span>{/if}
+			{#if isPartner}<span class="text-3xs font-semibold uppercase tracking-[0.04em] px-2 py-[2px] rounded-full font-mono bg-[rgba(139,92,246,0.1)] text-[#a78bfa] border border-[rgba(139,92,246,0.2)]">Partner</span>{/if}
+			{#if launchEnabled}<span class="text-3xs font-semibold uppercase tracking-[0.04em] px-2 py-[2px] rounded-full font-mono bg-[rgba(16,185,129,0.1)] text-[#10b981] border border-[rgba(16,185,129,0.2)]">Launch</span>{/if}
 		</div>
 	{/if}
 
 	<!-- Tax Summary -->
 	{#if hasTax}
 		<div class="mb-3 p-[10px] bg-surface rounded-lg border border-line-subtle">
-			<div class="text-[10px] font-semibold uppercase tracking-[0.06em] text-muted font-mono mb-[6px]">Tax Rates</div>
+			<div class="text-3xs font-semibold uppercase tracking-[0.06em] text-muted font-mono mb-[6px]">Tax Rates</div>
 			<div class="flex flex-col gap-1">
 				{#if parseFloat(buyTaxPct) > 0}
 					<div class="flex justify-between text-xs font-mono text-muted"><span>Buy</span><span class="text-foreground font-semibold">{buyTaxPct}%</span></div>
@@ -162,7 +162,7 @@
 	<!-- Launch Summary -->
 	{#if launchEnabled}
 		<div class="mb-3 p-[10px] bg-surface rounded-lg border border-line-subtle">
-			<div class="text-[10px] font-semibold uppercase tracking-[0.06em] text-muted font-mono mb-[6px]">Launchpad</div>
+			<div class="text-3xs font-semibold uppercase tracking-[0.06em] text-muted font-mono mb-[6px]">Launchpad</div>
 			<div class="flex flex-col gap-1">
 				<div class="flex justify-between text-xs font-mono text-muted"><span>Tokens</span><span class="text-foreground font-semibold">{launchTokensPct}%</span></div>
 				<div class="flex justify-between text-xs font-mono text-muted"><span>Curve</span><span class="text-foreground font-semibold">{CURVE_LABELS[launchCurveType]}</span></div>
@@ -174,7 +174,7 @@
 	<!-- Protection Summary -->
 	{#if hasProtection}
 		<div class="mb-3 p-[10px] bg-surface rounded-lg border border-line-subtle">
-			<div class="text-[10px] font-semibold uppercase tracking-[0.06em] text-[#f59e0b] font-mono mb-[6px]">Protection</div>
+			<div class="text-3xs font-semibold uppercase tracking-[0.06em] text-[#f59e0b] font-mono mb-[6px]">Protection</div>
 			<div class="flex flex-col gap-1">
 				{#if maxWalletPct !== '0'}
 					<div class="flex justify-between text-xs font-mono text-muted"><span>Max wallet</span><span class="text-[#f59e0b] font-semibold">{maxWalletPct}%</span></div>
@@ -188,13 +188,13 @@
 
 	<!-- Partner note -->
 	{#if isPartner && !isTaxable}
-		<div class="text-[11px] text-[#a78bfa] font-mono py-2 px-[10px] bg-[rgba(139,92,246,0.06)] border border-[rgba(139,92,246,0.12)] rounded-lg mb-3">
+		<div class="text-xs2 text-[#a78bfa] font-mono py-2 px-[10px] bg-[rgba(139,92,246,0.06)] border border-[rgba(139,92,246,0.12)] rounded-lg mb-3">
 			0.5% platform fee on buys/sells (fixed)
 		</div>
 	{/if}
 
 	<!-- Current step indicator -->
-	<div class="text-[11px] text-dim font-mono text-center pt-3 border-t border-line-subtle mt-1">
+	<div class="text-xs2 text-dim font-mono text-center pt-3 border-t border-line-subtle mt-1">
 		{#if wizardStep === 'basics'}Configure your token's identity
 		{:else if wizardStep === 'features'}Choose token capabilities
 		{:else if wizardStep === 'tax'}Set tax rates and wallets

@@ -587,7 +587,7 @@
 					<h3 class="section-title mb-3">Implementations</h3>
 					<table class="w-full text-sm"><tbody>
 						{#each implAddresses as addr, i}
-							<tr class="border-b border-white/3"><td class="py-1.5 px-2 text-white text-xs">{TYPE_LABELS[i]}</td><td class="py-1.5 px-2 font-mono text-[10px] {addr === ZERO_ADDRESS ? 'text-red-400' : 'text-cyan-400'}">{addr === ZERO_ADDRESS ? 'Not set' : formatAddress(addr)}</td></tr>
+							<tr class="border-b border-white/3"><td class="py-1.5 px-2 text-white text-xs">{TYPE_LABELS[i]}</td><td class="py-1.5 px-2 font-mono text-3xs {addr === ZERO_ADDRESS ? 'text-red-400' : 'text-cyan-400'}">{addr === ZERO_ADDRESS ? 'Not set' : formatAddress(addr)}</td></tr>
 						{/each}
 					</tbody></table>
 					<div class="flex flex-col sm:flex-row gap-2 mt-3">
@@ -708,7 +708,7 @@
 			</div>
 			<div class="card p-4">
 				<h3 class="section-title mb-2 text-xs">DEX Router</h3>
-				<div class="info-row mb-2"><span class="text-gray-500 text-xs">Current</span><span class="text-cyan-400 text-[10px] font-mono">{dexRouterAddr}</span></div>
+				<div class="info-row mb-2"><span class="text-gray-500 text-xs">Current</span><span class="text-cyan-400 text-3xs font-mono">{dexRouterAddr}</span></div>
 				<div class="flex flex-col sm:flex-row gap-2">
 					<input class="input-field flex-1 text-xs" placeholder="0x... new router" bind:value={newDexRouter} />
 					<button class="btn-primary text-xs px-4 py-1.5 cursor-pointer" disabled={busy} onclick={doSetDexRouter}>{busy ? '...' : 'Update'}</button>

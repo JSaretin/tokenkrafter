@@ -22,7 +22,7 @@
 	<img src={logo} alt="" class="rounded-full object-cover shrink-0" style="width: {size}px; height: {size}px;" />
 {:else}
 	<div
-		class={"flex items-center justify-center rounded-full shrink-0 font-display text-[14px] font-bold " + fallbackClass}
+		class={"flex items-center justify-center rounded-full shrink-0 font-display text-sm font-bold " + fallbackClass}
 		style="width: {size}px; height: {size}px;"
 	>
 		{symbol.charAt(0)}

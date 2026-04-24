@@ -65,7 +65,7 @@
 		renounced: { label: 'No Owner', color: 'emerald', tooltip: 'Renounced — contract ownership has been permanently given up' }
 	};
 
-	const LAUNCH_BADGE_BASE = 'text-[10px] font-semibold font-mono uppercase tracking-[0.04em] px-2 py-0.5 rounded border';
+	const LAUNCH_BADGE_BASE = 'text-3xs font-semibold font-mono uppercase tracking-[0.04em] px-2 py-0.5 rounded border';
 	const LAUNCH_BADGE_COLOR: Record<string, string> = {
 		cyan: 'bg-cyan/[0.12] text-cyan border-cyan/25',
 		emerald: 'bg-success/[0.12] text-emerald-400 border-success/25',

@@ -12,7 +12,7 @@
 	} = $props();
 </script>
 
-<div class="flex justify-between py-[3px] font-mono text-[11px]">
+<div class="flex justify-between py-[3px] font-mono text-xs2">
 	<span class="text-(--text-muted)">{label}</span>
 	<span class={warn ? "text-[#f59e0b]" : "text-(--text)"}>{@render children()}</span>
 </div>

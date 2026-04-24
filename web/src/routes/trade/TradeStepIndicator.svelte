@@ -14,7 +14,7 @@
 	);
 </script>
 
-<div class={"w-7 h-7 rounded-full shrink-0 flex items-center justify-center border-2 font-mono text-[11px] font-bold transition-all duration-300 " + indicatorCls}>
+<div class={"w-7 h-7 rounded-full shrink-0 flex items-center justify-center border-2 font-mono text-xs2 font-bold transition-all duration-300 " + indicatorCls}>
 	{#if state === 'done'}
 		<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
 	{:else if state === 'active'}

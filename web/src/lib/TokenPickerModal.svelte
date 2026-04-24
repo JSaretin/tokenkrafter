@@ -141,8 +141,8 @@
 								<div class="w-4 h-4 border-2 border-[rgba(139,92,246,0.2)] border-t-[#a78bfa] rounded-full animate-spin"></div>
 							</div>
 							<div class="flex-1 min-w-0">
-								<span class="block font-display text-[13px] font-bold text-heading">Loading...</span>
-								<span class="block font-mono text-[10px] text-dim shrink-0">{search.trim().slice(0, 6)}...{search.trim().slice(-4)}</span>
+								<span class="block font-display text-13 font-bold text-heading">Loading...</span>
+								<span class="block font-mono text-3xs text-dim shrink-0">{search.trim().slice(0, 6)}...{search.trim().slice(-4)}</span>
 							</div>
 						</div>
 					{:else if pastedMeta}
@@ -153,17 +153,17 @@
 								<div class="w-9 h-9 rounded-full shrink-0 flex items-center justify-center bg-[rgba(139,92,246,0.1)] text-[#a78bfa] border border-[rgba(139,92,246,0.2)] font-display text-sm font-bold">{pastedMeta.symbol.charAt(0)}</div>
 							{/if}
 							<div class="flex-1 min-w-0">
-								<span class="block font-display text-[13px] font-bold text-heading">{pastedMeta.symbol}</span>
-								<span class="block font-display text-[10px] text-muted whitespace-nowrap overflow-hidden text-ellipsis">{pastedMeta.name}</span>
+								<span class="block font-display text-13 font-bold text-heading">{pastedMeta.symbol}</span>
+								<span class="block font-display text-3xs text-muted whitespace-nowrap overflow-hidden text-ellipsis">{pastedMeta.name}</span>
 							</div>
-							<span class="font-display text-[10px] font-bold text-[#a78bfa] bg-[rgba(139,92,246,0.1)] border border-[rgba(139,92,246,0.2)] py-[3px] px-2 rounded-md shrink-0">Import</span>
+							<span class="font-display text-3xs font-bold text-[#a78bfa] bg-[rgba(139,92,246,0.1)] border border-[rgba(139,92,246,0.2)] py-[3px] px-2 rounded-md shrink-0">Import</span>
 						</button>
 					{:else}
 						<button class="flex items-center gap-[10px] w-full py-[10px] px-3 rounded-xl border-none bg-transparent cursor-pointer transition-all text-left hover:bg-surface-hover" onclick={importPasted}>
 							<div class="w-9 h-9 rounded-full shrink-0 flex items-center justify-center bg-[rgba(139,92,246,0.1)] text-[#a78bfa] border border-[rgba(139,92,246,0.2)] font-display text-sm font-bold">?</div>
 							<div class="flex-1 min-w-0">
-								<span class="block font-display text-[13px] font-bold text-heading">Import Token</span>
-								<span class="block font-mono text-[10px] text-dim shrink-0">{search.trim().slice(0, 6)}...{search.trim().slice(-4)}</span>
+								<span class="block font-display text-13 font-bold text-heading">Import Token</span>
+								<span class="block font-mono text-3xs text-dim shrink-0">{search.trim().slice(0, 6)}...{search.trim().slice(-4)}</span>
 							</div>
 						</button>
 					{/if}
@@ -179,14 +179,14 @@
 							</div>
 						{/if}
 						<div class="flex-1 min-w-0">
-							<span class="block font-display text-[13px] font-bold text-heading">{token.symbol}</span>
-							<span class="block font-display text-[10px] text-muted whitespace-nowrap overflow-hidden text-ellipsis">{token.name}</span>
+							<span class="block font-display text-13 font-bold text-heading">{token.symbol}</span>
+							<span class="block font-display text-3xs text-muted whitespace-nowrap overflow-hidden text-ellipsis">{token.name}</span>
 						</div>
 						{#if token.balance !== undefined && token.balance > 0n}
-							<span class="font-['Rajdhani',sans-serif] text-[11px] font-bold text-foreground shrink-0 tabular-nums">{formatBalance(token.balance, token.decimals)}</span>
+							<span class="font-['Rajdhani',sans-serif] text-xs2 font-bold text-foreground shrink-0 tabular-nums">{formatBalance(token.balance, token.decimals)}</span>
 						{/if}
 						{#if token.address !== ethers.ZeroAddress}
-							<span class="font-mono text-[10px] text-dim shrink-0">{token.address.slice(0, 6)}...{token.address.slice(-4)}</span>
+							<span class="font-mono text-3xs text-dim shrink-0">{token.address.slice(0, 6)}...{token.address.slice(-4)}</span>
 						{/if}
 					</button>
 				{/each}

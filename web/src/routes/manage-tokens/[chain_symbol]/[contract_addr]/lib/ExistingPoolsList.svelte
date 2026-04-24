@@ -124,10 +124,10 @@
 							<div class="flex flex-col">
 								{#if isEmptyPool(pool)}
 									<span class="text-amber-400 text-sm font-mono">No liquidity yet</span>
-									<span class="text-gray-600 text-[10px] font-mono">Add tokens to set the initial price</span>
+									<span class="text-gray-600 text-3xs font-mono">Add tokens to set the initial price</span>
 								{:else}
 									<span class="text-white text-sm rajdhani" style="font-size:15px;">1 {tokenSymbol} = {pool.pricePerToken < 0.00000001 ? '< 0.00000001' : pool.pricePerToken < 0.000001 ? pool.pricePerToken.toFixed(10).replace(/\.?0+$/, '') : pool.pricePerToken.toFixed(6)} {pool.baseSymbol}</span>
-									<span class="text-gray-500 text-[10px] font-mono">{fmtSupply(String(pool.tokenReserve), 0)} {tokenSymbol} + {pool.baseReserve.toLocaleString(undefined, { maximumFractionDigits: 4 })} {pool.baseSymbol}</span>
+									<span class="text-gray-500 text-3xs font-mono">{fmtSupply(String(pool.tokenReserve), 0)} {tokenSymbol} + {pool.baseReserve.toLocaleString(undefined, { maximumFractionDigits: 4 })} {pool.baseSymbol}</span>
 								{/if}
 							</div>
 						</div>

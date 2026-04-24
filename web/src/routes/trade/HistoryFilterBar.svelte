@@ -30,12 +30,12 @@
 		{@const count = counts[f]}
 		<button
 			type="button"
-			class={"py-1 px-2.5 rounded-full border font-mono text-[10px] cursor-pointer transition-all duration-[120ms] capitalize " + (filter === f ? "text-[#00d2ff] border-[rgba(0,210,255,0.25)] bg-[rgba(0,210,255,0.06)]" : "text-(--text-dim) border-(--border) bg-transparent hover:text-(--text-muted) hover:border-(--border-input)")}
+			class={"py-1 px-2.5 rounded-full border font-mono text-3xs cursor-pointer transition-all duration-[120ms] capitalize " + (filter === f ? "text-[#00d2ff] border-[rgba(0,210,255,0.25)] bg-[rgba(0,210,255,0.06)]" : "text-(--text-dim) border-(--border) bg-transparent hover:text-(--text-muted) hover:border-(--border-input)")}
 			onclick={() => filter = f}
 		>
 			{labelFor(f)}
 			{#if count > 0}
-				<span class="inline-flex items-center justify-center min-w-4 h-4 py-0 px-1 rounded-lg text-[9px] font-bold bg-[rgba(0,210,255,0.1)] text-[#00d2ff] ml-[3px]">{count}</span>
+				<span class="inline-flex items-center justify-center min-w-4 h-4 py-0 px-1 rounded-lg text-xs4 font-bold bg-[rgba(0,210,255,0.1)] text-[#00d2ff] ml-[3px]">{count}</span>
 			{/if}
 		</button>
 	{/each}

@@ -819,7 +819,7 @@
 				onclick={() => jumpToStep(i)}
 			>
 				<span class="wz-step-num w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold font-mono border-2 border-line-input text-dim bg-transparent transition-all duration-200 shrink-0">{i < currentStepIdx ? '✓' : i + 1}</span>
-				<span class="wz-step-label text-[9px] text-dim font-mono uppercase tracking-wider truncate max-w-full">{step.label}</span>
+				<span class="wz-step-label text-xs4 text-dim font-mono uppercase tracking-wider truncate max-w-full">{step.label}</span>
 			</button>
 			{#if i < steps.length - 1}
 				<div class={'flex-1 h-0.5 min-w-[12px] mx-1 mb-4 ' + (i < currentStepIdx ? 'bg-emerald-500' : 'bg-surface-hover')}></div>
@@ -853,7 +853,7 @@
 				<!-- Existing token: address + network -->
 				<div class="p-5 rounded-xl bg-white/[0.015] border border-white/[0.04]">
 					<div class="field-group mb-4">
-						<label class="block text-[11px] font-bold text-dim uppercase tracking-wider font-mono mb-1.5" for="existing-token-addr">Token contract address</label>
+						<label class="block text-xs2 font-bold text-dim uppercase tracking-wider font-mono mb-1.5" for="existing-token-addr">Token contract address</label>
 						<input
 							id="existing-token-addr"
 							class="input-field"
@@ -865,7 +865,7 @@
 						{/if}
 					</div>
 					<div class="field-group">
-						<label class="block text-[11px] font-bold text-dim uppercase tracking-wider font-mono mb-1.5" for="existing-token-network">Network</label>
+						<label class="block text-xs2 font-bold text-dim uppercase tracking-wider font-mono mb-1.5" for="existing-token-network">Network</label>
 						<select id="existing-token-network" class="input-field" bind:value={chainId}>
 							<option value="">Select network</option>
 							{#each supportedNetworks.filter((n) => n.platform_address && n.platform_address.length > 2) as n (n.chain_id)}
@@ -873,7 +873,7 @@
 							{/each}
 						</select>
 					</div>
-					<p class="text-muted text-[10px] font-mono mt-3">
+					<p class="text-muted text-3xs font-mono mt-3">
 						Your token must be owned by your connected wallet. The router will temporarily take ownership to configure the launch, then return it.
 					</p>
 				</div>
@@ -905,7 +905,7 @@
 					</p>
 					<div class="flex flex-wrap gap-2 mb-3">
 						{#each baseOptions as b (b.address.toLowerCase())}
-							<label class={'base-pill inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[10px] border bg-transparent font-mono text-[11px] cursor-pointer transition ' + (baseSelection[b.address.toLowerCase()] ? 'border-brand-cyan/40 text-brand-cyan bg-brand-cyan/[0.08]' : 'border-line-input text-dim hover:border-brand-cyan/30 hover:text-foreground')} title={b.name || b.symbol}>
+							<label class={'base-pill inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[10px] border bg-transparent font-mono text-xs2 cursor-pointer transition ' + (baseSelection[b.address.toLowerCase()] ? 'border-brand-cyan/40 text-brand-cyan bg-brand-cyan/[0.08]' : 'border-line-input text-dim hover:border-brand-cyan/30 hover:text-foreground')} title={b.name || b.symbol}>
 								<input
 									type="checkbox"
 									class="absolute opacity-0 pointer-events-none"
@@ -926,7 +926,7 @@
 					</div>
 					<div class="grid grid-cols-[1fr_auto] gap-2">
 						<input
-							class="input-field text-[11px]"
+							class="input-field text-xs2"
 							type="text"
 							placeholder="0x… add custom base"
 							bind:value={newBaseAddress}
@@ -934,13 +934,13 @@
 						/>
 						<button
 							type="button"
-							class="px-4 py-2 rounded-[10px] border border-brand-cyan/40 bg-brand-cyan/[0.08] text-brand-cyan font-mono text-[11px] cursor-pointer transition hover:bg-brand-cyan/[0.15] disabled:opacity-40 disabled:cursor-not-allowed"
+							class="px-4 py-2 rounded-[10px] border border-brand-cyan/40 bg-brand-cyan/[0.08] text-brand-cyan font-mono text-xs2 cursor-pointer transition hover:bg-brand-cyan/[0.15] disabled:opacity-40 disabled:cursor-not-allowed"
 							onclick={addCustomBase}
 							disabled={!newBaseAddress.trim() || baseLookupBusy}
 						>{baseLookupBusy ? '…' : 'Add'}</button>
 					</div>
 					{#if baseLookupError}
-						<p class="text-[11px] text-red-400 font-mono mt-1.5">{baseLookupError}</p>
+						<p class="text-xs2 text-red-400 font-mono mt-1.5">{baseLookupError}</p>
 					{/if}
 				</div>
 				{/if}
@@ -950,25 +950,25 @@
 			<div>
 				<h2 class="font-display text-xl font-extrabold text-heading m-0 mb-1">Bonding Curve Launch</h2>
 				<div class="mb-3.5">
-					<label for="launchTokensPct" class="block text-[11px] font-bold text-dim uppercase tracking-wider font-mono mb-1.5">
+					<label for="launchTokensPct" class="block text-xs2 font-bold text-dim uppercase tracking-wider font-mono mb-1.5">
 						Tokens for launch ({launchTokensPct}%{#if launchTokenAmount > 0} — {formatTokenAmount(launchTokenAmount)} {symbol || 'tokens'}{/if})
 					</label>
 					<input id="launchTokensPct" type="range" class="wz-slider w-full h-1.5 bg-surface-hover rounded-sm outline-none" min="20" max="90" step="5" bind:value={launchTokensPct} />
 					{#if launchTokenAmount > 0}
-						<span class="block text-[10px] text-dim font-mono mt-0.5">Remaining {formatTokenAmount(supplyNum - launchTokenAmount)} {symbol || 'tokens'} goes to: LP seeding (on graduation) + creator allocation (if any) + burn</span>
+						<span class="block text-3xs text-dim font-mono mt-0.5">Remaining {formatTokenAmount(supplyNum - launchTokenAmount)} {symbol || 'tokens'} goes to: LP seeding (on graduation) + creator allocation (if any) + burn</span>
 					{/if}
 				</div>
 				<div class="mb-3.5">
-					<span class="block text-[11px] font-bold text-dim uppercase tracking-wider font-mono mb-1.5">Curve type</span>
+					<span class="block text-xs2 font-bold text-dim uppercase tracking-wider font-mono mb-1.5">Curve type</span>
 					<CurveTypePicker bind:value={launchCurveType} />
 				</div>
 				<div class="grid grid-cols-1 min-[501px]:grid-cols-2 gap-3">
-					<div class="mb-3.5"><label class="block text-[11px] font-bold text-dim uppercase tracking-wider font-mono mb-1.5" for="launchSoftCap">Soft cap ($)</label><input id="launchSoftCap" class="input-field" type="number" min="1" step="any" required bind:value={launchSoftCap} placeholder="50,000" /></div>
-					<div class="mb-3.5"><label class="block text-[11px] font-bold text-dim uppercase tracking-wider font-mono mb-1.5" for="launchHardCap">Hard cap ($)</label><input id="launchHardCap" class="input-field" type="number" min="1" step="any" required bind:value={launchHardCap} placeholder="100,000" /></div>
+					<div class="mb-3.5"><label class="block text-xs2 font-bold text-dim uppercase tracking-wider font-mono mb-1.5" for="launchSoftCap">Soft cap ($)</label><input id="launchSoftCap" class="input-field" type="number" min="1" step="any" required bind:value={launchSoftCap} placeholder="50,000" /></div>
+					<div class="mb-3.5"><label class="block text-xs2 font-bold text-dim uppercase tracking-wider font-mono mb-1.5" for="launchHardCap">Hard cap ($)</label><input id="launchHardCap" class="input-field" type="number" min="1" step="any" required bind:value={launchHardCap} placeholder="100,000" /></div>
 				</div>
 				<div class="grid grid-cols-1 min-[501px]:grid-cols-2 gap-3">
 					<div class="mb-3.5">
-						<label class="block text-[11px] font-bold text-dim uppercase tracking-wider font-mono mb-1.5" for="launchDuration">Duration</label>
+						<label class="block text-xs2 font-bold text-dim uppercase tracking-wider font-mono mb-1.5" for="launchDuration">Duration</label>
 						<select id="launchDuration" class="input-field" bind:value={launchDurationDays}>
 							<option value="7">7 days</option>
 							<option value="14">14 days</option>
@@ -978,7 +978,7 @@
 						</select>
 					</div>
 					<div class="mb-3.5">
-						<label class="block text-[11px] font-bold text-dim uppercase tracking-wider font-mono mb-1.5" for="launchStart">Start date (optional)</label>
+						<label class="block text-xs2 font-bold text-dim uppercase tracking-wider font-mono mb-1.5" for="launchStart">Start date (optional)</label>
 						<input
 							id="launchStart"
 							type="datetime-local"
@@ -986,12 +986,12 @@
 							bind:value={launchStartDateLocal}
 							min={new Date(Date.now() + 60000).toISOString().slice(0, 16)}
 						/>
-						<span class="block text-[10px] text-dim font-mono mt-0.5">{launchStartDateLocal ? 'Launch opens at this local time' : 'Leave empty to start immediately after deploy'}</span>
+						<span class="block text-3xs text-dim font-mono mt-0.5">{launchStartDateLocal ? 'Launch opens at this local time' : 'Leave empty to start immediately after deploy'}</span>
 					</div>
 				</div>
 				<div class="grid grid-cols-1 min-[501px]:grid-cols-2 gap-3">
 					<div class="mb-3.5">
-						<label for="launchCreatorAlloc" class="block text-[11px] font-bold text-dim uppercase tracking-wider font-mono mb-1.5">Creator allocation</label>
+						<label for="launchCreatorAlloc" class="block text-xs2 font-bold text-dim uppercase tracking-wider font-mono mb-1.5">Creator allocation</label>
 						<select id="launchCreatorAlloc" class="input-field" bind:value={launchCreatorAllocPct}>
 							<option value="0">None</option>
 							<option value="1">1% of supply</option>
@@ -1000,17 +1000,17 @@
 							<option value="4">4% of supply</option>
 							<option value="5">5% of supply (max)</option>
 						</select>
-						<span class="block text-[10px] text-dim font-mono mt-0.5">Tokens reserved for you (vested). Contract caps at 5%.</span>
+						<span class="block text-3xs text-dim font-mono mt-0.5">Tokens reserved for you (vested). Contract caps at 5%.</span>
 					</div>
 					<div class="mb-3.5">
-						<label for="launchVesting" class="block text-[11px] font-bold text-dim uppercase tracking-wider font-mono mb-1.5">Vesting period</label>
+						<label for="launchVesting" class="block text-xs2 font-bold text-dim uppercase tracking-wider font-mono mb-1.5">Vesting period</label>
 						<select id="launchVesting" class="input-field" bind:value={launchVestingDays}>
 							<option value="0">No vesting</option>
 							<option value="30">30 days</option>
 							<option value="60">60 days</option>
 							<option value="90">90 days</option>
 						</select>
-						<span class="block text-[10px] text-dim font-mono mt-0.5">Lock period for creator tokens (7-day cliff before any vest starts).</span>
+						<span class="block text-3xs text-dim font-mono mt-0.5">Lock period for creator tokens (7-day cliff before any vest starts).</span>
 					</div>
 				</div>
 
@@ -1018,8 +1018,8 @@
 				<div class={'border rounded-xl p-0 mt-3.5 overflow-hidden transition ' + (launchProtectionEnabled ? 'border-amber-500/25' : 'border-line')}>
 					<label class="flex items-center justify-between py-3 px-3.5 cursor-pointer gap-3">
 						<div>
-							<span class="block text-[13px] font-bold text-foreground font-display">Launchpad Anti-Whale Protection</span>
-							<span class="block text-[10px] text-dim font-mono mt-px">Applies during the bonding curve only</span>
+							<span class="block text-13 font-bold text-foreground font-display">Launchpad Anti-Whale Protection</span>
+							<span class="block text-3xs text-dim font-mono mt-px">Applies during the bonding curve only</span>
 						</div>
 						<div class={'w-10 h-[22px] rounded-[11px] border relative shrink-0 transition-[background] duration-200 ' + (launchProtectionEnabled ? 'bg-amber-500 border-amber-500/50' : 'bg-[var(--toggle-track)] border-line')}>
 							<div class={'w-4 h-4 rounded-full shadow-[0_1px_3px_rgba(0,0,0,0.2)] absolute top-0.5 left-0.5 transition-transform duration-200 ' + (launchProtectionEnabled ? 'translate-x-[18px] bg-[var(--toggle-thumb)]' : 'bg-[var(--toggle-thumb-off)]')}></div>
@@ -1030,7 +1030,7 @@
 						<div class="px-3.5 pb-3.5">
 							<div class="grid grid-cols-1 min-[501px]:grid-cols-2 gap-3">
 								<div class="mb-3.5">
-									<label for="launchMaxBuyPct" class="block text-[11px] font-bold text-dim uppercase tracking-wider font-mono mb-1.5">Max buy per wallet</label>
+									<label for="launchMaxBuyPct" class="block text-xs2 font-bold text-dim uppercase tracking-wider font-mono mb-1.5">Max buy per wallet</label>
 									<select id="launchMaxBuyPct" class="input-field" bind:value={launchMaxBuyPct}>
 										<option value="0.5">0.5% of hard cap</option>
 										<option value="1">1% of hard cap</option>
@@ -1038,24 +1038,24 @@
 										<option value="3">3% of hard cap</option>
 										<option value="5">5% of hard cap</option>
 									</select>
-									<span class="block text-[10px] text-dim font-mono mt-0.5">
+									<span class="block text-3xs text-dim font-mono mt-0.5">
 										One wallet can't buy more than this share of the total raise
 										{#if launchMaxBuyUsdt > 0} — ${launchMaxBuyUsdt.toLocaleString(undefined, { maximumFractionDigits: 2 })} at your hard cap{/if}
 									</span>
 								</div>
 								<div class="mb-3.5">
-									<label class="block text-[11px] font-bold text-dim uppercase tracking-wider font-mono mb-1.5" for="launchMinBuyUsdt">Min buy (USDT)</label>
+									<label class="block text-xs2 font-bold text-dim uppercase tracking-wider font-mono mb-1.5" for="launchMinBuyUsdt">Min buy (USDT)</label>
 									<input id="launchMinBuyUsdt" class="input-field" type="text" bind:value={launchMinBuyUsdt} placeholder="1" />
-									<span class="block text-[10px] text-dim font-mono mt-0.5">Anti-dust floor per buy. Must be &gt; 0 and ≤ soft cap.</span>
+									<span class="block text-3xs text-dim font-mono mt-0.5">Anti-dust floor per buy. Must be &gt; 0 and ≤ soft cap.</span>
 								</div>
 							</div>
 							{#if minBuyExceedsMaxBuy}
-								<div class="mt-2 px-2.5 py-2 rounded-md bg-red-400/[0.08] border border-red-400/25 text-red-300 text-[11px] font-mono leading-normal">
+								<div class="mt-2 px-2.5 py-2 rounded-md bg-red-400/[0.08] border border-red-400/25 text-red-300 text-xs2 font-mono leading-normal">
 									⚠ Your min buy (${launchMinBuyNum}) exceeds the max-wallet allowance (${launchMaxBuyUsdt.toLocaleString(undefined, { maximumFractionDigits: 2 })}) — no one will be able to buy. Either lower min buy, raise hard cap, or increase max-buy %.
 								</div>
 							{/if}
 							<div class="mb-3.5">
-								<label class="block text-[11px] font-bold text-dim uppercase tracking-wider font-mono mb-1.5" for="launchLockDurationMinutes">Anti-snipe delay (minutes)</label>
+								<label class="block text-xs2 font-bold text-dim uppercase tracking-wider font-mono mb-1.5" for="launchLockDurationMinutes">Anti-snipe delay (minutes)</label>
 								<select id="launchLockDurationMinutes" class="input-field" bind:value={launchLockDurationMinutes}>
 									<option value="0">None (open immediately)</option>
 									<option value="5">5 min</option>
@@ -1066,7 +1066,7 @@
 									<option value="720">12 hours</option>
 									<option value="1440">24 hours (max)</option>
 								</select>
-								<span class="block text-[10px] text-dim font-mono mt-0.5">How long DEX trading stays locked after graduation — blocks snipers from front-running the listing block.</span>
+								<span class="block text-3xs text-dim font-mono mt-0.5">How long DEX trading stays locked after graduation — blocks snipers from front-running the listing block.</span>
 							</div>
 						</div>
 					{/if}
@@ -1087,8 +1087,8 @@
 						<div class="flex items-center gap-2.5">
 							<span class="text-xl shrink-0">{burnLp ? '🔥' : '⚠️'}</span>
 							<div>
-								<span class="block text-[13px] font-bold text-heading font-display">{burnLp ? 'LP Burned (Permanent)' : 'LP NOT Burned (Removable)'}</span>
-								<span class="block text-[10px] text-muted font-mono mt-0.5">{burnLp ? 'Liquidity is permanent. Investors see this as safe.' : 'You can remove liquidity anytime. No SAFU badge.'}</span>
+								<span class="block text-13 font-bold text-heading font-display">{burnLp ? 'LP Burned (Permanent)' : 'LP NOT Burned (Removable)'}</span>
+								<span class="block text-3xs text-muted font-mono mt-0.5">{burnLp ? 'Liquidity is permanent. Investors see this as safe.' : 'You can remove liquidity anytime. No SAFU badge.'}</span>
 							</div>
 						</div>
 						<div class={'w-10 h-[22px] rounded-[11px] border relative shrink-0 transition-[background] duration-200 ' + (burnLp ? 'bg-amber-500 border-amber-500/50' : 'bg-[var(--toggle-track)] border-line')}>
@@ -1100,7 +1100,7 @@
 
 				<!-- Anti-snipe delay for direct listings -->
 				<div class="mt-6 mb-3.5">
-					<label class="block text-[11px] font-bold text-dim uppercase tracking-wider font-mono mb-1.5" for="listingTradingDelaySeconds">Anti-snipe delay (seconds)</label>
+					<label class="block text-xs2 font-bold text-dim uppercase tracking-wider font-mono mb-1.5" for="listingTradingDelaySeconds">Anti-snipe delay (seconds)</label>
 					<select id="listingTradingDelaySeconds" class="input-field" bind:value={listingTradingDelaySeconds}>
 						<option value="0">None (open immediately)</option>
 						<option value="30">30 sec</option>
@@ -1109,7 +1109,7 @@
 						<option value="900">15 min</option>
 						<option value="3600">1 hour</option>
 					</select>
-					<span class="block text-[10px] text-dim font-mono mt-0.5">Blocks public swaps for this many seconds after your listing transaction confirms. Stops MEV bots from front-running your seed tx with a buy in the same block.</span>
+					<span class="block text-3xs text-dim font-mono mt-0.5">Blocks public swaps for this many seconds after your listing transaction confirms. Stops MEV bots from front-running your seed tx with a buy in the same block.</span>
 				</div>
 			</div>
 

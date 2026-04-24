@@ -276,7 +276,7 @@
 	<div class="flex items-start justify-between gap-4 mb-6 flex-wrap max-[500px]:flex-col">
 		<div>
 			<h1 class="heading-1">{$t('mt.pageTitle')}</h1>
-			<p class="text-[13px] text-dim font-mono mt-1 mb-0">
+			<p class="text-13 text-dim font-mono mt-1 mb-0">
 				{#if userAddress}
 					Tokens created by <span class="text-brand-cyan">{shortAddr(userAddress)}</span>
 				{:else}
@@ -291,7 +291,7 @@
 					<input class="bg-transparent border-none outline-none flex-1 text-foreground font-mono text-xs w-full placeholder:text-dim" type="text" placeholder="Search..." bind:value={search} />
 				</div>
 			{/if}
-			<a href="/create" class="inline-flex items-center gap-1 px-[18px] py-[9px] rounded-[10px] bg-gradient-to-br from-[#00d2ff] to-[#3a7bd5] text-white font-display font-bold text-[13px] no-underline transition duration-200 hover:-translate-y-px hover:shadow-[0_6px_24px_rgba(0,210,255,0.3)]">+ Create Token</a>
+			<a href="/create" class="inline-flex items-center gap-1 px-[18px] py-[9px] rounded-[10px] bg-gradient-to-br from-[#00d2ff] to-[#3a7bd5] text-white font-display font-bold text-13 no-underline transition duration-200 hover:-translate-y-px hover:shadow-[0_6px_24px_rgba(0,210,255,0.3)]">+ Create Token</a>
 		</div>
 	</div>
 
@@ -300,7 +300,7 @@
 			<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#374151" stroke-width="1.5"><rect x="2" y="6" width="20" height="12" rx="3"/><path d="M22 10h-4a2 2 0 0 0 0 4h4"/></svg>
 			<h2 class="heading-2">Wallet not connected</h2>
 			<p class="font-mono text-xs text-dim m-0">Connect to see tokens you've created</p>
-			<button onclick={handleConnect} class="inline-block mt-2 px-6 py-[11px] rounded-[10px] border-none bg-gradient-to-br from-[#00d2ff] to-[#3a7bd5] text-white font-display font-bold text-[13px] cursor-pointer transition duration-200 hover:-translate-y-px hover:shadow-[0_6px_24px_rgba(0,210,255,0.3)]">Connect Wallet</button>
+			<button onclick={handleConnect} class="inline-block mt-2 px-6 py-[11px] rounded-[10px] border-none bg-gradient-to-br from-[#00d2ff] to-[#3a7bd5] text-white font-display font-bold text-13 cursor-pointer transition duration-200 hover:-translate-y-px hover:shadow-[0_6px_24px_rgba(0,210,255,0.3)]">Connect Wallet</button>
 		</div>
 
 	{:else if isLoading}
@@ -318,7 +318,7 @@
 				<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#374151" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
 				<h2 class="heading-2">No tokens yet</h2>
 				<p class="font-mono text-xs text-dim m-0">Create your first token to get started</p>
-				<a href="/create" class="inline-block mt-2 px-6 py-[11px] rounded-[10px] bg-gradient-to-br from-[#00d2ff] to-[#3a7bd5] text-white font-display font-bold text-[13px] no-underline transition duration-200 hover:-translate-y-px hover:shadow-[0_6px_24px_rgba(0,210,255,0.3)]">Create Token</a>
+				<a href="/create" class="inline-block mt-2 px-6 py-[11px] rounded-[10px] bg-gradient-to-br from-[#00d2ff] to-[#3a7bd5] text-white font-display font-bold text-13 no-underline transition duration-200 hover:-translate-y-px hover:shadow-[0_6px_24px_rgba(0,210,255,0.3)]">Create Token</a>
 			{/if}
 		</div>
 
@@ -332,9 +332,9 @@
 						<TokenLogo logoUrl={tok.logo_url} symbol={tok.symbol} address={tok.address} chainId={tok.chain_id} size={36} />
 						<div class="flex-1 min-w-0">
 							<span class="block font-display text-sm font-bold text-heading whitespace-nowrap overflow-hidden text-ellipsis">{tok.name}</span>
-							<span class="block font-mono text-[10px] text-dim">${tok.symbol}</span>
+							<span class="block font-mono text-3xs text-dim">${tok.symbol}</span>
 						</div>
-						<span class={'text-[8px] font-bold uppercase tracking-[0.05em] px-[7px] py-0.5 rounded-full font-mono shrink-0 ' +
+						<span class={'text-4xs font-bold uppercase tracking-[0.05em] px-[7px] py-0.5 rounded-full font-mono shrink-0 ' +
 							(tc === 'cyan' ? 'bg-cyan-500/10 text-cyan-400' :
 							 tc === 'amber' ? 'bg-amber-500/10 text-amber-400' :
 							 tc === 'purple' ? 'bg-purple-500/10 text-[#a78bfa]' :
@@ -344,26 +344,26 @@
 					<!-- Stats -->
 					<div class="flex gap-0 rounded-lg overflow-hidden border border-line-subtle">
 						<div class="flex-1 px-2.5 py-2">
-							<span class="block text-[8px] text-dim font-mono uppercase tracking-[0.04em]">Supply</span>
+							<span class="block text-4xs text-dim font-mono uppercase tracking-[0.04em]">Supply</span>
 							<span class="block font-numeric text-sm font-semibold text-foreground tabular-nums mt-px">{fmtSupply(tok.total_supply, tok.decimals)}</span>
 						</div>
 						<div class="flex-1 px-2.5 py-2 border-l border-line-subtle">
-							<span class="block text-[8px] text-dim font-mono uppercase tracking-[0.04em]">Created</span>
+							<span class="block text-4xs text-dim font-mono uppercase tracking-[0.04em]">Created</span>
 							<span class="block font-numeric text-sm font-semibold text-foreground tabular-nums mt-px">{tok.created_at ? timeAgo(tok.created_at) : '—'}</span>
 						</div>
 						<div class="flex-1 px-2.5 py-2 border-l border-line-subtle">
-							<span class="block text-[8px] text-dim font-mono uppercase tracking-[0.04em]">Chain</span>
+							<span class="block text-4xs text-dim font-mono uppercase tracking-[0.04em]">Chain</span>
 							<span class="block font-numeric text-sm font-semibold text-foreground tabular-nums mt-px">{tok.network_name}</span>
 						</div>
 					</div>
 
 					<!-- Description -->
 					{#if tok.description}
-						<div class="font-mono text-[10px] text-dim leading-[1.4]">{tok.description.slice(0, 80)}{tok.description.length > 80 ? '...' : ''}</div>
+						<div class="font-mono text-3xs text-dim leading-[1.4]">{tok.description.slice(0, 80)}{tok.description.length > 80 ? '...' : ''}</div>
 					{/if}
 
 					<!-- Manage arrow -->
-					<div class="flex items-center justify-end gap-1 font-mono text-[10px] text-dim transition-colors group-hover:text-brand-cyan">
+					<div class="flex items-center justify-end gap-1 font-mono text-3xs text-dim transition-colors group-hover:text-brand-cyan">
 						<span>Manage</span>
 						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
 					</div>
@@ -372,7 +372,7 @@
 		</div>
 
 		<div class="flex justify-center mt-4">
-			<button onclick={loadTokens} class="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-line bg-surface text-dim font-mono text-[11px] cursor-pointer transition hover:text-brand-cyan hover:border-cyan-500/20 hover:bg-cyan-500/[0.04]">
+			<button onclick={loadTokens} class="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-line bg-surface text-dim font-mono text-xs2 cursor-pointer transition hover:text-brand-cyan hover:border-cyan-500/20 hover:bg-cyan-500/[0.04]">
 				<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
 				Refresh
 			</button>

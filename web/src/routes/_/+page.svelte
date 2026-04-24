@@ -118,7 +118,7 @@
 					<rect x="2" y="6" width="20" height="12" rx="2"/><path d="M22 10H18a2 2 0 000 4h4"/><circle cx="18" cy="12" r="0.5" fill="#00d2ff"/>
 				</svg>
 			</div>
-			<h1 class="font-display text-[22px] font-extrabold text-heading m-0 mb-[6px]">Admin Access</h1>
+			<h1 class="font-display text-22 font-extrabold text-heading m-0 mb-[6px]">Admin Access</h1>
 			<p class="font-mono text-xs text-muted m-0 mb-6">Sign with your wallet to verify admin access</p>
 
 			{#if authError}
@@ -175,7 +175,7 @@
 						{/if}
 					{/each}
 				</select>
-				<span class="font-mono text-[11px] text-[#10b981] bg-[rgba(16,185,129,0.06)] border border-[rgba(16,185,129,0.12)] py-1 px-[10px] rounded-lg">
+				<span class="font-mono text-xs2 text-[#10b981] bg-[rgba(16,185,129,0.06)] border border-[rgba(16,185,129,0.12)] py-1 px-[10px] rounded-lg">
 					{userAddress.slice(0, 6)}...{userAddress.slice(-4)}
 				</span>
 			</div>

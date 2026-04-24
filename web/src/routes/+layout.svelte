@@ -624,7 +624,7 @@
 <!-- Skip to content -->
 <a
 	href="#main-content"
-	class="absolute -left-[9999px] top-auto w-px h-px overflow-hidden focus:fixed focus:top-2 focus:left-2 focus:w-auto focus:h-auto focus:py-2 focus:px-4 focus:bg-surface focus:text-foreground focus:border focus:border-line focus:rounded-lg focus:z-[200] focus:font-mono focus:text-[13px]"
+	class="absolute -left-[9999px] top-auto w-px h-px overflow-hidden focus:fixed focus:top-2 focus:left-2 focus:w-auto focus:h-auto focus:py-2 focus:px-4 focus:bg-surface focus:text-foreground focus:border focus:border-line focus:rounded-lg focus:z-[200] focus:font-mono focus:text-13"
 >Skip to main content</a>
 
 
@@ -635,7 +635,7 @@
 
 <!-- Offline Banner -->
 {#if isOffline}
-	<div class="fixed top-0 left-0 right-0 z-[110] flex items-center justify-center gap-1.5 py-1.5 px-3 font-mono text-[11px] font-semibold animate-[slideDown_0.3s_ease-out]" style="background: #7f1d1d; color: #fca5a5;">
+	<div class="fixed top-0 left-0 right-0 z-[110] flex items-center justify-center gap-1.5 py-1.5 px-3 font-mono text-xs2 font-semibold animate-[slideDown_0.3s_ease-out]" style="background: #7f1d1d; color: #fca5a5;">
 		<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="1" y1="1" x2="23" y2="23"/><path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"/><path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"/><path d="M10.71 5.05A16 16 0 0 1 22.56 9"/><path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
 		<span>You're offline</span>
 	</div>
@@ -649,8 +649,8 @@
 				<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
 			</div>
 			<div class="flex flex-col gap-px min-w-0">
-				<span class="syne text-[13px] font-bold text-white">Install TokenKrafter</span>
-				<span class="text-[11px] text-dim">Add to home screen for a faster experience</span>
+				<span class="syne text-13 font-bold text-white">Install TokenKrafter</span>
+				<span class="text-xs2 text-dim">Add to home screen for a faster experience</span>
 			</div>
 		</div>
 		<div class="flex items-center gap-2 shrink-0">
@@ -719,7 +719,7 @@
 					<a
 						href={link.href}
 						onclick={() => { if (link.href === '/create') createMode.set(null); }}
-						class="nav-link px-3 py-1.5 rounded-md text-[13px] transition font-mono
+						class="nav-link px-3 py-1.5 rounded-md text-13 transition font-mono
 						{page.url.pathname === link.href || (link.href !== '/' && page.url.pathname.startsWith(link.href))
 							? 'text-cyan-400 bg-cyan-400/10'
 							: 'text-gray-400 hover:text-white hover:bg-white/5'}"
@@ -728,7 +728,7 @@
 				{#if userAddress}
 					<a
 						href="/manage-tokens"
-						class="nav-link px-3 py-1.5 rounded-md text-[13px] transition font-mono
+						class="nav-link px-3 py-1.5 rounded-md text-13 transition font-mono
 						{page.url.pathname.startsWith('/manage-tokens')
 							? 'text-cyan-400 bg-cyan-400/10'
 							: 'text-gray-400 hover:text-white hover:bg-white/5'}"
@@ -737,7 +737,7 @@
 				{#if isAdmin}
 					<a
 						href="/_"
-						class="nav-link px-3 py-1.5 rounded-md text-[13px] transition font-mono
+						class="nav-link px-3 py-1.5 rounded-md text-13 transition font-mono
 						{page.url.pathname.startsWith('/_')
 							? 'text-cyan-400 bg-cyan-400/10'
 							: 'text-gray-400 hover:text-white hover:bg-white/5'}"
@@ -752,7 +752,7 @@
 					<svg class="text-dim shrink-0" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
 					<input
 						type="text"
-						class="bg-transparent border-none outline-none text-foreground font-mono text-[11px] w-[120px] focus:w-[180px] transition-[width] duration-200 placeholder:text-dim"
+						class="bg-transparent border-none outline-none text-foreground font-mono text-xs2 w-[120px] focus:w-[180px] transition-[width] duration-200 placeholder:text-dim"
 						placeholder="Search tokens..."
 						bind:value={navSearch}
 						onkeydown={handleNavSearch}
@@ -836,7 +836,7 @@
 				{/each}
 
 				<hr class="divider my-2" />
-				<span class="text-[10px] font-mono uppercase tracking-wider px-4 mb-1" style="color: var(--text-dim)">More</span>
+				<span class="text-3xs font-mono uppercase tracking-wider px-4 mb-1" style="color: var(--text-dim)">More</span>
 				{#each secondaryLinks as link}
 					<a
 						href={link.href}
@@ -952,27 +952,27 @@
 
 	<!-- Mobile Bottom Tab Bar -->
 	<div class="fixed bottom-0 left-0 right-0 z-40 md:hidden flex items-stretch bg-background border-t border-line" style="height: calc(60px + env(safe-area-inset-bottom, 0px)); padding-bottom: env(safe-area-inset-bottom, 0px);">
-		<a href="/explore" aria-current={page.url.pathname.startsWith('/explore') ? 'page' : undefined} class="bottom-tab relative flex-1 flex flex-col items-center justify-center gap-0.5 border-none bg-none no-underline font-mono text-[10px] cursor-pointer transition-colors duration-150 hover:text-foreground active:text-foreground {page.url.pathname.startsWith('/explore') ? 'text-cyan-400 font-bold bg-cyan-400/5' : 'text-dim'}">
+		<a href="/explore" aria-current={page.url.pathname.startsWith('/explore') ? 'page' : undefined} class="bottom-tab relative flex-1 flex flex-col items-center justify-center gap-0.5 border-none bg-none no-underline font-mono text-3xs cursor-pointer transition-colors duration-150 hover:text-foreground active:text-foreground {page.url.pathname.startsWith('/explore') ? 'text-cyan-400 font-bold bg-cyan-400/5' : 'text-dim'}">
 			<span aria-hidden="true" class="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-[3px] rounded-b-full bg-cyan-400 transition-opacity duration-150 {page.url.pathname.startsWith('/explore') ? 'opacity-100' : 'opacity-0'}"></span>
 			<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
 			<span>Explore</span>
 		</a>
-		<a href="/launchpad" aria-current={page.url.pathname.startsWith('/launchpad') ? 'page' : undefined} class="bottom-tab relative flex-1 flex flex-col items-center justify-center gap-0.5 border-none bg-none no-underline font-mono text-[10px] cursor-pointer transition-colors duration-150 hover:text-foreground active:text-foreground {page.url.pathname.startsWith('/launchpad') ? 'text-cyan-400 font-bold bg-cyan-400/5' : 'text-dim'}">
+		<a href="/launchpad" aria-current={page.url.pathname.startsWith('/launchpad') ? 'page' : undefined} class="bottom-tab relative flex-1 flex flex-col items-center justify-center gap-0.5 border-none bg-none no-underline font-mono text-3xs cursor-pointer transition-colors duration-150 hover:text-foreground active:text-foreground {page.url.pathname.startsWith('/launchpad') ? 'text-cyan-400 font-bold bg-cyan-400/5' : 'text-dim'}">
 			<span aria-hidden="true" class="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-[3px] rounded-b-full bg-cyan-400 transition-opacity duration-150 {page.url.pathname.startsWith('/launchpad') ? 'opacity-100' : 'opacity-0'}"></span>
 			<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
 			<span>Launchpad</span>
 		</a>
-		<a href="/trade" aria-current={page.url.pathname.startsWith('/trade') ? 'page' : undefined} class="bottom-tab relative flex-1 flex flex-col items-center justify-center gap-0.5 border-none bg-none no-underline font-mono text-[10px] cursor-pointer transition-colors duration-150 hover:text-foreground active:text-foreground {page.url.pathname.startsWith('/trade') ? 'text-cyan-400 font-bold bg-cyan-400/5' : 'text-dim'}">
+		<a href="/trade" aria-current={page.url.pathname.startsWith('/trade') ? 'page' : undefined} class="bottom-tab relative flex-1 flex flex-col items-center justify-center gap-0.5 border-none bg-none no-underline font-mono text-3xs cursor-pointer transition-colors duration-150 hover:text-foreground active:text-foreground {page.url.pathname.startsWith('/trade') ? 'text-cyan-400 font-bold bg-cyan-400/5' : 'text-dim'}">
 			<span aria-hidden="true" class="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-[3px] rounded-b-full bg-cyan-400 transition-opacity duration-150 {page.url.pathname.startsWith('/trade') ? 'opacity-100' : 'opacity-0'}"></span>
 			<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4"/></svg>
 			<span>Trade</span>
 		</a>
-		<a href="/create" onclick={() => createMode.set(null)} aria-current={page.url.pathname.startsWith('/create') ? 'page' : undefined} class="bottom-tab relative flex-1 flex flex-col items-center justify-center gap-0.5 border-none bg-none no-underline font-mono text-[10px] cursor-pointer transition-colors duration-150 hover:text-foreground active:text-foreground {page.url.pathname.startsWith('/create') ? 'text-cyan-400 font-bold bg-cyan-400/5' : 'text-dim'}">
+		<a href="/create" onclick={() => createMode.set(null)} aria-current={page.url.pathname.startsWith('/create') ? 'page' : undefined} class="bottom-tab relative flex-1 flex flex-col items-center justify-center gap-0.5 border-none bg-none no-underline font-mono text-3xs cursor-pointer transition-colors duration-150 hover:text-foreground active:text-foreground {page.url.pathname.startsWith('/create') ? 'text-cyan-400 font-bold bg-cyan-400/5' : 'text-dim'}">
 			<span aria-hidden="true" class="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-[3px] rounded-b-full bg-cyan-400 transition-opacity duration-150 {page.url.pathname.startsWith('/create') ? 'opacity-100' : 'opacity-0'}"></span>
 			<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
 			<span>Create</span>
 		</a>
-		<button aria-current={moreTabActive ? 'page' : undefined} class="relative flex-1 flex flex-col items-center justify-center gap-0.5 border-none bg-none font-mono text-[10px] cursor-pointer transition-colors duration-150 hover:text-foreground active:text-foreground {moreTabActive ? 'text-cyan-400 font-bold bg-cyan-400/5' : 'text-dim'}" onclick={() => (mobileMenuOpen = !mobileMenuOpen)}>
+		<button aria-current={moreTabActive ? 'page' : undefined} class="relative flex-1 flex flex-col items-center justify-center gap-0.5 border-none bg-none font-mono text-3xs cursor-pointer transition-colors duration-150 hover:text-foreground active:text-foreground {moreTabActive ? 'text-cyan-400 font-bold bg-cyan-400/5' : 'text-dim'}" onclick={() => (mobileMenuOpen = !mobileMenuOpen)}>
 			<span aria-hidden="true" class="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-[3px] rounded-b-full bg-cyan-400 transition-opacity duration-150 {moreTabActive ? 'opacity-100' : 'opacity-0'}"></span>
 			<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
 			<span>More</span>

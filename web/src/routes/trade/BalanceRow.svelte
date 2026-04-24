@@ -18,7 +18,7 @@
 </script>
 
 {#if symbol || usdValue}
-	<div class="mt-1.5 font-mono text-[11px] text-(--text-dim) flex justify-between items-center">
+	<div class="mt-1.5 font-mono text-xs2 text-(--text-dim) flex justify-between items-center">
 		{#if symbol}
 			<span>{$t('trade.balance')}: {balance > 0n ? formatted : '0'} {symbol}</span>
 		{:else}

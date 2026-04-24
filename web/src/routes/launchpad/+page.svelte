@@ -530,50 +530,50 @@
 	<!-- Stats bar -->
 	{#if loading}
 		<div class="flex gap-px bg-surface-hover border border-surface-hover rounded-[10px] overflow-hidden mb-5">
-			<div class="flex-1 flex flex-col items-center gap-0.5 py-3 px-2 bg-surface"><span class="skeleton-line" style="width:30px;height:22px;border-radius:4px;"></span><span class="text-[10px] text-dim uppercase tracking-wider font-mono">{$t('lp.live')}</span></div>
-			<div class="flex-1 flex flex-col items-center gap-0.5 py-3 px-2 bg-surface"><span class="skeleton-line" style="width:30px;height:22px;border-radius:4px;"></span><span class="text-[10px] text-dim uppercase tracking-wider font-mono">{$t('lp.graduated')}</span></div>
-			<div class="flex-1 flex flex-col items-center gap-0.5 py-3 px-2 bg-surface"><span class="skeleton-line" style="width:70px;height:22px;border-radius:4px;"></span><span class="text-[10px] text-dim uppercase tracking-wider font-mono">{$t('lp.totalRaised')}</span></div>
+			<div class="flex-1 flex flex-col items-center gap-0.5 py-3 px-2 bg-surface"><span class="skeleton-line" style="width:30px;height:22px;border-radius:4px;"></span><span class="text-3xs text-dim uppercase tracking-wider font-mono">{$t('lp.live')}</span></div>
+			<div class="flex-1 flex flex-col items-center gap-0.5 py-3 px-2 bg-surface"><span class="skeleton-line" style="width:30px;height:22px;border-radius:4px;"></span><span class="text-3xs text-dim uppercase tracking-wider font-mono">{$t('lp.graduated')}</span></div>
+			<div class="flex-1 flex flex-col items-center gap-0.5 py-3 px-2 bg-surface"><span class="skeleton-line" style="width:70px;height:22px;border-radius:4px;"></span><span class="text-3xs text-dim uppercase tracking-wider font-mono">{$t('lp.totalRaised')}</span></div>
 		</div>
 	{:else if launches.length > 0}
 		<div class="flex gap-px bg-surface-hover border border-surface-hover rounded-[10px] overflow-hidden mb-5">
 			<div class="flex-1 flex flex-col items-center gap-0.5 py-3 px-2 bg-surface">
 				<span class="text-base font-bold text-heading font-mono">{liveCount}</span>
-				<span class="text-[10px] text-dim uppercase tracking-wider font-mono">{$t('lp.live')}</span>
+				<span class="text-3xs text-dim uppercase tracking-wider font-mono">{$t('lp.live')}</span>
 			</div>
 			{#if upcomingCount > 0}
 				<div class="flex-1 flex flex-col items-center gap-0.5 py-3 px-2 bg-surface">
 					<span class="text-base font-bold text-heading font-mono">{upcomingCount}</span>
-					<span class="text-[10px] text-dim uppercase tracking-wider font-mono">Upcoming</span>
+					<span class="text-3xs text-dim uppercase tracking-wider font-mono">Upcoming</span>
 				</div>
 			{/if}
 			{#if graduatedCount > 0}
 				<div class="flex-1 flex flex-col items-center gap-0.5 py-3 px-2 bg-surface">
 					<span class="text-base font-bold text-heading font-mono">{graduatedCount}</span>
-					<span class="text-[10px] text-dim uppercase tracking-wider font-mono">{$t('lp.graduated')}</span>
+					<span class="text-3xs text-dim uppercase tracking-wider font-mono">{$t('lp.graduated')}</span>
 				</div>
 			{/if}
 			<div class="flex-1 flex flex-col items-center gap-0.5 py-3 px-2 bg-surface">
 				<span class="text-base font-bold text-heading font-mono">{formatUsdt(totalRaised)}</span>
-				<span class="text-[10px] text-dim uppercase tracking-wider font-mono">{$t('lp.totalRaised')}</span>
+				<span class="text-3xs text-dim uppercase tracking-wider font-mono">{$t('lp.totalRaised')}</span>
 			</div>
 		</div>
 	{/if}
 
 	<!-- Platform trust banner — contract-enforced guarantees -->
 	<div class="grid grid-cols-2 sm:grid-cols-4 gap-px bg-line-subtle rounded-[10px] overflow-hidden mb-5">
-		<div class="flex flex-col items-center gap-1.5 py-3 px-2 bg-surface text-center font-numeric text-[11px] text-muted leading-snug">
+		<div class="flex flex-col items-center gap-1.5 py-3 px-2 bg-surface text-center font-numeric text-xs2 text-muted leading-snug">
 			<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
 			<span>LP burned permanently</span>
 		</div>
-		<div class="flex flex-col items-center gap-1.5 py-3 px-2 bg-surface text-center font-numeric text-[11px] text-muted leading-snug">
+		<div class="flex flex-col items-center gap-1.5 py-3 px-2 bg-surface text-center font-numeric text-xs2 text-muted leading-snug">
 			<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round"><polyline points="13 17 18 12 13 7"/><polyline points="6 17 11 12 6 7"/></svg>
 			<span>Instant token delivery</span>
 		</div>
-		<div class="flex flex-col items-center gap-1.5 py-3 px-2 bg-surface text-center font-numeric text-[11px] text-muted leading-snug">
+		<div class="flex flex-col items-center gap-1.5 py-3 px-2 bg-surface text-center font-numeric text-xs2 text-muted leading-snug">
 			<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
 			<span>Refundable if soft cap missed</span>
 		</div>
-		<div class="flex flex-col items-center gap-1.5 py-3 px-2 bg-surface text-center font-numeric text-[11px] text-muted leading-snug">
+		<div class="flex flex-col items-center gap-1.5 py-3 px-2 bg-surface text-center font-numeric text-xs2 text-muted leading-snug">
 			<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
 			<span>Unsold tokens burned</span>
 		</div>
@@ -583,10 +583,10 @@
 	<div class="flex items-center justify-between gap-2.5 mb-4 flex-wrap">
 		<div class="flex items-center gap-1 flex-wrap">
 			<div class="flex gap-0.5 bg-surface border border-surface-hover rounded-[10px] p-[3px]">
-				<button class={'text-xs font-mono px-3.5 py-1.5 rounded-lg border-none cursor-pointer transition whitespace-nowrap ' + (activeTab === 'live' ? 'bg-brand-cyan/10 text-brand-cyan font-semibold' : 'bg-transparent text-dim hover:text-foreground')} onclick={() => activeTab = 'live'}>{$t('lp.live')} <span class="text-[9px] opacity-50 ml-0.5">{liveCount}</span></button>
-				<button class={'text-xs font-mono px-3.5 py-1.5 rounded-lg border-none cursor-pointer transition whitespace-nowrap ' + (activeTab === 'upcoming' ? 'bg-brand-cyan/10 text-brand-cyan font-semibold' : 'bg-transparent text-dim hover:text-foreground')} onclick={() => activeTab = 'upcoming'}>{$t('lp.upcoming')} <span class="text-[9px] opacity-50 ml-0.5">{upcomingCount}</span></button>
-				<button class={'text-xs font-mono px-3.5 py-1.5 rounded-lg border-none cursor-pointer transition whitespace-nowrap ' + (activeTab === 'graduated' ? 'bg-brand-cyan/10 text-brand-cyan font-semibold' : 'bg-transparent text-dim hover:text-foreground')} onclick={() => activeTab = 'graduated'}>{$t('lp.graduated')} <span class="text-[9px] opacity-50 ml-0.5">{graduatedCount}</span></button>
-				<button class={'text-xs font-mono px-3.5 py-1.5 rounded-lg border-none cursor-pointer transition whitespace-nowrap ' + (activeTab === 'all' ? 'bg-brand-cyan/10 text-brand-cyan font-semibold' : 'bg-transparent text-dim hover:text-foreground')} onclick={() => activeTab = 'all'}>{$t('lp.all')} <span class="text-[9px] opacity-50 ml-0.5">{launches.length}</span></button>
+				<button class={'text-xs font-mono px-3.5 py-1.5 rounded-lg border-none cursor-pointer transition whitespace-nowrap ' + (activeTab === 'live' ? 'bg-brand-cyan/10 text-brand-cyan font-semibold' : 'bg-transparent text-dim hover:text-foreground')} onclick={() => activeTab = 'live'}>{$t('lp.live')} <span class="text-xs4 opacity-50 ml-0.5">{liveCount}</span></button>
+				<button class={'text-xs font-mono px-3.5 py-1.5 rounded-lg border-none cursor-pointer transition whitespace-nowrap ' + (activeTab === 'upcoming' ? 'bg-brand-cyan/10 text-brand-cyan font-semibold' : 'bg-transparent text-dim hover:text-foreground')} onclick={() => activeTab = 'upcoming'}>{$t('lp.upcoming')} <span class="text-xs4 opacity-50 ml-0.5">{upcomingCount}</span></button>
+				<button class={'text-xs font-mono px-3.5 py-1.5 rounded-lg border-none cursor-pointer transition whitespace-nowrap ' + (activeTab === 'graduated' ? 'bg-brand-cyan/10 text-brand-cyan font-semibold' : 'bg-transparent text-dim hover:text-foreground')} onclick={() => activeTab = 'graduated'}>{$t('lp.graduated')} <span class="text-xs4 opacity-50 ml-0.5">{graduatedCount}</span></button>
+				<button class={'text-xs font-mono px-3.5 py-1.5 rounded-lg border-none cursor-pointer transition whitespace-nowrap ' + (activeTab === 'all' ? 'bg-brand-cyan/10 text-brand-cyan font-semibold' : 'bg-transparent text-dim hover:text-foreground')} onclick={() => activeTab = 'all'}>{$t('lp.all')} <span class="text-xs4 opacity-50 ml-0.5">{launches.length}</span></button>
 			</div>
 			<button
 				onclick={() => { showFavorites = !showFavorites; if (showFavorites) showMyLaunches = false; }}
@@ -605,9 +605,9 @@
 		<div class="flex items-center gap-2">
 			<div class="relative flex items-center max-sm:w-full max-sm:order-10">
 				<svg class="absolute left-2.5 text-dim pointer-events-none" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-				<input type="text" class="input-field pl-[30px]! min-w-[180px] max-w-[260px] text-[11px] h-8 max-sm:w-full max-sm:max-w-none" placeholder="Search..." bind:value={searchQuery} />
+				<input type="text" class="input-field pl-[30px]! min-w-[180px] max-w-[260px] text-xs2 h-8 max-sm:w-full max-sm:max-w-none" placeholder="Search..." bind:value={searchQuery} />
 			</div>
-			<select class="text-[11px] font-mono px-3 py-1.5 rounded-lg border border-surface-hover bg-surface text-muted cursor-pointer min-w-[120px] focus:border-brand-cyan/30 focus:outline-none [&>option]:bg-select" bind:value={sortBy}>
+			<select class="text-xs2 font-mono px-3 py-1.5 rounded-lg border border-surface-hover bg-surface text-muted cursor-pointer min-w-[120px] focus:border-brand-cyan/30 focus:outline-none [&>option]:bg-select" bind:value={sortBy}>
 				<option value="newest">{$t('lp.newest')}</option>
 				<option value="ending">{$t('lp.endingSoon')}</option>
 				<option value="raised">{$t('lp.mostRaised')}</option>
@@ -651,22 +651,22 @@
 		<div class="flex flex-col items-center gap-2 py-12 px-5 text-center">
 			{#if showFavorites}
 				<svg class="mb-1" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#374151" stroke-width="1.5"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
-				<h3 class="font-display text-[17px] font-bold text-heading m-0">No favorites yet</h3>
+				<h3 class="font-display text-17 font-bold text-heading m-0">No favorites yet</h3>
 				<p class="font-mono text-xs text-dim m-0 max-w-[300px]">Tap the heart on any launch to save it here</p>
 			{:else if showMyLaunches}
 				<svg class="mb-1" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#374151" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M8 12l2 2 4-4"/></svg>
-				<h3 class="font-display text-[17px] font-bold text-heading m-0">No launches yet</h3>
+				<h3 class="font-display text-17 font-bold text-heading m-0">No launches yet</h3>
 				<p class="font-mono text-xs text-dim m-0 max-w-[300px]">Create your first bonding curve launch</p>
 			{:else if launches.length === 0}
 				<svg class="mb-1" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#374151" stroke-width="1.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-				<h3 class="font-display text-[17px] font-bold text-heading m-0">No launches on the platform yet</h3>
+				<h3 class="font-display text-17 font-bold text-heading m-0">No launches on the platform yet</h3>
 				<p class="font-mono text-xs text-dim m-0 max-w-[300px]">Be the first to launch a token with bonding curve pricing</p>
 			{:else}
 				<svg class="mb-1" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#374151" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-				<h3 class="font-display text-[17px] font-bold text-heading m-0">No matching launches</h3>
+				<h3 class="font-display text-17 font-bold text-heading m-0">No matching launches</h3>
 				<p class="font-mono text-xs text-dim m-0 max-w-[300px]">Try adjusting your filters</p>
 			{/if}
-			<a href="/create?launch=true" class="mt-2.5 px-[22px] py-2.5 rounded-[10px] bg-gradient-to-br from-brand-cyan to-brand-blue text-white font-display font-bold text-[13px] no-underline transition hover:-translate-y-px hover:shadow-[0_6px_24px_rgba(0,210,255,0.3)]">Create Launch</a>
+			<a href="/create?launch=true" class="mt-2.5 px-[22px] py-2.5 rounded-[10px] bg-gradient-to-br from-brand-cyan to-brand-blue text-white font-display font-bold text-13 no-underline transition hover:-translate-y-px hover:shadow-[0_6px_24px_rgba(0,210,255,0.3)]">Create Launch</a>
 		</div>
 	{:else}
 		<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -737,7 +737,7 @@
 							{#if (launch as any).logoUrl}
 								<img src={(launch as any).logoUrl} alt="" class="w-10 h-10 rounded-full object-cover shrink-0 border border-surface-hover card-logo-adapt" />
 							{:else}
-								<div class="w-10 h-10 rounded-full shrink-0 border border-brand-cyan/15 flex items-center justify-center bg-brand-cyan/10 text-brand-cyan text-[15px] font-bold font-display">
+								<div class="w-10 h-10 rounded-full shrink-0 border border-brand-cyan/15 flex items-center justify-center bg-brand-cyan/10 text-brand-cyan text-15 font-bold font-display">
 									{(launch.tokenSymbol || '?').charAt(0)}
 								</div>
 							{/if}
@@ -753,7 +753,7 @@
 									{:else}
 										<span class="text-xs font-mono state-text-{color}">{stateLabel(launch.state)}</span>
 									{/if}
-									<span class="text-dim text-[10px] font-mono ml-auto">{CURVE_TYPES[launch.curveType]}</span>
+									<span class="text-dim text-3xs font-mono ml-auto">{CURVE_TYPES[launch.curveType]}</span>
 								</div>
 							</div>
 						</div>
@@ -769,22 +769,22 @@
 					<!-- 3b. Key stats + SC badge -->
 					<div class="flex gap-px mx-4 mb-2 bg-line-subtle rounded-lg overflow-hidden">
 						<div class="flex-1 py-1.5 px-2.5 bg-white/[0.02]">
-							<span class="block font-numeric text-[9px] text-dim uppercase tracking-wider">Hard Cap</span>
+							<span class="block font-numeric text-xs4 text-dim uppercase tracking-wider">Hard Cap</span>
 							<span class="font-display text-xs font-bold text-heading">{formatUsdt(launch.hardCap, ud)}</span>
 						</div>
 						<div class="flex-1 py-1.5 px-2.5 bg-white/[0.02]">
-							<span class="block font-numeric text-[9px] text-dim uppercase tracking-wider">Buyers</span>
+							<span class="block font-numeric text-xs4 text-dim uppercase tracking-wider">Buyers</span>
 							{#if (launch as any).totalBuyers > 0}
 								<span class="font-display text-xs font-bold text-heading">{(launch as any).totalBuyers}</span>
 							{:else if launch.totalBaseRaised > 0n}
 								<span class="font-display text-xs font-bold text-heading">-</span>
 							{:else}
-								<span class="font-display font-bold text-brand-cyan text-[10px]">Be first!</span>
+								<span class="font-display font-bold text-brand-cyan text-3xs">Be first!</span>
 							{/if}
 						</div>
 					</div>
 					{#if launch.totalBaseRaised >= launch.softCap && launch.softCap > 0n}
-						<div class="flex items-center justify-center gap-1.5 mx-4 mb-2 px-2.5 py-1 rounded-md bg-emerald-500/10 border border-emerald-500/15 font-mono text-[9px] font-bold text-emerald-500">
+						<div class="flex items-center justify-center gap-1.5 mx-4 mb-2 px-2.5 py-1 rounded-md bg-emerald-500/10 border border-emerald-500/15 font-mono text-xs4 font-bold text-emerald-500">
 							<svg class="shrink-0" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
 							Soft cap reached — will graduate
 						</div>
@@ -811,7 +811,7 @@
 					<div class="px-4 pt-3 pb-4 border-t border-line-subtle">
 						<div class="flex justify-between items-baseline mb-2">
 							<span class="text-heading text-xs font-mono font-semibold">Raised {progress}%</span>
-							<span class="text-muted text-[10px] font-mono">{formatUsdt(launch.hardCap, ud)}</span>
+							<span class="text-muted text-3xs font-mono">{formatUsdt(launch.hardCap, ud)}</span>
 						</div>
 						<div class="relative h-5">
 							<div class="progress-track h-3 mt-0.5 rounded-md border border-line-subtle">
@@ -820,12 +820,12 @@
 							{#if scPct > 0 && scPct < 100}
 								<div class="absolute top-0 -translate-x-1/2 flex flex-col items-center pointer-events-none" style="left: {scPct}%">
 									<div class="w-0.5 h-2.5 bg-white/40 rounded-[1px]"></div>
-									<div class="text-[7px] font-mono text-white/35 mt-px tracking-wider">SC</div>
+									<div class="text-7 font-mono text-white/35 mt-px tracking-wider">SC</div>
 								</div>
 							{/if}
 						</div>
 						<div class="flex justify-between mt-1.5">
-							<span class="text-dim text-[10px] font-mono">{formatUsdt(launch.totalBaseRaised, ud)} / {formatUsdt(launch.hardCap, ud)}</span>
+							<span class="text-dim text-3xs font-mono">{formatUsdt(launch.totalBaseRaised, ud)} / {formatUsdt(launch.hardCap, ud)}</span>
 						</div>
 
 						<!-- Buy CTA -->
@@ -842,28 +842,28 @@
 					{#if hoveredLaunch === launch.address}
 						<div class="card-tooltip absolute left-1/2 -translate-x-1/2 bottom-[calc(100%+8px)] bg-surface backdrop-blur-[12px] border border-line rounded-lg px-3.5 py-2.5 min-w-[220px] z-50 shadow-[0_12px_40px_rgba(0,0,0,0.5)] pointer-events-none">
 							<div class="flex justify-between items-center py-0.5">
-								<span class="text-[10px] text-dim font-mono">{$t('lp.softCapLabel')}</span>
-								<span class="text-[10px] text-foreground font-mono font-semibold">{formatUsdt(launch.softCap, ud)}</span>
+								<span class="text-3xs text-dim font-mono">{$t('lp.softCapLabel')}</span>
+								<span class="text-3xs text-foreground font-mono font-semibold">{formatUsdt(launch.softCap, ud)}</span>
 							</div>
 							<div class="flex justify-between items-center py-0.5 border-t border-white/[0.04]">
-								<span class="text-[10px] text-dim font-mono">{$t('lp.hardCapLabel')}</span>
-								<span class="text-[10px] text-foreground font-mono font-semibold">{formatUsdt(launch.hardCap, ud)}</span>
+								<span class="text-3xs text-dim font-mono">{$t('lp.hardCapLabel')}</span>
+								<span class="text-3xs text-foreground font-mono font-semibold">{formatUsdt(launch.hardCap, ud)}</span>
 							</div>
 							<div class="flex justify-between items-center py-0.5 border-t border-white/[0.04]">
-								<span class="text-[10px] text-dim font-mono">{$t('lp.curveLabel')}</span>
-								<span class="text-[10px] text-foreground font-mono font-semibold">{CURVE_TYPES[launch.curveType]}</span>
+								<span class="text-3xs text-dim font-mono">{$t('lp.curveLabel')}</span>
+								<span class="text-3xs text-foreground font-mono font-semibold">{CURVE_TYPES[launch.curveType]}</span>
 							</div>
 							<div class="flex justify-between items-center py-0.5 border-t border-white/[0.04]">
-								<span class="text-[10px] text-dim font-mono">{$t('lp.creatorLabel')}</span>
-								<span class="text-[10px] text-foreground font-mono font-semibold">{truncateAddr(launch.creator)}</span>
+								<span class="text-3xs text-dim font-mono">{$t('lp.creatorLabel')}</span>
+								<span class="text-3xs text-foreground font-mono font-semibold">{truncateAddr(launch.creator)}</span>
 							</div>
 							<div class="flex justify-between items-center py-0.5 border-t border-white/[0.04]">
-								<span class="text-[10px] text-dim font-mono">{$t('lp.tokensForLpLabel')}</span>
-								<span class="text-[10px] text-foreground font-mono font-semibold">{lpPercent(launch)}%</span>
+								<span class="text-3xs text-dim font-mono">{$t('lp.tokensForLpLabel')}</span>
+								<span class="text-3xs text-foreground font-mono font-semibold">{lpPercent(launch)}%</span>
 							</div>
 							<div class="flex justify-between items-center py-0.5 border-t border-white/[0.04]">
-								<span class="text-[10px] text-dim font-mono">{$t('lp.creatorAllocLabel')}</span>
-								<span class="text-[10px] text-foreground font-mono font-semibold">{(Number(launch.creatorAllocationBps) / 100).toFixed(1)}%</span>
+								<span class="text-3xs text-dim font-mono">{$t('lp.creatorAllocLabel')}</span>
+								<span class="text-3xs text-foreground font-mono font-semibold">{(Number(launch.creatorAllocationBps) / 100).toFixed(1)}%</span>
 							</div>
 						</div>
 					{/if}

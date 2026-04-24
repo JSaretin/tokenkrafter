@@ -134,7 +134,7 @@
 			<h3 class="text-white text-sm font-semibold mb-3">PlatformRouter Status</h3>
 			<div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
 				<div class="bg-white/[0.02] border border-line rounded-lg py-2.5 px-3">
-					<span class="block text-[10px] font-mono text-dim uppercase tracking-[0.05em]">Status</span>
+					<span class="block text-3xs font-mono text-dim uppercase tracking-[0.05em]">Status</span>
 					<span
 						class={'block text-sm font-bold font-mono mt-0.5 ' + (isPaused ? 'text-red-400' : 'text-emerald-400')}
 					>
@@ -142,7 +142,7 @@
 					</span>
 				</div>
 				<div class="bg-white/[0.02] border border-line rounded-lg py-2.5 px-3">
-					<span class="block text-[10px] font-mono text-dim uppercase tracking-[0.05em]">Min Liquidity</span>
+					<span class="block text-3xs font-mono text-dim uppercase tracking-[0.05em]">Min Liquidity</span>
 					<span class="block text-sm font-bold font-mono mt-0.5 text-cyan-400">
 						{minLiquidity > 0n
 							? parseFloat(ethers.formatUnits(minLiquidity, usdtDecimals)).toLocaleString()
@@ -150,7 +150,7 @@
 					</span>
 				</div>
 				<div class="bg-white/[0.02] border border-line rounded-lg py-2.5 px-3">
-					<span class="block text-[10px] font-mono text-dim uppercase tracking-[0.05em]">Address</span>
+					<span class="block text-3xs font-mono text-dim uppercase tracking-[0.05em]">Address</span>
 					<span class="block text-xs font-bold font-mono mt-0.5 text-gray-400">
 						{selectedNetwork.router_address.slice(0, 6)}…{selectedNetwork.router_address.slice(-4)}
 					</span>

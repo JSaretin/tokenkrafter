@@ -302,7 +302,7 @@
 			</select>
 		</div>
 	{:else if availableNetworks.length === 1}
-		<div class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-cyan/4 border border-brand-cyan/10 font-mono text-[11px] text-brand-cyan">
+		<div class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-cyan/4 border border-brand-cyan/10 font-mono text-xs2 text-brand-cyan">
 			<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
 			<span class="font-semibold">{availableNetworks[0].name}</span>
 		</div>
@@ -348,7 +348,7 @@
 						<input class="w-full box-border font-mono text-[0.82rem] text-white bg-surface-input border border-line rounded-[10px] px-3.5 py-3 outline-none transition-[border-color] duration-200 focus:border-brand-cyan/40 placeholder:text-placeholder" type="text" placeholder="0x..." bind:value={presetAddress} onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); loadPreset(); } }} />
 					</div>
 					{#if presetError}<span class="block font-mono text-[0.72rem] text-[#ff5e5e] mb-1">{presetError}</span>{/if}
-					<button class="flex items-center justify-center gap-2 w-full py-[11px] mt-2 rounded-[10px] border-0 bg-[linear-gradient(135deg,#0891b2,#1d4ed8)] text-white font-display text-[13px] font-bold cursor-pointer transition-all duration-[150ms] hover:-translate-y-px hover:shadow-[0_4px_16px_rgba(8,145,178,0.3)] disabled:opacity-50 disabled:cursor-not-allowed disabled:translate-y-0 disabled:shadow-none" type="button" disabled={presetLoading} onclick={loadPreset}>
+					<button class="flex items-center justify-center gap-2 w-full py-[11px] mt-2 rounded-[10px] border-0 bg-[linear-gradient(135deg,#0891b2,#1d4ed8)] text-white font-display text-13 font-bold cursor-pointer transition-all duration-[150ms] hover:-translate-y-px hover:shadow-[0_4px_16px_rgba(8,145,178,0.3)] disabled:opacity-50 disabled:cursor-not-allowed disabled:translate-y-0 disabled:shadow-none" type="button" disabled={presetLoading} onclick={loadPreset}>
 						{#if presetLoading}
 							<span class="spinner-sm"></span> Loading...
 						{:else}
@@ -368,18 +368,18 @@
 					<div class="flex items-end gap-3 flex-1">
 						<div class="flex flex-col items-center gap-[3px]">
 							<img src={tokenLogoUrl} alt="Logo" class="rounded-full object-cover border border-line w-12 h-12" />
-							<span class="text-[8px] text-placeholder font-mono">Profile</span>
+							<span class="text-4xs text-placeholder font-mono">Profile</span>
 						</div>
 						<div class="flex flex-col items-center gap-[3px]">
 							<img src={tokenLogoUrl} alt="Logo" class="rounded-full object-cover border border-line w-8 h-8" />
-							<span class="text-[8px] text-placeholder font-mono">Card</span>
+							<span class="text-4xs text-placeholder font-mono">Card</span>
 						</div>
 						<div class="flex flex-col items-center gap-[3px]">
 							<img src={tokenLogoUrl} alt="Logo" class="rounded-full object-cover border border-line w-5 h-5" />
-							<span class="text-[8px] text-placeholder font-mono">List</span>
+							<span class="text-4xs text-placeholder font-mono">List</span>
 						</div>
 					</div>
-					<button class="flex items-center gap-1 px-2.5 py-1.5 rounded-md border border-line bg-transparent text-brand-cyan font-mono text-[10px] cursor-pointer transition-all duration-[120ms] flex-shrink-0 hover:bg-brand-cyan/6" type="button" onclick={() => logoFileInput?.click()}>
+					<button class="flex items-center gap-1 px-2.5 py-1.5 rounded-md border border-line bg-transparent text-brand-cyan font-mono text-3xs cursor-pointer transition-all duration-[120ms] flex-shrink-0 hover:bg-brand-cyan/6" type="button" onclick={() => logoFileInput?.click()}>
 						<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
 						Change
 					</button>

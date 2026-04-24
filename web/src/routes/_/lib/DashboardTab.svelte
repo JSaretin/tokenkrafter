@@ -146,27 +146,27 @@
 	<div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3 mb-6">
 		<div class="bg-surface border border-line rounded-xl p-4 transition-colors hover:border-placeholder min-w-0">
 			<div class="text-xs text-dim font-numeric font-medium uppercase tracking-[0.08em]">Total Revenue</div>
-			<div class="font-numeric text-[28px] font-bold leading-[1.1] mt-1 break-words text-emerald-400">${onChainTotalRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+			<div class="font-numeric text-28 font-bold leading-[1.1] mt-1 break-words text-emerald-400">${onChainTotalRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
 			<div class="h-[3px] rounded-sm mt-2.5 overflow-hidden bg-emerald-400/20"><div class="h-full rounded-sm transition-[width] duration-500 bg-emerald-400" style="width: 100%"></div></div>
 		</div>
 		<div class="bg-surface border border-line rounded-xl p-4 transition-colors hover:border-placeholder min-w-0">
 			<div class="text-xs text-dim font-numeric font-medium uppercase tracking-[0.08em]">Creation Fees</div>
-			<div class="font-numeric text-[28px] font-bold leading-[1.1] mt-1 break-words text-amber-400">${onChainTokenFees.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+			<div class="font-numeric text-28 font-bold leading-[1.1] mt-1 break-words text-amber-400">${onChainTokenFees.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
 			<div class="h-[3px] rounded-sm mt-2.5 overflow-hidden bg-amber-400/20"><div class="h-full rounded-sm transition-[width] duration-500 bg-amber-400" style="width: {onChainTotalRevenue > 0 ? (onChainTokenFees / onChainTotalRevenue * 100) : 0}%"></div></div>
 		</div>
 		<div class="bg-surface border border-line rounded-xl p-4 transition-colors hover:border-placeholder min-w-0">
 			<div class="text-xs text-dim font-numeric font-medium uppercase tracking-[0.08em]">Tokens Created</div>
-			<div class="font-numeric text-[28px] font-bold leading-[1.1] mt-1 break-words text-cyan-400">{onChainTokens}</div>
+			<div class="font-numeric text-28 font-bold leading-[1.1] mt-1 break-words text-cyan-400">{onChainTokens}</div>
 			<div class="h-[3px] rounded-sm mt-2.5 overflow-hidden bg-cyan-400/20"><div class="h-full rounded-sm transition-[width] duration-500 bg-cyan-400" style="width: {Math.min(100, onChainTokens * 2)}%"></div></div>
 		</div>
 		<div class="bg-surface border border-line rounded-xl p-4 transition-colors hover:border-placeholder min-w-0">
 			<div class="text-xs text-dim font-numeric font-medium uppercase tracking-[0.08em]">Launches</div>
-			<div class="font-numeric text-[28px] font-bold leading-[1.1] mt-1 break-words text-blue-400">{onChainLaunches}</div>
+			<div class="font-numeric text-28 font-bold leading-[1.1] mt-1 break-words text-blue-400">{onChainLaunches}</div>
 			<div class="h-[3px] rounded-sm mt-2.5 overflow-hidden bg-blue-400/20"><div class="h-full rounded-sm transition-[width] duration-500 bg-blue-400" style="width: {Math.min(100, onChainLaunches * 5)}%"></div></div>
 		</div>
 		<div class="bg-surface border border-line rounded-xl p-4 transition-colors hover:border-placeholder min-w-0">
 			<div class="text-xs text-dim font-numeric font-medium uppercase tracking-[0.08em]">Launch Fees</div>
-			<div class="font-numeric text-[28px] font-bold leading-[1.1] mt-1 break-words text-purple-400">${onChainLaunchFees.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+			<div class="font-numeric text-28 font-bold leading-[1.1] mt-1 break-words text-purple-400">${onChainLaunchFees.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
 			<div class="h-[3px] rounded-sm mt-2.5 overflow-hidden bg-purple-400/20"><div class="h-full rounded-sm transition-[width] duration-500 bg-purple-400" style="width: {onChainTotalRevenue > 0 ? (onChainLaunchFees / onChainTotalRevenue * 100) : 0}%"></div></div>
 		</div>
 	</div>
@@ -175,20 +175,20 @@
 	{#if allChainData.length > 0}
 		<div class="bg-surface border border-line rounded-[14px] overflow-hidden relative mb-4">
 			<div class="flex justify-between items-center pt-3.5 px-4">
-				<h3 class="font-numeric text-[15px] font-semibold text-heading tracking-[0.02em]">Chain Overview</h3>
-				<span class="text-[10px] text-gray-600 font-mono">{allChainData.length} active chain{allChainData.length > 1 ? 's' : ''}</span>
+				<h3 class="font-numeric text-15 font-semibold text-heading tracking-[0.02em]">Chain Overview</h3>
+				<span class="text-3xs text-gray-600 font-mono">{allChainData.length} active chain{allChainData.length > 1 ? 's' : ''}</span>
 			</div>
 			<div class="p-4">
 				<div class="overflow-x-auto">
 					<table class="w-full text-sm">
 						<thead>
 							<tr class="border-b border-white/5">
-								<th class="text-left text-gray-500 text-[10px] font-mono uppercase py-2 px-2">Chain</th>
-								<th class="text-right text-gray-500 text-[10px] font-mono uppercase py-2 px-2">Tokens</th>
-								<th class="text-right text-gray-500 text-[10px] font-mono uppercase py-2 px-2">Launches</th>
-								<th class="text-right text-gray-500 text-[10px] font-mono uppercase py-2 px-2">Fees Earned</th>
-								<th class="text-right text-gray-500 text-[10px] font-mono uppercase py-2 px-2">Launch Fee</th>
-								<th class="text-center text-gray-500 text-[10px] font-mono uppercase py-2 px-2">Owner</th>
+								<th class="text-left text-gray-500 text-3xs font-mono uppercase py-2 px-2">Chain</th>
+								<th class="text-right text-gray-500 text-3xs font-mono uppercase py-2 px-2">Tokens</th>
+								<th class="text-right text-gray-500 text-3xs font-mono uppercase py-2 px-2">Launches</th>
+								<th class="text-right text-gray-500 text-3xs font-mono uppercase py-2 px-2">Fees Earned</th>
+								<th class="text-right text-gray-500 text-3xs font-mono uppercase py-2 px-2">Launch Fee</th>
+								<th class="text-center text-gray-500 text-3xs font-mono uppercase py-2 px-2">Owner</th>
 							</tr>
 						</thead>
 						<tbody>
@@ -196,7 +196,7 @@
 								<tr class="border-b border-white/3 hover:bg-white/[0.02] transition">
 									<td class="py-2.5 px-2">
 										<span class="text-white text-xs font-mono font-semibold">{chain.network.name}</span>
-										<span class="text-gray-600 text-[10px] ml-1">({chain.network.symbol})</span>
+										<span class="text-gray-600 text-3xs ml-1">({chain.network.symbol})</span>
 									</td>
 									<td class="py-2.5 px-2 text-right text-cyan-400 font-mono text-xs">{chain.totalTokens.toString()}</td>
 									<td class="py-2.5 px-2 text-right text-purple-400 font-mono text-xs">{chain.totalLaunches.toString()}</td>
@@ -204,9 +204,9 @@
 									<td class="py-2.5 px-2 text-right text-gray-400 font-mono text-xs">${chain.launchFee}</td>
 									<td class="py-2.5 px-2 text-center">
 										{#if chain.isOwner}
-											<span class="text-emerald-400 text-[10px] font-mono">You</span>
+											<span class="text-emerald-400 text-3xs font-mono">You</span>
 										{:else}
-											<span class="text-gray-600 text-[10px] font-mono">{chain.owner.slice(0,6)}...{chain.owner.slice(-4)}</span>
+											<span class="text-gray-600 text-3xs font-mono">{chain.owner.slice(0,6)}...{chain.owner.slice(-4)}</span>
 										{/if}
 									</td>
 								</tr>
@@ -220,14 +220,14 @@
 
 	<!-- Charts — all data from on-chain getState() -->
 	<div class="flex items-center justify-between mb-3">
-		<span class="font-numeric text-[15px] font-semibold text-heading tracking-[0.02em]">Charts</span>
+		<span class="font-numeric text-15 font-semibold text-heading tracking-[0.02em]">Charts</span>
 		<ChartTypeToggle />
 	</div>
 	<div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
 		<!-- Revenue Breakdown (bar) -->
 		<div class="bg-surface border border-line rounded-[14px] overflow-hidden relative">
 			<div class="flex justify-between items-center pt-3.5 px-4">
-				<h3 class="font-numeric text-[15px] font-semibold text-heading tracking-[0.02em]">Revenue Breakdown</h3>
+				<h3 class="font-numeric text-15 font-semibold text-heading tracking-[0.02em]">Revenue Breakdown</h3>
 			</div>
 			{#if onChainTotalRevenue > 0}
 				<Chart option={{
@@ -241,14 +241,14 @@
 					legend: { data: ['Creation', 'Launch'], top: 4, right: 12, textStyle: { color: '#64748b', fontSize: 10 } }
 				}} />
 			{:else}
-				<div class="absolute inset-0 flex items-center justify-center text-dim text-[11px] font-mono">No revenue yet</div>
+				<div class="absolute inset-0 flex items-center justify-center text-dim text-xs2 font-mono">No revenue yet</div>
 			{/if}
 		</div>
 
 		<!-- Token Types (donut) — from on-chain countPerType[8] -->
 		<div class="bg-surface border border-line rounded-[14px] overflow-hidden relative">
 			<div class="flex justify-between items-center pt-3.5 px-4">
-				<h3 class="font-numeric text-[15px] font-semibold text-heading tracking-[0.02em]">Token Types</h3>
+				<h3 class="font-numeric text-15 font-semibold text-heading tracking-[0.02em]">Token Types</h3>
 			</div>
 			{#each [dashTokenTypeDistribution.filter(tp => tp.count > 0)] as pieData}
 				{#if pieData.length > 0}
@@ -265,7 +265,7 @@
 						}]
 					}} />
 				{:else}
-					<div class="absolute inset-0 flex items-center justify-center text-dim text-[11px] font-mono">No tokens created yet</div>
+					<div class="absolute inset-0 flex items-center justify-center text-dim text-xs2 font-mono">No tokens created yet</div>
 				{/if}
 			{/each}
 		</div>
@@ -276,12 +276,12 @@
 		<!-- Revenue summary card -->
 		<div class="bg-surface border border-line rounded-[14px] overflow-hidden relative">
 			<div class="flex justify-between items-center pt-3.5 px-4">
-				<h3 class="font-numeric text-[15px] font-semibold text-heading tracking-[0.02em]">Revenue Summary</h3>
+				<h3 class="font-numeric text-15 font-semibold text-heading tracking-[0.02em]">Revenue Summary</h3>
 			</div>
 			<div class="p-4">
 				{#each [onChainTotalRevenue || 1] as revTotal}
 				<div class="grid grid-cols-[1fr_auto] gap-2 items-center py-2">
-					<div class="flex items-center gap-2 text-[11px] text-muted font-mono">
+					<div class="flex items-center gap-2 text-xs2 text-muted font-mono">
 						<span class="inline-block w-[7px] h-[7px] rounded-full mr-1 shrink-0 bg-emerald-400"></span>
 						<span>Creation Fees</span>
 					</div>
@@ -289,7 +289,7 @@
 					<div class="col-span-2 h-[3px] bg-surface-input rounded-sm overflow-hidden"><div class="h-full rounded-sm transition-[width] duration-500 bg-emerald-400" style="width: {(onChainTokenFees / revTotal) * 100}%"></div></div>
 				</div>
 				<div class="grid grid-cols-[1fr_auto] gap-2 items-center py-2">
-					<div class="flex items-center gap-2 text-[11px] text-muted font-mono">
+					<div class="flex items-center gap-2 text-xs2 text-muted font-mono">
 						<span class="inline-block w-[7px] h-[7px] rounded-full mr-1 shrink-0 bg-cyan-400"></span>
 						<span>Launch Fees</span>
 					</div>
@@ -297,7 +297,7 @@
 					<div class="col-span-2 h-[3px] bg-surface-input rounded-sm overflow-hidden"><div class="h-full rounded-sm transition-[width] duration-500 bg-cyan-400" style="width: {(onChainLaunchFees / revTotal) * 100}%"></div></div>
 				</div>
 				<div class="grid grid-cols-[1fr_auto] gap-2 items-center py-2 mt-3 pt-3 border-t border-line">
-					<div class="flex items-center gap-2 text-[11px] text-muted font-mono font-bold">
+					<div class="flex items-center gap-2 text-xs2 text-muted font-mono font-bold">
 						<span>Total</span>
 					</div>
 					<span class="text-xs font-mono font-semibold text-right text-white font-bold">${onChainTotalRevenue.toFixed(2)}</span>
@@ -309,8 +309,8 @@
 		<!-- Recent Tokens -->
 		<div class="bg-surface border border-line rounded-[14px] overflow-hidden relative">
 			<div class="flex justify-between items-center pt-3.5 px-4">
-				<h3 class="font-numeric text-[15px] font-semibold text-heading tracking-[0.02em]">Recent Tokens</h3>
-				<span class="text-[10px] text-gray-600 font-mono">{recentTokens.length} token{recentTokens.length !== 1 ? 's' : ''}</span>
+				<h3 class="font-numeric text-15 font-semibold text-heading tracking-[0.02em]">Recent Tokens</h3>
+				<span class="text-3xs text-gray-600 font-mono">{recentTokens.length} token{recentTokens.length !== 1 ? 's' : ''}</span>
 			</div>
 			<div class="p-4 max-h-[280px] overflow-y-auto" style="scrollbar-width: thin;">
 				{#if recentTokens.length === 0}
@@ -321,19 +321,19 @@
 							{#if token.logo_url}
 								<img src={token.logo_url} alt="" class="w-7 h-7 rounded-full object-cover shrink-0 border border-line" />
 							{:else}
-								<div class="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold text-white font-display shrink-0" style="background: {token.is_partner ? 'rgba(167,139,250,0.15)' : token.is_taxable ? 'rgba(239,68,68,0.15)' : 'rgba(0,210,255,0.15)'}">
+								<div class="w-7 h-7 rounded-full flex items-center justify-center text-xs2 font-bold text-white font-display shrink-0" style="background: {token.is_partner ? 'rgba(167,139,250,0.15)' : token.is_taxable ? 'rgba(239,68,68,0.15)' : 'rgba(0,210,255,0.15)'}">
 									{(token.symbol || '?').charAt(0)}
 								</div>
 							{/if}
 							<div class="flex-1 min-w-0">
 								<div class="text-white text-xs font-mono truncate">{token.name} <span class="text-gray-600">{token.symbol}</span></div>
-								<div class="text-gray-600 text-[10px] font-mono">
+								<div class="text-gray-600 text-3xs font-mono">
 									{token.is_partner ? 'Partner' : token.is_taxable ? 'Taxable' : token.is_mintable ? 'Mintable' : 'Basic'}
 									<span class="text-gray-700 ml-1">{token.creator?.slice(0, 6)}...{token.creator?.slice(-4)}</span>
 								</div>
 							</div>
 							<div class="text-right">
-								<div class="text-[10px] text-gray-600 font-mono">{new Date(token.created_at).toLocaleDateString()}</div>
+								<div class="text-3xs text-gray-600 font-mono">{new Date(token.created_at).toLocaleDateString()}</div>
 							</div>
 						</a>
 					{/each}
@@ -347,8 +347,8 @@
 		{@const usdtDec = allChainData[0]?.usdtDecimals || 18}
 		<div class="bg-surface border border-line rounded-[14px] overflow-hidden relative mt-4">
 			<div class="flex justify-between items-center pt-3.5 px-4">
-				<h3 class="font-numeric text-[15px] font-semibold text-heading tracking-[0.02em]">Recent Launches</h3>
-				<span class="text-[10px] text-gray-600 font-mono">{recentLaunches.length} launch{recentLaunches.length !== 1 ? 'es' : ''}</span>
+				<h3 class="font-numeric text-15 font-semibold text-heading tracking-[0.02em]">Recent Launches</h3>
+				<span class="text-3xs text-gray-600 font-mono">{recentLaunches.length} launch{recentLaunches.length !== 1 ? 'es' : ''}</span>
 			</div>
 			<div class="p-4 max-h-70 overflow-y-auto" style="scrollbar-width: thin;">
 				{#each recentLaunches.slice(0, 10) as launch}
@@ -357,12 +357,12 @@
 					{@const hc = parseFloat(ethers.formatUnits(launch.hardCap, usdtDec))}
 					{@const pct = hc > 0 ? Math.min(100, (raised / hc) * 100) : 0}
 					<a href="/launchpad/{chainSlug(launch.chain_id)}/{launch.launch}" class="flex items-center gap-2.5 py-2 border-b border-line-subtle last:border-b-0 no-underline transition-colors hover:bg-surface">
-						<div class="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold text-white font-display shrink-0" style="background: {launch.state === 2 ? 'rgba(16,185,129,0.15)' : launch.state === 1 ? 'rgba(0,210,255,0.15)' : 'rgba(245,158,11,0.15)'}">
+						<div class="w-7 h-7 rounded-full flex items-center justify-center text-xs2 font-bold text-white font-display shrink-0" style="background: {launch.state === 2 ? 'rgba(16,185,129,0.15)' : launch.state === 1 ? 'rgba(0,210,255,0.15)' : 'rgba(245,158,11,0.15)'}">
 							{(launch.tokenSymbol || '?').charAt(0)}
 						</div>
 						<div class="flex-1 min-w-0">
 							<div class="text-white text-xs font-mono truncate">{launch.tokenName || 'Unknown'} <span class="text-gray-600">{launch.tokenSymbol}</span></div>
-							<div class="text-gray-600 text-[10px] font-mono">
+							<div class="text-gray-600 text-3xs font-mono">
 								{launch.state === 2 ? 'Graduated' : launch.state === 1 ? 'Active' : 'Pending'}
 								· SC ${sc.toLocaleString(undefined, { maximumFractionDigits: 0 })}
 								· HC ${hc.toLocaleString(undefined, { maximumFractionDigits: 0 })}
@@ -374,7 +374,7 @@
 						</div>
 						<div class="text-right">
 							<div class="text-xs font-mono text-emerald-400">${raised.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
-							<div class="text-[10px] text-gray-600 font-mono">/ ${hc.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+							<div class="text-3xs text-gray-600 font-mono">/ ${hc.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
 						</div>
 					</a>
 				{/each}

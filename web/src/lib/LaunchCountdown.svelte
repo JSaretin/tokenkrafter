@@ -38,24 +38,24 @@
 	{:else}
 		<div class={'w-full lcd-' + variant + ' lcd-' + size}>
 			{#if label}
-				<span class={'block text-center mb-1.5 font-mono uppercase tracking-[0.06em] ' + (size === 'sm' ? 'text-[8px] mb-1' : size === 'lg' ? 'text-[10px] mb-2' : 'text-[9px]') + ' ' + (urgent ? 'text-[#f87171] lcd-urgent' : warning ? 'text-[#fbbf24]' : variant === 'cyan' ? 'text-[#00d2ff]' : 'text-[#f59e0b]')}>{label}</span>
+				<span class={'block text-center mb-1.5 font-mono uppercase tracking-[0.06em] ' + (size === 'sm' ? 'text-4xs mb-1' : size === 'lg' ? 'text-3xs mb-2' : 'text-xs4') + ' ' + (urgent ? 'text-[#f87171] lcd-urgent' : warning ? 'text-[#fbbf24]' : variant === 'cyan' ? 'text-[#00d2ff]' : 'text-[#f59e0b]')}>{label}</span>
 			{/if}
 			<div class={'grid grid-cols-4 ' + (size === 'sm' ? 'gap-[3px]' : size === 'lg' ? 'gap-2' : 'gap-1')}>
 				<div class={'lcd-box flex flex-col items-center rounded-lg ' + (size === 'sm' ? 'px-0.5 py-1 gap-px' : size === 'lg' ? 'px-1 py-2.5 gap-1' : 'px-0.5 py-1.5 gap-0.5')}>
-					<span class={'lcd-num font-numeric font-bold text-heading leading-none ' + (size === 'sm' ? 'text-sm' : size === 'lg' ? 'text-[28px]' : 'text-lg')}>{pad(d)}</span>
-					<span class={'font-mono uppercase tracking-[0.06em] text-dim ' + (size === 'sm' ? 'text-[6px]' : size === 'lg' ? 'text-[9px]' : 'text-[7px]')}>{size === 'sm' ? 'd' : 'Days'}</span>
+					<span class={'lcd-num font-numeric font-bold text-heading leading-none ' + (size === 'sm' ? 'text-sm' : size === 'lg' ? 'text-28' : 'text-lg')}>{pad(d)}</span>
+					<span class={'font-mono uppercase tracking-[0.06em] text-dim ' + (size === 'sm' ? 'text-6' : size === 'lg' ? 'text-xs4' : 'text-7')}>{size === 'sm' ? 'd' : 'Days'}</span>
 				</div>
 				<div class={'lcd-box flex flex-col items-center rounded-lg ' + (size === 'sm' ? 'px-0.5 py-1 gap-px' : size === 'lg' ? 'px-1 py-2.5 gap-1' : 'px-0.5 py-1.5 gap-0.5')}>
-					<span class={'lcd-num font-numeric font-bold text-heading leading-none ' + (size === 'sm' ? 'text-sm' : size === 'lg' ? 'text-[28px]' : 'text-lg')}>{pad(h)}</span>
-					<span class={'font-mono uppercase tracking-[0.06em] text-dim ' + (size === 'sm' ? 'text-[6px]' : size === 'lg' ? 'text-[9px]' : 'text-[7px]')}>{size === 'sm' ? 'h' : 'Hrs'}</span>
+					<span class={'lcd-num font-numeric font-bold text-heading leading-none ' + (size === 'sm' ? 'text-sm' : size === 'lg' ? 'text-28' : 'text-lg')}>{pad(h)}</span>
+					<span class={'font-mono uppercase tracking-[0.06em] text-dim ' + (size === 'sm' ? 'text-6' : size === 'lg' ? 'text-xs4' : 'text-7')}>{size === 'sm' ? 'h' : 'Hrs'}</span>
 				</div>
 				<div class={'lcd-box flex flex-col items-center rounded-lg ' + (size === 'sm' ? 'px-0.5 py-1 gap-px' : size === 'lg' ? 'px-1 py-2.5 gap-1' : 'px-0.5 py-1.5 gap-0.5')}>
-					<span class={'lcd-num font-numeric font-bold text-heading leading-none ' + (size === 'sm' ? 'text-sm' : size === 'lg' ? 'text-[28px]' : 'text-lg')}>{pad(m)}</span>
-					<span class={'font-mono uppercase tracking-[0.06em] text-dim ' + (size === 'sm' ? 'text-[6px]' : size === 'lg' ? 'text-[9px]' : 'text-[7px]')}>{size === 'sm' ? 'm' : 'Min'}</span>
+					<span class={'lcd-num font-numeric font-bold text-heading leading-none ' + (size === 'sm' ? 'text-sm' : size === 'lg' ? 'text-28' : 'text-lg')}>{pad(m)}</span>
+					<span class={'font-mono uppercase tracking-[0.06em] text-dim ' + (size === 'sm' ? 'text-6' : size === 'lg' ? 'text-xs4' : 'text-7')}>{size === 'sm' ? 'm' : 'Min'}</span>
 				</div>
 				<div class={'lcd-box flex flex-col items-center rounded-lg ' + (size === 'sm' ? 'px-0.5 py-1 gap-px' : size === 'lg' ? 'px-1 py-2.5 gap-1' : 'px-0.5 py-1.5 gap-0.5')}>
-					<span class={'lcd-num font-numeric font-bold text-heading leading-none ' + (size === 'sm' ? 'text-sm' : size === 'lg' ? 'text-[28px]' : 'text-lg')}>{pad(s)}</span>
-					<span class={'font-mono uppercase tracking-[0.06em] text-dim ' + (size === 'sm' ? 'text-[6px]' : size === 'lg' ? 'text-[9px]' : 'text-[7px]')}>{size === 'sm' ? 's' : 'Sec'}</span>
+					<span class={'lcd-num font-numeric font-bold text-heading leading-none ' + (size === 'sm' ? 'text-sm' : size === 'lg' ? 'text-28' : 'text-lg')}>{pad(s)}</span>
+					<span class={'font-mono uppercase tracking-[0.06em] text-dim ' + (size === 'sm' ? 'text-6' : size === 'lg' ? 'text-xs4' : 'text-7')}>{size === 'sm' ? 's' : 'Sec'}</span>
 				</div>
 			</div>
 		</div>

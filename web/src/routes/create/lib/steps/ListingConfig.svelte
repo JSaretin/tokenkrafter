@@ -89,12 +89,12 @@
 
 <!-- Tokens for trading -->
 <div class="mb-4">
-	<label for="lc-pool-pct" class="block text-[11px] font-bold text-dim uppercase tracking-[0.05em] font-mono mb-1.5">Tokens for trading</label>
+	<label for="lc-pool-pct" class="block text-xs2 font-bold text-dim uppercase tracking-[0.05em] font-mono mb-1.5">Tokens for trading</label>
 	<div class="flex items-center gap-3">
 		<input id="lc-pool-pct" type="range" class="lc-slider flex-1 h-1.5 bg-surface-hover rounded-[3px] outline-none" min="10" max="100" step="5" bind:value={poolPct} />
 		<span class="text-base font-bold text-[#00d2ff] font-display min-w-[40px] text-right">{poolPct}%</span>
 	</div>
-	<div class="flex justify-between mt-1 text-[10px] text-dim font-mono">
+	<div class="flex justify-between mt-1 text-3xs text-dim font-mono">
 		<span>{tokensForPool > 0 ? tokensForPool.toLocaleString(undefined, { maximumFractionDigits: 0 }) : '0'} {symbol} in pools</span>
 		<span>{(Number(totalSupply) - tokensForPool).toLocaleString(undefined, { maximumFractionDigits: 0 })} in your wallet</span>
 	</div>
@@ -102,7 +102,7 @@
 
 <!-- Liquidity pairs -->
 <div class="mb-4">
-	<span class="block text-[11px] font-bold text-dim uppercase tracking-[0.05em] font-mono mb-1.5">Add liquidity</span>
+	<span class="block text-xs2 font-bold text-dim uppercase tracking-[0.05em] font-mono mb-1.5">Add liquidity</span>
 	{#each pairs as pair, i}
 		<div class="border border-line rounded-xl p-3 mb-2 bg-surface">
 			<div class="flex justify-between items-center mb-2">
@@ -117,15 +117,15 @@
 			</div>
 			<div class="flex items-center gap-2">
 				<input class="flex-1 bg-transparent border-none outline-none text-heading font-display text-2xl font-bold p-0 min-w-0 placeholder:text-placeholder" type="text" inputmode="decimal" placeholder="0.00" value={pair.amount} oninput={(e) => updateAmount(i, (e.target as HTMLInputElement).value)} />
-				<span class="text-[13px] font-bold text-dim font-mono">{getLabel(pair.base)}</span>
+				<span class="text-13 font-bold text-dim font-mono">{getLabel(pair.base)}</span>
 			</div>
 			{#if pairUsd(pair) > 0}
-				<div class="text-[11px] text-dim font-mono mt-1">≈ ${pairUsd(pair).toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
+				<div class="text-xs2 text-dim font-mono mt-1">≈ ${pairUsd(pair).toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
 			{/if}
 			{#if totalUsd > 0 && pairUsd(pair) > 0}
 				<div class="mt-2 pt-2 border-t border-line-subtle">
 					<div class="w-full h-[5px] bg-surface-input rounded-[3px] overflow-hidden"><div class="h-full rounded-[3px] transition-[width] duration-200" style="width:{sharePct(pair)}%;background:{pair.base === 'native' ? '#f59e0b' : pair.base === 'usdt' ? '#10b981' : '#3b82f6'}"></div></div>
-					<div class="flex justify-between mt-[3px] text-[10px] text-dim font-mono">
+					<div class="flex justify-between mt-[3px] text-3xs text-dim font-mono">
 						<span>{symbol}/{getLabel(pair.base)}</span>
 						<span class="text-[#00d2ff]">{sharePct(pair).toFixed(0)}% · {tokensForPair(pair).toLocaleString(undefined, { maximumFractionDigits: 0 })} {symbol}</span>
 					</div>
@@ -145,26 +145,26 @@
 		<div class="font-display text-xs font-bold text-[#00d2ff] uppercase tracking-[0.05em] mb-2.5">Preview</div>
 		<div class="grid grid-cols-2 max-[500px]:grid-cols-1 gap-2 mb-2.5">
 			<div class="bg-black/20 rounded-lg py-2 px-2.5 min-w-0">
-				<span class="block text-[9px] text-dim font-mono uppercase tracking-[0.03em]">Starting price</span>
-				<span class="block text-[13px] font-bold text-heading font-mono mt-0.5 truncate">{fmtPrice(autoPrice)}</span>
+				<span class="block text-xs4 text-dim font-mono uppercase tracking-[0.03em]">Starting price</span>
+				<span class="block text-13 font-bold text-heading font-mono mt-0.5 truncate">{fmtPrice(autoPrice)}</span>
 			</div>
 			<div class="bg-black/20 rounded-lg py-2 px-2.5 min-w-0">
-				<span class="block text-[9px] text-dim font-mono uppercase tracking-[0.03em]">Market cap</span>
-				<span class="block text-[13px] font-bold font-mono mt-0.5 text-[#10b981] truncate">${marketCap.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+				<span class="block text-xs4 text-dim font-mono uppercase tracking-[0.03em]">Market cap</span>
+				<span class="block text-13 font-bold font-mono mt-0.5 text-[#10b981] truncate">${marketCap.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
 			</div>
 			<div class="bg-black/20 rounded-lg py-2 px-2.5 min-w-0">
-				<span class="block text-[9px] text-dim font-mono uppercase tracking-[0.03em]">Total liquidity</span>
-				<span class="block text-[13px] font-bold text-heading font-mono mt-0.5 truncate">${totalUsd.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+				<span class="block text-xs4 text-dim font-mono uppercase tracking-[0.03em]">Total liquidity</span>
+				<span class="block text-13 font-bold text-heading font-mono mt-0.5 truncate">${totalUsd.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
 			</div>
 			<div class="bg-black/20 rounded-lg py-2 px-2.5 min-w-0">
-				<span class="block text-[9px] text-dim font-mono uppercase tracking-[0.03em]">$10 buys</span>
-				<span class="block text-[13px] font-bold text-heading font-mono mt-0.5 truncate">{tenDollarBuy > 0 ? tenDollarBuy.toLocaleString(undefined, { maximumFractionDigits: 0 }) : '—'} {symbol}</span>
+				<span class="block text-xs4 text-dim font-mono uppercase tracking-[0.03em]">$10 buys</span>
+				<span class="block text-13 font-bold text-heading font-mono mt-0.5 truncate">{tenDollarBuy > 0 ? tenDollarBuy.toLocaleString(undefined, { maximumFractionDigits: 0 }) : '—'} {symbol}</span>
 			</div>
 		</div>
 
 		<!-- Pool breakdown bars -->
 		{#each pairs.filter(p => Number(p.amount) > 0) as pair}
-			<div class="flex items-center gap-2 py-[3px] text-[10px] font-mono min-w-0">
+			<div class="flex items-center gap-2 py-[3px] text-3xs font-mono min-w-0">
 				<div class="w-[40px] h-1.5 bg-surface-input rounded-[3px] overflow-hidden shrink-0"><div class="h-full rounded-[3px]" style="width:{sharePct(pair)}%;background:{pair.base === 'native' ? '#f59e0b' : pair.base === 'usdt' ? '#10b981' : '#3b82f6'}"></div></div>
 				<span class="text-foreground font-bold shrink-0 truncate max-w-[80px]">{symbol}/{getLabel(pair.base)}</span>
 				<span class="text-dim flex-1 min-w-0 truncate">{pair.amount} {getLabel(pair.base)} ↔ {tokensForPair(pair).toLocaleString(undefined, { maximumFractionDigits: 0 })} {symbol}</span>
@@ -175,12 +175,12 @@
 {/if}
 
 <!-- Advanced -->
-<button type="button" class="block mt-2 p-0 border-none bg-none text-dim text-[11px] font-mono cursor-pointer hover:text-[#00d2ff]" tabindex="-1" onclick={() => advanced = !advanced}>
+<button type="button" class="block mt-2 p-0 border-none bg-none text-dim text-xs2 font-mono cursor-pointer hover:text-[#00d2ff]" tabindex="-1" onclick={() => advanced = !advanced}>
 	{advanced ? '▾ Hide' : '▸ Advanced'} — set price manually
 </button>
 {#if advanced}
 	<div class="mb-4 mt-1.5">
-		<label for="lc-price-per-token" class="block text-[11px] font-bold text-dim uppercase tracking-[0.05em] font-mono mb-1.5">Token price (USDT)</label>
+		<label for="lc-price-per-token" class="block text-xs2 font-bold text-dim uppercase tracking-[0.05em] font-mono mb-1.5">Token price (USDT)</label>
 		<input id="lc-price-per-token" class="input-field" type="text" bind:value={pricePerToken} placeholder="0.001" />
 	</div>
 {/if}

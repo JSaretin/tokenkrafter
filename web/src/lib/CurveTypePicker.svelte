@@ -71,8 +71,8 @@
 						>
 							<svg class="w-12 h-7 shrink-0" viewBox="0 0 48 28" fill="none"><path d={curveMiniPath(i, 48, 28)} stroke={value === i ? '#00d2ff' : '#475569'} stroke-width="2" stroke-linecap="round" fill="none"/></svg>
 							<div class="flex-1 flex flex-col gap-px text-left">
-								<span class={'curve-opt-name font-display text-[13px] font-semibold ' + (value === i ? 'text-[#00d2ff]' : 'text-foreground')}>{label}</span>
-								<span class="font-mono text-[10px] text-dim leading-[1.3]">{CURVE_DESCS[i]}</span>
+								<span class={'curve-opt-name font-display text-13 font-semibold ' + (value === i ? 'text-[#00d2ff]' : 'text-foreground')}>{label}</span>
+								<span class="font-mono text-3xs text-dim leading-[1.3]">{CURVE_DESCS[i]}</span>
 							</div>
 							{#if value === i}
 								<svg class="shrink-0" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#00d2ff" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>

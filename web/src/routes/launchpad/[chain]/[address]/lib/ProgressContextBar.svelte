@@ -111,7 +111,7 @@
 		{#if softCapPct > 0 && softCapPct < 100}
 			<div class="absolute -top-1 -translate-x-1/2 flex flex-col items-center z-[2]" style="left: {softCapPct}%" title={$t('lpd.softCapTitle') + ': ' + formatUsdt(launch.softCap, usdtDecimals)}>
 				<div class="w-0.5 h-6 bg-warning rounded-sm shadow-[0_0_6px_rgba(245,158,11,0.4)]"></div>
-				<div class="text-[9px] text-warning font-mono font-bold mt-0.5 bg-[var(--bg)] px-1 rounded-sm border border-warning/30">{$t('lpd.scLabel')}</div>
+				<div class="text-xs4 text-warning font-mono font-bold mt-0.5 bg-[var(--bg)] px-1 rounded-sm border border-warning/30">{$t('lpd.scLabel')}</div>
 			</div>
 		{/if}
 		<!-- Milestone ticks at 25%, 50%, 75% -->

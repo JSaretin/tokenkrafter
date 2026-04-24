@@ -70,7 +70,7 @@
 
 			<!-- Required Balances -->
 			{#if requiredBalances.length > 0}
-				<div class="font-mono text-[10px] font-bold uppercase tracking-[0.1em] text-muted mb-2 mt-4 first:mt-0">Required Balances</div>
+				<div class="font-mono text-3xs font-bold uppercase tracking-[0.1em] text-muted mb-2 mt-4 first:mt-0">Required Balances</div>
 				<div class="flex flex-col gap-1.5">
 					{#each requiredBalances as bal}
 						<div class={'py-2 px-2.5 rounded-[10px] ' + (bal.status === 'insufficient' ? 'border border-[rgba(248,113,113,0.3)] bg-[rgba(248,113,113,0.04)]' : 'bg-surface border border-line-subtle')}>
@@ -80,12 +80,12 @@
 									{:else if bal.status === 'insufficient'}<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
 									{:else}<span class="inline-block w-3 h-3 border-[1.5px] border-line border-t-muted rounded-full animate-spin"></span>{/if}
 								</span>
-								<span class="font-display font-bold text-[13px] text-foreground">{bal.symbol}:</span>
+								<span class="font-display font-bold text-13 text-foreground">{bal.symbol}:</span>
 								<span class="font-mono text-xs text-foreground">{bal.required}</span>
-								<span class="font-mono text-[11px] text-dim">({bal.breakdown})</span>
+								<span class="font-mono text-xs2 text-dim">({bal.breakdown})</span>
 							</div>
 							{#if bal.available}
-								<div class={'font-mono text-[11px] ml-[22px] mt-0.5 ' + (bal.status === 'insufficient' ? 'text-[#f87171] font-bold' : 'text-muted')}>
+								<div class={'font-mono text-xs2 ml-[22px] mt-0.5 ' + (bal.status === 'insufficient' ? 'text-[#f87171] font-bold' : 'text-muted')}>
 									Available: {bal.available}{#if bal.status === 'insufficient'} — Insufficient!{/if}
 								</div>
 							{/if}
@@ -101,12 +101,12 @@
 						<div class="font-mono text-xs text-muted mb-3">Send <strong>{bal.symbol}</strong> to your wallet</div>
 						<div class="w-[140px] h-[140px] mx-auto mb-3 rounded-xl bg-surface border border-line"></div>
 						<div class="mb-2">
-							<button type="button" class="inline-flex items-center gap-1.5 py-1.5 px-3.5 rounded-lg border border-line bg-surface text-foreground font-mono text-[11px] cursor-pointer transition-all duration-150 hover:bg-surface-hover" onclick={() => copyAddress('')}>
+							<button type="button" class="inline-flex items-center gap-1.5 py-1.5 px-3.5 rounded-lg border border-line bg-surface text-foreground font-mono text-xs2 cursor-pointer transition-all duration-150 hover:bg-surface-hover" onclick={() => copyAddress('')}>
 								<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
 								{copied ? 'Copied!' : 'Copy address'}
 							</button>
 						</div>
-						<div class="inline-block py-[3px] px-2.5 rounded-full text-[10px] font-mono font-bold uppercase tracking-[0.04em] bg-[rgba(245,158,11,0.1)] text-[#f59e0b] border border-[rgba(245,158,11,0.2)] mb-1.5">Only send {bal.symbol} on BSC</div>
+						<div class="inline-block py-[3px] px-2.5 rounded-full text-3xs font-mono font-bold uppercase tracking-[0.04em] bg-[rgba(245,158,11,0.1)] text-[#f59e0b] border border-[rgba(245,158,11,0.2)] mb-1.5">Only send {bal.symbol} on BSC</div>
 						<div class="font-display text-lg font-extrabold text-heading mt-1.5">Need: {bal.required} {bal.symbol}</div>
 					</div>
 				{/each}
@@ -114,7 +114,7 @@
 
 			<!-- Steps -->
 			{#if steps.length > 0}
-				<div class="font-mono text-[10px] font-bold uppercase tracking-[0.1em] text-muted mb-2 mt-4 first:mt-0">Steps</div>
+				<div class="font-mono text-3xs font-bold uppercase tracking-[0.1em] text-muted mb-2 mt-4 first:mt-0">Steps</div>
 				<div class="flex flex-col gap-1">
 					{#each steps as step}
 						<div class={'flex items-center gap-2 py-[7px] px-2.5 rounded-lg transition-colors duration-200 ' + (step.status === 'active' ? 'bg-[rgba(0,210,255,0.04)] step-pulse ' : '') + (step.status === 'error' ? 'bg-[rgba(248,113,113,0.04)]' : '')}>
@@ -137,7 +137,7 @@
 							</span>
 						</div>
 						{#if step.status === 'error' && step.error}
-							<div class="font-mono text-[11px] text-[#f87171] pt-0.5 pr-2.5 pb-1 pl-[34px]">{step.error}</div>
+							<div class="font-mono text-xs2 text-[#f87171] pt-0.5 pr-2.5 pb-1 pl-[34px]">{step.error}</div>
 						{/if}
 					{/each}
 				</div>
@@ -145,9 +145,9 @@
 
 			<!-- Footer warning / success -->
 			{#if allDone}
-				<div class="text-center font-display text-[15px] font-bold text-[#10b981] mt-3">Your token is live on BSC!</div>
+				<div class="text-center font-display text-15 font-bold text-[#10b981] mt-3">Your token is live on BSC!</div>
 			{:else if isDeploying}
-				<div class="flex items-center justify-center gap-1.5 mt-4 p-2.5 rounded-[10px] bg-[rgba(245,158,11,0.06)] border border-[rgba(245,158,11,0.15)] font-mono text-[11px] text-[#f59e0b]">
+				<div class="flex items-center justify-center gap-1.5 mt-4 p-2.5 rounded-[10px] bg-[rgba(245,158,11,0.06)] border border-[rgba(245,158,11,0.15)] font-mono text-xs2 text-[#f59e0b]">
 					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
 					Don't close this window
 				</div>

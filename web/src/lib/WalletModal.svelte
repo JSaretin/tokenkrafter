@@ -272,7 +272,7 @@
 						{@const idx = i + 1}
 						{@const state = idx < stepperPos ? 'done' : idx === stepperPos ? 'active' : 'todo'}
 						<div class="flex items-center gap-1.5">
-							<div class={'w-[22px] h-[22px] rounded-full flex items-center justify-center font-display text-[11px] font-extrabold border transition ' +
+							<div class={'w-[22px] h-[22px] rounded-full flex items-center justify-center font-display text-xs2 font-extrabold border transition ' +
 								(state === 'active' ? 'bg-cyan-500/[0.12] text-brand-cyan border-cyan-500/[0.35] shadow-[0_0_0_3px_rgba(0,210,255,0.08)]' :
 								 state === 'done' ? 'bg-emerald-500/[0.12] text-[#10b981] border-emerald-500/30' :
 								 'bg-surface-input text-dim border-line')}>
@@ -282,7 +282,7 @@
 									{idx}
 								{/if}
 							</div>
-							<span class={'font-mono text-[10px] transition-colors ' +
+							<span class={'font-mono text-3xs transition-colors ' +
 								(state === 'active' ? 'text-brand-cyan font-bold' :
 								 state === 'done' ? 'text-[#10b981]' :
 								 'text-dim')}>{label}</span>
@@ -303,7 +303,7 @@
 				</div>
 
 				<button class="relative flex items-center gap-3 p-3.5 bg-cyan-500/[0.04] border border-cyan-500/20 rounded-xl cursor-pointer transition text-left font-[inherit] text-[inherit] hover:border-cyan-500/50" onclick={handleGoogleLogin}>
-					<span class="absolute -top-2 right-2.5 inline-flex items-center gap-1 text-[8px] px-2 py-0.5 rounded bg-gradient-to-br from-[#00d2ff] to-[#3a7bd5] text-white font-mono font-bold uppercase tracking-[0.05em] shadow-[0_2px_8px_rgba(0,210,255,0.3)]">
+					<span class="absolute -top-2 right-2.5 inline-flex items-center gap-1 text-4xs px-2 py-0.5 rounded bg-gradient-to-br from-[#00d2ff] to-[#3a7bd5] text-white font-mono font-bold uppercase tracking-[0.05em] shadow-[0_2px_8px_rgba(0,210,255,0.3)]">
 						<svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
 						{$t('wallet.recommended')}
 					</span>
@@ -312,7 +312,7 @@
 					</div>
 					<div class="flex-1 flex flex-col gap-0.5">
 						<span class="text-sm font-semibold text-heading font-display">{$t('wallet.quickWallet')}</span>
-						<span class="text-[10px] text-dim font-mono">{$t('wallet.quickWalletDesc')}</span>
+						<span class="text-3xs text-dim font-mono">{$t('wallet.quickWalletDesc')}</span>
 					</div>
 				</button>
 
@@ -322,7 +322,7 @@
 					</div>
 					<div class="flex-1 flex flex-col gap-0.5">
 						<span class="text-sm font-semibold text-heading font-display">{$t('wallet.walletConnect')}</span>
-						<span class="text-[10px] text-dim font-mono">{$t('wallet.walletConnectDesc')}</span>
+						<span class="text-3xs text-dim font-mono">{$t('wallet.walletConnectDesc')}</span>
 					</div>
 				</button>
 
@@ -370,13 +370,13 @@
 					onkeydown={(e) => { if (e.key === 'Enter') { isImporting ? handleImportFirstWallet() : handleCreateWallet(); } }} />
 
 				{#if isImporting}
-					<label class="flex items-center gap-2 text-[11px] text-muted font-mono cursor-pointer">
+					<label class="flex items-center gap-2 text-xs2 text-muted font-mono cursor-pointer">
 						<input type="checkbox" bind:checked={importAck} class="accent-brand-cyan" />
 						<span>{$t('wallet.importAck')}</span>
 					</label>
 				{/if}
 
-				{#if error}<p class="text-[11px] text-[#f87171] font-mono m-0 px-2.5 py-1.5 bg-[rgba(248,113,113,0.08)] rounded-md">{error}</p>{/if}
+				{#if error}<p class="text-xs2 text-[#f87171] font-mono m-0 px-2.5 py-1.5 bg-[rgba(248,113,113,0.08)] rounded-md">{error}</p>{/if}
 
 				{#if isImporting}
 					<button class="p-3 rounded-[10px] border-none cursor-pointer font-display text-sm font-bold transition w-full bg-gradient-to-br from-[#00d2ff] to-[#3a7bd5] text-white hover:-translate-y-px hover:shadow-[0_4px_20px_rgba(0,210,255,0.3)] disabled:opacity-50 disabled:cursor-not-allowed disabled:translate-y-0 disabled:shadow-none" onclick={handleImportFirstWallet} disabled={loading}>
@@ -395,14 +395,14 @@
 				<input class="w-full px-3.5 py-3 rounded-[10px] bg-surface-input border border-line text-heading font-mono text-base outline-none transition-[border-color] focus:border-cyan-500/40 placeholder:text-dim [-webkit-text-security:disc] [text-security:disc]" type="tel" inputmode="numeric" autocomplete="one-time-code" data-lpignore="true" data-1p-ignore="true" placeholder={$t('wallet.pinPlaceholder')} bind:value={pin} maxlength="8"
 					onkeydown={(e) => { if (e.key === 'Enter') handleUnlock(); }} />
 
-				{#if error}<p class="text-[11px] text-[#f87171] font-mono m-0 px-2.5 py-1.5 bg-[rgba(248,113,113,0.08)] rounded-md">{error}</p>{/if}
+				{#if error}<p class="text-xs2 text-[#f87171] font-mono m-0 px-2.5 py-1.5 bg-[rgba(248,113,113,0.08)] rounded-md">{error}</p>{/if}
 
 				<button class="p-3 rounded-[10px] border-none cursor-pointer font-display text-sm font-bold transition w-full bg-gradient-to-br from-[#00d2ff] to-[#3a7bd5] text-white hover:-translate-y-px hover:shadow-[0_4px_20px_rgba(0,210,255,0.3)] disabled:opacity-50 disabled:cursor-not-allowed disabled:translate-y-0 disabled:shadow-none" onclick={handleUnlock} disabled={loading}>
 					{loading ? $t('wallet.unlocking') : $t('wallet.unlock')}
 				</button>
 				<div class="flex justify-between">
-					<button class="bg-none border-none text-dim cursor-pointer font-mono text-[11px] underline p-1 hover:text-brand-cyan" onclick={() => { error = ''; step = 'forgot-pin'; }}>{$t('wallet.forgotPin')}</button>
-					<button class="bg-none border-none cursor-pointer font-mono text-[11px] underline p-1 text-[#f87171] hover:text-[#ef4444]" onclick={() => { onDisconnect(); open = false; }}>{$t('wallet.disconnect')}</button>
+					<button class="bg-none border-none text-dim cursor-pointer font-mono text-xs2 underline p-1 hover:text-brand-cyan" onclick={() => { error = ''; step = 'forgot-pin'; }}>{$t('wallet.forgotPin')}</button>
+					<button class="bg-none border-none cursor-pointer font-mono text-xs2 underline p-1 text-[#f87171] hover:text-[#ef4444]" onclick={() => { onDisconnect(); open = false; }}>{$t('wallet.disconnect')}</button>
 				</div>
 
 			{:else if step === 'recovery-codes'}
@@ -411,7 +411,7 @@
 
 				<div class="flex flex-col gap-1.5 p-3 bg-emerald-500/[0.06] border border-emerald-500/[0.15] rounded-[10px]">
 					{#each recoveryCodes as code, i}
-						<div class="font-mono text-[13px] text-[#10b981] tracking-[0.05em]">{i + 1}. {code}</div>
+						<div class="font-mono text-13 text-[#10b981] tracking-[0.05em]">{i + 1}. {code}</div>
 					{/each}
 				</div>
 
@@ -428,7 +428,7 @@
 					{$t('wallet.saveToDevice')}
 				</button>
 
-				<label class="flex items-center gap-2 text-[11px] text-muted font-mono cursor-pointer">
+				<label class="flex items-center gap-2 text-xs2 text-muted font-mono cursor-pointer">
 					<input type="checkbox" bind:checked={codesConfirmed} class="accent-brand-cyan" />
 					<span>{$t('wallet.savedCodes')}</span>
 				</label>
@@ -444,12 +444,12 @@
 				<input class="w-full px-3.5 py-3 rounded-[10px] bg-surface-input border border-line text-heading font-mono text-base outline-none transition-[border-color] focus:border-cyan-500/40 placeholder:text-dim" type="text" placeholder="XXXX-XXXX-XXXX-XXXX" bind:value={recoveryCode}
 					onkeydown={(e) => { if (e.key === 'Enter') handleRecover(); }} />
 
-				{#if error}<p class="text-[11px] text-[#f87171] font-mono m-0 px-2.5 py-1.5 bg-[rgba(248,113,113,0.08)] rounded-md">{error}</p>{/if}
+				{#if error}<p class="text-xs2 text-[#f87171] font-mono m-0 px-2.5 py-1.5 bg-[rgba(248,113,113,0.08)] rounded-md">{error}</p>{/if}
 
 				<button class="p-3 rounded-[10px] border-none cursor-pointer font-display text-sm font-bold transition w-full bg-gradient-to-br from-[#00d2ff] to-[#3a7bd5] text-white hover:-translate-y-px hover:shadow-[0_4px_20px_rgba(0,210,255,0.3)] disabled:opacity-50 disabled:cursor-not-allowed disabled:translate-y-0 disabled:shadow-none" onclick={handleRecover} disabled={loading}>
 					{loading ? $t('wallet.verifying') : $t('wallet.recover')}
 				</button>
-				<button class="bg-none border-none text-dim cursor-pointer font-mono text-[11px] underline p-1 hover:text-brand-cyan" onclick={() => { error = ''; step = 'pin-enter'; }}>{$t('wallet.backToPin')}</button>
+				<button class="bg-none border-none text-dim cursor-pointer font-mono text-xs2 underline p-1 hover:text-brand-cyan" onclick={() => { error = ''; step = 'pin-enter'; }}>{$t('wallet.backToPin')}</button>
 
 			{:else if step === 'new-pin'}
 				<h2 class="heading-2">{$t('wallet.setNewPin')}</h2>
@@ -459,7 +459,7 @@
 				<input class="w-full px-3.5 py-3 rounded-[10px] bg-surface-input border border-line text-heading font-mono text-base outline-none transition-[border-color] focus:border-cyan-500/40 placeholder:text-dim [-webkit-text-security:disc] [text-security:disc]" type="tel" inputmode="numeric" autocomplete="one-time-code" data-lpignore="true" data-1p-ignore="true" placeholder={$t('wallet.confirmPin')} bind:value={pinConfirm} maxlength="8"
 					onkeydown={(e) => { if (e.key === 'Enter') handleSetNewPin(); }} />
 
-				{#if error}<p class="text-[11px] text-[#f87171] font-mono m-0 px-2.5 py-1.5 bg-[rgba(248,113,113,0.08)] rounded-md">{error}</p>{/if}
+				{#if error}<p class="text-xs2 text-[#f87171] font-mono m-0 px-2.5 py-1.5 bg-[rgba(248,113,113,0.08)] rounded-md">{error}</p>{/if}
 
 				<button class="p-3 rounded-[10px] border-none cursor-pointer font-display text-sm font-bold transition w-full bg-gradient-to-br from-[#00d2ff] to-[#3a7bd5] text-white hover:-translate-y-px hover:shadow-[0_4px_20px_rgba(0,210,255,0.3)] disabled:opacity-50 disabled:cursor-not-allowed disabled:translate-y-0 disabled:shadow-none" onclick={handleSetNewPin} disabled={loading}>
 					{loading ? $t('wallet.saving') : $t('wallet.setPinContinue')}

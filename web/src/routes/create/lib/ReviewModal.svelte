@@ -204,7 +204,7 @@
 
 			<!-- Token identifier (one line) -->
 			<div class="flex items-baseline gap-2 mb-1">
-				<span class="syne text-[15px] font-bold text-(--text-heading)">{tokenInfo.name} ({tokenInfo.symbol})</span>
+				<span class="syne text-15 font-bold text-(--text-heading)">{tokenInfo.name} ({tokenInfo.symbol})</span>
 				<span class="text-3xs text-cyan-400 font-mono">{tokenInfo.network.name}</span>
 			</div>
 			<div class="flex gap-1 flex-wrap mb-3">
@@ -263,7 +263,7 @@
 			<button
 				onclick={onSubmit}
 				disabled={submitDisabled || feeDisplay.loading || paymentTokens.length === 0}
-				class="w-full p-3.5 rounded-xl font-bold text-[15px] text-(--text-heading) border-none mt-2 cursor-pointer transition-all bg-gradient-to-br from-cyan-400 to-blue-500 syne hover:not-disabled:-translate-y-px hover:not-disabled:shadow-[0_8px_32px_rgba(0,210,255,0.3)] disabled:opacity-50 disabled:cursor-not-allowed"
+				class="w-full p-3.5 rounded-xl font-bold text-15 text-(--text-heading) border-none mt-2 cursor-pointer transition-all bg-gradient-to-br from-cyan-400 to-blue-500 syne hover:not-disabled:-translate-y-px hover:not-disabled:shadow-[0_8px_32px_rgba(0,210,255,0.3)] disabled:opacity-50 disabled:cursor-not-allowed"
 			>
 				{submitLabel ?? defaultSubmitLabel}
 			</button>

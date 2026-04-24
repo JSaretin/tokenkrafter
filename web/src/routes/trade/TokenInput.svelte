@@ -67,7 +67,7 @@
 
 <div class={"bg-(--bg-surface-input) rounded-2xl py-3.5 px-4 " + (readonly ? "mt-1" : "")}>
 	<div class="flex justify-between items-center mb-2">
-		<span class="font-mono text-[11px] font-semibold text-(--text-muted) uppercase tracking-[0.05em]">{label}</span>
+		<span class="font-mono text-xs2 font-semibold text-(--text-muted) uppercase tracking-[0.05em]">{label}</span>
 		<TokenSelectorButton symbol={tokenSymbol} logo={tokenLogo} onclick={onSelectToken} />
 	</div>
 	<div class="flex items-center gap-2 relative">

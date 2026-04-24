@@ -1612,14 +1612,14 @@
 						<span class="text-cyan-400 text-xs font-mono break-all">{userAddress}</span>
 					</div>
 					<button
-						class="text-gray-500 hover:text-cyan-400 text-[10px] font-mono mt-2 cursor-pointer transition"
+						class="text-gray-500 hover:text-cyan-400 text-3xs font-mono mt-2 cursor-pointer transition"
 						onclick={() => { navigator.clipboard.writeText(userAddress ?? ''); addFeedback({ message: 'Address copied!', type: 'success' }); }}
 					>
 						{$t('lpd.copyAddress')}
 					</button>
 				</div>
 
-				<p class="text-gray-600 text-[10px] font-mono">
+				<p class="text-gray-600 text-3xs font-mono">
 					{$t('lpd.sendTo').replace('{token}', paymentLabel)} <span class="text-gray-400">{network?.name || 'BSC'}</span>. {$t('lpd.autoDetect')}
 				</p>
 
@@ -1668,7 +1668,7 @@
 						{#if metadata.logo_url}
 							<img src={metadata.logo_url} alt="" class="w-14 h-14 rounded-full object-cover shrink-0 border-2 border-surface-hover card-logo-adapt" />
 						{:else}
-							<div class="w-14 h-14 rounded-full shrink-0 border-2 border-surface-hover flex items-center justify-center font-display text-[22px] font-bold text-brand-cyan bg-[linear-gradient(135deg,rgba(0,210,255,0.15),rgba(139,92,246,0.15))]">
+							<div class="w-14 h-14 rounded-full shrink-0 border-2 border-surface-hover flex items-center justify-center font-display text-22 font-bold text-brand-cyan bg-[linear-gradient(135deg,rgba(0,210,255,0.15),rgba(139,92,246,0.15))]">
 								<span>{(launch.tokenSymbol || '?')[0]}</span>
 							</div>
 						{/if}
@@ -1676,9 +1676,9 @@
 							<label class="logo-upload-overlay" title="Upload logo (max 512 KB)">
 								<input type="file" accept="image/*" class="hidden" onchange={handleLogoUpload} disabled={isUploadingLogo} />
 								{#if isUploadingLogo}
-									<span class="text-[10px]">...</span>
+									<span class="text-3xs">...</span>
 								{:else}
-									<span class="text-[10px]">{$t('lpd.upload')}</span>
+									<span class="text-3xs">{$t('lpd.upload')}</span>
 								{/if}
 							</label>
 						{/if}
@@ -1688,7 +1688,7 @@
 							<h1 class="heading-1 leading-tight">
 								{launch.tokenName || 'Unknown Token'}
 							</h1>
-							<span class="text-[13px] font-mono text-dim bg-surface border border-surface-hover py-0.5 px-2.5 rounded-md">{launch.tokenSymbol || '???'}</span>
+							<span class="text-13 font-mono text-dim bg-surface border border-surface-hover py-0.5 px-2.5 rounded-md">{launch.tokenSymbol || '???'}</span>
 							<span class="badge badge-{color} text-xs px-3 py-1">
 								{stateLabel(launch.state)}
 							</span>
@@ -1750,9 +1750,9 @@
 							>🔗</button>
 						</div>
 						<div class="hidden sm:flex items-center gap-2 mt-2 flex-wrap">
-							<span class="header-tag text-[11px] font-mono text-dim bg-white/[0.03] border border-line py-0.5 px-2 rounded">{network?.name || 'BSC'}</span>
-							<span class="header-tag text-[11px] font-mono text-dim bg-white/[0.03] border border-line py-0.5 px-2 rounded">{CURVE_TYPES[launch.curveType]} {$t('lpd.curve')}</span>
-							<span class="header-tag text-[11px] font-mono text-dim bg-white/[0.03] border border-line py-0.5 px-2 rounded">{$t('lpd.creator')}: {shortAddr(launch.creator)}</span>
+							<span class="header-tag text-xs2 font-mono text-dim bg-white/[0.03] border border-line py-0.5 px-2 rounded">{network?.name || 'BSC'}</span>
+							<span class="header-tag text-xs2 font-mono text-dim bg-white/[0.03] border border-line py-0.5 px-2 rounded">{CURVE_TYPES[launch.curveType]} {$t('lpd.curve')}</span>
+							<span class="header-tag text-xs2 font-mono text-dim bg-white/[0.03] border border-line py-0.5 px-2 rounded">{$t('lpd.creator')}: {shortAddr(launch.creator)}</span>
 						</div>
 						<!-- Social icons inline -->
 						{#if metadata.website || metadata.twitter || metadata.telegram || metadata.discord}
@@ -2311,7 +2311,7 @@
 								bind:value={commentText}
 							></textarea>
 							<div class="flex justify-between items-center mt-2">
-								<span class="text-gray-600 text-[10px] font-mono">{commentText.length}/500</span>
+								<span class="text-gray-600 text-3xs font-mono">{commentText.length}/500</span>
 								<button
 									onclick={postComment}
 									disabled={isPostingComment || !commentText.trim()}
@@ -2338,7 +2338,7 @@
 								<div class="comment-item">
 									<div class="comment-header">
 										<span class="text-cyan-400 text-xs font-mono font-semibold">{shortAddr(comment.wallet_address)}</span>
-										<span class="text-gray-600 text-[10px] font-mono">{relativeTime(comment.created_at)}</span>
+										<span class="text-gray-600 text-3xs font-mono">{relativeTime(comment.created_at)}</span>
 									</div>
 									<p class="text-gray-300 text-sm font-mono leading-relaxed mt-1 whitespace-pre-line break-words">{comment.message}</p>
 								</div>
@@ -2396,7 +2396,7 @@
 							variant="amber"
 							label="Trading starts in"
 						/>
-						<p class="text-gray-500 text-[10px] font-mono text-center mt-2">Anti-snipe lock protects buyers from front-running bots</p>
+						<p class="text-gray-500 text-3xs font-mono text-center mt-2">Anti-snipe lock protects buyers from front-running bots</p>
 					</div>
 				{/if}
 
@@ -2439,7 +2439,7 @@
 							{#if metadata.description}
 								<p class={'mobile-about-text font-mono text-xs text-muted leading-relaxed whitespace-pre-line ' + (mobileAboutExpanded ? 'mobile-about-expanded' : '')}>{metadata.description}</p>
 								{#if metadata.description.length > 120}
-									<button class="font-mono text-[11px] text-brand-cyan bg-transparent border-none cursor-pointer pt-1 pb-0 px-0 m-0" onclick={() => mobileAboutExpanded = !mobileAboutExpanded}>
+									<button class="font-mono text-xs2 text-brand-cyan bg-transparent border-none cursor-pointer pt-1 pb-0 px-0 m-0" onclick={() => mobileAboutExpanded = !mobileAboutExpanded}>
 										{mobileAboutExpanded ? 'Show less' : 'Read more'}
 									</button>
 								{/if}
@@ -2489,7 +2489,7 @@
 								{/if}
 							{/if}
 						</div>
-						<div class="flex justify-between text-[10px] font-mono mt-1">
+						<div class="flex justify-between text-3xs font-mono mt-1">
 							<span class="text-gray-500">{progress}% {$t('lpd.raised')}</span>
 							{#if launch.totalBaseRaised < launch.softCap}
 								<span class="text-amber-400">{$t('lpd.softCapLabel')}: {progressPercent(launch.totalBaseRaised, launch.softCap)}%</span>
@@ -2517,7 +2517,7 @@
 							{@const impactPct = curveAtNow > 0 ? ((curveAtNext - curveAtNow) / curveAtNow * 100) : 0}
 							<div class="flex flex-col gap-1 mt-2">
 								{#if remainingNum > 0}
-									<div class="flex items-center gap-[5px] font-mono text-[9px] py-1 px-2 rounded-md text-amber-500 bg-amber-500/5 [&_svg]:shrink-0 [&_svg]:text-amber-500">
+									<div class="flex items-center gap-[5px] font-mono text-xs4 py-1 px-2 rounded-md text-amber-500 bg-amber-500/5 [&_svg]:shrink-0 [&_svg]:text-amber-500">
 										<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
 										<span>{formatUsdt(remainingUsdt, ud)} left until hard cap</span>
 									</div>
@@ -2532,7 +2532,7 @@
 									{@const hourVol = hourBuys.reduce((s, tx) => { try { return s + parseFloat(ethers.formatUnits(BigInt(tx.base_amount) + BigInt(tx.fee || '0'), usdtDecimals)); } catch { return s; } }, 0)}
 									{@const recentCount = txItems.filter(tx => { try { const ts = typeof tx.created_at === 'number' ? tx.created_at * 1000 : new Date(tx.created_at).getTime(); return !isNaN(ts) && ts > tenMinAgo; } catch { return false; } }).length}
 									{#if hourVol > 0}
-										<div class="flex items-center gap-[5px] font-mono text-[9px] py-1 px-2 rounded-md text-amber-500 bg-amber-500/5 [&_svg]:shrink-0">
+										<div class="flex items-center gap-[5px] font-mono text-xs4 py-1 px-2 rounded-md text-amber-500 bg-amber-500/5 [&_svg]:shrink-0">
 											<span>🔥</span>
 											<span>+${hourVol.toFixed(2)} in the last hour{recentCount > 0 ? ` · ${recentCount} buy${recentCount > 1 ? 's' : ''} in 10 min` : ''}</span>
 										</div>
@@ -2542,12 +2542,12 @@
 								{#if timePct > 0 && progress > 0}
 									{@const pace = progress / timePct}
 									{#if pace > 1.5}
-										<div class="flex items-center gap-[5px] font-mono text-[9px] py-1 px-2 rounded-md text-brand-cyan bg-brand-cyan/5 [&_svg]:shrink-0">
+										<div class="flex items-center gap-[5px] font-mono text-xs4 py-1 px-2 rounded-md text-brand-cyan bg-brand-cyan/5 [&_svg]:shrink-0">
 											<span>🚀</span>
 											<span>{progress.toFixed(1)}% raised in {timePct.toFixed(0)}% of time — ahead of pace</span>
 										</div>
 									{:else if pace < 0.5 && timePct > 20}
-										<div class="flex items-center gap-[5px] font-mono text-[9px] py-1 px-2 rounded-md text-dim bg-white/[0.02] [&_svg]:shrink-0">
+										<div class="flex items-center gap-[5px] font-mono text-xs4 py-1 px-2 rounded-md text-dim bg-white/[0.02] [&_svg]:shrink-0">
 											<span>⏳</span>
 											<span>{progress.toFixed(1)}% raised, {(100 - timePct).toFixed(0)}% of time remaining</span>
 										</div>
@@ -2555,14 +2555,14 @@
 								{/if}
 
 								{#if tokenProgress > 0 && Math.abs(progress - tokenProgress) > 3}
-									<div class="flex items-center gap-[5px] font-mono text-[9px] py-1 px-2 rounded-md text-muted bg-white/[0.02] [&_svg]:shrink-0 [&_svg]:text-dim">
+									<div class="flex items-center gap-[5px] font-mono text-xs4 py-1 px-2 rounded-md text-muted bg-white/[0.02] [&_svg]:shrink-0 [&_svg]:text-dim">
 										<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4m0-4h.01"/></svg>
 										<span>{tokenProgress}% tokens sold = {progress}% of hard cap (price rises along curve)</span>
 									</div>
 								{/if}
 
 								{#if impactPct > 0.1}
-									<div class="flex items-center gap-[5px] font-mono text-[9px] py-1 px-2 rounded-md text-emerald-500 bg-emerald-500/5 [&_svg]:shrink-0 [&_svg]:text-emerald-500">
+									<div class="flex items-center gap-[5px] font-mono text-xs4 py-1 px-2 rounded-md text-emerald-500 bg-emerald-500/5 [&_svg]:shrink-0 [&_svg]:text-emerald-500">
 										<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/></svg>
 										<span>Next 1% of tokens → price +{impactPct.toFixed(1)}%</span>
 									</div>
@@ -2579,7 +2579,7 @@
 						<div class="progress-track">
 							<div class="progress-fill progress-purple" style="width: {tokenProgress}%"></div>
 						</div>
-						<div class="text-right text-[10px] text-gray-400 font-mono mt-1">{tokenProgress}% {$t('lpd.tokensSold')}</div>
+						<div class="text-right text-3xs text-gray-400 font-mono mt-1">{tokenProgress}% {$t('lpd.tokensSold')}</div>
 					</div>
 
 					<!-- Buyer stats -->
@@ -2650,7 +2650,7 @@
 						</div>
 
 						<div class="mb-4">
-							<div class="flex justify-between text-[10px] font-mono mb-1">
+							<div class="flex justify-between text-3xs font-mono mb-1">
 								<span class="text-gray-500">{$t('lpd.depositProgress')}</span>
 								<span class="text-gray-400">{depositPct}%</span>
 							</div>
@@ -2667,7 +2667,7 @@
 							>
 								{isDepositing ? $t('lpd.depositing') : `${$t('lpd.approveDeposit')} ${formatTokens(remaining, tokenMeta.decimals)} ${launch.tokenSymbol}`}
 							</button>
-							<p class="text-gray-600 text-[10px] font-mono mt-2 text-center">
+							<p class="text-gray-600 text-3xs font-mono mt-2 text-center">
 								{$t('lpd.depositNotice')}
 							</p>
 						{:else}
@@ -2706,7 +2706,7 @@
 										</span>
 									</div>
 								</div>
-								<p class="text-gray-500 text-[10px] font-mono mb-3">
+								<p class="text-gray-500 text-3xs font-mono mb-3">
 									Click "Fix &amp; activate" to grant the missing permission on your token and activate the launch in one flow.
 								</p>
 								<button
@@ -2763,7 +2763,7 @@
 							<p class="text-gray-400 text-xs font-mono mb-2">
 								{$t('lpd.enableTradingMsg')}
 							</p>
-							<p class="text-gray-500 text-[10px] font-mono mb-3">
+							<p class="text-gray-500 text-3xs font-mono mb-3">
 								{$t('lpd.enableTradingNote')}
 							</p>
 							<button
@@ -2870,27 +2870,27 @@
 									<span class="text-gray-500 text-xs font-mono">{$t('lpd.noBuyLimit')}</span>
 								{:else if atMaxBuy}
 									<div class="remaining-buy-detail">
-										<div class="flex justify-between text-[10px] font-mono mb-1.5">
+										<div class="flex justify-between text-3xs font-mono mb-1.5">
 											<span class="text-emerald-400 font-semibold">Max allocation reached</span>
 											<span class="text-emerald-400">100%</span>
 										</div>
 										<div class="remaining-buy-track">
 											<div class="remaining-buy-fill remaining-buy-full" style="width: 100%"></div>
 										</div>
-										<div class="text-[10px] font-mono mt-1.5 text-gray-500">
+										<div class="text-3xs font-mono mt-1.5 text-gray-500">
 											You've used your full {formatUsdt(maxBuyPerWallet, ud)} allocation
 										</div>
 									</div>
 								{:else}
 									<div class="remaining-buy-detail">
-										<div class="flex justify-between text-[10px] font-mono mb-1.5">
+										<div class="flex justify-between text-3xs font-mono mb-1.5">
 											<span class="text-gray-500">{$t('lpd.allocationUsed')}</span>
 											<span class="text-gray-400">{allocationPct.toFixed(1)}%</span>
 										</div>
 										<div class="remaining-buy-track">
 											<div class="remaining-buy-fill" style="width: {allocationPct}%"></div>
 										</div>
-										<div class="text-[10px] font-mono mt-1.5 text-gray-400">
+										<div class="text-3xs font-mono mt-1.5 text-gray-400">
 											{$t('lpd.remainingBuyUsdt').replace('{amount}', formatUsdt(remainingBuyUsdt, ud))}
 										</div>
 									</div>
@@ -2913,23 +2913,23 @@
 						</div>
 
 						{#if swapEstimateLoading}
-							<div class="text-gray-500 text-[10px] font-mono mt-1 mb-2">Estimating {paySymbol} cost...</div>
+							<div class="text-gray-500 text-3xs font-mono mt-1 mb-2">Estimating {paySymbol} cost...</div>
 						{:else if swapEstimate}
-							<div class="text-cyan-400 text-[11px] font-mono mt-1 mb-2">{swapEstimate}</div>
+							<div class="text-cyan-400 text-xs2 font-mono mt-1 mb-2">{swapEstimate}</div>
 						{/if}
 
 						<!-- Payment method select -->
 						<div class="mb-3">
 							<span class="label-text">{$t('lpd.payWith')}</span>
-							<button class="flex items-center gap-2 w-full py-2.5 px-3 rounded-[10px] cursor-pointer bg-surface border border-line text-foreground font-mono text-[13px] transition-colors hover:border-brand-cyan/30" type="button" onclick={() => showPayPicker = true}>
+							<button class="flex items-center gap-2 w-full py-2.5 px-3 rounded-[10px] cursor-pointer bg-surface border border-line text-foreground font-mono text-13 transition-colors hover:border-brand-cyan/30" type="button" onclick={() => showPayPicker = true}>
 								{#if getKnownLogo(paySymbol)}
 									<img src={getKnownLogo(paySymbol)} alt="" class="w-[22px] h-[22px] rounded-full object-cover shrink-0" />
 								{:else}
-									<span class="w-[22px] h-[22px] rounded-full shrink-0 flex items-center justify-center bg-brand-cyan/15 text-brand-cyan text-[10px] font-bold">{paySymbol.charAt(0)}</span>
+									<span class="w-[22px] h-[22px] rounded-full shrink-0 flex items-center justify-center bg-brand-cyan/15 text-brand-cyan text-3xs font-bold">{paySymbol.charAt(0)}</span>
 								{/if}
 								<span class="flex-1 text-left font-semibold">{paySymbol}</span>
-								{#if buyPaymentMethod === 'native'}<span class="text-[9px] text-dim bg-surface-hover py-0.5 px-1.5 rounded">auto-converted</span>{/if}
-								{#if buyPaymentMethod === 'custom'}<span class="text-[9px] text-dim bg-surface-hover py-0.5 px-1.5 rounded">swap → USDT</span>{/if}
+								{#if buyPaymentMethod === 'native'}<span class="text-xs4 text-dim bg-surface-hover py-0.5 px-1.5 rounded">auto-converted</span>{/if}
+								{#if buyPaymentMethod === 'custom'}<span class="text-xs4 text-dim bg-surface-hover py-0.5 px-1.5 rounded">swap → USDT</span>{/if}
 								<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M6 9l6 6 6-6"/></svg>
 							</button>
 						</div>
@@ -2948,7 +2948,7 @@
 						{#if preview && !previewLoading}
 							<div class="preview-box p-3 bg-brand-cyan/[0.03] border border-brand-cyan/10 rounded-[10px] flex flex-col gap-2 mb-4">
 								{#if previewError === 'estimate'}
-									<div class="text-amber-400 text-[10px] font-mono text-center pb-1">
+									<div class="text-amber-400 text-3xs font-mono text-center pb-1">
 										{$t('lpd.approxEstimate')}
 									</div>
 								{/if}
@@ -2993,12 +2993,12 @@
 						<!-- Max buy info -->
 						{#if maxBuyPerWallet > 0n && userAddress}
 							<div class="max-buy-info py-2 px-3 bg-surface border border-surface-hover rounded-lg mb-3">
-								<div class="flex justify-between text-[10px] font-mono">
+								<div class="flex justify-between text-3xs font-mono">
 									<span class="text-gray-500">{$t('lpd.maxBuyPerWallet')}</span>
 									<span class="text-gray-400">{formatUsdt(maxBuyPerWallet, ud)} ({maxBuyPct}%)</span>
 								</div>
 								{#if userBasePaid > 0n}
-									<div class="flex justify-between text-[10px] font-mono mt-1">
+									<div class="flex justify-between text-3xs font-mono mt-1">
 										<span class="text-gray-500">{$t('lpd.remainingLabel')}</span>
 										<span class="{remainingBuyUsdt === 0n ? 'text-red-400' : 'text-gray-400'}">
 											{remainingBuyUsdt === 0n ? $t('lpd.limitReached') : formatUsdt(remainingBuyUsdt, ud) + ' remaining'}
@@ -3026,7 +3026,7 @@
 
 						<!-- Slippage -->
 						<div class="flex flex-col gap-1.5 mb-2.5 relative">
-							<button class="inline-flex items-center gap-[5px] bg-transparent border-none text-dim font-mono text-[11px] cursor-pointer py-1 w-fit hover:text-heading" onclick={() => showSlippageMenu = !showSlippageMenu}>
+							<button class="inline-flex items-center gap-[5px] bg-transparent border-none text-dim font-mono text-xs2 cursor-pointer py-1 w-fit hover:text-heading" onclick={() => showSlippageMenu = !showSlippageMenu}>
 								<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
 								<span>Slippage {slippagePct}%</span>
 							</button>
@@ -3148,7 +3148,7 @@
 								>
 									{isRefunding ? $t('lpd.processing') : `${$t('common.refund')} ${formatUsdt(userBasePaid, ud)}`}
 								</button>
-								<p class="text-gray-600 text-[10px] font-mono mt-2">
+								<p class="text-gray-600 text-3xs font-mono mt-2">
 									Return your tokens to receive your USDT back pro-rata. Partial refunds supported.
 								</p>
 							</div>
@@ -3180,7 +3180,7 @@
 							>
 								{isReclaiming ? 'Reclaiming…' : 'Reclaim available tokens'}
 							</button>
-							<p class="text-gray-600 text-[10px] font-mono mt-2">
+							<p class="text-gray-600 text-3xs font-mono mt-2">
 								Each call drains the launch's current token balance. As more buyers refund, their returned tokens become reclaimable — call again to pick them up.
 							</p>
 						{:else}
@@ -3213,7 +3213,7 @@
 							>
 								{isSweeping ? 'Sweeping…' : 'Sweep stranded USDT to platform wallet'}
 							</button>
-							<p class="text-gray-600 text-[10px] font-mono mt-2">
+							<p class="text-gray-600 text-3xs font-mono mt-2">
 								90-day refund window has passed. Abandoned refunds can no longer be claimed by buyers.
 							</p>
 						{:else if refundStartTimestamp > 0n}

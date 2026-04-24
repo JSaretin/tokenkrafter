@@ -43,7 +43,7 @@
 			Recent Activity
 		</div>
 		{#if realtime.connected}
-			<span class="text-[9px] font-bold font-mono tracking-[0.1em] text-emerald-500 bg-emerald-500/10 px-2 py-[3px] rounded border border-emerald-500/20">LIVE</span>
+			<span class="text-xs4 font-bold font-mono tracking-[0.1em] text-emerald-500 bg-emerald-500/10 px-2 py-[3px] rounded border border-emerald-500/20">LIVE</span>
 		{/if}
 	</div>
 
@@ -56,8 +56,8 @@
 				</div>
 				<div class="flex-1 min-w-0">
 					<div class="flex justify-between items-center mb-0.5">
-						<span class="text-[11px] font-mono text-muted">{truncAddr(tx.buyer)}</span>
-						<span class="text-[10px] text-dim font-mono">{timeAgo(tx.created_at)}</span>
+						<span class="text-xs2 font-mono text-muted">{truncAddr(tx.buyer)}</span>
+						<span class="text-3xs text-dim font-mono">{timeAgo(tx.created_at)}</span>
 					</div>
 					<div class="text-xs font-mono">
 						<span class="text-white font-semibold">{formatAmount(tx.base_amount, tx.base_decimals)} {tx.base_symbol}</span>

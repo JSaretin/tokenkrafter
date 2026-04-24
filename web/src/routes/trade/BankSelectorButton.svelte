@@ -16,9 +16,9 @@
 	{onclick}
 >
 	{#if bankName}
-		<span class="font-mono text-[13px] font-semibold text-(--text)">{bankName}</span>
+		<span class="font-mono text-13 font-semibold text-(--text)">{bankName}</span>
 	{:else}
-		<span class="font-mono text-[13px] text-(--placeholder)">{$t('trade.selectBank')}</span>
+		<span class="font-mono text-13 text-(--placeholder)">{$t('trade.selectBank')}</span>
 	{/if}
 	<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M6 9l6 6 6-6"/></svg>
 </button>

@@ -145,35 +145,35 @@
 			<h3 class="text-white text-sm font-semibold mb-3">TradeRouter Status</h3>
 			<div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
 				<div class="bg-surface border border-line-subtle rounded-[10px] px-3 py-2.5">
-					<span class="block text-[10px] font-mono text-dim uppercase tracking-[0.05em]">Status</span>
+					<span class="block text-3xs font-mono text-dim uppercase tracking-[0.05em]">Status</span>
 					<span class={'block text-sm font-bold font-mono mt-0.5 ' + (isPaused ? 'text-red-400' : 'text-emerald-400')}>
 						{isPaused ? 'PAUSED' : 'ACTIVE'}
 					</span>
 				</div>
 				<div class="bg-surface border border-line-subtle rounded-[10px] px-3 py-2.5">
-					<span class="block text-[10px] font-mono text-dim uppercase tracking-[0.05em]">Fee</span>
+					<span class="block text-3xs font-mono text-dim uppercase tracking-[0.05em]">Fee</span>
 					<span class="block text-sm font-bold font-mono mt-0.5 text-cyan-400">{feeBps / 100}%</span>
 				</div>
 				<div class="bg-surface border border-line-subtle rounded-[10px] px-3 py-2.5">
-					<span class="block text-[10px] font-mono text-dim uppercase tracking-[0.05em]">Timeout</span>
+					<span class="block text-3xs font-mono text-dim uppercase tracking-[0.05em]">Timeout</span>
 					<span class="block text-sm font-bold font-mono mt-0.5 text-amber-400">{payoutTimeout}s ({Math.round(payoutTimeout / 60)}m)</span>
 				</div>
 				<div class="bg-surface border border-line-subtle rounded-[10px] px-3 py-2.5">
-					<span class="block text-[10px] font-mono text-dim uppercase tracking-[0.05em]">Pending</span>
+					<span class="block text-3xs font-mono text-dim uppercase tracking-[0.05em]">Pending</span>
 					<span class="block text-sm font-bold font-mono mt-0.5 text-purple-400">{pendingCount}</span>
 				</div>
 			</div>
 			<div class="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-3">
 				<div class="bg-surface border border-line-subtle rounded-[10px] px-3 py-2.5">
-					<span class="block text-[10px] font-mono text-dim uppercase tracking-[0.05em]">Total Escrow</span>
+					<span class="block text-3xs font-mono text-dim uppercase tracking-[0.05em]">Total Escrow</span>
 					<span class="block text-sm font-bold font-mono mt-0.5 text-amber-400">${parseFloat(ethers.formatUnits(totalEscrow, usdtDecimals)).toFixed(2)}</span>
 				</div>
 				<div class="bg-surface border border-line-subtle rounded-[10px] px-3 py-2.5">
-					<span class="block text-[10px] font-mono text-dim uppercase tracking-[0.05em]">Earnings (USDT)</span>
+					<span class="block text-3xs font-mono text-dim uppercase tracking-[0.05em]">Earnings (USDT)</span>
 					<span class="block text-sm font-bold font-mono mt-0.5 text-emerald-400">${parseFloat(ethers.formatUnits(usdtEarnings, usdtDecimals)).toFixed(2)}</span>
 				</div>
 				<div class="bg-surface border border-line-subtle rounded-[10px] px-3 py-2.5">
-					<span class="block text-[10px] font-mono text-dim uppercase tracking-[0.05em]">Total Withdrawals</span>
+					<span class="block text-3xs font-mono text-dim uppercase tracking-[0.05em]">Total Withdrawals</span>
 					<span class="block text-sm font-bold font-mono mt-0.5 text-cyan-400">{totalWithdrawals}</span>
 				</div>
 			</div>
@@ -184,12 +184,12 @@
 			<h3 class="text-white text-sm font-semibold mb-3">Emergency Controls</h3>
 			<div class="flex gap-2">
 				{#if isPaused}
-					<button class="px-3.5 py-1.5 rounded-lg border-none cursor-pointer font-mono text-[11px] font-bold transition bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 disabled:opacity-40 disabled:cursor-not-allowed" disabled={processing}
+					<button class="px-3.5 py-1.5 rounded-lg border-none cursor-pointer font-mono text-xs2 font-bold transition bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 disabled:opacity-40 disabled:cursor-not-allowed" disabled={processing}
 						onclick={() => execTx('Unpause', (r: any) => r.unpause())}>
 						Unpause Trading
 					</button>
 				{:else}
-					<button class="px-3.5 py-1.5 rounded-lg border-none cursor-pointer font-mono text-[11px] font-bold transition bg-red-500/15 text-red-400 hover:bg-red-500/25 disabled:opacity-40 disabled:cursor-not-allowed" disabled={processing}
+					<button class="px-3.5 py-1.5 rounded-lg border-none cursor-pointer font-mono text-xs2 font-bold transition bg-red-500/15 text-red-400 hover:bg-red-500/25 disabled:opacity-40 disabled:cursor-not-allowed" disabled={processing}
 						onclick={() => execTx('Pause', (r: any) => r.pause())}>
 						Pause Trading
 					</button>
@@ -204,7 +204,7 @@
 				<div class="flex items-center gap-2">
 					<label for="trt-fee-bps" class="text-gray-400 text-xs font-mono">Fee (bps)</label>
 					<input id="trt-fee-bps" class="input-field w-24" type="number" bind:value={newFeeBps} placeholder="10" />
-					<button class="px-3.5 py-1.5 rounded-lg border-none cursor-pointer font-mono text-[11px] font-bold transition bg-cyan-500/15 text-cyan-400 hover:bg-cyan-500/25 disabled:opacity-40 disabled:cursor-not-allowed" disabled={processing || !newFeeBps}
+					<button class="px-3.5 py-1.5 rounded-lg border-none cursor-pointer font-mono text-xs2 font-bold transition bg-cyan-500/15 text-cyan-400 hover:bg-cyan-500/25 disabled:opacity-40 disabled:cursor-not-allowed" disabled={processing || !newFeeBps}
 						onclick={() => execTx('Set fee', (r: any) => r.setFeeBps(parseInt(newFeeBps)))}>
 						Set
 					</button>
@@ -212,7 +212,7 @@
 				<div class="flex items-center gap-2">
 					<label for="trt-timeout" class="text-gray-400 text-xs font-mono">Timeout (sec)</label>
 					<input id="trt-timeout" class="input-field w-24" type="number" bind:value={newTimeout} placeholder="300" />
-					<button class="px-3.5 py-1.5 rounded-lg border-none cursor-pointer font-mono text-[11px] font-bold transition bg-cyan-500/15 text-cyan-400 hover:bg-cyan-500/25 disabled:opacity-40 disabled:cursor-not-allowed" disabled={processing || !newTimeout}
+					<button class="px-3.5 py-1.5 rounded-lg border-none cursor-pointer font-mono text-xs2 font-bold transition bg-cyan-500/15 text-cyan-400 hover:bg-cyan-500/25 disabled:opacity-40 disabled:cursor-not-allowed" disabled={processing || !newTimeout}
 						onclick={() => execTx('Set timeout', (r: any) => r.setPayoutTimeout(parseInt(newTimeout)))}>
 						Set
 					</button>
@@ -220,11 +220,11 @@
 				<div class="flex items-center gap-2">
 					<label for="trt-max-slip" class="text-gray-400 text-xs font-mono">Max slippage (bps)</label>
 					<input id="trt-max-slip" class="input-field w-24" type="number" bind:value={newMaxSlippage} placeholder="500" />
-					<button class="px-3.5 py-1.5 rounded-lg border-none cursor-pointer font-mono text-[11px] font-bold transition bg-cyan-500/15 text-cyan-400 hover:bg-cyan-500/25 disabled:opacity-40 disabled:cursor-not-allowed" disabled={processing || !newMaxSlippage}
+					<button class="px-3.5 py-1.5 rounded-lg border-none cursor-pointer font-mono text-xs2 font-bold transition bg-cyan-500/15 text-cyan-400 hover:bg-cyan-500/25 disabled:opacity-40 disabled:cursor-not-allowed" disabled={processing || !newMaxSlippage}
 						onclick={() => execTx('Set max slippage', (r: any) => r.setMaxSlippage(parseInt(newMaxSlippage)))}>
 						Set
 					</button>
-					<span class="text-[10px] text-gray-600 font-mono">{maxSlippageBps/100}%</span>
+					<span class="text-3xs text-gray-600 font-mono">{maxSlippageBps/100}%</span>
 				</div>
 			</div>
 		</div>
@@ -235,7 +235,7 @@
 			<p class="text-xs text-gray-500 font-mono mb-2">Current: {platformWallet}</p>
 			<div class="flex gap-2">
 				<input class="input-field flex-1" bind:value={newPlatformWallet} placeholder="0x..." />
-				<button class="px-3.5 py-1.5 rounded-lg border-none cursor-pointer font-mono text-[11px] font-bold transition bg-cyan-500/15 text-cyan-400 hover:bg-cyan-500/25 disabled:opacity-40 disabled:cursor-not-allowed" disabled={processing || !newPlatformWallet}
+				<button class="px-3.5 py-1.5 rounded-lg border-none cursor-pointer font-mono text-xs2 font-bold transition bg-cyan-500/15 text-cyan-400 hover:bg-cyan-500/25 disabled:opacity-40 disabled:cursor-not-allowed" disabled={processing || !newPlatformWallet}
 					onclick={() => execTx('Set wallet', (r: any) => r.setPlatformWallet(newPlatformWallet))}>
 					Update
 				</button>
@@ -251,7 +251,7 @@
 			</p>
 			<div class="flex gap-2">
 				<input class="input-field flex-1" type="number" step="any" min="0" bind:value={newMinWithdraw} placeholder="10" />
-				<button class="px-3.5 py-1.5 rounded-lg border-none cursor-pointer font-mono text-[11px] font-bold transition bg-cyan-500/15 text-cyan-400 hover:bg-cyan-500/25 disabled:opacity-40 disabled:cursor-not-allowed" disabled={processing || newMinWithdraw === ''}
+				<button class="px-3.5 py-1.5 rounded-lg border-none cursor-pointer font-mono text-xs2 font-bold transition bg-cyan-500/15 text-cyan-400 hover:bg-cyan-500/25 disabled:opacity-40 disabled:cursor-not-allowed" disabled={processing || newMinWithdraw === ''}
 					onclick={() => execTx('Set min withdraw', (r: any) => r.setMinWithdrawUsdt(ethers.parseUnits(String(newMinWithdraw || '0'), usdtDecimals)))}>
 					Update
 				</button>
@@ -270,7 +270,7 @@
 					<span class="text-xs font-mono {affiliateEnabled ? 'text-emerald-400' : 'text-gray-500'}">
 						{affiliateEnabled ? 'ENABLED' : 'DISABLED'}
 					</span>
-					<button class="px-3.5 py-1.5 rounded-lg border-none cursor-pointer font-mono text-[11px] font-bold transition bg-cyan-500/15 text-cyan-400 hover:bg-cyan-500/25 disabled:opacity-40 disabled:cursor-not-allowed" disabled={processing}
+					<button class="px-3.5 py-1.5 rounded-lg border-none cursor-pointer font-mono text-xs2 font-bold transition bg-cyan-500/15 text-cyan-400 hover:bg-cyan-500/25 disabled:opacity-40 disabled:cursor-not-allowed" disabled={processing}
 						onclick={() => execTx(affiliateEnabled ? 'Disable affiliate' : 'Enable affiliate', (r: any) => r.setAffiliateEnabled(!affiliateEnabled))}>
 						{affiliateEnabled ? 'Disable' : 'Enable'}
 					</button>
@@ -278,11 +278,11 @@
 				<div class="flex items-center gap-2">
 					<label for="trt-aff-share" class="text-gray-400 text-xs font-mono">Share (bps)</label>
 					<input id="trt-aff-share" class="input-field w-24" type="number" min="0" max="10000" bind:value={newAffiliateShareBps} placeholder="1000" />
-					<button class="px-3.5 py-1.5 rounded-lg border-none cursor-pointer font-mono text-[11px] font-bold transition bg-cyan-500/15 text-cyan-400 hover:bg-cyan-500/25 disabled:opacity-40 disabled:cursor-not-allowed" disabled={processing || newAffiliateShareBps === ''}
+					<button class="px-3.5 py-1.5 rounded-lg border-none cursor-pointer font-mono text-xs2 font-bold transition bg-cyan-500/15 text-cyan-400 hover:bg-cyan-500/25 disabled:opacity-40 disabled:cursor-not-allowed" disabled={processing || newAffiliateShareBps === ''}
 						onclick={() => execTx('Set affiliate share', (r: any) => r.setAffiliateShare(parseInt(newAffiliateShareBps)))}>
 						Set
 					</button>
-					<span class="text-[10px] text-gray-600 font-mono">{(affiliateShareBps / 100).toFixed(2)}%</span>
+					<span class="text-3xs text-gray-600 font-mono">{(affiliateShareBps / 100).toFixed(2)}%</span>
 				</div>
 			</div>
 		</div>
@@ -303,7 +303,7 @@
 					{ key: 'eth', label: 'Withdraw BNB' },
 					{ key: 'rescue', label: 'Rescue Token' },
 				] as mode}
-					<button class="text-[10px] font-mono px-2 py-1 rounded-md cursor-pointer transition border
+					<button class="text-3xs font-mono px-2 py-1 rounded-md cursor-pointer transition border
 						{withdrawMode === mode.key ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' : 'text-gray-500 bg-transparent border-white/5'}"
 						onclick={() => withdrawMode = mode.key}
 					>{mode.label}</button>
@@ -311,7 +311,7 @@
 			</div>
 
 			{#if withdrawMode === 'all'}
-				<button class="w-full px-3.5 py-1.5 rounded-lg border-none cursor-pointer font-mono text-[11px] font-bold transition bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 disabled:opacity-40 disabled:cursor-not-allowed" disabled={processing}
+				<button class="w-full px-3.5 py-1.5 rounded-lg border-none cursor-pointer font-mono text-xs2 font-bold transition bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 disabled:opacity-40 disabled:cursor-not-allowed" disabled={processing}
 					onclick={() => execTx('Withdraw all USDT', (r) => r['withdraw()']())}>
 					Withdraw All → Platform Wallet
 				</button>
@@ -319,7 +319,7 @@
 			{:else if withdrawMode === 'to'}
 				<div class="flex gap-2">
 					<input class="input-field flex-1" bind:value={withdrawTo} placeholder="Recipient 0x..." />
-					<button class="px-3.5 py-1.5 rounded-lg border-none cursor-pointer font-mono text-[11px] font-bold transition bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 disabled:opacity-40 disabled:cursor-not-allowed" disabled={processing || !withdrawTo}
+					<button class="px-3.5 py-1.5 rounded-lg border-none cursor-pointer font-mono text-xs2 font-bold transition bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 disabled:opacity-40 disabled:cursor-not-allowed" disabled={processing || !withdrawTo}
 						onclick={() => execTx('Withdraw USDT', (r) => r['withdraw(address)'](withdrawTo))}>
 						Withdraw
 					</button>
@@ -331,14 +331,14 @@
 				</div>
 				<div class="flex gap-2">
 					<input class="input-field flex-1" type="text" bind:value={withdrawAmount} placeholder="Amount (e.g. 100)" />
-					<button class="px-3.5 py-1.5 rounded-lg border-none cursor-pointer font-mono text-[11px] font-bold transition bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 disabled:opacity-40 disabled:cursor-not-allowed" disabled={processing || !withdrawTo || !withdrawAmount}
+					<button class="px-3.5 py-1.5 rounded-lg border-none cursor-pointer font-mono text-xs2 font-bold transition bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 disabled:opacity-40 disabled:cursor-not-allowed" disabled={processing || !withdrawTo || !withdrawAmount}
 						onclick={() => execTx('Withdraw amount', (r) => r['withdraw(address,uint256)'](withdrawTo, ethers.parseUnits(withdrawAmount, usdtDecimals)))}>
 						Withdraw
 					</button>
 				</div>
 
 			{:else if withdrawMode === 'eth'}
-				<button class="w-full px-3.5 py-1.5 rounded-lg border-none cursor-pointer font-mono text-[11px] font-bold transition bg-cyan-500/15 text-cyan-400 hover:bg-cyan-500/25 disabled:opacity-40 disabled:cursor-not-allowed" disabled={processing}
+				<button class="w-full px-3.5 py-1.5 rounded-lg border-none cursor-pointer font-mono text-xs2 font-bold transition bg-cyan-500/15 text-cyan-400 hover:bg-cyan-500/25 disabled:opacity-40 disabled:cursor-not-allowed" disabled={processing}
 					onclick={() => execTx('Withdraw BNB', (r) => r.withdrawETH())}>
 					Withdraw All BNB → Platform Wallet
 				</button>
@@ -346,12 +346,12 @@
 			{:else if withdrawMode === 'rescue'}
 				<div class="flex gap-2">
 					<input class="input-field flex-1" bind:value={withdrawToken} placeholder="Token address to rescue" />
-					<button class="px-3.5 py-1.5 rounded-lg border-none cursor-pointer font-mono text-[11px] font-bold transition bg-cyan-500/15 text-cyan-400 hover:bg-cyan-500/25 disabled:opacity-40 disabled:cursor-not-allowed" disabled={processing || !withdrawToken}
+					<button class="px-3.5 py-1.5 rounded-lg border-none cursor-pointer font-mono text-xs2 font-bold transition bg-cyan-500/15 text-cyan-400 hover:bg-cyan-500/25 disabled:opacity-40 disabled:cursor-not-allowed" disabled={processing || !withdrawToken}
 						onclick={() => execTx('Rescue token', (r) => r.rescueToken(withdrawToken))}>
 						Rescue
 					</button>
 				</div>
-				<p class="text-[10px] text-gray-600 font-mono mt-1">Rescues stuck tokens. For USDT, only withdraws above escrow.</p>
+				<p class="text-3xs text-gray-600 font-mono mt-1">Rescues stuck tokens. For USDT, only withdraws above escrow.</p>
 			{/if}
 		</div>
 
@@ -374,7 +374,7 @@
 			</div>
 			<div class="flex gap-2">
 				<input class="input-field flex-1" bind:value={newAdmin} placeholder="0x..." />
-				<button class="px-3.5 py-1.5 rounded-lg border-none cursor-pointer font-mono text-[11px] font-bold transition bg-cyan-500/15 text-cyan-400 hover:bg-cyan-500/25 disabled:opacity-40 disabled:cursor-not-allowed" disabled={processing || !newAdmin}
+				<button class="px-3.5 py-1.5 rounded-lg border-none cursor-pointer font-mono text-xs2 font-bold transition bg-cyan-500/15 text-cyan-400 hover:bg-cyan-500/25 disabled:opacity-40 disabled:cursor-not-allowed" disabled={processing || !newAdmin}
 					onclick={() => execTx('Add admin', (r: any) => r.addAdmin(newAdmin))}>
 					Add Admin
 				</button>

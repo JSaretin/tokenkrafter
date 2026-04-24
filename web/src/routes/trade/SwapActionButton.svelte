@@ -24,7 +24,7 @@
 
 <button
 	type="button"
-	class={"w-[calc(100%-8px)] mx-1 mt-2 mb-1 py-4 px-0 rounded-2xl border-0 font-display text-[15px] font-bold tracking-[0.02em] transition-all duration-200 " + variantClass + (disabled ? " opacity-85 cursor-not-allowed" : " cursor-pointer hover:-translate-y-px")}
+	class={"w-[calc(100%-8px)] mx-1 mt-2 mb-1 py-4 px-0 rounded-2xl border-0 font-display text-15 font-bold tracking-[0.02em] transition-all duration-200 " + variantClass + (disabled ? " opacity-85 cursor-not-allowed" : " cursor-pointer hover:-translate-y-px")}
 	{disabled}
 	{onclick}
 >

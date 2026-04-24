@@ -28,7 +28,7 @@
 			<img src={view.logoUrl} alt={view.symbol} class="w-16 h-16 max-[540px]:w-13 max-[540px]:h-13 rounded-2xl max-[540px]:rounded-[14px] object-cover border-2 border-(--border) shrink-0 shadow-[0_0_24px_rgba(0,210,255,0.08)]" />
 		{:else}
 			<div class="w-16 h-16 max-[540px]:w-13 max-[540px]:h-13 rounded-2xl max-[540px]:rounded-[14px] shrink-0 shadow-[0_0_24px_rgba(0,210,255,0.08)] bg-linear-to-br from-[#0c1220] to-[#0a1628] border-2 border-cyan/15 flex items-center justify-center">
-				<span class="syne text-[22px] font-extrabold bg-linear-to-br from-cyan to-success bg-clip-text text-transparent">{view.symbol.slice(0, 2)}</span>
+				<span class="syne text-22 font-extrabold bg-linear-to-br from-cyan to-success bg-clip-text text-transparent">{view.symbol.slice(0, 2)}</span>
 			</div>
 		{/if}
 		<div>

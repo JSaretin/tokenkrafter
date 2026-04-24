@@ -6,7 +6,7 @@
 	} = $props();
 </script>
 
-<div class="flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-[rgba(0,210,255,0.04)] border border-[rgba(0,210,255,0.08)] font-mono text-[11px] text-(--text-muted) mb-1">
+<div class="flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-[rgba(0,210,255,0.04)] border border-[rgba(0,210,255,0.08)] font-mono text-xs2 text-(--text-muted) mb-1">
 	<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-[#00d2ff] shrink-0">
 		<path d="M17 1l4 4-4 4" />
 		<path d="M3 11V9a4 4 0 0 1 4-4h14" />

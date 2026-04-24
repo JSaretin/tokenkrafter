@@ -41,11 +41,11 @@
 	<div
 		class="w-20 h-20 rounded-full mx-auto mb-4 overflow-hidden border-2 border-[rgba(0,210,255,0.2)] flex items-center justify-center bg-[rgba(0,210,255,0.08)]"
 	>
-		<span class="font-display text-[28px] font-bold text-[#00d2ff]">{member.name.charAt(0)}</span>
+		<span class="font-display text-28 font-bold text-[#00d2ff]">{member.name.charAt(0)}</span>
 	</div>
 	<h3 class="font-display text-base font-bold text-heading mb-1">{member.name}</h3>
 	<span
-		class="block font-mono text-[11px] text-[#00d2ff] uppercase tracking-[0.05em] mb-3"
+		class="block font-mono text-xs2 text-[#00d2ff] uppercase tracking-[0.05em] mb-3"
 	>{member.title}</span>
 	<p class="font-mono text-xs text-muted leading-[1.6] mb-4">{member.about}</p>
 	{#if member.socials.length}

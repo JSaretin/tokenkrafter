@@ -1404,7 +1404,7 @@
 </svelte:head>
 
 <div class="page-container max-w-6xl mx-auto px-4 sm:px-6 py-10">
-	<a href="/manage-tokens" class="inline-block mb-6 font-mono text-[12px] text-dim no-underline transition-colors duration-150 hover:text-[#00d2ff]">&larr; Back to Manage Tokens</a>
+	<a href="/manage-tokens" class="inline-block mb-6 font-mono text-xs text-dim no-underline transition-colors duration-150 hover:text-[#00d2ff]">&larr; Back to Manage Tokens</a>
 
 	{#if isLoading}
 		<div class="flex items-center justify-center min-h-[50vh]">
@@ -1440,7 +1440,7 @@
 					{#if metaLogoUrl || metaLogoPreview}
 						<img src={metaLogoPreview || metaLogoUrl} alt={tokenInfo.symbol} class="w-[60px] h-[60px] rounded-2xl object-cover border border-line-input shrink-0" />
 					{:else}
-						<div class="w-[60px] h-[60px] rounded-2xl bg-[linear-gradient(135deg,rgba(0,210,255,0.2),rgba(99,102,241,0.2))] border border-line-input flex items-center justify-center text-[20px] font-extrabold text-heading shrink-0 font-display">
+						<div class="w-[60px] h-[60px] rounded-2xl bg-[linear-gradient(135deg,rgba(0,210,255,0.2),rgba(99,102,241,0.2))] border border-line-input flex items-center justify-center text-xl font-extrabold text-heading shrink-0 font-display">
 							{tokenInfo.symbol.slice(0, 2).toUpperCase()}
 						</div>
 					{/if}
@@ -1477,39 +1477,39 @@
 		<!-- Stats Row -->
 		<div class="stats-row mb-8 grid grid-cols-2 sm:grid-cols-4 gap-3">
 			<div class="card p-4 bg-surface border border-line rounded-xl">
-				<div class="text-[11px] text-dim font-mono uppercase tracking-[0.05em]">{$t('mt.totalSupply')}</div>
-				<div class="text-[22px] font-bold text-heading mt-1 mb-0.5 font-numeric">{fmtSupply(tokenInfo.totalSupply)}</div>
-				<div class="text-[11px] text-dim font-mono">{tokenInfo.symbol}</div>
+				<div class="text-xs2 text-dim font-mono uppercase tracking-[0.05em]">{$t('mt.totalSupply')}</div>
+				<div class="text-22 font-bold text-heading mt-1 mb-0.5 font-numeric">{fmtSupply(tokenInfo.totalSupply)}</div>
+				<div class="text-xs2 text-dim font-mono">{tokenInfo.symbol}</div>
 			</div>
 			<div class="card p-4 bg-surface border border-line rounded-xl">
-				<div class="text-[11px] text-dim font-mono uppercase tracking-[0.05em]">{$t('mt.decimals')}</div>
-				<div class="text-[22px] font-bold text-heading mt-1 mb-0.5 font-numeric">{tokenInfo.decimals}</div>
-				<div class="text-[11px] text-dim font-mono">{$t('mt.precision')}</div>
+				<div class="text-xs2 text-dim font-mono uppercase tracking-[0.05em]">{$t('mt.decimals')}</div>
+				<div class="text-22 font-bold text-heading mt-1 mb-0.5 font-numeric">{tokenInfo.decimals}</div>
+				<div class="text-xs2 text-dim font-mono">{$t('mt.precision')}</div>
 			</div>
 			{#if tokenInfo.userBalance !== undefined}
 				<div class="card p-4 bg-surface border border-line rounded-xl">
-					<div class="text-[11px] text-dim font-mono uppercase tracking-[0.05em]">{$t('mt.yourBalance')}</div>
-					<div class="text-[22px] font-bold text-heading mt-1 mb-0.5 font-numeric">{fmtSupply(tokenInfo.userBalance)}</div>
-					<div class="text-[11px] text-dim font-mono">{tokenInfo.symbol}</div>
+					<div class="text-xs2 text-dim font-mono uppercase tracking-[0.05em]">{$t('mt.yourBalance')}</div>
+					<div class="text-22 font-bold text-heading mt-1 mb-0.5 font-numeric">{fmtSupply(tokenInfo.userBalance)}</div>
+					<div class="text-xs2 text-dim font-mono">{tokenInfo.symbol}</div>
 				</div>
 			{/if}
 			{#if tokenInfo.isTaxable && tokenInfo.buyTaxBps !== undefined}
 				<div class="card p-4 bg-surface border border-line rounded-xl col-span-1">
-					<div class="text-[11px] text-dim font-mono uppercase tracking-[0.05em]">Tax Rates</div>
+					<div class="text-xs2 text-dim font-mono uppercase tracking-[0.05em]">Tax Rates</div>
 					<div class="flex items-center gap-1 sm:gap-1.5 mt-1 mb-0.5 flex-wrap">
 						<div class="flex flex-col items-center gap-0 min-w-0">
-							<span class="text-[14px] sm:text-[20px] font-bold text-heading leading-[1.2] font-numeric">{(tokenInfo.buyTaxBps / 100).toFixed(1)}%</span>
-							<span class="text-[8px] sm:text-[9px] text-dim font-mono uppercase tracking-[0.04em]">Buy</span>
+							<span class="text-sm sm:text-xl font-bold text-heading leading-[1.2] font-numeric">{(tokenInfo.buyTaxBps / 100).toFixed(1)}%</span>
+							<span class="text-4xs sm:text-xs4 text-dim font-mono uppercase tracking-[0.04em]">Buy</span>
 						</div>
-						<span class="text-dim text-[12px] sm:text-[16px] -mt-1">/</span>
+						<span class="text-dim text-xs sm:text-base -mt-1">/</span>
 						<div class="flex flex-col items-center gap-0 min-w-0">
-							<span class="text-[14px] sm:text-[20px] font-bold text-heading leading-[1.2] font-numeric">{((tokenInfo.sellTaxBps ?? 0) / 100).toFixed(1)}%</span>
-							<span class="text-[8px] sm:text-[9px] text-dim font-mono uppercase tracking-[0.04em]">Sell</span>
+							<span class="text-sm sm:text-xl font-bold text-heading leading-[1.2] font-numeric">{((tokenInfo.sellTaxBps ?? 0) / 100).toFixed(1)}%</span>
+							<span class="text-4xs sm:text-xs4 text-dim font-mono uppercase tracking-[0.04em]">Sell</span>
 						</div>
-						<span class="text-dim text-[12px] sm:text-[16px] -mt-1">/</span>
+						<span class="text-dim text-xs sm:text-base -mt-1">/</span>
 						<div class="flex flex-col items-center gap-0 min-w-0">
-							<span class="text-[14px] sm:text-[20px] font-bold text-heading leading-[1.2] font-numeric">{((tokenInfo.transferTaxBps ?? 0) / 100).toFixed(1)}%</span>
-							<span class="text-[8px] sm:text-[9px] text-dim font-mono uppercase tracking-[0.04em]">Transfer</span>
+							<span class="text-sm sm:text-xl font-bold text-heading leading-[1.2] font-numeric">{((tokenInfo.transferTaxBps ?? 0) / 100).toFixed(1)}%</span>
+							<span class="text-4xs sm:text-xs4 text-dim font-mono uppercase tracking-[0.04em]">Transfer</span>
 						</div>
 					</div>
 				</div>
@@ -1521,7 +1521,7 @@
 			{#each tabs.filter(isTabVisible) as tab}
 				<button
 					onclick={() => (activeTab = tab.id as typeof activeTab)}
-					class={'flex items-center gap-1.5 px-4 py-2 rounded-t-lg text-[13px] bg-transparent border-none border-b-2 border-b-transparent -mb-px whitespace-nowrap transition-all duration-150 font-mono cursor-pointer ' + (activeTab === tab.id ? 'text-[#00d2ff] border-b-[#00d2ff] bg-[rgba(0,210,255,0.05)] ' : 'text-dim hover:text-foreground ')}
+					class={'flex items-center gap-1.5 px-4 py-2 rounded-t-lg text-13 bg-transparent border-none border-b-2 border-b-transparent -mb-px whitespace-nowrap transition-all duration-150 font-mono cursor-pointer ' + (activeTab === tab.id ? 'text-[#00d2ff] border-b-[#00d2ff] bg-[rgba(0,210,255,0.05)] ' : 'text-dim hover:text-foreground ')}
 				>
 					<span>{tab.icon}</span>
 					<span>{$t(tab.labelKey)}</span>
@@ -1750,7 +1750,7 @@
 					</div>
 					<div>
 						<h2 class="heading-2">{$t('mt.depositRequired')}</h2>
-						<p class="text-gray-500 text-[11px] font-mono">{depositInfo.networkName} Network</p>
+						<p class="text-gray-500 text-xs2 font-mono">{depositInfo.networkName} Network</p>
 					</div>
 				</div>
 				<button aria-label="Close" onclick={closeDepositModal} class="w-8 h-8 rounded-lg border-none bg-surface-hover text-dim flex items-center justify-center transition-all duration-150 hover:bg-[var(--border-input)] hover:text-heading cursor-pointer">
@@ -1786,10 +1786,10 @@
 
 			<!-- Address -->
 			<div class="px-6 pb-4 flex flex-col gap-1.5">
-				<span class="text-gray-500 text-[10px] font-mono uppercase tracking-wider">{$t('mt.depositAddress')}</span>
+				<span class="text-gray-500 text-3xs font-mono uppercase tracking-wider">{$t('mt.depositAddress')}</span>
 				<div class="flex items-center gap-2 px-3 py-2.5 bg-surface border border-line rounded-[10px]">
 					<span class="text-cyan-400 text-xs font-mono break-all flex-1">{userAddress}</span>
-					<button onclick={copyAddress} class="px-3 py-1 rounded-md border border-[rgba(0,210,255,0.3)] bg-[rgba(0,210,255,0.08)] text-[#00d2ff] text-[11px] font-mono font-semibold transition-all duration-150 whitespace-nowrap shrink-0 hover:bg-[rgba(0,210,255,0.15)] hover:border-[rgba(0,210,255,0.5)] cursor-pointer">
+					<button onclick={copyAddress} class="px-3 py-1 rounded-md border border-[rgba(0,210,255,0.3)] bg-[rgba(0,210,255,0.08)] text-[#00d2ff] text-xs2 font-mono font-semibold transition-all duration-150 whitespace-nowrap shrink-0 hover:bg-[rgba(0,210,255,0.15)] hover:border-[rgba(0,210,255,0.5)] cursor-pointer">
 						{addressCopied ? $t('mt.copied') : $t('mt.copy')}
 					</button>
 				</div>
@@ -1802,7 +1802,7 @@
 					<line x1="12" y1="9" x2="12" y2="13"/>
 					<line x1="12" y1="17" x2="12.01" y2="17"/>
 				</svg>
-				<span class="text-gray-400 text-[11px] font-mono">
+				<span class="text-gray-400 text-xs2 font-mono">
 					{$t('mt.depositWarning1')} <strong class="text-white">{depositInfo.symbol}</strong> {$t('mt.depositWarning2')} <strong class="text-white">{depositInfo.networkName}</strong>. {$t('mt.depositWarningEnd')}
 				</span>
 			</div>
@@ -1811,7 +1811,7 @@
 			<div class="flex justify-between items-center px-6 py-4 border-t border-surface-hover bg-surface">
 				<div class="flex items-center gap-2">
 					<div class="spinner-sm w-3.5 h-3.5 rounded-full border-2 border-white/10 border-t-cyan-400"></div>
-					<span class="text-gray-500 text-[11px] font-mono">{$t('mt.monitoringDeposit')}</span>
+					<span class="text-gray-500 text-xs2 font-mono">{$t('mt.monitoringDeposit')}</span>
 				</div>
 				<button onclick={closeDepositModal} class="btn-secondary text-xs px-4 py-2 cursor-pointer">{$t('common.cancel')}</button>
 			</div>

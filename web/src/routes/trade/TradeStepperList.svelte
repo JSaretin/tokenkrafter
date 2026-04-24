@@ -43,13 +43,13 @@
 		<div class={"flex items-center gap-3 py-3 px-3.5 border-l-2 relative transition-all duration-300 " + borderCls(state)}>
 			<TradeStepIndicator {state} number={step.n} />
 			<div class="flex-1 min-w-0">
-				<span class={"block font-mono text-[12px] font-bold " + titleCls(state)}>{step.title}</span>
-				<span class={"block font-mono text-[10px] mt-px " + (state === 'active' ? 'text-[rgba(0,210,255,0.7)]' : 'text-(--text-muted)')}>
+				<span class={"block font-mono text-xs font-bold " + titleCls(state)}>{step.title}</span>
+				<span class={"block font-mono text-3xs mt-px " + (state === 'active' ? 'text-[rgba(0,210,255,0.7)]' : 'text-(--text-muted)')}>
 					{state === 'active' ? step.activeDesc : step.desc}
 				</span>
 			</div>
 			{#if state === 'done'}
-				<span class="font-mono text-[10px] font-bold text-[#10b981] shrink-0">{$t('trade.done')}</span>
+				<span class="font-mono text-3xs font-bold text-[#10b981] shrink-0">{$t('trade.done')}</span>
 			{/if}
 		</div>
 	{/each}

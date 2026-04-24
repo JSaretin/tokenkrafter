@@ -1002,10 +1002,10 @@
 		{:else}
 			<!-- Unified wallet+account chip — opens WalletSwitcher sheet -->
 			<button class="flex items-center gap-2.5 flex-1 min-w-0 bg-(--bg-surface) border border-(--border) rounded-[10px] py-[7px] px-3 cursor-pointer text-inherit font-inherit transition-colors duration-150 hover:border-[rgba(0,210,255,0.25)] hover:bg-[rgba(0,210,255,0.04)]" onclick={() => { showSwitcher = true; }}>
-				<div class="w-7 h-7 rounded-full shrink-0 bg-gradient-to-br from-[rgba(0,210,255,0.16)] to-[rgba(58,123,213,0.16)] border border-[rgba(0,210,255,0.25)] flex items-center justify-center font-display text-[11px] font-extrabold text-[#00d2ff]">
+				<div class="w-7 h-7 rounded-full shrink-0 bg-gradient-to-br from-[rgba(0,210,255,0.16)] to-[rgba(58,123,213,0.16)] border border-[rgba(0,210,255,0.25)] flex items-center justify-center font-display text-xs2 font-extrabold text-[#00d2ff]">
 					{#if walletType === 'embedded'}
 						{#if acctAvatar(activeIndex)}
-							<span class="text-[15px] leading-none">{acctAvatar(activeIndex)}</span>
+							<span class="text-15 leading-none">{acctAvatar(activeIndex)}</span>
 						{:else}
 							{activeIndex + 1}
 						{/if}
@@ -1014,7 +1014,7 @@
 					{/if}
 				</div>
 				<div class="flex-1 min-w-0 flex flex-col gap-px overflow-hidden">
-					<span class="flex items-center gap-[5px] min-w-0 font-display text-[11px] font-bold text-(--text) whitespace-nowrap overflow-hidden text-ellipsis">
+					<span class="flex items-center gap-[5px] min-w-0 font-display text-xs2 font-bold text-(--text) whitespace-nowrap overflow-hidden text-ellipsis">
 						{#if walletType === 'embedded' && activeWallet}
 							<span class="text-(--text)">{activeWallet.name}</span>
 							<span class="text-(--text-dim)">•</span>
@@ -1023,7 +1023,7 @@
 							{$t('account.externalWallet')}
 						{/if}
 					</span>
-					<span class="font-mono text-[8px] text-(--text-dim)">{shortAddr(userAddress)}</span>
+					<span class="font-mono text-4xs text-(--text-dim)">{shortAddr(userAddress)}</span>
 				</div>
 				<svg class="text-(--text-dim) shrink-0" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
 			</button>
@@ -1053,7 +1053,7 @@
 	<!-- ═══ MAIN VIEW ═══ -->
 	{#if view === 'main'}
 		<!-- Network -->
-		<div class="flex items-center gap-[5px] px-4 pb-1 text-[9px] text-(--text-dim) font-mono"><span class="w-[5px] h-[5px] rounded-full bg-[#10b981]"></span>{networkName}</div>
+		<div class="flex items-center gap-[5px] px-4 pb-1 text-xs4 text-(--text-dim) font-mono"><span class="w-[5px] h-[5px] rounded-full bg-[#10b981]"></span>{networkName}</div>
 
 		<!-- Balance -->
 		<div class="ap-bal text-center pt-4 px-4 pb-5">
@@ -1069,19 +1069,19 @@
 
 		<!-- Actions -->
 		<div class="flex justify-center gap-[18px] px-4 pb-3.5">
-			<button class="group/act flex flex-col items-center gap-[5px] bg-none border-none cursor-pointer text-(--text-muted) font-mono text-[9px] transition-colors duration-100 hover:text-[#00d2ff]" onclick={() => { close(); goto('/trade'); }}>
+			<button class="group/act flex flex-col items-center gap-[5px] bg-none border-none cursor-pointer text-(--text-muted) font-mono text-xs4 transition-colors duration-100 hover:text-[#00d2ff]" onclick={() => { close(); goto('/trade'); }}>
 				<div class="w-10 h-10 rounded-full bg-[rgba(0,210,255,0.05)] border border-[rgba(0,210,255,0.1)] flex items-center justify-center transition-all duration-150 group-hover/act:bg-[rgba(0,210,255,0.1)] group-hover/act:border-[rgba(0,210,255,0.25)] group-hover/act:-translate-y-0.5 group-hover/act:shadow-[0_4px_12px_rgba(0,210,255,0.1)]"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg></div>
 				<span>{$t('account.buy')}</span>
 			</button>
-			<button class="group/act flex flex-col items-center gap-[5px] bg-none border-none cursor-pointer text-(--text-muted) font-mono text-[9px] transition-colors duration-100 hover:text-[#00d2ff]" onclick={() => showSend = true}>
+			<button class="group/act flex flex-col items-center gap-[5px] bg-none border-none cursor-pointer text-(--text-muted) font-mono text-xs4 transition-colors duration-100 hover:text-[#00d2ff]" onclick={() => showSend = true}>
 				<div class="w-10 h-10 rounded-full bg-[rgba(0,210,255,0.05)] border border-[rgba(0,210,255,0.1)] flex items-center justify-center transition-all duration-150 group-hover/act:bg-[rgba(0,210,255,0.1)] group-hover/act:border-[rgba(0,210,255,0.25)] group-hover/act:-translate-y-0.5 group-hover/act:shadow-[0_4px_12px_rgba(0,210,255,0.1)]"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg></div>
 				<span>{$t('account.send')}</span>
 			</button>
-			<button class="group/act flex flex-col items-center gap-[5px] bg-none border-none cursor-pointer text-(--text-muted) font-mono text-[9px] transition-colors duration-100 hover:text-[#00d2ff]" onclick={() => view = 'receive'}>
+			<button class="group/act flex flex-col items-center gap-[5px] bg-none border-none cursor-pointer text-(--text-muted) font-mono text-xs4 transition-colors duration-100 hover:text-[#00d2ff]" onclick={() => view = 'receive'}>
 				<div class="w-10 h-10 rounded-full bg-[rgba(0,210,255,0.05)] border border-[rgba(0,210,255,0.1)] flex items-center justify-center transition-all duration-150 group-hover/act:bg-[rgba(0,210,255,0.1)] group-hover/act:border-[rgba(0,210,255,0.25)] group-hover/act:-translate-y-0.5 group-hover/act:shadow-[0_4px_12px_rgba(0,210,255,0.1)]"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg></div>
 				<span>{$t('account.receive')}</span>
 			</button>
-			<button class="group/act flex flex-col items-center gap-[5px] bg-none border-none cursor-pointer text-(--text-muted) font-mono text-[9px] transition-colors duration-100 hover:text-[#00d2ff]" onclick={() => { close(); goto('/trade'); }}>
+			<button class="group/act flex flex-col items-center gap-[5px] bg-none border-none cursor-pointer text-(--text-muted) font-mono text-xs4 transition-colors duration-100 hover:text-[#00d2ff]" onclick={() => { close(); goto('/trade'); }}>
 				<div class="w-10 h-10 rounded-full bg-[rgba(0,210,255,0.05)] border border-[rgba(0,210,255,0.1)] flex items-center justify-center transition-all duration-150 group-hover/act:bg-[rgba(0,210,255,0.1)] group-hover/act:border-[rgba(0,210,255,0.25)] group-hover/act:-translate-y-0.5 group-hover/act:shadow-[0_4px_12px_rgba(0,210,255,0.1)]"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg></div>
 				<span>{$t('account.swap')}</span>
 			</button>
@@ -1096,12 +1096,12 @@
 					<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>
 				</div>
 				<div>
-					<strong class="block font-display text-[13px] text-(--text-heading) mb-[3px]">{$t('account.fundWallet')}</strong>
-					<p class="m-0 font-mono text-[10px] text-(--text-muted) leading-[1.5]">Receive {nativeCoin}, USDT or any token on {networkName} at your address.</p>
+					<strong class="block font-display text-13 text-(--text-heading) mb-[3px]">{$t('account.fundWallet')}</strong>
+					<p class="m-0 font-mono text-3xs text-(--text-muted) leading-[1.5]">Receive {nativeCoin}, USDT or any token on {networkName} at your address.</p>
 				</div>
 				<div class="flex gap-2">
-					<button class="ap-btn ap-btn-primary flex-1 px-2.5 py-2 text-[10px]" onclick={() => view = 'receive'}>{$t('account.showAddress')}</button>
-					<button class="ap-btn flex-1 px-2.5 py-2 text-[10px]" onclick={() => { close(); goto('/trade'); }}>{$t('account.buyWithCard')}</button>
+					<button class="ap-btn ap-btn-primary flex-1 px-2.5 py-2 text-3xs" onclick={() => view = 'receive'}>{$t('account.showAddress')}</button>
+					<button class="ap-btn flex-1 px-2.5 py-2 text-3xs" onclick={() => { close(); goto('/trade'); }}>{$t('account.buyWithCard')}</button>
 				</div>
 			</div>
 		{/if}
@@ -1126,7 +1126,7 @@
 					</div>
 					<button class="ap-row-right" type="button" onclick={() => toggleRowCompact('native')} title={nativeCompact ? 'Tap to expand' : 'Tap to shrink'}>
 						<span class="block text-base text-(--text-heading) font-numeric font-bold tabular-nums leading-[1.3] max-w-full overflow-hidden text-ellipsis whitespace-nowrap">{fmtBal(nativeBalance, nativeDecimals)}</span>
-						<span class="block text-[13px] text-(--text-dim) font-numeric font-medium tabular-nums mt-0.5 max-w-full overflow-hidden text-ellipsis whitespace-nowrap">{nativeCompact ? fmtCompactUsd(nativeUsd) : fmtUsd(nativeUsd)}</span>
+						<span class="block text-13 text-(--text-dim) font-numeric font-medium tabular-nums mt-0.5 max-w-full overflow-hidden text-ellipsis whitespace-nowrap">{nativeCompact ? fmtCompactUsd(nativeUsd) : fmtUsd(nativeUsd)}</span>
 					</button>
 				</div>
 
@@ -1147,7 +1147,7 @@
 						</div>
 						<button class="ap-row-right" type="button" onclick={() => toggleRowCompact(rowKey)} title={isCompact ? 'Tap to expand' : 'Tap to shrink'}>
 							<span class="block text-base text-(--text-heading) font-numeric font-bold tabular-nums leading-[1.3] max-w-full overflow-hidden text-ellipsis whitespace-nowrap">{isCompact ? fmtCompactAmount(tok._bal) : fmtBal(tok.balance, tok.decimals)}</span>
-							<span class="block text-[13px] text-(--text-dim) font-numeric font-medium tabular-nums mt-0.5 max-w-full overflow-hidden text-ellipsis whitespace-nowrap">{tok._usd > 0 ? (isCompact ? fmtCompactUsd(tok._usd) : fmtUsd(tok._usd)) : ''}</span>
+							<span class="block text-13 text-(--text-dim) font-numeric font-medium tabular-nums mt-0.5 max-w-full overflow-hidden text-ellipsis whitespace-nowrap">{tok._usd > 0 ? (isCompact ? fmtCompactUsd(tok._usd) : fmtUsd(tok._usd)) : ''}</span>
 						</button>
 						<button
 							type="button"
@@ -1179,7 +1179,7 @@
 						</div>
 						<button class="ap-row-right" type="button" onclick={() => toggleRowCompact(rowKey)} title={isCompact ? 'Tap to expand' : 'Tap to shrink'}>
 							<span class="block text-base text-(--text-heading) font-numeric font-bold tabular-nums leading-[1.3] max-w-full overflow-hidden text-ellipsis whitespace-nowrap">{isCompact ? fmtCompactAmount(parseFloat(ethers.formatUnits(tok.balance, tok.decimals))) : fmtBal(tok.balance, tok.decimals)}</span>
-							<span class="block text-[13px] text-(--text-dim) font-numeric font-medium tabular-nums mt-0.5 max-w-full overflow-hidden text-ellipsis whitespace-nowrap">{usd > 0 ? (isCompact ? fmtCompactUsd(usd) : fmtUsd(usd)) : ''}</span>
+							<span class="block text-13 text-(--text-dim) font-numeric font-medium tabular-nums mt-0.5 max-w-full overflow-hidden text-ellipsis whitespace-nowrap">{usd > 0 ? (isCompact ? fmtCompactUsd(usd) : fmtUsd(usd)) : ''}</span>
 						</button>
 						<button
 							type="button"
@@ -1194,14 +1194,14 @@
 				{/each}
 
 				{#if tokens.length === 0 && importedTokens.length === 0}
-					<p class="text-center py-6 text-[13px] text-(--text-dim) font-mono">{$t('account.noImportedTokens')}</p>
+					<p class="text-center py-6 text-13 text-(--text-dim) font-mono">{$t('account.noImportedTokens')}</p>
 				{/if}
 
 				<!-- Hidden assets (collapsible) -->
 				{#if hiddenRows.length > 0}
 					<button
 						type="button"
-						class="flex items-center justify-between gap-2 mx-4 my-2 py-2 px-3 rounded-lg bg-transparent border border-(--border-subtle) text-(--text-dim) cursor-pointer font-mono text-[10px] transition-all hover:border-(--border) hover:text-(--text-muted) w-[calc(100%-2rem)]"
+						class="flex items-center justify-between gap-2 mx-4 my-2 py-2 px-3 rounded-lg bg-transparent border border-(--border-subtle) text-(--text-dim) cursor-pointer font-mono text-3xs transition-all hover:border-(--border) hover:text-(--text-muted) w-[calc(100%-2rem)]"
 						onclick={() => (showHidden = !showHidden)}
 					>
 						<span>{showHidden ? 'Hide' : 'Show'} hidden ({hiddenRows.length})</span>
@@ -1218,7 +1218,7 @@
 								{/if}
 								<div class="flex-1 min-w-0">
 									<span class="block text-sm text-(--text-heading) font-display font-bold leading-[1.3]">{tok.symbol}</span>
-									<span class="block text-[10px] text-(--text-dim) font-mono mt-0.5">{tok.name}</span>
+									<span class="block text-3xs text-(--text-dim) font-mono mt-0.5">{tok.name}</span>
 								</div>
 								<button
 									type="button"
@@ -1245,7 +1245,7 @@
 						</div>
 					</div>
 				{:else}
-					<button class="flex items-center justify-center gap-[5px] mx-4 my-1 py-[9px] border border-dashed border-(--border) rounded-lg bg-transparent text-(--text-dim) cursor-pointer font-mono text-[10px] transition-all duration-150 hover:border-[rgba(0,210,255,0.15)] hover:text-[#00d2ff] w-[calc(100%-2rem)]" onclick={() => showImport = true}>
+					<button class="flex items-center justify-center gap-[5px] mx-4 my-1 py-[9px] border border-dashed border-(--border) rounded-lg bg-transparent text-(--text-dim) cursor-pointer font-mono text-3xs transition-all duration-150 hover:border-[rgba(0,210,255,0.15)] hover:text-[#00d2ff] w-[calc(100%-2rem)]" onclick={() => showImport = true}>
 						<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
 						{$t('account.importToken')}
 					</button>
@@ -1255,7 +1255,7 @@
 		{/if}
 
 		<!-- Disconnect footer -->
-		<button class="flex items-center justify-center gap-1.5 px-4 py-2.5 mx-4 mt-1 mb-3 rounded-lg border border-(--border-subtle) bg-transparent text-(--text-dim) cursor-pointer font-mono text-[10px] transition-all duration-100 shrink-0 hover:text-[#f87171] hover:border-[rgba(248,113,113,0.15)] hover:bg-[rgba(248,113,113,0.04)]" onclick={() => { onDisconnect(); close(); }}>
+		<button class="flex items-center justify-center gap-1.5 px-4 py-2.5 mx-4 mt-1 mb-3 rounded-lg border border-(--border-subtle) bg-transparent text-(--text-dim) cursor-pointer font-mono text-3xs transition-all duration-100 shrink-0 hover:text-[#f87171] hover:border-[rgba(248,113,113,0.15)] hover:bg-[rgba(248,113,113,0.04)]" onclick={() => { onDisconnect(); close(); }}>
 			<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
 			{$t('account.disconnect')}
 		</button>
@@ -1263,7 +1263,7 @@
 	<!-- ═══ RECEIVE VIEW ═══ -->
 	{:else if view === 'receive'}
 		<div class="flex-1 p-4 flex flex-col gap-3 overflow-y-auto items-center">
-			<p class="text-[10px] text-(--text-dim) font-mono m-0 leading-[1.5]">Send only {nativeCoin} and tokens on {networkName} to this address.</p>
+			<p class="text-3xs text-(--text-dim) font-mono m-0 leading-[1.5]">Send only {nativeCoin} and tokens on {networkName} to this address.</p>
 			<div class="p-4 bg-(--bg-surface) border border-(--border) rounded-xl">
 				<QrCode data={userAddress} width={180} />
 			</div>
@@ -1274,8 +1274,8 @@
 				role="button"
 				tabindex="0"
 			>
-				<span class="block font-mono text-[10px] text-(--text-muted) break-all leading-[1.6]">{userAddress}</span>
-				<span class="block text-[9px] text-[#00d2ff] mt-1.5 font-mono">{copiedAddr ? $t('account.copied') : $t('account.tapToCopy')}</span>
+				<span class="block font-mono text-3xs text-(--text-muted) break-all leading-[1.6]">{userAddress}</span>
+				<span class="block text-xs4 text-[#00d2ff] mt-1.5 font-mono">{copiedAddr ? $t('account.copied') : $t('account.tapToCopy')}</span>
 			</div>
 		</div>
 
@@ -1284,14 +1284,14 @@
 		<div class="flex-1 p-4 flex flex-col gap-3 overflow-y-auto">
 			<div class="flex gap-2.5 p-3 rounded-[10px] bg-[rgba(245,158,11,0.04)] border border-[rgba(245,158,11,0.1)]">
 				<svg class="shrink-0 mt-0.5" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-				<p class="m-0 text-[10px] text-[#f59e0b] font-mono leading-[1.5]">{$t('account.securityWarn')}</p>
+				<p class="m-0 text-3xs text-[#f59e0b] font-mono leading-[1.5]">{$t('account.securityWarn')}</p>
 			</div>
-			<button class="flex items-center gap-2.5 w-full px-4 py-3 border-none bg-transparent text-(--text-muted) cursor-pointer font-mono text-[11px] transition-all duration-100 text-left hover:bg-(--bg-surface) hover:text-(--text)" onclick={() => { resetExport(); view = 'export-key'; }}>
+			<button class="flex items-center gap-2.5 w-full px-4 py-3 border-none bg-transparent text-(--text-muted) cursor-pointer font-mono text-xs2 transition-all duration-100 text-left hover:bg-(--bg-surface) hover:text-(--text)" onclick={() => { resetExport(); view = 'export-key'; }}>
 				<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
 				<span>{$t('account.exportPrivateKey')}</span>
 				<svg class="ml-auto text-(--text-dim)" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
 			</button>
-			<button class="flex items-center gap-2.5 w-full px-4 py-3 border-none bg-transparent text-(--text-muted) cursor-pointer font-mono text-[11px] transition-all duration-100 text-left hover:bg-(--bg-surface) hover:text-(--text)" onclick={() => { resetExport(); view = 'export-seed'; }}>
+			<button class="flex items-center gap-2.5 w-full px-4 py-3 border-none bg-transparent text-(--text-muted) cursor-pointer font-mono text-xs2 transition-all duration-100 text-left hover:bg-(--bg-surface) hover:text-(--text)" onclick={() => { resetExport(); view = 'export-seed'; }}>
 				<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
 				<span>{$t('account.exportRecoveryPhrase')}</span>
 				<svg class="ml-auto text-(--text-dim)" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
@@ -1306,23 +1306,23 @@
 					<svg class="shrink-0 mt-0.5" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
 					<div>
 						<strong class="block font-display text-xs text-[#f87171] mb-1">Warning</strong>
-						<p class="m-0 text-[10px] text-(--text-muted) font-mono leading-[1.5]">{view === 'export-key' ? $t('account.warningKey') : $t('account.warningPhrase')}</p>
+						<p class="m-0 text-3xs text-(--text-muted) font-mono leading-[1.5]">{view === 'export-key' ? $t('account.warningKey') : $t('account.warningPhrase')}</p>
 					</div>
 				</div>
 
-				<label for="ap-export-pin" class="text-[9px] text-(--text-dim) font-mono uppercase tracking-[0.05em]">{$t('account.enterPinContinue')}</label>
+				<label for="ap-export-pin" class="text-xs4 text-(--text-dim) font-mono uppercase tracking-[0.05em]">{$t('account.enterPinContinue')}</label>
 				<input id="ap-export-pin" class="ap-input" type="tel" inputmode="numeric" style="-webkit-text-security: disc; text-security: disc;" placeholder="PIN" bind:value={exportPin}
 					{...INPUT_ATTRS}
 					onkeydown={(e) => { if (e.key === 'Enter') handleExport(view === 'export-key' ? 'key' : 'seed'); }} />
 
-				{#if exportError}<p class="text-[10px] text-[#f87171] font-mono m-0 py-1 px-2 bg-[rgba(248,113,113,0.04)] rounded">{exportError}</p>{/if}
+				{#if exportError}<p class="text-3xs text-[#f87171] font-mono m-0 py-1 px-2 bg-[rgba(248,113,113,0.04)] rounded">{exportError}</p>{/if}
 
 				<button class="ap-btn ap-btn-danger ap-btn-full" onclick={() => handleExport(view === 'export-key' ? 'key' : 'seed')}>
 					{view === 'export-key' ? $t('account.revealKey') : $t('account.revealPhrase')}
 				</button>
 			{:else}
 				<div
-					class="p-3.5 bg-[rgba(248,113,113,0.04)] border border-[rgba(248,113,113,0.12)] rounded-[10px] font-mono text-[10px] text-[#f87171] break-all leading-[1.7] cursor-pointer transition-colors duration-100 hover:bg-[rgba(248,113,113,0.08)]"
+					class="p-3.5 bg-[rgba(248,113,113,0.04)] border border-[rgba(248,113,113,0.12)] rounded-[10px] font-mono text-3xs text-[#f87171] break-all leading-[1.7] cursor-pointer transition-colors duration-100 hover:bg-[rgba(248,113,113,0.08)]"
 					onclick={() => { navigator.clipboard.writeText(exportedValue); setTimeout(() => { try { navigator.clipboard.writeText(''); } catch {} }, 30000); onAddFeedback({ message: $t('account.copiedClipboard'), type: 'info' }); }}
 					onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigator.clipboard.writeText(exportedValue); setTimeout(() => { try { navigator.clipboard.writeText(''); } catch {} }, 30000); onAddFeedback({ message: $t('account.copiedClipboard'), type: 'info' }); } }}
 					role="button"
@@ -1330,7 +1330,7 @@
 				>
 					{exportedValue}
 				</div>
-				<p class="text-center text-[9px] text-(--text-dim) font-mono m-0">{$t('account.doNotShare')}</p>
+				<p class="text-center text-xs4 text-(--text-dim) font-mono m-0">{$t('account.doNotShare')}</p>
 				<button class="ap-btn ap-btn-full" onclick={() => { view = 'security'; resetExport(); }}>Done</button>
 			{/if}
 		</div>

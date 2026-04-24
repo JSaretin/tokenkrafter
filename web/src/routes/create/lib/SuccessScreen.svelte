@@ -45,7 +45,7 @@
 
 	{#if tokenAddress}
 		<div class="p-3 px-3.5 bg-cyan-400/[0.04] border border-cyan-400/15 rounded-[10px] text-center mb-4">
-			<div class="text-gray-500 text-[11px] font-mono uppercase tracking-wider mb-1">{$t('ct.tokenAddress')}</div>
+			<div class="text-gray-500 text-xs2 font-mono uppercase tracking-wider mb-1">{$t('ct.tokenAddress')}</div>
 			<div class="text-cyan-400 text-xs font-mono break-all mb-2">{tokenAddress}</div>
 			<a
 				href={explorerUrl('address', tokenAddress)}
@@ -62,7 +62,7 @@
 				href={explorerUrl('tx', txHash)}
 				target="_blank"
 				rel="noopener noreferrer"
-				class="text-gray-500 text-[11px] font-mono hover:text-gray-300 transition no-underline"
+				class="text-gray-500 text-xs2 font-mono hover:text-gray-300 transition no-underline"
 			>View transaction: {txHash.slice(0, 10)}...{txHash.slice(-8)} -></a>
 		</div>
 	{/if}

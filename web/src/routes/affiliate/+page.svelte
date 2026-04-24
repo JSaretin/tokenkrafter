@@ -231,7 +231,7 @@
 			<div class="card p-6">
 				<div class="flex items-start justify-between gap-3 flex-wrap mb-4">
 					<div>
-						<div class="text-[10px] font-mono uppercase tracking-widest text-emerald-400">Your affiliate dashboard</div>
+						<div class="text-3xs font-mono uppercase tracking-widest text-emerald-400">Your affiliate dashboard</div>
 						<h2 class="font-display text-xl font-bold text-heading mt-1">Welcome back</h2>
 					</div>
 					<a href="#affiliate-full-dashboard" class="text-xs font-mono text-brand-cyan hover:underline">View full stats →</a>
@@ -254,19 +254,19 @@
 				     pending USDT; number-of-referrals = totalReferred. -->
 				<div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
 					<div class="px-3 py-2.5 rounded-[10px] bg-white/2 border border-white/5">
-						<div class="font-mono text-[9px] text-white/35 uppercase tracking-[0.06em]">Referrals</div>
+						<div class="font-mono text-xs4 text-white/35 uppercase tracking-[0.06em]">Referrals</div>
 						<div class="font-display text-[1.05rem] font-bold text-white mt-0.5">{loading ? '—' : totalReferred.toString()}</div>
 					</div>
 					<div class="px-3 py-2.5 rounded-[10px] bg-white/2 border border-white/5">
-						<div class="font-mono text-[9px] text-white/35 uppercase tracking-[0.06em]">Total earned</div>
+						<div class="font-mono text-xs4 text-white/35 uppercase tracking-[0.06em]">Total earned</div>
 						<div class="font-display text-[1.05rem] font-bold text-emerald-400 mt-0.5">{loading ? '—' : `${formatAmount(totalEarnedUsdt, usdtDecimals)} ${usdtSymbol}`}</div>
 					</div>
 					<div class="px-3 py-2.5 rounded-[10px] bg-white/2 border border-white/5">
-						<div class="font-mono text-[9px] text-white/35 uppercase tracking-[0.06em]">Pending</div>
+						<div class="font-mono text-xs4 text-white/35 uppercase tracking-[0.06em]">Pending</div>
 						<div class="font-display text-[1.05rem] font-bold text-amber-400 mt-0.5">{loading ? '—' : `${formatAmount(pendingUsdt, usdtDecimals)} ${usdtSymbol}`}</div>
 					</div>
 					<div class="px-3 py-2.5 rounded-[10px] bg-white/2 border border-white/5">
-						<div class="font-mono text-[9px] text-white/35 uppercase tracking-[0.06em]">Paid</div>
+						<div class="font-mono text-xs4 text-white/35 uppercase tracking-[0.06em]">Paid</div>
 						<!-- Paid = total earned − pending (no dedicated endpoint yet). -->
 						<div class="font-display text-[1.05rem] font-bold text-white mt-0.5">{loading ? '—' : `${formatAmount(totalEarnedUsdt - pendingUsdt > 0n ? totalEarnedUsdt - pendingUsdt : 0n, usdtDecimals)} ${usdtSymbol}`}</div>
 					</div>
@@ -460,7 +460,7 @@
 					<div class="flex items-center gap-2 mb-2">
 						<span class="label-text mb-0">Custom Alias</span>
 						{#if myAlias}
-							<span class="text-[10px] font-mono text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded-full">{myAlias}</span>
+							<span class="text-3xs font-mono text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded-full">{myAlias}</span>
 						{/if}
 					</div>
 					<div class="flex gap-2">
@@ -479,7 +479,7 @@
 							{aliasLoading ? '...' : myAlias ? 'Update' : 'Save'}
 						</button>
 					</div>
-					<p class="text-[10px] text-gray-600 font-mono mt-1.5">
+					<p class="text-3xs text-gray-600 font-mono mt-1.5">
 						3-20 chars, lowercase. Your link becomes: tokenkrafter.com/?ref={aliasInput.trim().toLowerCase() || 'your-alias'}
 					</p>
 				</div>
@@ -565,7 +565,7 @@
 							{:else}
 								<span class="text-gray-600 text-xs font-mono">{$t('aff.noRewards')}</span>
 							{/if}
-							<p class="text-[10px] text-gray-600 font-mono mt-2">Rewards paid in USDT only.</p>
+							<p class="text-3xs text-gray-600 font-mono mt-2">Rewards paid in USDT only.</p>
 						</div>
 					</div>
 				</div>

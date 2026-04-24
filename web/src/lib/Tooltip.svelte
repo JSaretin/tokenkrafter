@@ -67,7 +67,7 @@
 >
 	<button
 		type="button"
-		class="w-[14px] h-[14px] rounded-full bg-cyan-500/15 text-cyan-400 border border-cyan-500/30 hover:bg-cyan-500/25 hover:border-cyan-500/50 text-[9px] font-bold leading-none inline-flex items-center justify-center cursor-help p-0 shrink-0 font-mono transition-[background,border-color] duration-150"
+		class="w-[14px] h-[14px] rounded-full bg-cyan-500/15 text-cyan-400 border border-cyan-500/30 hover:bg-cyan-500/25 hover:border-cyan-500/50 text-xs4 font-bold leading-none inline-flex items-center justify-center cursor-help p-0 shrink-0 font-mono transition-[background,border-color] duration-150"
 		bind:this={triggerEl}
 		onclick={toggle}
 		aria-label="Help"
