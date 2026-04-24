@@ -109,7 +109,7 @@
 			</div>
 			<div>
 				<div class="flex items-center gap-1.5 flex-wrap max-[500px]:gap-1">
-					<h1 class="syne text-2xl sm:text-3xl font-bold text-white leading-tight">
+					<h1 class="heading-1 leading-tight">
 						{launch.tokenName || $t('lp.unknownToken')}
 					</h1>
 					<span class="text-sm2 font-mono text-[var(--text-dim)] bg-[var(--bg-surface)] border border-[var(--bg-surface-hover)] px-2.5 py-0.5 rounded-md">{launch.tokenSymbol || '???'}</span>

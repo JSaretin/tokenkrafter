@@ -52,7 +52,7 @@
 		<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
 		<div class="curve-modal w-full max-w-[440px] max-[500px]:max-w-full bg-background border border-line rounded-[20px] max-[500px]:rounded-2xl overflow-hidden shadow-[0_24px_80px_rgba(0,0,0,0.5)]" onclick={(e) => e.stopPropagation()} role="dialog" aria-label="Choose curve type" tabindex="-1">
 			<div class="flex items-center justify-between px-5 pt-[18px]">
-				<h3 class="font-display text-base font-bold text-heading m-0">Choose Curve Type</h3>
+				<h3 class="heading-3">Choose Curve Type</h3>
 				<button type="button" class="w-8 h-8 rounded-lg border-none bg-surface-hover text-dim flex items-center justify-center cursor-pointer transition-all duration-150 hover:bg-line-input hover:text-heading" aria-label="Close" onclick={() => showModal = false}>
 					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
 				</button>

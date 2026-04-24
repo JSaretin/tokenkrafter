@@ -196,7 +196,7 @@
 	<div class="status-modal w-full max-w-[400px] bg-background border border-line rounded-[20px] overflow-hidden max-[640px]:max-w-full max-[640px]:w-full max-[640px]:h-screen max-[640px]:max-h-screen max-[640px]:rounded-none max-[640px]:flex max-[640px]:flex-col" onclick={(e) => e.stopPropagation()}>
 		<!-- Header -->
 		<div class="flex justify-between items-center px-5 py-4 border-b border-line">
-			<h3 class="font-display text-base font-bold text-heading m-0">{liveStatus === 'confirmed' ? 'Payment Sent!' : liveStatus === 'cancelled' ? 'Withdrawal Cancelled' : 'Processing Withdrawal'}</h3>
+			<h3 class="heading-3">{liveStatus === 'confirmed' ? 'Payment Sent!' : liveStatus === 'cancelled' ? 'Withdrawal Cancelled' : 'Processing Withdrawal'}</h3>
 			<button class="bg-transparent border-0 text-muted cursor-pointer p-1 rounded-lg transition-all duration-[150ms] hover:text-foreground hover:bg-surface-hover" onclick={onclose} aria-label="Close">
 				<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
 			</button>

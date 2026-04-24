@@ -164,7 +164,7 @@
 
 		{:else if state === 'deposit' && deposit && tokenInfo}
 			<div class="flex justify-between items-center mb-2">
-				<h2 class="syne text-lg font-bold text-white">Deposit to Continue</h2>
+				<h2 class="heading-2">Deposit to Continue</h2>
 				<button
 					onclick={onClose}
 					class="w-8 h-8 rounded-lg bg-(--bg-surface-hover) text-(--text-muted) border-none flex items-center justify-center text-sm cursor-pointer transition-all hover:text-(--text-heading)"

@@ -518,7 +518,7 @@
 	<!-- Header row -->
 	<div class="flex flex-wrap items-end justify-between gap-4 mb-6">
 		<div>
-			<h1 class="font-display text-2xl sm:text-3xl font-bold text-heading">{$t('lp.title')}</h1>
+			<h1 class="heading-1">{$t('lp.title')}</h1>
 			<p class="text-muted font-mono text-xs mt-1">{$t('lp.subtitle')}</p>
 		</div>
 		<div class="flex gap-2">

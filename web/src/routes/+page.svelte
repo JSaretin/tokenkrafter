@@ -157,7 +157,7 @@
 	<section class="pt-7 pb-5">
 		<div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
 			<div>
-				<h1 class="syne text-2xl sm:text-3xl font-bold text-white">
+				<h1 class="heading-1">
 					{$t('home.heroTitle1')} <span class="gradient-text">{$t('home.heroTitle2')}</span>
 				</h1>
 				<p class="syne text-gray-400 text-sm font-light mt-1 max-w-xl">{$t('home.statsTagline')}</p>

@@ -118,7 +118,7 @@
 	<div class="fixed inset-0 z-[100] bg-black/70 backdrop-blur-[4px] flex items-start justify-center py-[60px] px-4 max-[639px]:items-end max-[639px]:p-0" onclick={close} role="dialog" aria-modal="true" tabindex="-1">
 		<div class="w-full max-w-[420px] max-h-[70vh] bg-background border border-line rounded-[20px] overflow-hidden flex flex-col max-[639px]:max-w-full max-[639px]:rounded-t-[20px] max-[639px]:rounded-b-none max-[639px]:h-[85vh] max-[639px]:max-h-[85vh]" onclick={(e) => e.stopPropagation()}>
 			<div class="flex justify-between items-center py-4 px-5 border-b border-line">
-				<h3 class="font-display text-base font-bold text-heading m-0">{title}</h3>
+				<h3 class="heading-3">{title}</h3>
 				<button aria-label="Close" class="bg-none border-none text-muted cursor-pointer p-1 rounded-lg transition-all hover:text-foreground hover:bg-surface-hover" onclick={close}>
 					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
 				</button>

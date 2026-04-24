@@ -52,7 +52,7 @@
 		class="w-full max-w-[420px] max-h-[85vh] bg-(--bg) border border-(--border) rounded-[20px] overflow-hidden flex flex-col max-sm:max-w-full max-sm:rounded-t-[20px] max-sm:rounded-b-none max-sm:h-[85vh] max-sm:max-h-[85vh]"
 	>
 		<div class="flex justify-between items-center py-4 px-5 border-b border-(--border)">
-			<h3 class="syne text-base font-bold text-(--text-heading) m-0">Select payment</h3>
+			<h3 class="heading-3">Select payment</h3>
 			<button
 				class="bg-transparent border-none text-(--text-muted) cursor-pointer p-1 rounded-lg transition-all hover:text-(--text) hover:bg-(--bg-surface-hover)"
 				onclick={handleClose}

@@ -11,7 +11,7 @@
 </script>
 
 <div class="text-center mb-7">
-	<h1 class="syne text-2xl sm:text-3xl font-extrabold text-(--text-heading) m-0">What do you want to build?</h1>
+	<h1 class="heading-1">What do you want to build?</h1>
 	<p class="text-xs3 text-(--text-muted) font-['Rajdhani',sans-serif] mt-1 mb-0">Every option is non-custodial and on-chain</p>
 </div>
 

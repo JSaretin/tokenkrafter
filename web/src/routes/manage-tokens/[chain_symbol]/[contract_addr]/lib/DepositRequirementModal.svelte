@@ -38,7 +38,7 @@
 				</svg>
 			</div>
 			<div>
-				<h2 class="syne text-lg font-bold text-white">{$t('mt.depositRequired')}</h2>
+				<h2 class="heading-2">{$t('mt.depositRequired')}</h2>
 				<p class="text-gray-500 text-xs3 font-mono">{depositInfo.networkName} Network</p>
 			</div>
 		</div>

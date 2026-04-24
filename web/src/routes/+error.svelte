@@ -9,7 +9,7 @@
 <div class="min-h-[calc(100vh-200px)] flex items-center justify-center p-6">
 	<div class="text-center max-w-[420px] w-full">
 		<div class="error-code font-display text-[96px] font-extrabold leading-none mb-2">{page.status}</div>
-		<h1 class="font-display text-2xl font-bold text-heading m-0 mb-3">
+		<h1 class="heading-1 mb-3">
 			{#if page.status === 404}
 				Page not found
 			{:else if page.status === 403}

@@ -1663,7 +1663,7 @@
 					</div>
 					<div>
 						<div class="flex items-center gap-3 flex-wrap badge-row">
-							<h1 class="syne text-2xl sm:text-3xl font-bold text-white leading-tight">
+							<h1 class="heading-1 leading-tight">
 								{launch.tokenName || 'Unknown Token'}
 							</h1>
 							<span class="text-[13px] font-mono text-dim bg-surface border border-surface-hover py-0.5 px-2.5 rounded-md">{launch.tokenSymbol || '???'}</span>

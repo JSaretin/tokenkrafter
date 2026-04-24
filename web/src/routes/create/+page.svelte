@@ -1474,7 +1474,7 @@
 			{:else if step === 'waiting-deposit'}
 				<div class="flex flex-col gap-3">
 					<div class="flex justify-between items-center mb-2">
-						<h2 class="font-display text-lg font-bold text-white">Deposit to Continue</h2>
+						<h2 class="heading-2">Deposit to Continue</h2>
 						<button onclick={closePreview} class="w-8 h-8 rounded-lg bg-surface-hover border-none text-muted flex items-center justify-center transition-all duration-150 text-sm hover:bg-surface-hover hover:text-heading cursor-pointer">x</button>
 					</div>
 					<DepositInfo
@@ -1638,7 +1638,7 @@
 				</button>
 				<div class="mt-4 mb-5">
 					<span class="badge badge-cyan">{mode === 'token' ? $t('ci.titleToken') : mode === 'launch' ? $t('ci.titleLaunch') : mode === 'list' ? 'Create & List' : $t('ci.titleBoth')}</span>
-					<h1 class="font-display text-2xl sm:text-3xl font-bold text-white mt-3 mb-1">{pageTitle}</h1>
+					<h1 class="heading-1 mt-3 mb-1">{pageTitle}</h1>
 					<p class="text-gray-500 font-mono text-sm">{mode === 'token' ? $t('ci.metaToken') : mode === 'launch' ? $t('ci.metaLaunch') : mode === 'list' ? 'Create and list your token on a DEX.' : $t('ci.metaBoth')}</p>
 				</div>
 				<TokenForm {supportedNetworks} {addFeedback} {updateTokenInfo} onPreviewChange={handlePreviewChange} initialData={initialFormData} initialMode={mode} onModeChange={handleModeChange} {resetSignal} />

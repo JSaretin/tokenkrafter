@@ -22,7 +22,7 @@
 
 <div class="py-2">
 	<div class="text-center mb-5">
-		<h2 class="syne text-lg font-extrabold text-(--text-heading) m-0">{title}</h2>
+		<h2 class="heading-2">{title}</h2>
 		<p class="text-xs2 text-(--text-dim) syne mt-1 mb-0">{subtitle}</p>
 	</div>
 

@@ -296,7 +296,7 @@
 
 			{#if step === 'choose'}
 				<div class="flex items-center justify-between">
-					<h2 class="font-display text-lg font-extrabold text-heading m-0">{$t('wallet.connectWallet')}</h2>
+					<h2 class="heading-2">{$t('wallet.connectWallet')}</h2>
 					<button class="w-8 h-8 rounded-lg border-none bg-surface-hover text-dim flex items-center justify-center cursor-pointer transition-colors shrink-0 hover:bg-line-input hover:text-heading" aria-label="Close" onclick={close}>
 						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
 					</button>
@@ -327,21 +327,21 @@
 				</button>
 
 			{:else if step === 'google-loading'}
-				<div class="flex items-center justify-between"><h2 class="font-display text-lg font-extrabold text-heading m-0">{$t('wallet.signingIn')}</h2></div>
+				<div class="flex items-center justify-between"><h2 class="heading-2">{$t('wallet.signingIn')}</h2></div>
 				<div class="flex flex-col items-center gap-3 py-6">
 					<div class="w-8 h-8 border-2 border-line-input border-t-brand-cyan rounded-full animate-[spin_0.8s_linear_infinite]"></div>
 					<p class="text-xs text-dim font-mono m-0 leading-[1.5]">{$t('wallet.redirectingGoogle')}</p>
 				</div>
 
 			{:else if step === 'completing-signin'}
-				<div class="flex items-center justify-between"><h2 class="font-display text-lg font-extrabold text-heading m-0">{$t('wallet.signingIn')}</h2></div>
+				<div class="flex items-center justify-between"><h2 class="heading-2">{$t('wallet.signingIn')}</h2></div>
 				<div class="flex flex-col items-center gap-3 py-6">
 					<div class="w-8 h-8 border-2 border-line-input border-t-brand-cyan rounded-full animate-[spin_0.8s_linear_infinite]"></div>
 					<p class="text-xs text-dim font-mono m-0 leading-[1.5]">Completing sign-in…</p>
 				</div>
 
 			{:else if step === 'pin-setup'}
-				<h2 class="font-display text-lg font-extrabold text-heading m-0">{$t('wallet.secureWallet')}</h2>
+				<h2 class="heading-2">{$t('wallet.secureWallet')}</h2>
 
 				<!-- Explicit tabs replace the easy-to-miss inline toggle. -->
 				<div class="flex gap-1 p-[3px] bg-surface-input border border-line rounded-[10px]">
@@ -389,7 +389,7 @@
 				{/if}
 
 			{:else if step === 'pin-enter'}
-				<h2 class="font-display text-lg font-extrabold text-heading m-0">{$t('wallet.unlockWallet')}</h2>
+				<h2 class="heading-2">{$t('wallet.unlockWallet')}</h2>
 				<p class="text-xs text-dim font-mono m-0 leading-[1.5]">{$t('wallet.enterPinToUnlock')}</p>
 
 				<input class="w-full px-3.5 py-3 rounded-[10px] bg-surface-input border border-line text-heading font-mono text-base outline-none transition-[border-color] focus:border-cyan-500/40 placeholder:text-dim [-webkit-text-security:disc] [text-security:disc]" type="tel" inputmode="numeric" autocomplete="one-time-code" data-lpignore="true" data-1p-ignore="true" placeholder={$t('wallet.pinPlaceholder')} bind:value={pin} maxlength="8"
@@ -406,7 +406,7 @@
 				</div>
 
 			{:else if step === 'recovery-codes'}
-				<h2 class="font-display text-lg font-extrabold text-heading m-0">{$t('wallet.recoveryCodes')}</h2>
+				<h2 class="heading-2">{$t('wallet.recoveryCodes')}</h2>
 				<p class="text-xs text-dim font-mono m-0 leading-[1.5]">{$t('wallet.recoveryCodesHint')}</p>
 
 				<div class="flex flex-col gap-1.5 p-3 bg-emerald-500/[0.06] border border-emerald-500/[0.15] rounded-[10px]">
@@ -438,7 +438,7 @@
 				</button>
 
 			{:else if step === 'forgot-pin'}
-				<h2 class="font-display text-lg font-extrabold text-heading m-0">{$t('wallet.recoverWallet')}</h2>
+				<h2 class="heading-2">{$t('wallet.recoverWallet')}</h2>
 				<p class="text-xs text-dim font-mono m-0 leading-[1.5]">{$t('wallet.enterRecoveryCode')}</p>
 
 				<input class="w-full px-3.5 py-3 rounded-[10px] bg-surface-input border border-line text-heading font-mono text-base outline-none transition-[border-color] focus:border-cyan-500/40 placeholder:text-dim" type="text" placeholder="XXXX-XXXX-XXXX-XXXX" bind:value={recoveryCode}
@@ -452,7 +452,7 @@
 				<button class="bg-none border-none text-dim cursor-pointer font-mono text-[11px] underline p-1 hover:text-brand-cyan" onclick={() => { error = ''; step = 'pin-enter'; }}>{$t('wallet.backToPin')}</button>
 
 			{:else if step === 'new-pin'}
-				<h2 class="font-display text-lg font-extrabold text-heading m-0">{$t('wallet.setNewPin')}</h2>
+				<h2 class="heading-2">{$t('wallet.setNewPin')}</h2>
 				<p class="text-xs text-dim font-mono m-0 leading-[1.5]">{$t('wallet.recoverySuccess')}</p>
 
 				<input class="w-full px-3.5 py-3 rounded-[10px] bg-surface-input border border-line text-heading font-mono text-base outline-none transition-[border-color] focus:border-cyan-500/40 placeholder:text-dim [-webkit-text-security:disc] [text-security:disc]" type="tel" inputmode="numeric" autocomplete="one-time-code" data-lpignore="true" data-1p-ignore="true" placeholder={$t('wallet.newPin')} bind:value={pin} maxlength="8" />

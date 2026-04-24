@@ -32,7 +32,7 @@
 			</div>
 		{/if}
 		<div>
-			<h1 class="syne text-[26px] max-[540px]:text-[22px] font-extrabold text-(--text-heading) m-0 leading-tight tracking-tight">{view.name}</h1>
+			<h1 class="heading-1 leading-tight tracking-tight">{view.name}</h1>
 			<div class="flex items-center gap-1.5 mt-1.5 flex-wrap">
 				<span class="font-mono text-xs3 text-(--text-dim) bg-(--bg-surface) px-2 py-0.5 rounded border border-(--border-subtle)">{view.symbol}</span>
 				<span class="font-mono text-xxs px-2 py-0.5 rounded bg-warning/8 text-[#b45309] border border-warning/10">{chainName}</span>

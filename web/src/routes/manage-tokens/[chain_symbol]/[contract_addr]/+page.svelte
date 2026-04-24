@@ -1445,7 +1445,7 @@
 						</div>
 					{/if}
 					<div>
-						<h1 class="syne text-2xl sm:text-3xl font-bold text-white">{tokenInfo.name}</h1>
+						<h1 class="heading-1">{tokenInfo.name}</h1>
 						<div class="flex items-center gap-2 mt-1 flex-wrap">
 							<span class="text-gray-400 font-mono text-sm">{tokenInfo.symbol}</span>
 							<span class="text-gray-600">|</span>
@@ -1749,7 +1749,7 @@
 						</svg>
 					</div>
 					<div>
-						<h2 class="font-display text-lg font-bold text-white">{$t('mt.depositRequired')}</h2>
+						<h2 class="heading-2">{$t('mt.depositRequired')}</h2>
 						<p class="text-gray-500 text-[11px] font-mono">{depositInfo.networkName} Network</p>
 					</div>
 				</div>

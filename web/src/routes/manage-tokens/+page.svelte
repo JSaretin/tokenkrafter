@@ -275,7 +275,7 @@
 	<!-- Header -->
 	<div class="flex items-start justify-between gap-4 mb-6 flex-wrap max-[500px]:flex-col">
 		<div>
-			<h1 class="font-display text-2xl sm:text-3xl font-extrabold text-heading m-0">{$t('mt.pageTitle')}</h1>
+			<h1 class="heading-1">{$t('mt.pageTitle')}</h1>
 			<p class="text-[13px] text-dim font-mono mt-1 mb-0">
 				{#if userAddress}
 					Tokens created by <span class="text-brand-cyan">{shortAddr(userAddress)}</span>
@@ -298,7 +298,7 @@
 	{#if !userAddress}
 		<div class="flex flex-col items-center gap-2 py-[60px] px-5 text-center">
 			<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#374151" stroke-width="1.5"><rect x="2" y="6" width="20" height="12" rx="3"/><path d="M22 10h-4a2 2 0 0 0 0 4h4"/></svg>
-			<h2 class="font-display text-lg font-bold text-heading m-0">Wallet not connected</h2>
+			<h2 class="heading-2">Wallet not connected</h2>
 			<p class="font-mono text-xs text-dim m-0">Connect to see tokens you've created</p>
 			<button onclick={handleConnect} class="inline-block mt-2 px-6 py-[11px] rounded-[10px] border-none bg-gradient-to-br from-[#00d2ff] to-[#3a7bd5] text-white font-display font-bold text-[13px] cursor-pointer transition duration-200 hover:-translate-y-px hover:shadow-[0_6px_24px_rgba(0,210,255,0.3)]">Connect Wallet</button>
 		</div>
@@ -316,7 +316,7 @@
 				<p class="font-mono text-xs text-dim m-0">No tokens match "{search}"</p>
 			{:else}
 				<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#374151" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-				<h2 class="font-display text-lg font-bold text-heading m-0">No tokens yet</h2>
+				<h2 class="heading-2">No tokens yet</h2>
 				<p class="font-mono text-xs text-dim m-0">Create your first token to get started</p>
 				<a href="/create" class="inline-block mt-2 px-6 py-[11px] rounded-[10px] bg-gradient-to-br from-[#00d2ff] to-[#3a7bd5] text-white font-display font-bold text-[13px] no-underline transition duration-200 hover:-translate-y-px hover:shadow-[0_6px_24px_rgba(0,210,255,0.3)]">Create Token</a>
 			{/if}

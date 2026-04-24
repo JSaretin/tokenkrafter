@@ -338,7 +338,7 @@
 	<!-- Header -->
 	<div class="flex items-start justify-between gap-4 mb-4 flex-wrap max-[500px]:flex-col">
 		<div>
-			<h1 class="font-display text-2xl sm:text-3xl font-extrabold text-(--text-heading) m-0">Explore Tokens</h1>
+			<h1 class="heading-1">Explore Tokens</h1>
 			<p class="text-xs text-[#475569] font-mono mt-1 mb-0">{tokens.length} tokens on TokenKrafter</p>
 		</div>
 		<div class="flex items-center gap-2 px-3.5 py-2 rounded-[10px] bg-white/[0.03] border border-white/[0.06] min-w-[260px] max-[500px]:min-w-0 max-[500px]:w-full transition-colors duration-150 focus-within:border-[rgba(0,210,255,0.3)]">

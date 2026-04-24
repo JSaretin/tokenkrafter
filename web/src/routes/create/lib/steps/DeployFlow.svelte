@@ -53,7 +53,7 @@
 	<div class="w-full max-w-[440px] bg-background border border-line rounded-[20px] overflow-hidden max-h-[90vh] flex flex-col max-sm:max-w-full max-sm:rounded-none max-sm:max-h-screen max-sm:h-screen" onclick={(e) => e.stopPropagation()}>
 		<!-- Header -->
 		<div class="flex justify-between items-center px-5 py-4 border-b border-line">
-			<h3 class="font-display text-base font-bold text-heading m-0">{allDone ? 'Token Deployed!' : 'Deploying Your Token'}</h3>
+			<h3 class="heading-3">{allDone ? 'Token Deployed!' : 'Deploying Your Token'}</h3>
 			{#if !isDeploying}
 				<button type="button" aria-label="Close" class="bg-none border-none text-muted cursor-pointer p-1 rounded-lg transition-all duration-150 hover:text-foreground hover:bg-surface-hover" onclick={onclose}>
 					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
