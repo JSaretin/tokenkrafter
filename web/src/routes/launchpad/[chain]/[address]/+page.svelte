@@ -1032,9 +1032,35 @@
 				);
 			} else {
 				const paymentAddress = getPaymentAddress();
-				const amountWei = ethers.parseUnits(String(buyAmount), paymentDecimals);
-				// minUsdtOut for non-USDT tokens (USDC → USDT swap), 0 if paying USDT directly
-				const minUsdtOut = buyPaymentMethod === 'usdt' ? 0n : amountWei * (10000n - slipBps) / 10000n;
+				const isUsdt = paymentAddress.toLowerCase() === network.usdt_address.toLowerCase();
+				const usdtNeeded = ethers.parseUnits(String(buyAmount), usdtDecimals);
+
+				// Compute amountIn + minUsdtOut. buyAmount is entered in USDT
+				// terms, so for non-USDT payment tokens we must quote the
+				// swap first — otherwise minUsdtOut comes out denominated in
+				// the payment token and the DEX reverts with a cryptic
+				// INSUFFICIENT_OUTPUT_AMOUNT.
+				let amountWei: bigint;
+				let minUsdtOut: bigint;
+				if (isUsdt) {
+					amountWei = usdtNeeded;
+					minUsdtOut = 0n;
+				} else {
+					const router = new DexRouterClient(network.dex_router, signer.provider!);
+					let tokensNeeded: bigint;
+					try {
+						const amounts = await router.getAmountsIn(usdtNeeded, [paymentAddress, network.usdt_address]);
+						tokensNeeded = amounts[0];
+					} catch (e) {
+						addFeedback({ message: `No direct ${paymentLabel} → USDT liquidity. Pick another payment token.`, type: 'error' });
+						isBuying = false;
+						return;
+					}
+					// Buffer the in-amount by +slippage so the swap can still
+					// settle if the pool moves against us between quote and tx.
+					amountWei = tokensNeeded * (10000n + slipBps) / 10000n;
+					minUsdtOut = usdtNeeded * (10000n - slipBps) / 10000n;
+				}
 
 				// Check allowance & approve — generic ERC20, inline is fine.
 				const tokenContract = new ethers.Contract(paymentAddress, ERC20_ABI, signer);
@@ -1047,11 +1073,11 @@
 
 				// Path: [paymentToken, USDT]. If paymentToken == USDT, the contract
 				// short-circuits the swap (path can still be [USDT, USDT]).
-				const path = paymentAddress.toLowerCase() === network.usdt_address.toLowerCase()
+				const path = isUsdt
 					? [network.usdt_address, network.usdt_address]
 					: [paymentAddress, network.usdt_address];
 
-				addFeedback({ message: 'Buying tokens...', type: 'info' });
+				addFeedback({ message: `Buying with ${paymentLabel}...`, type: 'info' });
 				await launchClient.buy(path, amountWei, minUsdtOut, minTokensOut);
 			}
 
@@ -1067,9 +1093,14 @@
 				savedTokens
 			);
 		} catch (e: any) {
+			console.warn('[launch.buy] raw error:', e);
 			const errStr = String(e?.data || e?.message || e?.shortMessage || '');
 			if (errStr.includes('0x11') || errStr.includes('OVERFLOW') || errStr.includes('overflow')) {
 				addFeedback({ message: 'Transaction failed: arithmetic overflow in bonding curve. This launch may need to be recreated with a smaller token supply.', type: 'error' });
+			} else if (/INSUFFICIENT_OUTPUT_AMOUNT/i.test(errStr)) {
+				addFeedback({ message: 'Swap slippage too tight. Raise slippage or pick another payment token.', type: 'error' });
+			} else if (/INSUFFICIENT_LIQUIDITY|no liquidity/i.test(errStr)) {
+				addFeedback({ message: `Not enough ${paymentLabel} liquidity for this swap.`, type: 'error' });
 			} else {
 				addFeedback({ message: friendlyError(e), type: 'error' });
 			}
