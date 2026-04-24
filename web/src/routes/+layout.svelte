@@ -89,6 +89,13 @@
 	let hamburgerEl: HTMLElement | undefined = $state(undefined);
 	let theme: 'dark' | 'light' = $state('dark');
 
+	// Optimistic nav highlighting: while SvelteKit is fetching the next
+	// route, prefer the pending destination over the current URL so the
+	// active tab flips immediately on tap. Without this the user taps a
+	// tab, nothing visible changes for 300–800ms, and web-vs-app illusion
+	// breaks.
+	let activePath = $derived(navigating.to?.url.pathname ?? page.url.pathname);
+
 	function addFeedback(feedback: { message: string; type: string }) {
 		const id = feedbackCounter++;
 		feedbacks = [...feedbacks, { ...feedback, id }];
@@ -585,11 +592,12 @@
 	];
 
 	// Mobile "More" tab is active when on any page that isn't the home page
-	// or one of the primary bottom-tab destinations.
+	// or one of the primary bottom-tab destinations. Uses activePath (not
+	// page.url.pathname) so the highlight switches optimistically.
 	const primaryTabHrefs = ['/explore', '/launchpad', '/trade', '/create'];
 	const moreTabActive = $derived(
-		page.url.pathname !== '/' &&
-			!primaryTabHrefs.some((p) => page.url.pathname.startsWith(p))
+		activePath !== '/' &&
+			!primaryTabHrefs.some((p) => activePath.startsWith(p))
 	);
 
 	// Nav search state
@@ -720,7 +728,7 @@
 						href={link.href}
 						onclick={() => { if (link.href === '/create') createMode.set(null); }}
 						class="nav-link px-3 py-1.5 rounded-md text-13 transition font-mono
-						{page.url.pathname === link.href || (link.href !== '/' && page.url.pathname.startsWith(link.href))
+						{activePath === link.href || (link.href !== "/" && activePath.startsWith(link.href))
 							? 'text-cyan-400 bg-cyan-400/10'
 							: 'text-gray-400 hover:text-white hover:bg-white/5'}"
 					>{$t(link.key)}</a>
@@ -729,7 +737,7 @@
 					<a
 						href="/manage-tokens"
 						class="nav-link px-3 py-1.5 rounded-md text-13 transition font-mono
-						{page.url.pathname.startsWith('/manage-tokens')
+						{activePath.startsWith("/manage-tokens")
 							? 'text-cyan-400 bg-cyan-400/10'
 							: 'text-gray-400 hover:text-white hover:bg-white/5'}"
 					>{$t('nav.manageTokens')}</a>
@@ -738,7 +746,7 @@
 					<a
 						href="/_"
 						class="nav-link px-3 py-1.5 rounded-md text-13 transition font-mono
-						{page.url.pathname.startsWith('/_')
+						{activePath.startsWith("/_")
 							? 'text-cyan-400 bg-cyan-400/10'
 							: 'text-gray-400 hover:text-white hover:bg-white/5'}"
 					>{$t('nav.admin')}</a>
@@ -829,7 +837,7 @@
 						href={link.href}
 						onclick={() => { mobileMenuOpen = false; if (link.href === '/create') createMode.set(null); }}
 						class="mobile-nav-link px-4 py-3 rounded-lg text-sm transition font-mono flex items-center
-						{page.url.pathname === link.href || (link.href !== '/' && page.url.pathname.startsWith(link.href))
+						{activePath === link.href || (link.href !== "/" && activePath.startsWith(link.href))
 							? 'text-cyan-400 bg-cyan-400/10'
 							: 'text-gray-400 hover:text-white hover:bg-white/5'}"
 					>{$t(link.key)}</a>
@@ -842,7 +850,7 @@
 						href={link.href}
 						onclick={() => (mobileMenuOpen = false)}
 						class="mobile-nav-link px-4 py-2.5 rounded-lg text-xs transition font-mono flex items-center
-						{page.url.pathname.startsWith(link.href)
+						{activePath.startsWith(link.href)
 							? 'text-cyan-400 bg-cyan-400/10'
 							: 'text-gray-500 hover:text-white hover:bg-white/5'}"
 					>{$t(link.key)}</a>
@@ -852,7 +860,7 @@
 						href="/_"
 						onclick={() => (mobileMenuOpen = false)}
 						class="mobile-nav-link px-4 py-2.5 rounded-lg text-xs transition font-mono flex items-center
-						{page.url.pathname.startsWith('/_')
+						{activePath.startsWith("/_")
 							? 'text-cyan-400 bg-cyan-400/10'
 							: 'text-gray-500 hover:text-white hover:bg-white/5'}"
 					>{$t('nav.admin')}</a>
@@ -954,20 +962,20 @@
 	     no heavy background tint, tiny labels. Active tab uses colour +
 	     stroke weight for the cue, not a filled pill. -->
 	<div class="fixed bottom-0 left-0 right-0 z-40 md:hidden flex items-stretch bg-background/95 backdrop-blur-md border-t border-line" style="height: calc(54px + env(safe-area-inset-bottom, 0px)); padding-bottom: env(safe-area-inset-bottom, 0px);">
-		<a href="/explore" aria-current={page.url.pathname.startsWith('/explore') ? 'page' : undefined} class={"flex-1 flex flex-col items-center justify-center gap-0.5 border-none bg-transparent no-underline font-mono text-4xs tracking-wide cursor-pointer transition-colors duration-150 " + (page.url.pathname.startsWith('/explore') ? 'text-cyan-400' : 'text-dim hover:text-foreground active:text-foreground')}>
-			<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width={page.url.pathname.startsWith('/explore') ? '2.4' : '1.8'}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+		<a href="/explore" aria-current={activePath.startsWith('/explore') ? 'page' : undefined} class={"flex-1 flex flex-col items-center justify-center gap-0.5 border-none bg-transparent no-underline font-mono text-4xs tracking-wide cursor-pointer transition-colors duration-150 " + (activePath.startsWith('/explore') ? 'text-cyan-400' : 'text-dim hover:text-foreground active:text-foreground')}>
+			<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width={activePath.startsWith('/explore') ? '2.4' : '1.8'}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
 			<span>Explore</span>
 		</a>
-		<a href="/launchpad" aria-current={page.url.pathname.startsWith('/launchpad') ? 'page' : undefined} class={"flex-1 flex flex-col items-center justify-center gap-0.5 border-none bg-transparent no-underline font-mono text-4xs tracking-wide cursor-pointer transition-colors duration-150 " + (page.url.pathname.startsWith('/launchpad') ? 'text-cyan-400' : 'text-dim hover:text-foreground active:text-foreground')}>
-			<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width={page.url.pathname.startsWith('/launchpad') ? '2.4' : '1.8'}><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+		<a href="/launchpad" aria-current={activePath.startsWith('/launchpad') ? 'page' : undefined} class={"flex-1 flex flex-col items-center justify-center gap-0.5 border-none bg-transparent no-underline font-mono text-4xs tracking-wide cursor-pointer transition-colors duration-150 " + (activePath.startsWith('/launchpad') ? 'text-cyan-400' : 'text-dim hover:text-foreground active:text-foreground')}>
+			<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width={activePath.startsWith('/launchpad') ? '2.4' : '1.8'}><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
 			<span>Launch</span>
 		</a>
-		<a href="/trade" aria-current={page.url.pathname.startsWith('/trade') ? 'page' : undefined} class={"flex-1 flex flex-col items-center justify-center gap-0.5 border-none bg-transparent no-underline font-mono text-4xs tracking-wide cursor-pointer transition-colors duration-150 " + (page.url.pathname.startsWith('/trade') ? 'text-cyan-400' : 'text-dim hover:text-foreground active:text-foreground')}>
-			<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width={page.url.pathname.startsWith('/trade') ? '2.4' : '1.8'}><path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4"/></svg>
+		<a href="/trade" aria-current={activePath.startsWith('/trade') ? 'page' : undefined} class={"flex-1 flex flex-col items-center justify-center gap-0.5 border-none bg-transparent no-underline font-mono text-4xs tracking-wide cursor-pointer transition-colors duration-150 " + (activePath.startsWith('/trade') ? 'text-cyan-400' : 'text-dim hover:text-foreground active:text-foreground')}>
+			<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width={activePath.startsWith('/trade') ? '2.4' : '1.8'}><path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4"/></svg>
 			<span>Trade</span>
 		</a>
-		<a href="/create" onclick={() => createMode.set(null)} aria-current={page.url.pathname.startsWith('/create') ? 'page' : undefined} class={"flex-1 flex flex-col items-center justify-center gap-0.5 border-none bg-transparent no-underline font-mono text-4xs tracking-wide cursor-pointer transition-colors duration-150 " + (page.url.pathname.startsWith('/create') ? 'text-cyan-400' : 'text-dim hover:text-foreground active:text-foreground')}>
-			<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width={page.url.pathname.startsWith('/create') ? '2.4' : '1.8'}><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+		<a href="/create" onclick={() => createMode.set(null)} aria-current={activePath.startsWith('/create') ? 'page' : undefined} class={"flex-1 flex flex-col items-center justify-center gap-0.5 border-none bg-transparent no-underline font-mono text-4xs tracking-wide cursor-pointer transition-colors duration-150 " + (activePath.startsWith('/create') ? 'text-cyan-400' : 'text-dim hover:text-foreground active:text-foreground')}>
+			<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width={activePath.startsWith('/create') ? '2.4' : '1.8'}><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
 			<span>Create</span>
 		</a>
 		<button aria-current={moreTabActive ? 'page' : undefined} class={"flex-1 flex flex-col items-center justify-center gap-0.5 border-none bg-transparent font-mono text-4xs tracking-wide cursor-pointer transition-colors duration-150 " + (moreTabActive ? 'text-cyan-400' : 'text-dim hover:text-foreground active:text-foreground')} onclick={() => (mobileMenuOpen = !mobileMenuOpen)}>
