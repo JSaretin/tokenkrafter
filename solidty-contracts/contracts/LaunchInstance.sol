@@ -962,7 +962,10 @@ contract LaunchInstance is ReentrancyGuard {
         _transferExact(pair, tokensForDexLP);
         usdt.safeTransfer(pair, usdtForLP);
 
-        // Mint LP tokens and burn them — permanent liquidity
+        // Mint LP tokens and burn them — permanent liquidity. The prior
+        // _transferExact(pair, tokensForDexLP) already auto-opened the
+        // pair via the token's _checkProtections hook (this launch is
+        // an excluded sender), so no separate activatePool call is needed.
         IUniswapV2Pair(pair).mint(address(0xdead));
 
         // Send remaining USDT to platform (graduation = no refunds)

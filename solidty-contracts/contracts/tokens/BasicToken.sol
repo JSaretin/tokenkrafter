@@ -28,11 +28,22 @@ contract BasicTokenImpl is ERC20Upgradeable, OwnableUpgradeable {
     uint8 private decimals_;
 
     // ── Pool gate state ──
-    struct PoolInfo { bool isPool; }
+    /// @dev A pool is unlocked for non-excluded transfers only when BOTH:
+    ///      - global trading is live (`block.timestamp >= tradingStartTime`)
+    ///      - `isOpen == true` for this specific pool
+    ///
+    ///      `isOpen` defaults to false when a pool is registered pre-launch
+    ///      (e.g. bases pre-registered at init) — the creator calls
+    ///      `activatePool(pair)` for each one when they're ready to open it.
+    ///      Pools added after global trading is already live auto-open on
+    ///      registration since there's no grifter window to protect.
+    struct PoolInfo { bool isPool; bool isOpen; }
     mapping(address => PoolInfo) public pools;
 
-    /// @notice Moment public pool trading opens. `type(uint256).max` means
-    ///         "not yet scheduled" — the default until `enableTrading` is called.
+    /// @notice Moment the token's trading surface opens globally. Pre-registered
+    ///         pools also need `isOpen` flipped to true before they accept
+    ///         non-excluded transfers — which protects pre-registered base
+    ///         pairs from grifter seeds even after this global fires.
     uint256 public tradingStartTime;
 
     /// @notice Maximum delay that can be passed to `enableTrading`.
@@ -60,6 +71,7 @@ contract BasicTokenImpl is ERC20Upgradeable, OwnableUpgradeable {
 
     // ── Events ──
     event PoolRegistered(address indexed pool, address indexed base);
+    event PoolActivated(address indexed pool);
     event TradingEnabled(uint256 startsAt);
     event MaxWalletAmountUpdated(uint256 amount);
     event MaxTransactionAmountUpdated(uint256 amount);
@@ -94,6 +106,12 @@ contract BasicTokenImpl is ERC20Upgradeable, OwnableUpgradeable {
     ///      (creating the pair if it doesn't exist yet) and marks it as a pool.
     ///      Used by both `initialize` (in a loop over `bases[]`) and by the
     ///      post-deploy `addPool(base)` entrypoint — single source of truth.
+    ///
+    ///      A pool registered BEFORE global trading is enabled defaults to
+    ///      `isOpen = false` — grifters transferring into it revert. A pool
+    ///      registered AFTER global trading is already live auto-opens — no
+    ///      grifter window to protect, and forcing a second tx to open the
+    ///      pair is friction without benefit.
     function _registerPool(address base) internal returns (address pair) {
         require(dexFactory != address(0), "DEX not set");
         require(base != address(0) && base != address(this), "Invalid base");
@@ -102,6 +120,10 @@ contract BasicTokenImpl is ERC20Upgradeable, OwnableUpgradeable {
         if (pair == address(0)) pair = dex.createPair(address(this), base);
         require(!pools[pair].isPool, "Duplicate pool");
         pools[pair].isPool = true;
+        if (tradingStartTime != type(uint256).max && block.timestamp >= tradingStartTime) {
+            pools[pair].isOpen = true;
+            emit PoolActivated(pair);
+        }
         emit PoolRegistered(pair, base);
     }
 
@@ -168,12 +190,20 @@ contract BasicTokenImpl is ERC20Upgradeable, OwnableUpgradeable {
 
     /// @notice Register an additional V2-style DEX pair by base token.
     ///         Resolves the pair address through the configured DEX factory,
-    ///         so an owner cannot mark an arbitrary wallet as a pool. Late
-    ///         additions carry NO anti-snipe lock; the window only applies to
-    ///         pools registered at init time.
+    ///         so an owner cannot mark an arbitrary wallet as a pool. The new
+    ///         pool is created locked (unlockTime = MAX) — call
+    ///         `activatePool` to open it.
     function addPool(address base) external onlyOwnerOrFactory {
         _registerPool(base);
     }
+
+    // No explicit `activatePool` entrypoint — pools auto-open on the
+    // first transfer from an allow-listed sender (owner, factory,
+    // authorized launcher, or other isExcludedFromLimits address) into
+    // the pair. See `_checkProtections` for the flip logic. This makes
+    // the seed-and-open flow a single transfer instead of two: the
+    // launchpad's graduation `_transferExact(pair, tokensForDexLP)`
+    // seeds liquidity AND flips isOpen in the same tx.
 
     /// @notice Register an arbitrary pool address. For DEXes where
     ///         `getPair(base, token)` cannot resolve the pool — Uniswap V3
@@ -190,7 +220,11 @@ contract BasicTokenImpl is ERC20Upgradeable, OwnableUpgradeable {
         require(tradingStartTime != type(uint256).max && block.timestamp >= tradingStartTime, "Trading not open");
         require(!pools[pool].isPool, "Already registered");
         pools[pool].isPool = true;
+        // Post-launch registration — auto-open (trading is already live,
+        // no grifter window to protect).
+        pools[pool].isOpen = true;
         emit PoolRegistered(pool, address(0));
+        emit PoolActivated(pool);
     }
 
     // ── Classic owner knobs ─────────────────────────────────────────
@@ -290,13 +324,32 @@ contract BasicTokenImpl is ERC20Upgradeable, OwnableUpgradeable {
     ///      Extracted so taxable `_update` can call it once per transfer and
     ///      then split sub-transfers without retriggering cooldown.
     function _checkProtections(address from, address to, uint256 value) internal {
-        // Pool-lock gate: first-and-only line of defense against grifter seeds
-        // and post-graduation snipe windows.
-        if ((pools[from].isPool || pools[to].isPool) && block.timestamp < tradingStartTime) {
-            require(
-                isExcludedFromLimits[from] || isExcludedFromLimits[to],
-                "Pool locked"
-            );
+        // Pool-lock gate: a pool transfer is allowed only if global trading
+        // is live AND the specific pool's isOpen flag is set. Failing
+        // either, only allow-listed addresses (isExcludedFromLimits) can
+        // push tokens in/out.
+        //
+        // Auto-open: an excluded sender transferring INTO a locked pool
+        // (typically the launchpad instance seeding LP at graduation)
+        // flips that pool's isOpen = true in the same tx. No separate
+        // activatePool call needed — the seed transfer itself opens the
+        // pair. Grifters can't trigger this because they're not excluded.
+        bool involvesPool = pools[from].isPool || pools[to].isPool;
+        if (involvesPool) {
+            bool globalOpen = block.timestamp >= tradingStartTime;
+            bool fromLocked = pools[from].isPool && !pools[from].isOpen;
+            bool toLocked = pools[to].isPool && !pools[to].isOpen;
+            if (!globalOpen || fromLocked || toLocked) {
+                bool senderExcluded = isExcludedFromLimits[from];
+                require(
+                    senderExcluded || isExcludedFromLimits[to],
+                    "Pool locked"
+                );
+                if (toLocked && senderExcluded) {
+                    pools[to].isOpen = true;
+                    emit PoolActivated(to);
+                }
+            }
         }
 
         require(!blacklisted[from] && !blacklisted[to], "Blacklisted");
