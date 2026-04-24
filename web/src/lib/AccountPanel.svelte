@@ -104,10 +104,13 @@
 	let nativeUsd = $derived(nativeBalFormatted * nativePriceUsd);
 	let totalUsd = $derived.by(() => {
 		let total = nativeUsd;
+		const hidden = $hiddenAssets;
 		for (const t of tokens) {
+			if (hidden.includes(t.address.toLowerCase())) continue;
 			if (t.priceUsd) total += parseFloat(ethers.formatUnits(t.balance, t.decimals)) * t.priceUsd;
 		}
 		for (const t of importedTokens) {
+			if (hidden.includes(t.address.toLowerCase())) continue;
 			if (t.priceUsd && t.balance > 0n) total += parseFloat(ethers.formatUnits(t.balance, t.decimals)) * t.priceUsd;
 		}
 		return total;
@@ -1106,9 +1109,35 @@
 			</div>
 		{/if}
 
-		<!-- Assets header -->
-		<div class="pt-2 px-4 pb-1 font-display text-xs font-bold text-(--text-dim) uppercase tracking-[0.04em]">{$t('account.assets')}</div>
+		<!-- Assets header with filter/import icon on the right -->
+		<div class="pt-2 px-4 pb-1 flex items-center justify-between gap-2">
+			<span class="font-display text-xs font-bold text-(--text-dim) uppercase tracking-[0.04em]">{$t('account.assets')}</span>
+			<button
+				type="button"
+				class="p-1.5 rounded-lg text-(--text-dim) transition-all hover:text-(--text-heading) hover:bg-(--bg-surface-hover)"
+				onclick={() => (showImport = !showImport)}
+				aria-label={showImport ? 'Close import' : 'Import or manage assets'}
+				title={showImport ? 'Close' : 'Import or manage'}
+			>
+				{#if showImport}
+					<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+				{:else}
+					<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+				{/if}
+			</button>
+		</div>
 
+		{#if showImport}
+			<div class="py-1.5 px-4 flex flex-col gap-1.5">
+				<input class="ap-input" type="text" placeholder="Paste token address (0x...)" bind:value={importAddress} {...INPUT_ATTRS} />
+				<div class="flex gap-1.5 justify-end">
+					<button class="ap-btn-s" onclick={() => { showImport = false; importAddress = ''; }}>Cancel</button>
+					<button class="ap-btn-s ap-btn-primary" disabled={importLoading} onclick={() => handleImportToken()}>
+						{importLoading ? 'Loading...' : 'Import'}
+					</button>
+				</div>
+			</div>
+		{/if}
 
 		{#if true}
 			{@const nativeCompact = compactRows.has('native')}
@@ -1234,22 +1263,6 @@
 					{/if}
 				{/if}
 
-				{#if showImport}
-					<div class="py-1.5 px-4 flex flex-col gap-1.5">
-						<input class="ap-input" type="text" placeholder="Token address (0x...)" bind:value={importAddress} {...INPUT_ATTRS} />
-						<div class="flex gap-1.5 justify-end">
-							<button class="ap-btn-s" onclick={() => { showImport = false; importAddress = ''; }}>Cancel</button>
-							<button class="ap-btn-s ap-btn-primary" disabled={importLoading} onclick={() => handleImportToken()}>
-								{importLoading ? 'Loading...' : 'Import'}
-							</button>
-						</div>
-					</div>
-				{:else}
-					<button class="flex items-center justify-center gap-[5px] mx-4 my-1 py-[9px] border border-dashed border-(--border) rounded-lg bg-transparent text-(--text-dim) cursor-pointer font-mono text-3xs transition-all duration-150 hover:border-[rgba(0,210,255,0.15)] hover:text-[#00d2ff] w-[calc(100%-2rem)]" onclick={() => showImport = true}>
-						<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-						{$t('account.importToken')}
-					</button>
-				{/if}
 			</div>
 
 		{/if}
