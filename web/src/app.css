@@ -91,6 +91,18 @@
 :root { color-scheme: dark; }
 :root.light { color-scheme: light; }
 
+/* iOS Safari auto-zooms when a focused input's computed font-size is
+   below 16px. `@supports (-webkit-touch-callout: none)` is the common
+   iOS-only probe — so we bump any input/textarea/select to at least
+   16px on iOS without changing sizes on Android or desktop. */
+@supports (-webkit-touch-callout: none) {
+  input,
+  textarea,
+  select {
+    font-size: max(16px, 1em);
+  }
+}
+
 /* ─────────────────────────────────────────────────────────
    Legacy var aliases.
    Components and `<style>` blocks across the codebase still
