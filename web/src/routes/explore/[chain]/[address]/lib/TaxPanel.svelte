@@ -4,20 +4,33 @@
 
 	let {
 		taxInfo,
+		isTaxable = false,
 		isHoneypot,
 		notTradingYet,
 		antiSnipeLock,
 		antiSnipeSeconds,
 	}: {
 		taxInfo: TaxInfo | null;
+		isTaxable?: boolean;
 		isHoneypot: boolean;
 		notTradingYet: boolean;
 		antiSnipeLock: boolean;
 		antiSnipeSeconds: number;
 	} = $props();
+
+	// Tax-simulation card is only meaningful when the token actually has a
+	// tax surface (declared taxable) OR when a non-zero tax was observed in
+	// the simulation. For vanilla non-taxable tokens it's just noise —
+	// honeypot / not-trading warnings live in TradeWarningBanner anyway.
+	let hasTax = $derived(!!taxInfo && (
+		taxInfo.buyTaxBps > 0 ||
+		taxInfo.sellTaxBps > 0 ||
+		taxInfo.transferTaxBps > 0
+	));
+	let show = $derived(!!taxInfo && (isTaxable || hasTax || antiSnipeLock));
 </script>
 
-{#if taxInfo}
+{#if show && taxInfo}
 	<div class="bg-warning/2 border border-warning/10 rounded-xl overflow-hidden mb-4">
 		<div class="flex items-center gap-2 px-4 py-2.5 border-b border-warning/8 syne text-xs3 font-bold text-[#92400e] uppercase tracking-wide">
 			<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>

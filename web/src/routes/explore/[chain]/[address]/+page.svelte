@@ -242,6 +242,7 @@
 
 	<TaxPanel
 		{taxInfo}
+		isTaxable={view.isTaxable}
 		{isHoneypot}
 		{notTradingYet}
 		{antiSnipeLock}
@@ -258,30 +259,32 @@
 		{taxDistribution}
 	/>
 
-	<!-- Action bar -->
-	<div class="flex gap-2 mb-7 flex-wrap">
+	<!-- Action bar — primary Trade CTA + dense icon chips. On narrow
+	     viewports the secondary buttons collapse to icons to keep the
+	     whole row on one line. -->
+	<div class="flex items-stretch gap-1.5 mb-5">
 		{#if view.hasLiquidity}
-			<a href="/trade?token={tokenAddress}" class="inline-flex items-center gap-1.75 px-4 py-2.5 rounded-[10px] bg-linear-to-br from-cyan/12 to-success/12 border border-cyan/20 text-cyan syne font-bold text-sm2 cursor-pointer transition-all duration-150 no-underline hover:-translate-y-px hover:shadow-[0_4px_20px_rgba(0,210,255,0.15)] hover:from-cyan/18 hover:to-success/18">
-				<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
-				{$t('explore.detail.tradeSymbol').replace('{symbol}', view.symbol)}
+			<a href="/trade?token={tokenAddress}" class="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-linear-to-br from-cyan/12 to-success/12 border border-cyan/20 text-cyan syne font-bold text-xs2 cursor-pointer transition-all duration-150 no-underline hover:shadow-[0_4px_16px_rgba(0,210,255,0.18)] hover:from-cyan/20 hover:to-success/20 min-w-0">
+				<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="shrink-0"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+				<span class="truncate">{$t('explore.detail.tradeSymbol').replace('{symbol}', view.symbol)}</span>
 			</a>
 		{/if}
-		<button class="inline-flex items-center gap-1.75 px-4 py-2.5 rounded-[10px] border border-(--border) bg-(--bg-surface) text-(--text-dim) font-mono text-xs3 cursor-pointer transition-all duration-150 no-underline hover:bg-(--bg-surface-hover) hover:text-(--text) hover:border-(--border-input)" onclick={addToWallet}>
-			<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg>
-			{addedToWallet ? $t('explore.detail.added') : $t('explore.detail.wallet')}
+		<button class="shrink-0 inline-flex items-center justify-center gap-1 px-2.5 py-2 rounded-lg border border-(--border) bg-(--bg-surface) text-(--text-dim) font-mono text-3xs cursor-pointer transition-all duration-150 hover:bg-(--bg-surface-hover) hover:text-(--text) hover:border-(--border-input)" onclick={addToWallet} aria-label={$t('explore.detail.wallet')} title={$t('explore.detail.wallet')}>
+			<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg>
+			<span class="hidden sm:inline">{addedToWallet ? $t('explore.detail.added') : $t('explore.detail.wallet')}</span>
 		</button>
-		<a href="{chainInfo.explorer}/token/{tokenAddress}" target="_blank" rel="noopener" class="inline-flex items-center gap-1.75 px-4 py-2.5 rounded-[10px] border border-(--border) bg-(--bg-surface) text-(--text-dim) font-mono text-xs3 cursor-pointer transition-all duration-150 no-underline hover:bg-(--bg-surface-hover) hover:text-(--text) hover:border-(--border-input)">
-			<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-			{$t('explore.detail.explorer')}
+		<a href="{chainInfo.explorer}/token/{tokenAddress}" target="_blank" rel="noopener" class="shrink-0 inline-flex items-center justify-center gap-1 px-2.5 py-2 rounded-lg border border-(--border) bg-(--bg-surface) text-(--text-dim) font-mono text-3xs cursor-pointer transition-all duration-150 no-underline hover:bg-(--bg-surface-hover) hover:text-(--text) hover:border-(--border-input)" aria-label={$t('explore.detail.explorer')} title={$t('explore.detail.explorer')}>
+			<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+			<span class="hidden sm:inline">{$t('explore.detail.explorer')}</span>
 		</a>
-		<button class="inline-flex items-center gap-1.75 px-4 py-2.5 rounded-[10px] border border-(--border) bg-(--bg-surface) text-(--text-dim) font-mono text-xs3 cursor-pointer transition-all duration-150 no-underline hover:bg-(--bg-surface-hover) hover:text-(--text) hover:border-(--border-input)" onclick={shareUrl}>
-			<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
-			{copiedUrl ? $t('explore.detail.copied') : $t('explore.detail.share')}
+		<button class="shrink-0 inline-flex items-center justify-center gap-1 px-2.5 py-2 rounded-lg border border-(--border) bg-(--bg-surface) text-(--text-dim) font-mono text-3xs cursor-pointer transition-all duration-150 hover:bg-(--bg-surface-hover) hover:text-(--text) hover:border-(--border-input)" onclick={shareUrl} aria-label={$t('explore.detail.share')} title={$t('explore.detail.share')}>
+			<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+			<span class="hidden sm:inline">{copiedUrl ? $t('explore.detail.copied') : $t('explore.detail.share')}</span>
 		</button>
 		{#if isCreator && view.isOnPlatform}
-			<a href="/manage-tokens/{data.chainSlug}/{tokenAddress}" class="inline-flex items-center gap-1.75 px-4 py-2.5 rounded-[10px] bg-linear-to-br from-[rgba(168,85,247,0.12)] to-purple-dark/12 border border-[rgba(168,85,247,0.2)] text-[#a855f7] syne font-bold text-sm2 cursor-pointer transition-all duration-150 no-underline hover:-translate-y-px hover:shadow-[0_4px_20px_rgba(168,85,247,0.15)]">
-				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 15.5A3.5 3.5 0 1 0 12 8.5a3.5 3.5 0 0 0 0 7z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-				{$t('explore.detail.manage')}
+			<a href="/manage-tokens/{data.chainSlug}/{tokenAddress}" class="shrink-0 inline-flex items-center justify-center gap-1 px-2.5 py-2 rounded-lg bg-[rgba(168,85,247,0.1)] border border-[rgba(168,85,247,0.22)] text-[#a855f7] syne font-bold text-3xs cursor-pointer transition-all duration-150 no-underline hover:bg-[rgba(168,85,247,0.16)]" aria-label={$t('explore.detail.manage')} title={$t('explore.detail.manage')}>
+				<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 15.5A3.5 3.5 0 1 0 12 8.5a3.5 3.5 0 0 0 0 7z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+				<span class="hidden sm:inline">{$t('explore.detail.manage')}</span>
 			</a>
 		{/if}
 	</div>

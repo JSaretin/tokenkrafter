@@ -25,6 +25,7 @@
 	import TokenForm from './lib/TokenForm.svelte';
 	import type { ListingConfig, TokenFormData, PreviewState } from './lib/TokenForm.svelte';
 	import { userTokens, addUserToken } from '$lib/userTokens';
+	import { get as getStore } from 'svelte/store';
 	import {
 		toUrlIntentView,
 		toInitialFormData,
@@ -676,9 +677,12 @@
 
 		// Set payment options for selected network, then merge user-imported
 		// tokens from the shared store (only those on the same chain).
+		// Use `get()` instead of $ prefix — this function runs asynchronously
+		// from a user action, and auto-subscription inside async bodies is
+		// fragile across Svelte 5 contexts.
 		const defaults = getPaymentOptions(info!.network);
 		const defaultAddrs = new Set<string>(defaults.map(o => o.address.toLowerCase()));
-		const extras: PaymentOption[] = $userTokens
+		const extras: PaymentOption[] = getStore(userTokens)
 			.filter(t => t.chainId === info!.network.chain_id && !defaultAddrs.has(t.address))
 			.map(t => ({ symbol: t.symbol, name: t.name, address: t.address, decimals: t.decimals }));
 		const options = [...defaults, ...extras];
