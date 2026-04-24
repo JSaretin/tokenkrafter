@@ -753,7 +753,11 @@
 				_wsSubs.push(sub);
 			}
 
-			refreshInterval = setInterval(refreshData, 120_000);
+			// Even with a WS subscription, keep a 30s poll as a safety net.
+			// WebSockets can silently stall — mobile background, proxy drops,
+			// idle timeouts — without firing a close event. 2 min was too
+			// long to notice the gap.
+			refreshInterval = setInterval(refreshData, 30_000);
 		} else {
 			refreshInterval = setInterval(refreshData, 15000);
 		}
@@ -1494,13 +1498,15 @@
 		await refreshLatestTransactions();
 	}
 
-	// Activity feed: WS events already trigger refreshLatestTransactions via launch sub.
-	// Keep a slow fallback poll for safety.
+	// Activity feed: WS events already trigger refreshLatestTransactions via
+	// the launch sub. Polling fallback at 30s catches silently-dropped WS
+	// connections (mobile background, proxy idle) so activity still appears
+	// when another device buys.
 	$effect(() => {
 		const ws = getWsManager();
 		if (launch && launch.state === 1) {
 			loadTransactions();
-			txRefreshInterval = setInterval(refreshLatestTransactions, ws ? 120_000 : 15000);
+			txRefreshInterval = setInterval(refreshLatestTransactions, ws ? 30_000 : 15000);
 		} else {
 			loadTransactions();
 		}
