@@ -285,6 +285,19 @@
 	let graduatedCount = $derived(launches.filter(l => l.state === 2).length);
 	let totalRaised = $derived(launches.reduce((sum, l) => sum + l.totalBaseRaised, 0n));
 
+	// Smart default tab: don't strand the user on an empty "Live" view
+	// when the platform has only graduated launches. Runs once data has
+	// loaded, and only if the user hasn't already changed tab.
+	let _tabAutoSwitched = false;
+	$effect(() => {
+		if (loading || _tabAutoSwitched || activeTab !== 'live' || launches.length === 0) return;
+		if (liveCount > 0) { _tabAutoSwitched = true; return; }
+		if (graduatedCount > 0) activeTab = 'graduated';
+		else if (upcomingCount > 0) activeTab = 'upcoming';
+		else activeTab = 'all';
+		_tabAutoSwitched = true;
+	});
+
 	// Database row mapper
 	function dbRowToLaunch(row: any): (LaunchInfo & { network: SupportedNetwork }) | null {
 		const net = supportedNetworks.find((n) => n.chain_id === row.chain_id);
@@ -522,8 +535,10 @@
 			<p class="text-muted font-mono text-xs mt-1">{$t('lp.subtitle')}</p>
 		</div>
 		<div class="flex gap-2">
-			<a href="/create?launch=true" class="btn-primary text-xs px-4 py-2 no-underline">{$t('lp.createLaunch')}</a>
-			<a href="/create" class="btn-secondary text-xs px-4 py-2 no-underline">{$t('lp.createToken')}</a>
+			<!-- Single primary CTA — /create handles the intent picker
+			     (token / token+launch / token+listing). Two side-by-side
+			     CTAs here just duplicated that choice a step earlier. -->
+			<a href="/create" class="btn-primary text-xs px-4 py-2 no-underline">{$t('lp.createLaunch')}</a>
 		</div>
 	</div>
 
