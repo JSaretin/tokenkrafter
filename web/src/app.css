@@ -103,6 +103,29 @@
   }
 }
 
+/* Mobile readability: bump the root font-size so every rem-based
+   Tailwind utility (text-xs, text-sm, text-base, etc.) scales up
+   proportionally on small screens. 17px vs. the default 16px is a
+   ~6% lift — enough to help the many text-xs / text-xs2 labels
+   without reshaping tap targets. Also floor the most common literal
+   px sizes so meta/label text stays legible (they don't scale with
+   the rem bump). */
+@media (max-width: 768px) {
+  html {
+    font-size: 17px;
+  }
+  .text-\[8px\],
+  .text-\[9px\] {
+    font-size: 11px;
+  }
+  .text-\[10px\] {
+    font-size: 12px;
+  }
+  .text-\[11px\] {
+    font-size: 12px;
+  }
+}
+
 /* ─────────────────────────────────────────────────────────
    Legacy var aliases.
    Components and `<style>` blocks across the codebase still
