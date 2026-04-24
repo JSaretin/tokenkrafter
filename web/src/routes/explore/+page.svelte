@@ -517,7 +517,10 @@
 								{/if}
 								{#if isOnLaunchpad(tok)}
 									<span class="tc-badge tc-badge-live-launch">Live Launch</span>
-								{:else if !gecko?.has_data && !tok.has_liquidity}
+								{:else if !gecko?.has_data && !(safu?.hasLiquidity ?? tok.has_liquidity)}
+									<!-- Prefer the on-chain SafuLens result over the indexed DB
+									     column so a graduated launch whose row hasn't been
+									     re-indexed yet doesn't mistakenly render as pre-launch. -->
 									<span class="tc-badge tc-badge-prelaunch">Pre-launch</span>
 								{/if}
 								{#if tok.created_at && isNew(tok.created_at)}

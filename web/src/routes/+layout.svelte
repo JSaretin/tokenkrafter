@@ -950,31 +950,28 @@
 	</footer>
 	</div>
 
-	<!-- Mobile Bottom Tab Bar -->
-	<div class="fixed bottom-0 left-0 right-0 z-40 md:hidden flex items-stretch bg-background border-t border-line" style="height: calc(60px + env(safe-area-inset-bottom, 0px)); padding-bottom: env(safe-area-inset-bottom, 0px);">
-		<a href="/explore" aria-current={page.url.pathname.startsWith('/explore') ? 'page' : undefined} class="bottom-tab relative flex-1 flex flex-col items-center justify-center gap-0.5 border-none bg-none no-underline font-mono text-3xs cursor-pointer transition-colors duration-150 hover:text-foreground active:text-foreground {page.url.pathname.startsWith('/explore') ? 'text-cyan-400 font-bold bg-cyan-400/5' : 'text-dim'}">
-			<span aria-hidden="true" class="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-[3px] rounded-b-full bg-cyan-400 transition-opacity duration-150 {page.url.pathname.startsWith('/explore') ? 'opacity-100' : 'opacity-0'}"></span>
-			<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+	<!-- Mobile Bottom Tab Bar — PancakeSwap-style: compact, icon-led,
+	     no heavy background tint, tiny labels. Active tab uses colour +
+	     stroke weight for the cue, not a filled pill. -->
+	<div class="fixed bottom-0 left-0 right-0 z-40 md:hidden flex items-stretch bg-background/95 backdrop-blur-md border-t border-line" style="height: calc(54px + env(safe-area-inset-bottom, 0px)); padding-bottom: env(safe-area-inset-bottom, 0px);">
+		<a href="/explore" aria-current={page.url.pathname.startsWith('/explore') ? 'page' : undefined} class={"flex-1 flex flex-col items-center justify-center gap-0.5 border-none bg-transparent no-underline font-mono text-4xs tracking-wide cursor-pointer transition-colors duration-150 " + (page.url.pathname.startsWith('/explore') ? 'text-cyan-400' : 'text-dim hover:text-foreground active:text-foreground')}>
+			<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width={page.url.pathname.startsWith('/explore') ? '2.4' : '1.8'}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
 			<span>Explore</span>
 		</a>
-		<a href="/launchpad" aria-current={page.url.pathname.startsWith('/launchpad') ? 'page' : undefined} class="bottom-tab relative flex-1 flex flex-col items-center justify-center gap-0.5 border-none bg-none no-underline font-mono text-3xs cursor-pointer transition-colors duration-150 hover:text-foreground active:text-foreground {page.url.pathname.startsWith('/launchpad') ? 'text-cyan-400 font-bold bg-cyan-400/5' : 'text-dim'}">
-			<span aria-hidden="true" class="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-[3px] rounded-b-full bg-cyan-400 transition-opacity duration-150 {page.url.pathname.startsWith('/launchpad') ? 'opacity-100' : 'opacity-0'}"></span>
-			<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-			<span>Launchpad</span>
+		<a href="/launchpad" aria-current={page.url.pathname.startsWith('/launchpad') ? 'page' : undefined} class={"flex-1 flex flex-col items-center justify-center gap-0.5 border-none bg-transparent no-underline font-mono text-4xs tracking-wide cursor-pointer transition-colors duration-150 " + (page.url.pathname.startsWith('/launchpad') ? 'text-cyan-400' : 'text-dim hover:text-foreground active:text-foreground')}>
+			<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width={page.url.pathname.startsWith('/launchpad') ? '2.4' : '1.8'}><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+			<span>Launch</span>
 		</a>
-		<a href="/trade" aria-current={page.url.pathname.startsWith('/trade') ? 'page' : undefined} class="bottom-tab relative flex-1 flex flex-col items-center justify-center gap-0.5 border-none bg-none no-underline font-mono text-3xs cursor-pointer transition-colors duration-150 hover:text-foreground active:text-foreground {page.url.pathname.startsWith('/trade') ? 'text-cyan-400 font-bold bg-cyan-400/5' : 'text-dim'}">
-			<span aria-hidden="true" class="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-[3px] rounded-b-full bg-cyan-400 transition-opacity duration-150 {page.url.pathname.startsWith('/trade') ? 'opacity-100' : 'opacity-0'}"></span>
-			<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4"/></svg>
+		<a href="/trade" aria-current={page.url.pathname.startsWith('/trade') ? 'page' : undefined} class={"flex-1 flex flex-col items-center justify-center gap-0.5 border-none bg-transparent no-underline font-mono text-4xs tracking-wide cursor-pointer transition-colors duration-150 " + (page.url.pathname.startsWith('/trade') ? 'text-cyan-400' : 'text-dim hover:text-foreground active:text-foreground')}>
+			<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width={page.url.pathname.startsWith('/trade') ? '2.4' : '1.8'}><path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4"/></svg>
 			<span>Trade</span>
 		</a>
-		<a href="/create" onclick={() => createMode.set(null)} aria-current={page.url.pathname.startsWith('/create') ? 'page' : undefined} class="bottom-tab relative flex-1 flex flex-col items-center justify-center gap-0.5 border-none bg-none no-underline font-mono text-3xs cursor-pointer transition-colors duration-150 hover:text-foreground active:text-foreground {page.url.pathname.startsWith('/create') ? 'text-cyan-400 font-bold bg-cyan-400/5' : 'text-dim'}">
-			<span aria-hidden="true" class="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-[3px] rounded-b-full bg-cyan-400 transition-opacity duration-150 {page.url.pathname.startsWith('/create') ? 'opacity-100' : 'opacity-0'}"></span>
-			<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+		<a href="/create" onclick={() => createMode.set(null)} aria-current={page.url.pathname.startsWith('/create') ? 'page' : undefined} class={"flex-1 flex flex-col items-center justify-center gap-0.5 border-none bg-transparent no-underline font-mono text-4xs tracking-wide cursor-pointer transition-colors duration-150 " + (page.url.pathname.startsWith('/create') ? 'text-cyan-400' : 'text-dim hover:text-foreground active:text-foreground')}>
+			<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width={page.url.pathname.startsWith('/create') ? '2.4' : '1.8'}><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
 			<span>Create</span>
 		</a>
-		<button aria-current={moreTabActive ? 'page' : undefined} class="relative flex-1 flex flex-col items-center justify-center gap-0.5 border-none bg-none font-mono text-3xs cursor-pointer transition-colors duration-150 hover:text-foreground active:text-foreground {moreTabActive ? 'text-cyan-400 font-bold bg-cyan-400/5' : 'text-dim'}" onclick={() => (mobileMenuOpen = !mobileMenuOpen)}>
-			<span aria-hidden="true" class="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-[3px] rounded-b-full bg-cyan-400 transition-opacity duration-150 {moreTabActive ? 'opacity-100' : 'opacity-0'}"></span>
-			<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+		<button aria-current={moreTabActive ? 'page' : undefined} class={"flex-1 flex flex-col items-center justify-center gap-0.5 border-none bg-transparent font-mono text-4xs tracking-wide cursor-pointer transition-colors duration-150 " + (moreTabActive ? 'text-cyan-400' : 'text-dim hover:text-foreground active:text-foreground')} onclick={() => (mobileMenuOpen = !mobileMenuOpen)}>
+			<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width={moreTabActive ? '2.4' : '1.8'}><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg>
 			<span>More</span>
 		</button>
 	</div>
