@@ -8,6 +8,7 @@
 	import { friendlyError } from '$lib/errorDecoder';
 	import QrCode from '$lib/QrCode.svelte';
 	import { getKnownLogo } from '$lib/tokenLogo';
+	import { userTokens, addUserToken } from '$lib/userTokens';
 	import TokenPickerModal, { type PickerToken } from '$lib/TokenPickerModal.svelte';
 	import { supabase } from '$lib/supabaseClient';
 	import { favorites, toggleFavorite } from '$lib/favorites';
@@ -333,6 +334,17 @@
 			if (!b.address || tokens.find(t => t.address.toLowerCase() === b.address.toLowerCase())) continue;
 			if (wrappedNative.has(b.symbol.toUpperCase())) continue; // native coin already listed
 			tokens.push({ address: b.address, symbol: b.symbol, name: b.name || b.symbol, decimals: 18, logoUrl: getKnownLogo(b.symbol) });
+		}
+		// Append user-imported tokens from the shared store (same chain only).
+		// The picker itself surfaces balances; we show them as options so the
+		// user can pay with anything they already hold.
+		const seen = new Set(tokens.map(t => t.address.toLowerCase()));
+		for (const ut of $userTokens) {
+			if (ut.chainId !== network.chain_id) continue;
+			const a = ut.address.toLowerCase();
+			if (seen.has(a)) continue;
+			tokens.push({ address: ut.address, symbol: ut.symbol, name: ut.name, decimals: ut.decimals, logoUrl: ut.logoUrl || getKnownLogo(ut.symbol), chainId: ut.chainId });
+			seen.add(a);
 		}
 		return tokens;
 	});
@@ -959,6 +971,16 @@
 			buyPaymentMethod = 'custom';
 			customPayToken = token;
 			paymentDecimals = token.decimals;
+			// Persist custom pay tokens so they appear in every other selector
+			// (wallet, trade, create) without needing to re-import them.
+			addUserToken({
+				address: addr,
+				symbol: token.symbol,
+				name: token.name,
+				decimals: token.decimals,
+				logoUrl: token.logoUrl || '',
+				chainId: network.chain_id,
+			});
 		}
 	}
 

@@ -17,6 +17,7 @@
 	import { findBestRoute as findBestRouteOnChain } from '$lib/routeFinder';
 	import { pushPreferences } from '$lib/embeddedWallet';
 	import { resolveTokenLogo } from '$lib/tokenLogo';
+	import { userTokens, addUserToken, updateUserToken, removeUserToken } from '$lib/userTokens';
 	import { t } from '$lib/i18n';
 	import SwapCardShell from './SwapCardShell.svelte';
 	import TokenInput from './TokenInput.svelte';
@@ -224,70 +225,58 @@
 		return tokens;
 	});
 
-	// ── Imported tokens (persisted to localStorage) ──────────
+	// ── Imported tokens (backed by shared userTokens store) ─────
 	type ImportedToken = { address: string; symbol: string; name: string; decimals: number; chainId: number; logo_url?: string };
-	let importedTokens: ImportedToken[] = $state([]);
 
-	// Load from localStorage on mount — merge both trade + wallet imported tokens
-	function loadImportedTokens() {
-		try {
-			// Trade page tokens
-			const stored = localStorage.getItem('importedTokens');
-			if (stored) importedTokens = JSON.parse(stored);
-		} catch {}
-		// Also load wallet imported tokens (different localStorage key)
-		try {
-			const walletTokens = localStorage.getItem('imported_tokens');
-			if (walletTokens) {
-				const parsed = JSON.parse(walletTokens);
-				for (const t of parsed) {
-					const addr = t.address?.toLowerCase();
-					if (addr && !importedTokens.find(x => x.address.toLowerCase() === addr)) {
-						importedTokens.push({
-							address: t.address,
-							symbol: t.symbol || '???',
-							name: t.name || 'Unknown',
-							decimals: t.decimals || 18,
-							chainId: 56,
-							logo_url: t.logoUrl || '',
-						});
-					}
-				}
-			}
-		} catch {}
-		// Resolve missing logos via shared cache
+	// Derive from the unified store so tokens imported anywhere (wallet,
+	// create, launchpad) show up here too. The store handles persistence +
+	// legacy-key migration.
+	let importedTokens: ImportedToken[] = $derived(
+		$userTokens.map(t => ({
+			address: t.address,
+			symbol: t.symbol,
+			name: t.name,
+			decimals: t.decimals,
+			chainId: t.chainId,
+			logo_url: t.logoUrl || '',
+		}))
+	);
+
+	// Resolve missing logos — writes back to the store so every consumer
+	// benefits from the cached URL.
+	$effect(() => {
 		for (const t of importedTokens) {
 			if (!t.logo_url && t.address) {
 				resolveTokenLogo(t.address, t.chainId || 56).then(url => {
-					if (url) {
-						t.logo_url = url;
-						importedTokens = [...importedTokens];
-					}
+					if (url) updateUserToken(t.address, t.chainId, { logoUrl: url });
 				});
 			}
 		}
-	}
+	});
 
 	function saveImportedToken(token: ImportedToken) {
-		if (importedTokens.find(t => t.address.toLowerCase() === token.address.toLowerCase() && t.chainId === token.chainId)) return;
-		// Resolve logo before saving
-		if (!token.logo_url && token.address) {
-			resolveTokenLogo(token.address, token.chainId || 56).then(url => {
-				if (url) {
-					token.logo_url = url;
-					importedTokens = [...importedTokens];
-					try { localStorage.setItem('importedTokens', JSON.stringify(importedTokens)); } catch {}
-				}
+		const chainId = token.chainId || selectedNetwork?.chain_id || 56;
+		const addr = token.address.toLowerCase();
+		const before = $userTokens.length;
+		addUserToken({
+			address: addr,
+			symbol: token.symbol,
+			name: token.name,
+			decimals: token.decimals,
+			logoUrl: token.logo_url || '',
+			chainId,
+		});
+		if ($userTokens.length !== before) refreshPrices();
+		if (!token.logo_url) {
+			resolveTokenLogo(addr, chainId).then(url => {
+				if (url) updateUserToken(addr, chainId, { logoUrl: url });
 			});
 		}
-		importedTokens = [...importedTokens, token];
-		try { localStorage.setItem('importedTokens', JSON.stringify(importedTokens)); } catch {}
-		refreshPrices();
 	}
 
 	function removeImportedToken(address: string) {
-		importedTokens = importedTokens.filter(t => t.address.toLowerCase() !== address.toLowerCase());
-		try { localStorage.setItem('importedTokens', JSON.stringify(importedTokens)); } catch {}
+		const chainId = selectedNetwork?.chain_id || 56;
+		removeUserToken(address, chainId);
 	}
 
 	// ── Auto-detect pasted address ────────────────────────────
@@ -430,7 +419,8 @@
 
 	// ── Data from server (platformTokens, ngBanks, fiatRates) — already loaded ──
 	onMount(async () => {
-		loadImportedTokens();
+		// importedTokens hydrates itself from the userTokens store (legacy keys
+		// are migrated on first load).
 
 		// ── Fetch all token prices (instant quotes) ──────────────
 		refreshPrices();

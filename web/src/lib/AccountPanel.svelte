@@ -29,6 +29,8 @@
 	import { friendlyError } from './errorDecoder';
 	import QrCode from './QrCode.svelte';
 	import { t } from '$lib/i18n';
+	import { userTokens, addUserToken, updateUserToken, removeUserToken, type UserToken } from './userTokens';
+	import { hiddenAssets, toggleHidden } from './hiddenAssets';
 
 	let {
 		open = $bindable(false),
@@ -122,12 +124,14 @@
 		return set;
 	});
 
-	// Pinned stablecoin rows — rendered right after native coin, always visible
+	// Pinned stablecoin rows — rendered right after native coin, always visible.
+	// Hidden ones move to the "hidden" section at the bottom.
 	let pinnedStables = $derived.by(() => {
 		const rows: { address: string; symbol: string; name: string; balance: bigint; decimals: number; priceUsd?: number; logoUrl?: string; _bal: number; _usd: number }[] = [];
 		const addEntry = (addr: string, symbol: string, name: string) => {
 			if (!addr) return;
 			const lower = addr.toLowerCase();
+			if ($hiddenAssets.includes(lower)) return;
 			const match = [...tokens, ...importedTokens].find(t => t.address.toLowerCase() === lower);
 			const decimals = match?.decimals ?? 18;
 			const balance = match?.balance ?? 0n;
@@ -149,10 +153,10 @@
 	});
 
 	// All displayable tokens sorted by USD value (highest first, hide zero balance)
-	// Excludes pinned stablecoins — those are rendered separately at the top.
+	// Excludes pinned stablecoins and user-hidden assets.
 	let sortedTokens = $derived.by(() => {
 		const all = [...tokens, ...importedTokens]
-			.filter(t => t.balance > 0n && !pinnedStableAddrs.has(t.address.toLowerCase()))
+			.filter(t => t.balance > 0n && !pinnedStableAddrs.has(t.address.toLowerCase()) && !$hiddenAssets.includes(t.address.toLowerCase()))
 			.map(t => {
 				const bal = parseFloat(ethers.formatUnits(t.balance, t.decimals));
 				const usd = t.priceUsd ? bal * t.priceUsd : 0;
@@ -160,6 +164,37 @@
 			});
 		return all.sort((a, b) => b._usd - a._usd);
 	});
+
+	// Hidden assets — shown in a collapsible section so users can unhide.
+	let hiddenRows = $derived.by(() => {
+		const out: { address: string; symbol: string; name: string; balance: bigint; decimals: number; priceUsd?: number; logoUrl?: string; _bal: number; _usd: number }[] = [];
+		const seen = new Set<string>();
+		const addRow = (addr: string, fallbackSymbol: string, fallbackName: string) => {
+			const lower = addr.toLowerCase();
+			if (!$hiddenAssets.includes(lower) || seen.has(lower)) return;
+			seen.add(lower);
+			const match = [...tokens, ...importedTokens].find(t => t.address.toLowerCase() === lower);
+			const decimals = match?.decimals ?? 18;
+			const balance = match?.balance ?? 0n;
+			const priceUsd = match?.priceUsd ?? 0;
+			const bal = parseFloat(ethers.formatUnits(balance, decimals));
+			out.push({
+				address: lower,
+				symbol: match?.symbol || fallbackSymbol,
+				name: match?.name || fallbackName,
+				balance, decimals, priceUsd,
+				logoUrl: (match as any)?.logoUrl || '',
+				_bal: bal,
+				_usd: bal * priceUsd,
+			});
+		};
+		if (usdtAddress) addRow(usdtAddress, 'USDT', 'Tether USD');
+		if (usdcAddress) addRow(usdcAddress, 'USDC', 'USD Coin');
+		for (const t of [...tokens, ...importedTokens]) addRow(t.address, t.symbol, t.name);
+		return out;
+	});
+
+	let showHidden = $state(false);
 
 	// ── UI state ──
 	type View = 'main' | 'receive' | 'security' | 'export-key' | 'export-seed';
@@ -359,20 +394,39 @@
 	let importAddress = $state('');
 	let showImport = $state(false);
 	let importLoading = $state(false);
+
+	// Local runtime mirror of user tokens (adds balance/price on top of the
+	// shared userTokens store). The store is the source of truth for which
+	// tokens to show + their metadata; balances/prices are runtime state.
 	let importedTokens = $state<{ address: string; symbol: string; name: string; balance: bigint; decimals: number; priceUsd?: number; logoUrl?: string }[]>([]);
 
-	// Load imported tokens from localStorage on mount
+	// Reconcile local mirror with the shared store whenever the store changes.
+	// Preserves existing balance/price for tokens already in the mirror.
 	$effect(() => {
-		try {
-			const saved = localStorage.getItem('imported_tokens');
-			if (saved) {
-				const parsed = JSON.parse(saved);
-				importedTokens = parsed.map((t: any) => ({ ...t, balance: 0n, logoUrl: t.logoUrl || '' }));
-			}
-		} catch {}
+		const chainList = $userTokens.filter(t => t.chainId === chainId);
+		const byAddr = new Map(importedTokens.map(t => [t.address.toLowerCase(), t]));
+		const next = chainList.map(st => {
+			const existing = byAddr.get(st.address);
+			return {
+				address: st.address,
+				symbol: st.symbol,
+				name: st.name,
+				decimals: st.decimals,
+				logoUrl: st.logoUrl || existing?.logoUrl || '',
+				balance: existing?.balance ?? 0n,
+				priceUsd: existing?.priceUsd,
+			};
+		});
+		// Only assign when the identity set changed, to avoid unnecessary churn.
+		const changed = next.length !== importedTokens.length
+			|| next.some((t, i) => t.address !== importedTokens[i].address
+				|| t.symbol !== importedTokens[i].symbol
+				|| t.logoUrl !== importedTokens[i].logoUrl);
+		if (changed) importedTokens = next;
 	});
 
-	// Auto-import tokens the user created on the platform
+	// Auto-import tokens the user created on the platform — persists to store
+	// so they appear across all selectors (create, trade, launchpad, wallet).
 	let autoImportDone = $state<string>('');
 	async function autoImportCreatedTokens() {
 		if (!userAddress || autoImportDone === userAddress) return;
@@ -383,51 +437,40 @@
 			const rows = await res.json();
 			if (!rows?.length) return;
 
-			let changed = false;
+			let added = false;
 			for (const r of rows) {
 				const addr = r.address?.toLowerCase();
 				if (!addr) continue;
-				if (importedTokens.some(t => t.address.toLowerCase() === addr)) continue;
-				importedTokens.push({
+				const before = $userTokens.length;
+				addUserToken({
 					address: addr,
 					symbol: r.symbol || '???',
 					name: r.name || 'Unknown',
 					decimals: r.decimals || 18,
-					balance: 0n,
 					logoUrl: r.logo_url || '',
+					chainId,
 				});
-				changed = true;
+				if ($userTokens.length !== before) added = true;
 			}
-			if (changed) {
-				importedTokens = [...importedTokens];
-				const toSave = importedTokens.map(t => ({ address: t.address, name: t.name, symbol: t.symbol, decimals: t.decimals, logoUrl: t.logoUrl || '' }));
-				localStorage.setItem('imported_tokens', JSON.stringify(toSave));
-				pushPreferences();
-			}
+			if (added && walletType === 'embedded') pushPreferences();
 		} catch {}
 	}
 
-	// Auto-pin stablecoins (USDT / USDC) so they always show up in the asset
-	// list and are queried for balances by the TradeLens pass. Uses network
-	// config addresses passed in as props.
+	// Auto-pin stablecoins (USDT / USDC) so they're queried for balances and
+	// appear as payment options across all selectors.
 	function autoPinStablecoins() {
-		let changed = false;
 		const pin = (addr: string, symbol: string, name: string) => {
 			if (!addr) return;
-			const lower = addr.toLowerCase();
-			if (importedTokens.some(t => t.address.toLowerCase() === lower)) return;
-			importedTokens.push({
-				address: lower,
+			addUserToken({
+				address: addr.toLowerCase(),
 				symbol, name,
-				decimals: 18, // BSC USDT/USDC are both 18; refreshTokenBalances re-queries anyway
-				balance: 0n,
+				decimals: 18,
 				logoUrl: '',
+				chainId,
 			});
-			changed = true;
 		};
 		pin(usdtAddress, 'USDT', 'Tether USD');
 		pin(usdcAddress, 'USDC', 'USD Coin');
-		if (changed) importedTokens = [...importedTokens];
 	}
 
 	// Refresh balances + auto-import when address changes
@@ -437,16 +480,11 @@
 		autoImportCreatedTokens();
 		if (importedTokens.length === 0) return;
 		refreshTokenBalances();
-		// Fetch missing logos via shared cache
+		// Fetch missing logos via shared cache → write back to store
 		for (const tok of importedTokens) {
 			if (!tok.logoUrl && tok.address) {
-				resolveTokenLogo(tok.address, 56).then(url => {
-					if (url) {
-						tok.logoUrl = url;
-						importedTokens = [...importedTokens];
-						const toSave = importedTokens.map(t => ({ address: t.address, name: t.name, symbol: t.symbol, decimals: t.decimals, logoUrl: t.logoUrl || '' }));
-						localStorage.setItem('imported_tokens', JSON.stringify(toSave));
-					}
+				resolveTokenLogo(tok.address, chainId).then(url => {
+					if (url) updateUserToken(tok.address, chainId, { logoUrl: url });
 				});
 			}
 		}
@@ -651,9 +689,17 @@
 			return;
 		}
 
-		// Check if already imported
-		if (importedTokens.some(t => t.address.toLowerCase() === importAddress.toLowerCase())) {
-			onAddFeedback({ message: 'Token already imported', type: 'error' });
+		const addrLower = importAddress.toLowerCase();
+		if ($userTokens.some(t => t.chainId === chainId && t.address === addrLower)) {
+			// If the token is hidden, unhide it instead of erroring out.
+			if ($hiddenAssets.includes(addrLower)) {
+				toggleHidden(addrLower);
+				onAddFeedback({ message: 'Token unhidden', type: 'success' });
+			} else {
+				onAddFeedback({ message: 'Token already imported', type: 'error' });
+			}
+			showImport = false;
+			importAddress = '';
 			return;
 		}
 
@@ -669,23 +715,26 @@
 				'function balanceOf(address) view returns (uint256)',
 			], net.provider);
 
-			const [name, symbol, decimals, balance] = await Promise.all([
+			const [name, symbol, decimals] = await Promise.all([
 				c.name().catch(() => 'Unknown'),
 				c.symbol().catch(() => '???'),
 				c.decimals().catch(() => 18),
-				userAddress ? c.balanceOf(userAddress).catch(() => 0n) : Promise.resolve(0n),
 			]);
 
-			// Fetch logo
-			const logoUrl = getKnownLogo(symbol) || await resolveTokenLogo(importAddress, 56);
+			const logoUrl = getKnownLogo(symbol) || await resolveTokenLogo(importAddress, chainId);
 
-			const token = { address: importAddress, name, symbol, decimals: Number(decimals), balance, logoUrl };
-			importedTokens = [...importedTokens, token];
-
-			// Persist to localStorage (without balance — re-fetched on load)
-			const toSave = importedTokens.map(t => ({ address: t.address, name: t.name, symbol: t.symbol, decimals: t.decimals, logoUrl: (t as any).logoUrl || '' }));
-			localStorage.setItem('imported_tokens', JSON.stringify(toSave));
+			addUserToken({
+				address: addrLower,
+				symbol,
+				name,
+				decimals: Number(decimals),
+				logoUrl,
+				chainId,
+			});
 			if (walletType === 'embedded') pushPreferences();
+
+			// Kick off a balance refresh now so the new row populates quickly
+			refreshTokenBalances();
 
 			onAddFeedback({ message: `${symbol} imported`, type: 'success' });
 			showImport = false;
@@ -695,6 +744,11 @@
 		} finally {
 			importLoading = false;
 		}
+	}
+
+	function hideToken(address: string) {
+		toggleHidden(address);
+		if (walletType === 'embedded') pushPreferences();
 	}
 
 	// ── Helpers ──
@@ -1081,7 +1135,7 @@
 					{@const logo = getTokenLogo(tok as any) || getKnownLogo(tok.symbol)}
 					{@const rowKey = tok.address}
 					{@const isCompact = compactRows.has(rowKey)}
-					<div class="flex items-center gap-3 py-3 px-4 transition-colors duration-100 hover:bg-(--bg-surface)">
+					<div class="group flex items-center gap-3 py-3 px-4 transition-colors duration-100 hover:bg-(--bg-surface)">
 						{#if logo}
 							<img src={logo} alt={tok.symbol} class="w-10 h-10 rounded-full object-cover shrink-0 border border-(--border)" />
 						{:else}
@@ -1095,6 +1149,15 @@
 							<span class="block text-base text-(--text-heading) font-numeric font-bold tabular-nums leading-[1.3] max-w-full overflow-hidden text-ellipsis whitespace-nowrap">{isCompact ? fmtCompactAmount(tok._bal) : fmtBal(tok.balance, tok.decimals)}</span>
 							<span class="block text-[13px] text-(--text-dim) font-numeric font-medium tabular-nums mt-0.5 max-w-full overflow-hidden text-ellipsis whitespace-nowrap">{tok._usd > 0 ? (isCompact ? fmtCompactUsd(tok._usd) : fmtUsd(tok._usd)) : ''}</span>
 						</button>
+						<button
+							type="button"
+							class="shrink-0 p-1.5 rounded-lg text-(--text-dim) hover:text-[#f87171] hover:bg-[rgba(248,113,113,0.08)] transition-all sm:opacity-0 sm:group-hover:opacity-100 opacity-60"
+							onclick={() => hideToken(tok.address)}
+							aria-label="Hide {tok.symbol}"
+							title="Hide {tok.symbol} from wallet"
+						>
+							<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+						</button>
 					</div>
 				{/each}
 
@@ -1104,7 +1167,7 @@
 					{@const logo = getTokenLogo(tok)}
 					{@const rowKey = (tok.address || tok.symbol).toLowerCase()}
 					{@const isCompact = compactRows.has(rowKey)}
-					<div class="flex items-center gap-3 py-3 px-4 transition-colors duration-100 hover:bg-(--bg-surface)">
+					<div class="group flex items-center gap-3 py-3 px-4 transition-colors duration-100 hover:bg-(--bg-surface)">
 					{#if logo}
 						<img src={logo} alt={tok.symbol} class="w-10 h-10 rounded-full object-cover shrink-0 border border-(--border)" />
 					{:else}
@@ -1118,11 +1181,57 @@
 							<span class="block text-base text-(--text-heading) font-numeric font-bold tabular-nums leading-[1.3] max-w-full overflow-hidden text-ellipsis whitespace-nowrap">{isCompact ? fmtCompactAmount(parseFloat(ethers.formatUnits(tok.balance, tok.decimals))) : fmtBal(tok.balance, tok.decimals)}</span>
 							<span class="block text-[13px] text-(--text-dim) font-numeric font-medium tabular-nums mt-0.5 max-w-full overflow-hidden text-ellipsis whitespace-nowrap">{usd > 0 ? (isCompact ? fmtCompactUsd(usd) : fmtUsd(usd)) : ''}</span>
 						</button>
+						<button
+							type="button"
+							class="shrink-0 p-1.5 rounded-lg text-(--text-dim) hover:text-[#f87171] hover:bg-[rgba(248,113,113,0.08)] transition-all sm:opacity-0 sm:group-hover:opacity-100 opacity-60"
+							onclick={() => hideToken(tok.address)}
+							aria-label="Hide {tok.symbol}"
+							title="Hide {tok.symbol} from wallet"
+						>
+							<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+						</button>
 					</div>
 				{/each}
 
 				{#if tokens.length === 0 && importedTokens.length === 0}
 					<p class="text-center py-6 text-[13px] text-(--text-dim) font-mono">{$t('account.noImportedTokens')}</p>
+				{/if}
+
+				<!-- Hidden assets (collapsible) -->
+				{#if hiddenRows.length > 0}
+					<button
+						type="button"
+						class="flex items-center justify-between gap-2 mx-4 my-2 py-2 px-3 rounded-lg bg-transparent border border-(--border-subtle) text-(--text-dim) cursor-pointer font-mono text-[10px] transition-all hover:border-(--border) hover:text-(--text-muted) w-[calc(100%-2rem)]"
+						onclick={() => (showHidden = !showHidden)}
+					>
+						<span>{showHidden ? 'Hide' : 'Show'} hidden ({hiddenRows.length})</span>
+						<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="transform: rotate({showHidden ? 180 : 0}deg); transition: transform 150ms;"><polyline points="6 9 12 15 18 9"/></svg>
+					</button>
+					{#if showHidden}
+						{#each hiddenRows as tok}
+							{@const logo = getTokenLogo(tok as any) || getKnownLogo(tok.symbol)}
+							<div class="flex items-center gap-3 py-2.5 px-4 opacity-55 transition-colors duration-100 hover:bg-(--bg-surface) hover:opacity-80">
+								{#if logo}
+									<img src={logo} alt={tok.symbol} class="w-8 h-8 rounded-full object-cover shrink-0 border border-(--border)" />
+								{:else}
+									<div class="w-8 h-8 rounded-full bg-(--bg-surface-input) border border-(--border) flex items-center justify-center font-display text-xs font-extrabold text-(--text-muted) shrink-0">{tok.symbol.charAt(0)}</div>
+								{/if}
+								<div class="flex-1 min-w-0">
+									<span class="block text-sm text-(--text-heading) font-display font-bold leading-[1.3]">{tok.symbol}</span>
+									<span class="block text-[10px] text-(--text-dim) font-mono mt-0.5">{tok.name}</span>
+								</div>
+								<button
+									type="button"
+									class="shrink-0 p-1.5 rounded-lg text-(--text-dim) hover:text-[#00d2ff] hover:bg-[rgba(0,210,255,0.08)] transition-all"
+									onclick={() => hideToken(tok.address)}
+									aria-label="Unhide {tok.symbol}"
+									title="Unhide {tok.symbol}"
+								>
+									<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+								</button>
+							</div>
+						{/each}
+					{/if}
 				{/if}
 
 				{#if showImport}

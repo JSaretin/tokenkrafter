@@ -24,6 +24,7 @@
 	import { findBestRoute, isCacheLoaded, getWeth } from '$lib/tradeLens';
 	import TokenForm from './lib/TokenForm.svelte';
 	import type { ListingConfig, TokenFormData, PreviewState } from './lib/TokenForm.svelte';
+	import { userTokens, addUserToken } from '$lib/userTokens';
 	import {
 		toUrlIntentView,
 		toInitialFormData,
@@ -413,6 +414,9 @@
 	let feeLoading = $state(false);
 	let selectedPaymentIndex = $state(0);
 	let paymentOptions: PaymentOption[] = $state([]);
+	// Lowercased addresses of built-in defaults — options outside this set are
+	// user-imported and only surface in the picker if they actually hold value.
+	let defaultPaymentAddrs = $state(new Set<string>());
 	// Per-option balances + quoteFee results (populated when modal opens)
 	let paymentBalances: bigint[] = $state([]);
 	let paymentQuotes: bigint[] = $state([]); // amountIn per option
@@ -422,19 +426,27 @@
 	let payImportBusy = $state(false);
 	let payImportError = $state<string | null>(null);
 
-	// View: format payment options for PaymentMethodSelector
-	let paymentMethodTokens = $derived(paymentOptions.map((opt, i) => {
-		const bal = paymentBalances[i] ?? 0n;
-		const quote = paymentQuotes[i] ?? 0n;
-		return {
-			address: opt.address,
-			symbol: opt.symbol,
-			name: opt.name,
-			balanceDisplay: parseFloat(ethers.formatUnits(bal, opt.decimals)).toFixed(4),
-			quoteDisplay: quote > 0n ? parseFloat(ethers.formatUnits(quote * 101n / 100n, opt.decimals)).toFixed(4) : '—',
-			logoUrl: COIN_LOGOS[opt.symbol.toUpperCase()] ?? null,
-		};
-	}));
+	// View: format payment options for PaymentMethodSelector.
+	// Defaults always render; user-imported tokens only render when they
+	// actually hold a balance (matches the "with value" requirement).
+	let paymentMethodTokens = $derived(paymentOptions
+		.map((opt, i) => {
+			const bal = paymentBalances[i] ?? 0n;
+			const quote = paymentQuotes[i] ?? 0n;
+			const isDefault = defaultPaymentAddrs.has(opt.address.toLowerCase());
+			return {
+				address: opt.address,
+				symbol: opt.symbol,
+				name: opt.name,
+				balanceDisplay: parseFloat(ethers.formatUnits(bal, opt.decimals)).toFixed(4),
+				quoteDisplay: quote > 0n ? parseFloat(ethers.formatUnits(quote * 101n / 100n, opt.decimals)).toFixed(4) : '—',
+				logoUrl: COIN_LOGOS[opt.symbol.toUpperCase()] ?? null,
+				_isDefault: isDefault,
+				_balance: bal,
+			};
+		})
+		.filter(t => t._isDefault || t._balance > 0n)
+		.map(({ _isDefault, _balance, ...rest }) => rest));
 
 	// Preloaded fee cache: keyed by "chainId-typeKey".
 	// USDT-only model: each entry holds the single USDT creation fee and
@@ -632,7 +644,19 @@
 
 			const newOpt: PaymentOption = { symbol: sym, name: name || sym, address: addr, decimals };
 			paymentOptions = [...paymentOptions, newOpt];
+			// Treat a just-imported token as a session default so it stays
+			// visible even if the user hasn't funded it yet.
+			defaultPaymentAddrs = new Set([...defaultPaymentAddrs, addr.toLowerCase()]);
 			payImportAddr = '';
+			// Persist to the shared store so every other selector (wallet, trade,
+			// launchpad) surfaces this token automatically.
+			addUserToken({
+				address: addr.toLowerCase(),
+				symbol: sym,
+				name: name || sym,
+				decimals,
+				chainId: net.chain_id,
+			});
 			// Re-fetch quotes to include the new option
 			await loadPaymentQuotes();
 		} finally {
@@ -650,9 +674,16 @@
 		step = 'review';
 		selectedPaymentIndex = 0;
 
-		// Set payment options for selected network
-		const options = getPaymentOptions(info!.network);
+		// Set payment options for selected network, then merge user-imported
+		// tokens from the shared store (only those on the same chain).
+		const defaults = getPaymentOptions(info!.network);
+		const defaultAddrs = new Set<string>(defaults.map(o => o.address.toLowerCase()));
+		const extras: PaymentOption[] = $userTokens
+			.filter(t => t.chainId === info!.network.chain_id && !defaultAddrs.has(t.address))
+			.map(t => ({ symbol: t.symbol, name: t.name, address: t.address, decimals: t.decimals }));
+		const options = [...defaults, ...extras];
 		paymentOptions = options;
+		defaultPaymentAddrs = defaultAddrs;
 
 		const isExistingToken = !!(info as any).existingTokenAddress;
 
