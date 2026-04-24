@@ -433,7 +433,7 @@
 		</div>
 
 		<!-- About (collapsible) — dashed card so users read it as "optional but valuable" -->
-		<p class="font-mono text-[0.72rem] leading-[1.4] text-white/45 my-1">Adding a description, logo, and links makes your token show up well on Explore.</p>
+		<p class="font-mono text-[0.72rem] leading-[1.4] text-white/45 my-1">Adding a description and links makes your token show up well on Explore.</p>
 		<div class={'rounded-xl p-3 transition-[border-color,background] duration-[150ms] ' + (showMetadata ? 'bg-brand-cyan/4 border border-solid border-brand-cyan/20' : 'bg-brand-cyan/[0.025] border border-dashed border-brand-cyan/[0.22] hover:border-brand-cyan/35')}>
 			<button class="flex items-center gap-2 w-full py-1 px-0.5 bg-transparent border-0 cursor-pointer font-inherit text-inherit text-left" onclick={() => showMetadata = !showMetadata} type="button" aria-expanded={showMetadata}>
 				<span class="font-display text-[0.82rem] font-semibold text-foreground flex-1 inline-flex items-center gap-2">About this token <span class="font-mono text-[0.6rem] font-normal text-brand-cyan/70 bg-brand-cyan/8 px-[7px] py-0.5 rounded-full uppercase tracking-[0.05em]">optional</span></span>
@@ -443,7 +443,6 @@
 			{#if !showMetadata}
 				<div class="flex flex-wrap gap-1.5 mt-2">
 					<span class="font-mono text-[0.65rem] px-2.5 py-[3px] rounded-full bg-white/3 border border-white/6 text-white/55">📝 Description</span>
-					<span class="font-mono text-[0.65rem] px-2.5 py-[3px] rounded-full bg-white/3 border border-white/6 text-white/55">🖼 Logo</span>
 					<span class="font-mono text-[0.65rem] px-2.5 py-[3px] rounded-full bg-white/3 border border-white/6 text-white/55">🔗 Links</span>
 				</div>
 			{/if}
