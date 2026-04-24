@@ -651,6 +651,27 @@
 	// all pass, or on the first invalid step (browser auto-focuses it).
 	let targetStepIdx = $state<number | null>(null);
 	let wzFormEl: HTMLFormElement | undefined = $state();
+	let wzRootEl: HTMLDivElement | undefined = $state();
+
+	// Reset scroll whenever the visible step changes, so the user always
+	// lands at the top of the new step instead of stranded near the footer
+	// of the previous one. Skips the initial mount.
+	let scrollSuppress = true;
+	$effect(() => {
+		// Track the dependency.
+		wizardStep;
+		if (scrollSuppress) {
+			scrollSuppress = false;
+			return;
+		}
+		queueMicrotask(() => {
+			if (wzRootEl) {
+				wzRootEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+			} else if (typeof window !== 'undefined') {
+				window.scrollTo({ top: 0, behavior: 'smooth' });
+			}
+		});
+	});
 
 	function nextStep() {
 		const idx = currentStepIdx;
@@ -787,7 +808,7 @@
 
 </script>
 
-<div class="max-w-[640px] mx-auto min-w-0">
+<div bind:this={wzRootEl} class="max-w-[640px] mx-auto min-w-0 scroll-mt-4">
 	<!-- Step indicator. `min-w-0` on the flex container plus `overflow-x-hidden`
 	     on the wrapper stop the nowrap labels from dragging the parent column
 	     wider than the viewport when the step list grows (e.g. Taxable adds

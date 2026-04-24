@@ -141,34 +141,34 @@
 
 <!-- Preview -->
 {#if totalUsd > 0 && tokensForPool > 0}
-	<div class="border border-[rgba(0,210,255,0.12)] rounded-xl bg-[rgba(0,210,255,0.02)] p-3.5 mb-3">
+	<div class="border border-[rgba(0,210,255,0.12)] rounded-xl bg-[rgba(0,210,255,0.02)] p-3.5 mb-3 overflow-hidden min-w-0">
 		<div class="font-display text-xs font-bold text-[#00d2ff] uppercase tracking-[0.05em] mb-2.5">Preview</div>
 		<div class="grid grid-cols-2 max-[500px]:grid-cols-1 gap-2 mb-2.5">
-			<div class="bg-black/20 rounded-lg py-2 px-2.5">
+			<div class="bg-black/20 rounded-lg py-2 px-2.5 min-w-0">
 				<span class="block text-[9px] text-dim font-mono uppercase tracking-[0.03em]">Starting price</span>
-				<span class="block text-[13px] font-bold text-heading font-mono mt-0.5">{fmtPrice(autoPrice)}</span>
+				<span class="block text-[13px] font-bold text-heading font-mono mt-0.5 truncate">{fmtPrice(autoPrice)}</span>
 			</div>
-			<div class="bg-black/20 rounded-lg py-2 px-2.5">
+			<div class="bg-black/20 rounded-lg py-2 px-2.5 min-w-0">
 				<span class="block text-[9px] text-dim font-mono uppercase tracking-[0.03em]">Market cap</span>
-				<span class="block text-[13px] font-bold font-mono mt-0.5 text-[#10b981]">${marketCap.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+				<span class="block text-[13px] font-bold font-mono mt-0.5 text-[#10b981] truncate">${marketCap.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
 			</div>
-			<div class="bg-black/20 rounded-lg py-2 px-2.5">
+			<div class="bg-black/20 rounded-lg py-2 px-2.5 min-w-0">
 				<span class="block text-[9px] text-dim font-mono uppercase tracking-[0.03em]">Total liquidity</span>
-				<span class="block text-[13px] font-bold text-heading font-mono mt-0.5">${totalUsd.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+				<span class="block text-[13px] font-bold text-heading font-mono mt-0.5 truncate">${totalUsd.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
 			</div>
-			<div class="bg-black/20 rounded-lg py-2 px-2.5">
+			<div class="bg-black/20 rounded-lg py-2 px-2.5 min-w-0">
 				<span class="block text-[9px] text-dim font-mono uppercase tracking-[0.03em]">$10 buys</span>
-				<span class="block text-[13px] font-bold text-heading font-mono mt-0.5">{tenDollarBuy > 0 ? tenDollarBuy.toLocaleString(undefined, { maximumFractionDigits: 0 }) : '—'} {symbol}</span>
+				<span class="block text-[13px] font-bold text-heading font-mono mt-0.5 truncate">{tenDollarBuy > 0 ? tenDollarBuy.toLocaleString(undefined, { maximumFractionDigits: 0 }) : '—'} {symbol}</span>
 			</div>
 		</div>
 
 		<!-- Pool breakdown bars -->
 		{#each pairs.filter(p => Number(p.amount) > 0) as pair}
-			<div class="flex items-center gap-2 py-[3px] text-[10px] font-mono">
-				<div class="w-[50px] h-1.5 bg-surface-input rounded-[3px] overflow-hidden shrink-0"><div class="h-full rounded-[3px]" style="width:{sharePct(pair)}%;background:{pair.base === 'native' ? '#f59e0b' : pair.base === 'usdt' ? '#10b981' : '#3b82f6'}"></div></div>
-				<span class="text-foreground font-bold min-w-[80px]">{symbol}/{getLabel(pair.base)}</span>
-				<span class="text-dim flex-1">{pair.amount} {getLabel(pair.base)} ↔ {tokensForPair(pair).toLocaleString(undefined, { maximumFractionDigits: 0 })} {symbol}</span>
-				<span class="text-[#00d2ff] font-bold">{sharePct(pair).toFixed(0)}%</span>
+			<div class="flex items-center gap-2 py-[3px] text-[10px] font-mono min-w-0">
+				<div class="w-[40px] h-1.5 bg-surface-input rounded-[3px] overflow-hidden shrink-0"><div class="h-full rounded-[3px]" style="width:{sharePct(pair)}%;background:{pair.base === 'native' ? '#f59e0b' : pair.base === 'usdt' ? '#10b981' : '#3b82f6'}"></div></div>
+				<span class="text-foreground font-bold shrink-0 truncate max-w-[80px]">{symbol}/{getLabel(pair.base)}</span>
+				<span class="text-dim flex-1 min-w-0 truncate">{pair.amount} {getLabel(pair.base)} ↔ {tokensForPair(pair).toLocaleString(undefined, { maximumFractionDigits: 0 })} {symbol}</span>
+				<span class="text-[#00d2ff] font-bold shrink-0">{sharePct(pair).toFixed(0)}%</span>
 			</div>
 		{/each}
 	</div>
