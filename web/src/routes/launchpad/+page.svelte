@@ -4,6 +4,7 @@
 	import { supabase } from '$lib/supabaseClient';
 	import { t } from '$lib/i18n';
 	import { favorites, toggleFavorite } from '$lib/favorites';
+	import { buildReferralUrl } from '$lib/referral';
 	import MarketFlow from '$lib/MarketFlow.svelte';
 	import LaunchCountdown from '$lib/LaunchCountdown.svelte';
 	import { chainSlug, type SupportedNetwork } from '$lib/structure';
@@ -133,6 +134,28 @@
 		if (ms < 15 * 60 * 1000) return 'countdown-urgent';
 		if (ms < 60 * 60 * 1000) return 'countdown-warning';
 		return 'countdown-normal';
+	}
+
+	/** Share a specific launch with the user's address attached as
+	 *  the referrer. Falls back to clipboard when navigator.share is
+	 *  unavailable. Affiliate.sol pays 25% of buy fees to the ref. */
+	async function shareLaunch(launch: LaunchInfo & { network: SupportedNetwork; tokenName?: string; tokenSymbol?: string }) {
+		const slug = chainSlug(launch.network?.chain_id ?? 56);
+		const path = `/launchpad/${slug}/${launch.address}`;
+		const url = userAddress
+			? (typeof window !== 'undefined' ? window.location.origin : '') + buildReferralUrl(path, userAddress)
+			: (typeof window !== 'undefined' ? window.location.origin + path : path);
+		const title = launch.tokenName || launch.tokenSymbol || 'TokenKrafter launch';
+		try {
+			if (typeof navigator !== 'undefined' && navigator.share) {
+				await navigator.share({ title, url });
+				return;
+			}
+			if (typeof navigator !== 'undefined' && navigator.clipboard) {
+				await navigator.clipboard.writeText(url);
+				addFeedback({ message: 'Link copied — paste anywhere', type: 'success' });
+			}
+		} catch {}
 	}
 
 	function isHot(launch: LaunchInfo): boolean {
@@ -801,14 +824,27 @@
 					onmouseenter={() => onCardMouseEnter(launch.address)}
 					onmouseleave={onCardMouseLeave}
 				>
-					<!-- Favorite button -->
-					<button
-						class={'absolute top-2.5 right-2.5 z-[2] bg-surface border border-line rounded-full w-[30px] h-[30px] flex items-center justify-center cursor-pointer transition text-dim hover:border-brand-cyan/40 hover:bg-brand-cyan/10 hover:text-brand-cyan group-hover:opacity-100 focus-visible:opacity-100 ' + ($favorites.includes(launch.address.toLowerCase()) ? 'opacity-100' : 'opacity-0')}
-						onclick={(e) => { e.preventDefault(); e.stopPropagation(); toggleFavorite(launch.address); }}
-						title={$favorites.includes(launch.address.toLowerCase()) ? 'Remove from favorites' : 'Add to favorites'}
-					>
-						<svg width="14" height="14" viewBox="0 0 24 24" fill={$favorites.includes(launch.address.toLowerCase()) ? '#00d2ff' : 'none'} stroke={$favorites.includes(launch.address.toLowerCase()) ? '#00d2ff' : 'currentColor'} stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
-					</button>
+					<!-- Favorite + share buttons (top-right). The share button
+					     opens navigator.share / clipboard with a referral URL
+					     so users can flex specific launches into their group
+					     chats and earn 25% of any referred buy fees. -->
+					<div class="absolute top-2.5 right-2.5 z-[2] flex items-center gap-1.5">
+						<button
+							class="bg-surface border border-line rounded-full w-[30px] h-[30px] flex items-center justify-center cursor-pointer transition text-dim hover:border-brand-cyan/40 hover:bg-brand-cyan/10 hover:text-brand-cyan opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+							onclick={(e) => { e.preventDefault(); e.stopPropagation(); shareLaunch(launch); }}
+							title="Share launch"
+							aria-label="Share this launch"
+						>
+							<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+						</button>
+						<button
+							class={'bg-surface border border-line rounded-full w-[30px] h-[30px] flex items-center justify-center cursor-pointer transition text-dim hover:border-brand-cyan/40 hover:bg-brand-cyan/10 hover:text-brand-cyan group-hover:opacity-100 focus-visible:opacity-100 ' + ($favorites.includes(launch.address.toLowerCase()) ? 'opacity-100' : 'opacity-0')}
+							onclick={(e) => { e.preventDefault(); e.stopPropagation(); toggleFavorite(launch.address); }}
+							title={$favorites.includes(launch.address.toLowerCase()) ? 'Remove from favorites' : 'Add to favorites'}
+						>
+							<svg width="14" height="14" viewBox="0 0 24 24" fill={$favorites.includes(launch.address.toLowerCase()) ? '#00d2ff' : 'none'} stroke={$favorites.includes(launch.address.toLowerCase()) ? '#00d2ff' : 'currentColor'} stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
+						</button>
+					</div>
 
 					<!-- 1. Badges banner (top) — per-launch attributes only.
 					     Platform-wide guarantees (LP burned, refundable, unsold burn)

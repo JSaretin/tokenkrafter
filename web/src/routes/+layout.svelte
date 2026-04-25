@@ -392,6 +392,12 @@
 			navigator.serviceWorker.register('/sw.js').catch(() => {});
 		}
 
+		// Sticky-capture `?ref=<address>` from any landing URL. Subsequent
+		// buys on the launchpad / future trade flows pick it up via
+		// refOrZero(). Self-referral and zero address are filtered inside
+		// captureReferralFromUrl.
+		import('$lib/referral').then((m) => m.captureReferralFromUrl()).catch(() => {});
+
 		// PWA install prompt
 		const dismissed = localStorage.getItem('pwa_install_dismissed');
 		window.addEventListener('beforeinstallprompt', (e: any) => {
