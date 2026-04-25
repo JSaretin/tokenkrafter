@@ -14,6 +14,14 @@
 	let activeLaunchAddrs = $derived(new Set(
 		activeLaunches.map((l: any) => (l.token_address || '').toLowerCase()).filter(Boolean)
 	));
+	let launchByToken = $derived.by(() => {
+		const m = new Map<string, any>();
+		for (const l of activeLaunches) {
+			const a = (l.token_address || '').toLowerCase();
+			if (a) m.set(a, l);
+		}
+		return m;
+	});
 	function isOnLaunchpad(tok: any): boolean {
 		return activeLaunchAddrs.has(tok.address?.toLowerCase());
 	}
@@ -108,7 +116,7 @@
 
 	// GeckoTerminal market data — first 30 from SSR, rest filled client-side
 	const GECKO_NETWORKS: Record<number, string> = { 56: 'bsc', 1: 'eth', 8453: 'base', 42161: 'arbitrum', 137: 'polygon_pos' };
-	type GeckoInfo = { price_usd: number; volume_24h: number; price_change_24h: number; has_data: boolean };
+	type GeckoInfo = { price_usd: number; volume_24h: number; price_change_24h: number; has_data: boolean; spark?: number[] };
 	let geckoMap: Record<string, GeckoInfo> = $state(data.geckoData || {});
 	let geckoLoading = $state(tokens.length > 30);
 
@@ -140,6 +148,43 @@
 		return '$0';
 	}
 
+	/** Build an SVG polyline path from a price series scaled into a 60x16 viewBox. */
+	function sparkPath(points: number[] | undefined): string {
+		if (!points || points.length < 2) return '';
+		const w = 60, h = 16, pad = 1;
+		const min = Math.min(...points);
+		const max = Math.max(...points);
+		const range = max - min || 1;
+		const dx = (w - pad * 2) / (points.length - 1);
+		return points.map((p, i) => {
+			const x = pad + i * dx;
+			const y = h - pad - ((p - min) / range) * (h - pad * 2);
+			return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
+		}).join(' ');
+	}
+
+	/** Compute progress info for a pre-launch token from its merged launch row. */
+	function launchProgress(tok: any): { pct: number; raised: string; hardCap: string; softPct: number } | null {
+		const l = launchByToken.get(tok.address?.toLowerCase());
+		if (!l) return null;
+		const dec = l.usdt_decimals || 18;
+		try {
+			const raised = parseFloat(ethers.formatUnits(l.total_base_raised || '0', dec));
+			const cap = parseFloat(ethers.formatUnits(l.hard_cap || '1', dec));
+			const sc = parseFloat(ethers.formatUnits(l.soft_cap || '0', dec));
+			const pct = cap > 0 ? Math.min(100, (raised / cap) * 100) : 0;
+			const softPct = cap > 0 ? Math.min(100, (sc / cap) * 100) : 0;
+			return {
+				pct,
+				raised: `$${raised.toFixed(2)}`,
+				hardCap: `$${cap.toFixed(2)}`,
+				softPct,
+			};
+		} catch {
+			return null;
+		}
+	}
+
 	async function fetchGeckoBatch(addresses: string[], geckoNetwork: string) {
 		if (addresses.length === 0) return;
 		const batch = addresses.slice(0, 30);
@@ -154,11 +199,21 @@
 				if (!a) continue;
 				const addr = (item.id || '').split('_').pop()?.toLowerCase();
 				if (!addr) continue;
+				const p = parseFloat(a.price_usd || '0');
+				const pc = a.price_change_percentage || {};
+				const steps = ['h24', 'h6', 'h1', 'm30', 'm15', 'm5'] as const;
+				const spark: number[] = [];
+				for (const k of steps) {
+					const v = parseFloat(pc[k] || '0');
+					spark.push(p / (1 + v / 100));
+				}
+				spark.push(p);
 				geckoMap[addr] = {
-					price_usd: parseFloat(a.price_usd || '0'),
+					price_usd: p,
 					volume_24h: parseFloat(a.volume_usd?.h24 || '0'),
-					price_change_24h: parseFloat(a.price_change_percentage?.h24 || '0'),
-					has_data: a.price_usd != null && parseFloat(a.price_usd) > 0,
+					price_change_24h: parseFloat(pc.h24 || '0'),
+					has_data: a.price_usd != null && p > 0,
+					spark,
 				};
 			}
 			// Trigger reactivity
@@ -267,35 +322,6 @@
 		return list;
 	});
 
-	function fmtSupply(raw: string | undefined, dec: number): string {
-		if (!raw || raw === '0') return '—';
-		try {
-			const n = parseFloat(ethers.formatUnits(raw, dec));
-			if (!Number.isFinite(n)) return '0';
-			if (n >= 1e12) return `${(n / 1e12).toFixed(1)}T`;
-			if (n >= 1e9) return `${(n / 1e9).toFixed(1)}B`;
-			if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
-			if (n >= 1e3) return `${(n / 1e3).toFixed(0)}K`;
-			return n.toLocaleString();
-		} catch { return '—'; }
-	}
-
-	function tokenType(t: any): string {
-		if (t.is_partner && t.is_taxable) return 'Partner+Tax';
-		if (t.is_partner) return 'Partner';
-		if (t.is_taxable && t.is_mintable) return 'Tax+Mint';
-		if (t.is_taxable) return 'Taxable';
-		if (t.is_mintable) return 'Mintable';
-		return 'Basic';
-	}
-
-	function typeColor(t: any): string {
-		if (t.is_partner) return 'purple';
-		if (t.is_taxable) return 'amber';
-		if (t.is_mintable) return 'cyan';
-		return 'emerald';
-	}
-
 	function timeAgo(dateStr: string): string {
 		const diff = NOW - new Date(dateStr).getTime();
 		const mins = Math.floor(diff / 60000);
@@ -397,15 +423,18 @@
 	<div class="flex items-center justify-between gap-3 mb-5 flex-wrap max-[500px]:flex-col max-[500px]:items-start">
 		<div class="flex gap-1.5 flex-wrap">
 			{#each [['all','All'],['basic','Basic'],['taxable','Taxable'],['mintable','Mintable'],['partner','Partner']] as [key, label]}
-				<button
-					class="inline-flex items-center gap-1.5 px-3 py-[5px] rounded-lg border font-mono text-xs2 cursor-pointer transition-all duration-150"
-					class:filter-pill-active={filterType === key}
-					class:filter-pill-idle={filterType !== key}
-					onclick={() => filterType = key as typeof filterType}
-				>
-					{label}
-					<span class="text-xs4 opacity-60">{typeCounts[key as keyof typeof typeCounts]}</span>
-				</button>
+				{@const count = typeCounts[key as keyof typeof typeCounts]}
+				{#if key === 'all' || count > 0}
+					<button
+						class="inline-flex items-center gap-1.5 px-3 py-[5px] rounded-lg border font-mono text-xs2 cursor-pointer transition-all duration-150"
+						class:filter-pill-active={filterType === key}
+						class:filter-pill-idle={filterType !== key}
+						onclick={() => filterType = key as typeof filterType}
+					>
+						{label}
+						<span class="text-xs4 opacity-60">{count}</span>
+					</button>
+				{/if}
 			{/each}
 		</div>
 		<div class="flex items-center gap-2">
@@ -438,7 +467,6 @@
 	{:else}
 		<div class="grid gap-3.5 grid-cols-[repeat(auto-fill,minmax(300px,1fr))] max-[500px]:grid-cols-[1fr]">
 			{#each filtered as tok}
-				{@const color = typeColor(tok)}
 				{@const slug = chainSlug(tok.chain_id)}
 				{@const gecko = geckoLookup[tok.address?.toLowerCase()]}
 				{@const safu = safuMap[safuKey(tok)]}
@@ -449,9 +477,11 @@
 			{@const sellTax = safu?.sellTaxBps ?? tok.sell_tax_bps ?? 0}
 			{@const isMintableRisk = (safu ? safu.isMintable && !safu.ownerIsZero : tok.is_mintable && !tok.owner_renounced)}
 			{@const buyTax = safu?.buyTaxBps ?? tok.buy_tax_bps ?? 0}
-				<div class="flex flex-col gap-2.5 p-4 rounded-xl bg-white/[0.02] border border-(--border) transition-all duration-150 hover:border-[rgba(0,210,255,0.15)] hover:shadow-[0_4px_20px_rgba(0,0,0,0.15)]" data-token-addr={tok.address} data-chain-id={tok.chain_id}>
+				{@const lp = isOnLaunchpad(tok) ? launchProgress(tok) : null}
+				{@const hasLiq = (safu?.hasLiquidity ?? tok.has_liquidity) || gecko?.has_data}
+				<div class="explore-card flex flex-col gap-2.5 p-4 rounded-xl bg-white/[0.02] border border-(--border) transition-all duration-150 hover:border-[rgba(0,210,255,0.15)] hover:shadow-[0_4px_20px_rgba(0,0,0,0.15)]" data-token-addr={tok.address} data-chain-id={tok.chain_id}>
 					<!-- Header: clickable to detail page -->
-					<a href="/explore/{slug}/{tok.address}" class="flex items-center gap-2.5 no-underline text-inherit">
+					<a href="/explore/{slug}/{tok.address}" class="explore-card-header flex items-start gap-2.5 no-underline text-inherit">
 						<TokenLogo logoUrl={tok.logo_url} symbol={tok.symbol} address={tok.address} chainId={tok.chain_id} size={36} />
 						<div class="flex-1 min-w-0">
 							<span class="block font-display text-15 font-bold text-(--text-heading) whitespace-nowrap overflow-hidden text-ellipsis">{tok.name || 'Unknown'}</span>
@@ -463,77 +493,67 @@
 								{/if}
 							</div>
 						</div>
-						<div class="flex flex-col items-end gap-[3px] shrink-0">
-							<div class="flex gap-1 items-center justify-end flex-wrap">
-								{#if isSafu}
-									<span class="badge-tip relative inline-flex cursor-pointer">
-										<span class="tc-badge tc-badge-safu">SAFU</span>
-										<div class="badge-tip-content">
-											<div class="btp-title">SAFU Token</div>
-											<div class="btp-row"><span class="btp-check">✓</span><span>LP ≥99% burned</span></div>
-											<div class="btp-row"><span class="btp-check">✓</span><span>Tax ceiling locked</span></div>
-											<div class="btp-row"><span class="btp-check">✓</span><span>Trading enabled + liquidity</span></div>
-											<div class="btp-row"><span class="btp-check">✓</span><span>Not mintable / owner renounced</span></div>
-										</div>
-									</span>
-								{/if}
-								{#if tok.is_kyc}
-									<span class="badge-tip relative inline-flex cursor-pointer">
-										<span class="tc-badge tc-badge-kyc">KYC</span>
-										<div class="badge-tip-content">
-											<div class="btp-title">KYC Verified</div>
-											<div class="btp-row"><span>Creator identity confirmed via AMA or KYC</span></div>
-										</div>
-									</span>
-								{/if}
-								{#if tok.is_taxable && (buyTax > 0 || sellTax > 0)}
-									<span class="badge-tip relative inline-flex cursor-pointer">
+						<div class="explore-card-badges flex gap-1 items-center justify-end flex-wrap shrink-0">
+							{#if isSafu}
+								<span class="badge-tip relative inline-flex cursor-pointer">
+									<span class="tc-badge tc-badge-safu">SAFU</span>
+									<div class="badge-tip-content">
+										<div class="btp-title">SAFU Token</div>
+										<div class="btp-row"><span class="btp-check">✓</span><span>LP ≥99% burned</span></div>
+										<div class="btp-row"><span class="btp-check">✓</span><span>Tax ceiling locked</span></div>
+										<div class="btp-row"><span class="btp-check">✓</span><span>Trading enabled + liquidity</span></div>
+										<div class="btp-row"><span class="btp-check">✓</span><span>Not mintable / owner renounced</span></div>
+									</div>
+								</span>
+							{/if}
+							{#if tok.is_kyc}
+								<span class="badge-tip relative inline-flex cursor-pointer">
+									<span class="tc-badge tc-badge-kyc">KYC</span>
+									<div class="badge-tip-content">
+										<div class="btp-title">KYC Verified</div>
+										<div class="btp-row"><span>Creator identity confirmed via AMA or KYC</span></div>
+									</div>
+								</span>
+							{/if}
+							{#if tok.is_taxable && (buyTax > 0 || sellTax > 0)}
+								<span class="badge-tip relative inline-flex cursor-pointer">
+									{#if isTaxLocked}
+										<span class="tc-badge tc-badge-tax-locked">Tax {(buyTax / 100).toFixed(0)}/{(sellTax / 100).toFixed(0)}% Locked</span>
+									{:else}
+										<span class="tc-badge tc-badge-tax">Tax {(buyTax / 100).toFixed(0)}/{(sellTax / 100).toFixed(0)}%</span>
+									{/if}
+									<div class="badge-tip-content">
+										<div class="btp-title">{isTaxLocked ? 'Tax Rates (Locked)' : 'Token Tax'}</div>
+										<div class="btp-kv"><span>Buy</span><span>{(buyTax / 100).toFixed(1)}%</span></div>
+										<div class="btp-kv"><span>Sell</span><span>{(sellTax / 100).toFixed(1)}%</span></div>
 										{#if isTaxLocked}
-											<span class="tc-badge tc-badge-tax-locked">Tax {(buyTax / 100).toFixed(0)}/{(sellTax / 100).toFixed(0)}% Locked</span>
+											<div class="btp-row"><span class="btp-check">✓</span><span>Rates locked at creation — cannot be increased after graduation</span></div>
 										{:else}
-											<span class="tc-badge tc-badge-tax">Tax {(buyTax / 100).toFixed(0)}/{(sellTax / 100).toFixed(0)}%</span>
+											<div class="btp-row"><span class="btp-warn">⚠</span><span>Tax ceiling not locked — creator could increase rates</span></div>
 										{/if}
-										<div class="badge-tip-content">
-											<div class="btp-title">{isTaxLocked ? 'Tax Rates (Locked)' : 'Token Tax'}</div>
-											<div class="btp-kv"><span>Buy</span><span>{(buyTax / 100).toFixed(1)}%</span></div>
-											<div class="btp-kv"><span>Sell</span><span>{(sellTax / 100).toFixed(1)}%</span></div>
-											{#if isTaxLocked}
-												<div class="btp-row"><span class="btp-check">✓</span><span>Rates locked at creation — cannot be increased after graduation</span></div>
-											{:else}
-												<div class="btp-row"><span class="btp-warn">⚠</span><span>Tax ceiling not locked — creator could increase rates</span></div>
-											{/if}
-										</div>
-									</span>
-								{/if}
-								{#if isMintableRisk}
-									<span class="badge-tip relative inline-flex cursor-pointer">
-										<span class="tc-badge tc-badge-mintable">Mintable</span>
-										<div class="badge-tip-content">
-											<div class="btp-title">Mintable Token</div>
-											<div class="btp-row"><span class="btp-warn">⚠</span><span>Owner can increase supply</span></div>
-											<div class="btp-row"><span class="btp-warn">⚠</span><span>Ownership not renounced</span></div>
-										</div>
-									</span>
-								{/if}
-								{#if isOnLaunchpad(tok)}
-									<span class="tc-badge tc-badge-live-launch">Live Launch</span>
-								{:else if !gecko?.has_data && !(safu?.hasLiquidity ?? tok.has_liquidity)}
-									<!-- Prefer the on-chain SafuLens result over the indexed DB
-									     column so a graduated launch whose row hasn't been
-									     re-indexed yet doesn't mistakenly render as pre-launch. -->
-									<span class="tc-badge tc-badge-prelaunch">Pre-launch</span>
-								{/if}
-								{#if tok.created_at && isNew(tok.created_at)}
-									<span class="tc-badge tc-badge-new">New</span>
-								{/if}
-							</div>
-							{#if gecko?.has_data}
-								<span class="font-numeric text-15 font-bold text-(--text-heading) leading-none">{fmtPrice(gecko.price_usd)}</span>
-								{#if gecko.price_change_24h !== 0}
-									<span class={"font-numeric text-xs2 font-semibold leading-none " + (gecko.price_change_24h > 0 ? "text-[#10b981]" : gecko.price_change_24h < 0 ? "text-[#f87171]" : "")}>
-										{gecko.price_change_24h > 0 ? '+' : ''}{gecko.price_change_24h.toFixed(1)}%
-									</span>
-								{/if}
+									</div>
+								</span>
+							{/if}
+							{#if isMintableRisk}
+								<span class="badge-tip relative inline-flex cursor-pointer">
+									<span class="tc-badge tc-badge-mintable">Mintable</span>
+									<div class="badge-tip-content">
+										<div class="btp-title">Mintable Token</div>
+										<div class="btp-row"><span class="btp-warn">⚠</span><span>Owner can increase supply</span></div>
+										<div class="btp-row"><span class="btp-warn">⚠</span><span>Ownership not renounced</span></div>
+									</div>
+								</span>
+							{/if}
+							{#if isOnLaunchpad(tok)}
+								<span class="tc-badge tc-badge-live-launch">Live Launch</span>
+							{:else if !gecko?.has_data && !(safu?.hasLiquidity ?? tok.has_liquidity)}
+								<!-- Prefer the on-chain SafuLens result over the indexed DB
+								     column so a graduated launch whose row hasn't been
+								     re-indexed yet doesn't mistakenly render as pre-launch. -->
+								<span class="tc-badge tc-badge-prelaunch">Pre-launch</span>
+							{/if}
+							{#if tok.created_at && isNew(tok.created_at)}
+								<span class="tc-badge tc-badge-new">New</span>
 							{/if}
 						</div>
 					</a>
@@ -543,49 +563,60 @@
 						<p class="font-mono text-3xs text-[#475569] leading-[1.5] m-0">{tok.description.slice(0, 90)}{tok.description.length > 90 ? '...' : ''}</p>
 					{/if}
 
-					<!-- Stats -->
-					<div class="flex rounded-lg overflow-hidden border border-white/[0.04]">
-						<div class="flex-1 py-[7px] px-2.5">
-							<span class="block text-4xs text-[#374151] font-mono uppercase tracking-[0.04em]">Supply</span>
-							<span class="block font-numeric text-sm font-semibold text-[#e2e8f0] mt-px">{fmtSupply(tok.total_supply, tok.decimals || 18)}</span>
-						</div>
-						{#if gecko?.has_data}
-							{#if gecko.volume_24h > 0}
-								<div class="flex-1 py-[7px] px-2.5 border-l border-white/[0.04]">
-									<span class="block text-4xs text-[#374151] font-mono uppercase tracking-[0.04em]">Volume 24h</span>
-									<span class="block font-numeric text-sm font-semibold text-[#e2e8f0] mt-px">{fmtVolume(gecko.volume_24h)}</span>
-								</div>
-							{:else}
-								<div class="flex-1 py-[7px] px-2.5 border-l border-white/[0.04]">
-									<span class="block text-4xs text-[#374151] font-mono uppercase tracking-[0.04em]">Status</span>
-									<span class="block font-numeric text-xs2 font-semibold text-[#10b981] mt-px">Listed</span>
-								</div>
-							{/if}
-						{:else}
-							<div class="flex-1 py-[7px] px-2.5 border-l border-white/[0.04]">
-								<span class="block text-4xs text-[#374151] font-mono uppercase tracking-[0.04em]">Status</span>
-								<span class="block font-numeric text-xs2 font-semibold text-[#374151] mt-px">Not Listed</span>
+					<!-- Discovery row: price/24h/volume/spark, or launch progress, or "not listed" -->
+					{#if gecko?.has_data}
+						<a href="/explore/{slug}/{tok.address}" class="flex items-center gap-3 no-underline text-inherit">
+							<div class="flex flex-col gap-0.5 min-w-0">
+								<span class="font-numeric tabular-nums text-base font-bold text-(--text-heading) leading-none">{fmtPrice(gecko.price_usd)}</span>
+								<span class="font-mono text-3xs text-(--text-dim)">Vol {fmtVolume(gecko.volume_24h)}</span>
 							</div>
-						{/if}
-						<div class="flex-1 py-[7px] px-2.5 border-l border-white/[0.04]">
-							<span class="block text-4xs text-[#374151] font-mono uppercase tracking-[0.04em]">Created</span>
-							<span class="block font-numeric text-sm font-semibold text-[#e2e8f0] mt-px">{tok.created_at ? timeAgo(tok.created_at) : '—'}</span>
-						</div>
-					</div>
+							<div class="flex flex-col items-end gap-0.5 ml-auto shrink-0">
+								<span class={"font-numeric tabular-nums text-xs2 font-semibold px-1.5 py-0.5 rounded leading-none " + (gecko.price_change_24h > 0 ? "bg-[rgba(16,185,129,0.12)] text-[#10b981]" : gecko.price_change_24h < 0 ? "bg-[rgba(248,113,113,0.12)] text-[#f87171]" : "bg-white/[0.04] text-(--text-dim)")}>
+									{gecko.price_change_24h > 0 ? '+' : ''}{gecko.price_change_24h.toFixed(1)}%
+								</span>
+								{#if gecko.spark && gecko.spark.length > 1}
+									{@const path = sparkPath(gecko.spark)}
+									{#if path}
+										<svg width="60" height="16" viewBox="0 0 60 16" class="overflow-visible">
+											<path d={path} fill="none" stroke={gecko.price_change_24h >= 0 ? '#10b981' : '#f87171'} stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" opacity="0.85" />
+										</svg>
+									{/if}
+								{/if}
+							</div>
+						</a>
+					{:else if isOnLaunchpad(tok) && lp}
+						<a href="/explore/{slug}/{tok.address}" class="flex flex-col gap-1.5 no-underline text-inherit">
+							<div class="flex items-center justify-between">
+								<span class="font-mono text-3xs font-bold text-[#00d2ff] uppercase tracking-[0.05em]">Live Launch</span>
+								<span class="font-numeric tabular-nums text-xs2 font-semibold text-(--text-heading)">{lp.raised} <span class="text-(--text-dim) font-normal">/ {lp.hardCap}</span></span>
+							</div>
+							<div class="relative">
+								<div class="w-full h-2 rounded overflow-hidden bg-white/[0.04] border border-white/[0.04]">
+									<div class="h-full rounded transition-[width] duration-300 ease-[ease] shadow-[0_0_8px_rgba(0,210,255,0.3)]" style="width: {lp.pct}%; background: linear-gradient(90deg, #00d2ff, #3a7bd5);"></div>
+								</div>
+								{#if lp.softPct > 0 && lp.softPct < 100}
+									<div class="absolute top-0 -translate-x-1/2 w-0.5 h-2 bg-white/40 rounded-[1px] pointer-events-none" style="left: {lp.softPct}%"></div>
+								{/if}
+							</div>
+						</a>
+					{:else}
+						<a href="/explore/{slug}/{tok.address}" class="flex items-center gap-2 no-underline text-inherit">
+							<span class="font-mono text-3xs text-[#475569] uppercase tracking-[0.05em]">Not listed</span>
+							{#if tok.created_at}
+								<span class="font-mono text-3xs text-[#374151]">· {timeAgo(tok.created_at)}</span>
+							{/if}
+						</a>
+					{/if}
 
-					<!-- Actions -->
-					<div class="flex gap-2 mt-auto">
-						{#if gecko?.has_data}
+					<!-- Trade action (only when liquid) -->
+					{#if hasLiq}
+						<div class="flex gap-2 mt-auto">
 							<a href="/trade?token={tok.address}" class="inline-flex items-center gap-1.5 px-3.5 py-[7px] rounded-lg font-mono text-xs2 no-underline transition-all duration-150 cursor-pointer flex-1 justify-center bg-gradient-to-br from-[rgba(0,210,255,0.12)] to-[rgba(59,130,246,0.12)] border border-[rgba(0,210,255,0.15)] text-[#00d2ff] hover:from-[rgba(0,210,255,0.2)] hover:to-[rgba(59,130,246,0.2)] hover:border-[rgba(0,210,255,0.3)]">
 								<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
 								Trade
 							</a>
-						{/if}
-						<a href="/explore/{slug}/{tok.address}" class={"inline-flex items-center gap-1.5 px-3 py-[7px] rounded-lg font-mono text-xs2 no-underline transition-all duration-150 cursor-pointer bg-white/[0.03] border border-white/[0.06] text-[#64748b] hover:text-[#e2e8f0] hover:border-white/[0.12] " + (!gecko?.has_data ? "flex-1 justify-center" : "")}>
-							View
-							<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
-						</a>
-					</div>
+						</div>
+					{/if}
 				</div>
 			{/each}
 		</div>
@@ -653,4 +684,15 @@
 	.btp-kv span:first-child { color: var(--text-dim); }
 	.btp-kv span:last-child { color: var(--text); font-weight: 600; }
 	.badge-tip:hover .badge-tip-content { display: flex; }
+
+	/* On narrow viewports, stack the badge column below the title row so the
+	   token name doesn't get truncated against the badges. */
+	@media (max-width: 480px) {
+		.explore-card-header { flex-wrap: wrap; }
+		.explore-card-badges {
+			flex-basis: 100%;
+			justify-content: flex-start;
+			margin-left: calc(36px + 0.625rem); /* logo width + gap */
+		}
+	}
 </style>
