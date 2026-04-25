@@ -41,6 +41,7 @@
 	import ConfirmModal from '$lib/ConfirmModal.svelte';
 	import BondingCurveChart from '$lib/BondingCurveChart.svelte';
 	import PriceProgressChart from '$lib/PriceProgressChart.svelte';
+	import SuccessBurst from '$lib/SuccessBurst.svelte';
 
 	let getProvider: () => ethers.BrowserProvider | null = getContext('provider');
 	let getSigner: () => ethers.Signer | null = getContext('signer');
@@ -131,6 +132,10 @@
 	let showBuyConfirm = $state(false);
 	let showGraduateConfirm = $state(false);
 	let isDepositing = $state(false);
+	// Single shared burst flag — flips true on any tx confirm (buy / refund /
+	// graduate / deposit / reclaim / sweep / activate / enableTrading), and
+	// resets via SuccessBurst's onComplete so it can re-fire next tx.
+	let txBurst = $state(false);
 	// For graduated launches, assume trading NOT enabled until on-chain check confirms.
 	// This prevents a flash of "now trading on DEX" during Phase 2 load.
 	let tradingEnabled = $state(ssrLaunch?.state === 2 ? false : true);
@@ -1147,6 +1152,7 @@
 			}
 
 			addFeedback({ message: 'Tokens purchased!', type: 'success' });
+			txBurst = true;
 			// Record transaction in activity feed (best effort)
 			const savedAmount = buyAmount;
 			const savedTokens = preview ? preview.tokensOut.toString() : '0';
@@ -1310,6 +1316,7 @@
 			// Pass the user's full position to keep the existing all-or-nothing UX.
 			await launchClient.refund(userTokensBought);
 			addFeedback({ message: 'Refund successful!', type: 'success' });
+			txBurst = true;
 			await refreshData();
 		} catch (e: any) {
 			addFeedback({ message: friendlyError(e), type: 'error' });
@@ -1326,6 +1333,7 @@
 			addFeedback({ message: 'Graduating to DEX...', type: 'info' });
 			await launchClient.graduate();
 			addFeedback({ message: 'Graduated! Liquidity added to DEX.', type: 'success' });
+			txBurst = true;
 			await refreshData();
 		} catch (e: any) {
 			addFeedback({ message: friendlyError(e), type: 'error' });
@@ -3393,6 +3401,14 @@
 		confirmStyle="background: linear-gradient(135deg, #f59e0b, #d97706);"
 		onconfirm={() => { showGraduateConfirm = false; handleGraduate(); }}
 	/>
+{/if}
+
+<!-- ═══ TX SUCCESS BURST ═══ -->
+<!-- Single shared overlay — flips true on buy / refund / graduate confirm. -->
+{#if txBurst}
+	<div class="fixed inset-0 z-[60] flex items-center justify-center pointer-events-none" aria-hidden="true">
+		<SuccessBurst show={txBurst} onComplete={() => { txBurst = false; }} />
+	</div>
 {/if}
 
 <style>

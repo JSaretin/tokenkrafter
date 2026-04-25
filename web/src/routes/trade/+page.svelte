@@ -34,6 +34,7 @@
 	import TrustCard from './TrustCard.svelte';
 	import TrustItem from './TrustItem.svelte';
 	import SlippageSetter from '$lib/SlippageSetter.svelte';
+	import SuccessBurst from '$lib/SuccessBurst.svelte';
 	import TokenSelectorModal from './TokenSelectorModal.svelte';
 	import BankSelectorModal from './BankSelectorModal.svelte';
 	import ConfirmModalShell from './ConfirmModalShell.svelte';
@@ -113,6 +114,8 @@
 	let isSwapping = $state(false);
 	let showConfirmModal = $state(false);
 	let swapStep = $state(0); // 0=idle, 1=approve, 2=swap, 3=done
+	// Success burst trigger — flips true on swap confirm, resets via onComplete
+	let swapBurst = $state(false);
 
 	// Payment method
 	let paymentMethod = $state<'bank' | 'paypal' | 'wise'>('bank');
@@ -1240,6 +1243,7 @@
 				});
 				tx = swapRes.tx;
 				swapStep = 3; // done
+				swapBurst = true;
 				addFeedback({ message: $t('trade.swappedSuccess').replace('{amountIn}', amountIn).replace('{symbolIn}', tokenInSymbol).replace('{amountOut}', displayAmountOut).replace('{symbolOut}', tokenOutSymbol), type: 'success' });
 				showConfirmModal = false;
 
@@ -1603,6 +1607,15 @@
 		{/if}
 	</div>
 </div>
+
+<!-- ═══ SWAP SUCCESS BURST ═══ -->
+<!-- Fires once when a swap confirms on-chain. Floats centered in the viewport
+     so the burst is visible even after the confirm modal dismisses. -->
+{#if swapBurst}
+	<div class="fixed inset-0 z-[60] flex items-center justify-center pointer-events-none" aria-hidden="true">
+		<SuccessBurst show={swapBurst} onComplete={() => { swapBurst = false; }} />
+	</div>
+{/if}
 
 <!-- ═══ TOKEN SELECTOR MODAL ═══ -->
 {#if showTokenModal}

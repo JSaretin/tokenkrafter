@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { t } from '$lib/i18n';
+	import SuccessBurst from '$lib/SuccessBurst.svelte';
 
 	let {
 		tokenName,
@@ -23,6 +24,13 @@
 		onClose: () => void;
 	} = $props();
 
+	// Burst fires once on mount — SuccessScreen is conditionally rendered
+	// only after deploy confirms, so an initial render === a fresh success.
+	let burst = $state(false);
+	$effect(() => {
+		burst = true;
+	});
+
 	function explorerUrl(type: 'tx' | 'address', hash: string): string {
 		const base = (network?.explorer_url || '').replace(/\/$/, '');
 		if (!base) return '#';
@@ -31,6 +39,9 @@
 </script>
 
 <div class="text-center py-8">
+	<div class="flex justify-center mb-3">
+		<SuccessBurst show={burst} onComplete={() => { burst = false; }} />
+	</div>
 	<div class="text-5xl mb-4 syne font-bold text-emerald-400">{$t('ct.done')}</div>
 	<h2 class="syne text-2xl font-bold text-white mb-2">
 		{title || (tokenName + ' (' + tokenSymbol + ') deployed')}
