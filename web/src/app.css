@@ -239,17 +239,26 @@ body {
   overflow-x: hidden;
   width: 100%;
 }
+
+/* Hide scrollbars everywhere — app feel. Scrolling still works
+   (touch, wheel, keyboard), the visible track/thumb just isn't
+   rendered. Apply globally so every overflow container looks
+   uniform without per-component opt-ins. */
+* {
+  scrollbar-width: none;          /* Firefox */
+  -ms-overflow-style: none;       /* IE/legacy Edge */
+}
+*::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;                  /* Chrome / Safari / new Edge */
+}
 body {
   background: var(--color-background);
   color: var(--color-foreground);
   font-family: var(--font-sans);
   margin: 0;
   -webkit-font-smoothing: antialiased;
-  /* App-like: no rubber-band overscroll bleeding into the browser
-     chrome on mobile. Refresh-pull is added per-page where useful. */
-  overscroll-behavior-y: contain;
-  /* Prevent iOS double-tap-to-zoom on tappable UI. */
-  touch-action: manipulation;
 }
 *,
 *::before,
@@ -310,29 +319,14 @@ body.modal-open {
 }
 
 /* ─── View Transitions ─── */
-/* Smooth cross-fade between routes. SvelteKit's onNavigate hook in
-   +layout.svelte calls document.startViewTransition; the CSS below
-   defines what each phase looks like. Keep it short — long
-   transitions feel sluggish. Reduced-motion users get a hard cut. */
-@view-transition {
-  navigation: auto;
-}
+/* Short opacity-only cross-fade between routes via document.startViewTransition
+   from +layout.svelte's onNavigate hook. Keep it fast and pure-opacity —
+   any transform or longer duration starts feeling sluggish on slower
+   devices. Reduced-motion users always get an instant cut. */
 ::view-transition-old(root),
 ::view-transition-new(root) {
-  animation-duration: 220ms;
-  animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
-}
-::view-transition-old(root) {
-  animation-name: fade-out-soft;
-}
-::view-transition-new(root) {
-  animation-name: fade-in-soft;
-}
-@keyframes fade-out-soft {
-  to { opacity: 0; transform: translateY(-2px); }
-}
-@keyframes fade-in-soft {
-  from { opacity: 0; transform: translateY(4px); }
+  animation-duration: 150ms;
+  animation-timing-function: ease;
 }
 @media (prefers-reduced-motion: reduce) {
   ::view-transition-old(root),

@@ -21,6 +21,7 @@
 	} from '$lib/launchpad';
 	import { LaunchpadFactoryClient } from '$lib/contracts/launchpadFactory';
 	import { LaunchInstanceClient } from '$lib/contracts/launchInstance';
+	import { tap } from '$lib/haptics';
 
 	let getUserAddress: () => string | null = getContext('userAddress');
 	let _getNetworks: () => SupportedNetwork[] = getContext('supportedNetworks');
@@ -297,6 +298,80 @@
 		else activeTab = 'all';
 		_tabAutoSwitched = true;
 	});
+
+	// Horizontal swipe between tabs (Live → Upcoming → Graduated → All).
+	// Touch users on mobile expect to swipe between filtered views; pointer
+	// events cover mouse + touch + stylus uniformly. We bail on vertical
+	// motion so it doesn't fight scroll, and on interactive descendants
+	// (a/button/input/select/textarea) so taps and drags inside cards
+	// stay unambiguous.
+	const TAB_ORDER: Array<typeof activeTab> = ['live', 'upcoming', 'graduated', 'all'];
+	let swipeStartX = 0;
+	let swipeStartY = 0;
+	let swipeStartTime = 0;
+	let swipeDx = $state(0);
+	let swipeActive = $state(false);
+	let swipeAborted = false;
+
+	function isInteractiveSwipeTarget(el: EventTarget | null): boolean {
+		if (!(el instanceof Element)) return false;
+		return !!el.closest('a, button, input, select, textarea');
+	}
+
+	function onListPointerDown(e: PointerEvent) {
+		// Only react to the primary input (left mouse / first touch / stylus).
+		if (!e.isPrimary) return;
+		if (isInteractiveSwipeTarget(e.target)) {
+			swipeActive = false;
+			return;
+		}
+		swipeActive = true;
+		swipeAborted = false;
+		swipeStartX = e.clientX;
+		swipeStartY = e.clientY;
+		swipeStartTime = e.timeStamp;
+		swipeDx = 0;
+	}
+
+	function onListPointerMove(e: PointerEvent) {
+		if (!swipeActive || swipeAborted) return;
+		const dx = e.clientX - swipeStartX;
+		const dy = e.clientY - swipeStartY;
+		// User is scrolling vertically — abort detection so we don't fight scroll.
+		if (Math.abs(dy) > Math.abs(dx)) {
+			swipeAborted = true;
+			swipeDx = 0;
+			return;
+		}
+		swipeDx = dx;
+	}
+
+	function endSwipe(e: PointerEvent) {
+		if (!swipeActive) return;
+		const dx = e.clientX - swipeStartX;
+		const dy = e.clientY - swipeStartY;
+		const elapsed = e.timeStamp - swipeStartTime;
+		const aborted = swipeAborted;
+		swipeActive = false;
+		swipeAborted = false;
+		swipeDx = 0;
+		if (aborted) return;
+		if (
+			Math.abs(dx) > 60 &&
+			Math.abs(dx) > Math.abs(dy) * 1.5 &&
+			elapsed < 400
+		) {
+			const idx = TAB_ORDER.indexOf(activeTab);
+			if (idx === -1) return;
+			let next = idx;
+			if (dx < 0) next = Math.min(TAB_ORDER.length - 1, idx + 1); // left swipe → next
+			else next = Math.max(0, idx - 1); // right swipe → previous
+			if (next !== idx) {
+				activeTab = TAB_ORDER[next];
+				tap();
+			}
+		}
+	}
 
 	// Database row mapper
 	function dbRowToLaunch(row: any): (LaunchInfo & { network: SupportedNetwork }) | null {
@@ -631,7 +706,20 @@
 		</div>
 	</div>
 
-	<!-- Grid -->
+	<!-- Grid — wrapped in a swipe-aware container so mobile users can swipe
+	     horizontally to switch tabs (Live → Upcoming → Graduated → All).
+	     `touch-action: pan-y` keeps native vertical scroll responsive.
+	     The swipe is a progressive enhancement; the tab buttons above are
+	     the accessible primary control, so a11y warning is suppressed. -->
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div
+		class="swipe-zone"
+		style="transform: translateX({Math.max(-40, Math.min(40, -swipeDx / 4))}px); transition: transform {swipeActive ? '0ms' : '180ms'} ease-out;"
+		onpointerdown={onListPointerDown}
+		onpointermove={onListPointerMove}
+		onpointerup={endSwipe}
+		onpointercancel={endSwipe}
+	>
 	{#if loading}
 		<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
 			{#each Array(6) as _}
@@ -904,6 +992,7 @@
 		{/if}
 	{/if}
 	</div>
+	</div>
 	<!-- Market Flow sidebar — always present on desktop so skeleton matches loaded layout -->
 	<div class="hidden xl:block sticky top-0 h-[calc(100vh-56px)] overflow-hidden">
 		<MarketFlow />
@@ -961,4 +1050,10 @@
 	/* Skeleton pulse animation */
 	.skeleton-card { animation: skeletonPulse 1.5s ease-in-out infinite; }
 	@keyframes skeletonPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+
+	/* Swipe zone — let native vertical scroll through, capture horizontal
+	   intent in JS. The transform is applied inline during drag for the
+	   subtle drag-along effect; spring-back is handled by the inline
+	   transition flipping when swipeActive goes false. */
+	.swipe-zone { touch-action: pan-y; will-change: transform; }
 </style>
