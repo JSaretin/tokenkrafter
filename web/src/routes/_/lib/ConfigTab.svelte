@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { getContext, onMount } from 'svelte';
 	import { supabase } from '$lib/supabaseClient';
+	import Skeleton from '$lib/Skeleton.svelte';
 
 	const addFeedback = getContext<(f: { message: string; type: string }) => void>('addFeedback');
 
@@ -120,9 +121,20 @@
 </script>
 
 {#if loading}
-	<div class="card p-8 text-center">
-		<div class="spinner mx-auto mb-3 w-6 h-6 rounded-full border-2 border-line border-t-brand-cyan"></div>
-		<span class="text-gray-500 font-mono text-xs">Loading config...</span>
+	<!-- Skeleton mirrors site-info / socials / networks panels. -->
+	<div class="space-y-6">
+		{#each Array(3) as _}
+			<div class="card p-5 flex flex-col gap-3">
+				<Skeleton width={140} height="1.05rem" />
+				{#each Array(3) as _}
+					<div class="flex flex-col gap-1.5">
+						<Skeleton width={80} height="0.7rem" />
+						<Skeleton width="100%" height="2.5rem" radius="10px" />
+					</div>
+				{/each}
+				<Skeleton width={140} height="2rem" radius="10px" />
+			</div>
+		{/each}
 	</div>
 {:else}
 	<div class="space-y-6">

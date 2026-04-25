@@ -7,6 +7,7 @@
 	import type { SupportedNetworks } from '$lib/structure';
 	import Chart from '$lib/Chart.svelte';
 	import ChartTypeToggle from '$lib/ChartTypeToggle.svelte';
+	import Skeleton from '$lib/Skeleton.svelte';
 	import {
 		loadAdminLens,
 		loadRecentTokens as fetchRecentTokens,
@@ -138,8 +139,33 @@
 </script>
 
 {#if chainsLoading}
-	<div class="flex items-center justify-center py-20">
-		<div class="spinner w-10 h-10 rounded-full border-2 border-line-input border-t-brand-cyan"></div>
+	<!-- Skeleton mirrors KPI strip + chain table + chart pair so the dashboard
+	     fills its real layout while AdminLens calls resolve. -->
+	<div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3 mb-6">
+		{#each Array(5) as _}
+			<div class="bg-surface border border-line rounded-xl p-4 flex flex-col gap-2 min-w-0">
+				<Skeleton width="65%" height="0.7rem" />
+				<Skeleton width="80%" height="1.6rem" />
+				<Skeleton width="100%" height="3px" radius="2px" />
+			</div>
+		{/each}
+	</div>
+	<div class="bg-surface border border-line rounded-[14px] p-4 mb-4 flex flex-col gap-2.5">
+		<Skeleton width={140} height="0.95rem" />
+		{#each Array(3) as _}
+			<div class="grid grid-cols-6 gap-2 items-center">
+				<Skeleton width="80%" height="0.85rem" />
+				<Skeleton width="60%" height="0.85rem" />
+				<Skeleton width="60%" height="0.85rem" />
+				<Skeleton width="65%" height="0.85rem" />
+				<Skeleton width="55%" height="0.85rem" />
+				<Skeleton width="50%" height="0.85rem" />
+			</div>
+		{/each}
+	</div>
+	<div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+		<Skeleton width="100%" height="240px" radius="14px" />
+		<Skeleton width="100%" height="240px" radius="14px" />
 	</div>
 {:else}
 	<!-- KPI Strip — all data from on-chain getState() -->

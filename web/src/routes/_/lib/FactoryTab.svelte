@@ -5,6 +5,7 @@
 	import type { SupportedNetworks, SupportedNetwork } from '$lib/structure';
 	import { t } from '$lib/i18n';
 	import { friendlyError } from '$lib/errorDecoder';
+	import Skeleton from '$lib/Skeleton.svelte';
 
 	let getSigner: () => ethers.Signer | null = getContext('signer');
 	let addFeedback: (f: { message: string; type: string }) => void = getContext('addFeedback');
@@ -499,9 +500,18 @@
 </script>
 
 {#if loading}
-	<div class="flex items-center justify-center py-20">
-		<div class="spinner w-10 h-10 rounded-full border-2 border-white/10 border-t-cyan-400"></div>
+	<!-- Skeleton mirrors factory info rows + governance section buttons. -->
+	<div class="card p-5 mb-4 flex flex-col gap-2">
+		{#each Array(7) as _}
+			<div class="flex justify-between items-center py-2 border-b border-surface last:border-b-0">
+				<Skeleton width={120} height="0.8rem" />
+				<Skeleton width={200} height="0.8rem" />
+			</div>
+		{/each}
 	</div>
+	{#each Array(3) as _}
+		<Skeleton width="100%" height="3rem" radius="10px" class="mb-1" />
+	{/each}
 {:else}
 	<!-- Factory Info -->
 	<div class="card p-5 mb-4">

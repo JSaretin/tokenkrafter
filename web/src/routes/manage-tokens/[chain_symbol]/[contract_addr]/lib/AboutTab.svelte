@@ -1,4 +1,6 @@
 <script lang="ts">
+	import Skeleton from '$lib/Skeleton.svelte';
+
 	let {
 		metaLoaded,
 		metaLoading,
@@ -45,8 +47,31 @@
 	<p class="text-gray-500 text-xs font-mono mb-4">Add details about your token. This info appears on the explore page and token profile.</p>
 
 	{#if metaLoading}
-		<div class="flex justify-center py-8">
-			<div class="spinner w-8 h-8 rounded-full border-2 border-white/10 border-t-cyan-400" style="animation: spin 0.8s linear infinite;"></div>
+		<!-- Mirror the about-form layout so the page doesn't shift when metadata loads. -->
+		<div class="flex flex-col gap-4">
+			<div class="flex items-center gap-3">
+				<Skeleton variant="rect" width={64} height={64} radius="12px" />
+				<Skeleton width={120} height="1rem" />
+			</div>
+			<div class="flex flex-col gap-1.5">
+				<Skeleton width={80} height="0.8rem" />
+				<Skeleton width="100%" height="4.5rem" radius="10px" />
+			</div>
+			<div class="flex flex-col gap-1.5">
+				<Skeleton width={80} height="0.8rem" />
+				<Skeleton width="100%" height="2.5rem" radius="10px" />
+			</div>
+			<div class="grid grid-cols-2 gap-3">
+				<div class="flex flex-col gap-1.5">
+					<Skeleton width={80} height="0.8rem" />
+					<Skeleton width="100%" height="2.5rem" radius="10px" />
+				</div>
+				<div class="flex flex-col gap-1.5">
+					<Skeleton width={80} height="0.8rem" />
+					<Skeleton width="100%" height="2.5rem" radius="10px" />
+				</div>
+			</div>
+			<Skeleton width="100%" height="2.5rem" radius="10px" />
 		</div>
 	{:else}
 		<div class="about-form">

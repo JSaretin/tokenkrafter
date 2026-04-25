@@ -5,6 +5,7 @@
 	import type { SupportedNetwork } from '$lib/structure';
 	import { TRADE_ROUTER_ABI } from '$lib/tradeRouter';
 	import { ERC20_DECIMALS_ABI } from '$lib/commonABIs';
+	import Skeleton from '$lib/Skeleton.svelte';
 
 	const addFeedback = getContext<(f: { message: string; type: string }) => void>('addFeedback');
 	let getSigner: () => ethers.Signer | null = getContext('signer');
@@ -351,9 +352,26 @@
 
 	<!-- Withdrawal list -->
 	{#if withdrawalsLoading}
-		<div class="card p-8 text-center">
-			<div class="spinner mx-auto mb-3 w-6 h-6 rounded-full border-2 border-line border-t-brand-cyan"></div>
-			<span class="text-gray-500 font-mono text-xs">Loading...</span>
+		<!-- Skeleton rows mirror withdrawal card shape so list height is stable. -->
+		<div class="flex flex-col gap-3">
+			{#each Array(4) as _}
+				<div class="card p-4 flex flex-col gap-3">
+					<div class="flex items-start justify-between gap-4">
+						<div class="flex flex-col gap-2">
+							<div class="flex items-center gap-2">
+								<Skeleton width={70} height="1rem" />
+								<Skeleton width={60} height="0.7rem" radius="999px" />
+							</div>
+							<Skeleton width={140} height="0.7rem" />
+						</div>
+						<div class="flex flex-col items-end gap-2">
+							<Skeleton width={80} height="0.85rem" />
+							<Skeleton width={60} height="0.7rem" />
+						</div>
+					</div>
+					<Skeleton width="100%" height="0.6rem" radius="3px" />
+				</div>
+			{/each}
 		</div>
 	{:else}
 		{@const list = withdrawFilter === 'pending' ? pendingWithdrawals : withdrawFilter === 'timeout' ? timeoutWithdrawals : allWithdrawals}

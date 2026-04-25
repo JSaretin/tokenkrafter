@@ -5,6 +5,7 @@
 	import { ERC20_DECIMALS_ABI } from '$lib/commonABIs';
 	import { ZERO_ADDRESS } from '$lib/tokenCrafter';
 	import { friendlyError } from '$lib/errorDecoder';
+	import Skeleton from '$lib/Skeleton.svelte';
 
 	// Narrow ABI — just the admin surface + read helpers. PlatformRouter has
 	// no getState() aggregator, so we call individual getters.
@@ -115,8 +116,29 @@
 </script>
 
 {#if loading}
-	<div class="flex items-center justify-center py-20">
-		<div class="spinner w-10 h-10 rounded-full border-2 border-white/10 border-t-cyan-400"></div>
+	<!-- Skeleton mirrors the admin tab layout: status-grid + 3 setting cards. -->
+	<div class="space-y-4">
+		<div class="card p-4 flex flex-col gap-3">
+			<Skeleton width={140} height="0.95rem" />
+			<div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+				{#each Array(3) as _}
+					<div class="bg-white/[0.02] border border-line rounded-lg py-2.5 px-3 flex flex-col gap-2">
+						<Skeleton width="55%" height="0.7rem" />
+						<Skeleton width="75%" height="1rem" />
+					</div>
+				{/each}
+			</div>
+		</div>
+		{#each Array(3) as _}
+			<div class="card p-4 flex flex-col gap-2">
+				<Skeleton width={160} height="0.95rem" />
+				<Skeleton width="100%" height="0.75rem" />
+				<Skeleton width="80%" height="0.75rem" />
+				<div class="flex gap-2 pt-1">
+					<Skeleton width="100%" height="2.25rem" radius="10px" />
+				</div>
+			</div>
+		{/each}
 	</div>
 {:else if !selectedNetwork?.router_address || selectedNetwork.router_address === '0x'}
 	<div class="card p-8 text-center">

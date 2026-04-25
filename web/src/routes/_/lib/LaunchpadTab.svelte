@@ -6,6 +6,7 @@
 	import type { SupportedNetworks, SupportedNetwork } from '$lib/structure';
 	import { t } from '$lib/i18n';
 	import { friendlyError } from '$lib/errorDecoder';
+	import Skeleton from '$lib/Skeleton.svelte';
 
 	let getSigner: () => ethers.Signer | null = getContext('signer');
 	let addFeedback: (f: { message: string; type: string }) => void = getContext('addFeedback');
@@ -276,8 +277,23 @@
 </script>
 
 {#if loading}
-	<div class="flex items-center justify-center py-20">
-		<div class="spinner w-10 h-10 rounded-full border-2 border-line-input border-t-brand-cyan"></div>
+	<!-- Skeleton mirrors launchpad stats trio + factory info card. -->
+	<div class="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-6">
+		{#each Array(3) as _}
+			<div class="card p-4 text-center flex flex-col items-center gap-2">
+				<Skeleton width="50%" height="1.5rem" />
+				<Skeleton width="70%" height="0.7rem" />
+			</div>
+		{/each}
+	</div>
+	<div class="card p-5 mb-4 flex flex-col gap-2">
+		<Skeleton width={180} height="0.95rem" />
+		{#each Array(5) as _}
+			<div class="flex justify-between items-center py-2 border-b border-surface last:border-b-0">
+				<Skeleton width={100} height="0.8rem" />
+				<Skeleton width={180} height="0.8rem" />
+			</div>
+		{/each}
 	</div>
 {:else if !selectedNetwork.launchpad_address || selectedNetwork.launchpad_address === '0x'}
 	<div class="card p-8 text-center">

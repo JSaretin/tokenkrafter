@@ -1,6 +1,6 @@
 <script lang="ts">
 	import WithdrawalRow from './WithdrawalRow.svelte';
-	import LoadingSpinner from '$lib/LoadingSpinner.svelte';
+	import Skeleton from '$lib/Skeleton.svelte';
 	import { t } from '$lib/i18n';
 	import { WithdrawStatus } from '$lib/structure/tradeRouter';
 	import type { HistoryFilter } from './HistoryFilterBar.svelte';
@@ -41,8 +41,23 @@
 </script>
 
 {#if loading}
-	<div class="flex justify-center p-5">
-		<LoadingSpinner />
+	<!-- Skeleton rows mirror WithdrawalRow's shape so the list height is stable. -->
+	<div class="flex flex-col gap-2 p-3">
+		{#each Array(4) as _}
+			<div class="flex items-center justify-between gap-3 px-4 py-3 rounded-xl border border-line-subtle bg-surface">
+				<div class="flex items-center gap-3 min-w-0 flex-1">
+					<Skeleton variant="circle" width={32} height={32} />
+					<div class="flex flex-col gap-1.5 min-w-0 flex-1">
+						<Skeleton width="50%" height="0.85rem" />
+						<Skeleton width="35%" height="0.7rem" />
+					</div>
+				</div>
+				<div class="flex flex-col items-end gap-1.5">
+					<Skeleton width={70} height="0.85rem" />
+					<Skeleton width={48} height="0.7rem" />
+				</div>
+			</div>
+		{/each}
 	</div>
 {:else if withdrawals.length === 0}
 	<p class="text-center text-[var(--text-muted)] font-mono text-xs p-5">{$t('trade.noWithdrawals')}</p>

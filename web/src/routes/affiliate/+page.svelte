@@ -4,6 +4,7 @@
 	import { TokenFactory, ZERO_ADDRESS } from '$lib/tokenCrafter';
 	import type { SupportedNetworks, SupportedNetwork } from '$lib/structure';
 	import { t } from '$lib/i18n';
+	import Skeleton from '$lib/Skeleton.svelte';
 
 	let connectWallet: () => Promise<boolean> = getContext('connectWallet');
 	let getSigner: () => ethers.Signer | null = getContext('signer');
@@ -502,10 +503,30 @@
 			</div>
 
 			{#if loading}
-				<div class="card p-10 flex items-center justify-center">
-					<div class="flex flex-col items-center gap-3">
-						<div class="spinner w-10 h-10 rounded-full border-2 border-white/10 border-t-cyan-400"></div>
-						<span class="text-gray-500 text-sm font-mono">{$t('aff.loadingStats')}</span>
+				<!-- Skeleton mirrors the stats-grid + earnings card so the dashboard
+				     reserves its real layout while on-chain stats load. -->
+				<div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+					{#each Array(4) as _}
+						<div class="card p-4 text-center flex flex-col items-center gap-2">
+							<Skeleton width="60%" height="1.6rem" />
+							<Skeleton width="80%" height="0.7rem" />
+						</div>
+					{/each}
+				</div>
+				<div class="card overflow-hidden mb-4">
+					<div class="p-4 border-b border-white/5">
+						<Skeleton width={140} height="0.95rem" />
+					</div>
+					<div class="p-5 grid grid-cols-1 sm:grid-cols-2 gap-4 items-center">
+						<div class="flex flex-col gap-2">
+							<Skeleton width={120} height="0.7rem" />
+							<Skeleton width={140} height="1.6rem" />
+							<Skeleton width={120} height="0.7rem" />
+							<Skeleton width={140} height="1.6rem" />
+						</div>
+						<div class="flex justify-end">
+							<Skeleton width={120} height="2.25rem" radius="10px" />
+						</div>
 					</div>
 				</div>
 			{:else}

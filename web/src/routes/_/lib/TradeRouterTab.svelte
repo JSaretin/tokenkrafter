@@ -4,6 +4,7 @@
 	import type { SupportedNetwork } from '$lib/structure';
 	import { TRADE_ROUTER_ABI } from '$lib/tradeRouter';
 	import { ERC20_DECIMALS_ABI } from '$lib/commonABIs';
+	import Skeleton from '$lib/Skeleton.svelte';
 
 	let { selectedNetwork }: { selectedNetwork: SupportedNetwork } = $props();
 
@@ -126,8 +127,33 @@
 </script>
 
 {#if loading}
-	<div class="flex items-center justify-center py-20">
-		<div class="spinner w-10 h-10 rounded-full border-2 border-line-input border-t-brand-cyan"></div>
+	<!-- Skeleton mirrors TradeRouter status grid + setting card stack. -->
+	<div class="space-y-4">
+		<div class="card p-4 flex flex-col gap-3">
+			<Skeleton width={160} height="0.95rem" />
+			<div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+				{#each Array(4) as _}
+					<div class="bg-surface border border-line-subtle rounded-[10px] px-3 py-2.5 flex flex-col gap-2">
+						<Skeleton width="60%" height="0.7rem" />
+						<Skeleton width="80%" height="1rem" />
+					</div>
+				{/each}
+			</div>
+			<div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+				{#each Array(3) as _}
+					<div class="bg-surface border border-line-subtle rounded-[10px] px-3 py-2.5 flex flex-col gap-2">
+						<Skeleton width="60%" height="0.7rem" />
+						<Skeleton width="80%" height="1rem" />
+					</div>
+				{/each}
+			</div>
+		</div>
+		{#each Array(3) as _}
+			<div class="card p-4 flex flex-col gap-2">
+				<Skeleton width={140} height="0.95rem" />
+				<Skeleton width="100%" height="2.25rem" radius="10px" />
+			</div>
+		{/each}
 	</div>
 {:else if !selectedNetwork?.trade_router_address}
 	<div class="card p-8 text-center">

@@ -23,6 +23,7 @@
 	import ExistingPoolsList from './lib/ExistingPoolsList.svelte';
 	import RegisterPoolForm from './lib/RegisterPoolForm.svelte';
 	import NewPoolForm from './lib/NewPoolForm.svelte';
+	import Skeleton from '$lib/Skeleton.svelte';
 
 	let _getNetworks: () => SupportedNetworks = getContext('supportedNetworks');
 	let supportedNetworks = $derived(_getNetworks());
@@ -1407,11 +1408,39 @@
 	<a href="/manage-tokens" class="inline-block mb-6 font-mono text-xs text-dim no-underline transition-colors duration-150 hover:text-[#00d2ff]">&larr; Back to Manage Tokens</a>
 
 	{#if isLoading}
-		<div class="flex items-center justify-center min-h-[50vh]">
-			<div class="flex flex-col items-center gap-4">
-				<div class="spinner w-12 h-12 rounded-full border-2 border-white/10 border-t-cyan-400"></div>
-				<p class="text-gray-500 text-sm font-mono">{$t('mt.loadingToken')}</p>
+		<!-- Skeleton mirrors the token header + tab strip + first-tab card so the
+		     layout doesn't jump when the real data arrives. -->
+		<div class="token-header mb-8">
+			<div class="flex items-start justify-between flex-wrap gap-4">
+				<div class="flex items-center gap-4">
+					<Skeleton variant="rect" width={60} height={60} radius="16px" />
+					<div class="flex flex-col gap-2">
+						<Skeleton width={180} height="1.6rem" />
+						<div class="flex items-center gap-2 flex-wrap">
+							<Skeleton width={60} height="0.85rem" />
+							<Skeleton width={90} height="0.85rem" />
+							<Skeleton width={64} height="0.85rem" radius="999px" />
+						</div>
+					</div>
+				</div>
+				<Skeleton width={120} height="2rem" radius="10px" />
 			</div>
+		</div>
+		<!-- Tab strip placeholders -->
+		<div class="flex gap-2 mb-4 overflow-x-auto">
+			{#each Array(5) as _}
+				<Skeleton width={88} height="2rem" radius="10px" />
+			{/each}
+		</div>
+		<!-- First-tab content placeholder -->
+		<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+			{#each Array(4) as _}
+				<div class="bg-surface border border-line-subtle rounded-xl p-4 flex flex-col gap-3">
+					<Skeleton width="40%" height="0.75rem" />
+					<Skeleton width="70%" height="1.4rem" />
+					<Skeleton width="55%" height="0.75rem" />
+				</div>
+			{/each}
 		</div>
 	{:else if error}
 		<div class="error-state text-center py-20">
