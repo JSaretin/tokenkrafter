@@ -1,6 +1,34 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { supabaseAdmin } from '$lib/supabaseServer';
+import { ethers } from 'ethers';
+
+const OWNER_ABI = ['function owner() view returns (address)'];
+
+/** Last-resort creator check: a live `Ownable.owner()` lookup. The DB
+ *  `creator` column is set by the indexer at deploy time and never
+ *  follows ownership transfers — so a creator who handed the contract
+ *  to a different wallet (or a user whose embedded HD path differs
+ *  from the deploy account) gets locked out of metadata edits despite
+ *  being the actual on-chain owner. Fall back to chain truth. */
+async function isOnChainOwner(address: string, chainId: number, wallet: string): Promise<boolean> {
+	const { data } = await supabaseAdmin
+		.from('platform_config')
+		.select('value')
+		.eq('key', 'networks')
+		.single();
+	const nets = (data?.value as any[] | undefined) ?? [];
+	const net = nets.find((n: any) => n.chain_id === chainId && n.rpc);
+	if (!net?.rpc) return false;
+	try {
+		const provider = new ethers.JsonRpcProvider(net.rpc, chainId, { staticNetwork: true });
+		const c = new ethers.Contract(address, OWNER_ABI, provider);
+		const owner = String(await c.owner()).toLowerCase();
+		return owner === wallet.toLowerCase();
+	} catch {
+		return false;
+	}
+}
 
 // GET /api/token-metadata?address=0x...&chain_id=56
 export const GET: RequestHandler = async ({ url }) => {
@@ -47,9 +75,14 @@ export const PUT: RequestHandler = async ({ request, locals }) => {
 			.eq('chain_id', chain_id)
 			.single();
 
-		// Token exists in DB — verify ownership
+		// Token exists in DB — verify ownership. DB creator is whatever
+		// the indexer captured at deploy time and doesn't follow on-chain
+		// ownership transfers, so fall back to a live owner() check before
+		// rejecting — handles "I'm the owner but DB says someone else"
+		// and ownership-transfer scenarios.
 		if (token && token.creator.toLowerCase() !== wallet) {
-			return error(403, 'Only the token creator can update metadata');
+			const isOwner = await isOnChainOwner(address, chain_id, wallet);
+			if (!isOwner) return error(403, 'Only the token creator can update metadata');
 		}
 		// If token not in DB yet (daemon hasn't indexed), allow the creator to save metadata
 		// The upsert below sets creator = wallet, so ownership is established

@@ -23,8 +23,6 @@
 	import { LaunchpadFactoryClient } from '$lib/contracts/launchpadFactory';
 	import { LaunchInstanceClient } from '$lib/contracts/launchInstance';
 	import { tap } from '$lib/haptics';
-	import PullToRefresh from '$lib/PullToRefresh.svelte';
-	import ShrinkingHeader from '$lib/ShrinkingHeader.svelte';
 
 	let getUserAddress: () => string | null = getContext('userAddress');
 	let _getNetworks: () => SupportedNetwork[] = getContext('supportedNetworks');
@@ -641,20 +639,16 @@
 
 <div class="page-wrap max-w-[1400px] mx-auto px-4 sm:px-6 py-8 xl:grid xl:grid-cols-[1fr_320px] xl:gap-6">
 	<div class="min-w-0">
-	<!-- Header — ShrinkingHeader compresses the title into a sticky bar
-	     once the user scrolls past the original block. The Create Launch
-	     CTA rides along in the right snippet so it stays reachable. -->
-	<ShrinkingHeader title={$t('lp.title')} subtitle={$t('lp.subtitle')}>
-		{#snippet right()}
-			<!-- Single primary CTA — /create handles the intent picker
-			     (token / token+launch / token+listing). Two side-by-side
-			     CTAs here just duplicated that choice a step earlier. -->
+	<!-- Header row -->
+	<div class="flex flex-wrap items-end justify-between gap-4 mb-6">
+		<div>
+			<h1 class="heading-1">{$t('lp.title')}</h1>
+			<p class="text-muted font-mono text-xs mt-1">{$t('lp.subtitle')}</p>
+		</div>
+		<div class="flex gap-2">
 			<a href="/create" class="btn-primary text-xs px-4 py-2 no-underline">{$t('lp.createLaunch')}</a>
-		{/snippet}
-	</ShrinkingHeader>
-	<div class="mb-2"></div>
-
-	<PullToRefresh onRefresh={handleRefresh}>
+		</div>
+	</div>
 
 	<!-- Stats bar -->
 	{#if loading}
@@ -931,8 +925,13 @@
 							<span class="block font-numeric text-xs4 text-dim uppercase tracking-wider">Buyers</span>
 							{#if (launch as any).totalBuyers > 0}
 								<span class="font-display text-xs font-bold text-heading">{(launch as any).totalBuyers}</span>
+							{:else if (launch as any).totalPurchases > 0}
+								<!-- DB row may have totalBuyers=0 but totalPurchases>0 when the
+								     sync indexer is mid-rebuild. Fall back to purchase count
+								     so a graduated launch with real activity doesn't show "-". -->
+								<span class="font-display text-xs font-bold text-heading">{(launch as any).totalPurchases}</span>
 							{:else if launch.totalBaseRaised > 0n}
-								<span class="font-display text-xs font-bold text-heading">-</span>
+								<span class="font-display text-xs font-bold text-heading">1+</span>
 							{:else}
 								<span class="font-display font-bold text-brand-cyan text-3xs">Be first!</span>
 							{/if}
@@ -1044,7 +1043,6 @@
 		{/if}
 	{/if}
 	</div>
-	</PullToRefresh>
 	</div>
 	<!-- Market Flow sidebar — always present on desktop so skeleton matches loaded layout -->
 	<div class="hidden xl:block sticky top-0 h-[calc(100vh-56px)] overflow-hidden">

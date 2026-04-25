@@ -1,6 +1,32 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { supabaseAdmin } from '$lib/supabaseServer';
+import { ethers } from 'ethers';
+
+const LAUNCH_CREATOR_ABI = ['function creator() view returns (address)'];
+
+/** Live on-chain creator check for a launch instance. The DB
+ *  `creator` column is set when the launch is indexed and may lag /
+ *  mismatch the user's current session wallet — fall back to chain
+ *  truth before refusing the metadata update. */
+async function isOnChainLaunchCreator(launchAddress: string, chainId: number, wallet: string): Promise<boolean> {
+	const { data } = await supabaseAdmin
+		.from('platform_config')
+		.select('value')
+		.eq('key', 'networks')
+		.single();
+	const nets = (data?.value as any[] | undefined) ?? [];
+	const net = nets.find((n: any) => n.chain_id === chainId && n.rpc);
+	if (!net?.rpc) return false;
+	try {
+		const provider = new ethers.JsonRpcProvider(net.rpc, chainId, { staticNetwork: true });
+		const c = new ethers.Contract(launchAddress, LAUNCH_CREATOR_ABI, provider);
+		const c1 = String(await c.creator()).toLowerCase();
+		return c1 === wallet.toLowerCase();
+	} catch {
+		return false;
+	}
+}
 
 // PATCH /api/launches/metadata — update off-chain metadata for a launch
 // Auth: wallet session (hooks.server.ts), then creator check
@@ -26,8 +52,12 @@ export const PATCH: RequestHandler = async ({ request, locals }) => {
 		return error(404, 'Launch not found');
 	}
 
-	if (launch.creator !== walletAddress) {
-		return error(403, 'Only the launch creator can update metadata');
+	if (launch.creator?.toLowerCase() !== walletAddress.toLowerCase()) {
+		// DB creator mismatch — verify against the on-chain `creator()`
+		// view before rejecting. Handles indexer lag or string-case drift
+		// that locks the real creator out of metadata edits.
+		const isOwner = await isOnChainLaunchCreator(body.address, body.chain_id, walletAddress);
+		if (!isOwner) return error(403, 'Only the launch creator can update metadata');
 	}
 
 	const updates: Record<string, string | null> = {};

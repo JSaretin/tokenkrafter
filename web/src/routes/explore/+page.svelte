@@ -7,8 +7,6 @@
 	import LaunchProgressBar from '$lib/LaunchProgressBar.svelte';
 	import LaunchCountdown from '$lib/LaunchCountdown.svelte';
 	import TokenLogo from '$lib/TokenLogo.svelte';
-	import PullToRefresh from '$lib/PullToRefresh.svelte';
-	import ShrinkingHeader from '$lib/ShrinkingHeader.svelte';
 
 	let { data }: { data: any } = $props();
 	let tokens: any[] = data.tokens;
@@ -391,15 +389,16 @@
 
 <div class="max-w-[1100px] mx-auto px-4 pb-[60px]">
 	<!-- Header -->
-	<ShrinkingHeader title="Explore Tokens" subtitle="{tokens.length} tokens on TokenKrafter" />
+	<div class="pt-6 mb-5">
+		<h1 class="heading-1">Explore Tokens</h1>
+		<p class="font-mono text-xs text-(--text-muted) mt-1">{tokens.length} {tokens.length === 1 ? 'token' : 'tokens'} on TokenKrafter</p>
+	</div>
 
 	<!-- Search -->
 	<div class="flex items-center gap-2 px-3.5 py-2 rounded-[10px] bg-white/[0.03] border border-white/[0.06] mb-4 transition-colors duration-150 focus-within:border-[rgba(0,210,255,0.3)]">
 		<svg class="text-[#374151] shrink-0" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
 		<input class="bg-transparent border-none outline-none flex-1 text-[#e2e8f0] font-mono text-xs placeholder:text-[#1e293b]" type="text" placeholder="Search name, symbol, or address..." bind:value={search} />
 	</div>
-
-	<PullToRefresh onRefresh={handleRefresh}>
 
 	<!-- Live Launches -->
 	{#if activeLaunches.length > 0 && !search.trim()}
@@ -649,7 +648,6 @@
 			{/each}
 		</div>
 	{/if}
-	</PullToRefresh>
 </div>
 
 <style>

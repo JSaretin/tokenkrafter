@@ -5,6 +5,8 @@
 	import type { SupportedNetworks, SupportedNetwork } from '$lib/structure';
 	import { t } from '$lib/i18n';
 	import Skeleton from '$lib/Skeleton.svelte';
+	import { LaunchpadFactoryClient } from '$lib/contracts/launchpadFactory';
+	import { AffiliateClient } from '$lib/contracts/affiliate';
 
 	let connectWallet: () => Promise<boolean> = getContext('connectWallet');
 	let getSigner: () => ethers.Signer | null = getContext('signer');
@@ -50,6 +52,18 @@
 	let referralLevels = $state(3);
 	let autoDistribute = $state(true);
 	let myReferrer = $state<string | null>(null);
+
+	// Launchpad-buy affiliate (separate from token-creation referrals).
+	// Affiliate.sol pays 25% of platform fee on each launchpad buy made
+	// through a referrer's link. State accumulates here and is claimable
+	// independently from the TokenFactory referral pool above.
+	let lpAffiliateAddr = $state<string | null>(null);
+	let lpPending = $state<bigint>(0n);
+	let lpTotalEarned = $state<bigint>(0n);
+	let lpTotalClaimed = $state<bigint>(0n);
+	let lpReferredCount = $state(0);
+	let lpMinClaim = $state<bigint>(0n);
+	let lpClaiming = $state(false);
 
 	function formatAddress(addr: string) {
 		return addr.slice(0, 6) + '...' + addr.slice(-4);
@@ -133,11 +147,61 @@
 			myReferrer = referrer !== ZERO_ADDRESS ? referrer : null;
 			usdtDecimals = Number(dec);
 			usdtSymbol = sym;
+
+			// Launchpad affiliate stats (separate Affiliate.sol). Resolved via
+			// the launchpad factory's affiliate() view. Best-effort — failures
+			// don't blow up the whole load (a network without launchpad still
+			// shows token-creation referrals).
+			try {
+				if (selectedNetwork.launchpad_address && selectedNetwork.launchpad_address !== '0x') {
+					const lpFactory = new LaunchpadFactoryClient(selectedNetwork.launchpad_address, provider);
+					const affiliateAddr = await lpFactory.affiliate();
+					if (affiliateAddr && affiliateAddr !== ZERO_ADDRESS) {
+						lpAffiliateAddr = affiliateAddr;
+						const aff = new AffiliateClient(affiliateAddr, provider);
+						const [lpStats, minClaim] = await Promise.all([
+							aff.getStats(userAddress),
+							aff.minClaim().catch(() => 0n),
+						]);
+						lpPending = lpStats.pending;
+						lpTotalEarned = lpStats.totalEarned;
+						lpTotalClaimed = lpStats.totalClaimed;
+						lpReferredCount = lpStats.referredCount;
+						lpMinClaim = minClaim;
+					} else {
+						lpAffiliateAddr = null;
+					}
+				}
+			} catch (e) {
+				// Silent fallback — this stream is optional.
+				console.warn('Launchpad affiliate stats unavailable:', (e as Error)?.message?.slice(0, 80));
+			}
 		} catch (e: any) {
 			console.error('Failed to load referral stats:', e);
 			addFeedback({ message: 'Failed to load referral stats.', type: 'error' });
 		} finally {
 			loading = false;
+		}
+	}
+
+	async function claimLpReward() {
+		if (!signer || !lpAffiliateAddr) return;
+		if (lpPending === 0n) return;
+		if (lpMinClaim > 0n && lpPending < lpMinClaim) {
+			addFeedback({ message: `Below minimum claim (${formatAmount(lpMinClaim, usdtDecimals)} ${usdtSymbol}).`, type: 'error' });
+			return;
+		}
+		lpClaiming = true;
+		try {
+			const aff = new AffiliateClient(lpAffiliateAddr, signer);
+			await aff.claim();
+			addFeedback({ message: `${usdtSymbol} claimed from launchpad referrals!`, type: 'success' });
+			await loadStats();
+		} catch (e: any) {
+			console.error('LP claim failed:', e);
+			addFeedback({ message: e?.reason || e?.shortMessage || 'Claim failed.', type: 'error' });
+		} finally {
+			lpClaiming = false;
 		}
 	}
 
@@ -273,6 +337,48 @@
 					</div>
 				</div>
 			</div>
+
+			<!-- Launchpad referral earnings — second stream. Affiliate.sol
+			     pays 25% of platform fee on each launchpad buy made through
+			     a referral link. Independent claim from the token-creation
+			     pool above. -->
+			{#if lpAffiliateAddr}
+				<div class="card p-6 mt-3" style="border-color: rgba(168,85,247,0.18);">
+					<div class="flex items-start justify-between gap-3 flex-wrap mb-4">
+						<div>
+							<div class="text-3xs font-mono uppercase tracking-widest text-purple-300">Launchpad referrals</div>
+							<h2 class="font-display text-base font-bold text-heading mt-1">Earn 25% on every buy you refer</h2>
+							<p class="font-mono text-xs2 text-muted mt-1 max-w-prose">Share any launch with your address attached as <code class="text-purple-300">?ref=</code> — when someone buys, the platform fee splits 75/25.</p>
+						</div>
+						<button
+							onclick={claimLpReward}
+							disabled={lpClaiming || lpPending === 0n || (lpMinClaim > 0n && lpPending < lpMinClaim)}
+							class="btn-primary text-sm px-5 flex-shrink-0 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+						>
+							{#if lpClaiming}Claiming…{:else if lpPending === 0n}Nothing to claim{:else if lpMinClaim > 0n && lpPending < lpMinClaim}Min {formatAmount(lpMinClaim, usdtDecimals)} {usdtSymbol}{:else}Claim {formatAmount(lpPending, usdtDecimals)} {usdtSymbol}{/if}
+						</button>
+					</div>
+
+					<div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+						<div class="px-3 py-2.5 rounded-[10px] bg-purple-400/[0.06] border border-purple-400/15">
+							<div class="font-mono text-xs4 text-white/35 uppercase tracking-[0.06em]">Buyers referred</div>
+							<div class="font-display text-[1.05rem] font-bold text-white mt-0.5">{loading ? '—' : lpReferredCount}</div>
+						</div>
+						<div class="px-3 py-2.5 rounded-[10px] bg-purple-400/[0.06] border border-purple-400/15">
+							<div class="font-mono text-xs4 text-white/35 uppercase tracking-[0.06em]">Total earned</div>
+							<div class="font-display text-[1.05rem] font-bold text-emerald-400 mt-0.5">{loading ? '—' : `${formatAmount(lpTotalEarned, usdtDecimals)} ${usdtSymbol}`}</div>
+						</div>
+						<div class="px-3 py-2.5 rounded-[10px] bg-purple-400/[0.06] border border-purple-400/15">
+							<div class="font-mono text-xs4 text-white/35 uppercase tracking-[0.06em]">Pending</div>
+							<div class="font-display text-[1.05rem] font-bold text-amber-400 mt-0.5">{loading ? '—' : `${formatAmount(lpPending, usdtDecimals)} ${usdtSymbol}`}</div>
+						</div>
+						<div class="px-3 py-2.5 rounded-[10px] bg-purple-400/[0.06] border border-purple-400/15">
+							<div class="font-mono text-xs4 text-white/35 uppercase tracking-[0.06em]">Paid</div>
+							<div class="font-display text-[1.05rem] font-bold text-white mt-0.5">{loading ? '—' : `${formatAmount(lpTotalClaimed, usdtDecimals)} ${usdtSymbol}`}</div>
+						</div>
+					</div>
+				</div>
+			{/if}
 		</section>
 	{/if}
 
