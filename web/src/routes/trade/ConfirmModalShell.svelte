@@ -25,7 +25,7 @@
 </script>
 
 <FixedOverlay bind:show onclose={handleClose}>
-	<div class="w-full max-w-[420px] bg-(--bg) border border-(--border) rounded-[20px] overflow-hidden max-h-[80vh] max-sm:h-[85vh] max-sm:max-h-[85vh] max-sm:w-full max-sm:max-w-full max-sm:rounded-b-none flex flex-col">
+	<div class="w-full max-w-[420px] bg-(--bg) border border-(--border) rounded-[20px] overflow-hidden max-h-[80vh] max-sm:h-[80vh] max-sm:max-h-[80vh] max-sm:w-full max-sm:max-w-full max-sm:rounded-b-none flex flex-col">
 		<div class="flex justify-between items-center py-4 px-5 border-b border-(--border)">
 			<h3 class="syne text-base font-bold text-(--text-heading) m-0">{title}</h3>
 			{#if closable}

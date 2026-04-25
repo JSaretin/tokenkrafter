@@ -262,7 +262,7 @@
 
 {#if open}
 	<div class="fixed inset-0 z-[9999] bg-black/70 backdrop-blur-[4px] flex items-center justify-center p-4 max-[480px]:items-end max-[480px]:p-0" onclick={close} role="presentation">
-		<div class="bg-background border border-line rounded-2xl p-6 w-full max-w-[380px] flex flex-col gap-3 max-[480px]:rounded-t-2xl max-[480px]:rounded-b-none max-[480px]:h-[85vh] max-[480px]:max-h-[85vh] max-[480px]:max-w-full max-[480px]:overflow-y-auto" onclick={(e) => e.stopPropagation()} role="dialog" aria-label="Connect wallet" tabindex="-1" onkeydown={handleModalKeydown}>
+		<div class="bg-background border border-line rounded-2xl p-6 w-full max-w-[380px] flex flex-col gap-3 max-[480px]:rounded-t-2xl max-[480px]:rounded-b-none max-[480px]:h-[80vh] max-[480px]:max-h-[80vh] max-[480px]:max-w-full max-[480px]:overflow-y-auto" onclick={(e) => e.stopPropagation()} role="dialog" aria-label="Connect wallet" tabindex="-1" onkeydown={handleModalKeydown}>
 
 			<!-- 3-step progress indicator: Method → Secure → Backup. Hidden on
 			     paths that don't fit the funnel (returning unlock, recovery). -->

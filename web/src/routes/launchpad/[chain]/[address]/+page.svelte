@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { ethers } from 'ethers';
-	import { getContext, onDestroy } from 'svelte';
+	import { getContext, onDestroy, onMount } from 'svelte';
+	import { captureReferralFromUrl, refOrZero, buildReferralUrl } from '$lib/referral';
 	import { page } from '$app/state';
 	import { shortAddr } from '$lib/formatters';
 	import { t } from '$lib/i18n';
@@ -715,6 +716,34 @@
 		}
 	});
 
+	// Capture ?ref=<address> from the URL once on mount and persist it
+	// stickily in localStorage. Subsequent buys pick it up via refOrZero().
+	onMount(() => {
+		captureReferralFromUrl(page.url);
+	});
+
+	// Build the share URL once we know the user's address — so users can
+	// flex this launch with their own address attached as the referrer.
+	let referralShareUrl = $derived.by(() => {
+		if (!userAddress || typeof window === 'undefined') return '';
+		return buildReferralUrl(window.location.pathname, userAddress);
+	});
+
+	let copiedReferral = $state(false);
+	async function copyReferralLink() {
+		if (!referralShareUrl || typeof navigator === 'undefined') return;
+		const fullUrl = typeof window !== 'undefined' ? window.location.origin + referralShareUrl : referralShareUrl;
+		try {
+			if (navigator.share) {
+				await navigator.share({ title: launch?.tokenName || 'TokenKrafter launch', url: fullUrl });
+			} else if (navigator.clipboard) {
+				await navigator.clipboard.writeText(fullUrl);
+				copiedReferral = true;
+				setTimeout(() => (copiedReferral = false), 2000);
+			}
+		} catch {}
+	}
+
 	// Fetch the DEX pair's spot price (reserves ratio) for graduated launches.
 	// `getLaunchInfo().currentPrice_` returns 0 post-graduation by design, so
 	// without this the "Value now" / "Price now" cells would either vanish or
@@ -1091,13 +1120,16 @@
 				const minUsdtOut = usdtNeeded * (10000n - slipBps) / 10000n;
 
 				// Path: [native, USDT]. The contract rewrites address(0) → WETH
-				// for the actual swap call.
+				// for the actual swap call. `ref` comes from a sticky URL
+				// capture (?ref=...) — Affiliate.sol pays the referrer 25%
+				// of the platform fee.
 				addFeedback({ message: `Swapping ${network.native_coin} → USDT and buying...`, type: 'info' });
-				await launchClient.buy(
+				await launchClient.buyWithRef(
 					[ethers.ZeroAddress, network.usdt_address],
 					bnbToSend,
 					minUsdtOut,
 					minTokensOut,
+					refOrZero(userAddress),
 					{ value: bnbToSend }
 				);
 			} else {
@@ -1148,7 +1180,7 @@
 					: [paymentAddress, network.usdt_address];
 
 				addFeedback({ message: `Buying with ${paymentLabel}...`, type: 'info' });
-				await launchClient.buy(path, amountWei, minUsdtOut, minTokensOut);
+				await launchClient.buyWithRef(path, amountWei, minUsdtOut, minTokensOut, refOrZero(userAddress));
 			}
 
 			addFeedback({ message: 'Tokens purchased!', type: 'success' });
@@ -2987,6 +3019,23 @@
 							</p>
 						</div>
 					{/if}
+					{#if userAddress}
+						<div class="flex items-center gap-2 px-3 py-2 mb-3 rounded-xl border border-purple-400/15 bg-purple-400/[0.04]">
+							<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#c084fc" stroke-width="2" class="shrink-0">
+								<path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/>
+							</svg>
+							<span class="flex-1 min-w-0 font-mono text-xs2 text-purple-300">Earn <span class="font-bold text-purple-200">25%</span> of buy fees from anyone you refer</span>
+							<button
+								type="button"
+								class="shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-purple-400/15 border border-purple-400/30 text-purple-200 syne text-3xs font-bold cursor-pointer transition-all hover:bg-purple-400/25"
+								onclick={copyReferralLink}
+							>
+								<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+								{copiedReferral ? 'Copied!' : 'Share'}
+							</button>
+						</div>
+					{/if}
+
 					<div class="card p-6 mb-4" class:opacity-50={notStartedYet} class:pointer-events-none={notStartedYet}>
 						<h3 class="syne font-bold text-white mb-4">{$t('lpd.buyTokens')}</h3>
 

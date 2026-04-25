@@ -60,7 +60,7 @@
 </script>
 
 <Modal bind:show maxWidth="max-w-[420px]">
-	<div class="flex flex-col max-h-[85vh] max-sm:h-full max-sm:max-h-full max-sm:min-h-0">
+	<div class="flex flex-col max-h-[80vh] max-sm:h-full max-sm:max-h-full max-sm:min-h-0">
 	<div class="flex justify-between items-center py-4 px-5 border-b border-(--border)">
 		<h3 class="font-display text-base font-bold text-(--text-heading) m-0">{$t('trade.selectAToken')}</h3>
 		<button aria-label="Close" class="bg-transparent border-0 text-(--text-muted) cursor-pointer p-1 rounded-lg transition-all duration-150 hover:text-(--text) hover:bg-(--bg-surface-hover)" onclick={() => show = false}>

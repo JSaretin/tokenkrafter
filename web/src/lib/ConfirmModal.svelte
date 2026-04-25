@@ -47,7 +47,7 @@
 	>
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<!-- svelte-ignore a11y_click_events_have_key_events -->
-		<div class="w-full max-w-[400px] max-[480px]:max-w-full bg-surface border border-white/[0.08] rounded-[20px] max-[480px]:rounded-b-none overflow-hidden flex flex-col shadow-[0_20px_60px_rgba(0,0,0,0.5)]" onclick={(e) => e.stopPropagation()}>
+		<div class="w-full max-w-[400px] max-h-[80vh] max-[480px]:max-w-full max-[480px]:max-h-[80vh] bg-surface border border-white/[0.08] rounded-[20px] max-[480px]:rounded-b-none overflow-y-auto flex flex-col shadow-[0_20px_60px_rgba(0,0,0,0.5)]" onclick={(e) => e.stopPropagation()}>
 			<div class="flex justify-between items-center px-4 pt-4">
 				<h3 class="font-display text-15 font-bold text-heading m-0">{title}</h3>
 				{#if !processing}
