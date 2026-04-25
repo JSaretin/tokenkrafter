@@ -21,6 +21,7 @@
 		type WalletContext,
 	} from './embeddedWallet';
 	import WalletSwitcher from './WalletSwitcher.svelte';
+	import AnimatedNumber from './AnimatedNumber.svelte';
 	import { getKnownLogo, resolveTokenLogo } from './tokenLogo';
 	import { balanceState } from './balancePoller';
 	import type { WsProviderManager, EventSubscription } from './wsProvider';
@@ -896,11 +897,18 @@
 	function fmtBal(bal: bigint, dec: number): string {
 		if (bal === 0n) return '0';
 		const v = parseFloat(ethers.formatUnits(bal, dec));
-		if (v >= 1000) return v.toLocaleString(undefined, { maximumFractionDigits: 2 });
-		if (v >= 1) return v.toFixed(4);
-		if (v >= 0.0001) return v.toFixed(6);
-		if (v >= 0.00000001) return v.toFixed(8).replace(/\.?0+$/, '');
-		// Truly dust amounts — show "< 0.00000001" instead of scientific notation
+		return fmtBalNumber(v);
+	}
+
+	/** Number-flavored variant of fmtBal — used by AnimatedNumber whose
+	 *  tween runs in number-space (so we can't reach for the original wei). */
+	function fmtBalNumber(v: number): string {
+		if (!isFinite(v) || v === 0) return '0';
+		const abs = Math.abs(v);
+		if (abs >= 1000) return v.toLocaleString(undefined, { maximumFractionDigits: 2 });
+		if (abs >= 1) return v.toFixed(4);
+		if (abs >= 0.0001) return v.toFixed(6);
+		if (abs >= 0.00000001) return v.toFixed(8).replace(/\.?0+$/, '');
 		return '< 0.00000001';
 	}
 
@@ -1060,12 +1068,12 @@
 
 		<!-- Balance -->
 		<div class="ap-bal text-center pt-4 px-4 pb-5">
-			<span class="ap-bal-total block font-numeric font-bold text-(--text-heading) leading-[1.1] tabular-nums tracking-[-0.02em] max-w-full overflow-hidden text-ellipsis whitespace-nowrap">{fmtUsd(totalUsd)}{#if portfolioLoading && totalUsd === 0} <span class="text-2xl text-(--text-dim) animate-[blink_1s_infinite]">...</span>{/if}</span>
+			<span class="ap-bal-total block font-numeric font-bold text-(--text-heading) leading-[1.1] tabular-nums tracking-[-0.02em] max-w-full overflow-hidden text-ellipsis whitespace-nowrap"><AnimatedNumber value={totalUsd} format={fmtUsd} duration={400} />{#if portfolioLoading && totalUsd === 0} <span class="text-2xl text-(--text-dim) animate-[blink_1s_infinite]">...</span>{/if}</span>
 			<span class="block font-numeric text-base font-medium text-(--text-muted) mt-1.5 tabular-nums max-w-full overflow-hidden text-ellipsis whitespace-nowrap px-2">
 				{#if totalNativeEquiv > 0}
-					≈ {totalNativeEquiv.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {nativeCoin}
+					≈ <AnimatedNumber value={totalNativeEquiv} decimals={2} suffix={' ' + nativeCoin} duration={400} />
 				{:else}
-					{fmtBal(nativeBalance, nativeDecimals)} {nativeCoin}
+					<AnimatedNumber value={nativeBalFormatted} format={fmtBalNumber} suffix={' ' + nativeCoin} duration={400} />
 				{/if}
 			</span>
 		</div>
@@ -1154,8 +1162,8 @@
 						<span class="block text-xs text-(--text-dim) font-mono mt-0.5">{$t('account.native')}</span>
 					</div>
 					<button class="ap-row-right" type="button" onclick={() => toggleRowCompact('native')} title={nativeCompact ? 'Tap to expand' : 'Tap to shrink'}>
-						<span class="block text-base text-(--text-heading) font-numeric font-bold tabular-nums leading-[1.3] max-w-full overflow-hidden text-ellipsis whitespace-nowrap">{fmtBal(nativeBalance, nativeDecimals)}</span>
-						<span class="block text-13 text-(--text-dim) font-numeric font-medium tabular-nums mt-0.5 max-w-full overflow-hidden text-ellipsis whitespace-nowrap">{nativeCompact ? fmtCompactUsd(nativeUsd) : fmtUsd(nativeUsd)}</span>
+						<span class="block text-base text-(--text-heading) font-numeric font-bold tabular-nums leading-[1.3] max-w-full overflow-hidden text-ellipsis whitespace-nowrap"><AnimatedNumber value={nativeBalFormatted} format={fmtBalNumber} duration={400} /></span>
+						<span class="block text-13 text-(--text-dim) font-numeric font-medium tabular-nums mt-0.5 max-w-full overflow-hidden text-ellipsis whitespace-nowrap"><AnimatedNumber value={nativeUsd} format={nativeCompact ? fmtCompactUsd : fmtUsd} duration={400} /></span>
 					</button>
 				</div>
 
@@ -1175,8 +1183,8 @@
 							<span class="block text-xs text-(--text-dim) font-mono mt-0.5">{tok.name}</span>
 						</div>
 						<button class="ap-row-right" type="button" onclick={() => toggleRowCompact(rowKey)} title={isCompact ? 'Tap to expand' : 'Tap to shrink'}>
-							<span class="block text-base text-(--text-heading) font-numeric font-bold tabular-nums leading-[1.3] max-w-full overflow-hidden text-ellipsis whitespace-nowrap">{isCompact ? fmtCompactAmount(tok._bal) : fmtBal(tok.balance, tok.decimals)}</span>
-							<span class="block text-13 text-(--text-dim) font-numeric font-medium tabular-nums mt-0.5 max-w-full overflow-hidden text-ellipsis whitespace-nowrap">{tok._usd > 0 ? (isCompact ? fmtCompactUsd(tok._usd) : fmtUsd(tok._usd)) : ''}</span>
+							<span class="block text-base text-(--text-heading) font-numeric font-bold tabular-nums leading-[1.3] max-w-full overflow-hidden text-ellipsis whitespace-nowrap"><AnimatedNumber value={tok._bal} format={isCompact ? fmtCompactAmount : fmtBalNumber} duration={400} /></span>
+							<span class="block text-13 text-(--text-dim) font-numeric font-medium tabular-nums mt-0.5 max-w-full overflow-hidden text-ellipsis whitespace-nowrap">{#if tok._usd > 0}<AnimatedNumber value={tok._usd} format={isCompact ? fmtCompactUsd : fmtUsd} duration={400} />{/if}</span>
 						</button>
 						<button
 							type="button"
@@ -1207,8 +1215,8 @@
 							<span class="block text-xs text-(--text-dim) font-mono mt-0.5">{tok.name}</span>
 						</div>
 						<button class="ap-row-right" type="button" onclick={() => toggleRowCompact(rowKey)} title={isCompact ? 'Tap to expand' : 'Tap to shrink'}>
-							<span class="block text-base text-(--text-heading) font-numeric font-bold tabular-nums leading-[1.3] max-w-full overflow-hidden text-ellipsis whitespace-nowrap">{isCompact ? fmtCompactAmount(parseFloat(ethers.formatUnits(tok.balance, tok.decimals))) : fmtBal(tok.balance, tok.decimals)}</span>
-							<span class="block text-13 text-(--text-dim) font-numeric font-medium tabular-nums mt-0.5 max-w-full overflow-hidden text-ellipsis whitespace-nowrap">{usd > 0 ? (isCompact ? fmtCompactUsd(usd) : fmtUsd(usd)) : ''}</span>
+							<span class="block text-base text-(--text-heading) font-numeric font-bold tabular-nums leading-[1.3] max-w-full overflow-hidden text-ellipsis whitespace-nowrap"><AnimatedNumber value={tok._bal} format={isCompact ? fmtCompactAmount : fmtBalNumber} duration={400} /></span>
+							<span class="block text-13 text-(--text-dim) font-numeric font-medium tabular-nums mt-0.5 max-w-full overflow-hidden text-ellipsis whitespace-nowrap">{#if usd > 0}<AnimatedNumber value={usd} format={isCompact ? fmtCompactUsd : fmtUsd} duration={400} />{/if}</span>
 						</button>
 						<button
 							type="button"
