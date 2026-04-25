@@ -317,6 +317,16 @@ body.modal-open {
   outline-offset: 2px;
   border-radius: 6px;
 }
+/* Form fields ship their own visible focus cue (border + box-shadow
+   from .input-field:focus etc.). Drop the global outline here so the
+   ring doesn't double-up on top of the field's own border. */
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+.input-field:focus-visible,
+[contenteditable]:focus-visible {
+  outline: none;
+}
 
 /* ─── View Transitions ─── */
 /* Short opacity-only cross-fade between routes via document.startViewTransition
