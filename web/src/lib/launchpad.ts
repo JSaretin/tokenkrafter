@@ -229,8 +229,14 @@ export async function fetchTokenMeta(
 export function formatUsdt(amount: bigint, usdtDecimals: number = 18, displayDecimals: number = 2): string {
 	const val = parseFloat(ethers.formatUnits(amount, usdtDecimals));
 	if (val === 0) return '$0';
-	if (val < 0.01) return '< $0.01';
-	return '$' + val.toFixed(displayDecimals);
+	// Caller's displayDecimals is the floor. For very small values we widen
+	// automatically — users buying at $0.0099 deserve to see that rather than
+	// a "< $0.01" placeholder that makes them think they bought at zero.
+	let dec = displayDecimals;
+	if (val < 1) dec = Math.max(dec, 4);
+	if (val < 0.001) dec = Math.max(dec, 6);
+	if (val < 0.000001) dec = Math.max(dec, 9);
+	return '$' + val.toFixed(dec);
 }
 
 export function formatTokens(raw: bigint, tokenDecimals: number = 18, displayDecimals: number = 2): string {

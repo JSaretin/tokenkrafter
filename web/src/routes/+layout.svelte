@@ -3,6 +3,8 @@
 	import favicon from '$lib/assets/favicon.svg';
 	import { setContext, onMount } from 'svelte';
 	import { navigating } from '$app/state';
+	import { onNavigate } from '$app/navigation';
+	import { tap as hapticTap } from '$lib/haptics';
 	import { createMode } from '$lib/createModeStore';
 	import { ethers } from 'ethers';
 	import { initAppKit, getAppKit } from '$lib/wagmiConfig';
@@ -95,6 +97,21 @@
 	// tab, nothing visible changes for 300–800ms, and web-vs-app illusion
 	// breaks.
 	let activePath = $derived(navigating.to?.url.pathname ?? page.url.pathname);
+
+	// View Transitions: cross-fade between routes. Browsers without the
+	// API (Firefox today) just get a hard cut — same as before. Skipped
+	// during page replay (initial load) since there's nothing to fade.
+	onNavigate((nav) => {
+		if (typeof document === 'undefined') return;
+		const doc = document as Document & { startViewTransition?: (cb: () => unknown) => unknown };
+		if (!doc.startViewTransition) return;
+		return new Promise<void>((resolve) => {
+			doc.startViewTransition!(async () => {
+				resolve();
+				await nav.complete;
+			});
+		});
+	});
 
 	function addFeedback(feedback: { message: string; type: string }) {
 		const id = feedbackCounter++;
@@ -357,6 +374,16 @@
 		// Restore theme from localStorage
 		const saved = localStorage.getItem('theme') as 'dark' | 'light' | null;
 		if (saved === 'light') applyTheme('light');
+
+		// Standalone-mode (PWA, installed-to-home-screen) detection.
+		// Adds a body class so CSS / components can tighten chrome when
+		// the OS browser bar is gone.
+		const stdMq = window.matchMedia?.('(display-mode: standalone)');
+		const applyStandalone = (m: MediaQueryList | MediaQueryListEvent | null) => {
+			document.body.classList.toggle('standalone', !!m?.matches);
+		};
+		applyStandalone(stdMq);
+		stdMq?.addEventListener?.('change', applyStandalone);
 
 		// PWA install prompt
 		const dismissed = localStorage.getItem('pwa_install_dismissed');
@@ -958,29 +985,44 @@
 	</footer>
 	</div>
 
-	<!-- Mobile Bottom Tab Bar — PancakeSwap-style: compact, icon-led,
-	     no heavy background tint, tiny labels. Active tab uses colour +
-	     stroke weight for the cue, not a filled pill. -->
+	<!-- Mobile Bottom Tab Bar. Active tab gets a clear pill + cyan top
+	     accent + bolder icon weight — three cues stacked so the current
+	     page is unmistakable even in a glance. -->
 	<div class="fixed bottom-0 left-0 right-0 z-40 md:hidden flex items-stretch bg-background/95 backdrop-blur-md border-t border-line" style="height: calc(54px + env(safe-area-inset-bottom, 0px)); padding-bottom: env(safe-area-inset-bottom, 0px);">
-		<a href="/explore" aria-current={activePath.startsWith('/explore') ? 'page' : undefined} class={"flex-1 flex flex-col items-center justify-center gap-0.5 border-none bg-transparent no-underline font-mono text-4xs tracking-wide cursor-pointer transition-colors duration-150 " + (activePath.startsWith('/explore') ? 'text-cyan-400' : 'text-dim hover:text-foreground active:text-foreground')}>
-			<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width={activePath.startsWith('/explore') ? '2.4' : '1.8'}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-			<span>Explore</span>
+		<a href="/explore" onclick={hapticTap} aria-current={activePath.startsWith('/explore') ? 'page' : undefined} class="bottom-tab" class:bottom-tab-active={activePath.startsWith('/explore')}>
+			<span class="bottom-tab-indicator"></span>
+			<span class="bottom-tab-inner">
+				<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width={activePath.startsWith('/explore') ? '2.5' : '1.8'}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+				<span>Explore</span>
+			</span>
 		</a>
-		<a href="/launchpad" aria-current={activePath.startsWith('/launchpad') ? 'page' : undefined} class={"flex-1 flex flex-col items-center justify-center gap-0.5 border-none bg-transparent no-underline font-mono text-4xs tracking-wide cursor-pointer transition-colors duration-150 " + (activePath.startsWith('/launchpad') ? 'text-cyan-400' : 'text-dim hover:text-foreground active:text-foreground')}>
-			<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width={activePath.startsWith('/launchpad') ? '2.4' : '1.8'}><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-			<span>Launch</span>
+		<a href="/launchpad" onclick={hapticTap} aria-current={activePath.startsWith('/launchpad') ? 'page' : undefined} class="bottom-tab" class:bottom-tab-active={activePath.startsWith('/launchpad')}>
+			<span class="bottom-tab-indicator"></span>
+			<span class="bottom-tab-inner">
+				<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width={activePath.startsWith('/launchpad') ? '2.5' : '1.8'}><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+				<span>Launch</span>
+			</span>
 		</a>
-		<a href="/trade" aria-current={activePath.startsWith('/trade') ? 'page' : undefined} class={"flex-1 flex flex-col items-center justify-center gap-0.5 border-none bg-transparent no-underline font-mono text-4xs tracking-wide cursor-pointer transition-colors duration-150 " + (activePath.startsWith('/trade') ? 'text-cyan-400' : 'text-dim hover:text-foreground active:text-foreground')}>
-			<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width={activePath.startsWith('/trade') ? '2.4' : '1.8'}><path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4"/></svg>
-			<span>Trade</span>
+		<a href="/trade" onclick={hapticTap} aria-current={activePath.startsWith('/trade') ? 'page' : undefined} class="bottom-tab" class:bottom-tab-active={activePath.startsWith('/trade')}>
+			<span class="bottom-tab-indicator"></span>
+			<span class="bottom-tab-inner">
+				<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width={activePath.startsWith('/trade') ? '2.5' : '1.8'}><path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4"/></svg>
+				<span>Trade</span>
+			</span>
 		</a>
-		<a href="/create" onclick={() => createMode.set(null)} aria-current={activePath.startsWith('/create') ? 'page' : undefined} class={"flex-1 flex flex-col items-center justify-center gap-0.5 border-none bg-transparent no-underline font-mono text-4xs tracking-wide cursor-pointer transition-colors duration-150 " + (activePath.startsWith('/create') ? 'text-cyan-400' : 'text-dim hover:text-foreground active:text-foreground')}>
-			<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width={activePath.startsWith('/create') ? '2.4' : '1.8'}><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
-			<span>Create</span>
+		<a href="/create" onclick={() => { hapticTap(); createMode.set(null); }} aria-current={activePath.startsWith('/create') ? 'page' : undefined} class="bottom-tab" class:bottom-tab-active={activePath.startsWith('/create')}>
+			<span class="bottom-tab-indicator"></span>
+			<span class="bottom-tab-inner">
+				<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width={activePath.startsWith('/create') ? '2.5' : '1.8'}><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+				<span>Create</span>
+			</span>
 		</a>
-		<button aria-current={moreTabActive ? 'page' : undefined} class={"flex-1 flex flex-col items-center justify-center gap-0.5 border-none bg-transparent font-mono text-4xs tracking-wide cursor-pointer transition-colors duration-150 " + (moreTabActive ? 'text-cyan-400' : 'text-dim hover:text-foreground active:text-foreground')} onclick={() => (mobileMenuOpen = !mobileMenuOpen)}>
-			<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width={moreTabActive ? '2.4' : '1.8'}><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg>
-			<span>More</span>
+		<button aria-current={moreTabActive ? 'page' : undefined} class="bottom-tab" class:bottom-tab-active={moreTabActive} onclick={() => { hapticTap(); mobileMenuOpen = !mobileMenuOpen; }}>
+			<span class="bottom-tab-indicator"></span>
+			<span class="bottom-tab-inner">
+				<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width={moreTabActive ? '2.5' : '1.8'}><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg>
+				<span>More</span>
+			</span>
 		</button>
 	</div>
 </div>
@@ -1036,6 +1078,60 @@
 		margin: 0;
 	}
 	:global(.syne) { font-family: 'Syne', sans-serif; }
+
+	/* ── Mobile bottom-tab active indicator ──
+	   Three stacked cues for the active tab: a cyan top-accent bar,
+	   a pill behind the icon/label, and bolder icon stroke. Makes the
+	   current page unmistakable at a glance. */
+	:global(.bottom-tab) {
+		position: relative;
+		flex: 1 1 0%;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border: none;
+		background: transparent;
+		text-decoration: none;
+		cursor: pointer;
+		padding: 0;
+		color: var(--color-dim);
+		transition: color 180ms ease;
+	}
+	:global(.bottom-tab-indicator) {
+		position: absolute;
+		top: 0;
+		left: 50%;
+		transform: translateX(-50%) scaleX(0);
+		width: 28px;
+		height: 3px;
+		border-radius: 0 0 3px 3px;
+		background: var(--color-brand-cyan, #00d2ff);
+		transform-origin: center;
+		transition: transform 220ms cubic-bezier(0.34, 1.26, 0.64, 1);
+		pointer-events: none;
+	}
+	:global(.bottom-tab-inner) {
+		display: inline-flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 2px;
+		padding: 4px 10px;
+		border-radius: 10px;
+		font-family: var(--font-mono);
+		font-size: 0.5rem;
+		letter-spacing: 0.04em;
+		transition: background 180ms ease, transform 180ms ease;
+	}
+	:global(.bottom-tab-active) { color: var(--color-brand-cyan, #00d2ff); }
+	:global(.bottom-tab-active .bottom-tab-indicator) {
+		transform: translateX(-50%) scaleX(1);
+	}
+	:global(.bottom-tab-active .bottom-tab-inner) {
+		background: color-mix(in srgb, var(--color-brand-cyan, #00d2ff) 10%, transparent);
+	}
+	:global(.bottom-tab:hover) { color: var(--color-foreground); }
+	:global(.bottom-tab-active:hover) { color: var(--color-brand-cyan, #00d2ff); }
 
 	/* Keyframes — referenced via `animate-[name_...]` utilities in markup */
 	@keyframes nav-load {

@@ -245,12 +245,27 @@ body {
   font-family: var(--font-sans);
   margin: 0;
   -webkit-font-smoothing: antialiased;
+  /* App-like: no rubber-band overscroll bleeding into the browser
+     chrome on mobile. Refresh-pull is added per-page where useful. */
+  overscroll-behavior-y: contain;
+  /* Prevent iOS double-tap-to-zoom on tappable UI. */
+  touch-action: manipulation;
 }
 *,
 *::before,
 *::after {
   box-sizing: border-box;
 }
+
+/* App-shell polish: tighten the page when launched as a PWA. The
+   .standalone class is added on body via JS in +layout.svelte when
+   the display-mode media matches. */
+body.standalone {
+  /* Slight padding pull because the OS chrome is gone — no need to
+     leave room for it. Keep this conservative; pages can override. */
+  -webkit-tap-highlight-color: transparent;
+}
+:global(*) { -webkit-tap-highlight-color: transparent; }
 a {
   color: inherit;
 }
@@ -281,9 +296,49 @@ body.modal-open {
 }
 
 /* ─── Focus ─── */
-:focus,
-:focus-visible {
+/* Strip pointer-only focus rings (the ugly hard outline that
+   appears after a tap on mobile). Keyboard nav still gets a visible
+   ring via :focus-visible, applied below. */
+:focus:not(:focus-visible) {
   outline: none;
+  box-shadow: none;
+}
+:focus-visible {
+  outline: 2px solid var(--color-brand-cyan, #00d2ff);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* ─── View Transitions ─── */
+/* Smooth cross-fade between routes. SvelteKit's onNavigate hook in
+   +layout.svelte calls document.startViewTransition; the CSS below
+   defines what each phase looks like. Keep it short — long
+   transitions feel sluggish. Reduced-motion users get a hard cut. */
+@view-transition {
+  navigation: auto;
+}
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 220ms;
+  animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+::view-transition-old(root) {
+  animation-name: fade-out-soft;
+}
+::view-transition-new(root) {
+  animation-name: fade-in-soft;
+}
+@keyframes fade-out-soft {
+  to { opacity: 0; transform: translateY(-2px); }
+}
+@keyframes fade-in-soft {
+  from { opacity: 0; transform: translateY(4px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation: none !important;
+  }
 }
 
 /* ─── Reduced motion ─── */

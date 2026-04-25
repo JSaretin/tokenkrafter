@@ -2704,7 +2704,7 @@
 						</div>
 						<div class="detail-row">
 							<span class="detail-label">{$t('lpd.currentRate')}</span>
-							<span class="detail-value">1 USDT = {launch.currentPrice > 0n ? formatTokens((BigInt(10 ** usdtDecimals) * BigInt(10 ** tokenMeta.decimals)) / launch.currentPrice, tokenMeta.decimals) : '0'} {launch.tokenSymbol}</span>
+							<span class="detail-value">1 USDT = {effectivePrice > 0n ? formatTokens((BigInt(10 ** usdtDecimals) * BigInt(10 ** tokenMeta.decimals)) / effectivePrice, tokenMeta.decimals) : '0'} {launch.tokenSymbol}</span>
 						</div>
 						<div class="detail-row">
 							<span class="detail-label">{$t('lpd.currentRaised')}</span>
