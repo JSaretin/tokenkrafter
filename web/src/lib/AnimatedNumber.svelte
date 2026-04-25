@@ -30,12 +30,16 @@
 
 	const target = $derived(toFiniteNumber(value));
 
-	let displayed = $state(toFiniteNumber(value));
+	// Seed `displayed` lazily inside the first $effect run so we don't capture
+	// the initial $props/state value at module-init time (which Svelte 5 warns
+	// about as "state_referenced_locally").
+	let displayed = $state(0);
+	let initialized = false;
 	let rafId = 0;
-	let tweenFrom = displayed;
-	let tweenTo = displayed;
+	let tweenFrom = 0;
+	let tweenTo = 0;
 	let tweenStart = 0;
-	let tweenDuration = duration;
+	let tweenDuration = 0;
 
 	function cancel() {
 		if (rafId !== 0 && typeof cancelAnimationFrame !== 'undefined') {
@@ -59,6 +63,12 @@
 
 	$effect(() => {
 		const next = target;
+		// First run — snap silently to the initial value, no tween.
+		if (!initialized) {
+			initialized = true;
+			displayed = next;
+			return;
+		}
 		// SSR / no rAF — snap.
 		if (typeof window === 'undefined' || typeof requestAnimationFrame === 'undefined') {
 			displayed = next;

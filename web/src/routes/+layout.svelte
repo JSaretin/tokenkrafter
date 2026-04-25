@@ -385,6 +385,13 @@
 		applyStandalone(stdMq);
 		stdMq?.addEventListener?.('change', applyStandalone);
 
+		// Register the shell-cache service worker. Production only — dev
+		// reloads are noisier without it. Failures are swallowed; the page
+		// still works without SW.
+		if ('serviceWorker' in navigator && import.meta.env.PROD) {
+			navigator.serviceWorker.register('/sw.js').catch(() => {});
+		}
+
 		// PWA install prompt
 		const dismissed = localStorage.getItem('pwa_install_dismissed');
 		window.addEventListener('beforeinstallprompt', (e: any) => {
