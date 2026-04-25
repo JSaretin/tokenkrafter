@@ -3058,6 +3058,16 @@ export default {
 	'explore.detail.decimals': 'Decimals',
 	'explore.detail.standard': 'Standard',
 	'explore.detail.metaDescDefault': 'View token details, price, and more.',
+	'explore.detail.createdBy': 'Created by',
+	'explore.detail.website': 'Website',
+	'explore.detail.twitter': 'Twitter',
+	'explore.detail.telegram': 'Telegram',
+	'explore.detail.shareToken': 'Share',
+	'explore.detail.copiedUrl': 'Link copied!',
+	'explore.detail.technicalDetails': 'Technical details',
+	'explore.detail.technicalHint': 'Tax, protection, contract & pools',
+	'explore.detail.showDetails': 'Show',
+	'explore.detail.hideDetails': 'Hide',
 
 	// ── Manage tokens list page ──────────────────────────────────
 	'manage.list.tokensCreatedBy': 'Tokens created by',
