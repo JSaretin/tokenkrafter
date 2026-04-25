@@ -7,6 +7,8 @@
 	import LaunchProgressBar from '$lib/LaunchProgressBar.svelte';
 	import LaunchCountdown from '$lib/LaunchCountdown.svelte';
 	import TokenLogo from '$lib/TokenLogo.svelte';
+	import PullToRefresh from '$lib/PullToRefresh.svelte';
+	import ShrinkingHeader from '$lib/ShrinkingHeader.svelte';
 
 	let { data }: { data: any } = $props();
 	let tokens: any[] = data.tokens;
@@ -221,6 +223,46 @@
 		} catch {}
 	}
 
+	/** Fetch fresh Gecko data for ALL tokens (used by pull-to-refresh). On
+	 *  initial mount we skip the first 30 because SSR already populated them;
+	 *  this function takes a `skip` arg so the same loop can serve both. */
+	async function refreshGeckoData(skip: number = 0) {
+		const targets = tokens.slice(skip);
+		if (targets.length === 0) return;
+		const byChain: Record<string, string[]> = {};
+		for (const t of targets) {
+			const net = GECKO_NETWORKS[t.chain_id] || 'bsc';
+			if (!byChain[net]) byChain[net] = [];
+			byChain[net].push(t.address);
+		}
+		for (const [net, addrs] of Object.entries(byChain)) {
+			for (let i = 0; i < addrs.length; i += 30) {
+				await fetchGeckoBatch(addrs.slice(i, i + 30), net);
+			}
+		}
+	}
+
+	/** Pull-to-refresh handler — re-fetch gecko prices and re-trigger
+	 *  SafuLens detection for visible cards. Best-effort: bounded by an
+	 *  8s timeout so it always resolves. */
+	async function handleRefresh() {
+		const work = (async () => {
+			// Reset SafuLens cache so visible cards re-query on observe.
+			_safuQueried.clear();
+			await refreshGeckoData(0);
+			if (_safuObserver) {
+				document.querySelectorAll('[data-token-addr]').forEach((el) => {
+					_safuObserver?.unobserve(el);
+					_safuObserver?.observe(el);
+				});
+			}
+		})();
+		await Promise.race([
+			work,
+			new Promise((resolve) => setTimeout(resolve, 8000)),
+		]);
+	}
+
 	onMount(async () => {
 		// Set up IntersectionObserver for lazy SafuLens badge detection
 		if (typeof IntersectionObserver !== 'undefined') {
@@ -231,21 +273,8 @@
 		}
 
 		// First 30 already loaded from SSR — fetch remaining batches
-		const remaining = tokens.slice(30);
-		if (remaining.length === 0) { geckoLoading = false; return; }
-
-		const byChain: Record<string, string[]> = {};
-		for (const t of remaining) {
-			const net = GECKO_NETWORKS[t.chain_id] || 'bsc';
-			if (!byChain[net]) byChain[net] = [];
-			byChain[net].push(t.address);
-		}
-
-		for (const [net, addrs] of Object.entries(byChain)) {
-			for (let i = 0; i < addrs.length; i += 30) {
-				await fetchGeckoBatch(addrs.slice(i, i + 30), net);
-			}
-		}
+		if (tokens.length <= 30) { geckoLoading = false; return; }
+		await refreshGeckoData(30);
 		geckoLoading = false;
 	});
 
@@ -360,18 +389,17 @@
 	<meta name="description" content="Browse tokens created on TokenKrafter. Discover new projects, view token details, and trade." />
 </svelte:head>
 
-<div class="max-w-[1100px] mx-auto px-4 pt-6 pb-[60px]">
+<div class="max-w-[1100px] mx-auto px-4 pb-[60px]">
 	<!-- Header -->
-	<div class="flex items-start justify-between gap-4 mb-4 flex-wrap max-[500px]:flex-col">
-		<div>
-			<h1 class="heading-1">Explore Tokens</h1>
-			<p class="text-xs text-[#475569] font-mono mt-1 mb-0">{tokens.length} tokens on TokenKrafter</p>
-		</div>
-		<div class="flex items-center gap-2 px-3.5 py-2 rounded-[10px] bg-white/[0.03] border border-white/[0.06] min-w-[260px] max-[500px]:min-w-0 max-[500px]:w-full transition-colors duration-150 focus-within:border-[rgba(0,210,255,0.3)]">
-			<svg class="text-[#374151] shrink-0" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-			<input class="bg-transparent border-none outline-none flex-1 text-[#e2e8f0] font-mono text-xs placeholder:text-[#1e293b]" type="text" placeholder="Search name, symbol, or address..." bind:value={search} />
-		</div>
+	<ShrinkingHeader title="Explore Tokens" subtitle="{tokens.length} tokens on TokenKrafter" />
+
+	<!-- Search -->
+	<div class="flex items-center gap-2 px-3.5 py-2 rounded-[10px] bg-white/[0.03] border border-white/[0.06] mb-4 transition-colors duration-150 focus-within:border-[rgba(0,210,255,0.3)]">
+		<svg class="text-[#374151] shrink-0" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+		<input class="bg-transparent border-none outline-none flex-1 text-[#e2e8f0] font-mono text-xs placeholder:text-[#1e293b]" type="text" placeholder="Search name, symbol, or address..." bind:value={search} />
 	</div>
+
+	<PullToRefresh onRefresh={handleRefresh}>
 
 	<!-- Live Launches -->
 	{#if activeLaunches.length > 0 && !search.trim()}
@@ -621,6 +649,7 @@
 			{/each}
 		</div>
 	{/if}
+	</PullToRefresh>
 </div>
 
 <style>
