@@ -599,6 +599,14 @@
 				}).catch(() => { preflightReady = false; preflightReason = ''; });
 			}
 
+			if (info.state === 2) {
+				// Graduated: fetch DEX pair spot price for mark-to-market.
+				// The bonding curve's currentPrice goes to 0 after graduation
+				// (see contract `getLaunchInfo`), so without this fallback the
+				// "Your Bag" / "1 USDT = X TOKEN" displays would read zero.
+				loadPoolPrice(prov, info.token, info.usdtAddress, net.dex_router);
+			}
+
 			if (info.state === 3) {
 				Promise.all([
 					new ethers.Contract(info.token, ERC20_ABI, prov).balanceOf(launchAddress).catch(() => 0n),
@@ -613,7 +621,6 @@
 					strandedSweepDelay = ssd;
 					platformWalletAddress = pw;
 				});
-				loadPoolPrice(prov, info.token, info.usdtAddress, net.dex_router);
 			}
 
 			// Load user position (non-blocking)
@@ -740,9 +747,11 @@
 	}
 
 	// Unified "price now" source. For graduated launches we trust the pool
-	// spot; otherwise the bonding curve's currentPrice.
+	// spot; otherwise the bonding curve's currentPrice. The contract returns
+	// `currentPrice = 0` post-graduation, so without this fallback the price
+	// displays would all read zero on a graduated launch.
 	let effectivePrice = $derived.by(() => {
-		if (launch?.state === 3 && poolPrice > 0n) return poolPrice;
+		if (launch?.state === 2 && poolPrice > 0n) return poolPrice;
 		return launch?.currentPrice ?? 0n;
 	});
 
@@ -1926,6 +1935,27 @@
 			</div>
 		{/if}
 
+		<!-- Refunding banner — soft cap missed, deadline passed -->
+		{#if launch.state === 3}
+			<div class="refunding-banner mb-4">
+				<div class="refunding-banner-inner">
+					<div class="refunding-banner-text">
+						<span class="refunding-banner-title">🚨 Soft cap missed — refunds open</span>
+						<span class="refunding-banner-sub">
+							{userBasePaid > 0n
+								? 'Return your tokens below to reclaim your USDT.'
+								: 'Buyers can return their tokens to reclaim USDT pro-rata.'}
+						</span>
+					</div>
+					{#if userBasePaid > 0n}
+						<a href="#refund-panel" class="btn-danger text-sm px-5 py-2.5 no-underline">
+							Refund {formatUsdt(userBasePaid, ud)} →
+						</a>
+					{/if}
+				</div>
+			</div>
+		{/if}
+
 		<!-- Creator vesting claim (graduated + creator has allocation) -->
 		{#if launch.state === 2 && isCreator && launch.creatorAllocationBps > 0n && vestingDurationSeconds > 0n && graduationTimestamp > 0n}
 			{@const elapsed = BigInt(Math.floor(countdownNow / 1000)) - graduationTimestamp}
@@ -2279,9 +2309,9 @@
 									Only {formatUsdt(remainingUsdt, ud)} left until hard cap
 								</div>
 							{/if}
-							{#if userBasePaid > 0n && launch && launch.currentPrice > 0n}
+							{#if userBasePaid > 0n && launch && effectivePrice > 0n}
 								{@const userAvg = Number(userBasePaid) / Number(userTokensBought)}
-								{@const currentP = Number(launch.currentPrice) / (10 ** usdtDecimals)}
+								{@const currentP = Number(effectivePrice) / (10 ** usdtDecimals)}
 								{#if currentP > userAvg}
 									{@const gain = ((currentP - userAvg) / userAvg * 100)}
 									<div class="activity-signal signal-gain">
@@ -2293,7 +2323,7 @@
 						</div>
 						{#if true}
 						{@const firstBuyerAddr = txItems.length > 0 ? txItems[txItems.length - 1].buyer : ''}
-						{@const curPriceForCtx = launch ? Number(launch.currentPrice) / (10 ** usdtDecimals) : 0}
+						{@const curPriceForCtx = launch ? Number(effectivePrice) / (10 ** usdtDecimals) : 0}
 						{@const buyerCounts = txItems.reduce((m, tx) => { m[tx.buyer] = (m[tx.buyer] || 0) + 1; return m; }, {} as Record<string, number>)}
 						{@const softCapNum = launch ? Number(launch.softCap) / (10 ** usdtDecimals) : 0}
 						{@const hardCapNum2 = launch ? Number(launch.hardCap) / (10 ** usdtDecimals) : 0}
@@ -3219,7 +3249,7 @@
 						</div>
 
 						{#if launch.state === 3 && userBasePaid > 0n}
-							<div class="card p-4 mt-4 mb-2" style="border-color: rgba(239,68,68,0.2); background: rgba(239,68,68,0.04);">
+							<div id="refund-panel" class="card p-4 mt-4 mb-2" style="border-color: rgba(239,68,68,0.2); background: rgba(239,68,68,0.04);">
 								<div class="detail-grid mb-3">
 									<div class="detail-row">
 										<span class="detail-label">Your USDT paid</span>
@@ -4068,6 +4098,37 @@
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
+	}
+
+	/* Refunding banner — soft cap missed */
+	.refunding-banner {
+		border-radius: 14px;
+		background: linear-gradient(135deg, rgba(239, 68, 68, 0.10), rgba(239, 68, 68, 0.04));
+		border: 1px solid rgba(239, 68, 68, 0.28);
+		padding: 16px 20px;
+	}
+	.refunding-banner-inner {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12px;
+		flex-wrap: wrap;
+	}
+	.refunding-banner-text {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+	.refunding-banner-title {
+		font-family: 'Space Mono', monospace;
+		font-size: 14px;
+		font-weight: 700;
+		color: #f87171;
+	}
+	.refunding-banner-sub {
+		font-family: 'Space Mono', monospace;
+		font-size: 12px;
+		color: var(--text-dim, #94a3b8);
 	}
 
 	/* Graduation celebration banner */
