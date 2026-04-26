@@ -248,6 +248,27 @@ export class ERC20Contract {
 		return this.decimals_;
 	}
 
+	async getName(): Promise<string> {
+		return String(await this.contract.name());
+	}
+
+	async getSymbol(): Promise<string> {
+		return String(await this.contract.symbol());
+	}
+
+	/** Single-call metadata bundle. Each field falls back to null on
+	 *  revert (some non-standard ERC20s ship without name/symbol or
+	 *  return bytes32 instead of string). Caller decides what to do
+	 *  with missing fields. */
+	async getMetadata(): Promise<{ name: string | null; symbol: string | null; decimals: number | null }> {
+		const [name, symbol, decimals] = await Promise.all([
+			this.contract.name().then((v: unknown) => String(v)).catch(() => null),
+			this.contract.symbol().then((v: unknown) => String(v)).catch(() => null),
+			this.contract.decimals().then((v: unknown) => Number(v)).catch(() => null),
+		]);
+		return { name, symbol, decimals };
+	}
+
 	async getBalance(owner: string): Promise<bigint> {
 		return await this.contract.balanceOf(owner);
 	}

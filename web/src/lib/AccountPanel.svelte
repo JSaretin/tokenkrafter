@@ -30,7 +30,7 @@
 	import { friendlyError } from './errorDecoder';
 	import QrCode from './QrCode.svelte';
 	import { t } from '$lib/i18n';
-	import { ERC20_ABI } from './tokenCrafter';
+	import { ERC20Contract } from './tokenCrafter';
 	import { userTokens, addUserToken, updateUserToken, removeUserToken, type UserToken } from './userTokens';
 	import { hiddenAssets, toggleHidden } from './hiddenAssets';
 
@@ -512,14 +512,11 @@
 			if (_healInFlight.has(key)) continue;
 			_healInFlight.add(key);
 			try {
-				const c = new ethers.Contract(tok.address, ERC20_ABI, provider.provider);
-				const [symbol, name] = await Promise.all([
-					c.symbol().catch(() => null),
-					c.name().catch(() => null),
-				]);
+				const erc20 = new ERC20Contract(tok.address, provider.provider);
+				const meta = await erc20.getMetadata();
 				const patch: { symbol?: string; name?: string } = {};
-				if (needsSymbol && symbol) patch.symbol = String(symbol).slice(0, 32);
-				if (needsName && name) patch.name = String(name).slice(0, 64);
+				if (needsSymbol && meta.symbol) patch.symbol = meta.symbol.slice(0, 32);
+				if (needsName && meta.name) patch.name = meta.name.slice(0, 64);
 				if (patch.symbol || patch.name) {
 					updateUserToken(tok.address, chainId, patch);
 				}
@@ -748,13 +745,11 @@
 			const net = getProvider();
 			if (!net) throw new Error('No provider');
 
-			const c = new ethers.Contract(importAddress, ERC20_ABI, net.provider);
-
-			const [name, symbol, decimals] = await Promise.all([
-				c.name().catch(() => 'Unknown'),
-				c.symbol().catch(() => '???'),
-				c.decimals().catch(() => 18),
-			]);
+			const erc20 = new ERC20Contract(importAddress, net.provider);
+			const meta = await erc20.getMetadata();
+			const name = meta.name ?? 'Unknown';
+			const symbol = meta.symbol ?? '???';
+			const decimals = meta.decimals ?? 18;
 
 			const logoUrl = getKnownLogo(symbol) || await resolveTokenLogo(importAddress, chainId);
 
@@ -762,7 +757,7 @@
 				address: addrLower,
 				symbol,
 				name,
-				decimals: Number(decimals),
+				decimals,
 				logoUrl,
 				chainId,
 			});
