@@ -30,6 +30,7 @@
 	import { friendlyError } from './errorDecoder';
 	import QrCode from './QrCode.svelte';
 	import { t } from '$lib/i18n';
+	import { ERC20_ABI } from './tokenCrafter';
 	import { userTokens, addUserToken, updateUserToken, removeUserToken, type UserToken } from './userTokens';
 	import { hiddenAssets, toggleHidden } from './hiddenAssets';
 
@@ -499,10 +500,6 @@
 		healPlaceholderTokens();
 	});
 
-	const TOKEN_META_ABI = [
-		'function name() view returns (string)',
-		'function symbol() view returns (string)',
-	];
 	let _healInFlight = new Set<string>();
 	async function healPlaceholderTokens() {
 		const provider = getProvider();
@@ -515,7 +512,7 @@
 			if (_healInFlight.has(key)) continue;
 			_healInFlight.add(key);
 			try {
-				const c = new ethers.Contract(tok.address, TOKEN_META_ABI, provider.provider);
+				const c = new ethers.Contract(tok.address, ERC20_ABI, provider.provider);
 				const [symbol, name] = await Promise.all([
 					c.symbol().catch(() => null),
 					c.name().catch(() => null),
@@ -751,12 +748,7 @@
 			const net = getProvider();
 			if (!net) throw new Error('No provider');
 
-			const c = new ethers.Contract(importAddress, [
-				'function name() view returns (string)',
-				'function symbol() view returns (string)',
-				'function decimals() view returns (uint8)',
-				'function balanceOf(address) view returns (uint256)',
-			], net.provider);
+			const c = new ethers.Contract(importAddress, ERC20_ABI, net.provider);
 
 			const [name, symbol, decimals] = await Promise.all([
 				c.name().catch(() => 'Unknown'),
