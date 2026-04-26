@@ -1307,13 +1307,45 @@
 		}
 	}
 
-	// Refresh balances when wallet connects (user was browsing without wallet)
+	// Re-fetch token balances when ANY of these change: wallet connected,
+	// network resolved, or active token swapped. Catches three races:
+	//   1. Page loads before the wallet unlocks → userAddress null → balance
+	//      stays 0n until this effect re-runs.
+	//   2. Network providers load after onMount's default selection ran with
+	//      a stale (null) selectedNetwork → fetchMeta returned 0n.
+	//   3. User changes selectedNetworkIdx mid-flow without re-selecting a
+	//      token — old balance lingered against the new chain.
 	$effect(() => {
-		if (userAddress && tokenInAddr) {
-			fetchMeta(tokenInAddr, tokenInIsNative).then(meta => { tokenInBalance = meta.balance; });
+		// Track all four explicit deps so Svelte re-runs when any flips.
+		const u = userAddress;
+		const net = selectedNetwork;
+		const inAddr = tokenInAddr;
+		const outAddr = tokenOutAddr;
+		if (!u || !net) return;
+		if (inAddr) {
+			fetchMeta(inAddr, tokenInIsNative).then(meta => {
+				if (tokenInAddr === inAddr) tokenInBalance = meta.balance;
+			});
 		}
-		if (userAddress && tokenOutAddr) {
-			fetchMeta(tokenOutAddr, tokenOutIsNative).then(meta => { tokenOutBalance = meta.balance; });
+		if (outAddr) {
+			fetchMeta(outAddr, tokenOutIsNative).then(meta => {
+				if (tokenOutAddr === outAddr) tokenOutBalance = meta.balance;
+			});
+		}
+	});
+
+	// If the default-selection on mount ran before selectedNetwork resolved,
+	// builtInTokens was empty and nothing got picked. Trigger the same
+	// pick-native-and-USDT fallback once the network IS available.
+	$effect(() => {
+		if (!selectedNetwork || builtInTokens.length === 0) return;
+		if (!tokenInAddr) {
+			const native = builtInTokens.find(t => t.isNative);
+			if (native) selectToken('in', native);
+		}
+		if (!tokenOutAddr) {
+			const usdt = builtInTokens.find(t => t.symbol === 'USDT');
+			if (usdt) selectToken('out', usdt);
 		}
 	});
 
