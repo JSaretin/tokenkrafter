@@ -280,6 +280,22 @@
 					<p class="font-mono text-3xs text-dim leading-relaxed m-0">{$t('home.step3Desc')}</p>
 				</div>
 			</div>
+			<div class="w-0.5 h-5 sm:w-6 sm:h-0.5 shrink-0 self-center opacity-40" style="background: repeating-linear-gradient(var(--dash-dir, 90deg), var(--text-dim) 0, var(--text-dim) 4px, transparent 4px, transparent 8px);"></div>
+			<!-- Step 4: optional cash-out — the differentiator vs other launchpads.
+			     The journey ends in NGN, not just on a DEX. -->
+			<a href="/trade" class="flex-1 flex flex-row sm:flex-col items-center gap-3.5 sm:gap-2.5 p-4 sm:p-5 sm:px-4 text-left sm:text-center no-underline transition hover:bg-purple-400/[0.04]">
+				<div class="relative w-13 h-13 rounded-full flex items-center justify-center shrink-0 bg-purple-400/10 text-purple-400 border border-purple-400/25" style="width:52px;height:52px">
+					<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M3 10h18"/><path d="M5 6l7-3 7 3"/><path d="M4 10v11"/><path d="M20 10v11"/><path d="M8 14v3"/><path d="M12 14v3"/><path d="M16 14v3"/></svg>
+					<span class="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-[5px] rounded-[9px] inline-flex items-center justify-center syne text-3xs font-extrabold bg-background border border-current">4</span>
+				</div>
+				<div class="flex-1">
+					<div class="flex items-center justify-start sm:justify-center gap-1.5 mb-1 flex-wrap">
+						<h3 class="syne text-sm font-bold text-heading m-0">{$t('home.step4Label')}</h3>
+						<span class="font-mono text-4xs uppercase tracking-wider px-1.5 py-px rounded-full bg-purple-400/10 text-purple-300 border border-purple-400/20">{$t('home.step4Optional')}</span>
+					</div>
+					<p class="font-mono text-3xs text-dim leading-relaxed m-0">{$t('home.step4Desc')}</p>
+				</div>
+			</a>
 		</div>
 	</section>
 
