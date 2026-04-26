@@ -492,7 +492,46 @@
 				});
 			}
 		}
+		// Self-heal placeholder names. Tokens that came in via the
+		// indexer with empty symbol/name fields land in the store as
+		// '???' / 'Unknown'. Re-query the chain to fix them so users
+		// don't stare at "???" forever.
+		healPlaceholderTokens();
 	});
+
+	const TOKEN_META_ABI = [
+		'function name() view returns (string)',
+		'function symbol() view returns (string)',
+	];
+	let _healInFlight = new Set<string>();
+	async function healPlaceholderTokens() {
+		const provider = getProvider();
+		if (!provider) return;
+		for (const tok of importedTokens) {
+			const needsSymbol = !tok.symbol || tok.symbol === '???';
+			const needsName = !tok.name || tok.name === 'Unknown' || tok.name === tok.symbol;
+			if (!needsSymbol && !needsName) continue;
+			const key = `${chainId}:${tok.address.toLowerCase()}`;
+			if (_healInFlight.has(key)) continue;
+			_healInFlight.add(key);
+			try {
+				const c = new ethers.Contract(tok.address, TOKEN_META_ABI, provider.provider);
+				const [symbol, name] = await Promise.all([
+					c.symbol().catch(() => null),
+					c.name().catch(() => null),
+				]);
+				const patch: { symbol?: string; name?: string } = {};
+				if (needsSymbol && symbol) patch.symbol = String(symbol).slice(0, 32);
+				if (needsName && name) patch.name = String(name).slice(0, 64);
+				if (patch.symbol || patch.name) {
+					updateUserToken(tok.address, chainId, patch);
+				}
+			} catch {}
+			finally {
+				_healInFlight.delete(key);
+			}
+		}
+	}
 
 	// Sync balances from background poller
 	const unsubPoller = balanceState.subscribe((state) => {
