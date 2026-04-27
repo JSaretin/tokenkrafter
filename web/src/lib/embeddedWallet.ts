@@ -1090,6 +1090,10 @@ export function collectPreferences(): Record<string, any> {
 		const hidden = localStorage.getItem('hidden_assets');
 		if (hidden) prefs.hidden_assets = JSON.parse(hidden);
 	} catch {}
+	try {
+		const dust = localStorage.getItem('hide_dust');
+		if (dust !== null) prefs.hide_dust = dust === '1';
+	} catch {}
 	return prefs;
 }
 
@@ -1122,11 +1126,15 @@ export function restorePreferences(prefs: Record<string, any>): void {
 	if (prefs.hidden_assets) {
 		try { localStorage.setItem('hidden_assets', JSON.stringify(prefs.hidden_assets)); } catch {}
 	}
+	if (typeof prefs.hide_dust === 'boolean') {
+		try { localStorage.setItem('hide_dust', prefs.hide_dust ? '1' : '0'); } catch {}
+	}
 	// Rehydrate stores so live UI reflects the restored values.
 	try {
 		// Dynamic import so this module stays usable in non-browser contexts.
 		import('./userTokens').then((m) => m.hydrateUserTokens()).catch(() => {});
 		import('./hiddenAssets').then((m) => m.hydrateHiddenAssets()).catch(() => {});
+		import('./hideDust').then((m) => m.hydrateHideDust()).catch(() => {});
 	} catch {}
 }
 
@@ -1143,9 +1151,10 @@ export async function pushPreferences(): Promise<void> {
 if (typeof window !== 'undefined') {
 	(async () => {
 		try {
-			const [{ userTokens }, { hiddenAssets }] = await Promise.all([
+			const [{ userTokens }, { hiddenAssets }, { hideDust }] = await Promise.all([
 				import('./userTokens'),
 				import('./hiddenAssets'),
+				import('./hideDust'),
 			]);
 			let userTokensInit = true;
 			userTokens.subscribe(() => {
@@ -1155,6 +1164,11 @@ if (typeof window !== 'undefined') {
 			let hiddenInit = true;
 			hiddenAssets.subscribe(() => {
 				if (hiddenInit) { hiddenInit = false; return; }
+				pushPreferences().catch(() => {});
+			});
+			let dustInit = true;
+			hideDust.subscribe(() => {
+				if (dustInit) { dustInit = false; return; }
 				pushPreferences().catch(() => {});
 			});
 		} catch {}

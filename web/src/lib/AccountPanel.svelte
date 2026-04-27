@@ -33,6 +33,9 @@
 	import { ERC20Contract } from './tokenCrafter';
 	import { userTokens, addUserToken, updateUserToken, removeUserToken, type UserToken } from './userTokens';
 	import { hiddenAssets, toggleHidden } from './hiddenAssets';
+	import { hideDust, DUST_USD_THRESHOLD } from './hideDust';
+	import AssetSettingsModal from './AssetSettingsModal.svelte';
+	import type { SupportedNetwork } from './structure';
 
 	let {
 		open = $bindable(false),
@@ -55,6 +58,7 @@
 		onRefreshBalance = () => {},
 		wsManager = null as WsProviderManager | null,
 		sharedProviders = null as Map<number, ethers.JsonRpcProvider> | null,
+		supportedNetworks = [] as SupportedNetwork[],
 	}: {
 		open: boolean;
 		userAddress: string;
@@ -76,6 +80,7 @@
 		onRefreshBalance: () => void;
 		wsManager?: WsProviderManager | null;
 		sharedProviders?: Map<number, ethers.JsonRpcProvider> | null;
+		supportedNetworks?: SupportedNetwork[];
 	} = $props();
 
 	// ── Reactive wallet state (re-renders on account switch, add, etc.) ──
@@ -160,15 +165,21 @@
 	});
 
 	// All displayable tokens sorted by USD value (highest first, hide zero balance)
-	// Excludes pinned stablecoins and user-hidden assets.
+	// Excludes pinned stablecoins and user-hidden assets. When hideDust is on,
+	// also filters out priced tokens worth less than DUST_USD_THRESHOLD — but
+	// only when we have a price (otherwise we'd hide every freshly imported
+	// token until prices populate). Unpriced rows still surface so users can
+	// see them; the dust gate strictly relies on a positive USD value.
 	let sortedTokens = $derived.by(() => {
+		const dust = $hideDust;
 		const all = [...tokens, ...importedTokens]
 			.filter(t => t.balance > 0n && !pinnedStableAddrs.has(t.address.toLowerCase()) && !$hiddenAssets.includes(t.address.toLowerCase()))
 			.map(t => {
 				const bal = parseFloat(ethers.formatUnits(t.balance, t.decimals));
 				const usd = t.priceUsd ? bal * t.priceUsd : 0;
 				return { ...t, _bal: bal, _usd: usd };
-			});
+			})
+			.filter(t => !(dust && t.priceUsd && t._usd < DUST_USD_THRESHOLD));
 		return all.sort((a, b) => b._usd - a._usd);
 	});
 
@@ -397,10 +408,8 @@
 	let previewUsd = $derived(parseFloat(sendAmount || '0') * (sendAssetInfo?.priceUsd || 0));
 	let previewBookLabel = $derived(matchBookLabel(sendTo));
 
-	// Import
-	let importAddress = $state('');
+	// Asset-settings modal toggle (import + hide-dust + future filters)
 	let showImport = $state(false);
-	let importLoading = $state(false);
 
 	// Local runtime mirror of user tokens (adds balance/price on top of the
 	// shared userTokens store). The store is the source of truth for which
@@ -740,66 +749,55 @@
 		};
 	});
 
-	async function handleImportToken() {
-		if (!importAddress || !ethers.isAddress(importAddress)) {
-			onAddFeedback({ message: 'Invalid address', type: 'error' });
-			return;
-		}
-
-		const addrLower = importAddress.toLowerCase();
-		if ($userTokens.some(t => t.chainId === chainId && t.address === addrLower)) {
-			// If the token is hidden, unhide it instead of erroring out.
-			if ($hiddenAssets.includes(addrLower)) {
-				toggleHidden(addrLower);
-				onAddFeedback({ message: 'Token unhidden', type: 'success' });
-			} else {
-				onAddFeedback({ message: 'Token already imported', type: 'error' });
-			}
-			showImport = false;
-			importAddress = '';
-			return;
-		}
-
-		importLoading = true;
-		try {
-			const net = getProvider();
-			if (!net) throw new Error('No provider');
-
-			const erc20 = new ERC20Contract(importAddress, net.provider);
-			const meta = await erc20.getMetadata();
-			const name = meta.name ?? 'Unknown';
-			const symbol = meta.symbol ?? '???';
-			const decimals = meta.decimals ?? 18;
-
-			const logoUrl = getKnownLogo(symbol) || await resolveTokenLogo(importAddress, chainId);
-
-			addUserToken({
-				address: addrLower,
-				symbol,
-				name,
-				decimals,
-				logoUrl,
-				chainId,
-			});
-			if (walletType === 'embedded') pushPreferences();
-
-			// Kick off a balance refresh now so the new row populates quickly
-			refreshTokenBalances();
-
-			onAddFeedback({ message: `${symbol} imported`, type: 'success' });
-			showImport = false;
-			importAddress = '';
-		} catch (e: any) {
-			onAddFeedback({ message: e.message || 'Failed to fetch token', type: 'error' });
-		} finally {
-			importLoading = false;
-		}
-	}
-
 	function hideToken(address: string) {
 		toggleHidden(address);
 		if (walletType === 'embedded') pushPreferences();
 	}
+
+	// ── Long-press to hide ──
+	// Replaces the inline "eye" icon next to each token. Press-and-hold on a
+	// row for LONG_PRESS_MS triggers the hide action with a brief haptic and
+	// a fill-bar progress overlay. Any movement >LONG_PRESS_TOL_PX during the
+	// press cancels (so scroll-drags don't accidentally hide).
+	const LONG_PRESS_MS = 500;
+	const LONG_PRESS_TOL_PX = 8;
+	let longPressKey = $state<string | null>(null);
+	let _lpTimer: ReturnType<typeof setTimeout> | null = null;
+	let _lpStart: { x: number; y: number } | null = null;
+	let _lpAddr = '';
+	let _lpSymbol = '';
+
+	function _lpClear() {
+		if (_lpTimer) { clearTimeout(_lpTimer); _lpTimer = null; }
+		longPressKey = null;
+		_lpStart = null;
+	}
+
+	function lpStart(rowKey: string, address: string, symbol: string, e: PointerEvent) {
+		// Only primary button / first touch
+		if (e.button && e.button !== 0) return;
+		_lpClear();
+		longPressKey = rowKey;
+		_lpAddr = address;
+		_lpSymbol = symbol;
+		_lpStart = { x: e.clientX, y: e.clientY };
+		_lpTimer = setTimeout(() => {
+			_lpTimer = null;
+			longPressKey = null;
+			try { (navigator as any).vibrate?.(15); } catch {}
+			hideToken(_lpAddr);
+			onAddFeedback({ message: `${_lpSymbol} hidden`, type: 'success' });
+		}, LONG_PRESS_MS);
+	}
+
+	function lpMove(e: PointerEvent) {
+		if (!_lpStart) return;
+		const dx = e.clientX - _lpStart.x;
+		const dy = e.clientY - _lpStart.y;
+		if (dx * dx + dy * dy > LONG_PRESS_TOL_PX * LONG_PRESS_TOL_PX) _lpClear();
+	}
+
+	function lpEnd() { _lpClear(); }
 
 	// ── Helpers ──
 
@@ -1163,35 +1161,19 @@
 			</div>
 		{/if}
 
-		<!-- Assets header with filter/import icon on the right -->
+		<!-- Assets header with settings/import icon on the right -->
 		<div class="pt-2 px-4 pb-1 flex items-center justify-between gap-2">
 			<span class="font-display text-xs font-bold text-(--text-dim) uppercase tracking-[0.04em]">{$t('account.assets')}</span>
 			<button
 				type="button"
 				class="p-1.5 rounded-lg text-(--text-dim) transition-all hover:text-(--text-heading) hover:bg-(--bg-surface-hover)"
-				onclick={() => (showImport = !showImport)}
-				aria-label={showImport ? 'Close import' : 'Import or manage assets'}
-				title={showImport ? 'Close' : 'Import or manage'}
+				onclick={() => (showImport = true)}
+				aria-label="Asset settings — import token, hide small balances"
+				title="Asset settings"
 			>
-				{#if showImport}
-					<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-				{:else}
-					<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
-				{/if}
+				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
 			</button>
 		</div>
-
-		{#if showImport}
-			<div class="py-1.5 px-4 flex flex-col gap-1.5">
-				<input class="ap-input" type="text" placeholder="Paste token address (0x...)" bind:value={importAddress} {...INPUT_ATTRS} />
-				<div class="flex gap-1.5 justify-end">
-					<button class="ap-btn-s" onclick={() => { showImport = false; importAddress = ''; }}>Cancel</button>
-					<button class="ap-btn-s ap-btn-primary" disabled={importLoading} onclick={() => handleImportToken()}>
-						{importLoading ? 'Loading...' : 'Import'}
-					</button>
-				</div>
-			</div>
-		{/if}
 
 		{#if true}
 			{@const nativeCompact = compactRows.has('native')}
@@ -1218,7 +1200,16 @@
 					{@const logo = getTokenLogo(tok as any) || getKnownLogo(tok.symbol)}
 					{@const rowKey = tok.address}
 					{@const isCompact = compactRows.has(rowKey)}
-					<div class="group flex items-center gap-3 py-3 px-4 transition-colors duration-100 hover:bg-(--bg-surface)">
+					<div
+						class="ap-row group relative flex items-center gap-3 py-3 px-4 transition-colors duration-100 hover:bg-(--bg-surface)"
+						class:ap-pressing={longPressKey === rowKey}
+						onpointerdown={(e) => lpStart(rowKey, tok.address, tok.symbol, e)}
+						onpointermove={lpMove}
+						onpointerup={lpEnd}
+						onpointercancel={lpEnd}
+						onpointerleave={lpEnd}
+					>
+						{#if longPressKey === rowKey}<span class="ap-press-fill" aria-hidden="true"></span>{/if}
 						{#if logo}
 							<img src={logo} alt={tok.symbol} class="w-10 h-10 rounded-full object-cover shrink-0 border border-(--border)" />
 						{:else}
@@ -1232,15 +1223,6 @@
 							<span class="block text-base text-(--text-heading) font-numeric font-bold tabular-nums leading-[1.3] max-w-full overflow-hidden text-ellipsis whitespace-nowrap"><AnimatedNumber value={tok._bal} format={isCompact ? fmtCompactAmount : fmtBalNumber} duration={400} /></span>
 							<span class="block text-13 text-(--text-dim) font-numeric font-medium tabular-nums mt-0.5 max-w-full overflow-hidden text-ellipsis whitespace-nowrap">{#if tok._usd > 0}<AnimatedNumber value={tok._usd} format={isCompact ? fmtCompactUsd : fmtUsd} duration={400} />{/if}</span>
 						</button>
-						<button
-							type="button"
-							class="shrink-0 p-1.5 rounded-lg text-(--text-dim) hover:text-[#f87171] hover:bg-[rgba(248,113,113,0.08)] transition-all sm:opacity-0 sm:group-hover:opacity-100 opacity-60"
-							onclick={() => hideToken(tok.address)}
-							aria-label="Hide {tok.symbol}"
-							title="Hide {tok.symbol} from wallet"
-						>
-							<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
-						</button>
 					</div>
 				{/each}
 
@@ -1250,7 +1232,16 @@
 					{@const logo = getTokenLogo(tok)}
 					{@const rowKey = (tok.address || tok.symbol).toLowerCase()}
 					{@const isCompact = compactRows.has(rowKey)}
-					<div class="group flex items-center gap-3 py-3 px-4 transition-colors duration-100 hover:bg-(--bg-surface)">
+					<div
+						class="ap-row group relative flex items-center gap-3 py-3 px-4 transition-colors duration-100 hover:bg-(--bg-surface)"
+						class:ap-pressing={longPressKey === rowKey}
+						onpointerdown={(e) => lpStart(rowKey, tok.address, tok.symbol, e)}
+						onpointermove={lpMove}
+						onpointerup={lpEnd}
+						onpointercancel={lpEnd}
+						onpointerleave={lpEnd}
+					>
+						{#if longPressKey === rowKey}<span class="ap-press-fill" aria-hidden="true"></span>{/if}
 					{#if logo}
 						<img src={logo} alt={tok.symbol} class="w-10 h-10 rounded-full object-cover shrink-0 border border-(--border)" />
 					{:else}
@@ -1263,15 +1254,6 @@
 						<button class="ap-row-right" type="button" onclick={() => toggleRowCompact(rowKey)} title={isCompact ? 'Tap to expand' : 'Tap to shrink'}>
 							<span class="block text-base text-(--text-heading) font-numeric font-bold tabular-nums leading-[1.3] max-w-full overflow-hidden text-ellipsis whitespace-nowrap"><AnimatedNumber value={tok._bal} format={isCompact ? fmtCompactAmount : fmtBalNumber} duration={400} /></span>
 							<span class="block text-13 text-(--text-dim) font-numeric font-medium tabular-nums mt-0.5 max-w-full overflow-hidden text-ellipsis whitespace-nowrap">{#if usd > 0}<AnimatedNumber value={usd} format={isCompact ? fmtCompactUsd : fmtUsd} duration={400} />{/if}</span>
-						</button>
-						<button
-							type="button"
-							class="shrink-0 p-1.5 rounded-lg text-(--text-dim) hover:text-[#f87171] hover:bg-[rgba(248,113,113,0.08)] transition-all sm:opacity-0 sm:group-hover:opacity-100 opacity-60"
-							onclick={() => hideToken(tok.address)}
-							aria-label="Hide {tok.symbol}"
-							title="Hide {tok.symbol} from wallet"
-						>
-							<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
 						</button>
 					</div>
 				{/each}
@@ -1680,6 +1662,15 @@
 		{/if}
 	{/if}
 </div>
+
+<AssetSettingsModal
+	bind:open={showImport}
+	networks={supportedNetworks}
+	defaultChainId={chainId}
+	{walletType}
+	{sharedProviders}
+	onFeedback={onAddFeedback}
+/>
 {/if}
 
 <style>
@@ -1930,6 +1921,22 @@
 	}
 	.ap-row-right:hover { background: var(--bg-surface-input); }
 	.ap-row-right:active { background: var(--bg-surface-hover); }
+
+	/* Long-press feedback: red bar fills left→right under the row over the
+	   hold duration. Bar reaches full width when hideToken fires. */
+	.ap-row { user-select: none; -webkit-user-select: none; touch-action: pan-y; }
+	.ap-row.ap-pressing { background: rgba(248, 113, 113, 0.05); }
+	.ap-press-fill {
+		position: absolute; left: 0; bottom: 0;
+		height: 2px; width: 100%; background: linear-gradient(90deg, #f87171, #fca5a5);
+		transform-origin: left center; transform: scaleX(0);
+		animation: apPressFill 500ms linear forwards;
+		pointer-events: none;
+	}
+	@keyframes apPressFill {
+		from { transform: scaleX(0); }
+		to { transform: scaleX(1); }
+	}
 
 	/* Shared inputs/buttons */
 	.ap-input {

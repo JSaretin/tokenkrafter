@@ -1065,6 +1065,7 @@
 	chainId={supportedNetworks[0]?.chain_id || 56}
 	{wsManager}
 	sharedProviders={networkProviders}
+	{supportedNetworks}
 	tokens={[]}
 	onDisconnect={disconnectWallet}
 	onAddFeedback={addFeedback}
