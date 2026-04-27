@@ -292,6 +292,54 @@ create or replace trigger withdrawal_requests_updated_at
   for each row execute function update_updated_at();
 
 -- ============================================================
+-- onramp_intents — NGN → USDT on-ramp via Flutterwave v4 virtual
+-- accounts. The receiver is bound by an EIP-712 signature so even
+-- a compromised backend can't redirect USDT to an attacker.
+-- ============================================================
+create table if not exists onramp_intents (
+  id uuid primary key default gen_random_uuid(),
+  reference text unique not null,            -- TKO-XXXXXX, server-issued
+  nonce text not null,                       -- 0x-hex bytes32, single-use
+  receiver text,                             -- set after sig submitted
+  chain_id integer not null default 56,
+  ngn_amount_kobo bigint not null,           -- ₦ × 100
+  usdt_amount_wei text not null,             -- bigint as string
+  rate_x100 integer not null,                -- ₦/$ × 100 at quote time
+  expires_at timestamptz not null,           -- 15 min after quote
+
+  signature text,                            -- 65-byte hex from signTypedData
+  signed_at timestamptz,
+
+  status text not null default 'quoted',
+    -- quoted → pending_payment → payment_received → delivering → delivered
+    -- forks: expired | failed | refunded | cancelled
+
+  flutterwave_customer_id text,
+  flutterwave_va_account_number text,
+  flutterwave_va_bank_name text,
+  flutterwave_tx_id text,
+  flutterwave_payer_account text,
+  flutterwave_payer_name text,
+
+  delivery_tx_hash text,
+  failure_reason text,
+
+  created_at timestamptz not null default now(),
+  paid_at timestamptz,
+  delivered_at timestamptz,
+  updated_at timestamptz not null default now()
+);
+create index if not exists idx_onramp_status on onramp_intents (status, created_at);
+create index if not exists idx_onramp_receiver on onramp_intents (lower(receiver));
+create unique index if not exists idx_onramp_nonce on onramp_intents (nonce);
+alter table onramp_intents enable row level security;
+-- No anon — service-role only (writes from server endpoints).
+
+create or replace trigger onramp_intents_updated_at
+  before update on onramp_intents
+  for each row execute function update_updated_at();
+
+-- ============================================================
 -- Token aliases (vanity names for tokens, e.g. MAMA -> 0x...)
 -- ============================================================
 create table if not exists token_aliases (
