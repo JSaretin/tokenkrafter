@@ -54,6 +54,7 @@
 		onAccountSwitch = (_addr: string) => {},
 		onRefreshBalance = () => {},
 		wsManager = null as WsProviderManager | null,
+		sharedProviders = null as Map<number, ethers.JsonRpcProvider> | null,
 	}: {
 		open: boolean;
 		userAddress: string;
@@ -74,6 +75,7 @@
 		onAccountSwitch: (addr: string) => void;
 		onRefreshBalance: () => void;
 		wsManager?: WsProviderManager | null;
+		sharedProviders?: Map<number, ethers.JsonRpcProvider> | null;
 	} = $props();
 
 	// ── Reactive wallet state (re-renders on account switch, add, etc.) ──
@@ -496,11 +498,17 @@
 		// Self-heal placeholder names. Tokens that came in via the
 		// indexer with empty symbol/name fields land in the store as
 		// '???' / 'Unknown'. Re-query the chain to fix them so users
-		// don't stare at "???" forever.
-		healPlaceholderTokens();
+		// don't stare at "???" forever. Once-per-session — repeat
+		// passes were thrashing the public RPC and competing with
+		// in-flight tx broadcasts.
+		if (!_healDoneFor.has(userAddress.toLowerCase())) {
+			_healDoneFor.add(userAddress.toLowerCase());
+			healPlaceholderTokens();
+		}
 	});
 
 	let _healInFlight = new Set<string>();
+	let _healDoneFor = new Set<string>();
 	async function healPlaceholderTokens() {
 		const provider = getProvider();
 		if (!provider) return;
@@ -544,8 +552,20 @@
 	let portfolioLoading = $state(false);
 	let portfolioPolling = $state(false);
 
+	// Prefer the shared, warmed provider from the layout's networkProviders
+	// map (already has staticNetwork: true + connection pooling). Falling
+	// back to a fresh JsonRpcProvider is risky — without staticNetwork the
+	// first call hangs on chain-id auto-detect, which is what makes
+	// "send is stuck" + "balance not detected" appear after a burst of
+	// RPC calls on wallet-connect. The shared provider is already ready.
 	function getProvider(): { provider: ethers.JsonRpcProvider } | null {
-		try { return { provider: new ethers.JsonRpcProvider(rpcUrl) }; } catch { return null; }
+		const shared = sharedProviders?.get?.(chainId);
+		if (shared) return { provider: shared };
+		try {
+			return { provider: new ethers.JsonRpcProvider(rpcUrl, chainId, { staticNetwork: true }) };
+		} catch {
+			return null;
+		}
 	}
 
 	// ── Wallet cache (per address, localStorage) ──

@@ -1064,6 +1064,7 @@
 	usdcAddress={supportedNetworks[0]?.usdc_address || ''}
 	chainId={supportedNetworks[0]?.chain_id || 56}
 	{wsManager}
+	sharedProviders={networkProviders}
 	tokens={[]}
 	onDisconnect={disconnectWallet}
 	onAddFeedback={addFeedback}
