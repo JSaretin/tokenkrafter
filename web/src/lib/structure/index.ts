@@ -163,6 +163,8 @@ export interface TradePageServerData {
 	onrampNgnRate?: number | null;
 	/** Platform on-ramp fee in basis points (covers FLW + margin). */
 	onrampFeeBps?: number;
+	/** Minimum on-ramp NGN amount in kobo (default ₦500). */
+	onrampMinKobo?: number;
 }
 
 // ════════════════════════════════════════════════════════════════════════════

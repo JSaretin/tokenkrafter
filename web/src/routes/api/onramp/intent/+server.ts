@@ -84,14 +84,22 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	// Create dynamic VA pinned to this exact amount. Expires 15 min
 	// after creation; FLW will reject any payment outside the window.
-	// Narration is intentionally just the reference — no "on-ramp" /
-	// "crypto" vocabulary lands on the payer's bank statement.
+	// `reference` stays TKO-XXXXXX for our webhook→intent matching.
+	// `narration` is a brand string — Flutterwave seeds the NUBAN
+	// account-name from this, so payers in their bank app see
+	// "TokenKrafter" rather than the cryptic reference.
 	const ngnWhole = Number(intent.ngnAmount) / 100;
+	// FLW V4 doesn't expose `account_name` in the VA response; instead
+	// they seed the NUBAN-registered account-name from `narration`
+	// (dashes stripped). So narration IS the brand label the payer's
+	// bank shows on lookup. Keep it the clean company name only — no
+	// reference, no codes — so what the user sees in our UI matches
+	// what their bank shows. `reference` is purely our webhook-matching ID.
 	const va = await createVirtualAccount({
 		customerId: customer.customerId,
 		amount: ngnWhole,
 		reference: intent.reference,
-		narration: intent.reference,
+		narration: 'TokenKrafter',
 		type: 'dynamic',
 		expiry: 900,
 	});

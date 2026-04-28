@@ -31,9 +31,15 @@
 	let {
 		row,
 		onClose,
+		onCancel,
 	}: {
 		row: OnrampHistoryRow;
 		onClose: () => void;
+		/** Optional cancel handler — when supplied (and the row is still
+		 *  pending_payment), a "Cancel this payment" button appears below
+		 *  the detail card. History-row callers omit this; OnrampPanel
+		 *  passes it so the user can abort the flow. */
+		onCancel?: () => void;
 	} = $props();
 
 	// ── Time-aware state ──
@@ -50,7 +56,6 @@
 	let createdAtSec = $derived(Math.floor(new Date(row.created_at).getTime() / 1000));
 	let totalWindow = $derived(Math.max(1, expiresAtSec - createdAtSec));
 	let remaining = $derived(Math.max(0, expiresAtSec - nowSec));
-	let progressPct = $derived(Math.min(100, Math.max(0, (remaining / totalWindow) * 100)));
 
 	let isPending = $derived(row.status === 'pending_payment' || row.status === 'quoted');
 	let isInflight = $derived(row.status === 'payment_received' || row.status === 'delivering');
@@ -96,29 +101,34 @@
 
 <ConfirmModalShell {title} {onClose}>
 	<div class="text-center px-2">
-		<!-- Icon -->
-		<div class="w-16 h-16 rounded-full mx-auto mb-3 flex items-center justify-center" style="background: {statusConfig.bg}">
-			<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke={statusConfig.color} stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d={statusConfig.icon}/></svg>
+		<!-- Icon with circular countdown ring (only animates while pending) -->
+		<div class="relative w-20 h-20 mx-auto mb-3">
+			{#if isPending}
+				{@const circumference = 2 * Math.PI * 36}
+				{@const ringOffset = circumference * (1 - Math.max(0, Math.min(1, remaining / totalWindow)))}
+				<svg class="absolute inset-0 -rotate-90" viewBox="0 0 80 80" aria-hidden="true">
+					<circle cx="40" cy="40" r="36" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="3" />
+					<circle
+						cx="40" cy="40" r="36" fill="none"
+						stroke={isExpired ? '#f87171' : statusConfig.color}
+						stroke-width="3"
+						stroke-linecap="round"
+						stroke-dasharray={circumference}
+						stroke-dashoffset={ringOffset}
+						style="transition: stroke-dashoffset 1s linear"
+					/>
+				</svg>
+			{/if}
+			<div
+				class="absolute inset-1 rounded-full flex items-center justify-center"
+				style="background: {statusConfig.bg}"
+			>
+				<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke={statusConfig.color} stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d={statusConfig.icon}/></svg>
+			</div>
 		</div>
 
 		<!-- Status label -->
-		<div class="font-mono text-13 font-bold uppercase tracking-[0.1em] mb-2" style="color: {statusConfig.color};">{statusConfig.label}</div>
-
-		<!-- Countdown for pending; otherwise no extra row -->
-		{#if isPending && !isExpired}
-			<div class="mt-2 mb-1">
-				<span class="font-display text-4xl font-extrabold text-amber-500 tracking-[0.05em]">{Math.floor(remaining / 60)}:{String(remaining % 60).padStart(2, '0')}</span>
-			</div>
-			<div class="mb-4 px-5">
-				<div class="w-full h-1 bg-surface-hover rounded-sm overflow-hidden">
-					<div class="h-full rounded-sm transition-[width] duration-1000" style="width: {progressPct}%; background: linear-gradient(90deg, #f59e0b, #d97706)"></div>
-				</div>
-			</div>
-		{:else if isExpired && isPending}
-			<div class="mt-2 mb-1">
-				<span class="font-display text-4xl font-extrabold text-red-400 tracking-[0.05em]">0:00</span>
-			</div>
-		{/if}
+		<div class="font-mono text-13 font-bold uppercase tracking-[0.1em] mb-3" style="color: {statusConfig.color};">{statusConfig.label}</div>
 
 		<!-- Big amount + USDT sub -->
 		<div class="font-display text-28 font-extrabold text-heading mb-1">₦{ngnDisplay.toLocaleString()}</div>
@@ -218,5 +228,14 @@
 		<p class="font-mono text-3xs text-(--text-dim) m-0 leading-relaxed text-center">
 			Send <span class="font-bold text-(--text-muted)">exactly ₦{ngnDisplay.toLocaleString()}</span> to the account above. The narration in your bank app doesn't matter — we match by account.
 		</p>
+		{#if onCancel}
+			<button
+				type="button"
+				class="w-full mt-3 py-2 rounded-lg bg-(--bg-surface) border border-(--border) text-(--text-muted) font-mono text-xs2 hover:text-red-400"
+				onclick={onCancel}
+			>
+				Cancel this payment
+			</button>
+		{/if}
 	{/if}
 </ConfirmModalShell>

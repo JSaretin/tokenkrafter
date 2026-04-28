@@ -55,6 +55,7 @@ export const load: PageServerLoad = async ({ setHeaders }) => {
 			const rates: Record<string, number> = settings?.value?.rates || {};
 			const spreadBps = override?.value?.spread_bps ?? 30;
 			const onrampFeeBps = Number(override?.value?.onramp_fee_bps ?? 250);
+			const onrampMinKobo = Math.max(0, Number(override?.value?.onramp_min_kobo ?? 50_000));
 			const overrides: Record<string, number | null> = override?.value || {};
 
 			// Off-ramp / sell rates: mid × (1 − spread).
@@ -76,7 +77,7 @@ export const load: PageServerLoad = async ({ setHeaders }) => {
 				onrampNgn = rates.NGN * (1 + spreadBps / 10000);
 			}
 
-			return { sell, onrampNgn, onrampFeeBps };
+			return { sell, onrampNgn, onrampFeeBps, onrampMinKobo };
 		})(),
 	]);
 
@@ -99,5 +100,6 @@ export const load: PageServerLoad = async ({ setHeaders }) => {
 		fiatRates: ratesResult.sell,
 		onrampNgnRate: ratesResult.onrampNgn,
 		onrampFeeBps: ratesResult.onrampFeeBps,
+		onrampMinKobo: ratesResult.onrampMinKobo,
 	};
 };

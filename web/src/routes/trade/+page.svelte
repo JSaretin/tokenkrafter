@@ -142,6 +142,8 @@
 	// On-ramp NGN rate (mid + spread) — separate from off-ramp's fiatRates.NGN
 	// so live preview matches what the lock-rate quote will return.
 	let onrampNgnRate = $derived(serverData?.onrampNgnRate ?? null);
+	// Whole-naira minimum on-ramp (configurable via platform_config.rate_override.onramp_min_kobo).
+	let onrampMinNgn = $derived(Math.ceil((serverData?.onrampMinKobo ?? 50_000) / 100));
 	// Use gross amount for NGN display (fee is hidden in the spread)
 	// USDT decimals for the selected network (BSC USDT = 18, ETH USDT = 6)
 	let usdtDecimals = $state(18);
@@ -1530,6 +1532,7 @@
 					chainId={selectedNetwork?.chain_id ?? 56}
 					receiver={userAddress ?? undefined}
 					initialRate={onrampNgnRate}
+					minNgn={onrampMinNgn}
 					onsuccess={() => {
 						// Refresh USDT balance after delivery so the user can
 						// immediately swap or use it on the trade page.

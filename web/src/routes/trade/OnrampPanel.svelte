@@ -31,6 +31,7 @@
 	} from '$lib/onramp/client';
 	import SuccessBurst from '$lib/SuccessBurst.svelte';
 	import ConfirmModalShell from './ConfirmModalShell.svelte';
+	import OnrampStatusModal from './OnrampStatusModal.svelte';
 	import { t } from '$lib/i18n';
 
 	type State =
@@ -55,12 +56,16 @@
 		 *  page's load(); without it the live preview just shows "—" until
 		 *  the user clicks Review (which fetches the locked rate anyway). */
 		initialRate,
+		/** Minimum on-ramp amount in whole NGN. SSR-supplied so the input's
+		 *  validation matches the server's `onramp_min_kobo` config. */
+		minNgn = 500,
 		onsuccess,
 	}: {
 		chainId?: number;
 		receiver?: string;
 		initialNgn?: number;
 		initialRate?: number | null;
+		minNgn?: number;
 		onsuccess?: (txHash: string) => void;
 	} = $props();
 
@@ -91,10 +96,12 @@
 	let userAddress = $derived(getUserAddress?.() ?? null);
 	let effectiveReceiver = $derived(receiver ?? userAddress ?? '');
 
-	// Modal visibility — every stage past "idle" lives in the popup modal,
-	// so the inline panel only shows the amount input. The modal closes
-	// on success (or via X / Cancel), bringing the user back to idle.
-	let showReviewModal = $derived(flow !== 'idle');
+	// Pre-submit modal: review + sign + submit. After submit we hand off
+	// to OnrampStatusModal (mounted below) so the look matches the
+	// history-row modal.
+	let showReviewModal = $derived(
+		flow === 'quoting' || flow === 'quoted' || flow === 'signing' || flow === 'submitting',
+	);
 	// Modal title flips with the flow stage so the user knows where they are.
 	let modalTitle = $derived(
 		flow === 'awaiting_payment' || flow === 'payment_received' || flow === 'delivering'
@@ -111,6 +118,49 @@
 	);
 	// Hard-lock close while a tx is mid-flight so partial state isn't dropped.
 	let modalClosable = $derived(flow !== 'signing' && flow !== 'submitting');
+
+	// Stages from awaiting_payment onwards delegate to OnrampStatusModal so
+	// the look matches the history-row modal exactly. Map our internal
+	// `flow` to the onramp_intents status vocabulary the modal expects.
+	let postSubmit = $derived(
+		flow === 'awaiting_payment' ||
+		flow === 'payment_received' ||
+		flow === 'delivering' ||
+		flow === 'delivered' ||
+		flow === 'expired' ||
+		flow === 'failed' ||
+		flow === 'cancelled',
+	);
+	let postSubmitStatus = $derived(
+		flow === 'awaiting_payment' ? 'pending_payment'
+			: flow === 'payment_received' ? 'payment_received'
+			: flow === 'delivering' ? 'delivering'
+			: flow === 'delivered' ? 'delivered'
+			: flow === 'expired' ? 'expired'
+			: flow === 'failed' ? 'failed'
+			: flow === 'cancelled' ? 'cancelled'
+			: 'pending_payment',
+	);
+	let statusRow = $derived(
+		quote
+			? {
+				reference: quote.reference,
+				status: postSubmitStatus,
+				chain_id: quote.chain_id,
+				ngn_amount_kobo: quote.ngn_amount_kobo,
+				usdt_amount_wei: quote.usdt_amount_wei,
+				rate_x100: quote.rate_x100,
+				expires_at: new Date(quote.expires_at * 1000).toISOString(),
+				created_at: new Date().toISOString(),
+				paid_at: null,
+				delivered_at: flow === 'delivered' ? new Date().toISOString() : null,
+				delivery_tx_hash: lastDeliveryTx,
+				failure_reason: flow === 'failed' ? errorMsg || null : null,
+				flutterwave_va_account_number: bankDetails?.account_number ?? null,
+				flutterwave_va_bank_name: bankDetails?.bank_name ?? null,
+			}
+			: null,
+	);
 
 	onDestroy(() => {
 		if (pollTimer) clearInterval(pollTimer);
@@ -294,18 +344,6 @@
 		}
 	}
 
-	function copyText(s: string) {
-		try {
-			navigator.clipboard?.writeText(s);
-		} catch {}
-	}
-
-	function fmtCountdown(s: number): string {
-		const m = Math.floor(s / 60);
-		const ss = (s % 60).toString().padStart(2, '0');
-		return `${m}:${ss}`;
-	}
-
 	// Inline panel = just the amount input. Everything else lives in the modal.
 </script>
 
@@ -435,83 +473,25 @@
 			>
 				Create payment
 			</button>
-		{:else if flow === 'awaiting_payment' && bankDetails}
-			<!-- Bank details — VA created, waiting for the user's transfer -->
-			<div class="rounded-xl border border-amber-500/25 bg-amber-500/[0.06] p-3 flex items-start gap-2 mb-3">
-				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2" class="shrink-0 mt-0.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-				<div class="flex-1 min-w-0">
-					<p class="font-display text-xs font-bold text-amber-300 m-0">One-time use account — expires in {fmtCountdown(secondsLeft)}</p>
-					<p class="font-mono text-3xs text-amber-200/80 mt-1 m-0 leading-relaxed">
-						Send <span class="font-bold">exactly ₦{bankDetails.amount_ngn.toLocaleString()}</span> once. Any payment after expiry will be returned by your bank — do not reuse this account.
-					</p>
-				</div>
-			</div>
-
-			<div class="rounded-xl border border-cyan-400/15 bg-cyan-400/[0.04] p-4 flex flex-col gap-3">
-				<div>
-					<span class="block font-mono text-xs2 text-(--text-muted)">Send exactly</span>
-					<span class="block font-numeric text-22 font-bold text-(--text-heading) tabular-nums">₦{bankDetails.amount_ngn.toLocaleString()}</span>
-				</div>
-				<div class="flex flex-col gap-2">
-					<div class="px-3 py-2 rounded-[10px] bg-(--bg-surface) border border-(--border)">
-						<span class="block font-mono text-3xs text-(--text-muted) uppercase tracking-wide">Bank</span>
-						<span class="block font-display text-sm font-bold text-(--text-heading) truncate">{bankDetails.bank_name}</span>
-					</div>
-					<div class="flex items-center justify-between gap-2 px-3 py-2 rounded-[10px] bg-(--bg-surface) border border-(--border)">
-						<div class="min-w-0">
-							<span class="block font-mono text-3xs text-(--text-muted) uppercase tracking-wide">Account number</span>
-							<span class="block font-numeric text-base font-bold text-(--text-heading) tabular-nums">{bankDetails.account_number}</span>
-						</div>
-						<button class="shrink-0 px-2.5 py-1 rounded-md bg-(--bg-surface-hover) border border-(--border) text-(--text-muted) font-mono text-3xs hover:text-cyan-300" onclick={() => copyText(bankDetails!.account_number)}>Copy</button>
-					</div>
-					<div class="px-3 py-2 rounded-[10px] bg-(--bg-surface) border border-(--border)">
-						<span class="block font-mono text-3xs text-(--text-muted) uppercase tracking-wide">Account name</span>
-						<span class="block font-display text-sm font-bold text-(--text-heading) truncate">{bankDetails.account_name}</span>
-					</div>
-				</div>
-				<p class="font-mono text-3xs text-(--text-dim) m-0 leading-relaxed">USDT lands in your wallet within 5 minutes after the bank confirms. The narration in your bank app doesn't matter — we match the deposit by account number.</p>
-			</div>
-
-			<button class="w-full mt-3 py-2 rounded-lg bg-(--bg-surface) border border-(--border) text-(--text-muted) font-mono text-xs2 hover:text-red-400" onclick={handleCancel}>
-				Cancel this payment
-			</button>
-		{:else if flow === 'payment_received' || flow === 'delivering'}
-			<div class="flex flex-col items-center gap-3 py-10">
-				<div class="w-10 h-10 rounded-full border-2 border-emerald-400/30 border-t-emerald-400 animate-spin"></div>
-				<div class="text-center">
-					<p class="font-display text-sm font-bold text-emerald-300 m-0">Payment received ✓</p>
-					<p class="font-mono text-xs2 text-(--text-muted) mt-1 m-0">Sending USDT to your wallet…</p>
-				</div>
-			</div>
-		{:else if flow === 'delivered'}
-			<div class="flex flex-col items-center gap-3 py-8 relative">
-				<SuccessBurst show={burstTrigger} onComplete={() => (burstTrigger = false)} />
-				<p class="font-display text-base font-bold text-emerald-300 m-0">USDT in your wallet ✓</p>
-				{#if lastDeliveryTx}
-					<a href="https://bscscan.com/tx/{lastDeliveryTx}" target="_blank" rel="noopener" class="font-mono text-3xs text-cyan-300 hover:underline truncate max-w-full">{lastDeliveryTx.slice(0, 10)}…{lastDeliveryTx.slice(-8)}</a>
-				{/if}
-				<button class="mt-2 px-4 py-2 rounded-lg bg-(--bg-surface) border border-(--border) text-(--text-muted) syne text-xs font-bold" onclick={reset}>
-					Buy more
-				</button>
-			</div>
-		{:else if flow === 'expired'}
-			<div class="rounded-xl border border-amber-500/20 bg-amber-500/[0.04] p-4 text-center">
-				<p class="font-display text-sm font-bold text-amber-300 m-0">Quote expired</p>
-				<p class="font-mono text-xs2 text-(--text-muted) mt-1 m-0">Get a fresh quote to continue.</p>
-				<button class="mt-3 px-4 py-2 rounded-lg bg-[linear-gradient(135deg,#00d2ff,#3a7bd5)] text-white syne text-xs font-bold" onclick={reset}>
-					New quote
-				</button>
-			</div>
-		{:else if flow === 'failed'}
-			<div class="rounded-xl border border-red-500/20 bg-red-500/[0.04] p-4">
-				<p class="font-display text-sm font-bold text-red-300 m-0">Payment failed</p>
-				<p class="font-mono text-xs2 text-(--text-muted) mt-1 m-0">{errorMsg}</p>
-				<button class="mt-3 px-4 py-2 rounded-lg bg-(--bg-surface) border border-(--border) text-(--text-muted) syne text-xs font-bold" onclick={reset}>
-					Try again
-				</button>
-			</div>
-		{:else if flow === 'cancelled'}
-			<p class="font-mono text-xs text-(--text-muted) text-center py-8 m-0">Cancelled.</p>
 		{/if}
 	</ConfirmModalShell>
+{/if}
+
+<!-- Post-submit: delegate to the same modal as history rows so the
+     awaiting/received/delivered/expired/failed states have one
+     consistent design. -->
+{#if postSubmit && statusRow}
+	<OnrampStatusModal
+		row={statusRow}
+		onCancel={flow === 'awaiting_payment' ? handleCancel : undefined}
+		onClose={() => {
+			if (flow === 'delivered') {
+				try { onsuccess?.(lastDeliveryTx ?? ''); } catch {}
+			}
+			reset();
+		}}
+	/>
+	{#if flow === 'delivered'}
+		<SuccessBurst show={burstTrigger} onComplete={() => (burstTrigger = false)} />
+	{/if}
 {/if}
