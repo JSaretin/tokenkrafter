@@ -35,6 +35,7 @@
 	import { hiddenAssets, toggleHidden } from './hiddenAssets';
 	import { hideDust, DUST_USD_THRESHOLD } from './hideDust';
 	import AssetSettingsModal from './AssetSettingsModal.svelte';
+	import RowActionSheet from './RowActionSheet.svelte';
 	import type { SupportedNetwork } from './structure';
 
 	let {
@@ -211,8 +212,6 @@
 		for (const t of [...tokens, ...importedTokens]) addRow(t.address, t.symbol, t.name);
 		return out;
 	});
-
-	let showHidden = $state(false);
 
 	// ── UI state ──
 	type View = 'main' | 'receive' | 'security' | 'export-key' | 'export-seed';
@@ -749,23 +748,20 @@
 		};
 	});
 
-	function hideToken(address: string) {
-		toggleHidden(address);
-		if (walletType === 'embedded') pushPreferences();
-	}
-
-	// ── Long-press to hide ──
-	// Replaces the inline "eye" icon next to each token. Press-and-hold on a
-	// row for LONG_PRESS_MS triggers the hide action with a brief haptic and
-	// a fill-bar progress overlay. Any movement >LONG_PRESS_TOL_PX during the
-	// press cancels (so scroll-drags don't accidentally hide).
+	// ── Long-press → action sheet ──
+	// Press-and-hold on a token row for LONG_PRESS_MS opens RowActionSheet
+	// (Hide / Delete / Cancel). A red progress bar fills under the row during
+	// the hold. Any movement >LONG_PRESS_TOL_PX cancels so scroll-drags don't
+	// trigger the sheet.
 	const LONG_PRESS_MS = 500;
 	const LONG_PRESS_TOL_PX = 8;
 	let longPressKey = $state<string | null>(null);
 	let _lpTimer: ReturnType<typeof setTimeout> | null = null;
 	let _lpStart: { x: number; y: number } | null = null;
-	let _lpAddr = '';
-	let _lpSymbol = '';
+	let _lpToken: { address: string; symbol: string; name: string; logoUrl?: string } | null = null;
+
+	let showRowSheet = $state(false);
+	let rowSheetToken = $state<{ address: string; symbol: string; name: string; logoUrl?: string } | null>(null);
 
 	function _lpClear() {
 		if (_lpTimer) { clearTimeout(_lpTimer); _lpTimer = null; }
@@ -773,20 +769,18 @@
 		_lpStart = null;
 	}
 
-	function lpStart(rowKey: string, address: string, symbol: string, e: PointerEvent) {
-		// Only primary button / first touch
+	function lpStart(rowKey: string, tok: { address: string; symbol: string; name: string; logoUrl?: string }, e: PointerEvent) {
 		if (e.button && e.button !== 0) return;
 		_lpClear();
 		longPressKey = rowKey;
-		_lpAddr = address;
-		_lpSymbol = symbol;
+		_lpToken = tok;
 		_lpStart = { x: e.clientX, y: e.clientY };
 		_lpTimer = setTimeout(() => {
 			_lpTimer = null;
 			longPressKey = null;
 			try { (navigator as any).vibrate?.(15); } catch {}
-			hideToken(_lpAddr);
-			onAddFeedback({ message: `${_lpSymbol} hidden`, type: 'success' });
+			rowSheetToken = _lpToken;
+			showRowSheet = true;
 		}, LONG_PRESS_MS);
 	}
 
@@ -1203,7 +1197,7 @@
 					<div
 						class="ap-row group relative flex items-center gap-3 py-3 px-4 transition-colors duration-100 hover:bg-(--bg-surface)"
 						class:ap-pressing={longPressKey === rowKey}
-						onpointerdown={(e) => lpStart(rowKey, tok.address, tok.symbol, e)}
+						onpointerdown={(e) => lpStart(rowKey, { address: tok.address, symbol: tok.symbol, name: tok.name, logoUrl: tok.logoUrl }, e)}
 						onpointermove={lpMove}
 						onpointerup={lpEnd}
 						onpointercancel={lpEnd}
@@ -1235,7 +1229,7 @@
 					<div
 						class="ap-row group relative flex items-center gap-3 py-3 px-4 transition-colors duration-100 hover:bg-(--bg-surface)"
 						class:ap-pressing={longPressKey === rowKey}
-						onpointerdown={(e) => lpStart(rowKey, tok.address, tok.symbol, e)}
+						onpointerdown={(e) => lpStart(rowKey, { address: tok.address, symbol: tok.symbol, name: tok.name, logoUrl: (tok as any).logoUrl }, e)}
 						onpointermove={lpMove}
 						onpointerup={lpEnd}
 						onpointercancel={lpEnd}
@@ -1261,53 +1255,9 @@
 				{#if tokens.length === 0 && importedTokens.length === 0}
 					<p class="text-center py-6 text-13 text-(--text-dim) font-mono">{$t('account.noImportedTokens')}</p>
 				{/if}
-
-				<!-- Hidden assets (collapsible) -->
-				{#if hiddenRows.length > 0}
-					<button
-						type="button"
-						class="flex items-center justify-between gap-2 mx-4 my-2 py-2 px-3 rounded-lg bg-transparent border border-(--border-subtle) text-(--text-dim) cursor-pointer font-mono text-3xs transition-all hover:border-(--border) hover:text-(--text-muted) w-[calc(100%-2rem)]"
-						onclick={() => (showHidden = !showHidden)}
-					>
-						<span>{showHidden ? 'Hide' : 'Show'} hidden ({hiddenRows.length})</span>
-						<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="transform: rotate({showHidden ? 180 : 0}deg); transition: transform 150ms;"><polyline points="6 9 12 15 18 9"/></svg>
-					</button>
-					{#if showHidden}
-						{#each hiddenRows as tok}
-							{@const logo = getTokenLogo(tok as any) || getKnownLogo(tok.symbol)}
-							<div class="flex items-center gap-3 py-2.5 px-4 opacity-55 transition-colors duration-100 hover:bg-(--bg-surface) hover:opacity-80">
-								{#if logo}
-									<img src={logo} alt={tok.symbol} class="w-8 h-8 rounded-full object-cover shrink-0 border border-(--border)" />
-								{:else}
-									<div class="w-8 h-8 rounded-full bg-(--bg-surface-input) border border-(--border) flex items-center justify-center font-display text-xs font-extrabold text-(--text-muted) shrink-0">{tok.symbol.charAt(0)}</div>
-								{/if}
-								<div class="flex-1 min-w-0">
-									<span class="block text-sm text-(--text-heading) font-display font-bold leading-[1.3]">{tok.symbol}</span>
-									<span class="block text-3xs text-(--text-dim) font-mono mt-0.5">{tok.name}</span>
-								</div>
-								<button
-									type="button"
-									class="shrink-0 p-1.5 rounded-lg text-(--text-dim) hover:text-[#00d2ff] hover:bg-[rgba(0,210,255,0.08)] transition-all"
-									onclick={() => hideToken(tok.address)}
-									aria-label="Unhide {tok.symbol}"
-									title="Unhide {tok.symbol}"
-								>
-									<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-								</button>
-							</div>
-						{/each}
-					{/if}
-				{/if}
-
 			</div>
 
 		{/if}
-
-		<!-- Disconnect footer -->
-		<button class="flex items-center justify-center gap-1.5 px-4 py-2.5 mx-4 mt-1 mb-3 rounded-lg border border-(--border-subtle) bg-transparent text-(--text-dim) cursor-pointer font-mono text-3xs transition-all duration-100 shrink-0 hover:text-[#f87171] hover:border-[rgba(248,113,113,0.15)] hover:bg-[rgba(248,113,113,0.04)]" onclick={() => { onDisconnect(); close(); }}>
-			<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-			{$t('account.disconnect')}
-		</button>
 
 	<!-- ═══ RECEIVE VIEW ═══ -->
 	{:else if view === 'receive'}
@@ -1669,6 +1619,15 @@
 	defaultChainId={chainId}
 	{walletType}
 	{sharedProviders}
+	hiddenTokens={hiddenRows}
+	onFeedback={onAddFeedback}
+/>
+
+<RowActionSheet
+	bind:open={showRowSheet}
+	token={rowSheetToken}
+	{chainId}
+	{walletType}
 	onFeedback={onAddFeedback}
 />
 {/if}
@@ -1923,8 +1882,15 @@
 	.ap-row-right:active { background: var(--bg-surface-hover); }
 
 	/* Long-press feedback: red bar fills left→right under the row over the
-	   hold duration. Bar reaches full width when hideToken fires. */
-	.ap-row { user-select: none; -webkit-user-select: none; touch-action: pan-y; }
+	   hold duration. Bar reaches full width when the action sheet opens.
+	   -webkit-touch-callout suppresses iOS's long-press text-selection menu. */
+	.ap-row {
+		user-select: none;
+		-webkit-user-select: none;
+		-webkit-touch-callout: none;
+		touch-action: pan-y;
+	}
+	.ap-row, .ap-row * { -webkit-user-select: none; user-select: none; }
 	.ap-row.ap-pressing { background: rgba(248, 113, 113, 0.05); }
 	.ap-press-fill {
 		position: absolute; left: 0; bottom: 0;

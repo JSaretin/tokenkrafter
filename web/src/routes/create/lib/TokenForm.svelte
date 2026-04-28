@@ -805,7 +805,7 @@
 
 </script>
 
-<div bind:this={wzRootEl} class="max-w-[640px] mx-auto min-w-0 scroll-mt-4">
+<div bind:this={wzRootEl} class="w-full max-w-[640px] mx-auto min-w-0 scroll-mt-4">
 	<!-- Step indicator. `min-w-0` on the flex container plus `overflow-x-hidden`
 	     on the wrapper stop the nowrap labels from dragging the parent column
 	     wider than the viewport when the step list grows (e.g. Taxable adds

@@ -1665,8 +1665,8 @@
 
 	{:else}
 		<!-- ═══════ TOKEN CREATION WIZARD ═══════ -->
-		<div class="flex flex-col lg:flex-row gap-7 items-start">
-			<div class="flex-1 min-w-0 max-w-[640px] mx-auto lg:max-w-none lg:mx-0">
+		<div class="flex flex-col lg:flex-row gap-7 items-stretch lg:items-start">
+			<div class="flex-1 w-full min-w-0 max-w-[640px] mx-auto lg:max-w-none lg:mx-0">
 				<button class="inline-flex items-center gap-1.5 text-muted text-13 font-mono bg-transparent border-none cursor-pointer p-0 transition-colors duration-150 hover:text-[#00d2ff]" onclick={() => selectMode(null)} title="Change create mode">
 					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
 					Change mode
