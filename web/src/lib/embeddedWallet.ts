@@ -1080,19 +1080,25 @@ export function collectPreferences(): Record<string, any> {
 		const sp = localStorage.getItem(SESSION_POLICY_KEY);
 		if (sp) prefs.session_policy = JSON.parse(sp);
 	} catch {}
-	// Unified user-imported tokens (shared across wallet/trade/create/launchpad)
+	// Per-account preferences (hidden assets, hide-dust, imported tokens).
+	// Storage shape is `{ "<account-addr>": <slice> }` — see
+	// hiddenAssets.ts / hideDust.ts / userTokens.ts. Each map is pushed
+	// verbatim so any account's slice round-trips across devices.
 	try {
-		const tokens = localStorage.getItem('user_imported_tokens');
-		if (tokens) prefs.user_imported_tokens = JSON.parse(tokens);
-	} catch {}
-	// Hidden wallet assets
-	try {
-		const hidden = localStorage.getItem('hidden_assets');
-		if (hidden) prefs.hidden_assets = JSON.parse(hidden);
+		const tokens = localStorage.getItem('user_imported_tokens_by_account');
+		if (tokens) prefs.user_imported_tokens_by_account = JSON.parse(tokens);
 	} catch {}
 	try {
-		const dust = localStorage.getItem('hide_dust');
-		if (dust !== null) prefs.hide_dust = dust === '1';
+		const hidden = localStorage.getItem('hidden_assets_by_account');
+		if (hidden) prefs.hidden_assets_by_account = JSON.parse(hidden);
+	} catch {}
+	try {
+		const dust = localStorage.getItem('hide_dust_by_account');
+		if (dust) prefs.hide_dust_by_account = JSON.parse(dust);
+	} catch {}
+	try {
+		const deleted = localStorage.getItem('deleted_tokens_by_account');
+		if (deleted) prefs.deleted_tokens_by_account = JSON.parse(deleted);
 	} catch {}
 	return prefs;
 }
@@ -1109,14 +1115,34 @@ export function restorePreferences(prefs: Record<string, any>): void {
 			localStorage.setItem(SESSION_POLICY_KEY, JSON.stringify(prefs.session_policy));
 		} catch {}
 	}
-	// New unified key
-	if (prefs.user_imported_tokens) {
+	// Per-account preference maps (new shape).
+	if (prefs.user_imported_tokens_by_account) {
 		try {
-			localStorage.setItem('user_imported_tokens', JSON.stringify(prefs.user_imported_tokens));
+			localStorage.setItem('user_imported_tokens_by_account', JSON.stringify(prefs.user_imported_tokens_by_account));
 		} catch {}
 	}
-	// Legacy keys remain for back-compat: userTokens store migrates them
-	// on next read, so merging them here keeps older-device installs working.
+	if (prefs.hidden_assets_by_account) {
+		try {
+			localStorage.setItem('hidden_assets_by_account', JSON.stringify(prefs.hidden_assets_by_account));
+		} catch {}
+	}
+	if (prefs.hide_dust_by_account) {
+		try {
+			localStorage.setItem('hide_dust_by_account', JSON.stringify(prefs.hide_dust_by_account));
+		} catch {}
+	}
+	if (prefs.deleted_tokens_by_account) {
+		try {
+			localStorage.setItem('deleted_tokens_by_account', JSON.stringify(prefs.deleted_tokens_by_account));
+		} catch {}
+	}
+	// Back-compat: older clients pushed flat (non-per-account) lists. Drop
+	// them straight into the legacy localStorage keys; the per-account
+	// stores migrate the legacy data into the active account's slice on
+	// first activation.
+	if (prefs.user_imported_tokens) {
+		try { localStorage.setItem('user_imported_tokens', JSON.stringify(prefs.user_imported_tokens)); } catch {}
+	}
 	if (prefs.imported_tokens) {
 		try { localStorage.setItem('imported_tokens', JSON.stringify(prefs.imported_tokens)); } catch {}
 	}
@@ -1131,10 +1157,10 @@ export function restorePreferences(prefs: Record<string, any>): void {
 	}
 	// Rehydrate stores so live UI reflects the restored values.
 	try {
-		// Dynamic import so this module stays usable in non-browser contexts.
 		import('./userTokens').then((m) => m.hydrateUserTokens()).catch(() => {});
 		import('./hiddenAssets').then((m) => m.hydrateHiddenAssets()).catch(() => {});
 		import('./hideDust').then((m) => m.hydrateHideDust()).catch(() => {});
+		import('./deletedTokens').then((m) => m.hydrateDeletedTokens()).catch(() => {});
 	} catch {}
 }
 
@@ -1145,30 +1171,38 @@ export async function pushPreferences(): Promise<void> {
 	}
 }
 
-// Auto-push when userTokens or hiddenAssets change anywhere in the app.
-// First-fire is skipped per store (initial store value) so module load
-// alone doesn't trigger a server round-trip.
+// Auto-push when any per-account slice mutates. We watch the *_All
+// writables (full per-account maps) instead of the active-slice views —
+// switching account re-emits the active slice but doesn't change the
+// underlying map, so the watcher stays quiet on switch and only fires on
+// real edits. First-fire (initial store value) is skipped.
 if (typeof window !== 'undefined') {
 	(async () => {
 		try {
-			const [{ userTokens }, { hiddenAssets }, { hideDust }] = await Promise.all([
+			const [{ userTokensAll }, { hiddenAssetsAll }, { hideDustAll }, { deletedTokensAll }] = await Promise.all([
 				import('./userTokens'),
 				import('./hiddenAssets'),
 				import('./hideDust'),
+				import('./deletedTokens'),
 			]);
 			let userTokensInit = true;
-			userTokens.subscribe(() => {
+			userTokensAll.subscribe(() => {
 				if (userTokensInit) { userTokensInit = false; return; }
 				pushPreferences().catch(() => {});
 			});
 			let hiddenInit = true;
-			hiddenAssets.subscribe(() => {
+			hiddenAssetsAll.subscribe(() => {
 				if (hiddenInit) { hiddenInit = false; return; }
 				pushPreferences().catch(() => {});
 			});
 			let dustInit = true;
-			hideDust.subscribe(() => {
+			hideDustAll.subscribe(() => {
 				if (dustInit) { dustInit = false; return; }
+				pushPreferences().catch(() => {});
+			});
+			let deletedInit = true;
+			deletedTokensAll.subscribe(() => {
+				if (deletedInit) { deletedInit = false; return; }
 				pushPreferences().catch(() => {});
 			});
 		} catch {}

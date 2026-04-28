@@ -2,6 +2,7 @@
 	import { fly, fade } from 'svelte/transition';
 	import { toggleHidden, hiddenAssets } from './hiddenAssets';
 	import { removeUserToken, userTokens } from './userTokens';
+	import { markDeleted } from './deletedTokens';
 	import { pushPreferences } from './embeddedWallet';
 	import { getKnownLogo } from './tokenLogo';
 
@@ -48,6 +49,10 @@
 	function doDelete() {
 		if (!token) return;
 		removeUserToken(token.address, chainId);
+		// Tombstone — blocks the auto-import paths (poller discovery,
+		// created-tokens fetch, stablecoin auto-pin) from re-adding it.
+		// The import modal clears the tombstone on re-import.
+		markDeleted(token.address);
 		// If it was hidden, also remove from hiddenAssets so a re-import shows up.
 		if ($hiddenAssets.includes(token.address.toLowerCase())) toggleHidden(token.address);
 		if (walletType === 'embedded') pushPreferences().catch(() => {});
@@ -70,7 +75,7 @@
 		transition:fade={{ duration: 120 }}
 	>
 		<div
-			class="w-full max-w-[380px] bg-(--bg) border border-(--border) rounded-2xl overflow-hidden flex flex-col max-[639px]:max-w-full max-[639px]:rounded-t-2xl max-[639px]:rounded-b-none"
+			class="w-full max-w-[380px] max-h-[80vh] bg-(--bg) border border-(--border) rounded-2xl overflow-hidden flex flex-col max-[639px]:max-w-full max-[639px]:rounded-t-2xl max-[639px]:rounded-b-none max-[639px]:h-[80vh] max-[639px]:max-h-[80vh]"
 			onclick={(e) => e.stopPropagation()}
 			transition:fly={{ y: 24, duration: 200 }}
 		>
@@ -88,7 +93,7 @@
 			</div>
 
 			<!-- Actions -->
-			<div class="p-2 flex flex-col gap-1">
+			<div class="flex-1 overflow-y-auto p-2 flex flex-col gap-1">
 				<button type="button" class="ras-action" onclick={doHide}>
 					<div class="ras-icon" style="color: #f59e0b; background: rgba(245,158,11,0.08); border-color: rgba(245,158,11,0.2);">
 						{#if isHidden}

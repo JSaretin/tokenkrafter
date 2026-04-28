@@ -1,7 +1,9 @@
 import { writable, derived, type Readable } from 'svelte/store';
+import { activeAccountKey } from './activeAccount';
+import { isDeletedAddress } from './deletedTokens';
 
-const STORAGE_KEY = 'user_imported_tokens';
-const LEGACY_KEYS = ['imported_tokens', 'importedTokens'] as const;
+const STORAGE_KEY = 'user_imported_tokens_by_account';
+const LEGACY_KEYS = ['user_imported_tokens', 'imported_tokens', 'importedTokens'] as const;
 
 export interface UserToken {
 	address: string;
@@ -12,22 +14,22 @@ export interface UserToken {
 	chainId: number;
 }
 
+type AllMap = Record<string, UserToken[]>;
+
 const norm = (a: string) => a.toLowerCase();
 const keyOf = (chainId: number, addr: string) => `${chainId}:${norm(addr)}`;
 
-function loadUserTokens(): UserToken[] {
-	if (typeof window === 'undefined') return [];
+function parseTokens(raw: unknown, fallbackChainId = 56): UserToken[] {
+	if (!Array.isArray(raw)) return [];
 	const out: UserToken[] = [];
 	const seen = new Set<string>();
-
-	const push = (raw: unknown, fallbackChainId = 56) => {
-		if (!raw || typeof raw !== 'object') return;
-		const r = raw as Record<string, unknown>;
+	for (const r of raw as Record<string, unknown>[]) {
+		if (!r || typeof r !== 'object') continue;
 		const addrRaw = typeof r.address === 'string' ? r.address : '';
-		if (!addrRaw) return;
+		if (!addrRaw) continue;
 		const chainId = Number(r.chainId ?? fallbackChainId) || fallbackChainId;
 		const k = keyOf(chainId, addrRaw);
-		if (seen.has(k)) return;
+		if (seen.has(k)) continue;
 		seen.add(k);
 		out.push({
 			address: norm(addrRaw),
@@ -37,74 +39,156 @@ function loadUserTokens(): UserToken[] {
 			logoUrl: typeof r.logoUrl === 'string' ? r.logoUrl : (typeof r.logo_url === 'string' ? r.logo_url : ''),
 			chainId,
 		});
-	};
+	}
+	return out;
+}
 
+function loadAll(): AllMap {
+	if (typeof window === 'undefined') return {};
 	try {
 		const raw = localStorage.getItem(STORAGE_KEY);
 		if (raw) {
 			const parsed = JSON.parse(raw);
-			if (Array.isArray(parsed)) for (const t of parsed) push(t);
+			if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+				const out: AllMap = {};
+				for (const [k, v] of Object.entries(parsed)) {
+					out[k.toLowerCase()] = parseTokens(v);
+				}
+				return out;
+			}
 		}
 	} catch {}
+	return {};
+}
 
-	for (const legacy of LEGACY_KEYS) {
+function saveAll(m: AllMap) {
+	if (typeof window === 'undefined') return;
+	try {
+		localStorage.setItem(STORAGE_KEY, JSON.stringify(m));
+	} catch {}
+}
+
+function readLegacyTokens(): UserToken[] {
+	if (typeof window === 'undefined') return [];
+	const seen = new Set<string>();
+	const out: UserToken[] = [];
+	for (const lk of LEGACY_KEYS) {
 		try {
-			const raw = localStorage.getItem(legacy);
+			const raw = localStorage.getItem(lk);
 			if (!raw) continue;
-			const parsed = JSON.parse(raw);
-			if (Array.isArray(parsed)) for (const t of parsed) push(t);
+			const arr = parseTokens(JSON.parse(raw));
+			for (const t of arr) {
+				const k = keyOf(t.chainId, t.address);
+				if (seen.has(k)) continue;
+				seen.add(k);
+				out.push(t);
+			}
 		} catch {}
 	}
-
 	return out;
 }
 
-export const userTokens = writable<UserToken[]>(loadUserTokens());
+let _all: AllMap = loadAll();
+let _currentKey = '';
 
-userTokens.subscribe((val) => {
-	if (typeof window === 'undefined') return;
-	try {
-		localStorage.setItem(STORAGE_KEY, JSON.stringify(val));
-	} catch {}
-});
+const _activeView = writable<UserToken[]>([]);
+const _allView = writable<AllMap>(_all);
 
-export function addUserToken(token: UserToken) {
-	userTokens.update((arr) => {
-		if (arr.find((t) => t.chainId === token.chainId && norm(t.address) === norm(token.address))) return arr;
-		return [...arr, { ...token, address: norm(token.address) }];
+function emitActive() {
+	_activeView.set(_all[_currentKey] ? [..._all[_currentKey]] : []);
+}
+function emitAll() {
+	_allView.set({ ..._all });
+}
+
+if (typeof window !== 'undefined') {
+	activeAccountKey.subscribe((k) => {
+		_currentKey = (k || '').toLowerCase();
+		// Legacy migration: first active account inherits anything from the
+		// pre-per-account global keys. Legacy keys are then removed.
+		if (_currentKey && !_all[_currentKey]) {
+			const legacy = readLegacyTokens();
+			if (legacy.length > 0) {
+				_all = { ..._all, [_currentKey]: legacy };
+				saveAll(_all);
+				emitAll();
+			}
+			for (const lk of LEGACY_KEYS) {
+				try { localStorage.removeItem(lk); } catch {}
+			}
+		}
+		emitActive();
 	});
 }
 
+export const userTokens: Readable<UserToken[]> = { subscribe: _activeView.subscribe };
+
+/** Full per-account map — used by the cross-device prefs sync watcher. */
+export const userTokensAll: Readable<AllMap> = { subscribe: _allView.subscribe };
+
+export function addUserToken(token: UserToken) {
+	if (!_currentKey) return;
+	// Respect explicit user deletions: auto-import (poller, created-tokens
+	// fetch, stablecoin auto-pin) shouldn't undo a Delete action. The
+	// import modal calls unmarkDeleted() before addUserToken, so manual
+	// re-imports bypass this gate.
+	if (isDeletedAddress(token.address)) return;
+	const arr = _all[_currentKey] || [];
+	if (arr.find((t) => t.chainId === token.chainId && norm(t.address) === norm(token.address))) return;
+	const next = [...arr, { ...token, address: norm(token.address) }];
+	_all = { ..._all, [_currentKey]: next };
+	saveAll(_all);
+	emitActive();
+	emitAll();
+}
+
 export function updateUserToken(address: string, chainId: number, patch: Partial<UserToken>) {
+	if (!_currentKey) return;
 	const addr = norm(address);
-	userTokens.update((arr) =>
-		arr.map((t) =>
-			t.chainId === chainId && norm(t.address) === addr
-				? { ...t, ...patch, address: norm(patch.address ?? t.address) }
-				: t
-		)
+	const arr = _all[_currentKey] || [];
+	const next = arr.map((t) =>
+		t.chainId === chainId && norm(t.address) === addr
+			? { ...t, ...patch, address: norm(patch.address ?? t.address) }
+			: t
 	);
+	_all = { ..._all, [_currentKey]: next };
+	saveAll(_all);
+	emitActive();
+	emitAll();
 }
 
 export function removeUserToken(address: string, chainId: number) {
+	if (!_currentKey) return;
 	const addr = norm(address);
-	userTokens.update((arr) => arr.filter((t) => !(t.chainId === chainId && norm(t.address) === addr)));
+	const arr = _all[_currentKey] || [];
+	const next = arr.filter((t) => !(t.chainId === chainId && norm(t.address) === addr));
+	_all = { ..._all, [_currentKey]: next };
+	saveAll(_all);
+	emitActive();
+	emitAll();
 }
 
 export function getUserTokensForChain(chainId: number): Readable<UserToken[]> {
 	return derived(userTokens, ($t) => $t.filter((t) => t.chainId === chainId));
 }
 
-/** Re-read the store from localStorage. Used after a cross-device
- *  preferences restore has written fresh values to storage. */
 export function hydrateUserTokens() {
 	if (typeof window === 'undefined') return;
-	userTokens.set(loadUserTokens());
+	_all = loadAll();
+	emitActive();
+	emitAll();
 }
 
-/** Serialize the current value for server-side preferences persistence. */
-export function serializeUserTokens(): UserToken[] {
-	let snapshot: UserToken[] = [];
-	userTokens.subscribe((v) => (snapshot = v))();
-	return snapshot;
+export function serializeUserTokensAll(): AllMap {
+	return _all;
+}
+
+export function applyUserTokensAll(m: AllMap) {
+	if (typeof window === 'undefined') return;
+	const out: AllMap = {};
+	for (const [k, v] of Object.entries(m || {})) out[k.toLowerCase()] = parseTokens(v);
+	_all = out;
+	saveAll(_all);
+	emitActive();
+	emitAll();
 }

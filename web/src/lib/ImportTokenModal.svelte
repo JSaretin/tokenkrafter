@@ -5,6 +5,7 @@
 	import { getKnownLogo, resolveTokenLogo } from './tokenLogo';
 	import { addUserToken, userTokens } from './userTokens';
 	import { hiddenAssets } from './hiddenAssets';
+	import { unmarkDeleted } from './deletedTokens';
 	import { pushPreferences } from './embeddedWallet';
 	import type { SupportedNetwork } from './structure';
 
@@ -139,6 +140,8 @@
 			const finalName = name.trim();
 			const finalDecimals = Number(decimals);
 			const logoUrl = getKnownLogo(finalSymbol) || (await resolveTokenLogo(addr, chainId).catch(() => ''));
+			// Manual re-import overrides any prior delete tombstone.
+			unmarkDeleted(lower);
 			addUserToken({
 				address: lower,
 				symbol: finalSymbol,

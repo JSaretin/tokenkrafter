@@ -749,13 +749,12 @@
 	});
 
 	// ── Long-press → action sheet ──
-	// Press-and-hold on a token row for LONG_PRESS_MS opens RowActionSheet
-	// (Hide / Delete / Cancel). A red progress bar fills under the row during
-	// the hold. Any movement >LONG_PRESS_TOL_PX cancels so scroll-drags don't
-	// trigger the sheet.
+	// Press-and-hold a token row for LONG_PRESS_MS opens RowActionSheet
+	// (Hide / Delete / Cancel). Movement >LONG_PRESS_TOL_PX cancels so
+	// scroll-drags don't trigger the sheet. No on-row progress UI — the
+	// haptic + sheet appearance is the feedback.
 	const LONG_PRESS_MS = 500;
 	const LONG_PRESS_TOL_PX = 8;
-	let longPressKey = $state<string | null>(null);
 	let _lpTimer: ReturnType<typeof setTimeout> | null = null;
 	let _lpStart: { x: number; y: number } | null = null;
 	let _lpToken: { address: string; symbol: string; name: string; logoUrl?: string } | null = null;
@@ -765,19 +764,16 @@
 
 	function _lpClear() {
 		if (_lpTimer) { clearTimeout(_lpTimer); _lpTimer = null; }
-		longPressKey = null;
 		_lpStart = null;
 	}
 
-	function lpStart(rowKey: string, tok: { address: string; symbol: string; name: string; logoUrl?: string }, e: PointerEvent) {
+	function lpStart(_rowKey: string, tok: { address: string; symbol: string; name: string; logoUrl?: string }, e: PointerEvent) {
 		if (e.button && e.button !== 0) return;
 		_lpClear();
-		longPressKey = rowKey;
 		_lpToken = tok;
 		_lpStart = { x: e.clientX, y: e.clientY };
 		_lpTimer = setTimeout(() => {
 			_lpTimer = null;
-			longPressKey = null;
 			try { (navigator as any).vibrate?.(15); } catch {}
 			rowSheetToken = _lpToken;
 			showRowSheet = true;
@@ -1196,14 +1192,12 @@
 					{@const isCompact = compactRows.has(rowKey)}
 					<div
 						class="ap-row group relative flex items-center gap-3 py-3 px-4 transition-colors duration-100 hover:bg-(--bg-surface)"
-						class:ap-pressing={longPressKey === rowKey}
 						onpointerdown={(e) => lpStart(rowKey, { address: tok.address, symbol: tok.symbol, name: tok.name, logoUrl: tok.logoUrl }, e)}
 						onpointermove={lpMove}
 						onpointerup={lpEnd}
 						onpointercancel={lpEnd}
 						onpointerleave={lpEnd}
 					>
-						{#if longPressKey === rowKey}<span class="ap-press-fill" aria-hidden="true"></span>{/if}
 						{#if logo}
 							<img src={logo} alt={tok.symbol} class="w-10 h-10 rounded-full object-cover shrink-0 border border-(--border)" />
 						{:else}
@@ -1228,14 +1222,12 @@
 					{@const isCompact = compactRows.has(rowKey)}
 					<div
 						class="ap-row group relative flex items-center gap-3 py-3 px-4 transition-colors duration-100 hover:bg-(--bg-surface)"
-						class:ap-pressing={longPressKey === rowKey}
 						onpointerdown={(e) => lpStart(rowKey, { address: tok.address, symbol: tok.symbol, name: tok.name, logoUrl: (tok as any).logoUrl }, e)}
 						onpointermove={lpMove}
 						onpointerup={lpEnd}
 						onpointercancel={lpEnd}
 						onpointerleave={lpEnd}
 					>
-						{#if longPressKey === rowKey}<span class="ap-press-fill" aria-hidden="true"></span>{/if}
 					{#if logo}
 						<img src={logo} alt={tok.symbol} class="w-10 h-10 rounded-full object-cover shrink-0 border border-(--border)" />
 					{:else}
@@ -1881,9 +1873,9 @@
 	.ap-row-right:hover { background: var(--bg-surface-input); }
 	.ap-row-right:active { background: var(--bg-surface-hover); }
 
-	/* Long-press feedback: red bar fills left→right under the row over the
-	   hold duration. Bar reaches full width when the action sheet opens.
-	   -webkit-touch-callout suppresses iOS's long-press text-selection menu. */
+	/* Long-press disables iOS's text-selection callout + native selection
+	   so a held row triggers the sheet instead of selecting text. No
+	   on-row progress UI — the haptic + sheet pop is the feedback. */
 	.ap-row {
 		user-select: none;
 		-webkit-user-select: none;
@@ -1891,18 +1883,6 @@
 		touch-action: pan-y;
 	}
 	.ap-row, .ap-row * { -webkit-user-select: none; user-select: none; }
-	.ap-row.ap-pressing { background: rgba(248, 113, 113, 0.05); }
-	.ap-press-fill {
-		position: absolute; left: 0; bottom: 0;
-		height: 2px; width: 100%; background: linear-gradient(90deg, #f87171, #fca5a5);
-		transform-origin: left center; transform: scaleX(0);
-		animation: apPressFill 500ms linear forwards;
-		pointer-events: none;
-	}
-	@keyframes apPressFill {
-		from { transform: scaleX(0); }
-		to { transform: scaleX(1); }
-	}
 
 	/* Shared inputs/buttons */
 	.ap-input {

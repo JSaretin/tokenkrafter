@@ -17,6 +17,7 @@
 	import WalletModal from '$lib/WalletModal.svelte';
 	import AccountPanel from '$lib/AccountPanel.svelte';
 	import { getSigner as getEmbeddedSigner, signOut, lockWallet, getWalletState, checkAuthReturn, hasVault, autoReconnect, onWalletStateChange, pushPreferences } from '$lib/embeddedWallet';
+	import { setActiveAccountKey } from '$lib/activeAccount';
 	import { startBalancePoller, stopBalancePoller, updatePollerAddress, balanceState, refreshBalancesNow, setWsManager, onTokenDiscovered } from '$lib/balancePoller';
 	import { createWsProviderManager, type WsProviderManager } from '$lib/wsProvider';
 	import { ROUTER_ABI_LITE } from '$lib/commonABIs';
@@ -86,6 +87,15 @@
 	let provider: ethers.BrowserProvider | null = $state(null);
 	let signer: ethers.Signer | null = $state(null);
 	let userAddress: string | null = $state(null);
+
+	// Drive the per-account preference scope. hiddenAssets, hideDust and
+	// userTokens stores subscribe to activeAccountKey and re-emit the
+	// active account's slice on every change. This is what makes "import
+	// per account" work: switching account swaps the visible imported
+	// list, so a fresh account no longer sees imports from another.
+	$effect(() => {
+		setActiveAccountKey(userAddress || '');
+	});
 	let mobileMenuOpen = $state(false);
 	let mobileMenuEl: HTMLElement | undefined = $state(undefined);
 	let hamburgerEl: HTMLElement | undefined = $state(undefined);
