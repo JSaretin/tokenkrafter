@@ -130,9 +130,6 @@
 	let avatarPickerFor = $state<{ walletId: string; index: number } | null>(null);
 	const AVATAR_OPTIONS = ['🦊', '🦄', '🐳', '🚀', '⚡', '🔥', '💎', '🌙', '🪐', '🎯', '🦁', '🐺'];
 
-	// Per-wallet cog menu (single popover — only one open at a time).
-	let menuForWallet = $state<string | null>(null);
-
 	// ── Long-press → action sheet (wallet + account) ──
 	// Replaces the inline rename/cog/export icons with a single press-and-hold
 	// gesture. Sheet content is built per-row when the timer fires so the
@@ -141,6 +138,8 @@
 	const LONG_PRESS_TOL_PX = 8;
 	let _lpTimer: ReturnType<typeof setTimeout> | null = null;
 	let _lpStart: { x: number; y: number } | null = null;
+	// Press-feedback key: drives a 0.97x scale on the held row.
+	let pressingKey = $state<string | null>(null);
 
 	let walletSheetOpen = $state(false);
 	let walletSheetTarget = $state<{ id: string; name: string; isPrimary: boolean; isImported: boolean; isActive: boolean } | null>(null);
@@ -151,6 +150,7 @@
 	function _lpClear() {
 		if (_lpTimer) { clearTimeout(_lpTimer); _lpTimer = null; }
 		_lpStart = null;
+		pressingKey = null;
 	}
 
 	function lpMove(e: PointerEvent) {
@@ -187,8 +187,10 @@
 		if (e.button && e.button !== 0) return;
 		_lpClear();
 		_lpStart = { x: e.clientX, y: e.clientY };
+		pressingKey = `w:${w.id}`;
 		_lpTimer = setTimeout(() => {
 			_lpTimer = null;
+			pressingKey = null;
 			try { (navigator as any).vibrate?.(15); } catch {}
 			openWalletSheet(w);
 		}, LONG_PRESS_MS);
@@ -198,8 +200,10 @@
 		if (e.button && e.button !== 0) return;
 		_lpClear();
 		_lpStart = { x: e.clientX, y: e.clientY };
+		pressingKey = `a:${walletId}:${acc.index}`;
 		_lpTimer = setTimeout(() => {
 			_lpTimer = null;
+			pressingKey = null;
 			try { (navigator as any).vibrate?.(15); } catch {}
 			openAccountSheet(walletId, acc);
 		}, LONG_PRESS_MS);
@@ -699,6 +703,7 @@
 						     gesture; chevron stays for expand/collapse. -->
 						<div
 							class="ws-wallet-row"
+							class:ws-pressing={pressingKey === `w:${w.id}`}
 							onpointerdown={(e) => lpStartWallet(w, e)}
 							onpointermove={lpMove}
 							onpointerup={lpEnd}
@@ -764,6 +769,7 @@
 
 									<div
 										class="ws-acct-row"
+										class:ws-pressing={pressingKey === `a:${w.id}:${acc.index}`}
 										onpointerdown={(e) => { if (!isRenamingAcct) lpStartAccount(w.id, acc, e); }}
 										onpointermove={lpMove}
 										onpointerup={lpEnd}
@@ -979,67 +985,6 @@
 				</div>
 			{/if}
 
-			<!-- Wallet settings action sheet — single instance, centered in
-			     the switcher. Renders outside the scrollable list so it
-			     can't be clipped. -->
-			{#if menuForWallet}
-				{@const menuWallet = wallets.find((w) => w.id === menuForWallet)}
-				{#if menuWallet}
-					{@const menuIsActive = menuWallet.id === activeWalletId}
-					<!-- svelte-ignore a11y_click_events_have_key_events -->
-					<!-- svelte-ignore a11y_no_static_element_interactions -->
-					<div class="ws-sheet-backdrop" onclick={() => (menuForWallet = null)}>
-						<div class="ws-sheet-menu" onclick={(e) => e.stopPropagation()}>
-							<div class="ws-sheet-menu-title">{menuWallet.name}</div>
-							{#if menuIsActive}
-								<button class="ws-menu-item" onclick={() => { menuForWallet = null; onExportSeed(); close(); }}>
-									<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h16M4 4h16M6 8h12v8H6z"/></svg>
-									{$t('switcher.exportRecoveryPhrase')}
-								</button>
-								<button class="ws-menu-item" onclick={() => { menuForWallet = null; resetAddForm(); addMode = 'change-pin'; collapseAllWallets(); }}>
-									<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-									{$t('switcher.changePin')}
-									<span class="ws-menu-sub">{$t('switcher.reEncryptsAll')}</span>
-								</button>
-								<button class="ws-menu-item" onclick={() => { menuForWallet = null; lockWallet(); onLock(); close(); }}>
-									<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-									{$t('switcher.lockNow')}
-								</button>
-							{/if}
-							{#if !menuWallet.isPrimary}
-								{#if menuIsActive}<div class="ws-menu-divider"></div>{/if}
-								<button class="ws-menu-item" onclick={() => { const id = menuWallet.id; menuForWallet = null; handleSetPrimary(id); }}>
-									<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-									{$t('switcher.setPrimary')}
-								</button>
-							{/if}
-							{#if menuIsActive}
-								<div class="ws-menu-divider"></div>
-								<!-- Collapse every wallet (explicit false so the auto-expand
-								     effect doesn't re-open the active one) so the create
-								     /import form has the full sheet height and focus
-								     lands on the input. -->
-								<button class="ws-menu-item" onclick={() => { menuForWallet = null; resetAddForm(); addMode = 'create'; newName = `Wallet ${wallets.length + 1}`; collapseAllWallets(); }}>
-									<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-									{$t('switcher.newWallet')}
-								</button>
-								<button class="ws-menu-item" onclick={() => { menuForWallet = null; resetAddForm(); addMode = 'import'; newName = `Imported ${wallets.length + 1}`; collapseAllWallets(); }}>
-									<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-									{$t('switcher.importWalletMenu')}
-								</button>
-							{/if}
-							{#if wallets.length > 1 && !menuWallet.isPrimary}
-								<div class="ws-menu-divider"></div>
-								<button class="ws-menu-item ws-menu-item-danger" onclick={() => { const id = menuWallet.id; menuForWallet = null; confirmDelete(id); }}>
-									<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-								{$t('switcher.deleteWallet')}
-							</button>
-							{/if}
-						</div>
-					</div>
-				{/if}
-			{/if}
-
 			<!-- Avatar picker overlay -->
 			{#if avatarPickerFor}
 				<!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -1153,7 +1098,11 @@
 
 	.ws-wallet-row {
 		display: flex; align-items: center; gap: 6px; padding: 8px 8px 8px 4px;
+		transition: transform 0.18s ease;
 	}
+	.ws-wallet-row.ws-pressing,
+	.ws-acct-row.ws-pressing { transform: scale(0.97); }
+	.ws-acct-row { transition: transform 0.18s ease; }
 	.ws-wallet-toggle {
 		width: 22px; height: 22px; border: none; border-radius: 6px;
 		background: transparent; color: var(--text-dim); cursor: pointer;

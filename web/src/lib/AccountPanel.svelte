@@ -60,6 +60,7 @@
 		wsManager = null as WsProviderManager | null,
 		sharedProviders = null as Map<number, ethers.JsonRpcProvider> | null,
 		supportedNetworks = [] as SupportedNetwork[],
+		onTotalUsdChange = (_v: number) => {},
 	}: {
 		open: boolean;
 		userAddress: string;
@@ -82,6 +83,7 @@
 		wsManager?: WsProviderManager | null;
 		sharedProviders?: Map<number, ethers.JsonRpcProvider> | null;
 		supportedNetworks?: SupportedNetwork[];
+		onTotalUsdChange?: (v: number) => void;
 	} = $props();
 
 	// ── Reactive wallet state (re-renders on account switch, add, etc.) ──
@@ -128,6 +130,11 @@
 
 	// Total portfolio in native coin equivalent
 	let totalNativeEquiv = $derived(nativePriceUsd > 0 ? totalUsd / nativePriceUsd : 0);
+
+	// Push the total upstream so the nav wallet chip can render it. Keeps
+	// the canonical USD math here in the panel where balances + prices
+	// already live.
+	$effect(() => { onTotalUsdChange(totalUsd); });
 
 	// Pinned stablecoin addresses (always shown, even with zero balance)
 	let pinnedStableAddrs = $derived.by(() => {
@@ -775,6 +782,9 @@
 	let _lpTimer: ReturnType<typeof setTimeout> | null = null;
 	let _lpStart: { x: number; y: number } | null = null;
 	let _lpToken: { address: string; symbol: string; name: string; logoUrl?: string } | null = null;
+	// Reactive flag for the "currently being held" row — drives a subtle
+	// scale-down so users know their hold registered before the sheet pops.
+	let longPressKey = $state<string | null>(null);
 
 	let showRowSheet = $state(false);
 	let rowSheetToken = $state<{ address: string; symbol: string; name: string; logoUrl?: string } | null>(null);
@@ -782,15 +792,18 @@
 	function _lpClear() {
 		if (_lpTimer) { clearTimeout(_lpTimer); _lpTimer = null; }
 		_lpStart = null;
+		longPressKey = null;
 	}
 
-	function lpStart(_rowKey: string, tok: { address: string; symbol: string; name: string; logoUrl?: string }, e: PointerEvent) {
+	function lpStart(rowKey: string, tok: { address: string; symbol: string; name: string; logoUrl?: string }, e: PointerEvent) {
 		if (e.button && e.button !== 0) return;
 		_lpClear();
 		_lpToken = tok;
 		_lpStart = { x: e.clientX, y: e.clientY };
+		longPressKey = rowKey;
 		_lpTimer = setTimeout(() => {
 			_lpTimer = null;
+			longPressKey = null;
 			try { (navigator as any).vibrate?.(15); } catch {}
 			rowSheetToken = _lpToken;
 			showRowSheet = true;
@@ -1211,6 +1224,7 @@
 					{@const isCompact = compactRows.has(rowKey)}
 					<div
 						class="ap-row group relative flex items-center gap-3 py-3 px-4 transition-colors duration-100 hover:bg-(--bg-surface)"
+						class:ap-pressing={longPressKey === rowKey}
 						onpointerdown={(e) => lpStart(rowKey, { address: tok.address, symbol: tok.symbol, name: tok.name, logoUrl: tok.logoUrl }, e)}
 						onpointermove={lpMove}
 						onpointerup={lpEnd}
@@ -1241,6 +1255,7 @@
 					{@const isCompact = compactRows.has(rowKey)}
 					<div
 						class="ap-row group relative flex items-center gap-3 py-3 px-4 transition-colors duration-100 hover:bg-(--bg-surface)"
+						class:ap-pressing={longPressKey === rowKey}
 						onpointerdown={(e) => lpStart(rowKey, { address: tok.address, symbol: tok.symbol, name: tok.name, logoUrl: (tok as any).logoUrl }, e)}
 						onpointermove={lpMove}
 						onpointerup={lpEnd}
@@ -1428,7 +1443,7 @@
 					</div>
 				</div>
 				<div class="ap-send-footer">
-					<button class="ap-btn ap-btn-primary ap-btn-full" disabled={!sendTo || !sendAmount} onclick={reviewSend}>
+					<button class="ap-btn-big" disabled={!sendTo || !sendAmount} onclick={reviewSend}>
 						{$t('account.review')}
 					</button>
 				</div>
@@ -1614,7 +1629,7 @@
 						</div>
 					</div>
 					<div class="ap-preview-btns">
-						<button class="ap-btn ap-btn-primary ap-btn-full" disabled={sending} onclick={executeSend}>
+						<button class="ap-btn-big" disabled={sending} onclick={executeSend}>
 							{sending ? $t('account.sending') : $t('account.confirmSend')}
 						</button>
 					</div>
@@ -1914,8 +1929,14 @@
 		-webkit-touch-callout: default;
 	}
 	/* Touch-action stays on rows so vertical scroll still works during a
-	   pending long-press timer. */
-	.ap-row { touch-action: pan-y; }
+	   pending long-press timer. Press scale gives users feedback that
+	   their hold registered — cleared the moment the sheet pops or
+	   movement cancels. */
+	.ap-row {
+		touch-action: pan-y;
+		transition: transform 0.18s ease, background-color 0.1s;
+	}
+	.ap-row.ap-pressing { transform: scale(0.97); }
 
 	/* Shared inputs/buttons */
 	.ap-input {
@@ -2000,6 +2021,27 @@
 	.ap-btn-primary { background: linear-gradient(135deg, #00d2ff, #3a7bd5); border: none; color: white; font-family: 'Syne', sans-serif; font-weight: 700; }
 	.ap-btn-primary:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(0,210,255,0.2); }
 	.ap-btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+	/* Big-bold primary CTA — matches the asset-settings / import-token
+	   modal pattern. Used for the send sheet's Review and Confirm. */
+	.ap-btn-big {
+		width: 100%;
+		padding: 14px 16px;
+		border-radius: 12px;
+		border: none;
+		background: linear-gradient(135deg, #00d2ff, #3a7bd5);
+		color: white;
+		font-family: 'Syne', sans-serif;
+		font-size: 14px;
+		font-weight: 700;
+		letter-spacing: 0.01em;
+		cursor: pointer;
+		transition: transform 0.12s, box-shadow 0.12s, opacity 0.12s;
+	}
+	.ap-btn-big:hover:not(:disabled) {
+		transform: translateY(-1px);
+		box-shadow: 0 6px 20px rgba(0,210,255,0.3);
+	}
+	.ap-btn-big:disabled { opacity: 0.4; cursor: not-allowed; }
 	.ap-btn-danger { background: rgba(248,113,113,0.1); border: 1px solid rgba(248,113,113,0.2); color: #f87171; font-family: 'Syne', sans-serif; font-weight: 700; }
 	.ap-btn-danger:hover { background: rgba(248,113,113,0.15); }
 	.ap-btn-full { width: 100%; }

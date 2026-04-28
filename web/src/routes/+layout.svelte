@@ -44,6 +44,9 @@
 	let walletModalRef: WalletModal | undefined = $state();
 	let nativeBalance = $state(0n);
 	let nativePriceUsd = $state(0);
+	// Pushed up from AccountPanel so the nav chip can show portfolio USD
+	// next to the truncated address (at-a-glance balance check).
+	let walletTotalUsd = $state(0);
 	let walletType: 'embedded' | 'external' | null = $state(null);
 
 	// Networks loaded from DB (admin-managed)
@@ -844,14 +847,17 @@
 				{#if authChecking || walletLoading || oauthPending}
 					<div class="wallet-btn wallet-skeleton" aria-label="Checking session" aria-busy="true"><span class="skeleton-bar"></span></div>
 				{:else if userAddress}
-					<button class="wallet-btn" onclick={() => {
+					<button class="wallet-btn wallet-btn-with-usd" onclick={() => {
 						if (walletType === 'external') { const kit = getAppKit(); if (kit) kit.open(); }
 						else if (walletType === 'embedded' && !signer && walletModalRef) { walletModalRef.openAt('pin-enter'); }
 						else if (walletType === 'embedded') { showAccountPanel = true; }
 						else { showWalletModal = true; }
 					}}>
 						<span class="wallet-dot" class:wallet-dot-locked={walletType === 'embedded' && !signer}></span>
-						{userAddress.slice(0, 6)}...{userAddress.slice(-4)}
+						<span class="wallet-addr">{userAddress.slice(0, 6)}...{userAddress.slice(-4)}</span>
+						{#if walletTotalUsd > 0}
+							<span class="wallet-usd">${walletTotalUsd >= 1000 ? walletTotalUsd.toFixed(0) : walletTotalUsd.toFixed(2)}</span>
+						{/if}
 					</button>
 				{:else}
 					<button class="wallet-btn wallet-btn-connect" onclick={() => showWalletModal = true}>
@@ -1085,6 +1091,7 @@
 	{wsManager}
 	sharedProviders={networkProviders}
 	{supportedNetworks}
+	onTotalUsdChange={(v) => (walletTotalUsd = v)}
 	tokens={[]}
 	onDisconnect={disconnectWallet}
 	onAddFeedback={addFeedback}
@@ -1238,6 +1245,20 @@
 	}
 	.wallet-btn-connect:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(8,145,178,0.4); background: linear-gradient(135deg, #0e7490, #1e40af); }
 	.wallet-btn-sm { font-size: 11px; padding: 5px 10px; }
+	/* Address + USD pill — separator pipe between the two for visual rhythm. */
+	.wallet-btn-with-usd { gap: 8px; }
+	.wallet-addr { font-family: 'Space Mono', monospace; }
+	.wallet-usd {
+		padding-left: 8px;
+		border-left: 1px solid var(--border-subtle, rgba(255,255,255,0.08));
+		font-family: 'Rajdhani', sans-serif;
+		font-weight: 700;
+		font-variant-numeric: tabular-nums;
+		color: #10b981;
+	}
+	@media (max-width: 480px) {
+		.wallet-usd { display: none; }
+	}
 	.show-mobile { display: none; }
 	@media (max-width: 640px) { .hide-mobile { display: none; } .show-mobile { display: inline; } }
 	.wallet-skeleton { width: 100px; cursor: default; }
