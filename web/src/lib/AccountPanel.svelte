@@ -415,8 +415,25 @@
 	// tokens to show + their metadata; balances/prices are runtime state.
 	let importedTokens = $state<{ address: string; symbol: string; name: string; balance: bigint; decimals: number; priceUsd?: number; logoUrl?: string }[]>([]);
 
+	// On account switch, drop the runtime balance/price mirror. The
+	// reconciler keys by token address, so without this reset USDT/USDC
+	// rows on a freshly-switched-to account inherit the prior account's
+	// balance until refreshTokenBalances finishes — exactly the "new
+	// account shows tokens it doesn't own" bug.
+	let _mirrorAddr = '';
+	$effect(() => {
+		if (userAddress !== _mirrorAddr) {
+			_mirrorAddr = userAddress;
+			importedTokens = [];
+			autoImportDone = '';
+			nativeBalance = 0n;
+			nativePriceUsd = 0;
+		}
+	});
+
 	// Reconcile local mirror with the shared store whenever the store changes.
-	// Preserves existing balance/price for tokens already in the mirror.
+	// Preserves existing balance/price for tokens already in the mirror —
+	// reset above on userAddress change handles cross-account safety.
 	$effect(() => {
 		const chainList = $userTokens.filter(t => t.chainId === chainId);
 		const byAddr = new Map(importedTokens.map(t => [t.address.toLowerCase(), t]));
@@ -843,7 +860,9 @@
 	async function reviewSend() {
 		if (!ethers.isAddress(sendTo)) { onAddFeedback({ message: 'Invalid recipient address', type: 'error' }); return; }
 		const amt = parseFloat(sendAmount);
-		if (isNaN(amt) || amt <= 0) { onAddFeedback({ message: 'Invalid amount', type: 'error' }); return; }
+		// Allow 0 — useful for "ping" txs (e.g. activating an account, calling
+		// a contract with no value) and matches Trust Wallet behaviour.
+		if (isNaN(amt) || amt < 0) { onAddFeedback({ message: 'Invalid amount', type: 'error' }); return; }
 
 		sendStep = 'preview';
 		sendFeeEst = '';
@@ -1603,25 +1622,30 @@
 			</div>
 		{/if}
 	{/if}
+
+	<!-- All in-panel modals render as absolute overlays inside .ap so they
+	     stay visually contained to the wallet (Trust Wallet feel) and
+	     inherit the panel's user-select: none. Mounting at body-level
+	     made them feel like full-site dialogs and bypassed the wallet's
+	     no-select rule. -->
+	<AssetSettingsModal
+		bind:open={showImport}
+		networks={supportedNetworks}
+		defaultChainId={chainId}
+		{walletType}
+		{sharedProviders}
+		hiddenTokens={hiddenRows}
+		onFeedback={onAddFeedback}
+	/>
+
+	<RowActionSheet
+		bind:open={showRowSheet}
+		token={rowSheetToken}
+		{chainId}
+		{walletType}
+		onFeedback={onAddFeedback}
+	/>
 </div>
-
-<AssetSettingsModal
-	bind:open={showImport}
-	networks={supportedNetworks}
-	defaultChainId={chainId}
-	{walletType}
-	{sharedProviders}
-	hiddenTokens={hiddenRows}
-	onFeedback={onAddFeedback}
-/>
-
-<RowActionSheet
-	bind:open={showRowSheet}
-	token={rowSheetToken}
-	{chainId}
-	{walletType}
-	onFeedback={onAddFeedback}
-/>
 {/if}
 
 <style>

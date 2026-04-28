@@ -67,17 +67,18 @@
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
-		class="fixed inset-0 z-[10002] bg-black/65 backdrop-blur-[3px] flex items-center justify-center p-4 max-[639px]:items-end max-[639px]:p-0"
+		class="ras-root absolute inset-0 z-30 bg-black/65 backdrop-blur-[3px] flex items-end justify-center"
 		onclick={close}
 		role="dialog"
 		aria-modal="true"
 		tabindex="-1"
 		transition:fade={{ duration: 120 }}
+		style="border-radius: inherit;"
 	>
 		<div
-			class="w-full max-w-[380px] max-h-[80vh] bg-(--bg) border border-(--border) rounded-2xl overflow-hidden flex flex-col max-[639px]:max-w-full max-[639px]:rounded-t-2xl max-[639px]:rounded-b-none max-[639px]:h-[80vh] max-[639px]:max-h-[80vh]"
+			class="w-full h-[80vh] max-h-[80%] bg-(--bg) border-t border-(--border) rounded-t-2xl overflow-hidden flex flex-col"
 			onclick={(e) => e.stopPropagation()}
-			transition:fly={{ y: 24, duration: 200 }}
+			transition:fly={{ y: 400, duration: 220 }}
 		>
 			<!-- Token header -->
 			<div class="flex items-center gap-3 px-4 py-3.5 border-b border-(--border)">

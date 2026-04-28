@@ -292,10 +292,63 @@ export function getSessionInfo(): SessionInfo {
 
 // ── Sign out ───────────────────────────────────────────────────────────
 
+/**
+ * Nuke every wallet-related artifact from localStorage on this device.
+ * Called from signOut so "Disconnect" really means "leave no trace" —
+ * imported wallets, vault, session cache, per-account preferences,
+ * cached balances. The server still has the user's account, so signing
+ * back in restores from server-side prefs sync.
+ */
+function wipeWalletDevice() {
+	if (typeof window === 'undefined') return;
+	try {
+		// Per-wallet account-meta entries (account_meta_<wid>) — collect
+		// before reset because _reset() clears _state.wallets.
+		for (const w of _state.wallets) {
+			try { localStorage.removeItem(_accountMetaKey(w.id)); } catch {}
+		}
+		const exact = [
+			SESSION_KEY,
+			SESSION_POLICY_KEY,
+			'account_names',
+			'hidden_assets', 'hide_dust', 'user_imported_tokens',
+			'imported_tokens', 'importedTokens',
+			'hidden_assets_by_account',
+			'hide_dust_by_account',
+			'user_imported_tokens_by_account',
+			'deleted_tokens_by_account',
+		];
+		for (const k of exact) {
+			try { localStorage.removeItem(k); } catch {}
+		}
+		// Prefix sweep: wallet caches (wc_<addr>) + any account_meta_*
+		// orphans we may have missed because the wallet list was already
+		// reset earlier in the flow.
+		const prefixes = ['wc_', 'account_meta_'];
+		const toRemove: string[] = [];
+		for (let i = 0; i < localStorage.length; i++) {
+			const k = localStorage.key(i);
+			if (!k) continue;
+			if (prefixes.some((p) => k.startsWith(p))) toRemove.push(k);
+		}
+		for (const k of toRemove) {
+			try { localStorage.removeItem(k); } catch {}
+		}
+	} catch {}
+}
+
 export async function signOut(): Promise<void> {
 	clearCachedPin();
 	await supabase.auth.signOut();
+	wipeWalletDevice();
 	_reset();
+	// Rehydrate per-account stores so any stale subscribers see empty state.
+	try {
+		import('./userTokens').then((m) => m.hydrateUserTokens()).catch(() => {});
+		import('./hiddenAssets').then((m) => m.hydrateHiddenAssets()).catch(() => {});
+		import('./hideDust').then((m) => m.hydrateHideDust()).catch(() => {});
+		import('./deletedTokens').then((m) => m.hydrateDeletedTokens()).catch(() => {});
+	} catch {}
 }
 
 // ── API helpers ────────────────────────────────────────────────────────
