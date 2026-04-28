@@ -10,6 +10,7 @@
 	} from './embeddedWallet';
 	import { friendlyError } from './errorDecoder';
 	import { t } from '$lib/i18n';
+	import { hasPasskey, unlockWithPasskey, isPasskeySupported } from './passkey';
 
 	let {
 		open = $bindable(false),
@@ -168,11 +169,35 @@
 
 	async function handleUnlock() {
 		if (!pin) { error = $t('wallet.enterYourPin'); return; }
+		await runUnlock(pin);
+	}
 
+	async function handlePasskeyUnlock() {
+		const userId = getWalletState().userId;
+		if (!userId) { error = 'Sign in first'; return; }
+		error = '';
+		loading = true;
+		const r = await unlockWithPasskey(userId);
+		if (!r.ok) {
+			error = r.reason;
+			loading = false;
+			return;
+		}
+		await runUnlock(r.pin);
+	}
+
+	// Recomputed reactively so the button appears as soon as we know the
+	// user id (after google-loading resolves).
+	let passkeyAvail = $derived.by(() => {
+		const uid = getWalletState().userId;
+		return !!uid && isPasskeySupported() && hasPasskey(uid);
+	});
+
+	async function runUnlock(pinValue: string) {
 		error = '';
 		loading = true;
 		try {
-			const ok = await unlockWallet(pin);
+			const ok = await unlockWallet(pinValue);
 			if (!ok) {
 				error = $t('wallet.wrongPin');
 				loading = false;
@@ -391,6 +416,16 @@
 			{:else if step === 'pin-enter'}
 				<h2 class="heading-2">{$t('wallet.unlockWallet')}</h2>
 				<p class="text-xs text-dim font-mono m-0 leading-[1.5]">{$t('wallet.enterPinToUnlock')}</p>
+
+				{#if passkeyAvail}
+					<button class="flex items-center justify-center gap-2 w-full p-3 rounded-[10px] border border-cyan-500/25 bg-cyan-500/[0.05] text-brand-cyan font-display font-bold text-sm cursor-pointer transition hover:bg-cyan-500/[0.1] hover:border-cyan-500/40 disabled:opacity-50 disabled:cursor-not-allowed" onclick={handlePasskeyUnlock} disabled={loading}>
+						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+						Unlock with passkey
+					</button>
+					<div class="flex items-center gap-2 text-3xs text-dim font-mono">
+						<span class="flex-1 h-px bg-line"></span>or use PIN<span class="flex-1 h-px bg-line"></span>
+					</div>
+				{/if}
 
 				<input class="w-full px-3.5 py-3 rounded-[10px] bg-surface-input border border-line text-heading font-mono text-base outline-none transition-[border-color] focus:border-cyan-500/40 placeholder:text-dim [-webkit-text-security:disc] [text-security:disc]" type="tel" inputmode="numeric" autocomplete="one-time-code" data-lpignore="true" data-1p-ignore="true" placeholder={$t('wallet.pinPlaceholder')} bind:value={pin} maxlength="8"
 					onkeydown={(e) => { if (e.key === 'Enter') handleUnlock(); }} />

@@ -37,6 +37,7 @@
 	import AssetSettingsModal from './AssetSettingsModal.svelte';
 	import RowActionSheet from './RowActionSheet.svelte';
 	import type { SupportedNetwork } from './structure';
+	import { hasPasskey, isPasskeySupported, setupPasskey, disablePasskey } from './passkey';
 
 	let {
 		open = $bindable(false),
@@ -279,6 +280,51 @@
 	let exportPin = $state('');
 	let exportedValue = $state('');
 	let exportError = $state('');
+
+	// Passkey enable/disable. Reactive to walletState so the toggle reflects
+	// the freshest registration status (e.g. after an enable round trip).
+	let passkeyEnabled = $derived.by(() => {
+		const uid = walletState?.userId;
+		return !!uid && hasPasskey(uid);
+	});
+	let passkeyPin = $state('');
+	let passkeyEnabling = $state(false);
+	let passkeyError = $state('');
+	let passkeyShowPin = $state(false);
+
+	async function enablePasskey() {
+		passkeyError = '';
+		const uid = walletState?.userId;
+		const email = walletState?.email || 'wallet@tokenkrafter.com';
+		if (!uid) { passkeyError = 'No active session'; return; }
+		if (!passkeyPin) { passkeyError = 'Enter your PIN to confirm'; return; }
+		if (!(await unlockWallet(passkeyPin))) {
+			passkeyError = 'Wrong PIN';
+			return;
+		}
+		passkeyEnabling = true;
+		const r = await setupPasskey({
+			userId: uid,
+			userEmail: email,
+			displayName: email.split('@')[0] || 'TokenKrafter user',
+			pin: passkeyPin,
+		});
+		passkeyEnabling = false;
+		if (!r.ok) {
+			passkeyError = r.reason;
+			return;
+		}
+		passkeyPin = '';
+		passkeyShowPin = false;
+		onAddFeedback({ message: 'Passkey enabled — unlock with FaceID/TouchID next time', type: 'success' });
+	}
+
+	function disablePasskeyForUser() {
+		const uid = walletState?.userId;
+		if (!uid) return;
+		disablePasskey(uid);
+		onAddFeedback({ message: 'Passkey disabled', type: 'success' });
+	}
 
 	// Send
 	let sendTo = $state('');
@@ -1311,6 +1357,38 @@
 				<svg class="shrink-0 mt-0.5" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
 				<p class="m-0 text-3xs text-[#f59e0b] font-mono leading-[1.5]">{$t('account.securityWarn')}</p>
 			</div>
+
+			<!-- Passkey unlock — opt-in. Encrypts the PIN locally with a key
+			     derived from the passkey's PRF output, so unlocking with
+			     FaceID/TouchID resolves to the cached PIN without typing.
+			     Server never sees the PRF output or the PIN. -->
+			{#if isPasskeySupported()}
+				<div class="p-3 rounded-[10px] border border-(--border-subtle) bg-(--bg-surface) flex flex-col gap-2.5">
+					<div class="flex items-center gap-2.5">
+						<svg class="shrink-0" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#00d2ff" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
+						<div class="flex-1 min-w-0">
+							<span class="block font-display text-13 font-bold text-(--text-heading) leading-[1.3]">Passkey unlock</span>
+							<span class="block font-mono text-3xs text-(--text-dim) mt-0.5">{passkeyEnabled ? 'Enabled — unlock with FaceID/TouchID' : 'Skip the PIN with biometrics on this device'}</span>
+						</div>
+						{#if passkeyEnabled}
+							<button class="px-2.5 py-1.5 rounded-md border border-[rgba(248,113,113,0.2)] bg-transparent text-[#f87171] font-mono text-3xs cursor-pointer transition hover:bg-[rgba(248,113,113,0.06)]" onclick={disablePasskeyForUser}>Disable</button>
+						{:else if !passkeyShowPin}
+							<button class="px-2.5 py-1.5 rounded-md border border-[rgba(0,210,255,0.25)] bg-[rgba(0,210,255,0.05)] text-[#00d2ff] font-mono text-3xs font-bold cursor-pointer transition hover:bg-[rgba(0,210,255,0.1)]" onclick={() => { passkeyShowPin = true; passkeyError = ''; }}>Enable</button>
+						{/if}
+					</div>
+					{#if passkeyShowPin && !passkeyEnabled}
+						<div class="flex flex-col gap-1.5">
+							<input class="ap-input" type="tel" inputmode="numeric" style="-webkit-text-security: disc; text-security: disc;" placeholder="Confirm with PIN" bind:value={passkeyPin} {...INPUT_ATTRS}
+								onkeydown={(e) => { if (e.key === 'Enter') enablePasskey(); }} />
+							{#if passkeyError}<p class="text-3xs text-[#f87171] font-mono m-0">{passkeyError}</p>{/if}
+							<div class="flex gap-1.5 justify-end">
+								<button class="ap-btn-s" onclick={() => { passkeyShowPin = false; passkeyPin = ''; passkeyError = ''; }}>Cancel</button>
+								<button class="ap-btn-s ap-btn-primary" disabled={passkeyEnabling || !passkeyPin} onclick={enablePasskey}>{passkeyEnabling ? 'Setting up…' : 'Confirm'}</button>
+							</div>
+						</div>
+					{/if}
+				</div>
+			{/if}
 			<button class="flex items-center gap-2.5 w-full px-4 py-3 border-none bg-transparent text-(--text-muted) cursor-pointer font-mono text-xs2 transition-all duration-100 text-left hover:bg-(--bg-surface) hover:text-(--text)" onclick={() => { resetExport(); view = 'export-key'; }}>
 				<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
 				<span>{$t('account.exportPrivateKey')}</span>
