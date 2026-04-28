@@ -119,7 +119,12 @@
 						</div>
 					</button>
 				{/if}
+			</div>
 
+			<!-- Sticky bottom Cancel — Trust Wallet pattern. Always reachable
+			     even when the action list scrolls; safe-area-inset-bottom keeps
+			     it clear of the home-indicator bar on iOS. -->
+			<div class="ras-footer">
 				<button type="button" class="ras-cancel" onclick={close}>Cancel</button>
 			</div>
 		</div>
@@ -165,15 +170,21 @@
 		font-size: 10px; color: var(--text-dim);
 		line-height: 1.4;
 	}
+	.ras-footer {
+		flex-shrink: 0;
+		padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+		border-top: 1px solid var(--border);
+		background: var(--bg);
+	}
 	.ras-cancel {
-		margin-top: 4px;
-		padding: 10px 12px;
-		border-radius: 10px;
+		width: 100%;
+		padding: 12px 16px;
+		border-radius: 12px;
 		border: 1px solid var(--border-subtle);
 		background: transparent;
 		color: var(--text-dim);
 		font-family: 'Space Mono', monospace;
-		font-size: 11px;
+		font-size: 12px;
 		cursor: pointer;
 		transition: background 0.12s, color 0.12s;
 	}

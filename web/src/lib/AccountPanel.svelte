@@ -1265,7 +1265,7 @@
 				role="button"
 				tabindex="0"
 			>
-				<span class="block font-mono text-3xs text-(--text-muted) break-all leading-[1.6]">{userAddress}</span>
+				<span class="ap-selectable block font-mono text-3xs text-(--text-muted) break-all leading-[1.6]">{userAddress}</span>
 				<span class="block text-xs4 text-[#00d2ff] mt-1.5 font-mono">{copiedAddr ? $t('account.copied') : $t('account.tapToCopy')}</span>
 			</div>
 		</div>
@@ -1313,7 +1313,7 @@
 				</button>
 			{:else}
 				<div
-					class="p-3.5 bg-[rgba(248,113,113,0.04)] border border-[rgba(248,113,113,0.12)] rounded-[10px] font-mono text-3xs text-[#f87171] break-all leading-[1.7] cursor-pointer transition-colors duration-100 hover:bg-[rgba(248,113,113,0.08)]"
+					class="ap-secret p-3.5 bg-[rgba(248,113,113,0.04)] border border-[rgba(248,113,113,0.12)] rounded-[10px] font-mono text-3xs text-[#f87171] break-all leading-[1.7] cursor-pointer transition-colors duration-100 hover:bg-[rgba(248,113,113,0.08)]"
 					onclick={() => { navigator.clipboard.writeText(exportedValue); setTimeout(() => { try { navigator.clipboard.writeText(''); } catch {} }, 30000); onAddFeedback({ message: $t('account.copiedClipboard'), type: 'info' }); }}
 					onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigator.clipboard.writeText(exportedValue); setTimeout(() => { try { navigator.clipboard.writeText(''); } catch {} }, 30000); onAddFeedback({ message: $t('account.copiedClipboard'), type: 'info' }); } }}
 					role="button"
@@ -1873,16 +1873,25 @@
 	.ap-row-right:hover { background: var(--bg-surface-input); }
 	.ap-row-right:active { background: var(--bg-surface-hover); }
 
-	/* Long-press disables iOS's text-selection callout + native selection
-	   so a held row triggers the sheet instead of selecting text. No
-	   on-row progress UI — the haptic + sheet pop is the feedback. */
-	.ap-row {
+	/* Wallet panel is non-selectable by default — chrome text (balances,
+	   labels, button text) shouldn't be selectable on long-press. We then
+	   opt-in selection on the few places where the user genuinely needs
+	   to copy: input fields (default), the receive address, and the
+	   private-key / seed-phrase reveal blocks (.ap-secret). */
+	.ap {
 		user-select: none;
 		-webkit-user-select: none;
 		-webkit-touch-callout: none;
-		touch-action: pan-y;
 	}
-	.ap-row, .ap-row * { -webkit-user-select: none; user-select: none; }
+	.ap input, .ap textarea,
+	.ap .ap-selectable, .ap .ap-secret {
+		user-select: text;
+		-webkit-user-select: text;
+		-webkit-touch-callout: default;
+	}
+	/* Touch-action stays on rows so vertical scroll still works during a
+	   pending long-press timer. */
+	.ap-row { touch-action: pan-y; }
 
 	/* Shared inputs/buttons */
 	.ap-input {
