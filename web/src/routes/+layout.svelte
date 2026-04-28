@@ -28,6 +28,14 @@
 	let showWalletModal = $state(false);
 	let showAccountPanel = $state(false);
 	let walletLoading = $state(true);
+	// Initial server-side session check. Distinct from walletLoading
+	// because the latter gets cleared when the PIN modal is dismissed,
+	// which on hard reload would race the auth-check IIFE and let the
+	// user click "Connect Wallet" while a session was still being
+	// restored. Hard reload re-creates this $state with default `true`,
+	// so the connect button is non-clickable until autoReconnect /
+	// checkAuthReturn settle.
+	let authChecking = $state(true);
 	// True while we're resolving a Google OAuth redirect. Separate from
 	// walletLoading because we want to keep showing "Signing in..." until
 	// the PIN modal pops — the user is still in the auth flow even after
@@ -498,6 +506,7 @@
 				}
 			} catch {}
 			walletLoading = false;
+			authChecking = false;
 		})();
 
 		// Load networks from DB, then init providers + AppKit.
@@ -832,8 +841,8 @@
 				</button>
 
 				<div class="lang-desktop"><LanguageSwitcher /></div>
-				{#if walletLoading || oauthPending}
-					<div class="wallet-btn wallet-skeleton"><span class="skeleton-bar"></span></div>
+				{#if authChecking || walletLoading || oauthPending}
+					<div class="wallet-btn wallet-skeleton" aria-label="Checking session" aria-busy="true"><span class="skeleton-bar"></span></div>
 				{:else if userAddress}
 					<button class="wallet-btn" onclick={() => {
 						if (walletType === 'external') { const kit = getAppKit(); if (kit) kit.open(); }
@@ -923,8 +932,8 @@
 					<span class="text-xs font-mono uppercase tracking-wider" style="color: var(--text-dim)">Language</span>
 					<LanguageSwitcher direction="up" />
 				</div>
-				{#if walletLoading || oauthPending}
-					<div class="wallet-btn wallet-skeleton"><span class="skeleton-bar"></span></div>
+				{#if authChecking || walletLoading || oauthPending}
+					<div class="wallet-btn wallet-skeleton" aria-label="Checking session" aria-busy="true"><span class="skeleton-bar"></span></div>
 				{:else if userAddress}
 					<button class="wallet-btn wallet-btn-sm" onclick={() => {
 						mobileMenuOpen = false;

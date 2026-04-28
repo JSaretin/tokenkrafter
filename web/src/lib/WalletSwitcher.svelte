@@ -35,6 +35,8 @@
 	import { friendlyError } from './errorDecoder';
 	import { shortAddr } from '$lib/formatters';
 	import { t } from '$lib/i18n';
+	import ActionSheet from './ActionSheet.svelte';
+	import type { ActionItem } from './actionSheetTypes';
 
 	let {
 		open = $bindable(false),
@@ -130,6 +132,163 @@
 
 	// Per-wallet cog menu (single popover — only one open at a time).
 	let menuForWallet = $state<string | null>(null);
+
+	// ── Long-press → action sheet (wallet + account) ──
+	// Replaces the inline rename/cog/export icons with a single press-and-hold
+	// gesture. Sheet content is built per-row when the timer fires so the
+	// actions array always reflects the current wallet/account state.
+	const LONG_PRESS_MS = 500;
+	const LONG_PRESS_TOL_PX = 8;
+	let _lpTimer: ReturnType<typeof setTimeout> | null = null;
+	let _lpStart: { x: number; y: number } | null = null;
+
+	let walletSheetOpen = $state(false);
+	let walletSheetTarget = $state<{ id: string; name: string; isPrimary: boolean; isImported: boolean; isActive: boolean } | null>(null);
+
+	let accountSheetOpen = $state(false);
+	let accountSheetTarget = $state<{ walletId: string; index: number; address: string; name: string; avatar: string } | null>(null);
+
+	function _lpClear() {
+		if (_lpTimer) { clearTimeout(_lpTimer); _lpTimer = null; }
+		_lpStart = null;
+	}
+
+	function lpMove(e: PointerEvent) {
+		if (!_lpStart) return;
+		const dx = e.clientX - _lpStart.x;
+		const dy = e.clientY - _lpStart.y;
+		if (dx * dx + dy * dy > LONG_PRESS_TOL_PX * LONG_PRESS_TOL_PX) _lpClear();
+	}
+	function lpEnd() { _lpClear(); }
+
+	function lpStartWallet(w: (typeof wallets)[number], e: PointerEvent) {
+		if (e.button && e.button !== 0) return;
+		_lpClear();
+		_lpStart = { x: e.clientX, y: e.clientY };
+		_lpTimer = setTimeout(() => {
+			_lpTimer = null;
+			try { (navigator as any).vibrate?.(15); } catch {}
+			walletSheetTarget = {
+				id: w.id,
+				name: w.name,
+				isPrimary: !!w.isPrimary,
+				isImported: !!w.isImported,
+				isActive: w.id === activeWalletId,
+			};
+			walletSheetOpen = true;
+		}, LONG_PRESS_MS);
+	}
+
+	function lpStartAccount(walletId: string, acc: (typeof accounts)[number], e: PointerEvent) {
+		if (e.button && e.button !== 0) return;
+		_lpClear();
+		_lpStart = { x: e.clientX, y: e.clientY };
+		_lpTimer = setTimeout(() => {
+			_lpTimer = null;
+			try { (navigator as any).vibrate?.(15); } catch {}
+			accountSheetTarget = {
+				walletId,
+				index: acc.index,
+				address: acc.address,
+				name: acctName(walletId, acc.index),
+				avatar: acctAvatar(walletId, acc.index) || String(acc.index + 1),
+			};
+			accountSheetOpen = true;
+		}, LONG_PRESS_MS);
+	}
+
+	let walletActions = $derived.by<ActionItem[]>(() => {
+		const w = walletSheetTarget;
+		if (!w) return [];
+		const list: ActionItem[] = [
+			{
+				title: 'Rename',
+				sub: 'Change wallet display name',
+				iconColor: '#00d2ff',
+				iconSvg: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>',
+				onClick: () => { renamingWalletId = w.id; renameWalletValue = w.name; },
+			},
+			{
+				title: 'Add account',
+				sub: 'Derive a new account in this wallet',
+				iconColor: '#10b981',
+				disabled: !w.isActive,
+				iconSvg: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>',
+				onClick: () => { if (w.isActive) handleAddAccount(); },
+			},
+			{
+				title: 'Export recovery phrase',
+				sub: w.isActive ? 'Reveal the seed phrase for this wallet' : 'Switch to this wallet first',
+				iconColor: '#f59e0b',
+				disabled: !w.isActive,
+				iconSvg: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
+				onClick: () => { onExportSeed(); close(); },
+			},
+			{
+				title: 'Change PIN',
+				sub: 'Re-encrypts every wallet on this device',
+				iconColor: '#a78bfa',
+				iconSvg: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>',
+				onClick: () => { resetAddForm(); addMode = 'change-pin'; collapseAllWallets(); },
+			},
+		];
+		if (!w.isPrimary) {
+			list.push({
+				title: 'Set as primary',
+				sub: 'Default wallet on next login',
+				iconColor: '#00d2ff',
+				iconSvg: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15 8.5 22 9.3 17 14.1 18.2 21 12 17.8 5.8 21 7 14.1 2 9.3 9 8.5 12 2"/></svg>',
+				onClick: () => { handleSetPrimary(w.id); },
+			});
+		}
+		if (wallets.length > 1) {
+			list.push({
+				title: 'Delete wallet',
+				sub: 'Removes this wallet from this device',
+				danger: true,
+				iconSvg: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/></svg>',
+				onClick: () => { confirmDelete(w.id); },
+			});
+		}
+		return list;
+	});
+
+	let accountActions = $derived.by<ActionItem[]>(() => {
+		const a = accountSheetTarget;
+		if (!a) return [];
+		return [
+			{
+				title: 'Rename',
+				sub: 'Change account display name',
+				iconColor: '#00d2ff',
+				iconSvg: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>',
+				onClick: () => { renamingAcct = { walletId: a.walletId, index: a.index }; renameAcctValue = a.name; },
+			},
+			{
+				title: 'Change avatar',
+				sub: 'Pick an emoji for this account',
+				iconColor: '#a78bfa',
+				iconSvg: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>',
+				onClick: () => { avatarPickerFor = { walletId: a.walletId, index: a.index }; },
+			},
+			{
+				title: 'Copy address',
+				sub: a.address,
+				iconColor: '#10b981',
+				iconSvg: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
+				onClick: () => {
+					try { navigator.clipboard?.writeText(a.address); onFeedback({ message: 'Address copied', type: 'success' }); } catch {}
+				},
+			},
+			{
+				title: 'Export private key',
+				sub: 'Reveal the private key for this account',
+				iconColor: '#f59e0b',
+				iconSvg: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
+				onClick: () => { setActiveAccount(a.index); onExportKey(); close(); },
+			},
+		];
+	});
 
 	// Bump when localStorage-backed account metadata (name, avatar) changes.
 	// Referenced inside acctName()/acctAvatar() so Svelte re-runs the derived
@@ -511,8 +670,19 @@
 					{@const visibleAccounts = accountsForWallet(w)}
 
 					<div class="ws-wallet" class:ws-wallet-active={isActive}>
-						<!-- Wallet row -->
-						<div class="ws-wallet-row">
+						<!-- Wallet row — long-press anywhere on the row body to open
+						     the wallet action sheet (rename / add account / export
+						     seed / change PIN / set primary / delete). The inline
+						     gear and edit-name icons were removed in favour of this
+						     gesture; chevron stays for expand/collapse. -->
+						<div
+							class="ws-wallet-row"
+							onpointerdown={(e) => lpStartWallet(w, e)}
+							onpointermove={lpMove}
+							onpointerup={lpEnd}
+							onpointercancel={lpEnd}
+							onpointerleave={lpEnd}
+						>
 							<button
 								class="ws-wallet-toggle"
 								onclick={() => toggleExpanded(w.id)}
@@ -556,23 +726,7 @@
 									{:else if isActive}
 										<span class="ws-active-dot" title="Active"></span>
 									{/if}
-									<button class="ws-icon-btn" title="Rename" onclick={(e) => { e.stopPropagation(); renamingWalletId = w.id; renameWalletValue = w.name; }}>
-										<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-									</button>
-									<!-- Wallet settings cog — opens popover with export seed /
-									     export private key / set primary / delete. Export
-									     actions are only shown for the active wallet since
-									     only its seed is in memory. -->
-									<button
-										class="ws-icon-btn"
-										class:ws-icon-btn-active={menuForWallet === w.id}
-										title="Wallet settings"
-										onclick={(e) => { e.stopPropagation(); menuForWallet = menuForWallet === w.id ? null : w.id; }}
-									>
-										<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-									</button>
 								</div>
-
 							{/if}
 						</div>
 
@@ -585,7 +739,14 @@
 									{@const usd = usdByAccount[acc.address.toLowerCase()] || 0}
 									{@const av = acctAvatar(w.id, acc.index)}
 
-									<div class="ws-acct-row">
+									<div
+										class="ws-acct-row"
+										onpointerdown={(e) => { if (!isRenamingAcct) lpStartAccount(w.id, acc, e); }}
+										onpointermove={lpMove}
+										onpointerup={lpEnd}
+										onpointercancel={lpEnd}
+										onpointerleave={lpEnd}
+									>
 										{#if isRenamingAcct}
 												<input
 													class="ws-rename ws-rename-acct"
@@ -632,18 +793,6 @@
 														{#if isActiveAcct}<span class="ws-acct-check">✓</span>{/if}
 													</div>
 												</button>
-
-												<div class="ws-acct-actions">
-													<button class="ws-icon-btn" title="Rename account" onclick={() => { renamingAcct = { walletId: w.id, index: acc.index }; renameAcctValue = acctName(w.id, acc.index); }}>
-														<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-													</button>
-													<!-- Per-account private key export. Switches to this
-													     account first so the export view reads the
-													     correct key, then navigates and closes the sheet. -->
-													<button class="ws-icon-btn" title="Export private key" onclick={() => { setActiveAccount(acc.index); onExportKey(); close(); }}>
-														<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-													</button>
-												</div>
 											{/if}
 										</div>
 								{/each}
@@ -883,6 +1032,26 @@
 					</div>
 				</div>
 			{/if}
+
+			<!-- Long-press action sheets — sit on top of the switcher sheet,
+			     scoped inside .ws-overlay so they don't escape the wallet panel. -->
+			<ActionSheet
+				bind:open={walletSheetOpen}
+				title={walletSheetTarget?.name || ''}
+				subtitle={walletSheetTarget ? `${walletSheetTarget.isImported ? 'Imported · ' : ''}${walletSheetTarget.isActive ? 'Active wallet' : 'Locked wallet'}` : ''}
+				avatar={walletSheetTarget?.name?.charAt(0).toUpperCase() || ''}
+				avatarColor="#00d2ff"
+				actions={walletActions}
+			/>
+
+			<ActionSheet
+				bind:open={accountSheetOpen}
+				title={accountSheetTarget?.name || ''}
+				subtitle={accountSheetTarget ? shortAddr(accountSheetTarget.address) : ''}
+				avatar={accountSheetTarget?.avatar || ''}
+				avatarColor="#a78bfa"
+				actions={accountActions}
+			/>
 		</div>
 	</div>
 {/if}
