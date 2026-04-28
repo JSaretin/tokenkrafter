@@ -38,7 +38,7 @@
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
-		class="absolute inset-0 z-30 bg-black/65 backdrop-blur-[3px] flex items-end justify-center"
+		class="absolute inset-0 z-[60] bg-black/65 backdrop-blur-[3px] flex items-end justify-center"
 		onclick={close}
 		role="dialog"
 		aria-modal="true"

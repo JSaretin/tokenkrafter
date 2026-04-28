@@ -161,6 +161,28 @@
 	}
 	function lpEnd() { _lpClear(); }
 
+	function openWalletSheet(w: (typeof wallets)[number]) {
+		walletSheetTarget = {
+			id: w.id,
+			name: w.name,
+			isPrimary: !!w.isPrimary,
+			isImported: !!w.isImported,
+			isActive: w.id === activeWalletId,
+		};
+		walletSheetOpen = true;
+	}
+
+	function openAccountSheet(walletId: string, acc: (typeof accounts)[number]) {
+		accountSheetTarget = {
+			walletId,
+			index: acc.index,
+			address: acc.address,
+			name: acctName(walletId, acc.index),
+			avatar: acctAvatar(walletId, acc.index) || String(acc.index + 1),
+		};
+		accountSheetOpen = true;
+	}
+
 	function lpStartWallet(w: (typeof wallets)[number], e: PointerEvent) {
 		if (e.button && e.button !== 0) return;
 		_lpClear();
@@ -168,14 +190,7 @@
 		_lpTimer = setTimeout(() => {
 			_lpTimer = null;
 			try { (navigator as any).vibrate?.(15); } catch {}
-			walletSheetTarget = {
-				id: w.id,
-				name: w.name,
-				isPrimary: !!w.isPrimary,
-				isImported: !!w.isImported,
-				isActive: w.id === activeWalletId,
-			};
-			walletSheetOpen = true;
+			openWalletSheet(w);
 		}, LONG_PRESS_MS);
 	}
 
@@ -186,15 +201,22 @@
 		_lpTimer = setTimeout(() => {
 			_lpTimer = null;
 			try { (navigator as any).vibrate?.(15); } catch {}
-			accountSheetTarget = {
-				walletId,
-				index: acc.index,
-				address: acc.address,
-				name: acctName(walletId, acc.index),
-				avatar: acctAvatar(walletId, acc.index) || String(acc.index + 1),
-			};
-			accountSheetOpen = true;
+			openAccountSheet(walletId, acc);
 		}, LONG_PRESS_MS);
+	}
+
+	// Desktop: right-click opens the same action sheet a long-press would.
+	// Touch devices keep the long-press; mouse users get the conventional
+	// context-menu gesture instead of having to discover hold-left-click.
+	function ctxWallet(w: (typeof wallets)[number], e: MouseEvent) {
+		e.preventDefault();
+		_lpClear();
+		openWalletSheet(w);
+	}
+	function ctxAccount(walletId: string, acc: (typeof accounts)[number], e: MouseEvent) {
+		e.preventDefault();
+		_lpClear();
+		openAccountSheet(walletId, acc);
 	}
 
 	let walletActions = $derived.by<ActionItem[]>(() => {
@@ -682,6 +704,7 @@
 							onpointerup={lpEnd}
 							onpointercancel={lpEnd}
 							onpointerleave={lpEnd}
+							oncontextmenu={(e) => ctxWallet(w, e)}
 						>
 							<button
 								class="ws-wallet-toggle"
@@ -746,6 +769,7 @@
 										onpointerup={lpEnd}
 										onpointercancel={lpEnd}
 										onpointerleave={lpEnd}
+										oncontextmenu={(e) => { if (!isRenamingAcct) ctxAccount(w.id, acc, e); }}
 									>
 										{#if isRenamingAcct}
 												<input
@@ -1032,28 +1056,32 @@
 					</div>
 				</div>
 			{/if}
-
-			<!-- Long-press action sheets — sit on top of the switcher sheet,
-			     scoped inside .ws-overlay so they don't escape the wallet panel. -->
-			<ActionSheet
-				bind:open={walletSheetOpen}
-				title={walletSheetTarget?.name || ''}
-				subtitle={walletSheetTarget ? `${walletSheetTarget.isImported ? 'Imported · ' : ''}${walletSheetTarget.isActive ? 'Active wallet' : 'Locked wallet'}` : ''}
-				avatar={walletSheetTarget?.name?.charAt(0).toUpperCase() || ''}
-				avatarColor="#00d2ff"
-				actions={walletActions}
-			/>
-
-			<ActionSheet
-				bind:open={accountSheetOpen}
-				title={accountSheetTarget?.name || ''}
-				subtitle={accountSheetTarget ? shortAddr(accountSheetTarget.address) : ''}
-				avatar={accountSheetTarget?.avatar || ''}
-				avatarColor="#a78bfa"
-				actions={accountActions}
-			/>
 		</div>
 	</div>
+
+	<!-- Long-press action sheets — siblings of the switcher backdrop, not
+	     children. The backdrop is the slide-down sheet from the top of .ap;
+	     mounting the action sheets inside it would confine them to that
+	     upper rectangle. As siblings they go absolute relative to the next
+	     positioned ancestor (.ap, position: fixed) and slide up from the
+	     bottom of the wallet panel — same chrome as RowActionSheet. -->
+	<ActionSheet
+		bind:open={walletSheetOpen}
+		title={walletSheetTarget?.name || ''}
+		subtitle={walletSheetTarget ? `${walletSheetTarget.isImported ? 'Imported · ' : ''}${walletSheetTarget.isActive ? 'Active wallet' : 'Locked wallet'}` : ''}
+		avatar={walletSheetTarget?.name?.charAt(0).toUpperCase() || ''}
+		avatarColor="#00d2ff"
+		actions={walletActions}
+	/>
+
+	<ActionSheet
+		bind:open={accountSheetOpen}
+		title={accountSheetTarget?.name || ''}
+		subtitle={accountSheetTarget ? shortAddr(accountSheetTarget.address) : ''}
+		avatar={accountSheetTarget?.avatar || ''}
+		avatarColor="#a78bfa"
+		actions={accountActions}
+	/>
 {/if}
 
 <style>
