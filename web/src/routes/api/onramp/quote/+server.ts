@@ -16,19 +16,29 @@ const MIN_NGN_KOBO = 50_000;        // ₦500 floor
 const MAX_NGN_KOBO = 5_000_000;     // ₦50,000 cap (raise once KYC tier ladder ships)
 const QUOTE_TTL_SECONDS = 900;       // 15 min
 
-async function loadNgnRate(): Promise<number | null> {
-	// Mirror trade/+page.server.ts rate logic, but skip the spread —
-	// per spec the on-ramp uses the raw db rate. Override still wins
-	// if explicitly set in platform_config.rate_override.
+// On-ramp default fee (bps). Covers Flutterwave's 1.6% inbound deposit
+// fee and leaves a thin platform margin. Tunable per-deploy via
+// `platform_config.rate_override.onramp_fee_bps`.
+const DEFAULT_ONRAMP_FEE_BPS = 250;
+
+async function loadRateAndFee(): Promise<{ rate: number; feeBps: number } | null> {
+	// Mirrors trade/+page.server.ts but applies the spread in the BUY
+	// direction (NGN paid per USDT goes UP), the inverse of off-ramp.
+	// `rate_override.NGN`, when set, is treated as a hard override and
+	// bypasses the spread entirely (operator decides the exact rate).
 	const [{ data: settings }, { data: override }] = await Promise.all([
 		supabaseAdmin.from('platform_config').select('value').eq('key', 'exchange_rates').single(),
 		supabaseAdmin.from('platform_config').select('value').eq('key', 'rate_override').single(),
 	]);
 	const overridden = override?.value?.NGN;
-	if (typeof overridden === 'number' && overridden > 0) return overridden;
 	const raw = settings?.value?.rates?.NGN;
-	if (typeof raw === 'number' && raw > 0) return raw;
-	return null;
+	const feeBps = Number(override?.value?.onramp_fee_bps ?? DEFAULT_ONRAMP_FEE_BPS);
+	if (typeof overridden === 'number' && overridden > 0) {
+		return { rate: overridden, feeBps };
+	}
+	if (typeof raw !== 'number' || raw <= 0) return null;
+	const spreadBps = override?.value?.spread_bps ?? 30;
+	return { rate: raw * (1 + spreadBps / 10000), feeBps };
 }
 
 export const POST: RequestHandler = async ({ request }) => {
@@ -40,13 +50,17 @@ export const POST: RequestHandler = async ({ request }) => {
 	if (ngn_amount_kobo < MIN_NGN_KOBO) return error(400, `Minimum on-ramp is ₦${MIN_NGN_KOBO / 100}`);
 	if (ngn_amount_kobo > MAX_NGN_KOBO) return error(400, `Maximum on-ramp is ₦${MAX_NGN_KOBO / 100}`);
 
-	const ngnRate = await loadNgnRate();
-	if (!ngnRate) return error(503, 'Exchange rate unavailable');
-	const rate_x100 = Math.round(ngnRate * 100);
+	const rateInfo = await loadRateAndFee();
+	if (!rateInfo) return error(503, 'Exchange rate unavailable');
+	const rate_x100 = Math.round(rateInfo.rate * 100);
+	const feeBps = rateInfo.feeBps;
 
-	// USDT (18-decimal) wei = (ngn_amount_kobo × 10^18) / (rate × 100)
-	// All bigint to avoid float drift on small amounts.
-	const usdt_amount_wei = (BigInt(ngn_amount_kobo) * 10n ** 18n) / BigInt(rate_x100);
+	// Gross USDT from FX conversion at the locked rate, then deduct the
+	// platform on-ramp fee. The user signs (and ultimately receives) the
+	// NET amount; gross + fee_bps are returned alongside for transparent
+	// breakdown in the review modal.
+	const usdt_gross_wei = (BigInt(ngn_amount_kobo) * 10n ** 18n) / BigInt(rate_x100);
+	const usdt_amount_wei = (usdt_gross_wei * BigInt(10000 - feeBps)) / 10000n;
 	if (usdt_amount_wei <= 0n) return error(400, 'Amount too small to quote');
 
 	const reference = 'TKO-' + randomBytes(6).toString('hex').toUpperCase();
@@ -75,6 +89,8 @@ export const POST: RequestHandler = async ({ request }) => {
 		chain_id,
 		ngn_amount_kobo,
 		usdt_amount_wei: usdt_amount_wei.toString(),
+		usdt_gross_wei: usdt_gross_wei.toString(),
+		fee_bps: feeBps,
 		rate_x100,
 		expires_at,
 	});

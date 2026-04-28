@@ -3,9 +3,9 @@
 	import ModeBtn from './ModeBtn.svelte';
 
 	let {
-		selected = $bindable<'token' | 'bank'>('token'),
+		selected = $bindable<'token' | 'bank' | 'fiat'>('token'),
 	}: {
-		selected: 'token' | 'bank';
+		selected: 'token' | 'bank' | 'fiat';
 	} = $props();
 </script>
 
@@ -17,5 +17,9 @@
 	<ModeBtn id="bank" bind:selected activeColor="emerald">
 		<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M3 10h18M5 6l7-3 7 3M4 10v11M20 10v11M8 14v3M12 14v3M16 14v3"/></svg>
 		{$t('trade.sellToBank')}
+	</ModeBtn>
+	<ModeBtn id="fiat" bind:selected activeColor="cyan">
+		<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/><line x1="6" y1="15" x2="10" y2="15"/></svg>
+		{$t('trade.buyWithBank')}
 	</ModeBtn>
 </div>

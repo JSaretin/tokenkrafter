@@ -46,7 +46,12 @@ export interface OnrampQuote {
 	nonce: string;
 	chain_id: number;
 	ngn_amount_kobo: number;
+	/** Net USDT delivered to the user (after on-ramp fee). bigint as string. */
 	usdt_amount_wei: string;
+	/** Gross USDT before fee — what the FX conversion yields at locked rate. */
+	usdt_gross_wei: string;
+	/** Platform on-ramp fee in basis points (covers FLW deposit cost + margin). */
+	fee_bps: number;
 	rate_x100: number;
 	expires_at: number; // unix seconds
 }

@@ -865,6 +865,16 @@
 
 	function lpEnd() { _lpClear(); }
 
+	// Desktop right-click → same action sheet as mobile long-press. Mirrors
+	// the WalletSwitcher's ctxWallet / ctxAccount handlers so the
+	// interaction feels consistent across asset rows, wallets and accounts.
+	function ctxToken(tok: { address: string; symbol: string; name: string; logoUrl?: string }, e: MouseEvent) {
+		e.preventDefault();
+		_lpClear();
+		rowSheetToken = tok;
+		showRowSheet = true;
+	}
+
 	// ── Helpers ──
 
 	/** Discard all pending send-transaction state. Called from every path
@@ -1276,6 +1286,7 @@
 						onpointerup={lpEnd}
 						onpointercancel={lpEnd}
 						onpointerleave={lpEnd}
+						oncontextmenu={(e) => ctxToken({ address: tok.address, symbol: tok.symbol, name: tok.name, logoUrl: tok.logoUrl }, e)}
 					>
 						{#if logo}
 							<img src={logo} alt={tok.symbol} class="w-10 h-10 rounded-full object-cover shrink-0 border border-(--border)" />
@@ -1307,6 +1318,7 @@
 						onpointerup={lpEnd}
 						onpointercancel={lpEnd}
 						onpointerleave={lpEnd}
+						oncontextmenu={(e) => ctxToken({ address: tok.address, symbol: tok.symbol, name: tok.name, logoUrl: (tok as any).logoUrl }, e)}
 					>
 					{#if logo}
 						<img src={logo} alt={tok.symbol} class="w-10 h-10 rounded-full object-cover shrink-0 border border-(--border)" />

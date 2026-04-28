@@ -13,6 +13,10 @@ async function asJson<T>(res: Response): Promise<T> {
 	return body as T;
 }
 
+export async function getOnrampRate(chainId = 56): Promise<{ chain_id: number; rate_x100: number; fetched_at: number }> {
+	return asJson(await fetch(`/api/onramp/rate?chain_id=${chainId}`));
+}
+
 export async function quoteOnramp(ngnAmountWhole: number, chainId = 56): Promise<OnrampQuote> {
 	return asJson<OnrampQuote>(
 		await fetch('/api/onramp/quote', {

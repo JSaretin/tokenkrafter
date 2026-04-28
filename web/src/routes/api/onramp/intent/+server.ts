@@ -66,14 +66,15 @@ export const POST: RequestHandler = async ({ request }) => {
 		return error(401, 'Signature does not match receiver');
 	}
 
-	// Create a one-shot Flutterwave customer for this intent. We use a
-	// synthetic email to keep the flow non-PII pre-KYC; FLW accepts any
-	// well-formed string and the customer is only used to bind the VA.
-	const email = `onramp+${intent.reference.toLowerCase()}@tokenkrafter.local`;
-	const lastNameSuffix = intent.receiver.slice(2, 8);
+	// Per-intent customer. The display name is consistent ("TokenKrafter
+	// Bid") so payers always see the same recipient label, but the email
+	// is unique per reference because FLW v4 enforces email uniqueness on
+	// the customer record. The synthetic email lives under our real
+	// domain — using a reserved TLD (.local) is rejected by FLW.
+	const email = `onramp+${intent.reference.toLowerCase()}@tokenkrafter.com`;
 	const customer = await createCustomer({
-		firstName: 'Onramp',
-		lastName: `User_${lastNameSuffix}`,
+		firstName: 'TokenKrafter',
+		lastName: 'Bid',
 		email,
 	});
 	if (!customer.customerId) {
@@ -83,12 +84,14 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	// Create dynamic VA pinned to this exact amount. Expires 15 min
 	// after creation; FLW will reject any payment outside the window.
+	// Narration is intentionally just the reference — no "on-ramp" /
+	// "crypto" vocabulary lands on the payer's bank statement.
 	const ngnWhole = Number(intent.ngnAmount) / 100;
 	const va = await createVirtualAccount({
 		customerId: customer.customerId,
 		amount: ngnWhole,
 		reference: intent.reference,
-		narration: `TokenKrafter on-ramp ${intent.reference}`,
+		narration: intent.reference,
 		type: 'dynamic',
 		expiry: 900,
 	});
@@ -120,7 +123,9 @@ export const POST: RequestHandler = async ({ request }) => {
 		bank_details: {
 			account_number: va.accountNumber,
 			bank_name: va.bankName,
-			account_name: `TokenKrafter / ${intent.reference}`,
+			// Recipient label: keep it minimal; FLW returns the actual
+			// holder name from the customer record on the payer's side.
+			account_name: 'TokenKrafter',
 			amount_ngn: ngnWhole,
 			reference: intent.reference,
 			expires_at: va.expiresAt ?? null,

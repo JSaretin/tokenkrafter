@@ -35,8 +35,7 @@
 	import TrustItem from './TrustItem.svelte';
 	import SlippageSetter from '$lib/SlippageSetter.svelte';
 	import SuccessBurst from '$lib/SuccessBurst.svelte';
-	import OnrampModal from '$lib/onramp/OnrampModal.svelte';
-	import { onrampStore } from '$lib/onramp/store';
+	import OnrampPanel from './OnrampPanel.svelte';
 	import TokenSelectorModal from './TokenSelectorModal.svelte';
 	import BankSelectorModal from './BankSelectorModal.svelte';
 	import ConfirmModalShell from './ConfirmModalShell.svelte';
@@ -45,7 +44,8 @@
 	import TradeCompletion from './TradeCompletion.svelte';
 	import TradeReviewRow from './TradeReviewRow.svelte';
 	import TradeReviewDetails from './TradeReviewDetails.svelte';
-	import WithdrawalHistoryPanel from './WithdrawalHistoryPanel.svelte';
+	import TradeHistoryPanel from './TradeHistoryPanel.svelte';
+	import OnrampStatusModal from './OnrampStatusModal.svelte';
 	import OutputModeToggle from './OutputModeToggle.svelte';
 
 	let { data: serverData }: { data: TradePageServerData } = $props();
@@ -69,7 +69,7 @@
 
 	// ── Core State ──────────────────────────────────────────────
 	let selectedNetworkIdx = $state(0);
-	let outputMode = $state<'token' | 'bank'>('token');
+	let outputMode = $state<'token' | 'bank' | 'fiat'>('token');
 
 	// Token In
 	let tokenInAddr = $state('');
@@ -178,8 +178,9 @@
 
 	// History
 	let showHistory = $state(false);
-	let historyPanel = $state<WithdrawalHistoryPanel | undefined>();
+	let historyPanel = $state<TradeHistoryPanel | undefined>();
 	let activeWithdrawal: WithdrawalView | null = $state(null);
+	let activeOnrampRow: any = $state(null);
 
 	let selectedNetwork = $derived(tradeNetworks[selectedNetworkIdx]);
 
@@ -1001,8 +1002,11 @@
 		logo: tokenOutLogo, loading: tokenOutLoading,
 	}, platformTokenAddrs));
 
+	// `fiat` mode renders OnrampPanel and bypasses this view entirely;
+	// coerce to `'token'` so the view's strict union still type-checks.
 	let amounts = $derived(toTradeAmountsView({
-		amountIn, amountOut, noLiquidity, slippageBps, outputMode,
+		amountIn, amountOut, noLiquidity, slippageBps,
+		outputMode: outputMode === 'fiat' ? 'token' : outputMode,
 		previewNet, usdtDecimals, ngnRate,
 		tokenIn: tokenInSlot, tokenOut: tokenOutSlot,
 		pricesLoaded, wethAddr, network: selectedNetwork,
@@ -1518,23 +1522,39 @@
 
 		<!-- ═══ SWAP CARD ═══ -->
 		<SwapCardShell>
-			<TokenInput
-				label={$t('trade.youPay')}
-				tokenSymbol={tokenInSymbol}
-				tokenLogo={tokenInLogo}
-				bind:amount={amountIn}
-				balance={tokenInBalance}
-				decimals={tokenInDecimals}
-				isNative={tokenInIsNative}
-				hasTax={tokenInHasTax}
-				taxBuy={tokenInTaxBuy}
-				taxSell={tokenInTaxSell}
-				taxInfo={tokenInTax}
-				isPlatform={tokenInIsPlatform}
-				usdValue={usdValueIn}
-				{estimatedGasCost}
-				onSelectToken={() => { tokenModalTarget = 'in'; showTokenModal = true; }}
-			/>
+			{#if outputMode === 'fiat'}
+				<OnrampPanel
+					chainId={selectedNetwork?.chain_id ?? 56}
+					receiver={userAddress ?? undefined}
+					onsuccess={() => {
+						// Refresh USDT balance after delivery so the user can
+						// immediately swap or use it on the trade page.
+						if (tokenInAddr && userAddress && selectedNetwork) {
+							fetchMeta(tokenInAddr, tokenInIsNative).then((meta) => {
+								if (tokenInAddr) tokenInBalance = meta.balance;
+							});
+						}
+					}}
+				/>
+			{:else}
+				<TokenInput
+					label={$t('trade.youPay')}
+					tokenSymbol={tokenInSymbol}
+					tokenLogo={tokenInLogo}
+					bind:amount={amountIn}
+					balance={tokenInBalance}
+					decimals={tokenInDecimals}
+					isNative={tokenInIsNative}
+					hasTax={tokenInHasTax}
+					taxBuy={tokenInTaxBuy}
+					taxSell={tokenInTaxSell}
+					taxInfo={tokenInTax}
+					isPlatform={tokenInIsPlatform}
+					usdValue={usdValueIn}
+					{estimatedGasCost}
+					onSelectToken={() => { tokenModalTarget = 'in'; showTokenModal = true; }}
+				/>
+			{/if}
 
 			{#if outputMode === 'token'}
 				<FlipButton onclick={flipTokens} />
@@ -1607,40 +1627,31 @@
 				</TrustCard>
 			{/if}
 
-			<SwapActionButton
-				variant={buttonVariant}
-				disabled={buttonDisabled && !!userAddress}
-				onclick={() => { if (!userAddress) connectWallet(); else showConfirmModal = true; }}
-			>
-				{buttonLabel}
-			</SwapActionButton>
+			{#if outputMode !== 'fiat'}
+				<SwapActionButton
+					variant={buttonVariant}
+					disabled={buttonDisabled && !!userAddress}
+					onclick={() => { if (!userAddress) connectWallet(); else showConfirmModal = true; }}
+				>
+					{buttonLabel}
+				</SwapActionButton>
+			{/if}
 		</SwapCardShell>
 
-		<!-- Buy crypto banner -->
+		<!-- Buy crypto banner (hide when already in fiat mode) -->
+		{#if outputMode !== 'fiat'}
 		<div class="flex items-center gap-2 px-3.5 py-2.5 mt-2.5 rounded-xl bg-(--bg-surface) border border-(--border) font-mono text-xs2 text-(--text-muted)">
 			<svg class="shrink-0 text-cyan" width="14" height="14" viewBox="0 0 512 512" fill="#00d2ff"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM169.8 165.3c7.9-22.3 29.1-37.3 52.8-37.3h58.3c34.9 0 63.1 28.3 63.1 63.1c0 22.6-12.1 43.5-31.7 54.8L280 264.4c-.2 13-10.9 23.6-24 23.6c-13.3 0-24-10.7-24-24V250.5c0-8.6 4.6-16.5 12.1-20.8l44.3-25.4c4.7-2.7 7.6-7.7 7.6-13.1c0-8.4-6.8-15.1-15.1-15.1H222.6c-3.4 0-6.4 2.1-7.5 5.3l-.4 1.2c-4.4 12.5-18.2 19-30.6 14.6s-19-18.2-14.6-30.6l.4-1.2zM224 352a32 32 0 1 1 64 0 32 32 0 1 1-64 0z"/></svg>
 			<span class="flex-1">{$t('trade.buyCrypto')}</span>
-			<button class="py-1.5 px-3.5 rounded-lg border-0 cursor-pointer bg-[linear-gradient(135deg,#00d2ff,#3a7bd5)] text-white font-[Syne,sans-serif] text-xs font-bold whitespace-nowrap transition-all duration-150 shrink-0 hover:-translate-y-px hover:shadow-[0_4px_16px_rgba(0,210,255,0.3)]" onclick={() => onrampStore.open({
-				ngnAmount: amountIn && parseFloat(amountIn) > 0 && tokenInIsNative === false && tokenInSymbol === 'USDT'
-					? Math.ceil(parseFloat(amountIn) * (ngnRate || 1640))
-					: 5000,
-				onSuccess: () => {
-					// Refresh the swap-side balance once delivery confirms so the
-					// swap can continue without the user re-entering the amount.
-					if (tokenInAddr && userAddress && selectedNetwork) {
-						fetchMeta(tokenInAddr, tokenInIsNative).then(meta => {
-							if (tokenInAddr) tokenInBalance = meta.balance;
-						});
-					}
-				},
-			})}>
+			<button class="py-1.5 px-3.5 rounded-lg border-0 cursor-pointer bg-[linear-gradient(135deg,#00d2ff,#3a7bd5)] text-white font-[Syne,sans-serif] text-xs font-bold whitespace-nowrap transition-all duration-150 shrink-0 hover:-translate-y-px hover:shadow-[0_4px_16px_rgba(0,210,255,0.3)]" onclick={() => { outputMode = 'fiat'; }}>
 				{$t('trade.getItNow')}
 			</button>
 		</div>
+		{/if}
 
-		<!-- History panel -->
+		<!-- Unified Trade History — off-ramp (sells) + on-ramp (buys) -->
 		{#if showHistory && userAddress}
-			<WithdrawalHistoryPanel
+			<TradeHistoryPanel
 				bind:this={historyPanel}
 				network={selectedNetwork}
 				{userAddress}
@@ -1649,6 +1660,10 @@
 				onselect={(w) => {
 					showConfirmModal = false;
 					activeWithdrawal = toWithdrawalView(w);
+				}}
+				onselectBuy={(o) => {
+					showConfirmModal = false;
+					activeOnrampRow = o;
 				}}
 			/>
 		{/if}
@@ -1813,10 +1828,7 @@
 	</ConfirmModalShell>
 {/if}
 
-<!-- ═══ ON-RAMP MODAL (singleton, opened via onrampStore) ═══ -->
-<OnrampModal />
-
-<!-- ═══ WITHDRAWAL STATUS MODAL ═══ -->
+<!-- ═══ WITHDRAWAL STATUS MODAL (sell rows) ═══ -->
 {#if activeWithdrawal}
 	<WithdrawalStatusModal
 		withdrawal={activeWithdrawal}
@@ -1826,6 +1838,14 @@
 		explorerUrl={selectedNetwork?.explorer_url || ''}
 		onclose={() => { activeWithdrawal = null; lockedNgnRate = 0; lockedNgnAmount = 0; amountIn = ''; bankAccount = ''; bankCode = ''; bankName = ''; bankBankName = ''; bankResolved = false; bankError = ''; }}
 		oncancel={async (id) => { await handleCancel(id); activeWithdrawal = null; lockedNgnRate = 0; lockedNgnAmount = 0; amountIn = ''; bankAccount = ''; bankCode = ''; bankName = ''; bankBankName = ''; bankResolved = false; bankError = ''; }}
+	/>
+{/if}
+
+<!-- ═══ ON-RAMP STATUS MODAL (buy rows) ═══ -->
+{#if activeOnrampRow}
+	<OnrampStatusModal
+		row={activeOnrampRow}
+		onClose={() => { activeOnrampRow = null; }}
 	/>
 {/if}
 

@@ -1092,6 +1092,7 @@ export default {
 	'trade.subtitle': 'Swap tokens or sell to your bank account',
 	'trade.swap': 'Swap',
 	'trade.sellToBank': 'Sell to Bank',
+	'trade.buyWithBank': 'Buy with Bank',
 	'trade.youPay': 'You pay',
 	'trade.youReceive': 'You receive',
 	'trade.selectToken': 'Select token',

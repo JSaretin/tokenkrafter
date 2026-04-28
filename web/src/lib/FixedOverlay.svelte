@@ -159,7 +159,7 @@
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div
 			bind:this={sheet}
-			class={"flex flex-col " + (mobileSheet ? "max-sm:w-full" : "")}
+			class={"w-full max-w-[420px] flex flex-col " + (mobileSheet ? "max-sm:max-w-full" : "")}
 			style:transform={dragY > 0 ? `translateY(${dragY}px)` : undefined}
 			style:transition={dragging ? 'none' : 'transform 220ms cubic-bezier(0.22, 1, 0.36, 1)'}
 			style:will-change={dragging ? 'transform' : undefined}

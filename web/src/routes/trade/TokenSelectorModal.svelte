@@ -59,7 +59,7 @@
 	$effect(() => { if (!show) onClose(); });
 </script>
 
-<Modal bind:show maxWidth="max-w-[420px]">
+<Modal bind:show maxWidth="max-w-[480px]">
 	<div class="flex flex-col max-h-[80vh] max-sm:h-full max-sm:max-h-full max-sm:min-h-0">
 	<div class="flex justify-between items-center py-4 px-5 border-b border-(--border)">
 		<h3 class="font-display text-base font-bold text-(--text-heading) m-0">{$t('trade.selectAToken')}</h3>

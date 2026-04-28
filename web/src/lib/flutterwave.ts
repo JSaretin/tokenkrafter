@@ -13,10 +13,14 @@ const V3_BASE = 'https://api.flutterwave.com/v3';
 const PROXY_URL = env.PAYMENT_PROXY_URL; // e.g. http://176.32.32.230:4100
 
 const IDP_URL = 'https://idp.flutterwave.com/realms/flutterwave/protocol/openid-connect/token';
-const isProd = env.NODE_ENV === 'production';
-const V4_BASE = isProd
-	? 'https://f4bexperience.flutterwave.com'
-	: 'https://developersandbox-api.flutterwave.com';
+// Default to prod. SvelteKit dev sets NODE_ENV=development, which used to
+// flip us to sandbox — but the user's creds are prod, so prod-against-
+// sandbox returned 403 Forbidden. Only an explicit FLUTTERWAVE_ENV=sandbox
+// flips to the sandbox endpoint now.
+const useSandbox = env.FLUTTERWAVE_ENV === 'sandbox';
+const V4_BASE = useSandbox
+	? 'https://developersandbox-api.flutterwave.com'
+	: 'https://f4bexperience.flutterwave.com';
 
 // ── v3 API — proxied through VPS when available ──────────────
 
@@ -107,7 +111,14 @@ async function v4Fetch(path: string, options: RequestInit = {}): Promise<any> {
 			...options.headers
 		}
 	});
-	return res.json();
+	const data = await res.json().catch(() => ({}));
+	// Surface validation details on non-2xx so caller error logs aren't
+	// reduced to "Request is not valid". FLW v4 puts per-field complaints
+	// under data.error.errors[]; we preserve the original body too.
+	if (!res.ok) {
+		console.error(`[flw v4] ${options.method || 'GET'} ${path} → ${res.status}`, JSON.stringify(data).slice(0, 1000));
+	}
+	return data;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -207,6 +218,53 @@ export async function getTransferStatus(transferId: number): Promise<{ status: s
 // ── v4 API functions (virtual accounts, charges) ──────────────
 
 /**
+ * Look up (or lazily create) the single shared on-ramp customer record.
+ *
+ * One customer record is reused across every on-ramp virtual account.
+ * The wallet address goes in the VA narration for reconciliation, so
+ * FLW never sees a flood of fake "User_xxx" customer entries — which
+ * looks like fraud to their risk team. The customer name is
+ * deliberately neutral ("TokenKrafter Bid") so the recipient name
+ * users see in their bank app contains zero crypto vocabulary.
+ *
+ * Caching strategy: the customer ID is stored under platform_config
+ * key `flw_onramp_customer` so it survives restarts and is shared
+ * across all Function instances. First call creates + persists.
+ */
+let _cachedOnrampCustomerId: string | null = null;
+export async function getOrCreateOnrampCustomer(
+	supabaseAdmin: any,
+): Promise<{ customerId: string | null; error?: string }> {
+	if (_cachedOnrampCustomerId) return { customerId: _cachedOnrampCustomerId };
+
+	// Try DB first (other instances may have already created it).
+	const { data: existing } = await supabaseAdmin
+		.from('platform_config')
+		.select('value')
+		.eq('key', 'flw_onramp_customer')
+		.single();
+	const stored = existing?.value?.customer_id;
+	if (typeof stored === 'string' && stored) {
+		_cachedOnrampCustomerId = stored;
+		return { customerId: stored };
+	}
+
+	// Create + persist.
+	const created = await createCustomer({
+		firstName: 'TokenKrafter',
+		lastName: 'Bid',
+		email: 'onramp@tokenkrafter.com',
+	});
+	if (!created.customerId) return created;
+
+	await supabaseAdmin
+		.from('platform_config')
+		.upsert({ key: 'flw_onramp_customer', value: { customer_id: created.customerId } });
+	_cachedOnrampCustomerId = created.customerId;
+	return { customerId: created.customerId };
+}
+
+/**
  * Create Flutterwave customer (v4 API)
  */
 export async function createCustomer(params: {
@@ -227,7 +285,12 @@ export async function createCustomer(params: {
 		return { customerId: data.data.id };
 	}
 
-	return { customerId: null, error: data.error?.message || data.message || 'Failed to create customer' };
+	// Stitch in field-level validation details if present.
+	const fieldErrors = Array.isArray(data.error?.errors)
+		? data.error.errors.map((e: any) => `${e.field || e.path || '?'}: ${e.message || JSON.stringify(e)}`).join('; ')
+		: '';
+	const baseMsg = data.error?.message || data.message || 'Failed to create customer';
+	return { customerId: null, error: fieldErrors ? `${baseMsg} (${fieldErrors})` : baseMsg };
 }
 
 /**
@@ -281,7 +344,11 @@ export async function createVirtualAccount(params: {
 		};
 	}
 
-	return { success: false, error: data.error?.message || data.message || 'Failed to create virtual account' };
+	const fieldErrors = Array.isArray(data.error?.errors)
+		? data.error.errors.map((e: any) => `${e.field || e.path || '?'}: ${e.message || JSON.stringify(e)}`).join('; ')
+		: '';
+	const baseMsg = data.error?.message || data.message || 'Failed to create virtual account';
+	return { success: false, error: fieldErrors ? `${baseMsg} (${fieldErrors})` : baseMsg };
 }
 
 /**
