@@ -54,17 +54,29 @@ export const load: PageServerLoad = async ({ setHeaders }) => {
 
 			const rates: Record<string, number> = settings?.value?.rates || {};
 			const spreadBps = override?.value?.spread_bps ?? 30;
+			const onrampFeeBps = Number(override?.value?.onramp_fee_bps ?? 250);
 			const overrides: Record<string, number | null> = override?.value || {};
 
-			const result: Record<string, number> = {};
+			// Off-ramp / sell rates: mid × (1 − spread).
+			const sell: Record<string, number> = {};
 			for (const code of ['NGN', 'GBP', 'EUR', 'GHS', 'KES']) {
 				if (overrides[code] !== undefined && overrides[code] !== null) {
-					result[code] = overrides[code] as number;
+					sell[code] = overrides[code] as number;
 				} else if (rates[code]) {
-					result[code] = rates[code] * (1 - spreadBps / 10000);
+					sell[code] = rates[code] * (1 - spreadBps / 10000);
 				}
 			}
-			return result;
+
+			// On-ramp / buy NGN rate: mid × (1 + spread). The override (when
+			// set) is a hard rate and bypasses the spread on both sides.
+			let onrampNgn: number | null = null;
+			if (typeof overrides.NGN === 'number' && overrides.NGN > 0) {
+				onrampNgn = overrides.NGN as number;
+			} else if (typeof rates.NGN === 'number' && rates.NGN > 0) {
+				onrampNgn = rates.NGN * (1 + spreadBps / 10000);
+			}
+
+			return { sell, onrampNgn, onrampFeeBps };
 		})(),
 	]);
 
@@ -81,6 +93,11 @@ export const load: PageServerLoad = async ({ setHeaders }) => {
 	return {
 		platformTokens,
 		ngBanks: banksResult.data || [],
-		fiatRates: ratesResult,
+		// `fiatRates` historically held only the off-ramp/sell rates as a
+		// flat dict; preserved here so off-ramp callers don't have to
+		// change. On-ramp NGN rate + fee are exposed alongside.
+		fiatRates: ratesResult.sell,
+		onrampNgnRate: ratesResult.onrampNgn,
+		onrampFeeBps: ratesResult.onrampFeeBps,
 	};
 };

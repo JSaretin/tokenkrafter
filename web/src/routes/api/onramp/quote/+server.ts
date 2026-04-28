@@ -13,7 +13,6 @@ import { randomBytes } from 'crypto';
 import { supabaseAdmin } from '$lib/supabaseServer';
 
 const MIN_NGN_KOBO = 50_000;        // ₦500 floor
-const MAX_NGN_KOBO = 5_000_000;     // ₦50,000 cap (raise once KYC tier ladder ships)
 const QUOTE_TTL_SECONDS = 900;       // 15 min
 
 // On-ramp default fee (bps). Covers Flutterwave's 1.6% inbound deposit
@@ -48,7 +47,6 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	if (!Number.isInteger(ngn_amount_kobo)) return error(400, 'ngn_amount_kobo must be an integer');
 	if (ngn_amount_kobo < MIN_NGN_KOBO) return error(400, `Minimum on-ramp is ₦${MIN_NGN_KOBO / 100}`);
-	if (ngn_amount_kobo > MAX_NGN_KOBO) return error(400, `Maximum on-ramp is ₦${MAX_NGN_KOBO / 100}`);
 
 	const rateInfo = await loadRateAndFee();
 	if (!rateInfo) return error(503, 'Exchange rate unavailable');

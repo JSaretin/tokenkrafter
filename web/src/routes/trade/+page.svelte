@@ -139,6 +139,9 @@
 	// Exchange rates (spread already applied server-side in +page.server.ts)
 	let fiatRates: Record<string, number> = $derived(serverData?.fiatRates || {});
 	let ngnRate = $derived(fiatRates['NGN'] || 0);
+	// On-ramp NGN rate (mid + spread) — separate from off-ramp's fiatRates.NGN
+	// so live preview matches what the lock-rate quote will return.
+	let onrampNgnRate = $derived(serverData?.onrampNgnRate ?? null);
 	// Use gross amount for NGN display (fee is hidden in the spread)
 	// USDT decimals for the selected network (BSC USDT = 18, ETH USDT = 6)
 	let usdtDecimals = $state(18);
@@ -1526,6 +1529,7 @@
 				<OnrampPanel
 					chainId={selectedNetwork?.chain_id ?? 56}
 					receiver={userAddress ?? undefined}
+					initialRate={onrampNgnRate}
 					onsuccess={() => {
 						// Refresh USDT balance after delivery so the user can
 						// immediately swap or use it on the trade page.
@@ -1639,7 +1643,7 @@
 		</SwapCardShell>
 
 		<!-- Buy crypto banner (hide when already in fiat mode) -->
-		{#if outputMode !== 'fiat'}
+		<!-- {#if outputMode !== 'fiat'}
 		<div class="flex items-center gap-2 px-3.5 py-2.5 mt-2.5 rounded-xl bg-(--bg-surface) border border-(--border) font-mono text-xs2 text-(--text-muted)">
 			<svg class="shrink-0 text-cyan" width="14" height="14" viewBox="0 0 512 512" fill="#00d2ff"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM169.8 165.3c7.9-22.3 29.1-37.3 52.8-37.3h58.3c34.9 0 63.1 28.3 63.1 63.1c0 22.6-12.1 43.5-31.7 54.8L280 264.4c-.2 13-10.9 23.6-24 23.6c-13.3 0-24-10.7-24-24V250.5c0-8.6 4.6-16.5 12.1-20.8l44.3-25.4c4.7-2.7 7.6-7.7 7.6-13.1c0-8.4-6.8-15.1-15.1-15.1H222.6c-3.4 0-6.4 2.1-7.5 5.3l-.4 1.2c-4.4 12.5-18.2 19-30.6 14.6s-19-18.2-14.6-30.6l.4-1.2zM224 352a32 32 0 1 1 64 0 32 32 0 1 1-64 0z"/></svg>
 			<span class="flex-1">{$t('trade.buyCrypto')}</span>
@@ -1647,7 +1651,7 @@
 				{$t('trade.getItNow')}
 			</button>
 		</div>
-		{/if}
+		{/if} -->
 
 		<!-- Unified Trade History — off-ramp (sells) + on-ramp (buys) -->
 		{#if showHistory && userAddress}

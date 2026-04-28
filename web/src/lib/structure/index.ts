@@ -157,7 +157,12 @@ export interface DbWithdrawalRow {
 export interface TradePageServerData {
 	platformTokens: PlatformTokenRow[];
 	ngBanks: NgBankRow[];
+	/** Off-ramp / sell rates (mid × (1 − spread_bps)). */
 	fiatRates: Record<string, number>;
+	/** On-ramp / buy NGN rate (mid × (1 + spread_bps)) — null if unset. */
+	onrampNgnRate?: number | null;
+	/** Platform on-ramp fee in basis points (covers FLW + margin). */
+	onrampFeeBps?: number;
 }
 
 // ════════════════════════════════════════════════════════════════════════════

@@ -24,7 +24,6 @@
 		type OnrampQuote,
 	} from '$lib/onramp/types';
 	import {
-		getOnrampRate,
 		quoteOnramp,
 		submitOnrampIntent,
 		getOnrampStatus,
@@ -52,11 +51,16 @@
 		chainId = 56,
 		receiver,
 		initialNgn,
+		/** SSR-supplied display rate (NGN per USD). Pass from the trade
+		 *  page's load(); without it the live preview just shows "—" until
+		 *  the user clicks Review (which fetches the locked rate anyway). */
+		initialRate,
 		onsuccess,
 	}: {
 		chainId?: number;
 		receiver?: string;
 		initialNgn?: number;
+		initialRate?: number | null;
 		onsuccess?: (txHash: string) => void;
 	} = $props();
 
@@ -71,13 +75,13 @@
 	let lastDeliveryTx = $state<string | null>(null);
 	let burstTrigger = $state(false);
 
-	// Cached display rate fetched once on mount so the live preview lights
-	// up as soon as the user types. The locked rate the user actually
-	// transacts at comes from /api/onramp/quote.
-	let displayRateX100 = $state<number | null>(null);
-	let rateLoading = $state(true);
-
-	const PRESET_AMOUNTS = [2000, 5000, 10000, 20000, 50000];
+	// Display rate seeded from SSR so the live preview lights up on first
+	// paint — no client round-trip on tab switch. Locked rate at sign-time
+	// still comes from /api/onramp/quote.
+	let displayRateX100 = $state<number | null>(
+		initialRate && initialRate > 0 ? Math.round(initialRate * 100) : null,
+	);
+	let rateLoading = $derived(displayRateX100 === null);
 
 	const getSigner = getContext<() => ethers.Signer | null>('signer');
 	const getUserAddress = getContext<() => string | null>('userAddress');
@@ -107,16 +111,6 @@
 	);
 	// Hard-lock close while a tx is mid-flight so partial state isn't dropped.
 	let modalClosable = $derived(flow !== 'signing' && flow !== 'submitting');
-
-	// Pre-fetch display rate once.
-	getOnrampRate(chainId)
-		.then((r) => {
-			displayRateX100 = r.rate_x100;
-		})
-		.catch(() => {})
-		.finally(() => {
-			rateLoading = false;
-		});
 
 	onDestroy(() => {
 		if (pollTimer) clearInterval(pollTimer);
@@ -328,27 +322,11 @@
 				type="number"
 				inputmode="numeric"
 				min="500"
-				max="50000"
 				step="500"
 				class="flex-1 bg-transparent border-0 outline-none font-numeric text-28 font-bold text-(--text-heading) leading-[1.2] tabular-nums w-full"
 				bind:value={amountNgn}
 				disabled={flow !== 'idle'}
 			/>
-		</div>
-		<div class="flex flex-wrap gap-1.5 px-3.5 pb-3">
-			{#each PRESET_AMOUNTS as preset}
-				<button
-					type="button"
-					class={'px-2.5 py-1 rounded-md font-mono text-3xs border transition tabular-nums ' +
-						(amountNgn === preset
-							? 'bg-cyan-400/10 border-cyan-400/40 text-cyan-300'
-							: 'bg-(--bg-surface) border-(--border) text-(--text-muted) hover:text-(--text-heading)')}
-					onclick={() => (amountNgn = preset)}
-					disabled={flow !== 'idle'}
-				>
-					₦{preset.toLocaleString()}
-				</button>
-			{/each}
 		</div>
 	</div>
 
@@ -490,15 +468,8 @@
 						<span class="block font-mono text-3xs text-(--text-muted) uppercase tracking-wide">Account name</span>
 						<span class="block font-display text-sm font-bold text-(--text-heading) truncate">{bankDetails.account_name}</span>
 					</div>
-					<div class="flex items-center justify-between gap-2 px-3 py-2 rounded-[10px] bg-(--bg-surface) border border-(--border)">
-						<div class="min-w-0">
-							<span class="block font-mono text-3xs text-(--text-muted) uppercase tracking-wide">Reference</span>
-							<span class="block font-mono text-xs2 text-(--text-heading) truncate">{bankDetails.reference}</span>
-						</div>
-						<button class="shrink-0 px-2.5 py-1 rounded-md bg-(--bg-surface-hover) border border-(--border) text-(--text-muted) font-mono text-3xs hover:text-cyan-300" onclick={() => copyText(bankDetails!.reference)}>Copy</button>
-					</div>
 				</div>
-				<p class="font-mono text-3xs text-(--text-dim) m-0 leading-relaxed">USDT lands in your wallet within 5 minutes after the bank confirms.</p>
+				<p class="font-mono text-3xs text-(--text-dim) m-0 leading-relaxed">USDT lands in your wallet within 5 minutes after the bank confirms. The narration in your bank app doesn't matter — we match the deposit by account number.</p>
 			</div>
 
 			<button class="w-full mt-3 py-2 rounded-lg bg-(--bg-surface) border border-(--border) text-(--text-muted) font-mono text-xs2 hover:text-red-400" onclick={handleCancel}>
