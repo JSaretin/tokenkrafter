@@ -71,6 +71,34 @@ async function releaseLock(reference: string) {
 	await redis.del(`onramp:processing:${reference}`);
 }
 
+// ── Alert dedup ──
+// Prevent the same failure mode from spamming Telegram every 30s.
+// Key TTL = 24h: if the issue persists past a day, re-alert is fine.
+const ALERT_TTL = 86400;
+
+async function alertOnce(
+	dedupKey: string,
+	subject: string,
+	message: string,
+): Promise<void> {
+	const fresh = await redis.set(`onramp:alerted:${dedupKey}`, '1', {
+		EX: ALERT_TTL,
+		NX: true,
+	});
+	if (fresh !== 'OK') return; // already alerted within window
+	await sendAlert(subject, message);
+}
+
+async function clearAlerts(reference: string): Promise<void> {
+	// On success, drop any pending alert keys for this reference so a
+	// future re-occurrence of the same failure mode would re-alert.
+	const keys = [
+		`onramp:alerted:treasury_low:${reference}`,
+		`onramp:alerted:fail:${reference}`,
+	];
+	for (const k of keys) await redis.del(k);
+}
+
 // ── Backend RPCs ──
 async function fetchPending(): Promise<PendingDelivery[]> {
 	const res = await fetch(`${BACKEND_URL}/api/onramp/pending-deliveries`, {
@@ -153,10 +181,13 @@ async function processOne(p: PendingDelivery): Promise<'delivered' | 'skipped' |
 		const res = await deliverOne(p.reference);
 		if (res.success) {
 			console.log(`[OK] ${p.reference} delivered: tx=${res.delivery_tx_hash}`);
+			// Success is unique per reference — direct send, then clear
+			// any previously-emitted failure alerts for this reference.
 			await sendAlert(
 				'On-ramp delivered',
 				`✅ ${p.reference}\n💰 ₦${ngn} → ${usdt} USDT\n👤 ${p.receiver}\n🔗 ${res.delivery_tx_hash ?? '?'}`,
 			);
+			await clearAlerts(p.reference);
 			return 'delivered';
 		}
 		if (res.skipped) {
@@ -166,17 +197,23 @@ async function processOne(p: PendingDelivery): Promise<'delivered' | 'skipped' |
 		const err = res.error ?? 'unknown';
 		console.error(`[FAIL] ${p.reference}: ${err}`);
 		// Treasury-shortfall alerts get explicit numbers so the operator
-		// knows exactly how much USDT to top up.
+		// knows exactly how much to top up. Dedup'd to one alert per
+		// reference per 24h so the poll loop doesn't spam.
 		if (err === 'Treasury insufficient' && res.detail) {
 			const have = fmtUsdtWei(res.detail.treasury_have_wei);
 			const need = fmtUsdtWei(res.detail.required_wei);
 			const short = fmtUsdtWei(res.detail.shortfall_wei);
-			await sendAlert(
+			await alertOnce(
+				`treasury_low:${p.reference}`,
 				'On-ramp treasury low',
 				`💸 ${p.reference} stuck — top up admin wallet\n• Need: ${need} USDT\n• Have: ${have} USDT\n• Short: ${short} USDT\nWill auto-retry on next poll once funded.`,
 			);
 		} else {
-			await sendAlert('On-ramp delivery failed', `❌ ${p.reference}: ${err}`);
+			await alertOnce(
+				`fail:${p.reference}`,
+				'On-ramp delivery failed',
+				`❌ ${p.reference}: ${err}`,
+			);
 		}
 		return 'failed';
 	} catch (e: any) {
