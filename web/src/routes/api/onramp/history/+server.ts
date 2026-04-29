@@ -16,9 +16,13 @@ export const GET: RequestHandler = async ({ url }) => {
 		return error(400, 'Invalid wallet');
 	}
 
+	// `failure_reason` is intentionally omitted — it holds operator-facing
+	// detail like "Treasury insufficient" / contract-revert strings that
+	// shouldn't reach the end user. The UI shows a generic message for
+	// failed rows; technical detail stays server-side for triage.
 	const { data, error: dbErr } = await supabaseAdmin
 		.from('onramp_intents')
-		.select('reference, status, chain_id, ngn_amount_kobo, usdt_amount_wei, rate_x100, expires_at, created_at, paid_at, delivered_at, delivery_tx_hash, failure_reason, flutterwave_va_account_number, flutterwave_va_bank_name')
+		.select('reference, status, chain_id, ngn_amount_kobo, usdt_amount_wei, rate_x100, expires_at, created_at, paid_at, delivered_at, delivery_tx_hash, flutterwave_va_account_number, flutterwave_va_bank_name')
 		.eq('receiver', wallet)
 		.order('created_at', { ascending: false })
 		.limit(100);

@@ -112,7 +112,18 @@ export const POST: RequestHandler = async ({ request }) => {
 		const treasury: bigint = await usdt.balanceOf(signer.address);
 		if (treasury < amount) {
 			await rollbackToPaid(reference);
-			return json({ success: false, error: 'Treasury insufficient' }, { status: 503 });
+			return json(
+				{
+					success: false,
+					error: 'Treasury insufficient',
+					detail: {
+						treasury_have_wei: treasury.toString(),
+						required_wei: amount.toString(),
+						shortfall_wei: (amount - treasury).toString(),
+					},
+				},
+				{ status: 503 },
+			);
 		}
 	} catch (e: any) {
 		await rollbackToPaid(reference);

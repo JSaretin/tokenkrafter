@@ -32,7 +32,16 @@
 		tickNow = Date.now();
 	}, 1000);
 
-	// Subscribe to realtime updates on this withdrawal
+	// Once we hit confirmed/cancelled, the modal must NEVER revert. Any
+	// further "pending" update we see is either stale, from a different
+	// row that happens to share a field, or a glitch — ignore it.
+	const TERMINAL = ['confirmed', 'cancelled'];
+
+	// Subscribe to realtime updates on this withdrawal. Strict row match:
+	// only by DB id or (withdraw_id + chain_id). The wallet-address
+	// fallback that used to live here was matching *any* withdrawal for
+	// the same wallet, which caused the modal to flip back to pending
+	// when an unrelated newer withdrawal landed.
 	const channel = supabase
 		.channel(`withdrawal-${withdrawal?.id}-${Date.now()}`)
 		.on('postgres_changes', {
@@ -40,18 +49,17 @@
 			schema: 'public',
 			table: 'withdrawal_requests'
 		}, (payload: any) => {
-			// Match by withdraw_id since DB id might not be known
 			const row = payload.new;
-			if (row && (
+			if (!row) return;
+			const sameRow =
 				row.id === withdrawal?.id ||
-				(row.withdraw_id === withdrawal?.withdraw_id && row.chain_id === withdrawal?.chain_id) ||
-				row.wallet_address?.toLowerCase() === withdrawal?.wallet_address?.toLowerCase()
-			)) {
-				if (row.status !== liveStatus) {
-					liveStatus = row.status;
-					liveNote = row.admin_note || '';
-					if (row.confirmed_at) confirmedAt = row.confirmed_at;
-				}
+				(row.withdraw_id != null && row.withdraw_id === withdrawal?.withdraw_id && row.chain_id === withdrawal?.chain_id);
+			if (!sameRow) return;
+			if (TERMINAL.includes(liveStatus)) return; // never go backwards
+			if (row.status !== liveStatus) {
+				liveStatus = row.status;
+				liveNote = row.admin_note || '';
+				if (row.confirmed_at) confirmedAt = row.confirmed_at;
 			}
 		})
 		.subscribe();
@@ -59,16 +67,16 @@
 	// Fallback poll every 5s in case Realtime misses an update — stops once
 	// we reach a terminal state (confirmed/cancelled) so we don't hammer the API.
 	const pollInterval = setInterval(async () => {
-		if (liveStatus === 'confirmed' || liveStatus === 'cancelled') return;
+		if (TERMINAL.includes(liveStatus)) return;
 		try {
 			const res = await fetch('/api/withdrawals?limit=10', { credentials: 'include' });
 			if (!res.ok) return;
 			const rows = await res.json();
 			const match = rows?.find?.((r: any) =>
 				r.id === withdrawal?.id ||
-				(r.withdraw_id === withdrawal?.withdraw_id && r.chain_id === withdrawal?.chain_id)
+				(r.withdraw_id != null && r.withdraw_id === withdrawal?.withdraw_id && r.chain_id === withdrawal?.chain_id)
 			);
-			if (match && match.status !== liveStatus) {
+			if (match && !TERMINAL.includes(liveStatus) && match.status !== liveStatus) {
 				liveStatus = match.status;
 				liveNote = match.admin_note || liveNote;
 				if (match.confirmed_at) confirmedAt = match.confirmed_at;

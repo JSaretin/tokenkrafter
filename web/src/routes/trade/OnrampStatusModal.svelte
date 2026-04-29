@@ -231,8 +231,14 @@
 				<span class="truncate ml-2">{row.delivery_tx_hash.slice(0, 10)}…{row.delivery_tx_hash.slice(-8)}</span>
 			</a>
 		{/if}
-		{#if row.failure_reason}
-			<div class="mt-2 pt-2 border-t border-(--border-subtle) font-mono text-3xs text-red-300/80">{row.failure_reason}</div>
+		{#if isFailed}
+			<!-- Generic user-facing message — operator-facing technical
+			     detail lives in failure_reason but is never rendered to
+			     the user (avoids leaking infra issues like "Treasury
+			     insufficient" or contract revert reasons). -->
+			<div class="mt-2 pt-2 border-t border-(--border-subtle) font-mono text-3xs text-red-300/80">
+				Delivery is taking longer than expected. Our team has been notified and will resolve this shortly. Please contact support if it isn't delivered within 30 minutes.
+			</div>
 		{/if}
 	</div>
 

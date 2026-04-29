@@ -88,7 +88,21 @@ interface DeliverResponse {
 	skipped?: boolean;
 	reason?: string;
 	error?: string;
+	detail?: {
+		treasury_have_wei?: string;
+		required_wei?: string;
+		shortfall_wei?: string;
+	};
 	delivery_tx_hash?: string;
+}
+
+function fmtUsdtWei(wei: string | undefined): string {
+	if (!wei) return '?';
+	try {
+		return (Number((BigInt(wei) * 10000n) / 10n ** 18n) / 10000).toFixed(4);
+	} catch {
+		return '?';
+	}
 }
 
 async function deliverOne(reference: string): Promise<DeliverResponse> {
@@ -151,7 +165,19 @@ async function processOne(p: PendingDelivery): Promise<'delivered' | 'skipped' |
 		}
 		const err = res.error ?? 'unknown';
 		console.error(`[FAIL] ${p.reference}: ${err}`);
-		await sendAlert('On-ramp delivery failed', `❌ ${p.reference}: ${err}`);
+		// Treasury-shortfall alerts get explicit numbers so the operator
+		// knows exactly how much USDT to top up.
+		if (err === 'Treasury insufficient' && res.detail) {
+			const have = fmtUsdtWei(res.detail.treasury_have_wei);
+			const need = fmtUsdtWei(res.detail.required_wei);
+			const short = fmtUsdtWei(res.detail.shortfall_wei);
+			await sendAlert(
+				'On-ramp treasury low',
+				`💸 ${p.reference} stuck — top up admin wallet\n• Need: ${need} USDT\n• Have: ${have} USDT\n• Short: ${short} USDT\nWill auto-retry on next poll once funded.`,
+			);
+		} else {
+			await sendAlert('On-ramp delivery failed', `❌ ${p.reference}: ${err}`);
+		}
 		return 'failed';
 	} catch (e: any) {
 		console.error(`[ERROR] ${p.reference}:`, e.message?.slice(0, 200));
