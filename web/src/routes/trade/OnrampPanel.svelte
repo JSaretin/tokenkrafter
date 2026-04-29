@@ -483,7 +483,6 @@
 {#if postSubmit && statusRow}
 	<OnrampStatusModal
 		row={statusRow}
-		onCancel={flow === 'awaiting_payment' ? handleCancel : undefined}
 		onClose={() => {
 			if (flow === 'delivered') {
 				try { onsuccess?.(lastDeliveryTx ?? ''); } catch {}

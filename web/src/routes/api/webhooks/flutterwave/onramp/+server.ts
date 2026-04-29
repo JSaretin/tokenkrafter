@@ -1,57 +1,92 @@
 /**
  * POST /api/webhooks/flutterwave/onramp
- * Flutterwave sends `charge.completed` events here when a virtual
- * account receives an inbound transfer. We match the tx_ref against
- * an `onramp_intents` row in `pending_payment` state, validate the
- * amount, and flip the intent to `payment_received`. The delivery
- * worker (separate concern) signs USDT.transfer to intent.receiver.
+ *
+ * Receives `charge.completed` events from Flutterwave when a virtual
+ * account we created accepts an inbound bank transfer. We match the
+ * reference against an `onramp_intents` row in `pending_payment`,
+ * verify the amount, and flip the intent to `payment_received`. The
+ * delivery worker (separate concern) then signs USDT.transfer to the
+ * receiver address bound by the EIP-712 intent signature.
+ *
+ * Signature verification supports both schemes Flutterwave uses:
+ *   - V4: `flutterwave-signature` header = HMAC-SHA256(rawBody, secret) base64.
+ *   - V3: `verif-hash` header = secret literal.
+ * Either is enough for accept; both are timing-safe-compared.
+ *
+ * Payload shape also varies between V3 and V4. We read fields with
+ * fallbacks so the same handler works on either; FLW's V4 docs show
+ * `type` + `data.reference` + `status: 'succeeded'`, V3 used `event` +
+ * `data.tx_ref` + `status: 'successful'`.
  */
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { env } from '$env/dynamic/private';
 import { supabaseAdmin } from '$lib/supabaseServer';
-import { timingSafeEqual } from 'crypto';
+import { createHmac, timingSafeEqual } from 'crypto';
 
-function timingSafeCompare(a: string, b: string): boolean {
+function timingSafeStringEq(a: string, b: string): boolean {
 	const bufA = Buffer.from(a);
 	const bufB = Buffer.from(b);
 	if (bufA.length !== bufB.length) return false;
 	return timingSafeEqual(bufA, bufB);
 }
 
+function verifySignature(rawBody: string, headers: Headers, secret: string): boolean {
+	// V4: flutterwave-signature = HMAC-SHA256(body, secret) → base64.
+	const v4Sig = headers.get('flutterwave-signature');
+	if (v4Sig) {
+		const expected = createHmac('sha256', secret).update(rawBody).digest('base64');
+		if (timingSafeStringEq(v4Sig, expected)) return true;
+	}
+	// V3 legacy: verif-hash = secret literal. Some FLW accounts still emit
+	// this even when the dashboard says "secret hash".
+	const v3Sig = headers.get('verif-hash');
+	if (v3Sig && timingSafeStringEq(v3Sig, secret)) return true;
+	return false;
+}
+
+const REF_PREFIXES = ['TokenKrafter-', 'TKO-'];
+
 export const POST: RequestHandler = async ({ request }) => {
-	// Same shared-secret hash header as the existing FLW webhook.
-	const signature = request.headers.get('verif-hash');
 	const webhookSecret = env.FLUTTERWAVE_WEBHOOK_SECRET || env.FLUTTERWAVE_ENCRYPTION_KEY;
 	if (!webhookSecret) {
 		console.error('[onramp.webhook] no webhook secret configured');
 		return json({ status: 'error' }, { status: 500 });
 	}
-	if (!signature || !timingSafeCompare(signature, webhookSecret)) {
+
+	// Read raw body once — needed for HMAC verification and JSON parse.
+	const rawBody = await request.text();
+	if (!verifySignature(rawBody, request.headers, webhookSecret)) {
 		return json({ status: 'error' }, { status: 401 });
 	}
 
-	const body = await request.json().catch(() => null);
-	const event: string | undefined = body?.event;
+	let body: any;
+	try {
+		body = JSON.parse(rawBody);
+	} catch {
+		return json({ status: 'error' }, { status: 400 });
+	}
+
+	// V4 uses `type`, V3 uses `event`.
+	const eventType: string | undefined = body?.type ?? body?.event;
 	const data = body?.data;
-	if (!event || !data) return json({ status: 'ok' });
+	if (!eventType || !data) return json({ status: 'ok' });
+	if (eventType !== 'charge.completed') return json({ status: 'ok' });
 
-	// Only interested in inbound payments
-	if (event !== 'charge.completed') return json({ status: 'ok' });
-
-	const reference = data.tx_ref || data.reference;
-	if (typeof reference !== 'string' || !reference.startsWith('TKO-')) {
+	// V4: data.reference (UUID-like). V3: data.tx_ref. Either is fine —
+	// only ours start with the on-ramp prefix.
+	const reference = data.reference ?? data.tx_ref;
+	if (typeof reference !== 'string' || !REF_PREFIXES.some((p) => reference.startsWith(p))) {
 		return json({ status: 'ok' });
 	}
 
+	// V4: 'succeeded'. V3: 'successful' / 'success'.
 	const flwStatus = String(data.status ?? '').toLowerCase();
-	if (flwStatus !== 'successful' && flwStatus !== 'success') {
-		// Failed payment — best to log and let the user retry.
+	if (flwStatus !== 'succeeded' && flwStatus !== 'successful' && flwStatus !== 'success') {
 		console.warn('[onramp.webhook] non-success status:', reference, flwStatus);
 		return json({ status: 'ok' });
 	}
 
-	// Look up the intent
 	const { data: row } = await supabaseAdmin
 		.from('onramp_intents')
 		.select('id, status, ngn_amount_kobo, flutterwave_tx_id')
@@ -59,17 +94,16 @@ export const POST: RequestHandler = async ({ request }) => {
 		.single();
 	if (!row) return json({ status: 'ok' });
 
-	// Idempotency — if we already processed this tx, ignore re-delivery
+	// Idempotency — re-delivery of an already-processed event is a no-op.
 	const incomingTxId = String(data.id ?? data.transactionId ?? '');
 	if (row.flutterwave_tx_id && row.flutterwave_tx_id === incomingTxId) {
 		return json({ status: 'ok' });
 	}
 	if (row.status !== 'pending_payment') {
-		// Already moved on — refunded, delivered, etc. Ignore.
 		return json({ status: 'ok' });
 	}
 
-	// Amount check (₦5 tolerance for bank-side rounding)
+	// Amount check (₦5 tolerance for bank-side rounding).
 	const expectedNgn = Number(row.ngn_amount_kobo) / 100;
 	const paidNgn = Number(data.amount);
 	if (!Number.isFinite(paidNgn) || Math.abs(paidNgn - expectedNgn) > 5) {
@@ -84,18 +118,30 @@ export const POST: RequestHandler = async ({ request }) => {
 		return json({ status: 'ok' });
 	}
 
+	// V4: customer is nested. V3 was flatter. Pull payer info with fallbacks
+	// so analytics has *some* identity even when shapes diverge.
+	const payerAccount =
+		data.payment_account_number ??
+		data.account_number ??
+		data.payment_method?.bank_transfer?.account_number ??
+		null;
+	const payerName =
+		data.payer_name ??
+		data.account_name ??
+		data.customer?.name ??
+		data.payment_method?.bank_transfer?.account_name ??
+		null;
+
 	await supabaseAdmin
 		.from('onramp_intents')
 		.update({
 			status: 'payment_received',
 			paid_at: new Date().toISOString(),
 			flutterwave_tx_id: incomingTxId,
-			flutterwave_payer_account: data.payment_account_number ?? data.account_number ?? null,
-			flutterwave_payer_name: data.payer_name ?? data.account_name ?? null,
+			flutterwave_payer_account: payerAccount,
+			flutterwave_payer_name: payerName,
 		})
 		.eq('reference', reference);
 
-	// Delivery is a separate concern — operator picks it up from
-	// /_/onramp for v0; auto-delivery worker arrives in a later commit.
 	return json({ status: 'ok' });
 };

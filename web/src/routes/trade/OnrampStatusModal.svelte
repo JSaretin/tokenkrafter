@@ -99,7 +99,7 @@
 	}
 </script>
 
-<ConfirmModalShell {title} {onClose}>
+<ConfirmModalShell {title} {onClose} fullScreen>
 	<div class="text-center px-2">
 		<!-- Icon with circular countdown ring (only animates while pending) -->
 		<div class="relative w-20 h-20 mx-auto mb-3">
@@ -196,7 +196,19 @@
 		{#if row.flutterwave_va_account_number}
 			<div class="flex justify-between items-center py-1.5 font-mono text-xs2">
 				<span class="text-(--text-muted)">Account</span>
-				<button class="text-(--text-heading) hover:text-cyan-300 cursor-pointer tabular-nums" onclick={() => copyText(row.flutterwave_va_account_number!)}>{row.flutterwave_va_account_number}</button>
+				<button
+					type="button"
+					class="flex items-center gap-1.5 text-(--text-heading) hover:text-cyan-300 cursor-pointer tabular-nums"
+					onclick={() => copyText(row.flutterwave_va_account_number!)}
+					aria-label="Copy account number"
+					title="Copy account number"
+				>
+					{row.flutterwave_va_account_number}
+					<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-(--text-muted)">
+						<rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+						<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+					</svg>
+				</button>
 			</div>
 		{/if}
 		<div class="flex justify-between items-center py-1.5 font-mono text-xs2">
