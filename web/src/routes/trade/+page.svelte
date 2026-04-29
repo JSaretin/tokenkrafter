@@ -144,6 +144,9 @@
 	let onrampNgnRate = $derived(serverData?.onrampNgnRate ?? null);
 	// Whole-naira minimum on-ramp (configurable via platform_config.rate_override.onramp_min_kobo).
 	let onrampMinNgn = $derived(Math.ceil((serverData?.onrampMinKobo ?? 50_000) / 100));
+	// On-ramp amount lives at the page level so it survives tab switches
+	// (Buy → Swap → Buy keeps the user's typed amount).
+	let onrampAmountNgn = $state<number | null>(null);
 	// Use gross amount for NGN display (fee is hidden in the spread)
 	// USDT decimals for the selected network (BSC USDT = 18, ETH USDT = 6)
 	let usdtDecimals = $state(18);
@@ -1533,6 +1536,7 @@
 					receiver={userAddress ?? undefined}
 					initialRate={onrampNgnRate}
 					minNgn={onrampMinNgn}
+					bind:amountNgn={onrampAmountNgn}
 					onsuccess={() => {
 						// Refresh USDT balance after delivery so the user can
 						// immediately swap or use it on the trade page.
@@ -1629,7 +1633,6 @@
 					<TrustItem>
 						{#if payoutTimeoutLoaded}{$t('trade.autoRefundAfter').replace('{min}', String(payoutTimeoutMins))}{:else}{$t('trade.autoRefundIfFails')}{/if}
 					</TrustItem>
-					<TrustItem>{$t('trade.cancelBeforeConfirmation')}</TrustItem>
 					<TrustItem>{$t('trade.noKycRequired')}</TrustItem>
 				</TrustCard>
 			{/if}

@@ -51,7 +51,6 @@
 	let {
 		chainId = 56,
 		receiver,
-		initialNgn,
 		/** SSR-supplied display rate (NGN per USD). Pass from the trade
 		 *  page's load(); without it the live preview just shows "—" until
 		 *  the user clicks Review (which fetches the locked rate anyway). */
@@ -59,20 +58,22 @@
 		/** Minimum on-ramp amount in whole NGN. SSR-supplied so the input's
 		 *  validation matches the server's `onramp_min_kobo` config. */
 		minNgn = 500,
+		/** Bindable amount input — lives at the parent so it survives
+		 *  tab switches (Buy → Swap → Buy keeps the typed amount). */
+		amountNgn = $bindable<number | null>(null),
 		onsuccess,
 	}: {
 		chainId?: number;
 		receiver?: string;
-		initialNgn?: number;
 		initialRate?: number | null;
 		minNgn?: number;
+		amountNgn?: number | null;
 		onsuccess?: (txHash: string) => void;
 	} = $props();
 
 	let flow = $state<State>('idle');
-	// Default to null so the user enters their actual desired amount —
-	// pre-filling 5000 anchored people into "default sized" buys.
-	let amountNgn = $state<number | null>(initialNgn && initialNgn > 0 ? initialNgn : null);
+	// amountNgn is a bindable prop (declared above) so its value lives
+	// at the parent and survives tab switches.
 	let quote = $state<OnrampQuote | null>(null);
 	let bankDetails = $state<BankDetails | null>(null);
 	let errorMsg = $state('');
@@ -355,48 +356,80 @@
 	// Inline panel = just the amount input. Everything else lives in the modal.
 </script>
 
-<!-- ═══ INLINE INPUT (amount only) ═══ -->
-	<!-- ═══ INLINE INPUT (matches off-ramp visual: card → preview → trust → button) ═══ -->
-	<div class="flex flex-col bg-(--bg-surface-input) rounded-xl overflow-hidden">
-		<div class="flex justify-between items-start px-3.5 pt-3 pb-1.5">
-			<span class="font-mono text-xs4 font-semibold uppercase tracking-[0.05em] text-(--text-muted)">{$t('trade.youPay')}</span>
-			<span class="font-mono text-3xs text-(--text-dim) tabular-nums">NGN</span>
-		</div>
-		<div class="px-3.5 pb-3 pt-1 flex items-baseline gap-2">
-			<span class="font-numeric text-22 font-bold text-(--text-muted) shrink-0">₦</span>
-			<input
-				type="number"
-				inputmode="numeric"
-				min="500"
-				step="500"
-				class="flex-1 bg-transparent border-0 outline-none font-numeric text-28 font-bold text-(--text-heading) leading-[1.2] tabular-nums w-full"
-				bind:value={amountNgn}
-				disabled={flow !== 'idle'}
-			/>
+<!-- ═══ YOU PAY (NGN input) ═══ -->
+<div class="flex flex-col bg-(--bg-surface-input) rounded-xl overflow-hidden">
+	<div class="flex justify-between items-start px-3.5 pt-3 pb-1.5">
+		<span class="font-mono text-xs4 font-semibold uppercase tracking-[0.05em] text-(--text-muted)">{$t('trade.youPay')}</span>
+		<div class="flex items-center gap-1.5 px-2 py-1 rounded-full bg-(--bg-surface) border border-(--border)">
+			<div class="w-4 h-4 rounded-full bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center">
+				<span class="font-mono text-3xs font-bold text-emerald-300">₦</span>
+			</div>
+			<span class="font-mono text-3xs font-bold text-(--text-heading) tabular-nums">NGN</span>
 		</div>
 	</div>
+	<div class="px-3.5 pb-3 pt-1 flex items-baseline gap-2">
+		<span class="font-numeric text-22 font-bold text-(--text-muted) shrink-0">₦</span>
+		<input
+			type="text"
+			inputmode="numeric"
+			pattern="[0-9]*"
+			placeholder="0"
+			class="flex-1 bg-transparent border-0 outline-none font-numeric text-28 font-bold text-(--text-heading) leading-[1.2] tabular-nums w-full"
+			value={amountNgn ?? ''}
+			oninput={(e) => {
+				const digits = (e.currentTarget as HTMLInputElement).value.replace(/[^0-9]/g, '');
+				amountNgn = digits ? Number(digits) : null;
+				(e.currentTarget as HTMLInputElement).value = digits;
+			}}
+			disabled={flow !== 'idle'}
+		/>
+	</div>
+	<div class="px-3.5 pb-3 -mt-1">
+		<span class="font-mono text-3xs text-(--text-dim)">Min ₦{minNgn.toLocaleString()}</span>
+	</div>
+</div>
 
-	<!-- USDT preview (mirrors PayoutPreviewCard look) -->
-	<div class="bg-[rgba(16,185,129,0.05)] border border-[rgba(16,185,129,0.1)] rounded-[10px] p-3.5 my-3 mb-2.5">
-		<div class="text-center">
-			{#if rateLoading}
-				<span class="block font-mono text-xs2 text-(--text-dim)">Loading rate…</span>
-			{:else if livePreviewUsdt !== null}
-				<span class="block font-[Rajdhani,sans-serif] text-28 font-bold text-[#10b981] leading-[1.2] tabular-nums">{livePreviewUsdt.toFixed(4)} USDT</span>
-				<span class="block font-mono text-3xs text-(--text-dim) mt-1">{$t('trade.youReceive')} (est.)</span>
-			{:else}
-				<span class="block font-mono text-xs2 text-(--text-dim)">—</span>
-			{/if}
+<!-- ═══ YOU RECEIVE (USDT preview) ═══ -->
+<div class="flex flex-col bg-(--bg-surface-input) rounded-xl overflow-hidden mt-2">
+	<div class="flex justify-between items-start px-3.5 pt-3 pb-1.5">
+		<span class="font-mono text-xs4 font-semibold uppercase tracking-[0.05em] text-(--text-muted)">{$t('trade.youReceive')}</span>
+		<div class="flex items-center gap-1.5 px-2 py-1 rounded-full bg-(--bg-surface) border border-(--border)">
+			<svg width="16" height="16" viewBox="0 0 339 295" xmlns="http://www.w3.org/2000/svg" class="shrink-0"><path d="M62.15.5h214.49a4.75 4.75 0 0 1 4.21 2.21l56.51 94.65a4.85 4.85 0 0 1-.43 5.62L173.31 292.13a4.92 4.92 0 0 1-7.4 0L2.05 102.93a4.85 4.85 0 0 1-.43-5.62L58.13 2.71A4.75 4.75 0 0 1 62.15.5Z" fill="#50AF95"/><path d="M191.19 144.8c-1.2.09-7.4.46-21.23.46-11 0-18.81-.33-21.55-.46-42.51-1.87-74.24-9.27-74.24-18.13s31.73-16.25 74.24-18.15v28.91c2.78.2 10.74.67 21.74.67 13.2 0 19.81-.55 21-.66v-28.9c42.42 1.89 74.08 9.29 74.08 18.13s-31.65 16.24-74.08 18.12l.04.01ZM191.19 105.6V79.73h59.21V40.29H88.61v39.44h59.2V105.6c-48.11 2.21-84.29 11.74-84.29 23.16s36.18 20.94 84.29 23.16v82.9h43.38v-82.93c48-2.21 84.12-11.74 84.12-23.15s-36.08-20.94-84.12-23.16v.02Z" fill="#fff"/></svg>
+			<span class="font-mono text-3xs font-bold text-(--text-heading)">USDT</span>
 		</div>
-		{#if liveRate !== null}
-			<div class="flex flex-col gap-1 mt-2 pt-2 border-t border-(--border-subtle)">
-				<div class="flex justify-between font-mono text-3xs text-(--text-dim)">
-					<span>Rate</span>
-					<span>₦{liveRate.toFixed(2)} / $1</span>
-				</div>
-			</div>
+	</div>
+	<div class="px-3.5 pb-3 pt-1">
+		{#if rateLoading}
+			<span class="block font-numeric text-22 font-bold text-(--text-dim) leading-[1.2]">Loading…</span>
+		{:else if livePreviewUsdt !== null}
+			<span class="block font-numeric text-28 font-bold text-[#10b981] leading-[1.2] tabular-nums">{livePreviewUsdt.toFixed(4)}</span>
+		{:else}
+			<span class="block font-numeric text-28 font-bold text-(--text-dim) leading-[1.2]">0.0000</span>
 		{/if}
 	</div>
+	{#if liveRate !== null}
+		<div class="flex justify-between items-center px-3.5 pb-3 -mt-1">
+			<span class="font-mono text-3xs text-(--text-dim)">Rate</span>
+			<span class="font-numeric text-3xs text-(--text-muted) tabular-nums">₦{liveRate.toFixed(2)} / $1</span>
+		</div>
+	{/if}
+</div>
+
+<!-- ═══ Receiver chip — show where the USDT will land ═══ -->
+{#if effectiveReceiver}
+	<div class="flex items-center justify-between gap-2 mt-2 px-3 py-2 rounded-[10px] bg-(--bg-surface) border border-(--border)">
+		<div class="flex items-center gap-2 min-w-0">
+			<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-(--text-muted) shrink-0">
+				<rect x="2" y="6" width="20" height="14" rx="2"/>
+				<path d="M2 10h20"/>
+				<path d="M6 14h2"/>
+			</svg>
+			<span class="font-mono text-3xs text-(--text-muted) shrink-0">Sent to</span>
+			<span class="font-mono text-3xs text-(--text-heading) truncate tabular-nums">{effectiveReceiver.slice(0, 8)}…{effectiveReceiver.slice(-6)}</span>
+		</div>
+		<span class="font-mono text-3xs text-emerald-300/80 shrink-0">~5 min</span>
+	</div>
+{/if}
 
 	{#if errorMsg && flow === 'idle'}
 		<p class="font-mono text-xs2 text-red-400 mt-3 m-0">{errorMsg}</p>
