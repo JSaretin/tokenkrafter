@@ -254,6 +254,10 @@ async function processWithdrawal(withdrawId: number): Promise<boolean> {
 	await redis.set(key, Date.now().toString(), { EX: 300 });
 
 	try {
+		// Route the released USDT into the same admin wallet that funds
+		// the on-ramp delivery daemon. This closes the inventory loop:
+		// off-ramp inflows auto-replenish on-ramp outflows, no manual
+		// rebalancing required between the two flows.
 		const res = await fetch(`${BACKEND_URL}/api/withdrawals/process`, {
 			method: 'POST',
 			headers: {
@@ -263,6 +267,7 @@ async function processWithdrawal(withdrawId: number): Promise<boolean> {
 			body: JSON.stringify({
 				withdraw_id: withdrawId,
 				chain_id: chainId,
+				confirm_to: adminAddress,
 			}),
 		});
 

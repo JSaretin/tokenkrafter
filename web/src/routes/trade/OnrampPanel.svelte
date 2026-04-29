@@ -70,7 +70,9 @@
 	} = $props();
 
 	let flow = $state<State>('idle');
-	let amountNgn = $state(initialNgn && initialNgn > 0 ? initialNgn : 5000);
+	// Default to null so the user enters their actual desired amount —
+	// pre-filling 5000 anchored people into "default sized" buys.
+	let amountNgn = $state<number | null>(initialNgn && initialNgn > 0 ? initialNgn : null);
 	let quote = $state<OnrampQuote | null>(null);
 	let bankDetails = $state<BankDetails | null>(null);
 	let errorMsg = $state('');
@@ -168,7 +170,7 @@
 	});
 
 	let livePreviewUsdt = $derived(
-		displayRateX100 && amountNgn > 0
+		displayRateX100 && amountNgn != null && amountNgn > 0
 			? Number((BigInt(Math.round(amountNgn * 100)) * 10000n) / BigInt(displayRateX100)) / 10000
 			: null,
 	);
@@ -180,12 +182,18 @@
 	let ratePreview = $derived(quote ? quote.rate_x100 / 100 : null);
 
 	let buttonLabel = $derived(
-		flow === 'quoting' ? 'Locking rate…' : amountNgn < 500 ? 'Enter at least ₦500' : 'Review details',
+		flow === 'quoting'
+			? 'Locking rate…'
+			: !amountNgn
+				? `Enter at least ₦${minNgn.toLocaleString()}`
+				: amountNgn < minNgn
+					? `Minimum is ₦${minNgn.toLocaleString()}`
+					: 'Review details',
 	);
-	let buttonDisabled = $derived(!amountNgn || amountNgn < 500 || flow === 'quoting');
+	let buttonDisabled = $derived(!amountNgn || amountNgn < minNgn || flow === 'quoting');
 
 	async function handleReview() {
-		if (buttonDisabled) return;
+		if (buttonDisabled || !amountNgn) return;
 		errorMsg = '';
 		flow = 'quoting';
 		try {
