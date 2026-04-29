@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "proxy": "bun run src/index.ts",
-    "processor": "bun run src/withdrawal-processor.ts"
+    "processor": "bun run src/withdrawal-processor.ts",
+    "onramp-delivery": "bun run src/onramp-delivery.ts"
   },
   "dependencies": {
     "ethers": "^6.16.0",

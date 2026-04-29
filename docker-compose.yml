@@ -37,6 +37,13 @@ services:
     restart: always
     depends_on: [redis]
 
+  onramp-delivery:
+    build: ./payment-server
+    command: bun onramp-delivery.mjs
+    env_file: .envs/onramp-delivery.env
+    restart: always
+    depends_on: [redis]
+
   redis:
     image: redis:7-alpine
     restart: always
