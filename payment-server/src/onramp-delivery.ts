@@ -132,7 +132,7 @@ async function processOne(p: PendingDelivery): Promise<'delivered' | 'skipped' |
 	}
 
 	try {
-		const usdt = (Number(BigInt(p.usdt_amount_wei) * 10000n) / 10n ** 18n) / 10000;
+		const usdt = Number((BigInt(p.usdt_amount_wei) * 10000n) / 10n ** 18n) / 10000;
 		const ngn = (p.ngn_amount_kobo / 100).toLocaleString();
 		console.log(`[DELIVER] ${p.reference} — ₦${ngn} → ${usdt} USDT → ${p.receiver}`);
 

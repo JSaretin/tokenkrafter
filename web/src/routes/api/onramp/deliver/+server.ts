@@ -95,28 +95,28 @@ export const POST: RequestHandler = async ({ request }) => {
 	try {
 		provider = new ethers.JsonRpcProvider(network.rpc, Number(row.chain_id), { staticNetwork: true });
 	} catch (e: any) {
-		await markFailed(reference, `Provider init failed: ${e.message?.slice(0, 200)}`);
-		return json({ success: false, error: 'Provider init failed' }, { status: 502 });
+		// RPC-level errors are transient — roll back to payment_received
+		// so the next poll retries.
+		await rollbackToPaid(reference);
+		return json({ success: false, error: `Provider init: ${e.message?.slice(0, 200)}` }, { status: 502 });
 	}
 
 	const signer = new ethers.Wallet(adminKey, provider);
 	const usdt = new ethers.Contract(network.usdt_address, ERC20_TRANSFER_ABI, signer);
 
-	// 4. Pre-flight balance check on the treasury so we don't burn gas
-	//    on a doomed transfer.
+	// 4. Pre-flight treasury balance check. Insufficient is *transient*
+	//    (operator funds the wallet → next poll succeeds), so roll back
+	//    to payment_received instead of marking failed.
 	const amount = BigInt(row.usdt_amount_wei);
 	try {
 		const treasury: bigint = await usdt.balanceOf(signer.address);
 		if (treasury < amount) {
-			await markFailed(
-				reference,
-				`Treasury USDT insufficient: have ${treasury}, need ${amount}`,
-			);
+			await rollbackToPaid(reference);
 			return json({ success: false, error: 'Treasury insufficient' }, { status: 503 });
 		}
 	} catch (e: any) {
-		await markFailed(reference, `Balance check failed: ${e.message?.slice(0, 200)}`);
-		return json({ success: false, error: 'Balance check failed' }, { status: 502 });
+		await rollbackToPaid(reference);
+		return json({ success: false, error: `Balance check: ${e.message?.slice(0, 200)}` }, { status: 502 });
 	}
 
 	// 5. Sign + broadcast the transfer.
@@ -129,7 +129,16 @@ export const POST: RequestHandler = async ({ request }) => {
 		const receipt = await tx.wait();
 		txHash = receipt?.hash ?? tx.hash;
 	} catch (e: any) {
-		await markFailed(reference, `Transfer failed: ${e.message?.slice(0, 300)}`);
+		// Distinguish transient (RPC drop, gas estimation glitch) from
+		// permanent (revert, blocked address). Conservative default:
+		// treat unknown failures as permanent so an operator looks.
+		const msg = e?.message ?? '';
+		const transient = /timeout|network|ECONN|nonce too low|replacement|gas|RPC|503|502/i.test(msg);
+		if (transient) {
+			await rollbackToPaid(reference);
+			return json({ success: false, error: `Transfer (transient): ${msg.slice(0, 300)}` }, { status: 502 });
+		}
+		await markFailed(reference, `Transfer failed: ${msg.slice(0, 300)}`);
 		return json({ success: false, error: 'On-chain transfer failed' }, { status: 500 });
 	}
 
@@ -155,4 +164,13 @@ async function markFailed(reference: string, reason: string) {
 			failure_reason: reason,
 		})
 		.eq('reference', reference);
+}
+
+/** Roll back to `payment_received` so the next daemon poll retries. */
+async function rollbackToPaid(reference: string) {
+	await supabaseAdmin
+		.from('onramp_intents')
+		.update({ status: 'payment_received' })
+		.eq('reference', reference)
+		.eq('status', 'delivering');
 }
