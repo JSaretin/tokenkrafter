@@ -256,6 +256,12 @@
 		userAddress = address;
 		walletType = type;
 		walletLoading = false;
+		// Clear authChecking too — the OAuth-return path early-returns
+		// out of the autoReconnect IIFE so the bottom-of-block clear
+		// never fires. Leaving authChecking true keeps the nav stuck on
+		// the skeleton even after the user successfully enters their PIN.
+		authChecking = false;
+		oauthPending = false;
 		if (type === 'embedded') {
 			// Use embedded wallet signer
 			const net = supportedNetworks[0];
