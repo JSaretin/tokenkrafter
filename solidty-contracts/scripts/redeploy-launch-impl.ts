@@ -52,7 +52,7 @@ async function main() {
 	const newImplAddr = await newImpl.getAddress();
 	console.log(`\n  New LaunchInstance impl: ${newImplAddr}`);
 
-	// Wire into the factory
+	// Wire into the factory (instant — Ownable, no timelock).
 	const factory = await ethers.getContractAt("LaunchpadFactory", dep.LaunchpadFactory);
 	process.stdout.write("  LaunchpadFactory.setLaunchImplementation... ");
 	await (await factory.setLaunchImplementation(newImplAddr)).wait();

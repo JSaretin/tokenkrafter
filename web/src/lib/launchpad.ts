@@ -27,12 +27,7 @@ export const LAUNCHPAD_FACTORY_ABI = [
 	'function setPlatformWallet(address wallet_) external',
 	'function setDexRouter(address router_) external',
 	'function setAuthorizedRouter(address router_) external',
-	'function proposeLaunchImplementation(address impl_) external',
-	'function applyLaunchImplementation() external',
-	'function cancelPendingLaunchImplementation() external',
-	'function pendingLaunchImplementation() view returns (address)',
-	'function pendingLaunchImplementationApplyAt() view returns (uint256)',
-	'function LAUNCH_IMPL_TIMELOCK() view returns (uint256)',
+	'function setLaunchImplementation(address impl_) external',
 	'function setCurveDefaults(tuple(uint256 linearSlope, uint256 linearIntercept, uint256 sqrtCoefficient, uint256 quadraticCoefficient, uint256 expBase, uint256 expKFactor) defaults_) external',
 	'function withdrawFees(address token_) external',
 

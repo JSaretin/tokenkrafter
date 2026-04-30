@@ -33,9 +33,6 @@
 	let lpOwner = $state('');
 	let lpAuthorizedRouter = $state('');
 	let lpLaunchImpl = $state('');
-	let lpPendingLaunchImpl = $state('');
-	let lpPendingLaunchImplApplyAt = $state(0n);
-	let lpLaunchImplTimelock = $state(0n);
 	let usdtDecimals = $state(18);
 
 	// Input state
@@ -75,7 +72,7 @@
 			}
 
 			const lpContract = getLpContract(provider);
-			const [lpOwner_, lpTotal, lpFeeUsdt, lpFee, lpPW, lpRouter, lpUsdt, lpAuthRouter, lpImpl, lpPending, lpPendingAt, lpTimelock] = await Promise.all([
+			const [lpOwner_, lpTotal, lpFeeUsdt, lpFee, lpPW, lpRouter, lpUsdt, lpAuthRouter, lpImpl] = await Promise.all([
 				lpContract.owner(),
 				lpContract.totalLaunches(),
 				lpContract.totalLaunchFeeEarnedUsdt(),
@@ -85,9 +82,6 @@
 				lpContract.usdt(),
 				lpContract.authorizedRouter().catch(() => ZERO_ADDRESS),
 				lpContract.launchImplementation().catch(() => ZERO_ADDRESS),
-				lpContract.pendingLaunchImplementation().catch(() => ZERO_ADDRESS),
-				lpContract.pendingLaunchImplementationApplyAt().catch(() => 0n),
-				lpContract.LAUNCH_IMPL_TIMELOCK().catch(() => 0n),
 			]);
 			lpOwner = lpOwner_;
 			lpTotalLaunches = lpTotal;
@@ -98,9 +92,6 @@
 			lpUsdtAddr = lpUsdt;
 			lpAuthorizedRouter = lpAuthRouter;
 			lpLaunchImpl = lpImpl;
-			lpPendingLaunchImpl = lpPending;
-			lpPendingLaunchImplApplyAt = BigInt(lpPendingAt);
-			lpLaunchImplTimelock = BigInt(lpTimelock);
 		} catch (e: any) {
 			console.warn('Failed to load launchpad data:', e.message);
 		} finally {
@@ -183,51 +174,20 @@
 		} finally { busy = false; }
 	}
 
-	async function lpProposeLaunchImplementation() {
+	async function lpSetLaunchImplementation() {
 		if (!signer || !lpNewLaunchImpl) return;
 		if (!ethers.isAddress(lpNewLaunchImpl)) {
 			addFeedback({ message: 'Invalid address', type: 'error' });
 			return;
 		}
-		const hours = lpLaunchImplTimelock > 0n ? Number(lpLaunchImplTimelock) / 3600 : 48;
-		if (!confirm(`Propose ${lpNewLaunchImpl} as the new LaunchInstance implementation? It can be applied after the ${hours.toFixed(0)}h timelock.`)) return;
+		if (!confirm(`Set ${lpNewLaunchImpl} as the LaunchInstance implementation? Existing launches keep their old impl; only NEW launches use this one.`)) return;
 		busy = true;
 		try {
 			const contract = getLpContract(signer);
-			const tx = await contract.proposeLaunchImplementation(lpNewLaunchImpl);
+			const tx = await contract.setLaunchImplementation(lpNewLaunchImpl);
 			await tx.wait();
-			addFeedback({ message: `Implementation proposed — apply after the timelock`, type: 'success' });
+			addFeedback({ message: 'Launch implementation updated', type: 'success' });
 			lpNewLaunchImpl = '';
-			loadData();
-		} catch (e) {
-			addFeedback({ message: friendlyError(e), type: 'error' });
-		} finally { busy = false; }
-	}
-
-	async function lpApplyLaunchImplementation() {
-		if (!signer) return;
-		if (!confirm(`Apply pending launch implementation ${lpPendingLaunchImpl}? This change is irreversible without proposing again.`)) return;
-		busy = true;
-		try {
-			const contract = getLpContract(signer);
-			const tx = await contract.applyLaunchImplementation();
-			await tx.wait();
-			addFeedback({ message: 'Launch implementation applied', type: 'success' });
-			loadData();
-		} catch (e) {
-			addFeedback({ message: friendlyError(e), type: 'error' });
-		} finally { busy = false; }
-	}
-
-	async function lpCancelPendingLaunchImplementation() {
-		if (!signer) return;
-		if (!confirm('Cancel the pending launch implementation proposal?')) return;
-		busy = true;
-		try {
-			const contract = getLpContract(signer);
-			const tx = await contract.cancelPendingLaunchImplementation();
-			await tx.wait();
-			addFeedback({ message: 'Pending implementation cancelled', type: 'success' });
 			loadData();
 		} catch (e) {
 			addFeedback({ message: friendlyError(e), type: 'error' });
@@ -396,27 +356,12 @@
 	<!-- Launch Implementation -->
 	<div class="card p-5 mb-4">
 		<h3 class="section-title mb-1">Launch Implementation</h3>
-		<p class="text-xs text-gray-500 mb-3">Clone template for new LaunchInstance deploys. Two-stage with a timelock so users can react before any change takes effect. Existing launches are unaffected.</p>
+		<p class="text-xs text-gray-500 mb-3">Clone template for new LaunchInstance deploys. Existing launches are unaffected — they keep their original impl.</p>
 		<div class="text-xs text-gray-400 font-mono mb-3">Current: {formatAddress(lpLaunchImpl)}</div>
-		{#if lpPendingLaunchImpl && lpPendingLaunchImpl !== ZERO_ADDRESS}
-			{@const applyAtMs = Number(lpPendingLaunchImplApplyAt) * 1000}
-			{@const ready = Date.now() >= applyAtMs}
-			<div class="text-xs font-mono mb-3 p-2 rounded border border-amber-500/20 bg-amber-500/5 text-amber-300">
-				Pending: {formatAddress(lpPendingLaunchImpl)} — {ready ? 'ready to apply' : `apply after ${new Date(applyAtMs).toLocaleString()}`}
-			</div>
-			<div class="flex gap-2 mb-3">
-				<button class="btn-primary text-xs px-5 py-2 cursor-pointer" disabled={busy || !ready} onclick={lpApplyLaunchImplementation}>
-					{busy ? '...' : 'Apply'}
-				</button>
-				<button class="btn-danger text-xs px-5 py-2 cursor-pointer" disabled={busy} onclick={lpCancelPendingLaunchImplementation}>
-					{busy ? '...' : 'Cancel pending'}
-				</button>
-			</div>
-		{/if}
 		<div class="flex flex-col sm:flex-row gap-3">
 			<input class="input-field flex-1" placeholder="0x... new LaunchInstance implementation" bind:value={lpNewLaunchImpl} />
-			<button class="btn-primary text-xs px-5 py-2 cursor-pointer" disabled={busy || !lpNewLaunchImpl} onclick={lpProposeLaunchImplementation}>
-				{busy ? '...' : 'Propose'}
+			<button class="btn-primary text-xs px-5 py-2 cursor-pointer" disabled={busy || !lpNewLaunchImpl} onclick={lpSetLaunchImplementation}>
+				{busy ? '...' : 'Set'}
 			</button>
 		</div>
 	</div>

@@ -55,9 +55,6 @@ const LAUNCHPAD_FACTORY_ABI = [
 	'function dailyLaunchStats(uint256) view returns (uint256 created, uint256 graduated, uint256 totalFeeUsdt)',
 	'function getState() view returns (address factoryOwner, uint256 totalLaunchCount, uint256 totalFeeUsdt, uint256 fee)',
 	'function usdtLocked() view returns (bool)',
-	'function pendingLaunchImplementation() view returns (address)',
-	'function pendingLaunchImplementationApplyAt() view returns (uint256)',
-	'function LAUNCH_IMPL_TIMELOCK() view returns (uint256)',
 
 	// ── Writes ──
 	'function createLaunch(address token_, uint256 totalTokens_, uint8 curveType_, uint256 softCap_, uint256 hardCap_, uint256 durationDays_, uint256 maxBuyBps_, uint256 creatorAllocationBps_, uint256 vestingDays_, uint256 startTimestamp_, uint256 lockDurationAfterListing_, uint256 minBuyUsdt_) external returns (address)',
@@ -67,9 +64,7 @@ const LAUNCHPAD_FACTORY_ABI = [
 	// ── Admin writes ──
 	'function setPlatformWallet(address wallet_) external',
 	'function setDexRouter(address router_) external',
-	'function proposeLaunchImplementation(address impl_) external',
-	'function applyLaunchImplementation() external',
-	'function cancelPendingLaunchImplementation() external',
+	'function setLaunchImplementation(address impl_) external',
 	'function setUsdt(address usdt_) external',
 	'function setLaunchFee(uint256 fee_) external',
 	'function setCurveDefaults(tuple(uint256 linearSlope, uint256 linearIntercept, uint256 sqrtCoefficient, uint256 quadraticCoefficient, uint256 expBase, uint256 expKFactor) defaults_) external',
@@ -80,10 +75,8 @@ const LAUNCHPAD_FACTORY_ABI = [
 	'function pauseLaunches(uint256 offset, uint256 limit, bool paused_) external',
 	'function withdrawFees(address token_) external',
 
-	// ── Ownable2Step ──
-	'function pendingOwner() view returns (address)',
+	// ── Ownable ──
 	'function transferOwnership(address newOwner) external',
-	'function acceptOwnership() external',
 
 	// ── Events ──
 	'event LaunchCreated(address indexed launch, address indexed token, address indexed creator, uint8 curveType, uint256 softCap, uint256 hardCap, uint256 totalTokens, uint256 param1, uint256 param2, uint256 durationDays, uint256 maxBuyBps, uint256 creatorAllocationBps, uint256 vestingDays, uint256 minBuyUsdt)',
@@ -99,8 +92,7 @@ const LAUNCHPAD_FACTORY_ABI = [
 	'event LaunchesPaused(uint256 fromIndex, uint256 toIndex, bool paused)',
 	'event UsdtUpdated(address indexed previous, address indexed current)',
 	'event UsdtLockedEvent()',
-	'event LaunchImplementationProposed(address indexed previous, address indexed proposed, uint256 applyAt)',
-	'event LaunchImplementationApplied(address indexed previous, address indexed current)',
+	'event LaunchImplementationUpdated(address indexed previous, address indexed current)',
 	'event AffiliateAuthorizationFailed(address indexed launch, address indexed affiliate_)',
 	'event LaunchCancelled(address indexed launch, address indexed token, address indexed creator)',
 	'event FeesWithdrawn(address indexed token, address indexed to, uint256 amount)',
@@ -209,15 +201,6 @@ export class LaunchpadFactoryClient {
 	/** Whether the USDT pointer has been locked (set true on first launch). */
 	async usdtLocked(): Promise<boolean> { return Boolean(await this.contract.usdtLocked()); }
 
-	/** Currently-proposed launch implementation (zero if none pending). */
-	async pendingLaunchImplementation(): Promise<string> { return this.contract.pendingLaunchImplementation(); }
-
-	/** Earliest unix-seconds timestamp the proposed implementation can be applied. */
-	async pendingLaunchImplementationApplyAt(): Promise<bigint> { return BigInt(await this.contract.pendingLaunchImplementationApplyAt()); }
-
-	/** Contract constant — seconds the timelock holds proposed implementations. */
-	async launchImplTimelock(): Promise<bigint> { return BigInt(await this.contract.LAUNCH_IMPL_TIMELOCK()); }
-
 	// ── Stats ──────────────────────────────────────────────
 
 	async dailyLaunchStatsRaw(day: number | bigint): Promise<LaunchDayStatsRaw> {
@@ -281,12 +264,8 @@ export class LaunchpadFactoryClient {
 
 	async setPlatformWallet(addr: string): Promise<TxResult> { return this._send('setPlatformWallet', [addr]); }
 	async setDexRouter(addr: string): Promise<TxResult> { return this._send('setDexRouter', [addr]); }
-	/** Stage a new launch implementation. Apply via {applyLaunchImplementation} after the timelock. */
-	async proposeLaunchImplementation(addr: string): Promise<TxResult> { return this._send('proposeLaunchImplementation', [addr]); }
-	/** Apply a previously-proposed launch implementation after the timelock has elapsed. */
-	async applyLaunchImplementation(): Promise<TxResult> { return this._send('applyLaunchImplementation', []); }
-	/** Cancel a pending implementation proposal before apply. */
-	async cancelPendingLaunchImplementation(): Promise<TxResult> { return this._send('cancelPendingLaunchImplementation', []); }
+	/** Swap the launch clone implementation. Takes effect for new launches only. */
+	async setLaunchImplementation(addr: string): Promise<TxResult> { return this._send('setLaunchImplementation', [addr]); }
 	async setUsdt(addr: string): Promise<TxResult> { return this._send('setUsdt', [addr]); }
 	async setLaunchFee(fee: bigint): Promise<TxResult> { return this._send('setLaunchFee', [fee]); }
 	async setCurveDefaults(defaults: CurveDefaultsRaw): Promise<TxResult> {

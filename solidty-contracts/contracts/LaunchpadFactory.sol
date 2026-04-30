@@ -48,8 +48,6 @@ contract LaunchpadFactory is Ownable, ReentrancyGuard {
     error OnlyLaunch();
     error OnlyAuthorizedRouter();
     error UsdtLocked();
-    error NoPendingImplementation();
-    error TimelockNotReached();
 
     // ── Structs ────────────────────────────────────────────────
 
@@ -99,8 +97,7 @@ contract LaunchpadFactory is Ownable, ReentrancyGuard {
     event AuthorizedRouterUpdated(address newRouter);
     event UsdtUpdated(address indexed previous, address indexed current);
     event UsdtLockedEvent();
-    event LaunchImplementationProposed(address indexed previous, address indexed proposed, uint256 applyAt);
-    event LaunchImplementationApplied(address indexed previous, address indexed current);
+    event LaunchImplementationUpdated(address indexed previous, address indexed current);
     event AffiliateAuthorizationFailed(address indexed launch, address indexed affiliate_);
     event LaunchCancelled(address indexed launch, address indexed token, address indexed creator);
     event FeesWithdrawn(address indexed token, address indexed to, uint256 amount);
@@ -131,15 +128,6 @@ contract LaunchpadFactory is Ownable, ReentrancyGuard {
     ///         create a confusing two-tier system. Locked on first
     ///         _createLaunchInternal — owner can no longer reach setUsdt().
     bool public usdtLocked;
-
-    /// @notice Two-stage timelock for swapping the launch clone implementation.
-    ///         A malicious or fat-fingered impl swap would compromise every
-    ///         future launch (and could silently re-route user USDT). The
-    ///         48-hour delay gives off-chain monitoring + users time to react
-    ///         to the proposal event before the change takes effect.
-    address public pendingLaunchImplementation;
-    uint256 public pendingLaunchImplementationApplyAt;
-    uint256 public constant LAUNCH_IMPL_TIMELOCK = 48 hours;
 
     /// @notice Shared Affiliate contract reporters across the platform write
     ///         to. address(0) disables affiliate accrual on launch buys.
@@ -546,36 +534,15 @@ contract LaunchpadFactory is Ownable, ReentrancyGuard {
         emit DexRouterUpdated(router_);
     }
 
-    /// @notice Stage a new launch implementation. Takes effect after
-    ///         `LAUNCH_IMPL_TIMELOCK` (48 h) when {applyLaunchImplementation}
-    ///         is called. Two-stage with a public proposal event so users and
-    ///         off-chain monitoring can see the change well before any new
-    ///         clone is spawned from the new pointer. Calling again before
-    ///         apply overwrites the pending proposal and resets the clock.
-    function proposeLaunchImplementation(address impl_) external onlyOwner {
+    /// @notice Swap the launch clone implementation. Takes effect for any
+    ///         launch created after this call — existing clones keep
+    ///         running their old code (clones bind their impl pointer at
+    ///         deploy time via EIP-1167, not at runtime).
+    function setLaunchImplementation(address impl_) external onlyOwner {
         if (impl_ == address(0)) revert InvalidAddress();
-        pendingLaunchImplementation = impl_;
-        pendingLaunchImplementationApplyAt = block.timestamp + LAUNCH_IMPL_TIMELOCK;
-        emit LaunchImplementationProposed(launchImplementation, impl_, pendingLaunchImplementationApplyAt);
-    }
-
-    /// @notice Apply a previously-proposed launch implementation after the
-    ///         timelock has elapsed.
-    function applyLaunchImplementation() external onlyOwner {
-        if (pendingLaunchImplementation == address(0)) revert NoPendingImplementation();
-        if (block.timestamp < pendingLaunchImplementationApplyAt) revert TimelockNotReached();
         address prev = launchImplementation;
-        launchImplementation = pendingLaunchImplementation;
-        pendingLaunchImplementation = address(0);
-        pendingLaunchImplementationApplyAt = 0;
-        emit LaunchImplementationApplied(prev, launchImplementation);
-    }
-
-    /// @notice Cancel a pending launch implementation proposal before apply.
-    function cancelPendingLaunchImplementation() external onlyOwner {
-        if (pendingLaunchImplementation == address(0)) revert NoPendingImplementation();
-        pendingLaunchImplementation = address(0);
-        pendingLaunchImplementationApplyAt = 0;
+        launchImplementation = impl_;
+        emit LaunchImplementationUpdated(prev, impl_);
     }
 
     /// @notice Set the USDT address. Only callable BEFORE the first launch
