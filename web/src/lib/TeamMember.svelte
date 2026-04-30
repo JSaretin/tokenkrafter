@@ -6,8 +6,17 @@
 </script>
 
 <script lang="ts">
-	import { SOCIAL_LABELS, type Team } from '$lib/team';
+	import { SOCIAL_LABELS, normalizeSocialUrl, type Team } from '$lib/team';
 	let { member }: { member: Team } = $props();
+
+	// Normalise socials at render time too — the admin save path
+	// already normalises, but DB rows imported by hand or written
+	// pre-normalisation might still hold bare handles. Cheap safety
+	// net so a row saying `{ platform: 'x', url: 'jsaretin' }`
+	// renders correctly without re-saving via the admin.
+	let socials = $derived(
+		member.socials.map((s) => ({ ...s, url: normalizeSocialUrl(s.platform, s.url) })),
+	);
 
 	// Auto-derive an avatar from the X social URL when present. The
 	// proxy endpoint hides unavatar.io behind our domain + edge cache;
@@ -15,7 +24,7 @@
 	// the layout never collapses.
 	const X_URL_RE = /^https?:\/\/(?:www\.)?(?:x\.com|twitter\.com)\/(?:#!\/)?@?([A-Za-z0-9_]{1,15})\/?(?:\?.*)?$/i;
 	let xUsername = $derived.by(() => {
-		const xs = member.socials.find((s) => s.platform === 'x');
+		const xs = socials.find((s) => s.platform === 'x');
 		if (!xs) return null;
 		const m = xs.url.match(X_URL_RE);
 		return m ? m[1] : null;
@@ -48,9 +57,9 @@
 		class="block font-mono text-xs2 text-[#00d2ff] uppercase tracking-[0.05em] mb-3"
 	>{member.title}</span>
 	<p class="font-mono text-xs text-muted leading-[1.6] mb-4">{member.about}</p>
-	{#if member.socials.length}
+	{#if socials.length}
 		<div class="flex justify-center gap-2.5 flex-wrap">
-			{#each member.socials as social (social.platform + social.url)}
+			{#each socials as social (social.platform + social.url)}
 				<a
 					href={social.url}
 					target="_blank"

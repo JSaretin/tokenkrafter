@@ -2,7 +2,7 @@
 	import { getContext, onMount } from 'svelte';
 	import { supabase } from '$lib/supabaseClient';
 	import Skeleton from '$lib/Skeleton.svelte';
-	import { SOCIAL_PLATFORMS, type Team, type Social, type SocialPlatform } from '$lib/team';
+	import { SOCIAL_PLATFORMS, normalizeSocialUrl, type Team, type Social } from '$lib/team';
 
 	const addFeedback = getContext<(f: { message: string; type: string }) => void>('addFeedback');
 
@@ -89,6 +89,19 @@
 			socials: next[memberIdx].socials.filter((_, i) => i !== socialIdx),
 		};
 		team = next;
+	}
+
+	// Normalise every social URL before persisting so the DB stores
+	// canonical URLs (operator can type "jsaretin" and the row gets
+	// "https://x.com/jsaretin"). Update local state too so the admin
+	// sees the normalised value reflected in the inputs after save.
+	async function saveTeam() {
+		const normalised: Team[] = team.map((m) => ({
+			...m,
+			socials: m.socials.map((s) => ({ ...s, url: normalizeSocialUrl(s.platform, s.url) })),
+		}));
+		team = normalised;
+		await saveConfig('team', normalised);
 	}
 
 	async function saveConfig(key: string, value: any) {
@@ -307,7 +320,7 @@
 				{/each}
 			</div>
 
-			<button class="btn-primary text-xs px-4 py-2 mt-4 cursor-pointer" disabled={saving} onclick={() => saveConfig('team', team)}>
+			<button class="btn-primary text-xs px-4 py-2 mt-4 cursor-pointer" disabled={saving} onclick={saveTeam}>
 				{saving ? 'Saving...' : 'Save Team'}
 			</button>
 		</div>
