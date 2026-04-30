@@ -33,6 +33,20 @@
 
 <script lang="ts">
 	let { member }: { member: Team } = $props();
+
+	// Auto-derive an avatar from the X social URL when present. The
+	// proxy endpoint hides unavatar.io behind our domain + edge cache;
+	// 404 / network failure falls back to the initial-letter circle so
+	// the layout never collapses.
+	const X_URL_RE = /^https?:\/\/(?:www\.)?(?:x\.com|twitter\.com)\/(?:#!\/)?@?([A-Za-z0-9_]{1,15})\/?(?:\?.*)?$/i;
+	let xUsername = $derived.by(() => {
+		const xs = member.socials.find((s) => s.platform === 'x');
+		if (!xs) return null;
+		const m = xs.url.match(X_URL_RE);
+		return m ? m[1] : null;
+	});
+	let avatarFailed = $state(false);
+	let showAvatar = $derived(xUsername !== null && !avatarFailed);
 </script>
 
 <div
@@ -41,7 +55,18 @@
 	<div
 		class="w-20 h-20 rounded-full mx-auto mb-4 overflow-hidden border-2 border-[rgba(0,210,255,0.2)] flex items-center justify-center bg-[rgba(0,210,255,0.08)]"
 	>
-		<span class="font-display text-28 font-bold text-[#00d2ff]">{member.name.charAt(0)}</span>
+		{#if showAvatar}
+			<img
+				src={`/api/avatar/x/${xUsername}`}
+				alt={`${member.name} avatar`}
+				class="w-full h-full object-cover"
+				loading="lazy"
+				decoding="async"
+				onerror={() => { avatarFailed = true; }}
+			/>
+		{:else}
+			<span class="font-display text-28 font-bold text-[#00d2ff]">{member.name.charAt(0)}</span>
+		{/if}
 	</div>
 	<h3 class="font-display text-base font-bold text-heading mb-1">{member.name}</h3>
 	<span
