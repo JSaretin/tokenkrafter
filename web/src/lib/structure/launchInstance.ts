@@ -583,6 +583,8 @@ export const LAUNCH_INSTANCE_EVENT_SIGNATURES = {
 	CreatorWithdraw: 'CreatorWithdraw(address,uint256)',
 	CreatorReclaim: 'CreatorReclaim(address,uint256)',
 	PausedChanged: 'PausedChanged(bool)',
+	AffiliateReportFailed: 'AffiliateReportFailed(address,address,uint256)',
+	CancelledByFactory: 'CancelledByFactory(address,uint256)',
 } as const;
 
 export const LAUNCH_INSTANCE_ERRORS = [
@@ -590,11 +592,13 @@ export const LAUNCH_INSTANCE_ERRORS = [
 	'InvalidDuration', 'InvalidMaxBuy', 'InvalidCreatorAlloc', 'InvalidVesting',
 	'CreatorAllocRequiresVesting', 'NotPending', 'ZeroAmount', 'InsufficientTokenBalance',
 	'OnlyFactory', 'NothingDeposited', 'SendNativeCoin', 'LaunchExpired',
-	'AmountTooSmall', 'ExceedsMaxBuy', 'SoftCapNotReached', 'OnlyCreatorCanGraduateEarly',
-	'NotRefunding', 'NothingToRefund', 'ReturnTokensToRefund', 'OutstandingRefundsRemain',
-	'NoTokens', 'NotGraduated', 'NoAllocation', 'CliffNotReached', 'NothingToClaim',
-	'NoETH', 'TransferFailed', 'InsufficientTokensOut', 'LaunchNotStarted',
+	'SwapDeadlineExpired', 'AmountTooSmall', 'ExceedsMaxBuy', 'SoftCapNotReached',
+	'OnlyCreatorCanGraduateEarly', 'NotRefunding', 'NothingToRefund', 'ReturnTokensToRefund',
+	'OutstandingRefundsRemain', 'NoTokens', 'NotGraduated', 'NoAllocation', 'CliffNotReached',
+	'NothingToClaim', 'NoETH', 'TransferFailed', 'InsufficientTokensOut', 'LaunchNotStarted',
 	'InvalidStartTimestamp', 'InvalidPath', 'PathMustEndAtUsdt', 'StrandedSweepTooEarly',
 	'LaunchPaused', 'FeeOnTransferNotSupported', 'InvalidCurveParams', 'InvalidTotalTokens',
 	'AlreadyInitialized', 'BelowMinBuy', 'InvalidMinBuy',
+	'AffiliateOverpull', 'Unauthorized', 'ExceedsTokensRequired', 'CurveOverflow',
+	'AlreadyCancelled',
 ] as const;

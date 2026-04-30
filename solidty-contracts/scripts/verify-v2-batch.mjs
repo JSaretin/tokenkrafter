@@ -71,8 +71,11 @@ const contracts = [
 	{ name: 'PartnerMintableTokenImpl', address: dep.PartnerMintableTokenImpl, path: 'contracts/tokens/PartnerToken.sol:PartnerMintableTokenImpl', args: '' },
 	{ name: 'PartnerTaxableTokenImpl', address: dep.PartnerTaxableTokenImpl, path: 'contracts/tokens/PartnerTaxableToken.sol:PartnerTaxableTokenImpl', args: '' },
 	{ name: 'PartnerTaxableMintableTokenImpl', address: dep.PartnerTaxableMintableTokenImpl, path: 'contracts/tokens/PartnerTaxableToken.sol:PartnerTaxableMintableTokenImpl', args: '' },
-	// Library + impl
-	{ name: 'BondingCurve', address: dep.BondingCurve, path: 'contracts/LaunchInstance.sol:BondingCurve', args: '' },
+	// Libraries + impl. BondingCurve was moved into LaunchMath.sol when
+	// the curve dispatch was extracted into LaunchMath; LaunchInstance
+	// now links against LaunchMath only (which links BondingCurve).
+	{ name: 'BondingCurve', address: dep.BondingCurve, path: 'contracts/LaunchMath.sol:BondingCurve', args: '' },
+	{ name: 'LaunchMath', address: dep.LaunchMath, path: 'contracts/LaunchMath.sol:LaunchMath', args: '' },
 	{ name: 'LaunchInstance', address: dep.LaunchInstanceImpl, path: 'contracts/LaunchInstance.sol:LaunchInstance', args: '' },
 	// Core contracts with constructor args
 	{ name: 'TokenFactory', address: dep.TokenFactory, path: 'contracts/TokenFactory.sol:TokenFactory', args: argsTokenFactory },

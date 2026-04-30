@@ -118,6 +118,12 @@ const CUSTOM_ERRORS: Record<string, string> = {
 	'AlreadyInitialized()': 'Launch has already been initialized.',
 	'BelowMinBuy()': 'Amount is below the minimum buy floor.',
 	'InvalidMinBuy()': 'Minimum buy value is out of range.',
+	'SwapDeadlineExpired()': 'Swap deadline expired — please retry.',
+	'AffiliateOverpull()': 'Affiliate fee accounting error — try again.',
+	'Unauthorized()': 'You are not authorized to perform this action.',
+	'ExceedsTokensRequired()': 'Deposit exceeds the tokens required for this launch.',
+	'CurveOverflow()': 'Bonding-curve math overflowed — amount too large.',
+	'AlreadyCancelled()': 'Launch has already been cancelled.',
 
 	// TradeRouter
 	'NotAdmin()': 'Caller is not an admin.',
