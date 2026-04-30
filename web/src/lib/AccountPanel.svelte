@@ -331,6 +331,15 @@
 	let sendAmount = $state('');
 	let sending = $state(false);
 	let sendAsset = $state<'native' | string>('native'); // 'native' or token address
+	// MAX-send state for native: when user clicks MAX we both deduct
+	// the exact gas estimate (no safety margin → no dust) AND lock the
+	// gasPrice we used. At submit time we pass that gasPrice + a fixed
+	// 21,000 gasLimit explicitly so the tx drains the wallet to zero.
+	// Without locking, a between-click-and-submit gas spike would leave
+	// the tx underfunded; without explicit gasLimit, ethers' default
+	// estimateGas could pick a higher number than we reserved for.
+	let sendingMax = $state(false);
+	let maxLockedGasPrice = $state<bigint | null>(null);
 	let showAssetPicker = $state(false);
 	// Two-step send: user fills the form, then sees a preview card summarising
 	// recipient / amount / estimated fee before the tx actually signs. The
@@ -887,6 +896,8 @@
 		sendTo = '';
 		sendAmount = '';
 		sendAsset = 'native';
+		sendingMax = false;
+		maxLockedGasPrice = null;
 		showAssetPicker = false;
 		showAddressBook = false;
 		addressBookQuery = '';
@@ -982,10 +993,20 @@
 			const sanitized = parts.length > 1 ? `${parts[0]}.${parts[1].slice(0, dec)}` : sendAmount;
 
 			if (sendAsset === 'native') {
-				const tx = await wallet.sendTransaction({
+				// MAX-send path: pin gasLimit + gasPrice to the exact
+				// values used to compute the reserve so the tx drains
+				// to zero. Anything else (ethers picking a fresh
+				// gasPrice or higher gasLimit) would either underfund
+				// the tx or leave dust.
+				const txReq: ethers.TransactionRequest = {
 					to: sendTo,
 					value: ethers.parseUnits(sanitized, nativeDecimals),
-				});
+				};
+				if (sendingMax && maxLockedGasPrice && maxLockedGasPrice > 0n) {
+					txReq.gasLimit = 21000n;
+					txReq.gasPrice = maxLockedGasPrice;
+				}
+				const tx = await wallet.sendTransaction(txReq);
 				await tx.wait();
 				onAddFeedback({ message: `Sent ${sanitized} ${nativeCoin}`, type: 'success' });
 			} else {
@@ -1503,7 +1524,25 @@
 					<!-- Amount input with inset MAX pill — mirrors the recipient
 					     row's address-book icon for structural consistency. -->
 					<div class="ap-recipient-row">
-						<input id="ap-send-amount" class="ap-input ap-recipient-input" type="text" inputmode="decimal" placeholder="0.0" bind:value={sendAmount} {...INPUT_ATTRS} />
+						<input
+							id="ap-send-amount"
+							class="ap-input ap-recipient-input"
+							type="text"
+							inputmode="decimal"
+							placeholder="0.0"
+							bind:value={sendAmount}
+							oninput={() => {
+								// User typing → drop the MAX lock. We only want the
+								// pinned gas params to apply to the exact value MAX
+								// computed; anything else should use the wallet's
+								// default gas estimation.
+								if (sendingMax) {
+									sendingMax = false;
+									maxLockedGasPrice = null;
+								}
+							}}
+							{...INPUT_ATTRS}
+						/>
 						<button
 							class="ap-max-btn"
 							type="button"
@@ -1511,30 +1550,43 @@
 							onclick={async () => {
 								const dec = sendAsset === 'native' ? nativeDecimals : sendAssetInfo.decimals;
 								if (sendAsset !== 'native') {
+									// ERC20: gas is paid in the native coin separately,
+									// so MAX just means full token balance.
+									sendingMax = false;
+									maxLockedGasPrice = null;
 									sendAmount = ethers.formatUnits(sendAssetInfo.balance, dec);
 									return;
 								}
-								// For native: max = balance - (live gas estimate × 1.1).
-								// Plain native transfers consume exactly 21,000 gas, so
-								// the only variable is gasPrice — read it fresh from
-								// the chain rather than guessing with a fixed reserve.
-								// On BSC the old 0.001 BNB reserve was ~50× the actual
-								// cost; users were leaving real money on the table.
-								// 10% safety margin covers gasPrice drift between
-								// MAX click and tx submission.
-								let reserve = ethers.parseUnits('0.0005', dec); // fallback
+								// Native: drain to exactly zero. We lock the gasPrice
+								// we read here so the submit path can reuse it as an
+								// explicit tx field — otherwise a network spike
+								// between click + send could leave the tx underfunded
+								// or leave dust if the wallet later picks lower gas.
+								let gasPrice: bigint | null = null;
 								try {
 									const net = getProvider();
 									if (net?.provider) {
 										const feeData = await (net.provider as any).getFeeData();
-										const gasPrice: bigint = feeData.maxFeePerGas ?? feeData.gasPrice ?? 0n;
-										if (gasPrice > 0n) {
-											reserve = (21000n * gasPrice * 110n) / 100n;
-										}
+										gasPrice = feeData.maxFeePerGas ?? feeData.gasPrice ?? null;
 									}
 								} catch {}
-								const max = sendAssetInfo.balance > reserve ? sendAssetInfo.balance - reserve : 0n;
-								sendAmount = ethers.formatUnits(max, dec);
+								if (gasPrice && gasPrice > 0n) {
+									const reserve = 21000n * gasPrice; // exact, no margin
+									const max = sendAssetInfo.balance > reserve ? sendAssetInfo.balance - reserve : 0n;
+									sendAmount = ethers.formatUnits(max, dec);
+									sendingMax = true;
+									maxLockedGasPrice = gasPrice;
+								} else {
+									// RPC unreachable — fall back to a small fixed
+									// reserve so the user isn't blocked from sending.
+									// Won't drain to zero in this branch, but it's an
+									// extremely rare path.
+									const reserve = ethers.parseUnits('0.0005', dec);
+									const max = sendAssetInfo.balance > reserve ? sendAssetInfo.balance - reserve : 0n;
+									sendAmount = ethers.formatUnits(max, dec);
+									sendingMax = false;
+									maxLockedGasPrice = null;
+								}
 							}}
 						>
 							MAX
