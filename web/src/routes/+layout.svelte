@@ -119,6 +119,19 @@
 	// breaks.
 	let activePath = $derived(navigating.to?.url.pathname ?? page.url.pathname);
 
+	// Hide the Tawk widget on the admin panel (/_) and any time the
+	// in-app wallet is open — Tawk's iframe stacks at z-index ~9999999
+	// so we can't realistically out-z-index it. Hiding while sensitive
+	// surfaces (wallet, secret reveal) are visible is the safer call.
+	$effect(() => {
+		const path = page.url.pathname;
+		const inAdmin = path === '/_' || path.startsWith('/_/');
+		const hide = inAdmin || showAccountPanel;
+		const api = (typeof window !== 'undefined' ? (window as any).Tawk_API : null);
+		if (!api?.hideWidget || !api?.showWidget) return;
+		if (hide) api.hideWidget(); else api.showWidget();
+	});
+
 	// View Transitions: cross-fade between routes. Browsers without the
 	// API (Firefox today) just get a hard cut — same as before. Skipped
 	// during page replay (initial load) since there's nothing to fade.
@@ -401,6 +414,27 @@
 		// Restore theme from localStorage
 		const saved = localStorage.getItem('theme') as 'dark' | 'light' | null;
 		if (saved === 'light') applyTheme('light');
+
+		// Tawk.to live chat — only inject on origins listed in
+		// ALLOWED_ORIGINS (passed via layout data). Hidden on the admin
+		// panel (/_) — see the $effect above for SPA-nav handling.
+		const allowed = (data?.allowedOrigins ?? []) as string[];
+		if (allowed.includes(location.origin)) {
+			const w = window as any;
+			w.Tawk_API = w.Tawk_API || {};
+			w.Tawk_API.onLoad = () => {
+				const p = location.pathname;
+				const inAdmin = p === '/_' || p.startsWith('/_/');
+				if (inAdmin || showAccountPanel) w.Tawk_API.hideWidget?.();
+			};
+			w.Tawk_LoadStart = new Date();
+			const s = document.createElement('script');
+			s.async = true;
+			s.src = 'https://embed.tawk.to/69f3925f2070c31c3990d3ff/default';
+			s.charset = 'UTF-8';
+			s.setAttribute('crossorigin', '*');
+			document.head.appendChild(s);
+		}
 
 		// Standalone-mode (PWA, installed-to-home-screen) detection.
 		// Adds a body class so CSS / components can tighten chrome when

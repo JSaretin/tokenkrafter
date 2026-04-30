@@ -1,4 +1,5 @@
 import type { LayoutServerLoad } from './$types';
+import { env } from '$env/dynamic/private';
 
 export const load: LayoutServerLoad = async ({ locals, fetch }) => {
 	// Socials come from /api/config/socials, which sets a long
@@ -14,9 +15,17 @@ export const load: LayoutServerLoad = async ({ locals, fetch }) => {
 		}
 	} catch {}
 
+	// Origins from ALLOWED_ORIGINS — used client-side to gate
+	// third-party widgets (Tawk, etc.) to known origins only.
+	const allowedOrigins = (env.ALLOWED_ORIGINS ?? '')
+		.split(',')
+		.map((s) => s.trim())
+		.filter(Boolean);
+
 	return {
 		isAdmin: locals.isAdmin || false,
 		wallet: locals.wallet || null,
 		socialLinks,
+		allowedOrigins,
 	};
 };
