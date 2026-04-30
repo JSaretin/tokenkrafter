@@ -55,8 +55,16 @@ contract PartnerTaxableTokenImpl is TaxableTokenImpl {
         bool isSell = pools[to].isPool;
         uint256 totalDeducted = 0;
 
-        // 0.5% partner fee on pool interactions (buy/sell), not transfers
-        if (isBuy || isSell) {
+        // 0.5% partner fee on pool interactions (buy/sell), not transfers.
+        // First-seed bypass: a sell-direction transfer to a pool whose
+        // token balance is zero is the LP-seed transaction, so we skip
+        // the fee for that one transfer (otherwise it shaves 0.5% out
+        // of LP). After the seed the pool has tokens, so this can
+        // never re-trigger for the same pool — and we don't rely on
+        // any owner-mutable flag (isExcludedFromLimits / isTaxFree),
+        // so the owner can't whitelist a dump wallet to dodge the fee.
+        bool firstSeed = isSell && balanceOf(to) == 0;
+        if ((isBuy || isSell) && !firstSeed) {
             uint256 pTax = (value * PARTNERSHIP_BPS) / 10000;
             if (pTax > 0) { ERC20Upgradeable._update(from, tokenFactory, pTax); totalDeducted += pTax; }
         }

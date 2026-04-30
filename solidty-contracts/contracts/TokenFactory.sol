@@ -56,6 +56,7 @@ contract TokenFactory is Ownable, ReentrancyGuard {
     error TotalExceedsMax();
     error NotFactoryToken();
     error NotAuthorizedRouter();
+    error InvalidPath();
 
     // =============================================================
     // STRUCTS
@@ -130,8 +131,8 @@ contract TokenFactory is Ownable, ReentrancyGuard {
     );
     event ImplementationUpdated(uint8 indexed tokenType, address impl);
     event TaxProcessed(address indexed token, uint256 amountIn, uint256 amountOut);
-    event ConvertTaxToStableUpdated(bool enabled);
     event TaxProcessFailed(address indexed token, uint256 amount);
+    event TaxAccumulated(address indexed token, uint256 balance);
     event ReferralRecorded(address indexed creator, address indexed referrer);
     event ReferralRewardDistributed(address indexed referrer, uint256 amount, uint8 level);
     event ReferralRewardClaimed(address indexed user, uint256 amount);
@@ -170,9 +171,6 @@ contract TokenFactory is Ownable, ReentrancyGuard {
 
     /// @notice Number of tokens created per type key (0..7).
     mapping(uint8 => uint256) public tokensCreatedByType;
-
-    /// @notice When true, `processTax` swaps accumulated tax tokens to USDT.
-    bool public convertTaxToStable;
 
     /// @notice Slippage tolerance (bps) for tax swaps. Default 500 = 5%.
     uint256 public taxSlippageBps = 500;
@@ -581,56 +579,50 @@ contract TokenFactory is Ownable, ReentrancyGuard {
     // TAX PROCESSING
     // =============================================================
 
-    /// @notice Converts accumulated tax tokens held by the factory to USDT
-    ///         via the best DEX route. Callable by the factory owner or by a
-    ///         registered token itself (during _update callbacks).
-    function processTax(address token) external nonReentrant {
-        if (msg.sender != owner()
-            && !(msg.sender == token && tokenInfo[token].creator != address(0)))
-            revert NotFactoryToken();
-
-        if (!convertTaxToStable) return;
+    /// @notice Token-side callback. Emits a signal that tax has
+    ///         accumulated on this factory for `token`; the actual
+    ///         token→USDT swap is done off-chain by an admin-side
+    ///         daemon via `processTaxAuth` so the slippage parameter
+    ///         comes from a private price feed instead of an in-tx
+    ///         `getAmountsOut` call (which a flash-loan attacker could
+    ///         manipulate to drain the tax balance through sandwich).
+    ///
+    ///         Only registered TokenKrafter tokens can emit. External
+    ///         tokens that happen to call into this address are
+    ///         silently ignored — emitting for them would pollute the
+    ///         daemon's signal feed.
+    function processTax(address token) external {
+        if (msg.sender != token) return;
+        if (tokenInfo[token].creator == address(0)) return;
         if (token == usdt) return;
+        uint256 balance = IERC20(token).balanceOf(address(this));
+        if (balance == 0) return;
+        emit TaxAccumulated(token, balance);
+    }
+
+    /// @notice Daemon-driven tax conversion. The off-chain admin
+    ///         monitors `TaxAccumulated` events, computes the safe
+    ///         swap path + `amountOutMin` from a private quote, and
+    ///         submits this tx. `path` must start at `token` and end
+    ///         at `usdt`; `amountOutMin` is enforced by the DEX router
+    ///         and bounds slippage to whatever the daemon decided was
+    ///         acceptable.
+    function processTaxAuth(
+        address token,
+        address[] calldata path,
+        uint256 amountOutMin
+    ) external onlyOwner nonReentrant {
+        if (token == usdt) return;
+        if (path.length < 2 || path[0] != token || path[path.length - 1] != usdt) revert InvalidPath();
 
         uint256 balance = IERC20(token).balanceOf(address(this));
         if (balance == 0) return;
 
-        address weth = dexRouter.WETH();
-
-        address[] memory directPath = new address[](2);
-        directPath[0] = token;
-        directPath[1] = usdt;
-
-        address[] memory wethPath = new address[](3);
-        wethPath[0] = token;
-        wethPath[1] = weth;
-        wethPath[2] = usdt;
-
-        uint256 directOut;
-        uint256 wethOut;
-
-        try dexRouter.getAmountsOut(balance, directPath) returns (uint256[] memory amounts) {
-            directOut = amounts[amounts.length - 1];
-        } catch {}
-
-        try dexRouter.getAmountsOut(balance, wethPath) returns (uint256[] memory amounts) {
-            wethOut = amounts[amounts.length - 1];
-        } catch {}
-
-        if (directOut == 0 && wethOut == 0) return;
-
-        bool isDirect = directOut >= wethOut;
-        address[] memory bestPath = isDirect ? directPath : wethPath;
-        uint256 expectedOut = isDirect ? directOut : wethOut;
-
-        uint256 amountOutMin = (expectedOut * (10000 - taxSlippageBps)) / 10000;
-
         IERC20(token).forceApprove(address(dexRouter), balance);
-
         try dexRouter.swapExactTokensForTokens(
             balance,
             amountOutMin,
-            bestPath,
+            path,
             address(this),
             block.timestamp
         ) returns (uint256[] memory amounts) {
@@ -724,7 +716,10 @@ contract TokenFactory is Ownable, ReentrancyGuard {
             feesPerType[i] = creationFee[i];
             countPerType[i] = tokensCreatedByType[i];
         }
-        taxToStable = convertTaxToStable;
+        // Tax-to-stable is always-on now (event-driven, daemon does
+        // the swap). Slot kept in the tuple for ABI continuity with
+        // the lens contracts that destructure this return.
+        taxToStable = true;
         taxSlippage = taxSlippageBps;
         refLevels = referralLevels;
         autoDistribute = autoDistributeReward;
@@ -825,10 +820,6 @@ contract TokenFactory is Ownable, ReentrancyGuard {
         }
     }
 
-    function setConvertTaxToStable(bool _enabled) external onlyOwner {
-        convertTaxToStable = _enabled;
-        emit ConvertTaxToStableUpdated(_enabled);
-    }
 
     function setTaxSlippage(uint256 _bps) external onlyOwner {
         if (_bps > 5000) revert TotalExceedsMax();

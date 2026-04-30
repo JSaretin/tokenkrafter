@@ -15,6 +15,11 @@ const config: HardhatUserConfig = {
   networks: {
     hardhat: {
       accounts: { count: 30 },
+      // LaunchInstance is over the 24576-byte mainnet code limit on
+      // some compiler builds. Local tests deploy regardless so the
+      // suite keeps running; production deploys still need the
+      // optimiser settings that make it fit.
+      allowUnlimitedContractSize: true,
     },
     bsc: {
       url: process.env.BSC_RPC_URL || "https://bsc-dataseed.binance.org/",

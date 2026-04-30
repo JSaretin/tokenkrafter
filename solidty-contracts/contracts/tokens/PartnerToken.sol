@@ -29,18 +29,31 @@ contract PartnerTokenImpl is BasicTokenImpl {
             && from != tokenFactory && to != tokenFactory
             && (pools[from].isPool || pools[to].isPool))
         {
-            uint256 pTax = (value * PARTNERSHIP_BPS) / 10000;
-            if (pTax > 0) {
-                // Run protection checks ONCE on the full value, then split.
-                _checkProtections(from, to, value);
-                ERC20Upgradeable._update(from, tokenFactory, pTax);
-                ERC20Upgradeable._update(from, to, value - pTax);
-                if (!_processingTax) {
-                    _processingTax = true;
-                    try ITokenFactoryTaxCallback(tokenFactory).processTax(address(this)) {} catch {}
-                    _processingTax = false;
+            // First-seed bypass: a sell-direction transfer to a pool
+            // whose token balance is zero is by definition the LP-seed
+            // transaction (the launch contract sending tokens to the
+            // pair before pair.mint). Skip the 0.5% partner fee just
+            // for that one transfer so we don't shave LP. After the
+            // seed the pool's balance is non-zero, so this condition
+            // cannot re-trigger for the same pool — and an owner-side
+            // exemption flag (e.g. isExcludedFromLimits) is irrelevant,
+            // so the owner cannot whitelist their own dump wallet to
+            // dodge the fee.
+            bool firstSeed = pools[to].isPool && balanceOf(to) == 0;
+            if (!firstSeed) {
+                uint256 pTax = (value * PARTNERSHIP_BPS) / 10000;
+                if (pTax > 0) {
+                    // Run protection checks ONCE on the full value, then split.
+                    _checkProtections(from, to, value);
+                    ERC20Upgradeable._update(from, tokenFactory, pTax);
+                    ERC20Upgradeable._update(from, to, value - pTax);
+                    if (!_processingTax) {
+                        _processingTax = true;
+                        try ITokenFactoryTaxCallback(tokenFactory).processTax(address(this)) {} catch {}
+                        _processingTax = false;
+                    }
+                    return;
                 }
-                return;
             }
         }
         super._update(from, to, value);

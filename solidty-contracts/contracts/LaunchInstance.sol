@@ -1077,6 +1077,10 @@ contract LaunchInstance is ReentrancyGuard {
         // Pro-rata refund amount — rounds down so dust stays in buyer's
         // entitlement (safer than rounding up which could drain the pool).
         uint256 refundBase = (paid * tokensToReturn) / buyerTokens;
+        // Reject zero-payout refunds: a tiny tokensToReturn rounds
+        // refundBase to 0 — the buyer would burn tokens for no USDT.
+        // Make them retry with enough size to round above zero.
+        if (refundBase == 0) revert AmountTooSmall();
 
         // Update global state
         tokensSold -= tokensToReturn;

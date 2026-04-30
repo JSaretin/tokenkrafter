@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "@openzeppelin/contracts/access/Ownable2Step.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
@@ -22,12 +22,12 @@ import "./shared/IAffiliate.sol";
 ///         this contract, so the factory is intentionally unaware of any
 ///         payment token besides USDT.
 ///
-///         Uses Ownable2Step so the owner key can only rotate via a
-///         two-transaction handoff (transferOwnership + acceptOwnership).
-///         For a contract that controls the launch implementation pointer
-///         and holds platform fees, single-tx transfer is too easy to fat-
-///         finger or compromise.
-contract LaunchpadFactory is Ownable2Step, ReentrancyGuard {
+///         Plain Ownable — production deployment hands ownership to a
+///         Safe (multisig) immediately after deploy, so the on-chain
+///         two-step handoff Ownable2Step provides is redundant
+///         (the multisig itself enforces multi-key approval on every
+///         action including transferOwnership).
+contract LaunchpadFactory is Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     // ── Custom errors ──────────────────────────────────────────

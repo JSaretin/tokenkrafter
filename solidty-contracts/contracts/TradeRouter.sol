@@ -137,6 +137,14 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
     mapping(uint256 => uint256) internal pendingIdxOf;      // id → index in pendingIds
     mapping(address => uint256[]) internal userWithdrawIds;  // user → their request IDs
 
+    // bankRef uniqueness — guards against the off-chain backend
+    // accidentally re-using the same human-readable reference (e.g.
+    // a frontend retry that double-submits with the same generated
+    // ref). Without on-chain enforcement, two pending withdrawals
+    // could share a ref and the off-ramp processor wouldn't know
+    // which one a fiat deposit corresponds to.
+    mapping(bytes32 => bool) public bankRefUsed;
+
     uint256 public totalEscrow;                             // total user funds held
     mapping(address => uint256) public platformEarnings;    // per token
 
@@ -200,6 +208,7 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
     error AffiliateOverpull();
     error EmptyPending();
     error TooManyAdmins();
+    error BankRefAlreadyUsed();
 
     // ── Modifiers ───────────────────────────────────────────────────
     modifier onlyAdmin() {
@@ -871,6 +880,14 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
         // (deposit, depositAndSwap, depositETH) so attackers can't bloat the
         // unbounded `withdrawals` / `pendingIds` arrays with sub-cent requests.
         if (minWithdrawUsdt > 0 && grossAmount < minWithdrawUsdt) revert BelowMinWithdraw();
+        // bankRef must be unique across all withdrawals (zero is the
+        // explicit "no ref provided" sentinel and is allowed for
+        // anonymous deposits). Pre-deposit dedup so the off-ramp
+        // processor can rely on bankRef as a stable lookup key.
+        if (bankRef != bytes32(0)) {
+            if (bankRefUsed[bankRef]) revert BankRefAlreadyUsed();
+            bankRefUsed[bankRef] = true;
+        }
 
         uint256 fee = (grossAmount * feeBps) / 10000;
         uint256 netAmount = grossAmount - fee;

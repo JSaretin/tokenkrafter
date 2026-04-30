@@ -64,17 +64,28 @@ async function approveUsdt(env: Env, who: any, amount: bigint) {
   await env.usdt.connect(who).approve(await env.router.getAddress(), amount);
 }
 
+// Each deposit gets a fresh bankRef so the on-chain uniqueness
+// constraint (added in M8) doesn't reject test-fixture reuse. Tests
+// that deliberately exercise the duplicate-ref revert pass the same
+// ref explicitly.
+let _bankRefCounter = 0;
+function nextBankRef(): string {
+  _bankRefCounter += 1;
+  return ethers.id(`TEST_BANK_REF_${_bankRefCounter}`);
+}
+
 async function doDeposit(
   env: Env,
   user: any,
   amount: bigint,
-  bankRef: string = BANK_REF_A,
+  bankRef: string = "",
   referrer: string = ethers.ZeroAddress
 ) {
+  const ref = bankRef === "" ? nextBankRef() : bankRef;
   await approveUsdt(env, user, amount);
   const tx = await env.router
     .connect(user)
-    .deposit(amount, bankRef, referrer);
+    .deposit(amount, ref, referrer);
   const receipt = await tx.wait();
   const log = receipt!.logs.find(
     (l: any) => l.fragment?.name === "WithdrawRequested"
