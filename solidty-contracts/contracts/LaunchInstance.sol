@@ -154,6 +154,7 @@ contract LaunchInstance is ReentrancyGuard {
     error NothingDeposited();
     error SendNativeCoin();
     error LaunchExpired();
+    error SwapDeadlineExpired();
     error AmountTooSmall();
     error ExceedsMaxBuy();
     error SoftCapNotReached();
@@ -297,6 +298,7 @@ contract LaunchInstance is ReentrancyGuard {
     event CreatorWithdraw(address indexed creator, uint256 tokenAmount);
     event CreatorReclaim(address indexed creator, uint256 tokenAmount);
     event PausedChanged(bool paused);
+    event AffiliateReportFailed(address indexed affiliate, address indexed buyer, uint256 buyFee);
     event CancelledByFactory(address indexed creator, uint256 returnedAmount);
 
     // ── Modifiers ──────────────────────────────────────────────
@@ -675,7 +677,7 @@ contract LaunchInstance is ReentrancyGuard {
         uint256 minUsdtOut,
         uint256 minTokensOut,
         address ref,
-        uint256 deadline
+        uint256 swapDeadline
     ) internal nonReentrant {
         if (paused || ILaunchpadFactory(factory).globalPause()) revert LaunchPaused();
         _autoResolve();
@@ -684,7 +686,13 @@ contract LaunchInstance is ReentrancyGuard {
         if (path.length < 2) revert InvalidPath();
         if (path[path.length - 1] != address(usdt)) revert PathMustEndAtUsdt();
         if (startTimestamp > 0 && block.timestamp < startTimestamp) revert LaunchNotStarted();
+        // Launch deadline (state) is distinct from the user's per-tx swap
+        // deadline (param). Without this check, a launch that has already
+        // passed its end time but reached softCap would still accept buys
+        // until tokensForCurve sells out — buyers came in expecting the
+        // listed end-date, not "until tokens run out".
         if (block.timestamp >= deadline) revert LaunchExpired();
+        if (block.timestamp >= swapDeadline) revert SwapDeadlineExpired();
 
         address paymentToken = path[0];
         uint256 usdtAmount;
@@ -710,7 +718,7 @@ contract LaunchInstance is ReentrancyGuard {
                 minUsdtOut,
                 fullPath,
                 address(this),
-                deadline
+                swapDeadline
             );
             usdtAmount = IERC20(address(usdt)).balanceOf(address(this)) - usdtBefore;
         } else {
@@ -729,7 +737,7 @@ contract LaunchInstance is ReentrancyGuard {
                     minUsdtOut,
                     path,
                     address(this),
-                    deadline
+                    swapDeadline
                 );
                 usdtAmount = IERC20(address(usdt)).balanceOf(address(this)) - usdtBefore;
             }
@@ -758,8 +766,15 @@ contract LaunchInstance is ReentrancyGuard {
         uint256 remaining = tokensForCurve - tokensSold;
         if (tokensOut > remaining) {
             tokensOut = remaining;
-            baseForTokens = _getCostForTokens(tokensOut);
         }
+        // Always recompute the actual curve cost. The binary search inside
+        // _getTokensForBase saturates at `remaining` whenever the budget
+        // exceeds the curve cost of the rest — without this recompute, a
+        // buyer who sends more USDT than the rest of the curve costs is
+        // charged their full input (the surplus would otherwise be swept
+        // to platformWallet at graduation, not refunded).
+        uint256 trueCost = _getCostForTokens(tokensOut);
+        if (trueCost < baseForTokens) baseForTokens = trueCost;
 
         // Anti-whale: cap by USDT value (% of hard cap)
         if (basePaid[buyer] + baseForTokens > maxBuyPerWallet) {
@@ -799,18 +814,22 @@ contract LaunchInstance is ReentrancyGuard {
                 // here is a launch-killer.
                 usdt.forceApprove(aff, buyFee);
                 uint256 balBefore = usdt.balanceOf(address(this));
-                // Intentionally NOT wrapped in try/catch: a misbehaving
-                // affiliate must surface loudly. Silent absorption (the old
-                // behaviour) lets a buggy affiliate quietly mis-account fees
-                // forever. If the affiliate reverts, the buy reverts; the
-                // factory owner can rotate `affiliate` to recover.
-                IAffiliateReporter(aff).report(buyer, ref, buyFee);
-                uint256 pulled = balBefore - usdt.balanceOf(address(this));
-                // Anything above buyFee is escrow theft. Revert the whole
-                // buy — the post-call zero-approval below is rolled back too,
-                // so no stale allowance leaks.
-                if (pulled > buyFee) revert AffiliateOverpull();
-                platformShare = buyFee - pulled;
+                // try/catch: a reverting affiliate must NOT brick buys.
+                // Earlier behaviour (no try/catch) meant a single misconfig
+                // (e.g. clone never authorised at the affiliate) bricked
+                // every buy on that launch until the factory zero'd the
+                // affiliate. Now: failures route the full fee to platform
+                // and surface as an event for ops; the buy succeeds either
+                // way. The over-pull check below still runs in the success
+                // path — no escrow theft surface.
+                try IAffiliateReporter(aff).report(buyer, ref, buyFee) {
+                    uint256 pulled = balBefore - usdt.balanceOf(address(this));
+                    if (pulled > buyFee) revert AffiliateOverpull();
+                    platformShare = buyFee - pulled;
+                } catch {
+                    emit AffiliateReportFailed(aff, buyer, buyFee);
+                    // platformShare stays at full buyFee — affiliate took 0.
+                }
                 usdt.forceApprove(aff, 0);
             }
 

@@ -217,109 +217,6 @@
 		</div>
 
 		<div class="px-5 py-6 text-center max-[640px]:flex-1 max-[640px]:overflow-y-auto">
-			{#if liveStatus === 'confirmed' || liveStatus === 'processing'}
-				<!-- ═══ RECEIPT VIEW ═══ -->
-				<div class="mb-3">
-					<div class="w-11 h-11 rounded-full mx-auto mb-2 bg-emerald-500/10 flex items-center justify-center [&_svg]:w-7 [&_svg]:h-7">
-						<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
-					</div>
-					<div class="font-display text-22 font-extrabold text-heading mb-px">${usdtAmount.toFixed(2)}</div>
-					{#if ngnAmount > 0}
-						<div class="font-numeric text-15 font-bold text-emerald-500 mb-2.5">NGN {ngnAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
-					{/if}
-					<div class="h-px mx-[-20px] mb-2.5 border-t border-dashed border-line"></div>
-					<div class="text-left">
-						<div class="flex justify-between py-1 font-numeric text-xs [&>span:first-child]:text-muted [&>span:last-child]:text-foreground">
-							<span>Status</span>
-							<span class="!text-emerald-500 font-bold">{liveStatus === 'confirmed' ? 'Sent' : 'Processing'}</span>
-						</div>
-						{#if refId}
-							<div class="flex justify-between py-1 font-numeric text-xs [&>span:first-child]:text-muted [&>span:last-child]:text-foreground">
-								<span>Reference</span>
-								<span>{refId}</span>
-							</div>
-						{/if}
-						{#if details.bank_name || details.bank_code || details.account || details.holder || details.email}
-							{#if details.bank_name || details.bank_code}
-								<div class="flex justify-between py-1 font-numeric text-xs [&>span:first-child]:text-muted [&>span:last-child]:text-foreground">
-									<span>Bank</span>
-									<span>{details.bank_name || details.bank_code}</span>
-								</div>
-							{/if}
-							{#if details.account}
-								<div class="flex justify-between py-1 font-numeric text-xs [&>span:first-child]:text-muted [&>span:last-child]:text-foreground">
-									<span>Account</span>
-									<span>{details.account}</span>
-								</div>
-							{/if}
-							{#if details.holder}
-								<div class="flex justify-between py-1 font-numeric text-xs [&>span:first-child]:text-muted [&>span:last-child]:text-foreground">
-									<span>Recipient</span>
-									<span class="!text-emerald-500 font-bold">{details.holder}</span>
-								</div>
-							{/if}
-							{#if details.email}
-								<div class="flex justify-between py-1 font-numeric text-xs [&>span:first-child]:text-muted [&>span:last-child]:text-foreground">
-									<span>Email</span>
-									<span>{details.email}</span>
-								</div>
-							{/if}
-						{:else}
-							<div class="flex justify-between py-1 font-numeric text-xs [&>span:first-child]:text-muted">
-								<span>Paid to</span>
-								<button class="inline-flex items-center gap-1 bg-transparent border-0 p-0 cursor-pointer font-numeric text-xs font-bold text-brand-cyan transition-opacity duration-[150ms] hover:opacity-80 disabled:opacity-50 disabled:cursor-default" onclick={loadPaymentDetails} disabled={detailsLoading}>
-									{#if detailsLoading}
-										Verifying...
-									{:else}
-										View payment info
-										<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
-									{/if}
-								</button>
-							</div>
-						{/if}
-						{#if feeAmount > 0}
-							<div class="flex justify-between py-1 font-numeric text-xs [&>span:first-child]:text-muted [&>span:last-child]:text-foreground">
-								<span>Gross</span>
-								<span>${grossAmount.toFixed(2)}</span>
-							</div>
-							<div class="flex justify-between py-1 font-numeric text-xs [&>span:first-child]:text-muted [&>span:last-child]:text-foreground">
-								<span>Fee</span>
-								<span>${feeAmount.toFixed(2)}</span>
-							</div>
-							<div class="flex justify-between py-1 font-numeric text-xs [&>span:first-child]:text-muted [&>span:last-child]:text-foreground">
-								<span>Net paid</span>
-								<span class="!text-emerald-500 font-bold">${netAmount.toFixed(2)}</span>
-							</div>
-						{/if}
-						{#if ngnAmount > 0}
-							<div class="flex justify-between py-1 font-numeric text-xs [&>span:first-child]:text-muted [&>span:last-child]:text-foreground">
-								<span>Rate</span>
-								<span>1 USD = NGN {ngnRate.toFixed(2)}</span>
-							</div>
-						{/if}
-						<div class="flex justify-between py-1 font-numeric text-xs [&>span:first-child]:text-muted [&>span:last-child]:text-foreground">
-							<span>Date</span>
-							<span>{new Date(withdrawal?.created_at || Date.now()).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
-						</div>
-						{#if confirmedAtDisplay}
-							<div class="flex justify-between py-1 font-numeric text-xs [&>span:first-child]:text-muted [&>span:last-child]:text-foreground">
-								<span>Confirmed</span>
-								<span>{confirmedAtDisplay}</span>
-							</div>
-						{/if}
-						{#if txExplorerLink}
-							<div class="flex justify-between py-1 font-numeric text-xs [&>span:first-child]:text-muted">
-								<span>On-chain tx</span>
-								<a class="inline-flex items-center gap-[3px] text-brand-cyan no-underline font-mono text-xs hover:underline" href={txExplorerLink} target="_blank" rel="noopener noreferrer">
-									{withdrawal.tx_hash?.slice(0, 10)}...
-									<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-								</a>
-							</div>
-						{/if}
-					</div>
-				</div>
-				<button class="w-full py-3.5 rounded-xl border-0 text-white cursor-pointer font-display text-sm font-bold transition-all duration-200 bg-[linear-gradient(135deg,#10b981,#059669)] hover:-translate-y-px hover:shadow-[0_6px_28px_rgba(16,185,129,0.3)]" onclick={onclose}>Done</button>
-			{:else}
 				<!-- ═══ PENDING / TIMED OUT VIEW ═══ -->
 				<div class="w-16 h-16 rounded-full mx-auto mb-3 flex items-center justify-center" style="background: {statusConfig.bg};">
 					{#if liveStatus === 'pending' && (!hasExpiry || remaining > 0)}
@@ -370,7 +267,7 @@
 					<div class="flex items-center justify-center my-4">
 						<div class="flex flex-col items-center gap-1 font-mono text-3xs text-foreground">
 							<div class="w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-emerald-500"></div>
-							<span>Deposited</span>
+							<span>Awaiting</span>
 						</div>
 						<div class="w-10 h-0.5 mx-1 mb-[18px] bg-emerald-500"></div>
 						<div class="flex flex-col items-center gap-1 font-mono text-3xs text-foreground">
@@ -382,7 +279,7 @@
 					<div class="flex items-center justify-center my-4">
 						<div class="flex flex-col items-center gap-1 font-mono text-3xs text-foreground">
 							<div class="w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-emerald-500"></div>
-							<span>Deposited</span>
+							<span>Awaiting</span>
 						</div>
 						<div class="w-10 h-0.5 mx-1 mb-[18px] bg-red-400"></div>
 						<div class="flex flex-col items-center gap-1 font-mono text-3xs text-red-400">
@@ -395,17 +292,17 @@
 					<div class="flex items-center justify-center my-4">
 						<div class={'flex flex-col items-center gap-1 font-mono text-3xs transition-all duration-200 ' + (step >= 1 ? 'text-foreground ' : 'text-muted ') + (step === 1 && (!hasExpiry || remaining > 0) ? 'text-amber-500' : '')}>
 							<div class={'w-2.5 h-2.5 rounded-full border-2 transition-all duration-200 ' + (step >= 1 ? 'bg-emerald-500 border-emerald-500' : 'bg-surface-hover border-line') + (step === 1 && (!hasExpiry || remaining > 0) ? ' !bg-amber-500 !border-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.4)]' : '')}></div>
-							<span>Deposited</span>
+							<span>Awaiting</span>
 						</div>
 						<div class={'w-10 h-0.5 mx-1 mb-[18px] transition-[background] duration-200 ' + (step >= 2 ? 'bg-emerald-500' : 'bg-line')}></div>
 						<div class={'flex flex-col items-center gap-1 font-mono text-3xs transition-all duration-200 ' + (step >= 2 ? 'text-foreground ' : 'text-muted ') + (step === 2 ? 'text-amber-500' : '')}>
 							<div class={'w-2.5 h-2.5 rounded-full border-2 transition-all duration-200 ' + (step >= 2 ? 'bg-emerald-500 border-emerald-500' : 'bg-surface-hover border-line') + (step === 2 ? ' !bg-amber-500 !border-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.4)]' : '')}></div>
-							<span>Processing</span>
+							<span>Received</span>
 						</div>
 						<div class={'w-10 h-0.5 mx-1 mb-[18px] transition-[background] duration-200 ' + (step >= 3 ? 'bg-emerald-500' : 'bg-line')}></div>
 						<div class={'flex flex-col items-center gap-1 font-mono text-3xs transition-all duration-200 ' + (step >= 3 ? 'text-foreground' : 'text-muted')}>
 							<div class={'w-2.5 h-2.5 rounded-full border-2 transition-all duration-200 ' + (step >= 3 ? 'bg-emerald-500 border-emerald-500' : 'bg-surface-hover border-line')}></div>
-							<span>Sent</span>
+							<span>Delivered</span>
 						</div>
 					</div>
 				{/if}
@@ -489,18 +386,8 @@
 				{/if}
 
 				{#if liveStatus === 'confirmed'}
-					<div class="bg-emerald-500/8 border border-emerald-500/25 rounded-xl p-3 mb-3 flex flex-col gap-1.5">
-						<div class="flex items-center gap-2 font-display text-13 font-bold text-emerald-500">
-							<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-							<span>Payment sent to {bankLabel}</span>
-						</div>
-						{#if confirmedAtDisplay}
-							<div class="font-mono text-xs2 text-muted pl-6">{confirmedAtDisplay}</div>
-						{/if}
-					</div>
 					<button class="w-full py-3.5 rounded-xl border-0 text-white cursor-pointer font-display text-sm font-bold transition-all duration-200 bg-[linear-gradient(135deg,#10b981,#059669)] hover:-translate-y-px hover:shadow-[0_6px_28px_rgba(16,185,129,0.3)]" onclick={onclose}>Done</button>
 				{/if}
-			{/if}
 		</div>
 	</div>
 </div>
