@@ -965,21 +965,35 @@
 				{/if}
 			</div>
 
-			<!-- ── Footer: disconnect only ──────────────────────── -->
-			<!-- New/Import wallet live in the active wallet's cog menu so
-			     the footer has exactly one action: terminal disconnect. -->
-			{#if addMode === null && createdCodes.length === 0}
-				<div class="ws-footer">
-					<button class="ws-foot-lock-link" onclick={() => { lockWallet(); onLock(); close(); }}>
-						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-						{$t('switcher.lock')}
-					</button>
-					<button class="ws-foot-disconnect-link" onclick={() => { onDisconnect(); close(); }}>
-						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-						{$t('switcher.disconnect')}
-					</button>
-				</div>
-			{:else if addMode === 'create' && createdCodes.length === 0}
+			<!-- ── Footer ───────────────────────────────────────── -->
+			<div class="ws-footer">
+				<button class="ws-foot-lock-link" onclick={() => { lockWallet(); onLock(); close(); }}>
+					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+					{$t('switcher.lock')}
+				</button>
+				<button class="ws-foot-disconnect-link" onclick={() => { onDisconnect(); close(); }}>
+					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+					{$t('switcher.disconnect')}
+				</button>
+			</div>
+
+			<!-- ── Add-mode bottom sheet ─────────────────────────────
+			     Forms triggered from the global settings cog (create /
+			     import / change-pin / auto-lock) and the post-create
+			     recovery-codes display all live in a bottom-up sheet
+			     that slides over the wallet list. Same shape as the
+			     long-press ActionSheets so the UX stays consistent. -->
+			{#if addMode !== null || createdCodes.length > 0}
+				<!-- svelte-ignore a11y_click_events_have_key_events -->
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<div class="ws-form-backdrop" onclick={() => { if (!addLoading) { addMode = null; resetAddForm(); } }}>
+					<div class="ws-form-sheet" onclick={(e) => e.stopPropagation()}>
+						<div class="ws-form-sheet-grab" aria-hidden="true"></div>
+						<button class="ws-form-sheet-close" onclick={() => { if (!addLoading) { addMode = null; resetAddForm(); } }} aria-label="Close">
+							<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+						</button>
+						<div class="ws-form-sheet-body">
+				{#if addMode === 'create' && createdCodes.length === 0}
 				<div class="ws-form">
 					<div class="ws-form-title">{$t('switcher.createNewWallet')}</div>
 					<input class="ws-input" placeholder={$t('switcher.walletName')} bind:value={newName} maxlength="40" {...INPUT_ATTRS} />
@@ -1101,6 +1115,10 @@
 					</div>
 					<div class="ws-form-btns">
 						<button class="ws-btn-s" onclick={() => { addMode = null; }}>{$t('switcher.done')}</button>
+					</div>
+				</div>
+				{/if}
+						</div>
 					</div>
 				</div>
 			{/if}
@@ -1523,6 +1541,49 @@
 	}
 	.ws-menu-divider {
 		height: 1px; background: var(--bg-surface-hover); margin: 3px 4px;
+	}
+
+	/* Bottom-up sheet hosting all addMode forms. Lives inside the
+	   wallet panel's absolute container so it slides up over the
+	   wallet list (rather than expanding the panel downward). */
+	.ws-form-backdrop {
+		position: absolute; inset: 0; z-index: 6;
+		background: rgba(0,0,0,0.55); backdrop-filter: blur(3px);
+		display: flex; align-items: flex-end; justify-content: center;
+		animation: wsFormFade 0.18s ease-out;
+		border-radius: inherit;
+	}
+	.ws-form-sheet {
+		position: relative;
+		width: 100%; max-height: 80%;
+		background: var(--bg);
+		border-top: 1px solid var(--border);
+		border-radius: 16px 16px 0 0;
+		box-shadow: 0 -8px 24px rgba(0,0,0,0.4);
+		display: flex; flex-direction: column;
+		animation: wsFormSlideUp 0.22s ease-out;
+		overflow: hidden;
+	}
+	.ws-form-sheet-grab {
+		width: 36px; height: 4px; border-radius: 2px;
+		background: var(--bg-surface-hover); margin: 8px auto 0;
+	}
+	.ws-form-sheet-close {
+		position: absolute; top: 10px; right: 12px; z-index: 1;
+		width: 28px; height: 28px; border-radius: 8px; border: none;
+		background: var(--bg-surface-input); color: var(--text-dim); cursor: pointer;
+		display: flex; align-items: center; justify-content: center; transition: all 0.12s;
+	}
+	.ws-form-sheet-close:hover { background: var(--bg-surface-hover); color: var(--text-heading); }
+	.ws-form-sheet-body { flex: 1; overflow-y: auto; }
+	.ws-form-sheet-body .ws-form { background: transparent; border-top: none; }
+	@keyframes wsFormSlideUp {
+		from { transform: translateY(100%); }
+		to { transform: translateY(0); }
+	}
+	@keyframes wsFormFade {
+		from { opacity: 0; }
+		to { opacity: 1; }
 	}
 
 	/* Form (create / import / codes) */
