@@ -43,7 +43,7 @@
 				</button>
 			{/if}
 		</div>
-		<div class="pt-3.5 px-4 pb-4 overflow-y-auto flex-1">
+		<div class="pt-3.5 px-4 pb-4 overflow-y-auto flex-1 min-h-0">
 			{@render children()}
 		</div>
 	</div>

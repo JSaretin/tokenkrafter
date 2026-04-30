@@ -28,8 +28,6 @@
 	// updates and external sources (realtime, poll) all funnel through
 	// this same state, with the TERMINAL-guard preventing regressions.
 	let liveStatus = $state<string>('pending');
-	let liveNote = $state<string>('');
-	let confirmedAt = $state<string | null>(null);
 
 	// Live countdown tick — stops once we reach a terminal state
 	const tickInterval = setInterval(() => {
@@ -74,8 +72,6 @@
 			if (TERMINAL.includes(liveStatus)) return; // never go backwards
 			if (row.status !== liveStatus) {
 				liveStatus = row.status;
-				liveNote = row.admin_note || '';
-				if (row.confirmed_at) confirmedAt = row.confirmed_at;
 			}
 		})
 		.subscribe();
@@ -88,8 +84,6 @@
 		if (!next || next === liveStatus) return;
 		if (TERMINAL.includes(liveStatus)) return;
 		liveStatus = next;
-		if (withdrawal?.admin_note) liveNote = withdrawal.admin_note;
-		if (withdrawal?.confirmed_at) confirmedAt = withdrawal.confirmed_at;
 	});
 
 	onDestroy(() => {
@@ -142,7 +136,6 @@
 	let detailsLoading = $state(false);
 	let details = $derived(fetchedDetails || withdrawal?.payment_details || {});
 	let hasDetails = $derived(!!(details.bank_name || details.bank_code || details.account || details.holder || details.email));
-	let bankLabel = $derived(details?.bank_name || details?.bank_code || details?.email || 'your account');
 
 	async function loadPaymentDetails() {
 		if (detailsLoading || hasDetails) return;
@@ -182,10 +175,6 @@
 			? `${explorerUrl.replace(/\/$/, '')}/tx/${withdrawal.tx_hash}`
 			: ''
 	);
-	let confirmedAtDisplay = $derived(
-		confirmedAt ? new Date(confirmedAt).toLocaleString() : ''
-	);
-
 	let statusConfig = $derived.by(() => {
 		switch (liveStatus) {
 			case 'confirmed': return { label: 'Confirmed', color: '#10b981', bg: 'rgba(16,185,129,0.1)', icon: 'M20 6L9 17l-5-5' };
@@ -207,7 +196,7 @@
 >
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
-	<div class="status-modal w-full max-w-[400px] bg-background border border-line rounded-[20px] overflow-hidden max-[640px]:max-w-full max-[640px]:w-full max-[640px]:h-screen max-[640px]:max-h-screen max-[640px]:rounded-none max-[640px]:flex max-[640px]:flex-col" onclick={(e) => e.stopPropagation()}>
+	<div class="status-modal w-full max-w-[400px] h-fit max-h-[calc(100vh-32px)] flex flex-col bg-background border border-line rounded-[20px] overflow-hidden max-[640px]:max-w-full max-[640px]:w-full max-[640px]:h-screen max-[640px]:max-h-screen max-[640px]:rounded-none" onclick={(e) => e.stopPropagation()}>
 		<!-- Header -->
 		<div class="flex justify-between items-center px-5 py-4 border-b border-line">
 			<h3 class="heading-3">{liveStatus === 'confirmed' ? 'Payment Sent!' : liveStatus === 'cancelled' ? 'Withdrawal Cancelled' : 'Processing Withdrawal'}</h3>
@@ -216,7 +205,7 @@
 			</button>
 		</div>
 
-		<div class="px-5 py-6 text-center max-[640px]:flex-1 max-[640px]:overflow-y-auto">
+		<div class="px-5 py-6 text-center flex-1 overflow-y-auto min-h-0">
 				<!-- ═══ PENDING / TIMED OUT VIEW ═══ -->
 				<div class="w-16 h-16 rounded-full mx-auto mb-3 flex items-center justify-center" style="background: {statusConfig.bg};">
 					{#if liveStatus === 'pending' && (!hasExpiry || remaining > 0)}
@@ -385,9 +374,6 @@
 					</button>
 				{/if}
 
-				{#if liveStatus === 'confirmed'}
-					<button class="w-full py-3.5 rounded-xl border-0 text-white cursor-pointer font-display text-sm font-bold transition-all duration-200 bg-[linear-gradient(135deg,#10b981,#059669)] hover:-translate-y-px hover:shadow-[0_6px_28px_rgba(16,185,129,0.3)]" onclick={onclose}>Done</button>
-				{/if}
 		</div>
 	</div>
 </div>
@@ -405,10 +391,6 @@
 	.status-header {
 		display: flex; justify-content: space-between; align-items: center;
 		padding: 16px 20px; border-bottom: 1px solid var(--border);
-	}
-	.status-header h3 {
-		font-family: 'Syne', sans-serif; font-size: 16px; font-weight: 700;
-		color: var(--text-heading); margin: 0;
 	}
 	.close-btn {
 		background: none; border: none; color: var(--text-muted); cursor: pointer;
