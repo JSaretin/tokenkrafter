@@ -22,12 +22,23 @@ services:
     env_file: .envs/indexer.env
     restart: always
 
+  activity-bot:
+    build: ./daemons
+    command: bun activity-bot.mjs
+    env_file: .envs/activity-bot.env
+    restart: "no"
+    profiles: [bots]
+    volumes:
+      - activity-bot-data:/app/data
+
   launch-buy-bot:
     build: ./daemons
     command: bun launch-buy-bot.mjs
     env_file: .envs/launch-buy-bot.env
     restart: "no"
     profiles: [bots]
+    volumes:
+      - launch-buy-bot-data:/app/data
 
   payment:
     build: ./payment-server
@@ -60,3 +71,5 @@ services:
 volumes:
   indexer-data:
   redis-data:
+  activity-bot-data:
+  launch-buy-bot-data:

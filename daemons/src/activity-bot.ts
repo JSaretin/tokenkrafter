@@ -193,7 +193,7 @@ async function fetchTrending(): Promise<CachedToken[]> {
 // ── Type weighting (no partner — reserved for real users) ──
 function pickTokenType(): number {
 	// 0=basic, 1=mintable, 2=taxable, 3=tax+mint
-	const weights = [50, 20, 20, 10];
+	const weights = [90, 5, 5, 0];
 	const total = weights.reduce((a, b) => a + b, 0);
 	let roll = randInt(1, total);
 	for (let i = 0; i < weights.length; i++) {
