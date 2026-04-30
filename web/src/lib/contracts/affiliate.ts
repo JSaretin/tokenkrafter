@@ -14,9 +14,12 @@ export const AFFILIATE_ABI = [
 	'function minClaim() view returns (uint256)',
 	'function totalPending() view returns (uint256)',
 	'function getStats(address referrer) view returns (uint256 pending, uint256 totalEarned, uint256 totalClaimed, uint32 referredCount, uint32 actionCount, uint64 lastActionAt)',
+	'function referrerOf(address user) view returns (address)',
 	'function claim() external',
+	'function registerReferrer(address ref) external',
 	'event Claimed(address indexed referrer, uint256 amount)',
 	'event Reported(address indexed user, address indexed referrer, uint256 platformFee, uint256 cut)',
+	'event ReferrerSet(address indexed user, address indexed referrer)',
 ];
 
 export interface AffiliateStats {
@@ -51,8 +54,21 @@ export class AffiliateClient {
 		return this.contract.minClaim();
 	}
 
+	async shareBps(): Promise<number> {
+		return Number(await this.contract.shareBps());
+	}
+
+	async referrerOf(user: string): Promise<string> {
+		return this.contract.referrerOf(user);
+	}
+
 	async claim(): Promise<ethers.TransactionReceipt | null> {
 		const tx = (await this.contract.claim()) as ethers.TransactionResponse;
+		return tx.wait();
+	}
+
+	async registerReferrer(ref: string): Promise<ethers.TransactionReceipt | null> {
+		const tx = (await this.contract.registerReferrer(ref)) as ethers.TransactionResponse;
 		return tx.wait();
 	}
 }

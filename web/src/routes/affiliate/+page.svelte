@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { getContext, onMount } from 'svelte';
+	import { getContext } from 'svelte';
 	import { ethers } from 'ethers';
-	import { TokenFactory, ZERO_ADDRESS } from '$lib/tokenCrafter';
-	import type { SupportedNetworks, SupportedNetwork } from '$lib/structure';
+	import { ZERO_ADDRESS } from '$lib/tokenCrafter';
+	import type { SupportedNetworks } from '$lib/structure';
 	import { t } from '$lib/i18n';
 	import Skeleton from '$lib/Skeleton.svelte';
 	import { LaunchpadFactoryClient } from '$lib/contracts/launchpadFactory';
@@ -20,23 +20,24 @@
 	let signer = $derived(getSigner());
 	let providersReady = $derived(getProvidersReady());
 
-	// Selected network for stats
+	// Selected network for stats — Affiliate.sol is per-chain, so balances
+	// don't aggregate across BSC + Base + Polygon. Switching the network
+	// pill swaps the readout.
 	let selectedNetworkIdx = $state(0);
 	let selectedNetwork = $derived(supportedNetworks[selectedNetworkIdx]);
 
-	// Referral stats
 	let loading = $state(false);
 	let claiming = $state(false);
 	let copied = $state(false);
 	let usdtSymbol = $state('USDT');
 	let usdtDecimals = $state(18);
 
-	// Alias
+	// Alias (orthogonal to on-chain affiliate state — purely a UX
+	// convenience for shorter ?ref= links).
 	let myAlias = $state('');
 	let aliasInput = $state('');
 	let aliasLoading = $state(false);
 	let aliasError = $state('');
-	let aliasSaved = $state(false);
 
 	let referralLink = $derived.by(() => {
 		if (!userAddress) return '';
@@ -44,26 +45,17 @@
 		return myAlias ? `${origin}/?ref=${myAlias}` : `${origin}/?ref=${userAddress}`;
 	});
 
-	// Stats data — USDT-only after refactor
-	let totalReferred = $state<bigint>(0n);
-	let totalEarnedUsdt = $state<bigint>(0n);
-	let pendingUsdt = $state<bigint>(0n);
-	let referralChain: string[] = $state([]);
-	let referralLevels = $state(3);
-	let autoDistribute = $state(true);
+	// On-chain Affiliate.sol state (single source of truth for V3).
+	let affiliateAddr = $state<string | null>(null);
+	let pending = $state<bigint>(0n);
+	let totalEarned = $state<bigint>(0n);
+	let totalClaimed = $state<bigint>(0n);
+	let referredCount = $state(0);
+	let actionCount = $state(0);
+	let lastActionAt = $state(0);
+	let minClaim = $state<bigint>(0n);
+	let shareBps = $state<number>(2500); // contract default 25%
 	let myReferrer = $state<string | null>(null);
-
-	// Launchpad-buy affiliate (separate from token-creation referrals).
-	// Affiliate.sol pays 25% of platform fee on each launchpad buy made
-	// through a referrer's link. State accumulates here and is claimable
-	// independently from the TokenFactory referral pool above.
-	let lpAffiliateAddr = $state<string | null>(null);
-	let lpPending = $state<bigint>(0n);
-	let lpTotalEarned = $state<bigint>(0n);
-	let lpTotalClaimed = $state<bigint>(0n);
-	let lpReferredCount = $state(0);
-	let lpMinClaim = $state<bigint>(0n);
-	let lpClaiming = $state(false);
 
 	function formatAddress(addr: string) {
 		return addr.slice(0, 6) + '...' + addr.slice(-4);
@@ -77,10 +69,20 @@
 		return num.toFixed(2);
 	}
 
+	function formatLastSeen(unixSec: number): string {
+		if (!unixSec) return '—';
+		const ms = unixSec * 1000;
+		const diff = Date.now() - ms;
+		if (diff < 60_000) return 'just now';
+		if (diff < 3600_000) return Math.floor(diff / 60_000) + 'm ago';
+		if (diff < 86400_000) return Math.floor(diff / 3600_000) + 'h ago';
+		const days = Math.floor(diff / 86400_000);
+		if (days < 30) return days + 'd ago';
+		return new Date(ms).toLocaleDateString();
+	}
+
 	async function copyLink() {
 		if (!referralLink) return;
-		// Try modern clipboard API first, fall back to legacy execCommand
-		// for insecure contexts / older browsers where it throws silently.
 		let ok = false;
 		try {
 			if (navigator.clipboard?.writeText) {
@@ -112,6 +114,15 @@
 	async function loadStats() {
 		if (!selectedNetwork || !userAddress) return;
 		loading = true;
+		// Reset stats so a slow chain switch doesn't show stale values.
+		affiliateAddr = null;
+		pending = 0n;
+		totalEarned = 0n;
+		totalClaimed = 0n;
+		referredCount = 0;
+		actionCount = 0;
+		lastActionAt = 0;
+		myReferrer = null;
 		try {
 			const providers = getNetworkProviders();
 			const provider = providers.get(selectedNetwork.chain_id);
@@ -120,119 +131,91 @@
 				return;
 			}
 
-			const factory = new TokenFactory(selectedNetwork.platform_address, provider);
-			// USDT metadata for display
+			// USDT metadata for display.
 			const usdtAbi = [
 				'function decimals() view returns (uint8)',
-				'function symbol() view returns (string)'
+				'function symbol() view returns (string)',
 			];
 			const usdt = new ethers.Contract(selectedNetwork.usdt_address, usdtAbi, provider);
-
-			const [stats, chain, levels, autoDist, referrer, dec, sym] = await Promise.all([
-				factory.getReferralStats(userAddress),
-				factory.getReferralChain(userAddress),
-				factory.getReferralLevels(),
-				factory.getAutoDistributeReward(),
-				factory.getReferrer(userAddress),
+			const [dec, sym] = await Promise.all([
 				usdt.decimals().catch(() => 18),
-				usdt.symbol().catch(() => 'USDT')
+				usdt.symbol().catch(() => 'USDT'),
 			]);
-
-			totalReferred = stats.referred;
-			totalEarnedUsdt = stats.earned;
-			pendingUsdt = stats.pending;
-			referralChain = [...chain];
-			referralLevels = levels;
-			autoDistribute = autoDist;
-			myReferrer = referrer !== ZERO_ADDRESS ? referrer : null;
 			usdtDecimals = Number(dec);
 			usdtSymbol = sym;
 
-			// Launchpad affiliate stats (separate Affiliate.sol). Resolved via
-			// the launchpad factory's affiliate() view. Best-effort — failures
-			// don't blow up the whole load (a network without launchpad still
-			// shows token-creation referrals).
-			try {
-				if (selectedNetwork.launchpad_address && selectedNetwork.launchpad_address !== '0x') {
-					const lpFactory = new LaunchpadFactoryClient(selectedNetwork.launchpad_address, provider);
-					const affiliateAddr = await lpFactory.affiliate();
-					if (affiliateAddr && affiliateAddr !== ZERO_ADDRESS) {
-						lpAffiliateAddr = affiliateAddr;
-						const aff = new AffiliateClient(affiliateAddr, provider);
-						const [lpStats, minClaim] = await Promise.all([
-							aff.getStats(userAddress),
-							aff.minClaim().catch(() => 0n),
-						]);
-						lpPending = lpStats.pending;
-						lpTotalEarned = lpStats.totalEarned;
-						lpTotalClaimed = lpStats.totalClaimed;
-						lpReferredCount = lpStats.referredCount;
-						lpMinClaim = minClaim;
-					} else {
-						lpAffiliateAddr = null;
-					}
-				}
-			} catch (e) {
-				// Silent fallback — this stream is optional.
-				console.warn('Launchpad affiliate stats unavailable:', (e as Error)?.message?.slice(0, 80));
+			// Resolve Affiliate.sol address via the LaunchpadFactory's
+			// affiliate() pointer. All three V3 reporters (TokenFactory,
+			// LaunchpadFactory, TradeRouter) wire to the same Affiliate
+			// address so any of them works as a discovery anchor.
+			if (!selectedNetwork.launchpad_address || selectedNetwork.launchpad_address === '0x') {
+				return;
 			}
+			const lpFactory = new LaunchpadFactoryClient(selectedNetwork.launchpad_address, provider);
+			const addr = await lpFactory.affiliate();
+			if (!addr || addr === ZERO_ADDRESS) return;
+
+			affiliateAddr = addr;
+			const aff = new AffiliateClient(addr, provider);
+			const [stats, mc, share, ref] = await Promise.all([
+				aff.getStats(userAddress),
+				aff.minClaim().catch(() => 0n),
+				aff.shareBps().catch(() => 2500),
+				aff.referrerOf(userAddress).catch(() => ZERO_ADDRESS),
+			]);
+			pending = stats.pending;
+			totalEarned = stats.totalEarned;
+			totalClaimed = stats.totalClaimed;
+			referredCount = stats.referredCount;
+			actionCount = stats.actionCount;
+			lastActionAt = stats.lastActionAt;
+			minClaim = mc;
+			shareBps = share;
+			myReferrer = ref && ref !== ZERO_ADDRESS ? ref : null;
 		} catch (e: any) {
-			console.error('Failed to load referral stats:', e);
-			addFeedback({ message: 'Failed to load referral stats.', type: 'error' });
+			console.error('Failed to load affiliate stats:', e);
+			addFeedback({ message: 'Failed to load affiliate stats.', type: 'error' });
 		} finally {
 			loading = false;
 		}
 	}
 
-	async function claimLpReward() {
-		if (!signer || !lpAffiliateAddr) return;
-		if (lpPending === 0n) return;
-		if (lpMinClaim > 0n && lpPending < lpMinClaim) {
-			addFeedback({ message: `Below minimum claim (${formatAmount(lpMinClaim, usdtDecimals)} ${usdtSymbol}).`, type: 'error' });
+	async function claim() {
+		if (!signer || !affiliateAddr) return;
+		if (pending === 0n) return;
+		if (minClaim > 0n && pending < minClaim) {
+			addFeedback({
+				message: `Below minimum claim (${formatAmount(minClaim, usdtDecimals)} ${usdtSymbol}).`,
+				type: 'error',
+			});
 			return;
 		}
-		lpClaiming = true;
-		try {
-			const aff = new AffiliateClient(lpAffiliateAddr, signer);
-			await aff.claim();
-			addFeedback({ message: `${usdtSymbol} claimed from launchpad referrals!`, type: 'success' });
-			await loadStats();
-		} catch (e: any) {
-			console.error('LP claim failed:', e);
-			addFeedback({ message: e?.reason || e?.shortMessage || 'Claim failed.', type: 'error' });
-		} finally {
-			lpClaiming = false;
-		}
-	}
-
-	async function claimReward() {
-		if (!signer || !selectedNetwork) return;
 		claiming = true;
 		try {
-			const factory = new TokenFactory(selectedNetwork.platform_address, signer);
-			await factory.claimReward();
-			addFeedback({ message: `${usdtSymbol} reward claimed!`, type: 'success' });
+			const aff = new AffiliateClient(affiliateAddr, signer);
+			await aff.claim();
+			addFeedback({ message: `${usdtSymbol} claimed!`, type: 'success' });
 			await loadStats();
 		} catch (e: any) {
 			console.error('Claim failed:', e);
-			addFeedback({ message: e?.reason || 'Claim failed.', type: 'error' });
+			addFeedback({ message: e?.reason || e?.shortMessage || 'Claim failed.', type: 'error' });
 		} finally {
 			claiming = false;
 		}
 	}
 
 	$effect(() => {
-		if (userAddress && providersReady) {
+		if (userAddress && providersReady && selectedNetwork) {
 			loadStats();
 		}
 	});
 
-	// Fetch existing alias on wallet connect
+	// Fetch existing alias on wallet connect.
 	$effect(() => {
 		if (userAddress) {
 			fetch(`/api/referral?wallet=${userAddress}`)
-				.then(r => r.json())
-				.then(data => {
+				.then((r) => r.json())
+				.then((data) => {
 					if (data.alias) {
 						myAlias = data.alias;
 						aliasInput = data.alias;
@@ -246,7 +229,6 @@
 		if (!signer || !userAddress || !aliasInput.trim()) return;
 		aliasLoading = true;
 		aliasError = '';
-		aliasSaved = false;
 		try {
 			const timestamp = Date.now();
 			const msg = `TokenKrafter Referral Alias\nAlias: ${aliasInput.trim().toLowerCase()}\nOrigin: ${window.location.origin}\nTimestamp: ${timestamp}`;
@@ -259,14 +241,13 @@
 					alias: aliasInput.trim(),
 					wallet_address: userAddress,
 					signature,
-					signed_message: msg
-				})
+					signed_message: msg,
+				}),
 			});
 
 			if (res.ok) {
 				const data = await res.json();
 				myAlias = data.alias;
-				aliasSaved = true;
 				addFeedback({ message: 'Alias saved!', type: 'success' });
 			} else {
 				const err = await res.json().catch(() => ({ message: 'Failed' }));
@@ -280,18 +261,22 @@
 			aliasLoading = false;
 		}
 	}
+
+	let sharePct = $derived((shareBps / 100).toFixed(shareBps % 100 === 0 ? 0 : 2));
+	let canClaim = $derived(pending > 0n && (minClaim === 0n || pending >= minClaim));
 </script>
 
 <svelte:head>
 	<title>Affiliate Program | TokenKrafter</title>
-	<meta name="description" content="Join the TokenKrafter affiliate program — earn commissions by referring users to create and deploy tokens on our platform." />
+	<meta
+		name="description"
+		content="Earn {sharePct}% of platform fees on every paid action your referrals take — token creation, launchpad buys, off-ramp swaps. Paid in USDT."
+	/>
 </svelte:head>
 
 <div class="page-wrap max-w-6xl mx-auto px-4 sm:px-6">
 	{#if userAddress}
-		<!-- Connected-user dashboard summary (shown ABOVE marketing copy so
-		     it's the first thing a returning affiliate sees). The fuller
-		     stats/claim UI still lives further down in the page. -->
+		<!-- Connected dashboard summary (sits above the marketing copy). -->
 		<section class="pt-5 pb-2">
 			<div class="card p-6">
 				<div class="flex items-start justify-between gap-3 flex-wrap mb-4">
@@ -302,7 +287,6 @@
 					<a href="#affiliate-full-dashboard" class="text-xs font-mono text-brand-cyan hover:underline">View full stats →</a>
 				</div>
 
-				<!-- Referral link (no backend required) -->
 				<div class="label-text mb-2">Your referral link</div>
 				<div class="flex gap-2 items-stretch mb-4">
 					<div class="min-w-0 flex-1 flex items-center px-4 py-3 rounded-lg overflow-hidden bg-surface-input border border-line-input">
@@ -313,72 +297,25 @@
 					</button>
 				</div>
 
-				<!-- Summary stats — wired to on-chain stats loaded by loadStats(). -->
-				<!-- TODO: if an HTTP stats endpoint is added (e.g. /api/referral/stats),
-				     wire "paid vs pending" counts here. The contract gives total earned +
-				     pending USDT; number-of-referrals = totalReferred. -->
 				<div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
 					<div class="px-3 py-2.5 rounded-[10px] bg-white/2 border border-white/5">
-						<div class="font-mono text-xs4 text-white/35 uppercase tracking-[0.06em]">Referrals</div>
-						<div class="font-display text-[1.05rem] font-bold text-white mt-0.5">{loading ? '—' : totalReferred.toString()}</div>
+						<div class="font-mono text-xs4 text-white/35 uppercase tracking-[0.06em]">Users referred</div>
+						<div class="font-display text-[1.05rem] font-bold text-white mt-0.5">{loading ? '—' : referredCount}</div>
 					</div>
 					<div class="px-3 py-2.5 rounded-[10px] bg-white/2 border border-white/5">
 						<div class="font-mono text-xs4 text-white/35 uppercase tracking-[0.06em]">Total earned</div>
-						<div class="font-display text-[1.05rem] font-bold text-emerald-400 mt-0.5">{loading ? '—' : `${formatAmount(totalEarnedUsdt, usdtDecimals)} ${usdtSymbol}`}</div>
+						<div class="font-display text-[1.05rem] font-bold text-emerald-400 mt-0.5">{loading ? '—' : `${formatAmount(totalEarned, usdtDecimals)} ${usdtSymbol}`}</div>
 					</div>
 					<div class="px-3 py-2.5 rounded-[10px] bg-white/2 border border-white/5">
 						<div class="font-mono text-xs4 text-white/35 uppercase tracking-[0.06em]">Pending</div>
-						<div class="font-display text-[1.05rem] font-bold text-amber-400 mt-0.5">{loading ? '—' : `${formatAmount(pendingUsdt, usdtDecimals)} ${usdtSymbol}`}</div>
+						<div class="font-display text-[1.05rem] font-bold text-amber-400 mt-0.5">{loading ? '—' : `${formatAmount(pending, usdtDecimals)} ${usdtSymbol}`}</div>
 					</div>
 					<div class="px-3 py-2.5 rounded-[10px] bg-white/2 border border-white/5">
-						<div class="font-mono text-xs4 text-white/35 uppercase tracking-[0.06em]">Paid</div>
-						<!-- Paid = total earned − pending (no dedicated endpoint yet). -->
-						<div class="font-display text-[1.05rem] font-bold text-white mt-0.5">{loading ? '—' : `${formatAmount(totalEarnedUsdt - pendingUsdt > 0n ? totalEarnedUsdt - pendingUsdt : 0n, usdtDecimals)} ${usdtSymbol}`}</div>
+						<div class="font-mono text-xs4 text-white/35 uppercase tracking-[0.06em]">Claimed</div>
+						<div class="font-display text-[1.05rem] font-bold text-white mt-0.5">{loading ? '—' : `${formatAmount(totalClaimed, usdtDecimals)} ${usdtSymbol}`}</div>
 					</div>
 				</div>
 			</div>
-
-			<!-- Launchpad referral earnings — second stream. Affiliate.sol
-			     pays 25% of platform fee on each launchpad buy made through
-			     a referral link. Independent claim from the token-creation
-			     pool above. -->
-			{#if lpAffiliateAddr}
-				<div class="card p-6 mt-3" style="border-color: rgba(168,85,247,0.18);">
-					<div class="flex items-start justify-between gap-3 flex-wrap mb-4">
-						<div>
-							<div class="text-3xs font-mono uppercase tracking-widest text-purple-300">Launchpad referrals</div>
-							<h2 class="font-display text-base font-bold text-heading mt-1">Earn 25% on every buy you refer</h2>
-							<p class="font-mono text-xs2 text-muted mt-1 max-w-prose">Share any launch with your address attached as <code class="text-purple-300">?ref=</code> — when someone buys, the platform fee splits 75/25.</p>
-						</div>
-						<button
-							onclick={claimLpReward}
-							disabled={lpClaiming || lpPending === 0n || (lpMinClaim > 0n && lpPending < lpMinClaim)}
-							class="btn-primary text-sm px-5 flex-shrink-0 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-						>
-							{#if lpClaiming}Claiming…{:else if lpPending === 0n}Nothing to claim{:else if lpMinClaim > 0n && lpPending < lpMinClaim}Min {formatAmount(lpMinClaim, usdtDecimals)} {usdtSymbol}{:else}Claim {formatAmount(lpPending, usdtDecimals)} {usdtSymbol}{/if}
-						</button>
-					</div>
-
-					<div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-						<div class="px-3 py-2.5 rounded-[10px] bg-purple-400/[0.06] border border-purple-400/15">
-							<div class="font-mono text-xs4 text-white/35 uppercase tracking-[0.06em]">Buyers referred</div>
-							<div class="font-display text-[1.05rem] font-bold text-white mt-0.5">{loading ? '—' : lpReferredCount}</div>
-						</div>
-						<div class="px-3 py-2.5 rounded-[10px] bg-purple-400/[0.06] border border-purple-400/15">
-							<div class="font-mono text-xs4 text-white/35 uppercase tracking-[0.06em]">Total earned</div>
-							<div class="font-display text-[1.05rem] font-bold text-emerald-400 mt-0.5">{loading ? '—' : `${formatAmount(lpTotalEarned, usdtDecimals)} ${usdtSymbol}`}</div>
-						</div>
-						<div class="px-3 py-2.5 rounded-[10px] bg-purple-400/[0.06] border border-purple-400/15">
-							<div class="font-mono text-xs4 text-white/35 uppercase tracking-[0.06em]">Pending</div>
-							<div class="font-display text-[1.05rem] font-bold text-amber-400 mt-0.5">{loading ? '—' : `${formatAmount(lpPending, usdtDecimals)} ${usdtSymbol}`}</div>
-						</div>
-						<div class="px-3 py-2.5 rounded-[10px] bg-purple-400/[0.06] border border-purple-400/15">
-							<div class="font-mono text-xs4 text-white/35 uppercase tracking-[0.06em]">Paid</div>
-							<div class="font-display text-[1.05rem] font-bold text-white mt-0.5">{loading ? '—' : `${formatAmount(lpTotalClaimed, usdtDecimals)} ${usdtSymbol}`}</div>
-						</div>
-					</div>
-				</div>
-			{/if}
 		</section>
 	{/if}
 
@@ -391,11 +328,11 @@
 			</div>
 
 			<h1 class="hero-title syne">
-				{$t('aff.heroTitle')} <span class="gradient-text">{$t('aff.heroTitleHighlight')}</span>
+				Earn <span class="gradient-text">{sharePct}%</span> of every fee
 			</h1>
 
 			<p class="hero-sub font-mono">
-				{$t('aff.heroSub')}
+				Refer users to TokenKrafter and earn a share of every platform fee they generate — token creation, launchpad buys, off-ramp swaps. Paid in USDT, claim anytime.
 			</p>
 		</div>
 	</section>
@@ -403,105 +340,69 @@
 	<!-- How It Works -->
 	<section class="section">
 		<div class="text-center mb-12">
-			<h2 class="syne text-3xl sm:text-4xl font-bold text-white">{$t('aff.howTitle')}</h2>
-			<p class="text-gray-400 mt-3 font-mono text-sm">{$t('aff.howSub')}</p>
+			<h2 class="syne text-3xl sm:text-4xl font-bold text-white">How It Works</h2>
+			<p class="text-gray-400 mt-3 font-mono text-sm">Three steps. Permanent referrer binding. One claim button.</p>
 		</div>
 
 		<div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-			{#each [
-				{ n: '01', labelKey: 'aff.step1', descKey: 'aff.step1Desc' },
-				{ n: '02', labelKey: 'aff.step2', descKey: 'aff.step2Desc' },
-				{ n: '03', labelKey: 'aff.step3', descKey: 'aff.step3Desc' }
-			] as step}
-				<div class="step-card card p-6 relative">
-					<div class="step-num syne text-5xl font-black text-white/5 absolute top-4 right-4">{step.n}</div>
-					<div class="text-emerald-400 text-xs font-mono uppercase tracking-widest mb-2">{step.n}</div>
-					<h3 class="syne font-bold text-white mb-2">{$t(step.labelKey)}</h3>
-					<p class="text-sm text-gray-400 font-mono leading-relaxed">{$t(step.descKey)}</p>
-				</div>
-			{/each}
-		</div>
-	</section>
-
-	<!-- Reward Tiers -->
-	<section class="section">
-		<div class="text-center mb-12">
-			<h2 class="syne text-3xl sm:text-4xl font-bold text-white">{$t('aff.tiersTitle')}</h2>
-			<p class="text-gray-400 mt-3 font-mono text-sm">{$t('aff.tiersSub')}</p>
-		</div>
-
-		<div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-			{#each [
-				{ levelKey: 'aff.level1', pct: '5%', descKey: 'aff.level1Desc', color: 'emerald', detailKey: 'aff.level1Detail' },
-				{ levelKey: 'aff.level2', pct: '3%', descKey: 'aff.level2Desc', color: 'cyan', detailKey: 'aff.level2Detail' },
-				{ levelKey: 'aff.level3', pct: '2%', descKey: 'aff.level3Desc', color: 'purple', detailKey: 'aff.level3Detail' }
-			] as tier}
-				<div class="card p-6 text-center transition-all duration-[250ms] hover:-translate-y-[3px] hover:shadow-[0_12px_40px_rgba(0,0,0,0.3)]">
-					<div class="tier-badge badge badge-{tier.color} mx-auto mb-4">{$t(tier.levelKey)}</div>
-					<div class="syne text-4xl font-black text-white mb-2">{tier.pct}</div>
-					<div class="text-sm text-gray-300 font-mono mb-2">{$t(tier.descKey)}</div>
-					<p class="text-xs text-gray-500 font-mono">{$t(tier.detailKey)}</p>
-				</div>
-			{/each}
-		</div>
-
-		<div class="mt-6 card p-5">
-			<div class="flex items-start gap-3">
-				<span class="text-cyan-400 text-lg mt-0.5">i</span>
-				<div>
-					<p class="text-sm text-gray-300 font-mono leading-relaxed">
-						<strong class="text-white">{$t('aff.example')}</strong> {$t('aff.exampleText')}
-					</p>
-				</div>
+			<div class="step-card card p-6 relative">
+				<div class="step-num syne text-5xl font-black text-white/5 absolute top-4 right-4">01</div>
+				<div class="text-emerald-400 text-xs font-mono uppercase tracking-widest mb-2">01</div>
+				<h3 class="syne font-bold text-white mb-2">Share your link</h3>
+				<p class="text-sm text-gray-400 font-mono leading-relaxed">Connect your wallet to get a unique referral link. Anyone who lands via your link gets bound to you the first time they take a paid action — or earlier if they pre-register.</p>
+			</div>
+			<div class="step-card card p-6 relative">
+				<div class="step-num syne text-5xl font-black text-white/5 absolute top-4 right-4">02</div>
+				<div class="text-emerald-400 text-xs font-mono uppercase tracking-widest mb-2">02</div>
+				<h3 class="syne font-bold text-white mb-2">They take a paid action</h3>
+				<p class="text-sm text-gray-400 font-mono leading-relaxed">Whether they create a token, buy from a launchpad, or sell to bank — every paying action triggers a fee. The platform keeps {(100 - shareBps / 100).toFixed(0)}%; you get {sharePct}%.</p>
+			</div>
+			<div class="step-card card p-6 relative">
+				<div class="step-num syne text-5xl font-black text-white/5 absolute top-4 right-4">03</div>
+				<div class="text-emerald-400 text-xs font-mono uppercase tracking-widest mb-2">03</div>
+				<h3 class="syne font-bold text-white mb-2">Claim in USDT</h3>
+				<p class="text-sm text-gray-400 font-mono leading-relaxed">Earnings accumulate in your pending balance. Pull-claim anytime once you clear the minimum (currently {formatAmount(minClaim || 10n ** BigInt(usdtDecimals), usdtDecimals)} {usdtSymbol}). No auto-send — you control your own gas.</p>
 			</div>
 		</div>
 	</section>
 
-	<!-- Two Revenue Streams — the biggest gap in current messaging -->
+	<!-- Single rate card (replaces multi-tier grid) -->
 	<section class="section">
 		<div class="text-center mb-10">
-			<h2 class="syne text-3xl sm:text-4xl font-bold text-white">{$t('aff.twoStreamsTitle')}</h2>
-			<p class="text-gray-400 mt-3 font-mono text-sm">{$t('aff.twoStreamsSub')}</p>
+			<h2 class="syne text-3xl sm:text-4xl font-bold text-white">One Flat Rate</h2>
+			<p class="text-gray-400 mt-3 font-mono text-sm">Same {sharePct}% share, every paid action. Live from on-chain config — no fine print.</p>
 		</div>
 
-		<div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
-			<!-- Stream 1: Creation referrals -->
-			<div class="card p-6" style="border-color: rgba(0,210,255,0.15);">
-				<div class="feature-icon-box cyan mb-4">
+		<div class="card p-10 text-center max-w-2xl mx-auto" style="border-color: rgba(16,185,129,0.18);">
+			<div class="text-3xs font-mono uppercase tracking-widest text-emerald-400 mb-4">Your share of the platform fee</div>
+			<div class="syne text-7xl sm:text-8xl font-black gradient-text mb-4">{sharePct}%</div>
+			<p class="text-sm text-gray-400 font-mono leading-relaxed max-w-md mx-auto">
+				Applies to every fee-bearing action your referrals take — token creation, launchpad buys, and off-ramp swaps — for the lifetime of the wallet.
+			</p>
+		</div>
+
+		<!-- Action coverage -->
+		<div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-6">
+			<div class="card p-5">
+				<div class="feature-icon-box cyan mb-3">
 					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
 				</div>
-				<h3 class="syne font-bold text-white text-lg mb-2">{$t('aff.stream1Title')}</h3>
-				<p class="text-sm text-gray-400 leading-relaxed font-mono mb-4">{$t('aff.stream1Desc')}</p>
-				<div class="flex gap-2 flex-wrap">
-					<span class="badge-cyan" style="font-size:11px;padding:4px 10px;border-radius:6px;">L1: 5%</span>
-					<span class="badge-cyan" style="font-size:11px;padding:4px 10px;border-radius:6px;">L2: 3%</span>
-					<span class="badge-cyan" style="font-size:11px;padding:4px 10px;border-radius:6px;">L3: 2%</span>
-				</div>
+				<h3 class="syne font-bold text-white mb-2">Token creation</h3>
+				<p class="text-sm text-gray-400 font-mono">{sharePct}% of the creation fee on every token your referrals deploy.</p>
 			</div>
-
-			<!-- Stream 2: Trade affiliate (the missing one) -->
-			<div class="card p-6" style="border-color: rgba(16,185,129,0.15);">
-				<div class="feature-icon-box emerald mb-4">
+			<div class="card p-5">
+				<div class="feature-icon-box emerald mb-3">
+					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-5"/></svg>
+				</div>
+				<h3 class="syne font-bold text-white mb-2">Launchpad buys</h3>
+				<p class="text-sm text-gray-400 font-mono">{sharePct}% of the buy fee on every launchpad purchase made through your referrals.</p>
+			</div>
+			<div class="card p-5">
+				<div class="feature-icon-box purple mb-3">
 					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
 				</div>
-				<h3 class="syne font-bold text-white text-lg mb-2">{$t('aff.stream2Title')}</h3>
-				<p class="text-sm text-gray-400 leading-relaxed font-mono mb-4">{$t('aff.stream2Desc')}</p>
-				<div class="flex gap-2 flex-wrap">
-					<span class="badge-emerald" style="font-size:11px;padding:4px 10px;border-radius:6px;">10% of fee</span>
-					<span class="badge-emerald" style="font-size:11px;padding:4px 10px;border-radius:6px;">Every trade</span>
-					<span class="badge-emerald" style="font-size:11px;padding:4px 10px;border-radius:6px;">Passive</span>
-				</div>
-			</div>
-		</div>
-
-		<div class="mt-5 card p-5" style="border-color: rgba(16,185,129,0.15);">
-			<div class="flex items-start gap-3">
-				<span class="text-emerald-400 text-lg mt-0.5">$</span>
-				<div>
-					<p class="text-sm text-gray-300 font-mono leading-relaxed">
-						<strong class="text-white">Sell to Bank (Off-Ramp)</strong> — You also earn when your referrals use the Sell to Bank feature — 10% of the platform fee on every off-ramp trade. This is passive income on top of creation and swap referrals.
-					</p>
-				</div>
+				<h3 class="syne font-bold text-white mb-2">Off-ramp swaps</h3>
+				<p class="text-sm text-gray-400 font-mono">{sharePct}% of the platform fee on every Sell-to-Bank withdrawal — passive income on every trade.</p>
 			</div>
 		</div>
 	</section>
@@ -513,18 +414,26 @@
 		</div>
 
 		<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-			{#each [
-				{ icon: '$', titleKey: 'aff.detail1Title', descKey: 'aff.detail1Desc' },
-				{ icon: '~', titleKey: 'aff.detail2Title', descKey: 'aff.detail2Desc' },
-				{ icon: '#', titleKey: 'aff.detail3Title', descKey: 'aff.detail3Desc' },
-				{ icon: '!', titleKey: 'aff.detail4Title', descKey: 'aff.detail4Desc' }
-			] as detail}
-				<div class="card card-hover p-6 group">
-					<div class="feature-icon-box emerald mb-4">{detail.icon}</div>
-					<h3 class="syne font-bold text-white mb-2">{$t(detail.titleKey)}</h3>
-					<p class="text-sm text-gray-400 leading-relaxed font-mono">{$t(detail.descKey)}</p>
-				</div>
-			{/each}
+			<div class="card card-hover p-6 group">
+				<div class="feature-icon-box emerald mb-4">$</div>
+				<h3 class="syne font-bold text-white mb-2">Paid in USDT</h3>
+				<p class="text-sm text-gray-400 leading-relaxed font-mono">Every fee on TokenKrafter is collected in USDT. Your earnings settle in USDT regardless of which token your referral spent.</p>
+			</div>
+			<div class="card card-hover p-6 group">
+				<div class="feature-icon-box emerald mb-4">~</div>
+				<h3 class="syne font-bold text-white mb-2">Pull-claim, not auto-send</h3>
+				<p class="text-sm text-gray-400 leading-relaxed font-mono">Earnings accumulate in your pending balance and you claim when you want. Lower gas, no surprise dust transfers, fewer mis-routed funds.</p>
+			</div>
+			<div class="card card-hover p-6 group">
+				<div class="feature-icon-box emerald mb-4">#</div>
+				<h3 class="syne font-bold text-white mb-2">Sticky referrer</h3>
+				<p class="text-sm text-gray-400 leading-relaxed font-mono">Once a wallet binds to your address, the relationship is permanent — every future paid action they take credits you. No expiry, no renewal.</p>
+			</div>
+			<div class="card card-hover p-6 group">
+				<div class="feature-icon-box emerald mb-4">!</div>
+				<h3 class="syne font-bold text-white mb-2">No caps</h3>
+				<p class="text-sm text-gray-400 leading-relaxed font-mono">No referral count limit, no earnings ceiling, no monthly resets. Refer one user or a thousand — the rate is the same.</p>
+			</div>
 		</div>
 	</section>
 
@@ -539,15 +448,13 @@
 			<div class="card p-10 text-center">
 				<div class="text-5xl mb-4 opacity-20">W</div>
 				<h3 class="syne text-xl font-bold text-white mb-3">{$t('aff.connectTitle')}</h3>
-				<p class="text-sm text-gray-400 font-mono mb-6 max-w-sm mx-auto">
-					{$t('aff.connectDesc')}
-				</p>
+				<p class="text-sm text-gray-400 font-mono mb-6 max-w-sm mx-auto">{$t('aff.connectDesc')}</p>
 				<button onclick={connectWallet} class="btn-primary text-sm px-6 py-3 cursor-pointer">
 					{$t('common.connectWallet')}
 				</button>
 			</div>
 		{:else}
-			<!-- Referral Link -->
+			<!-- Referral Link + Alias -->
 			<div class="card p-6 mb-4">
 				<div class="label-text mb-3">{$t('aff.yourLink')}</div>
 				<div class="flex gap-2 items-stretch">
@@ -558,11 +465,8 @@
 						{copied ? $t('aff.copied') : $t('aff.copy')}
 					</button>
 				</div>
-				<p class="text-xs text-gray-500 font-mono mt-2">
-					{$t('aff.linkHint')}
-				</p>
+				<p class="text-xs text-gray-500 font-mono mt-2">{$t('aff.linkHint')}</p>
 
-				<!-- Alias -->
 				<div class="alias-section mt-4 pt-4" style="border-top: 1px solid var(--border)">
 					<div class="flex items-center gap-2 mb-2">
 						<span class="label-text mb-0">Custom Alias</span>
@@ -609,8 +513,7 @@
 			</div>
 
 			{#if loading}
-				<!-- Skeleton mirrors the stats-grid + earnings card so the dashboard
-				     reserves its real layout while on-chain stats load. -->
+				<!-- Skeleton mirrors the stats-grid + earnings card. -->
 				<div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
 					{#each Array(4) as _}
 						<div class="card p-4 text-center flex flex-col items-center gap-2">
@@ -635,28 +538,32 @@
 						</div>
 					</div>
 				</div>
+			{:else if !affiliateAddr}
+				<div class="card p-8 text-center">
+					<p class="text-sm text-gray-400 font-mono">Affiliate program is not deployed on {selectedNetwork?.name ?? 'this network'} yet.</p>
+				</div>
 			{:else}
-				<!-- Stats Grid -->
+				<!-- Stats Grid (Affiliate.sol native fields) -->
 				<div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
 					<div class="card p-4 text-center">
-						<div class="syne text-2xl font-bold text-white">{totalReferred.toString()}</div>
-						<div class="text-xs text-gray-500 mt-1 font-mono">{$t('aff.totalReferred')}</div>
+						<div class="syne text-2xl font-bold text-white">{referredCount}</div>
+						<div class="text-xs text-gray-500 mt-1 font-mono">Users referred</div>
 					</div>
 					<div class="card p-4 text-center">
-						<div class="syne text-2xl font-bold text-white">{referralLevels}</div>
-						<div class="text-xs text-gray-500 mt-1 font-mono">{$t('aff.rewardLevels')}</div>
+						<div class="syne text-2xl font-bold text-white">{actionCount}</div>
+						<div class="text-xs text-gray-500 mt-1 font-mono">Actions credited</div>
 					</div>
 					<div class="card p-4 text-center">
-						<div class="syne text-2xl font-bold text-white">{referralChain.length}</div>
-						<div class="text-xs text-gray-500 mt-1 font-mono">{$t('aff.chainDepth')}</div>
+						<div class="syne text-2xl font-bold text-white">{sharePct}%</div>
+						<div class="text-xs text-gray-500 mt-1 font-mono">Share rate</div>
 					</div>
 					<div class="card p-4 text-center">
-						<div class="syne text-2xl font-bold text-emerald-400">{autoDistribute ? $t('aff.auto') : $t('aff.manual')}</div>
-						<div class="text-xs text-gray-500 mt-1 font-mono">{$t('aff.distribution')}</div>
+						<div class="syne text-2xl font-bold text-white">{formatLastSeen(lastActionAt)}</div>
+						<div class="text-xs text-gray-500 mt-1 font-mono">Last activity</div>
 					</div>
 				</div>
 
-				<!-- Your Referrer -->
+				<!-- Your Referrer (if any) -->
 				{#if myReferrer}
 					<div class="card p-4 mb-4 flex items-center gap-3">
 						<span class="text-xs text-gray-500 font-mono uppercase">{$t('aff.yourReferrer')}</span>
@@ -664,7 +571,7 @@
 					</div>
 				{/if}
 
-				<!-- Earnings (USDT only) -->
+				<!-- Earnings + Claim -->
 				<div class="card overflow-hidden mb-4">
 					<div class="p-4 border-b border-white/5">
 						<h3 class="section-title">{$t('aff.earningsTitle')}</h3>
@@ -672,49 +579,32 @@
 					<div class="p-5 grid grid-cols-1 sm:grid-cols-2 gap-4 items-center">
 						<div>
 							<div class="text-xs text-gray-500 font-mono uppercase mb-1">{$t('aff.totalEarned')} ({usdtSymbol})</div>
-							<div class="syne text-2xl font-bold text-emerald-400">{formatAmount(totalEarnedUsdt, usdtDecimals)}</div>
+							<div class="syne text-2xl font-bold text-emerald-400">{formatAmount(totalEarned, usdtDecimals)}</div>
 							<div class="text-xs text-gray-500 font-mono uppercase mt-3 mb-1">{$t('aff.pending')} ({usdtSymbol})</div>
-							<div class="syne text-2xl font-bold text-amber-400">{formatAmount(pendingUsdt, usdtDecimals)}</div>
+							<div class="syne text-2xl font-bold text-amber-400">{formatAmount(pending, usdtDecimals)}</div>
+							<div class="text-xs text-gray-500 font-mono uppercase mt-3 mb-1">Already claimed ({usdtSymbol})</div>
+							<div class="syne text-lg font-bold text-white">{formatAmount(totalClaimed, usdtDecimals)}</div>
 						</div>
 						<div class="text-right">
-							{#if pendingUsdt > 0n}
-								<button
-									onclick={() => claimReward()}
-									disabled={claiming}
-									class="btn-primary text-sm px-5 py-2 cursor-pointer"
-								>
-									{#if claiming}
-										<span class="spinner-inline"></span> {$t('aff.claiming')}
-									{:else}
-										{$t('aff.claim')}
-									{/if}
-								</button>
-							{:else}
-								<span class="text-gray-600 text-xs font-mono">{$t('aff.noRewards')}</span>
-							{/if}
+							<button
+								onclick={claim}
+								disabled={claiming || !canClaim}
+								class="btn-primary text-sm px-5 py-2 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+							>
+								{#if claiming}
+									<span class="spinner-inline"></span> {$t('aff.claiming')}
+								{:else if pending === 0n}
+									{$t('aff.noRewards')}
+								{:else if minClaim > 0n && pending < minClaim}
+									Min {formatAmount(minClaim, usdtDecimals)} {usdtSymbol}
+								{:else}
+									{$t('aff.claim')} {formatAmount(pending, usdtDecimals)} {usdtSymbol}
+								{/if}
+							</button>
 							<p class="text-3xs text-gray-600 font-mono mt-2">Rewards paid in USDT only.</p>
 						</div>
 					</div>
 				</div>
-
-				<!-- Referral Chain -->
-				{#if referralChain.length > 0}
-					<div class="card p-4">
-						<h3 class="section-title mb-3">{$t('aff.chainTitle')}</h3>
-						<div class="flex flex-wrap gap-2 items-center">
-							{#each referralChain as addr, i}
-								<div class="flex items-center gap-2">
-									<span class="badge badge-{i === 0 ? 'emerald' : i === 1 ? 'cyan' : 'purple'}">
-										L{i + 1}: {formatAddress(addr)}
-									</span>
-									{#if i < referralChain.length - 1}
-										<span class="text-gray-600">-></span>
-									{/if}
-								</div>
-							{/each}
-						</div>
-					</div>
-				{/if}
 			{/if}
 		{/if}
 	</section>
@@ -726,19 +616,30 @@
 		</div>
 
 		<div class="flex flex-col gap-3">
-			{#each [
-				{ qKey: 'aff.faq1Q', aKey: 'aff.faq1A' },
-				{ qKey: 'aff.faq2Q', aKey: 'aff.faq2A' },
-				{ qKey: 'aff.faq3Q', aKey: 'aff.faq3A' },
-				{ qKey: 'aff.faq4Q', aKey: 'aff.faq4A' },
-				{ qKey: 'aff.faq5Q', aKey: 'aff.faq5A' },
-				{ qKey: 'aff.faq6Q', aKey: 'aff.faq6A' }
-			] as faq}
-				<div class="card p-5">
-					<h4 class="syne font-bold text-white mb-2">{$t(faq.qKey)}</h4>
-					<p class="text-sm text-gray-400 font-mono leading-relaxed">{$t(faq.aKey)}</p>
-				</div>
-			{/each}
+			<div class="card p-5">
+				<h4 class="syne font-bold text-white mb-2">How do I start earning?</h4>
+				<p class="text-sm text-gray-400 font-mono leading-relaxed">Connect your wallet above to get your unique referral link. Share it with anyone who'll create a token, buy on the launchpad, or sell to bank. The first paying action they take binds them to you.</p>
+			</div>
+			<div class="card p-5">
+				<h4 class="syne font-bold text-white mb-2">When do I receive rewards?</h4>
+				<p class="text-sm text-gray-400 font-mono leading-relaxed">Earnings accumulate as a pending USDT balance. Pull-claim anytime via the dashboard once you clear the minimum ({formatAmount(minClaim || 10n ** BigInt(usdtDecimals), usdtDecimals)} {usdtSymbol}). No auto-send.</p>
+			</div>
+			<div class="card p-5">
+				<h4 class="syne font-bold text-white mb-2">What actions count?</h4>
+				<p class="text-sm text-gray-400 font-mono leading-relaxed">Every paid action on the platform — token creation fees, launchpad buy fees, and off-ramp withdrawal fees. The same {sharePct}% share applies across all three.</p>
+			</div>
+			<div class="card p-5">
+				<h4 class="syne font-bold text-white mb-2">Is there a referral cap?</h4>
+				<p class="text-sm text-gray-400 font-mono leading-relaxed">No. Refer as many wallets as you want. There's no count limit, earnings ceiling, or expiry — once bound, that wallet credits you on every future paid action.</p>
+			</div>
+			<div class="card p-5">
+				<h4 class="syne font-bold text-white mb-2">Can I refer myself?</h4>
+				<p class="text-sm text-gray-400 font-mono leading-relaxed">No. The contract rejects self-referrals at the binding step. The same wallet can't be both the referrer and the referred.</p>
+			</div>
+			<div class="card p-5">
+				<h4 class="syne font-bold text-white mb-2">What if my referral already has a referrer?</h4>
+				<p class="text-sm text-gray-400 font-mono leading-relaxed">First-bind wins. Once a wallet is bound to a referrer, it stays bound forever — your link won't override theirs. Pre-register early to lock in the relationship.</p>
+			</div>
 		</div>
 	</section>
 
@@ -762,7 +663,6 @@
 </div>
 
 <style>
-	/* Page-specific gradient — not expressible as a utility */
 	.gradient-text {
 		background: linear-gradient(135deg, #10b981, #00d2ff);
 		-webkit-background-clip: text;
