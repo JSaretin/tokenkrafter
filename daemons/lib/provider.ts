@@ -33,6 +33,17 @@ export function createManagedProvider(opts: {
 	let current: ethers.WebSocketProvider | ethers.JsonRpcProvider;
 	let closed = false;
 	let reconnectTimer: NodeJS.Timeout | null = null;
+	let connectedAt: number | null = null;
+
+	function fmtAge(ms: number): string {
+		const s = Math.floor(ms / 1000);
+		if (s < 60) return `${s}s`;
+		const m = Math.floor(s / 60);
+		const r = s % 60;
+		if (m < 60) return `${m}m ${r}s`;
+		const h = Math.floor(m / 60);
+		return `${h}h ${m % 60}m`;
+	}
 
 	function connect() {
 		if (closed) return;
@@ -48,12 +59,21 @@ export function createManagedProvider(opts: {
 			);
 			current = provider;
 
-			// Detect close via the underlying socket. ethers v6 exposes
-			// .websocket which is the raw WebSocket instance.
 			const sock = provider.websocket;
+			sock.addEventListener('open', () => {
+				connectedAt = Date.now();
+				console.log(`   ✓ WebSocket connected: ${wsRpc}`);
+			});
+			// Open-duration on close lets the operator distinguish
+			// expected behaviour (Infura free-tier closes idle WS after
+			// ~minutes; e.g. SAFU is idle 5min between sweeps so a drop
+			// at 5–10m is normal) from actually broken upstreams (drops
+			// in seconds = real problem).
 			sock.addEventListener('close', () => {
 				if (closed) return;
-				console.warn(`   ⚠️  WS dropped — reconnecting in 3s`);
+				const age = connectedAt ? fmtAge(Date.now() - connectedAt) : 'pre-open';
+				console.warn(`   ⚠️  WS dropped after ${age} — reconnecting in 3s`);
+				connectedAt = null;
 				scheduleReconnect();
 			});
 			sock.addEventListener('error', (evt: any) => {
@@ -61,8 +81,6 @@ export function createManagedProvider(opts: {
 				const msg = evt?.message || evt?.error?.message || 'unknown';
 				console.warn(`   ⚠️  WS error: ${String(msg).slice(0, 60)}`);
 			});
-
-			console.log(`   ✓ WebSocket connected: ${wsRpc}`);
 		} catch (e: any) {
 			console.warn(`   ⚠️  WS connect failed: ${e.message?.slice(0, 80)} — falling back to HTTP`);
 			current = new ethers.JsonRpcProvider(httpRpc, chainId, { staticNetwork: true });
