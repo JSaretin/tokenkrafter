@@ -132,19 +132,32 @@ export const POST: RequestHandler = async ({ request }) => {
 		return error(500, 'Failed to persist intent');
 	}
 
-	// Fire-and-forget Telegram alert so operators see the deposit
-	// pipeline in real time. Critical info: amount, where USDT lands,
-	// VA account so support can verify the bank deposit if needed.
+	// Telegram alert so operators see the deposit pipeline in real
+	// time. Critical info: amount, where USDT lands, VA account so
+	// support can verify the bank deposit if needed.
+	//
+	// IMPORTANT: must `await` rather than fire-and-forget. On
+	// Cloudflare Pages, promises that aren't awaited (or wrapped in
+	// platform.context.waitUntil) get terminated as soon as the
+	// response returns — the fetch to api.telegram.org never
+	// completes. Adds ~100–300ms to this endpoint's response time,
+	// which is fine: the user's bank-detail UI is the next render
+	// either way, and the operator alert is required for ops to
+	// correlate VA creations to bank deposits.
 	const usdtNet = (Number(BigInt(intent.usdtAmount) * 10000n / 10n ** 18n) / 10000).toFixed(4);
-	void sendTelegram(
-		'On-ramp initiated',
-		[
-			`💰 ₦${ngnWhole.toLocaleString()} → ${usdtNet} USDT`,
-			`👤 ${intent.receiver.slice(0, 6)}…${intent.receiver.slice(-4)}`,
-			`🏦 ${va.bankName ?? '—'} · ${va.accountNumber ?? '—'}`,
-			`🔖 ${intent.reference}`,
-		].join('\n'),
-	).catch(() => {});
+	try {
+		await sendTelegram(
+			'On-ramp initiated',
+			[
+				`💰 ₦${ngnWhole.toLocaleString()} → ${usdtNet} USDT`,
+				`👤 ${intent.receiver.slice(0, 6)}…${intent.receiver.slice(-4)}`,
+				`🏦 ${va.bankName ?? '—'} · ${va.accountNumber ?? '—'}`,
+				`🔖 ${intent.reference}`,
+			].join('\n'),
+		);
+	} catch (e: any) {
+		console.warn('[onramp.intent] Telegram alert failed:', e?.message?.slice(0, 100));
+	}
 
 	return json({
 		reference: intent.reference,
