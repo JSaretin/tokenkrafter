@@ -79,7 +79,10 @@ function baseTokenParams(overrides: Partial<any> = {}) {
 
 function baseLaunchParams(overrides: Partial<any> = {}) {
   return {
-    tokensForLaunch: 500_000n * 10n ** 18n,
+    // Must match `baseTokenParams().totalSupply * 1e18` — the router
+    // transfers the full minted balance to the launch and the launch
+    // rejects deposits beyond `totalTokensRequired`.
+    tokensForLaunch: 1_000_000n * 10n ** 18n,
     curveType: CURVE.Linear,
     softCap: PARSE_USDT(50),
     hardCap: PARSE_USDT(200),

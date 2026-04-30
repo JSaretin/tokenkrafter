@@ -913,10 +913,19 @@ describe("Integration — Multiple simultaneous launches", () => {
     await buyUsdt(s, l2.launch, b2, PARSE_USDT(5));
     await buyUsdt(s, l3.launch, b3, PARSE_USDT(8));
 
+    // After the H1 audit fix, baseForTokens is always re-derived from
+    // the curve's _getCostForTokens(tokensOut) rather than the user's
+    // budget, so totalBaseRaised can be 1–2 wei below net(amount) on
+    // small buys (binary search saturates with cost ≤ budget). Allow
+    // a small tolerance below the budget; never above.
     const net = (v: bigint) => (v * 99n) / 100n;
-    expect(await l1.launch.totalBaseRaised()).to.equal(net(PARSE_USDT(10)));
-    expect(await l2.launch.totalBaseRaised()).to.equal(net(PARSE_USDT(5)));
-    expect(await l3.launch.totalBaseRaised()).to.equal(net(PARSE_USDT(8)));
+    const within1Wei = (actual: bigint, expected: bigint) => {
+      expect(actual).to.be.lte(expected);
+      expect(actual).to.be.gte(expected - 5n);
+    };
+    within1Wei(await l1.launch.totalBaseRaised(), net(PARSE_USDT(10)));
+    within1Wei(await l2.launch.totalBaseRaised(), net(PARSE_USDT(5)));
+    within1Wei(await l3.launch.totalBaseRaised(), net(PARSE_USDT(8)));
 
     // b1 buying in l2 doesn't affect l1
     await buyUsdt(s, l2.launch, b1, PARSE_USDT(3));

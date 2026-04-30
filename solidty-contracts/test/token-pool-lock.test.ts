@@ -49,8 +49,8 @@ describe("Token pool-lock gate", () => {
       );
       expect(usdtPair).to.not.equal(ethers.ZeroAddress);
       expect(wethPair).to.not.equal(ethers.ZeroAddress);
-      expect((await token.pools(usdtPair))).to.equal(true);
-      expect((await token.pools(wethPair))).to.equal(true);
+      expect((await token.pools(usdtPair)).isPool).to.equal(true);
+      expect((await token.pools(wethPair)).isPool).to.equal(true);
     });
 
     it("starts with tradingStartTime = type(uint256).max (sentinel)", async () => {
@@ -276,7 +276,7 @@ describe("Token pool-lock gate", () => {
         await token.getAddress(),
         await newBase.getAddress()
       );
-      expect((await token.pools(pair))).to.equal(true);
+      expect((await token.pools(pair)).isPool).to.equal(true);
     });
 
     it("rejects duplicate base registration", async () => {
@@ -302,7 +302,7 @@ describe("Token pool-lock gate", () => {
 
       const fakePool = ethers.Wallet.createRandom().address;
       await token.connect(stack.alice).addPoolByAddress(fakePool);
-      expect((await token.pools(fakePool))).to.equal(true);
+      expect((await token.pools(fakePool)).isPool).to.equal(true);
     });
 
     it("owner-only — factory cannot call it", async () => {

@@ -47,7 +47,18 @@ contract PartnerTaxableTokenImpl is TaxableTokenImpl {
 
     function _update(address from, address to, uint256 value) internal virtual override {
         if (from == address(0) || to == address(0) || value == 0) { ERC20Upgradeable._update(from, to, value); return; }
-        if (from == tokenFactory || to == tokenFactory) { ERC20Upgradeable._update(from, to, value); return; }
+        // Factory-side fast-path: skip the partner-fee + user-tax
+        // logic so tax-token → USDT swaps (processTax / processTaxAuth)
+        // don't tax themselves recursively. We still run
+        // _checkProtections so pool-lock auto-unlock fires correctly
+        // when the factory itself is the seeder (the factory is
+        // isExcludedFromLimits, so the auto-open path inside
+        // _checkProtections triggers normally).
+        if (from == tokenFactory || to == tokenFactory) {
+            _checkProtections(from, to, value);
+            ERC20Upgradeable._update(from, to, value);
+            return;
+        }
 
         _checkProtections(from, to, value);
 
