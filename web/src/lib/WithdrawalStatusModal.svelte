@@ -22,9 +22,14 @@
 	} = $props();
 
 	let tickNow = $state(Date.now());
-	let liveStatus = $state(withdrawal?.status || 'pending');
-	let liveNote = $state(withdrawal?.admin_note || '');
-	let confirmedAt = $state<string | null>(withdrawal?.confirmed_at || null);
+	// Imperative state — initial values come from the prop via the
+	// $effect below (Svelte 5 warns about reading reactive props at
+	// init since that captures only the first value). Prop-driven
+	// updates and external sources (realtime, poll) all funnel through
+	// this same state, with the TERMINAL-guard preventing regressions.
+	let liveStatus = $state<string>('pending');
+	let liveNote = $state<string>('');
+	let confirmedAt = $state<string | null>(null);
 
 	// Live countdown tick — stops once we reach a terminal state
 	const tickInterval = setInterval(() => {
@@ -37,11 +42,26 @@
 	// row that happens to share a field, or a glitch — ignore it.
 	const TERMINAL = ['confirmed', 'cancelled'];
 
-	// Subscribe to realtime updates on this withdrawal. Strict row match:
-	// only by DB id or (withdraw_id + chain_id). The wallet-address
-	// fallback that used to live here was matching *any* withdrawal for
-	// the same wallet, which caused the modal to flip back to pending
-	// when an unrelated newer withdrawal landed.
+	// String-coerced row match. The DB returns numeric ids, but the
+	// receipt-derived view passed in by the parent on auto-open has
+	// `id: preData.id` — both should be numbers, but a JSON round-trip
+	// could leave one as string. `===` would silently fail to match;
+	// coercing keeps the comparison robust regardless.
+	function isSameRow(row: any): boolean {
+		if (!row || withdrawal == null) return false;
+		if (withdrawal.id != null && row.id != null && String(row.id) === String(withdrawal.id)) return true;
+		if (
+			withdrawal.withdraw_id != null && row.withdraw_id != null &&
+			String(row.withdraw_id) === String(withdrawal.withdraw_id) &&
+			Number(row.chain_id) === Number(withdrawal.chain_id)
+		) return true;
+		return false;
+	}
+
+	// Subscribe to realtime updates on this withdrawal. No polling
+	// fallback — Supabase realtime is the only path. If it drops, the
+	// user can close + reopen the modal to pull a fresh snapshot via
+	// the parent's history refresh.
 	const channel = supabase
 		.channel(`withdrawal-${withdrawal?.id}-${Date.now()}`)
 		.on('postgres_changes', {
@@ -50,11 +70,7 @@
 			table: 'withdrawal_requests'
 		}, (payload: any) => {
 			const row = payload.new;
-			if (!row) return;
-			const sameRow =
-				row.id === withdrawal?.id ||
-				(row.withdraw_id != null && row.withdraw_id === withdrawal?.withdraw_id && row.chain_id === withdrawal?.chain_id);
-			if (!sameRow) return;
+			if (!isSameRow(row)) return;
 			if (TERMINAL.includes(liveStatus)) return; // never go backwards
 			if (row.status !== liveStatus) {
 				liveStatus = row.status;
@@ -64,29 +80,20 @@
 		})
 		.subscribe();
 
-	// Fallback poll every 5s in case Realtime misses an update — stops once
-	// we reach a terminal state (confirmed/cancelled) so we don't hammer the API.
-	const pollInterval = setInterval(async () => {
+	// React to prop updates too — if the parent ever swaps in a fresher
+	// `withdrawal` object (e.g. via a history refresh), let its status
+	// drive the modal forward. Same terminal guard applies.
+	$effect(() => {
+		const next = withdrawal?.status;
+		if (!next || next === liveStatus) return;
 		if (TERMINAL.includes(liveStatus)) return;
-		try {
-			const res = await fetch('/api/withdrawals?limit=10', { credentials: 'include' });
-			if (!res.ok) return;
-			const rows = await res.json();
-			const match = rows?.find?.((r: any) =>
-				r.id === withdrawal?.id ||
-				(r.withdraw_id != null && r.withdraw_id === withdrawal?.withdraw_id && r.chain_id === withdrawal?.chain_id)
-			);
-			if (match && !TERMINAL.includes(liveStatus) && match.status !== liveStatus) {
-				liveStatus = match.status;
-				liveNote = match.admin_note || liveNote;
-				if (match.confirmed_at) confirmedAt = match.confirmed_at;
-			}
-		} catch {}
-	}, 5000);
+		liveStatus = next;
+		if (withdrawal?.admin_note) liveNote = withdrawal.admin_note;
+		if (withdrawal?.confirmed_at) confirmedAt = withdrawal.confirmed_at;
+	});
 
 	onDestroy(() => {
 		clearInterval(tickInterval);
-		clearInterval(pollInterval);
 		supabase.removeChannel(channel);
 	});
 
@@ -117,7 +124,6 @@
 	let totalDuration = $derived(hasExpiry ? expiresAt - createdAt : 0);
 	let nowSec = $derived(Math.floor(tickNow / 1000));
 	let remaining = $derived(hasExpiry ? Math.max(0, expiresAt - nowSec) : -1);
-	let elapsed = $derived(hasExpiry ? nowSec - createdAt : 0);
 	let progressPct = $derived(totalDuration > 0 ? Math.max(0, (remaining / totalDuration) * 100) : 0);
 	let canCancel = $derived((liveStatus === 'pending' || liveStatus === 'timeout') && hasExpiry && remaining <= 0);
 	let grossAmount = $derived(parseFloat(withdrawal?.gross_amount || '0') / (10 ** usdtDecimals));
