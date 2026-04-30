@@ -227,17 +227,21 @@ async function main() {
 	console.log(`   Batch size: ${BATCH_SIZE}`);
 
 	const config = await fetchNetworkConfig(CHAIN_ID);
-	// SAFU only ever does periodic eth_calls — no event subscriptions.
-	// A WS provider here gives zero benefit and is actively harmful: when
-	// the underlying socket drops (Infura free-tier WS does this every
-	// few minutes), a sweep call mid-flight gets cancelled with
-	// "provider destroyed". Force HTTP so this daemon stays stable
-	// independent of WS upstream health.
+	// Use the same dedicated daemon RPC as ws-indexer (typically Infura
+	// WS). The earlier crash loop wasn't a "WS is bad" problem — it was
+	// two specific bugs:
+	//   1. The local `provider` variable was captured once at startup,
+	//      so after a reconnect it pointed at the destroyed connection.
+	//      Fix: re-resolve via managed.getProvider() per batch (below).
+	//   2. A drop *mid-eth_call* still cancels the in-flight request
+	//      regardless of caching. Fix: retry once on cancelled errors.
 	const daemonRpc = (config as any).daemon_rpc || '';
 	const isWs = daemonRpc.startsWith('wss://') || daemonRpc.startsWith('ws://');
 	const rpcUrl = (!isWs && daemonRpc) || (config as any).rpc || RPC_URL;
-	console.log(`   RPC: ${rpcUrl} (HTTP only — no WS for sweep daemon)`);
-	const managed = createManagedProvider({ chainId: CHAIN_ID, httpRpc: rpcUrl });
+	const wsRpc = (isWs ? daemonRpc : '') || (config as any).ws_rpc || '';
+	console.log(`   RPC: ${rpcUrl}${wsRpc ? ` (ws: ${wsRpc})` : ''}`);
+	const managed = createManagedProvider({ chainId: CHAIN_ID, httpRpc: rpcUrl, wsRpc });
+	// NOTE: do NOT cache the provider here — fetch it fresh per batch.
 	const provider = managed.getProvider();
 	console.log(`   TokenFactory: ${config.platform_address}`);
 
@@ -275,11 +279,29 @@ async function main() {
 				for (let offset = 0; offset < allAddrs.length; offset += BATCH_SIZE) {
 					const batch = allAddrs.slice(offset, offset + BATCH_SIZE);
 					try {
-						const results = await querySafuLensBatch(
-							provider, bytecode,
-							config.platform_address, dexFactory, weth, config.usdt_address,
-							batch
-						);
+						// Fresh provider each batch — picks up reconnects
+						// transparently. Retry once on a "destroyed" /
+						// cancelled error (drop mid-call); the manager
+						// will have reconnected by then.
+						let results;
+						try {
+							results = await querySafuLensBatch(
+								managed.getProvider(), bytecode,
+								config.platform_address, dexFactory, weth, config.usdt_address,
+								batch,
+							);
+						} catch (e: any) {
+							const msg = String(e?.message ?? '');
+							const transient = /destroyed|cancelled|timeout|UNSUPPORTED_OPERATION|ECONN/i.test(msg);
+							if (!transient) throw e;
+							console.warn(`   ⚠️  Batch ${offset}: WS hiccup (${msg.slice(0, 60)}) — retry once`);
+							await new Promise(r => setTimeout(r, 1500));
+							results = await querySafuLensBatch(
+								managed.getProvider(), bytecode,
+								config.platform_address, dexFactory, weth, config.usdt_address,
+								batch,
+							);
+						}
 						if (results.length > 0) {
 							const n = await updateSafuBatch(CHAIN_ID, results);
 							totalUpdated += n;
