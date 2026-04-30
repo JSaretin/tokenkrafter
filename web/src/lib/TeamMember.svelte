@@ -1,37 +1,12 @@
 <script lang="ts" module>
-	export type SocialPlatform =
-		| 'site'
-		| 'x'
-		| 'telegram'
-		| 'github'
-		| 'linkedin'
-		| 'discord'
-		| 'email';
-
-	export interface Social {
-		platform: SocialPlatform;
-		url: string;
-	}
-
-	export interface Team {
-		name: string;
-		title: string;
-		about: string;
-		socials: Social[];
-	}
-
-	const socialLabels: Record<SocialPlatform, string> = {
-		site: 'Website',
-		x: 'X / Twitter',
-		telegram: 'Telegram',
-		github: 'GitHub',
-		linkedin: 'LinkedIn',
-		discord: 'Discord',
-		email: 'Email'
-	};
+	// Types live in $lib/team.ts so server loads (which can't import
+	// types from .svelte modules cleanly) and the admin panel can
+	// share the same shape.
+	export type { SocialPlatform, Social, Team } from '$lib/team';
 </script>
 
 <script lang="ts">
+	import { SOCIAL_LABELS, type Team } from '$lib/team';
 	let { member }: { member: Team } = $props();
 
 	// Auto-derive an avatar from the X social URL when present. The
@@ -80,8 +55,8 @@
 					href={social.url}
 					target="_blank"
 					rel="noopener"
-					title={socialLabels[social.platform]}
-					aria-label={socialLabels[social.platform]}
+					title={SOCIAL_LABELS[social.platform]}
+					aria-label={SOCIAL_LABELS[social.platform]}
 					class="w-8 h-8 rounded-lg flex items-center justify-center bg-surface-hover text-muted border border-line transition-all duration-150 no-underline hover:text-[#00d2ff] hover:border-[rgba(0,210,255,0.3)] hover:bg-[rgba(0,210,255,0.08)]"
 				>
 					{#if social.platform === 'x'}

@@ -1,26 +1,8 @@
 <script lang="ts">
-	import TeamMember, { type Team } from '$lib/TeamMember.svelte';
-
-	const teams: Team[] = [
-		{
-			name: 'JSaretin',
-			title: 'Founder & Lead Developer',
-			about:
-				'Full-stack blockchain developer building accessible DeFi tools for the African market. Passionate about bringing financial inclusion through crypto.',
-			socials: [
-				{ platform: 'x', url: 'https://x.com/jsaretin' },
-				{ platform: 'github', url: 'https://github.com/jsaretin' },
-				{ platform: 'site', url: 'https://jsaretin.com' }
-			]
-		},
-		{
-			name: 'Beauty Osaretin',
-			title: 'Co-Founder',
-			about:
-				'Co-founder who shaped TokenKrafter from day one — helping plan every part of the product alongside the founder, from vision to execution.',
-			socials: [{ platform: 'x', url: 'https://x.com/beauty_osaretin' }]
-		}
-	];
+	import TeamMember from '$lib/TeamMember.svelte';
+	import type { PageData } from './$types';
+	let { data }: { data: PageData } = $props();
+	let teams = $derived(data.teams);
 </script>
 
 <svelte:head>

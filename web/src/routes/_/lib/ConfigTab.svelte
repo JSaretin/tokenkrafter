@@ -2,6 +2,7 @@
 	import { getContext, onMount } from 'svelte';
 	import { supabase } from '$lib/supabaseClient';
 	import Skeleton from '$lib/Skeleton.svelte';
+	import { SOCIAL_PLATFORMS, type Team, type Social, type SocialPlatform } from '$lib/team';
 
 	const addFeedback = getContext<(f: { message: string; type: string }) => void>('addFeedback');
 
@@ -10,6 +11,7 @@
 	let networks: any[] = $state([]);
 	let site: any = $state({ name: '', description: '', support_email: '' });
 	let socials: any = $state({});
+	let team: Team[] = $state([]);
 	let loading = $state(true);
 	let saving = $state(false);
 
@@ -40,15 +42,54 @@
 		const { data } = await supabase
 			.from('platform_config')
 			.select('key, value')
-			.in('key', ['networks', 'site', 'social_links']);
+			.in('key', ['networks', 'site', 'social_links', 'team']);
 
 		for (const row of data || []) {
 			if (row.key === 'networks') networks = row.value || [];
 			else if (row.key === 'site') site = row.value || {};
 			else if (row.key === 'social_links') socials = row.value || {};
+			else if (row.key === 'team' && Array.isArray(row.value)) team = row.value as Team[];
 		}
 		loading = false;
 	});
+
+	// ── Team editor helpers ─────────────────────────────────────
+	function addTeamMember() {
+		team = [
+			...team,
+			{ name: '', title: '', about: '', socials: [] },
+		];
+	}
+
+	function removeTeamMember(idx: number) {
+		team = team.filter((_, i) => i !== idx);
+	}
+
+	function moveTeamMember(idx: number, dir: -1 | 1) {
+		const swap = idx + dir;
+		if (swap < 0 || swap >= team.length) return;
+		const next = [...team];
+		[next[idx], next[swap]] = [next[swap], next[idx]];
+		team = next;
+	}
+
+	function addMemberSocial(idx: number) {
+		const next = [...team];
+		next[idx] = {
+			...next[idx],
+			socials: [...next[idx].socials, { platform: 'x', url: '' } as Social],
+		};
+		team = next;
+	}
+
+	function removeMemberSocial(memberIdx: number, socialIdx: number) {
+		const next = [...team];
+		next[memberIdx] = {
+			...next[memberIdx],
+			socials: next[memberIdx].socials.filter((_, i) => i !== socialIdx),
+		};
+		team = next;
+	}
 
 	async function saveConfig(key: string, value: any) {
 		saving = true;
@@ -194,6 +235,80 @@
 			</div>
 			<button class="btn-primary text-xs px-4 py-2 mt-4 cursor-pointer" disabled={saving} onclick={() => saveConfig('social_links', socials)}>
 				{saving ? 'Saving...' : 'Save Socials'}
+			</button>
+		</div>
+
+		<!-- Team — roster shown on /team. Order in this list = render
+		     order on the page. Each member has free-form name/title/about
+		     and a list of socials (platform + url). The X social, if
+		     present, drives the auto-loaded avatar. -->
+		<div class="card p-5">
+			<div class="flex justify-between items-center mb-4">
+				<h3 class="font-numeric text-lg font-semibold text-heading mb-0">Team ({team.length})</h3>
+				<button class="btn-primary text-xs px-3 py-1.5 cursor-pointer" onclick={addTeamMember}>+ Add Member</button>
+			</div>
+			<p class="text-3xs text-muted font-mono mb-4 leading-normal">
+				Order here = order on the team page. The X social URL (if set) auto-loads each member's profile picture.
+			</p>
+
+			<div class="flex flex-col gap-4">
+				{#each team as member, i (i)}
+					<div class="bg-surface-input border border-line rounded-xl p-4">
+						<div class="flex justify-between items-center mb-3">
+							<span class="font-mono text-xs2 text-muted">Member {i + 1}</span>
+							<div class="flex gap-1.5">
+								<button class="btn-secondary text-3xs px-2 py-1 cursor-pointer" disabled={i === 0} onclick={() => moveTeamMember(i, -1)} title="Move up">↑</button>
+								<button class="btn-secondary text-3xs px-2 py-1 cursor-pointer" disabled={i === team.length - 1} onclick={() => moveTeamMember(i, 1)} title="Move down">↓</button>
+								<button class="btn-danger text-3xs px-2 py-1 cursor-pointer" onclick={() => removeTeamMember(i)} title="Remove">Remove</button>
+							</div>
+						</div>
+
+						<div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+							<label class="block">
+								<span class="label-text">Name</span>
+								<input class="input-field" placeholder="Jane Doe" bind:value={team[i].name} />
+							</label>
+							<label class="block">
+								<span class="label-text">Title</span>
+								<input class="input-field" placeholder="Founder &amp; Lead Developer" bind:value={team[i].title} />
+							</label>
+						</div>
+
+						<label class="block mb-3">
+							<span class="label-text">About</span>
+							<textarea class="input-field min-h-20 resize-y" placeholder="Short bio…" bind:value={team[i].about}></textarea>
+						</label>
+
+						<div class="border-t border-line pt-3">
+							<div class="flex justify-between items-center mb-2">
+								<span class="label-text mb-0">Socials</span>
+								<button class="btn-secondary text-3xs px-2 py-1 cursor-pointer" onclick={() => addMemberSocial(i)}>+ Add Social</button>
+							</div>
+
+							{#if member.socials.length === 0}
+								<p class="text-3xs text-dim font-mono italic m-0">No socials yet</p>
+							{/if}
+
+							<div class="flex flex-col gap-2">
+								{#each member.socials as _social, j (j)}
+									<div class="flex gap-2 items-center">
+										<select class="input-field w-auto!" bind:value={team[i].socials[j].platform}>
+											{#each SOCIAL_PLATFORMS as p}
+												<option value={p}>{p}</option>
+											{/each}
+										</select>
+										<input class="input-field flex-1" placeholder="https://..." bind:value={team[i].socials[j].url} />
+										<button class="btn-danger text-3xs px-2 py-1 cursor-pointer shrink-0" onclick={() => removeMemberSocial(i, j)} title="Remove">×</button>
+									</div>
+								{/each}
+							</div>
+						</div>
+					</div>
+				{/each}
+			</div>
+
+			<button class="btn-primary text-xs px-4 py-2 mt-4 cursor-pointer" disabled={saving} onclick={() => saveConfig('team', team)}>
+				{saving ? 'Saving...' : 'Save Team'}
 			</button>
 		</div>
 
