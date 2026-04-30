@@ -8,8 +8,13 @@ const config: HardhatUserConfig = {
   solidity: {
     version: "0.8.20",
     settings: {
+      // Solidity default settings (viaIR + runs:200). We had "no
+      // optimiser" briefly to get a true baseline, but Yul can't
+      // allocate stack slots without it (initialize has too many
+      // params), so the defaults are the closest practical baseline.
+      // Production deploys may go lower runs if size-pressed.
       viaIR: true,
-      optimizer: { enabled: true, runs: 100 },
+      optimizer: { enabled: true, runs: 200 },
     },
   },
   networks: {

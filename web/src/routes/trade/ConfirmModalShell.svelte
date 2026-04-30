@@ -32,8 +32,8 @@
 
 <FixedOverlay bind:show onclose={handleClose}>
 	<div
-		class={'w-full bg-(--bg) border border-(--border) rounded-[20px] overflow-hidden max-h-[80vh] max-sm:w-full max-sm:rounded-b-none flex flex-col ' +
-			(fullScreen ? 'max-sm:h-[100dvh] max-sm:max-h-[100dvh] max-sm:rounded-none' : 'max-sm:h-[80vh] max-sm:max-h-[80vh]')}
+		class={'w-full bg-(--bg) border border-(--border) rounded-[20px] overflow-hidden max-h-[90vh] max-sm:w-full max-sm:rounded-b-none flex flex-col ' +
+			(fullScreen ? 'max-sm:h-dvh max-sm:max-h-dvh max-sm:rounded-none' : 'max-sm:h-[80vh] max-sm:max-h-[80vh]')}
 	>
 		<div class="flex justify-between items-center py-4 px-5 border-b border-(--border)">
 			<h3 class="syne text-base font-bold text-(--text-heading) m-0">{title}</h3>

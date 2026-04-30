@@ -1148,7 +1148,7 @@
 	onpointerdown={() => { if (open && walletType === 'embedded') extendSession(); }} />
 
 {#if open}
-<div class="fixed inset-0 z-[9998] bg-black/60 backdrop-blur-[3px]" onclick={close} role="presentation"></div>
+<div class="absolute inset-0 z-[9998] bg-black/60 backdrop-blur-[3px]" onclick={close} role="presentation"></div>
 
 <div class="ap" class:ap-closing={!open} role="dialog" aria-label="Account panel">
 	<!-- ═══ HEADER ═══ -->

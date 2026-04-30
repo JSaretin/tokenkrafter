@@ -237,13 +237,24 @@ async function main() {
     (F) => F.deploy()
   );
 
-  // 2. LaunchInstance impl (library-linked)
+  // 2a. LaunchMath library (links BondingCurve, then LaunchInstance
+  //     links LaunchMath). Routing the curve dispatch + previewBuy
+  //     math through LaunchMath kept LaunchInstance under EIP-170.
+  const { addr: launchMathAddr } = await deployOrReuse(
+    "[2/8]",
+    "LaunchMath",
+    "LaunchMath",
+    (F) => F.deploy(),
+    { libraries: { BondingCurve: bondingCurveAddr } }
+  );
+
+  // 2b. LaunchInstance impl (links LaunchMath only)
   const { addr: launchImplAddr } = await deployOrReuse(
     "[2/8]",
     "LaunchInstanceImpl",
     "LaunchInstance",
     (F) => F.deploy(),
-    { libraries: { BondingCurve: bondingCurveAddr } }
+    { libraries: { LaunchMath: launchMathAddr } }
   );
 
   // 3. 8 token impls

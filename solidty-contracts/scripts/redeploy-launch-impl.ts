@@ -28,9 +28,25 @@ async function main() {
   BondingCurve: ${dep.BondingCurve}
 ──────────────────────────────────────────────────────────`);
 
-	// Deploy new LaunchInstance (links to the existing BondingCurve library)
+	// LaunchMath library now sits between LaunchInstance and
+	// BondingCurve. If the deployment file already has a LaunchMath
+	// address (from a previous deploy with this layout) reuse it;
+	// otherwise deploy a fresh one linked against the existing
+	// BondingCurve.
+	let launchMathAddr = dep.LaunchMath;
+	if (!launchMathAddr) {
+		const LaunchMath = await ethers.getContractFactory("LaunchMath", {
+			libraries: { BondingCurve: dep.BondingCurve },
+		});
+		const lm = await (await LaunchMath.deploy()).waitForDeployment();
+		launchMathAddr = await lm.getAddress();
+		dep.LaunchMath = launchMathAddr;
+		console.log(`  New LaunchMath:           ${launchMathAddr}`);
+	}
+
+	// Deploy new LaunchInstance linked against LaunchMath only.
 	const LaunchInstance = await ethers.getContractFactory("LaunchInstance", {
-		libraries: { BondingCurve: dep.BondingCurve },
+		libraries: { LaunchMath: launchMathAddr },
 	});
 	const newImpl = await (await LaunchInstance.deploy()).waitForDeployment();
 	const newImplAddr = await newImpl.getAddress();

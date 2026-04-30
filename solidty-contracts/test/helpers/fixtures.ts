@@ -102,11 +102,20 @@ export async function deployTokenStack() {
 export async function deployLaunchStack(
   stack: Awaited<ReturnType<typeof deployTokenStack>>
 ) {
+  // Library deploy chain: BondingCurve → LaunchMath → LaunchInstance.
+  // LaunchInstance now calls into LaunchMath (which itself calls
+  // BondingCurve), so the only library directly linked into the
+  // instance is LaunchMath.
   const BondingCurve = await ethers.getContractFactory("BondingCurve");
   const bondingCurve = await BondingCurve.deploy();
 
-  const LaunchInstance = await ethers.getContractFactory("LaunchInstance", {
+  const LaunchMath = await ethers.getContractFactory("LaunchMath", {
     libraries: { BondingCurve: await bondingCurve.getAddress() },
+  });
+  const launchMath = await LaunchMath.deploy();
+
+  const LaunchInstance = await ethers.getContractFactory("LaunchInstance", {
+    libraries: { LaunchMath: await launchMath.getAddress() },
   });
   const launchImpl = await LaunchInstance.deploy();
 

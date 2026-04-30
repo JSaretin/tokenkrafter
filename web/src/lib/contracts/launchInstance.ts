@@ -110,11 +110,8 @@ const LAUNCH_INSTANCE_CLIENT_ABI = [
 	'function grossPaid(address) view returns (uint256)',
 	'function tokensBought(address) view returns (uint256)',
 	'function getCurrentPrice() view returns (uint256)',
-	'function getCostForTokens(uint256 amount) view returns (uint256)',
-	'function getTokensForBase(uint256 baseAmount) view returns (uint256)',
 	'function previewBuy(uint256 baseAmount) view returns (uint256 tokensOut, uint256 fee, uint256 priceImpactBps)',
 	'function previewBuyFor(address buyer, uint256 baseAmount) view returns (uint256 tokensOut, uint256 fee, uint256 priceImpactBps)',
-	'function progressBps() view returns (uint256 softCapBps, uint256 hardCapBps)',
 	'function vestingInfo() view returns (uint256 total, uint256 claimed, uint256 claimable, uint256 nextClaimTimestamp)',
 	'function startTimestamp() view returns (uint256)',
 	'function graduationTimestamp() view returns (uint256)',
@@ -320,13 +317,9 @@ export class LaunchInstanceClient {
 		return BigInt(await this.contract.getCurrentPrice());
 	}
 
-	async getCostForTokens(amount: bigint): Promise<bigint> {
-		return BigInt(await this.contract.getCostForTokens(amount));
-	}
-
-	async getTokensForBase(base: bigint): Promise<bigint> {
-		return BigInt(await this.contract.getTokensForBase(base));
-	}
+	// getCostForTokens / getTokensForBase removed from the contract
+	// for bytecode size — `previewBuy(base)` subsumes them (returns
+	// tokensOut + fee + priceImpactBps in one call).
 
 	// ── Totals ────────────────────────────────────────────
 
@@ -416,15 +409,23 @@ export class LaunchInstanceClient {
 
 	// ── Progress / vesting ────────────────────────────────
 
+	// progressBps was removed from the contract for bytecode size — we
+	// derive it from the public totalBaseRaised / softCap / hardCap
+	// state vars on the client side. Math mirrors the original
+	// solidity: cap-clamped to BPS so a hardCap overshoot reads 100%.
 	async progressBps(): Promise<ProgressBpsNumeric> {
-		const [softCapBps, hardCapBps] = await this.contract.progressBps();
-		return { softCapBps: Number(softCapBps), hardCapBps: Number(hardCapBps) };
+		const [raised, soft, hard] = await Promise.all([
+			this.totalBaseRaised(), this.softCap(), this.hardCap(),
+		]);
+		const BPS = 10000n;
+		const softCapBps = soft > 0n ? Number(((raised * BPS) / soft) > BPS ? BPS : (raised * BPS) / soft) : 0;
+		const hardCapBps = hard > 0n ? Number(((raised * BPS) / hard) > BPS ? BPS : (raised * BPS) / hard) : 0;
+		return { softCapBps, hardCapBps };
 	}
 
 	async progressBpsView(): Promise<ProgressBpsView> {
-		const [softCapBps, hardCapBps] = await this.contract.progressBps();
-		const raw: ProgressBpsRaw = { softCapBps: BigInt(softCapBps), hardCapBps: BigInt(hardCapBps) };
-		return toProgressBpsView(raw);
+		const { softCapBps, hardCapBps } = await this.progressBps();
+		return toProgressBpsView({ softCapBps: BigInt(softCapBps), hardCapBps: BigInt(hardCapBps) });
 	}
 
 	/** Raw vesting params (cliff + duration in seconds). */

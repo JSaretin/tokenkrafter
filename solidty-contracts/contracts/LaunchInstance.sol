@@ -40,83 +40,10 @@ interface ILaunchToken {
 /// @notice Pure math for four bonding curve types. Returns cost in base coin (wei)
 ///         to purchase `amount` tokens from current `supply`. 1e18 precision.
 ///         Deployed as an external library to reduce consumer contract size.
-library BondingCurve {
-    uint256 constant PRECISION = 1e18;
-
-    /// @notice Linear: price = slope * supply + intercept
-    function linearCost(
-        uint256 supply,
-        uint256 amount,
-        uint256 slope,
-        uint256 intercept
-    ) external pure returns (uint256) {
-        uint256 sumTerm = 2 * supply + amount;
-        uint256 amountXsum = Math.mulDiv(amount, sumTerm, 1);
-        uint256 term1 = Math.mulDiv(slope, amountXsum, 2 * PRECISION);
-        uint256 term2 = Math.mulDiv(intercept, amount, PRECISION);
-        return term1 + term2;
-    }
-
-    /// @notice Square Root: price = coefficient * sqrt(supply)
-    ///         Approximated via Simpson's rule (3 points) for better accuracy than trapezoidal.
-    function sqrtCost(
-        uint256 supply,
-        uint256 amount,
-        uint256 coefficient
-    ) external pure returns (uint256) {
-        uint256 newSupply = supply + amount;
-        uint256 mid = supply + amount / 2;
-        uint256 priceLow = Math.mulDiv(coefficient, Math.sqrt(supply), PRECISION);
-        uint256 priceMid = Math.mulDiv(coefficient, Math.sqrt(mid), PRECISION);
-        uint256 priceHigh = Math.mulDiv(coefficient, Math.sqrt(newSupply), PRECISION);
-        uint256 simpsonSum = priceLow + 4 * priceMid + priceHigh;
-        return Math.mulDiv(simpsonSum, amount, 6 * PRECISION);
-    }
-
-    /// @notice Quadratic (FOMO): price = coefficient * supply^2
-    function quadraticCost(
-        uint256 supply,
-        uint256 amount,
-        uint256 coefficient
-    ) external pure returns (uint256) {
-        uint256 newSupply = supply + amount;
-        uint256 a2 = Math.mulDiv(newSupply, newSupply, PRECISION);
-        uint256 ab = Math.mulDiv(newSupply, supply, PRECISION);
-        uint256 b2 = Math.mulDiv(supply, supply, PRECISION);
-        uint256 sumSquares = a2 + ab + b2;
-        return Math.mulDiv(Math.mulDiv(coefficient, amount, 1), sumSquares, 3 * PRECISION * PRECISION);
-    }
-
-    /// @notice Exponential Lite: price = base * e^(k * supply)
-    ///         Uses Simpson's rule (3 points) for better accuracy than trapezoidal.
-    function exponentialCost(
-        uint256 supply,
-        uint256 amount,
-        uint256 base_,
-        uint256 kFactor
-    ) external pure returns (uint256) {
-        uint256 newSupply = supply + amount;
-        uint256 mid = supply + amount / 2;
-        uint256 priceLow = _approxExp(supply, base_, kFactor);
-        uint256 priceMid = _approxExp(mid, base_, kFactor);
-        uint256 priceHigh = _approxExp(newSupply, base_, kFactor);
-        uint256 simpsonSum = priceLow + 4 * priceMid + priceHigh;
-        return Math.mulDiv(simpsonSum, amount, 6 * PRECISION);
-    }
-
-    /// @dev 6th-order Taylor series for e^(kx): 1 + x + x²/2 + x³/6 + x⁴/24 + x⁵/120 + x⁶/720
-    ///      Accurate to <1% error for kx up to ~7 (e^7 ≈ 1097). Previous 2nd-order had 8x error at kx=5.
-    function _approxExp(uint256 x, uint256 base_, uint256 kFactor) private pure returns (uint256) {
-        uint256 kx = Math.mulDiv(kFactor, x, PRECISION);
-        uint256 kx2 = Math.mulDiv(kx, kx, PRECISION);
-        uint256 kx3 = Math.mulDiv(kx2, kx, PRECISION);
-        uint256 kx4 = Math.mulDiv(kx3, kx, PRECISION);
-        uint256 kx5 = Math.mulDiv(kx4, kx, PRECISION);
-        uint256 kx6 = Math.mulDiv(kx5, kx, PRECISION);
-        uint256 series = PRECISION + kx + kx2 / 2 + kx3 / 6 + kx4 / 24 + kx5 / 120 + kx6 / 720;
-        return Math.mulDiv(base_, series, PRECISION);
-    }
-}
+// BondingCurve and LaunchMath libraries live in LaunchMath.sol so the
+// bytecode is shared via DELEGATECALL rather than embedded in every
+// LaunchInstance clone.
+import "./LaunchMath.sol";
 
 // =============================================================
 // DEX INTERFACES
@@ -1250,17 +1177,9 @@ contract LaunchInstance is ReentrancyGuard {
         return amount < 1e18 && amount > 0 ? Math.mulDiv(cost, 1e18, amount) : cost;
     }
 
-    /// @notice Cost in base coin to buy `amount` tokens.
-    function getCostForTokens(uint256 amount) external view returns (uint256) {
-        return _getCostForTokens(amount);
-    }
-
-    /// @notice Tokens received for `baseAmount` base coin (before buy fee deduction).
-    ///         For accurate preview including fee, use previewBuy().
-    function getTokensForBase(uint256 baseAmount) external view returns (uint256) {
-        uint256 afterFee = baseAmount - (baseAmount * BUY_FEE_BPS) / BPS;
-        return _getTokensForBase(afterFee);
-    }
+    // getCostForTokens and getTokensForBase removed for bytecode size.
+    // Frontend uses previewBuy() / previewBuyFor() which subsume them
+    // (cost + fee + price-impact in one call).
 
     /// @notice Preview a buy: returns tokens out, fee, and price impact for a given base amount.
     ///         Does not account for per-wallet limits. Use previewBuyFor() for wallet-aware preview.
@@ -1289,35 +1208,25 @@ contract LaunchInstance is ReentrancyGuard {
         uint256 fee,
         uint256 priceImpactBps
     ) {
-        if (baseAmount == 0 || state != LaunchState.Active) return (0, 0, 0);
-        fee = (baseAmount * BUY_FEE_BPS) / BPS;
-        uint256 baseForTokens = baseAmount - fee;
-
-        // Cap to wallet's remaining USDT allowance
-        if (baseForTokens > maxBase) {
-            baseForTokens = maxBase;
-        }
-
-        tokensOut = _getTokensForBase(baseForTokens);
-        uint256 remaining = tokensForCurve - tokensSold;
-        if (tokensOut > remaining) tokensOut = remaining;
-
-        // Price impact: compare current price vs average fill price
-        uint256 priceBefore = getCurrentPrice();
-        if (priceBefore > 0 && tokensOut > 0) {
-            uint256 cost = _getCostForTokens(tokensOut);
-            uint256 avgPrice = (cost * 1e18) / tokensOut;
-            if (avgPrice > priceBefore) {
-                priceImpactBps = ((avgPrice - priceBefore) * BPS) / priceBefore;
-            }
-        }
+        if (state != LaunchState.Active) return (0, 0, 0);
+        // Body lives in LaunchMath so the bytecode is shared across
+        // every clone via DELEGATECALL rather than embedded per-instance.
+        return LaunchMath.previewBuy(LaunchMath.PreviewParams({
+            baseAmount: baseAmount,
+            maxBase: maxBase,
+            tokensSold: tokensSold,
+            tokensForCurve: tokensForCurve,
+            curveType: uint8(curveType),
+            curveParam1: curveParam1,
+            curveParam2: curveParam2,
+            baseScale: baseScale,
+            buyFeeBps: BUY_FEE_BPS,
+            bps: BPS,
+            currentPrice: getCurrentPrice()
+        }));
     }
-
-    /// @notice Progress towards soft/hard cap in BPS.
-    function progressBps() external view returns (uint256 softCapBps, uint256 hardCapBps) {
-        softCapBps = softCap > 0 ? Math.min((totalBaseRaised * BPS) / softCap, BPS) : 0;
-        hardCapBps = hardCap > 0 ? Math.min((totalBaseRaised * BPS) / hardCap, BPS) : 0;
-    }
+    // progressBps removed for bytecode size — frontend computes from
+    // the public totalBaseRaised / softCap / hardCap state vars.
 
     // ── Purchase history reads ──────────────────────────────────
 
@@ -1428,17 +1337,12 @@ contract LaunchInstance is ReentrancyGuard {
 
     // ── Internal Curve Math ────────────────────────────────────
 
-    /// @dev Raw curve cost in 18-decimal virtual base units (before scaling to actual USDT decimals).
+    /// @dev Raw curve cost in 18-decimal virtual base units (before
+    ///      scaling to actual USDT decimals). Dispatches via LaunchMath
+    ///      so the 4-way curve switch lives once in the library, not
+    ///      inlined here twice.
     function _curveCost(uint256 amount) internal view returns (uint256) {
-        if (curveType == CurveType.Linear) {
-            return BondingCurve.linearCost(tokensSold, amount, curveParam1, curveParam2);
-        } else if (curveType == CurveType.SquareRoot) {
-            return BondingCurve.sqrtCost(tokensSold, amount, curveParam1);
-        } else if (curveType == CurveType.Quadratic) {
-            return BondingCurve.quadraticCost(tokensSold, amount, curveParam1);
-        } else {
-            return BondingCurve.exponentialCost(tokensSold, amount, curveParam1, curveParam2);
-        }
+        return LaunchMath.curveCostAt(tokensSold, amount, uint8(curveType), curveParam1, curveParam2);
     }
 
     /// @dev Cost in actual USDT units (scaled from 18-dec curve output).
@@ -1447,19 +1351,8 @@ contract LaunchInstance is ReentrancyGuard {
     }
 
     /// @dev Cost at a specific supply position (not necessarily tokensSold).
-    ///      Used by getCurrentPrice() to compute the final curve price after sell-out.
     function _getCostForTokensAt(uint256 atSupply, uint256 amount) internal view returns (uint256) {
-        uint256 rawCost;
-        if (curveType == CurveType.Linear) {
-            rawCost = BondingCurve.linearCost(atSupply, amount, curveParam1, curveParam2);
-        } else if (curveType == CurveType.SquareRoot) {
-            rawCost = BondingCurve.sqrtCost(atSupply, amount, curveParam1);
-        } else if (curveType == CurveType.Quadratic) {
-            rawCost = BondingCurve.quadraticCost(atSupply, amount, curveParam1);
-        } else {
-            rawCost = BondingCurve.exponentialCost(atSupply, amount, curveParam1, curveParam2);
-        }
-        return rawCost / baseScale;
+        return LaunchMath.curveCostAt(atSupply, amount, uint8(curveType), curveParam1, curveParam2) / baseScale;
     }
 
     function _getTokensForBase(uint256 baseAmount) internal view returns (uint256) {

@@ -239,10 +239,7 @@
 					/>
 					{#if pinError}<div class="srs-error">{pinError}</div>{/if}
 				{:else}
-					<p class="srs-hint">
-						Press and hold to reveal. Release to hide. Once revealed, scan the QR or copy the phrase to a paper backup.
-					</p>
-
+			
 					<!-- svelte-ignore a11y_no_static_element_interactions -->
 					<!-- svelte-ignore a11y_click_events_have_key_events -->
 					<div
@@ -266,6 +263,11 @@
 								<div class="srs-key">{revealedValue}</div>
 							{/if}
 						{:else}
+						<div class="flex flex-col">
+									<p class="srs-hint">
+						Press and hold to reveal. Release to hide. Once revealed, scan the QR or copy the phrase to a paper backup.
+					</p>
+
 							<div class="srs-mask">
 								<div class="srs-mask-icon">
 									<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
@@ -275,6 +277,8 @@
 									<div class="srs-press-fill" style="width: {Math.round(pressProgress * 100)}%"></div>
 								</div>
 							</div>
+						</div>
+
 						{/if}
 					</div>
 
@@ -310,9 +314,13 @@
 
 <style>
 	.srs-backdrop {
-		position: fixed; inset: 0; z-index: 70;
+		/* Contained inside the AccountPanel (.ap) — same pattern as the
+		   wallet switcher's per-row sheets. The reveal flow is wallet-
+		   scoped, not app-scoped, so it shouldn't escape to fullscreen. */
+		position: absolute; inset: 0; z-index: 70;
 		background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(4px);
 		display: flex; align-items: flex-end; justify-content: center;
+		border-radius: inherit;
 	}
 	.srs-sheet {
 		position: relative;

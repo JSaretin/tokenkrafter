@@ -1095,8 +1095,12 @@ describe("Integration — USDT decimal variants (6 and 18)", () => {
     // Launchpad
     const BC = await ethers.getContractFactory("BondingCurve");
     const bc = await BC.deploy();
-    const LI = await ethers.getContractFactory("LaunchInstance", {
+    const LM = await ethers.getContractFactory("LaunchMath", {
       libraries: { BondingCurve: await bc.getAddress() },
+    });
+    const lm = await LM.deploy();
+    const LI = await ethers.getContractFactory("LaunchInstance", {
+      libraries: { LaunchMath: await lm.getAddress() },
     });
     const launchImpl = await LI.deploy();
     const LF = await ethers.getContractFactory("LaunchpadFactory");
@@ -1355,8 +1359,10 @@ describe("Integration — Slippage protection (minTokensOut)", () => {
     const usdtAddr = await s.usdt.getAddress();
     const launchAddr = await launch.getAddress();
 
-    // Victim computes expected tokens based on a pre-sandwich quote
-    const quotedTokens = await launch.getTokensForBase(PARSE_USDT(20));
+    // Victim computes expected tokens based on a pre-sandwich quote.
+    // getTokensForBase / getCostForTokens were removed for bytecode
+    // size; previewBuy returns the same `tokensOut` field.
+    const [quotedTokens] = await launch.previewBuy(PARSE_USDT(20));
     // Front-runner buys first, pushing the price up
     await buyUsdt(s, launch, frontRunner, PARSE_USDT(30));
 
