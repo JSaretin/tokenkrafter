@@ -13,9 +13,10 @@
        so the user can scan it into a hardware wallet / paper backup
        app without typing.
 
-  Exports + clipboard handling intentionally NOT included — copying a
-  seed to clipboard is exactly what we discourage. Want a hardware
-  scan? QR. Want a paper backup? Read off-screen.
+  Copy-to-clipboard is offered post-reveal. We discourage it (paper
+  backup is safer), but plenty of users will paste into a password
+  manager regardless — better to give them a button than have them
+  retype off-screen and get it wrong.
 -->
 <script lang="ts">
 	import { onDestroy } from 'svelte';
@@ -82,6 +83,31 @@
 	let pressStart = 0;
 	const PRESS_HOLD_MS = 1500;
 	let revealed = $state(false);
+	let copied = $state(false);
+	let copyTimer: ReturnType<typeof setTimeout> | null = null;
+	let showQr = $state(false);
+
+	function lockAgain() {
+		revealed = false;
+		showQr = false;
+		isPressing = false;
+		pressProgress = 0;
+		copied = false;
+		if (copyTimer) { clearTimeout(copyTimer); copyTimer = null; }
+		clearPressTimer();
+	}
+
+	async function copySecret() {
+		if (!revealedValue) return;
+		try {
+			await navigator.clipboard.writeText(revealedValue);
+			copied = true;
+			if (copyTimer) clearTimeout(copyTimer);
+			copyTimer = setTimeout(() => { copied = false; }, 1500);
+		} catch {
+			// Clipboard write blocked — leave button state alone.
+		}
+	}
 
 	function clearPressTimer() {
 		if (pressTimer) {
@@ -144,7 +170,7 @@
 			step = 'reveal';
 			// Pre-render the QR off the critical path; the reveal screen
 			// will render whatever's ready.
-			generateQR(value, { width: 220, margin: 1 })
+			generateQR(value, { width: 256, margin: 1 })
 				.then((url) => { qrDataUrl = url; })
 				.catch(() => { qrDataUrl = ''; });
 		} finally {
@@ -163,6 +189,9 @@
 		isPressing = false;
 		pressProgress = 0;
 		revealed = false;
+		copied = false;
+		showQr = false;
+		if (copyTimer) { clearTimeout(copyTimer); copyTimer = null; }
 		clearPressTimer();
 	}
 
@@ -180,6 +209,16 @@
 		? revealedValue.trim().split(/\s+/)
 		: []);
 
+	// Group the 0x-prefixed hex into 4-char chunks so the user can
+	// verify it by eye / read it aloud without losing their place.
+	let groupedKey = $derived(kind === 'key' && revealedValue
+		? (() => {
+			const m = revealedValue.match(/^0x([0-9a-fA-F]+)$/);
+			if (!m) return revealedValue;
+			return '0x ' + (m[1].match(/.{1,4}/g) ?? []).join(' ');
+		})()
+		: '');
+
 	let title = $derived(
 		kind === 'seed' ? 'Reveal recovery phrase' : 'Reveal private key',
 	);
@@ -195,7 +234,6 @@
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div class="srs-backdrop" onclick={handleClose} transition:fade={{ duration: 180 }}>
 		<div class="srs-sheet" onclick={(e) => e.stopPropagation()}>
-			<div class="srs-grab" aria-hidden="true"></div>
 			<button class="srs-close" onclick={handleClose} aria-label="Close" disabled={pinChecking}>
 				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
 			</button>
@@ -203,11 +241,12 @@
 			<div class="srs-head">
 				<div class="srs-title">{title}</div>
 				{#if subtitle}<div class="srs-subtitle">{subtitle}</div>{/if}
-				<div class="srs-steps">
-					<span class={'srs-dot ' + (step === 'ack' ? 'is-active' : 'is-done')}></span>
-					<span class={'srs-dot ' + (step === 'pin' ? 'is-active' : step === 'reveal' ? 'is-done' : '')}></span>
-					<span class={'srs-dot ' + (step === 'reveal' ? 'is-active' : '')}></span>
-				</div>
+				{#if step !== 'reveal'}
+					<div class="srs-steps">
+						<span class={'srs-dot ' + (step === 'ack' ? 'is-active' : 'is-done')}></span>
+						<span class={'srs-dot ' + (step === 'pin' ? 'is-active' : '')}></span>
+					</div>
+				{/if}
 			</div>
 
 			<div class="srs-body">
@@ -239,19 +278,32 @@
 					/>
 					{#if pinError}<div class="srs-error">{pinError}</div>{/if}
 				{:else}
-			
+					{#if revealed}
+						<div class="srs-warn">
+							<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/></svg>
+							<span>{kind === 'seed' ? 'Treat this phrase like cash. Anyone with it owns your wallet.' : 'Treat this key like cash. Anyone with it owns this account.'}</span>
+						</div>
+					{:else}
+						<p class="srs-hint">Press and hold to reveal. Release to hide.</p>
+					{/if}
+
 					<!-- svelte-ignore a11y_no_static_element_interactions -->
 					<!-- svelte-ignore a11y_click_events_have_key_events -->
 					<div
-						class={'srs-secret-wrap ' + (revealed ? 'is-revealed' : '')}
+						class={'srs-secret-wrap ' + (revealed ? 'is-revealed' : '') + (showQr ? ' is-qr' : '')}
 						onpointerdown={startPress}
 						onpointerup={endPress}
 						onpointerleave={endPress}
 						onpointercancel={endPress}
 					>
 						{#if revealed}
-							{#if kind === 'seed'}
-								<div class="srs-words">
+							{#if showQr && qrDataUrl}
+								<div class="srs-qr-drawer">
+									<img class="srs-qr-large" src={qrDataUrl} alt="QR code for the secret" />
+									<p class="srs-qr-caption">Scan with a hardware wallet or trusted backup app.</p>
+								</div>
+							{:else if kind === 'seed'}
+								<div class={'srs-words ' + (seedWords.length > 12 ? 'is-24' : 'is-12')}>
 									{#each seedWords as word, i}
 										<div class="srs-word">
 											<span class="srs-word-num">{i + 1}</span>
@@ -260,14 +312,9 @@
 									{/each}
 								</div>
 							{:else}
-								<div class="srs-key">{revealedValue}</div>
+								<div class="srs-key">{groupedKey}</div>
 							{/if}
 						{:else}
-						<div class="flex flex-col">
-									<p class="srs-hint">
-						Press and hold to reveal. Release to hide. Once revealed, scan the QR or copy the phrase to a paper backup.
-					</p>
-
 							<div class="srs-mask">
 								<div class="srs-mask-icon">
 									<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
@@ -277,69 +324,89 @@
 									<div class="srs-press-fill" style="width: {Math.round(pressProgress * 100)}%"></div>
 								</div>
 							</div>
-						</div>
-
 						{/if}
 					</div>
 
-					{#if revealed && qrDataUrl}
-						<div class="srs-qr-wrap">
-							<img class="srs-qr" src={qrDataUrl} alt="QR code for the secret" />
-							<p class="srs-qr-caption">
-								Scan with a hardware wallet or trusted backup app.
-							</p>
+					{#if revealed}
+						<div class="srs-actions">
+							<button
+								class={'srs-action ' + (copied ? 'is-copied' : '')}
+								onclick={copySecret}
+								type="button"
+							>
+								{#if copied}
+									<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+									Copied
+								{:else}
+									<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+									Copy
+								{/if}
+							</button>
+							{#if qrDataUrl}
+								<button
+									class={'srs-action ' + (showQr ? 'is-on' : '')}
+									onclick={() => { showQr = !showQr; }}
+									type="button"
+								>
+									{#if showQr}
+										<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+										Show {kind === 'seed' ? 'phrase' : 'key'}
+									{:else}
+										<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM18 18h3v3h-3zM14 19h3"/></svg>
+										Show QR
+									{/if}
+								</button>
+							{/if}
+							<button class="srs-action srs-action-danger" onclick={lockAgain} type="button">
+								<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+								Lock
+							</button>
 						</div>
 					{/if}
 				{/if}
 			</div>
 
-			<div class="srs-footer">
-				{#if step === 'ack'}
-					<button class="srs-btn srs-btn-ghost" onclick={handleClose}>Cancel</button>
-					<button class="srs-btn srs-btn-primary" disabled={!allAcked} onclick={() => { step = 'pin'; }}>
-						Continue
-					</button>
-				{:else if step === 'pin'}
-					<button class="srs-btn srs-btn-ghost" onclick={() => { step = 'ack'; pinError = ''; }}>Back</button>
-					<button class="srs-btn srs-btn-primary" disabled={!pinInput || pinChecking} onclick={submitPin}>
-						{pinChecking ? 'Checking…' : 'Verify PIN'}
-					</button>
-				{:else}
-					<button class="srs-btn srs-btn-primary srs-btn-full" onclick={handleClose}>Done</button>
-				{/if}
-			</div>
+			{#if step !== 'reveal'}
+				<div class="srs-footer">
+					{#if step === 'ack'}
+						<button class="srs-btn srs-btn-ghost" onclick={handleClose}>Cancel</button>
+						<button class="srs-btn srs-btn-primary" disabled={!allAcked} onclick={() => { step = 'pin'; }}>
+							Continue
+						</button>
+					{:else if step === 'pin'}
+						<button class="srs-btn srs-btn-ghost" onclick={() => { step = 'ack'; pinError = ''; }}>Back</button>
+						<button class="srs-btn srs-btn-primary" disabled={!pinInput || pinChecking} onclick={submitPin}>
+							{pinChecking ? 'Checking…' : 'Verify PIN'}
+						</button>
+					{/if}
+				</div>
+			{/if}
 		</div>
 	</div>
 {/if}
 
 <style>
 	.srs-backdrop {
-		/* Contained inside the AccountPanel (.ap) — same pattern as the
-		   wallet switcher's per-row sheets. The reveal flow is wallet-
-		   scoped, not app-scoped, so it shouldn't escape to fullscreen. */
+		/* Contained inside the AccountPanel (.ap) — fills the wallet
+		   panel entirely. Not a bottom sheet — the reveal flow takes
+		   over the whole wallet screen until dismissed. */
 		position: absolute; inset: 0; z-index: 70;
-		background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(4px);
-		display: flex; align-items: flex-end; justify-content: center;
+		background: var(--bg);
+		display: flex; flex-direction: column;
 		border-radius: inherit;
+		overflow: hidden;
 	}
 	.srs-sheet {
 		position: relative;
-		width: 100%; height: 80vh; max-height: 80%;
+		width: 100%; height: 100%;
 		background: var(--bg);
-		border-top: 1px solid var(--border);
-		border-radius: 16px 16px 0 0;
-		box-shadow: 0 -8px 28px rgba(0, 0, 0, 0.5);
 		display: flex; flex-direction: column;
 		overflow: hidden;
-		animation: srsSlideUp 0.22s ease-out;
+		animation: srsFadeIn 0.18s ease-out;
 	}
-	@keyframes srsSlideUp {
-		from { transform: translateY(100%); }
-		to { transform: translateY(0); }
-	}
-	.srs-grab {
-		width: 36px; height: 4px; border-radius: 2px;
-		background: var(--bg-surface-hover); margin: 8px auto 0;
+	@keyframes srsFadeIn {
+		from { opacity: 0; }
+		to { opacity: 1; }
 	}
 	.srs-close {
 		position: absolute; top: 10px; right: 12px; z-index: 1;
@@ -455,38 +522,81 @@
 		transition: width 60ms linear;
 	}
 
-	.srs-words {
-		display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px;
-		width: 100%;
+	.srs-warn {
+		display: flex; gap: 8px; align-items: flex-start;
+		padding: 9px 11px; border-radius: 10px;
+		background: rgba(239, 68, 68, 0.08);
+		border: 1px solid rgba(239, 68, 68, 0.25);
+		color: #fca5a5;
+		font-family: 'Space Mono', monospace; font-size: 11px;
+		line-height: 1.45;
 	}
+	.srs-warn svg { flex-shrink: 0; margin-top: 1px; color: #f87171; }
+
+	.srs-words {
+		display: grid; gap: 6px; width: 100%;
+	}
+	.srs-words.is-12 { grid-template-columns: repeat(3, 1fr); }
+	.srs-words.is-24 { grid-template-columns: repeat(4, 1fr); }
 	.srs-word {
-		display: flex; gap: 8px; align-items: center;
-		padding: 8px 10px; border-radius: 8px;
+		display: flex; gap: 6px; align-items: baseline;
+		padding: 7px 8px; border-radius: 8px;
 		background: var(--bg-surface-input); border: 1px solid var(--border);
 	}
 	.srs-word-num {
-		font-family: 'Space Mono', monospace; font-size: 10px;
-		color: var(--text-dim); min-width: 18px; text-align: right;
+		font-family: 'Space Mono', monospace; font-size: 9px;
+		color: var(--text-dim); min-width: 14px; text-align: right;
 	}
 	.srs-word-text {
 		font-family: 'Space Mono', monospace; font-size: 12px;
 		color: var(--text-heading); font-weight: 700;
+		overflow: hidden; text-overflow: ellipsis;
 	}
 	.srs-key {
-		font-family: 'Space Mono', monospace; font-size: 11px;
+		font-family: 'Space Mono', monospace; font-size: 13px;
 		color: var(--text-heading); word-break: break-all;
-		line-height: 1.6;
+		line-height: 1.7; letter-spacing: 0.04em;
+		text-align: center;
 	}
 
-	.srs-qr-wrap {
-		display: flex; flex-direction: column; align-items: center; gap: 8px;
-		padding: 14px;
-		background: var(--bg-surface-input); border-radius: 12px;
-		border: 1px solid var(--border);
+	.srs-actions {
+		display: flex; gap: 8px; align-items: stretch;
 	}
-	.srs-qr {
-		width: 220px; height: 220px; image-rendering: pixelated;
-		border-radius: 6px;
+	.srs-action {
+		flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+		padding: 10px 8px; border-radius: 10px;
+		background: var(--bg-surface-input); border: 1px solid var(--border);
+		color: var(--text-heading);
+		font-family: 'Syne', sans-serif; font-size: 11px; font-weight: 700;
+		cursor: pointer; transition: all 0.12s;
+		white-space: nowrap;
+	}
+	.srs-action:hover { background: var(--bg-surface-hover); }
+	.srs-action.is-copied {
+		background: rgba(16, 185, 129, 0.12);
+		border-color: rgba(16, 185, 129, 0.4);
+		color: #10b981;
+	}
+	.srs-action.is-on {
+		background: rgba(245, 158, 11, 0.12);
+		border-color: rgba(245, 158, 11, 0.4);
+		color: #f59e0b;
+	}
+	.srs-action-danger {
+		color: #f87171;
+	}
+	.srs-action-danger:hover {
+		background: rgba(239, 68, 68, 0.1);
+		border-color: rgba(239, 68, 68, 0.3);
+	}
+
+	.srs-qr-drawer {
+		display: flex; flex-direction: column; align-items: center; gap: 10px;
+		width: 100%;
+	}
+	.srs-qr-large {
+		width: 200px; height: 200px; image-rendering: pixelated;
+		padding: 10px; background: white; border-radius: 8px;
 	}
 	.srs-qr-caption {
 		margin: 0; font-family: 'Space Mono', monospace; font-size: 10px;
