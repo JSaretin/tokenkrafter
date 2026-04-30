@@ -101,7 +101,9 @@
 
 <ConfirmModalShell {title} {onClose} fullScreen>
 	<div class="text-center px-2">
-		<!-- Icon with circular countdown ring (only animates while pending) -->
+		<!-- Icon with circular countdown ring. While pending the ring
+		     pulses subtly so the user reads it as a live timer, and the
+		     stroke depletes once a second toward the expiry. -->
 		<div class="relative w-20 h-20 mx-auto mb-3">
 			{#if isPending}
 				{@const circumference = 2 * Math.PI * 36}
@@ -109,13 +111,14 @@
 				<svg class="absolute inset-0 -rotate-90" viewBox="0 0 80 80" aria-hidden="true">
 					<circle cx="40" cy="40" r="36" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="3" />
 					<circle
+						class={isExpired ? '' : 'countdown-ring-pulse'}
 						cx="40" cy="40" r="36" fill="none"
 						stroke={isExpired ? '#f87171' : statusConfig.color}
 						stroke-width="3"
 						stroke-linecap="round"
 						stroke-dasharray={circumference}
 						stroke-dashoffset={ringOffset}
-						style="transition: stroke-dashoffset 1s linear"
+						style="transition: stroke-dashoffset 1s linear; --ring-color: {statusConfig.color};"
 					/>
 				</svg>
 			{/if}
@@ -123,7 +126,7 @@
 				class="absolute inset-1 rounded-full flex items-center justify-center"
 				style="background: {statusConfig.bg}"
 			>
-				<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke={statusConfig.color} stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d={statusConfig.icon}/></svg>
+				<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke={statusConfig.color} stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class={isPending && !isExpired ? 'countdown-icon-tick' : ''}><path d={statusConfig.icon}/></svg>
 			</div>
 		</div>
 
@@ -257,3 +260,32 @@
 		{/if}
 	{/if}
 </ConfirmModalShell>
+
+<style>
+	/* Pulsing glow on the active progress ring so users register it
+	 * as a live countdown, not a static decoration. The drop-shadow
+	 * uses the inline --ring-color CSS variable set per-status. */
+	.countdown-ring-pulse {
+		animation: ringPulse 2s ease-in-out infinite;
+	}
+	@keyframes ringPulse {
+		0%, 100% { filter: drop-shadow(0 0 0 transparent); opacity: 1; }
+		50%      { filter: drop-shadow(0 0 4px var(--ring-color, #f59e0b)); opacity: 0.85; }
+	}
+	/* Subtle once-per-second tick on the centered icon to mirror the
+	 * second-hand of a clock — clear "this is timing down" cue. */
+	.countdown-icon-tick {
+		animation: iconTick 1s ease-in-out infinite;
+		transform-origin: center;
+	}
+	@keyframes iconTick {
+		0%   { transform: scale(1); }
+		15%  { transform: scale(1.05); }
+		30%  { transform: scale(1); }
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.countdown-ring-pulse, .countdown-icon-tick {
+			animation: none;
+		}
+	}
+</style>

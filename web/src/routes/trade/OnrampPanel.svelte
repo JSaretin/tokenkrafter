@@ -58,6 +58,9 @@
 		/** Minimum on-ramp amount in whole NGN. SSR-supplied so the input's
 		 *  validation matches the server's `onramp_min_kobo` config. */
 		minNgn = 500,
+		/** Platform fee bps (default 250 = 2.5%). SSR-supplied so the live
+		 *  preview matches what the locked quote will return. */
+		feeBps = 250,
 		/** Bindable amount input — lives at the parent so it survives
 		 *  tab switches (Buy → Swap → Buy keeps the typed amount). */
 		amountNgn = $bindable<number | null>(null),
@@ -67,6 +70,7 @@
 		receiver?: string;
 		initialRate?: number | null;
 		minNgn?: number;
+		feeBps?: number;
 		amountNgn?: number | null;
 		onsuccess?: (txHash: string) => void;
 	} = $props();
@@ -134,16 +138,28 @@
 		flow === 'failed' ||
 		flow === 'cancelled',
 	);
-	let postSubmitStatus = $derived(
-		flow === 'awaiting_payment' ? 'pending_payment'
-			: flow === 'payment_received' ? 'payment_received'
-			: flow === 'delivering' ? 'delivering'
-			: flow === 'delivered' ? 'delivered'
-			: flow === 'expired' ? 'expired'
-			: flow === 'failed' ? 'failed'
-			: flow === 'cancelled' ? 'cancelled'
-			: 'pending_payment',
-	);
+	// Tick a clock so client-side expiry detection is reactive.
+	let nowSec = $state(Math.floor(Date.now() / 1000));
+	$effect(() => {
+		const id = setInterval(() => { nowSec = Math.floor(Date.now() / 1000); }, 1000);
+		return () => clearInterval(id);
+	});
+	let postSubmitStatus = $derived.by(() => {
+		// Awaiting + clock past expiry → mark expired in the row we hand
+		// to the status modal. No DB write, just UI state. Keeps the
+		// post-submit modal and the "open from history" modal in lockstep.
+		if (flow === 'awaiting_payment' && quote && quote.expires_at <= nowSec) return 'expired';
+		switch (flow) {
+			case 'awaiting_payment': return 'pending_payment';
+			case 'payment_received': return 'payment_received';
+			case 'delivering': return 'delivering';
+			case 'delivered': return 'delivered';
+			case 'expired': return 'expired';
+			case 'failed': return 'failed';
+			case 'cancelled': return 'cancelled';
+			default: return 'pending_payment';
+		}
+	});
 	let statusRow = $derived(
 		quote
 			? {
@@ -170,9 +186,28 @@
 		if (countdownTimer) clearInterval(countdownTimer);
 	});
 
-	let livePreviewUsdt = $derived(
+	// Gross USDT before fee — for fee-line display alongside the net.
+	let livePreviewGrossUsdt = $derived(
 		displayRateX100 && amountNgn != null && amountNgn > 0
 			? Number((BigInt(Math.round(amountNgn * 100)) * 10000n) / BigInt(displayRateX100)) / 10000
+			: null,
+	);
+	// Net of platform fee — what the user actually receives. Matches the
+	// math in /api/onramp/quote so the live preview equals the locked
+	// quote (no surprise drop on Review).
+	let livePreviewUsdt = $derived(
+		displayRateX100 && amountNgn != null && amountNgn > 0
+			? Number(
+					(BigInt(Math.round(amountNgn * 100)) * 10000n * BigInt(10000 - feeBps)) /
+						(BigInt(displayRateX100) * 10000n),
+				) / 10000
+			: null,
+	);
+	// Fee in USDT terms — what got deducted (gross − net). Used for the
+	// transparent "Fee X.XX USDT (Y%)" line in the YOU RECEIVE card.
+	let livePreviewFeeUsdt = $derived(
+		livePreviewGrossUsdt !== null && livePreviewUsdt !== null
+			? livePreviewGrossUsdt - livePreviewUsdt
 			: null,
 	);
 	let liveRate = $derived(displayRateX100 ? displayRateX100 / 100 : null);
@@ -408,10 +443,19 @@
 		{/if}
 	</div>
 	{#if liveRate !== null}
-		<div class="flex justify-between items-center px-3.5 pb-3 -mt-1">
+		<div class="flex justify-between items-center px-3.5 pb-1.5 -mt-1">
 			<span class="font-mono text-3xs text-(--text-dim)">Rate</span>
 			<span class="font-numeric text-3xs text-(--text-muted) tabular-nums">₦{liveRate.toFixed(2)} / $1</span>
 		</div>
+	{/if}
+	{#if feeBps > 0 && livePreviewFeeUsdt !== null && livePreviewFeeUsdt > 0}
+		<div class="flex justify-between items-center px-3.5 pb-3">
+			<span class="font-mono text-3xs text-(--text-dim)">Fee</span>
+			<span class="font-numeric text-3xs text-(--text-muted) tabular-nums">{livePreviewFeeUsdt.toFixed(4)} USDT ({(feeBps / 100).toFixed(2)}%)</span>
+		</div>
+	{:else if liveRate !== null}
+		<!-- preserve the bottom padding the Rate row used to provide -->
+		<div class="pb-3"></div>
 	{/if}
 </div>
 

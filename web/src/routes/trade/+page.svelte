@@ -1192,21 +1192,45 @@
 				withdrawStep = 4; // all done
 				showConfirmModal = false;
 
-				activeWithdrawal = {
-					id: preData.id,
-					withdraw_id: withdrawId,
-					chain_id: selectedNetwork.chain_id,
-					wallet_address: userAddress,
-					status: 'pending',
-					net_amount: onChainNet.toString(),
-					fee: onChainFee.toString(),
-					gross_amount: usdtGross.toString(),
-					payment_method: paymentMethod,
-					payment_details: paymentDetails,
-					tx_hash: receipt?.hash || '',
-					created_at: new Date().toISOString(),
-					expiresAt: onChainExpiresAt,
-				};
+				// Auto-open WithdrawalStatusModal. To ensure the post-submit
+				// view matches the "open from history" view (countdown,
+				// timeout state, all the bells), refresh history then read
+				// the row back through the same path. That way the modal
+				// gets on-chain-derived expiresAt + status uniformly,
+				// instead of the receipt-derived shape which sometimes
+				// missed the expiry timestamp.
+				try {
+					historyPanel?.refresh?.();
+					if (selectedNetwork?.trade_router_address) {
+						const provider = networkProviders.get(selectedNetwork.chain_id);
+						if (provider) {
+							const router = new TradeRouterClient(selectedNetwork.trade_router_address, provider);
+							const { records } = await router.getUserWithdrawals(userAddress);
+							const fresh = records.find((r) => r.withdraw_id === withdrawId);
+							if (fresh) {
+								activeWithdrawal = toWithdrawalView({
+									id: preData.id,
+									withdraw_id: fresh.withdraw_id,
+									user: fresh.user,
+									token: tokenInAddr,
+									grossAmount: fresh.grossAmount,
+									fee: fresh.fee,
+									netAmount: fresh.netAmount,
+									createdAt: fresh.createdAt,
+									expiresAt: fresh.expiresAt,
+									status: fresh.status,
+									bankRef: fresh.bankRef,
+									referrer: fresh.referrer,
+									payment_method: paymentMethod,
+									payment_details: paymentDetails,
+									chain_id: selectedNetwork.chain_id,
+									tx_hash: receipt?.hash || '',
+									db_status: 'pending',
+								});
+							}
+						}
+					}
+				} catch {}
 
 				// Reset form after capturing values
 				amountIn = '';
@@ -1536,6 +1560,7 @@
 					receiver={userAddress ?? undefined}
 					initialRate={onrampNgnRate}
 					minNgn={onrampMinNgn}
+					feeBps={serverData?.onrampFeeBps ?? 250}
 					bind:amountNgn={onrampAmountNgn}
 					onsuccess={() => {
 						// Refresh USDT balance after delivery so the user can
