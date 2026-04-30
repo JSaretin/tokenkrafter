@@ -3,6 +3,7 @@ import type { RequestHandler } from './$types';
 import { env } from '$env/dynamic/private';
 import { supabaseAdmin } from '$lib/supabaseServer';
 import { isDaemonAuth } from '$lib/daemonAuth';
+import { sendTelegram } from '$lib/alerts';
 
 /**
  * POST /api/alert — centralized alert fanout
@@ -20,29 +21,6 @@ import { isDaemonAuth } from '$lib/daemonAuth';
  *   data?: Record<string, any>,                        // structured payload for templates
  * }
  */
-
-async function sendTelegram(title: string, message: string): Promise<boolean> {
-	const token = env.TELEGRAM_BOT_TOKEN;
-	const chatId = env.TELEGRAM_CHANNEL_ID;
-	if (!token || !chatId) return false;
-
-	try {
-		const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				chat_id: chatId,
-				text: `${title}\n${message}`,
-				parse_mode: 'Markdown',
-			}),
-		});
-		const data = await res.json();
-		return data.ok === true;
-	} catch (e: any) {
-		console.error('[alert] Telegram failed:', e.message?.slice(0, 80));
-		return false;
-	}
-}
 
 // Future: email via Resend/SES/SMTP
 // async function sendEmail(to: string, title: string, message: string): Promise<boolean> { ... }

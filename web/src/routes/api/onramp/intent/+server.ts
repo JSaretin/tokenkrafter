@@ -14,6 +14,7 @@ import { ethers } from 'ethers';
 import { supabaseAdmin } from '$lib/supabaseServer';
 import { ONRAMP_DOMAIN, ONRAMP_TYPES, type OnrampIntent } from '$lib/onramp/types';
 import { createCustomer, createVirtualAccount } from '$lib/flutterwave';
+import { sendTelegram } from '$lib/alerts';
 
 function isHex32(v: unknown): v is string {
 	return typeof v === 'string' && /^0x[0-9a-f]{64}$/i.test(v);
@@ -125,6 +126,20 @@ export const POST: RequestHandler = async ({ request }) => {
 		console.error('[onramp.intent] update failed:', updErr.message);
 		return error(500, 'Failed to persist intent');
 	}
+
+	// Fire-and-forget Telegram alert so operators see the deposit
+	// pipeline in real time. Critical info: amount, where USDT lands,
+	// VA account so support can verify the bank deposit if needed.
+	const usdtNet = (Number(BigInt(intent.usdtAmount) * 10000n / 10n ** 18n) / 10000).toFixed(4);
+	void sendTelegram(
+		'On-ramp initiated',
+		[
+			`💰 ₦${ngnWhole.toLocaleString()} → ${usdtNet} USDT`,
+			`👤 ${intent.receiver.slice(0, 6)}…${intent.receiver.slice(-4)}`,
+			`🏦 ${va.bankName ?? '—'} · ${va.accountNumber ?? '—'}`,
+			`🔖 ${intent.reference}`,
+		].join('\n'),
+	).catch(() => {});
 
 	return json({
 		reference: intent.reference,

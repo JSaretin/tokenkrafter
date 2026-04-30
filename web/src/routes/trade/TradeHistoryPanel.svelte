@@ -90,7 +90,21 @@
 		return 'pending';
 	}
 
-	function buyBucket(o: OnrampHistoryRow): Bucket {
+	/** True if a buy row is past its expiry window but still has DB
+	 *  status='pending_payment' (no FLW expire-event handled). Takes
+	 *  `nowSec` explicitly so the $derived block ties to the ticking
+	 *  clock — badges update live as expiry passes. */
+	function buyExpiredClientSide(o: OnrampHistoryRow, nowSec: number): boolean {
+		if (o.status !== 'pending_payment' && o.status !== 'quoted') return false;
+		try {
+			return nowSec > Math.floor(new Date(o.expires_at).getTime() / 1000);
+		} catch {
+			return false;
+		}
+	}
+
+	function buyBucket(o: OnrampHistoryRow, nowSec: number): Bucket {
+		if (buyExpiredClientSide(o, nowSec)) return 'failed';
 		switch (o.status) {
 			case 'delivered': return 'completed';
 			case 'failed':
@@ -221,7 +235,7 @@
 			when: Math.floor(new Date(o.created_at).getTime() / 1000),
 			sortKey: Math.floor(new Date(o.created_at).getTime() / 1000),
 			data: o,
-			bucket: buyBucket(o),
+			bucket: buyBucket(o, nowTs),
 		})),
 	].sort((a, b) => b.sortKey - a.sortKey));
 
@@ -265,6 +279,11 @@
 		} catch {
 			return String(unixOrIso);
 		}
+	}
+
+	function buyStatusTextFor(o: OnrampHistoryRow): string {
+		if (buyExpiredClientSide(o, nowTs)) return 'Expired';
+		return buyStatusText(o.status);
 	}
 
 	function buyStatusText(s: string): string {
@@ -363,7 +382,7 @@
 								<span class="block font-mono text-3xs text-(--text-dim) mt-0.5 truncate">{o.reference} · {fmtTime(o.created_at)}</span>
 							</div>
 							<span class={'shrink-0 px-2 py-1 rounded-md font-mono text-3xs ' + bucketTone(r.bucket)}>
-								{buyStatusText(o.status)}
+								{buyStatusTextFor(o)}
 							</span>
 						</div>
 						{#if o.delivery_tx_hash}

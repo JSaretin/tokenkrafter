@@ -94,8 +94,17 @@
 	// Step number for the tracker — 1: awaiting, 2: received, 3: delivered.
 	let step = $derived(isDelivered ? 3 : isInflight ? 2 : 1);
 
-	function copyText(s: string) {
+	// Track which copy action just happened so we can swap the icon
+	// to a checkmark for ~1.5s as feedback. One key per copy site
+	// ('account' / 'reference') so two simultaneous copies don't
+	// fight for the same flag.
+	let copiedKey = $state<string | null>(null);
+	let copiedTimer: ReturnType<typeof setTimeout> | null = null;
+	function copyText(s: string, key: string) {
 		try { navigator.clipboard?.writeText(s); } catch {}
+		copiedKey = key;
+		if (copiedTimer) clearTimeout(copiedTimer);
+		copiedTimer = setTimeout(() => { copiedKey = null; }, 1500);
 	}
 </script>
 
@@ -197,20 +206,27 @@
 			</div>
 		{/if}
 		{#if row.flutterwave_va_account_number}
+			{@const justCopied = copiedKey === 'account'}
 			<div class="flex justify-between items-center py-1.5 font-mono text-xs2">
 				<span class="text-(--text-muted)">Account</span>
 				<button
 					type="button"
-					class="flex items-center gap-1.5 text-(--text-heading) hover:text-cyan-300 cursor-pointer tabular-nums"
-					onclick={() => copyText(row.flutterwave_va_account_number!)}
-					aria-label="Copy account number"
-					title="Copy account number"
+					class={'flex items-center gap-1.5 cursor-pointer tabular-nums transition-colors duration-150 ' + (justCopied ? 'text-emerald-400' : 'text-(--text-heading) hover:text-cyan-300')}
+					onclick={() => copyText(row.flutterwave_va_account_number!, 'account')}
+					aria-label={justCopied ? 'Account number copied' : 'Copy account number'}
+					title={justCopied ? 'Copied!' : 'Copy account number'}
 				>
 					{row.flutterwave_va_account_number}
-					<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-(--text-muted)">
-						<rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-						<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-					</svg>
+					{#if justCopied}
+						<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+							<polyline points="20 6 9 17 4 12"/>
+						</svg>
+					{:else}
+						<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-(--text-muted)">
+							<rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+							<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+						</svg>
+					{/if}
 				</button>
 			</div>
 		{/if}
