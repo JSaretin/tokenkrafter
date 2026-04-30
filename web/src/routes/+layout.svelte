@@ -692,10 +692,17 @@
 
 	let socials = $derived.by(() => {
 		const links = (data?.socialLinks ?? {}) as Record<string, string>;
+		// Operator can override any default label by setting
+		// `<key>_label` in social_links — e.g. `telegram_channel_label:
+		// "Telegram"` so a sole Telegram presence isn't awkwardly
+		// labelled "Telegram Channel". Falls back to the brand default
+		// when absent.
 		return SOCIAL_DEFS
 			.map((d) => {
 				const href = (links[d.key] ?? '').trim();
-				return href ? { ...d, href } : null;
+				if (!href) return null;
+				const labelOverride = (links[`${d.key}_label`] ?? '').trim();
+				return { ...d, href, label: labelOverride || d.label };
 			})
 			.filter((s): s is NonNullable<typeof s> => s !== null);
 	});
