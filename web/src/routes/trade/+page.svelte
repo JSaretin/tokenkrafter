@@ -1192,45 +1192,42 @@
 				withdrawStep = 4; // all done
 				showConfirmModal = false;
 
-				// Auto-open WithdrawalStatusModal. To ensure the post-submit
-				// view matches the "open from history" view (countdown,
-				// timeout state, all the bells), refresh history then read
-				// the row back through the same path. That way the modal
-				// gets on-chain-derived expiresAt + status uniformly,
-				// instead of the receipt-derived shape which sometimes
-				// missed the expiry timestamp.
-				try {
-					historyPanel?.refresh?.();
-					if (selectedNetwork?.trade_router_address) {
-						const provider = networkProviders.get(selectedNetwork.chain_id);
-						if (provider) {
-							const router = new TradeRouterClient(selectedNetwork.trade_router_address, provider);
-							const { records } = await router.getUserWithdrawals(userAddress);
-							const fresh = records.find((r) => r.withdraw_id === withdrawId);
-							if (fresh) {
-								activeWithdrawal = toWithdrawalView({
-									id: preData.id,
-									withdraw_id: fresh.withdraw_id,
-									user: fresh.user,
-									token: tokenInAddr,
-									grossAmount: fresh.grossAmount,
-									fee: fresh.fee,
-									netAmount: fresh.netAmount,
-									createdAt: fresh.createdAt,
-									expiresAt: fresh.expiresAt,
-									status: fresh.status,
-									bankRef: fresh.bankRef,
-									referrer: fresh.referrer,
-									payment_method: paymentMethod,
-									payment_details: paymentDetails,
-									chain_id: selectedNetwork.chain_id,
-									tx_hash: receipt?.hash || '',
-									db_status: 'pending',
-								});
-							}
-						}
-					}
-				} catch {}
+				// Auto-open WithdrawalStatusModal directly from receipt data.
+				// Earlier this path called getUserWithdrawals(userAddress) and
+				// only opened the modal if the new record showed up — but BSC
+				// RPC nodes routinely lag a block or two behind the broadcast
+				// node, so the just-submitted withdrawal often wasn't visible
+				// yet, leaving the modal closed entirely. The receipt's
+				// WithdrawRequested event is the authoritative source for
+				// withdrawId + expiresAt + fee + netAmount, so build the
+				// view from that directly. History refresh runs in the
+				// background and will replace this with the merged record
+				// once the chain reads catch up.
+				const grossAmount = (onChainNet ?? 0n) + (onChainFee ?? 0n);
+				const nowSecs = Math.floor(Date.now() / 1000);
+				activeWithdrawal = toWithdrawalView({
+					id: preData.id,
+					withdraw_id: withdrawId,
+					user: userAddress?.toLowerCase() || '',
+					token: tokenInAddr,
+					grossAmount,
+					fee: onChainFee ?? 0n,
+					netAmount: onChainNet ?? 0n,
+					createdAt: nowSecs,
+					expiresAt: onChainExpiresAt || 0,
+					status: WithdrawStatus.Pending,
+					bankRef: '',
+					referrer: ethers.ZeroAddress,
+					payment_method: paymentMethod,
+					payment_details: paymentDetails,
+					chain_id: selectedNetwork.chain_id,
+					tx_hash: receipt?.hash || '',
+					db_status: 'pending',
+				});
+
+				// Refresh the history panel in the background so the row
+				// shows up there too. Doesn't gate the modal-open above.
+				try { historyPanel?.refresh?.(); } catch {}
 
 				// Reset form after capturing values
 				amountIn = '';
