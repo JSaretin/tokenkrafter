@@ -70,10 +70,30 @@
 		} else if (launchFromUrl) {
 			resolved = 'both';
 		} else {
+			// Only auto-restore the previously chosen mode if the user
+			// actually edited the form before leaving — otherwise just
+			// picking a mode and bouncing would force them back into the
+			// same wizard on next visit, with no chance to switch. Same
+			// "has user input" check TokenForm uses for its own draft
+			// restore, so the two stay consistent.
 			try {
 				const saved = typeof localStorage !== 'undefined' ? localStorage.getItem('tk_last_create_mode') : null;
-				if (saved === 'token' || saved === 'launch' || saved === 'both' || saved === 'list') {
+				const hasDraft = (() => {
+					if (typeof sessionStorage === 'undefined') return false;
+					const raw = sessionStorage.getItem('tk_create_form_draft');
+					if (!raw) return false;
+					try {
+						const d = JSON.parse(raw);
+						return !!(d?.name || d?.symbol || d?.totalSupply || d?.existingTokenAddress);
+					} catch { return false; }
+				})();
+				if (hasDraft && (saved === 'token' || saved === 'launch' || saved === 'both' || saved === 'list')) {
 					resolved = saved;
+				} else if (!hasDraft) {
+					// Garbage-collect a stale mode pointer with no backing
+					// draft so subsequent visits don't keep tripping the
+					// same check.
+					try { localStorage.removeItem('tk_last_create_mode'); } catch {}
 				}
 			} catch {}
 		}
