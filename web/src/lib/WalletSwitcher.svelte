@@ -1543,19 +1543,20 @@
 		height: 1px; background: var(--bg-surface-hover); margin: 3px 4px;
 	}
 
-	/* Bottom-up sheet hosting all addMode forms. Lives inside the
-	   wallet panel's absolute container so it slides up over the
-	   wallet list (rather than expanding the panel downward). */
+	/* Bottom-up sheet hosting all addMode forms. Anchored to the
+	   viewport (position: fixed) so it matches the size + chrome of
+	   the cog's ActionSheet — being constrained to the wallet
+	   switcher's auto-sized content area made it look like a tiny
+	   popover instead of a proper sheet. */
 	.ws-form-backdrop {
-		position: absolute; inset: 0; z-index: 6;
+		position: fixed; inset: 0; z-index: 60;
 		background: rgba(0,0,0,0.55); backdrop-filter: blur(3px);
 		display: flex; align-items: flex-end; justify-content: center;
 		animation: wsFormFade 0.18s ease-out;
-		border-radius: inherit;
 	}
 	.ws-form-sheet {
 		position: relative;
-		width: 100%; max-height: 80%;
+		width: 100%; height: 80vh; max-height: 80%;
 		background: var(--bg);
 		border-top: 1px solid var(--border);
 		border-radius: 16px 16px 0 0;
