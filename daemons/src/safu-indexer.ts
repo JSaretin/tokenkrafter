@@ -227,12 +227,17 @@ async function main() {
 	console.log(`   Batch size: ${BATCH_SIZE}`);
 
 	const config = await fetchNetworkConfig(CHAIN_ID);
+	// SAFU only ever does periodic eth_calls — no event subscriptions.
+	// A WS provider here gives zero benefit and is actively harmful: when
+	// the underlying socket drops (Infura free-tier WS does this every
+	// few minutes), a sweep call mid-flight gets cancelled with
+	// "provider destroyed". Force HTTP so this daemon stays stable
+	// independent of WS upstream health.
 	const daemonRpc = (config as any).daemon_rpc || '';
 	const isWs = daemonRpc.startsWith('wss://') || daemonRpc.startsWith('ws://');
 	const rpcUrl = (!isWs && daemonRpc) || (config as any).rpc || RPC_URL;
-	const wsRpc = (isWs ? daemonRpc : '') || (config as any).ws_rpc || '';
-	console.log(`   RPC: ${rpcUrl}${wsRpc ? ` (ws: ${wsRpc})` : ''}`);
-	const managed = createManagedProvider({ chainId: CHAIN_ID, httpRpc: rpcUrl, wsRpc });
+	console.log(`   RPC: ${rpcUrl} (HTTP only — no WS for sweep daemon)`);
+	const managed = createManagedProvider({ chainId: CHAIN_ID, httpRpc: rpcUrl });
 	const provider = managed.getProvider();
 	console.log(`   TokenFactory: ${config.platform_address}`);
 

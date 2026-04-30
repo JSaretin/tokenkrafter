@@ -55,7 +55,7 @@ export const POST: RequestHandler = async ({ request }) => {
 				base: 'USD',
 				rates,
 				crypto,
-				source: 'open.er-api.com + coingecko',
+				source: 'open.er-api.com + binance',
 				fetched_at: new Date().toISOString(),
 			},
 			updated_at: new Date().toISOString(),
