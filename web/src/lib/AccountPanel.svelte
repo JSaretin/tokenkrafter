@@ -21,6 +21,7 @@
 		type WalletContext,
 	} from './embeddedWallet';
 	import WalletSwitcher from './WalletSwitcher.svelte';
+	import SecretRevealSheet from './SecretRevealSheet.svelte';
 	import AnimatedNumber from './AnimatedNumber.svelte';
 	import { getKnownLogo, resolveTokenLogo } from './tokenLogo';
 	import { balanceState } from './balancePoller';
@@ -222,8 +223,14 @@
 	});
 
 	// ── UI state ──
+	// 'export-key' / 'export-seed' used to be inline views; they're now
+	// rendered by SecretRevealSheet (80vh bottom-up modal with an ack
+	// list, PIN gate, and long-press reveal + QR). Kept as legacy values
+	// for the type alias so any deprecated references still compile.
 	type View = 'main' | 'receive' | 'security' | 'export-key' | 'export-seed';
 	let view = $state<View>('main');
+	let showSecretSheet = $state(false);
+	let secretSheetKind = $state<'seed' | 'key'>('seed');
 	// Send is a bottom-up sheet overlaid on the main wallet panel, not a
 	// full-view swap — keeps the user's balance / account chrome visible
 	// behind the form (MetaMask-style).
@@ -1196,8 +1203,8 @@
 			bind:open={showSwitcher}
 			onAccountSwitched={(addr) => { handleSwitcherAccountSwitched(addr); bumpMeta(); }}
 			onFeedback={onAddFeedback}
-			onExportSeed={() => { resetExport(); view = 'export-seed'; }}
-			onExportKey={() => { resetExport(); view = 'export-key'; }}
+			onExportSeed={() => { secretSheetKind = 'seed'; showSecretSheet = true; }}
+			onExportKey={() => { secretSheetKind = 'key'; showSecretSheet = true; }}
 			onDisconnect={onDisconnect}
 			onLock={() => { close(); }}
 			onAccountMetaChanged={bumpMeta}
@@ -1422,55 +1429,30 @@
 					{/if}
 				</div>
 			{/if}
-			<button class="flex items-center gap-2.5 w-full px-4 py-3 border-none bg-transparent text-(--text-muted) cursor-pointer font-mono text-xs2 transition-all duration-100 text-left hover:bg-(--bg-surface) hover:text-(--text)" onclick={() => { resetExport(); view = 'export-key'; }}>
+			<button class="flex items-center gap-2.5 w-full px-4 py-3 border-none bg-transparent text-(--text-muted) cursor-pointer font-mono text-xs2 transition-all duration-100 text-left hover:bg-(--bg-surface) hover:text-(--text)" onclick={() => { secretSheetKind = 'key'; showSecretSheet = true; }}>
 				<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
 				<span>{$t('account.exportPrivateKey')}</span>
 				<svg class="ml-auto text-(--text-dim)" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
 			</button>
-			<button class="flex items-center gap-2.5 w-full px-4 py-3 border-none bg-transparent text-(--text-muted) cursor-pointer font-mono text-xs2 transition-all duration-100 text-left hover:bg-(--bg-surface) hover:text-(--text)" onclick={() => { resetExport(); view = 'export-seed'; }}>
+			<button class="flex items-center gap-2.5 w-full px-4 py-3 border-none bg-transparent text-(--text-muted) cursor-pointer font-mono text-xs2 transition-all duration-100 text-left hover:bg-(--bg-surface) hover:text-(--text)" onclick={() => { secretSheetKind = 'seed'; showSecretSheet = true; }}>
 				<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
 				<span>{$t('account.exportRecoveryPhrase')}</span>
 				<svg class="ml-auto text-(--text-dim)" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
 			</button>
 		</div>
 
-	<!-- ═══ EXPORT VIEW (key or seed) ═══ -->
-	{:else if view === 'export-key' || view === 'export-seed'}
-		<div class="flex-1 p-4 flex flex-col gap-3 overflow-y-auto">
-			{#if !exportedValue}
-				<div class="flex gap-2.5 p-3.5 rounded-[10px] bg-[rgba(248,113,113,0.04)] border border-[rgba(248,113,113,0.12)]">
-					<svg class="shrink-0 mt-0.5" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-					<div>
-						<strong class="block font-display text-xs text-[#f87171] mb-1">Warning</strong>
-						<p class="m-0 text-3xs text-(--text-muted) font-mono leading-[1.5]">{view === 'export-key' ? $t('account.warningKey') : $t('account.warningPhrase')}</p>
-					</div>
-				</div>
-
-				<label for="ap-export-pin" class="text-xs4 text-(--text-dim) font-mono uppercase tracking-[0.05em]">{$t('account.enterPinContinue')}</label>
-				<input id="ap-export-pin" class="ap-input" type="tel" inputmode="numeric" style="-webkit-text-security: disc; text-security: disc;" placeholder="PIN" bind:value={exportPin}
-					{...INPUT_ATTRS}
-					onkeydown={(e) => { if (e.key === 'Enter') handleExport(view === 'export-key' ? 'key' : 'seed'); }} />
-
-				{#if exportError}<p class="text-3xs text-[#f87171] font-mono m-0 py-1 px-2 bg-[rgba(248,113,113,0.04)] rounded">{exportError}</p>{/if}
-
-				<button class="ap-btn ap-btn-danger ap-btn-full" onclick={() => handleExport(view === 'export-key' ? 'key' : 'seed')}>
-					{view === 'export-key' ? $t('account.revealKey') : $t('account.revealPhrase')}
-				</button>
-			{:else}
-				<div
-					class="ap-secret p-3.5 bg-[rgba(248,113,113,0.04)] border border-[rgba(248,113,113,0.12)] rounded-[10px] font-mono text-3xs text-[#f87171] break-all leading-[1.7] cursor-pointer transition-colors duration-100 hover:bg-[rgba(248,113,113,0.08)]"
-					onclick={() => { navigator.clipboard.writeText(exportedValue); setTimeout(() => { try { navigator.clipboard.writeText(''); } catch {} }, 30000); onAddFeedback({ message: $t('account.copiedClipboard'), type: 'info' }); }}
-					onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigator.clipboard.writeText(exportedValue); setTimeout(() => { try { navigator.clipboard.writeText(''); } catch {} }, 30000); onAddFeedback({ message: $t('account.copiedClipboard'), type: 'info' }); } }}
-					role="button"
-					tabindex="0"
-				>
-					{exportedValue}
-				</div>
-				<p class="text-center text-xs4 text-(--text-dim) font-mono m-0">{$t('account.doNotShare')}</p>
-				<button class="ap-btn ap-btn-full" onclick={() => { view = 'security'; resetExport(); }}>Done</button>
-			{/if}
-		</div>
 	{/if}
+
+	<!-- Secret-reveal sheet — replaces the inline export-key /
+	     export-seed views. 80vh bottom-up modal with a 5-item ack
+	     gauntlet, PIN gate, and long-press reveal + QR. -->
+	<SecretRevealSheet
+		bind:open={showSecretSheet}
+		kind={secretSheetKind}
+		accountIndex={activeIndex}
+		accountAddress={userAddress || ''}
+		walletName={walletState.wallets.find((w) => w.id === walletState.activeWalletId)?.name || ''}
+	/>
 
 	<!-- ═══ SEND SHEET — slides up from bottom, main wallet panel stays visible behind it ═══ -->
 	{#if showSend}
