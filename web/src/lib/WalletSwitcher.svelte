@@ -159,6 +159,11 @@
 	let accountSheetOpen = $state(false);
 	let accountSheetTarget = $state<{ walletId: string; index: number; address: string; name: string; avatar: string } | null>(null);
 
+	// Global settings sheet — actions that apply across the whole
+	// device (PIN, auto-lock, adding a new wallet) rather than to a
+	// specific wallet. Opened from the gear button in the footer.
+	let globalSheetOpen = $state(false);
+
 	function _lpClear() {
 		if (_lpTimer) { clearTimeout(_lpTimer); _lpTimer = null; }
 		_lpStart = null;
@@ -262,13 +267,6 @@
 				iconSvg: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
 				onClick: () => { onExportSeed(); close(); },
 			},
-			{
-				title: 'Change PIN',
-				sub: 'Re-encrypts every wallet on this device',
-				iconColor: '#a78bfa',
-				iconSvg: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>',
-				onClick: () => { resetAddForm(); addMode = 'change-pin'; collapseAllWallets(); },
-			},
 		];
 		if (!w.isPrimary) {
 			list.push({
@@ -290,6 +288,40 @@
 		}
 		return list;
 	});
+
+	// Global settings actions — these apply across every wallet on
+	// this device, so they live in a single device-wide sheet rather
+	// than the per-wallet long-press menu.
+	let globalSettingsActions = $derived.by<ActionItem[]>(() => [
+		{
+			title: 'Create new wallet',
+			sub: 'Generate a fresh seed phrase on this device',
+			iconColor: '#10b981',
+			iconSvg: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>',
+			onClick: () => { resetAddForm(); addMode = 'create'; collapseAllWallets(); },
+		},
+		{
+			title: 'Import existing wallet',
+			sub: 'Restore from a recovery phrase',
+			iconColor: '#00d2ff',
+			iconSvg: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>',
+			onClick: () => { resetAddForm(); addMode = 'import'; collapseAllWallets(); },
+		},
+		{
+			title: 'Change PIN',
+			sub: 'Re-encrypts every wallet on this device',
+			iconColor: '#a78bfa',
+			iconSvg: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>',
+			onClick: () => { resetAddForm(); addMode = 'change-pin'; collapseAllWallets(); },
+		},
+		{
+			title: 'Auto-lock',
+			sub: 'How long until your wallet locks after inactivity',
+			iconColor: '#f59e0b',
+			iconSvg: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>',
+			onClick: () => { resetAddForm(); addMode = 'settings'; collapseAllWallets(); },
+		},
+	]);
 
 	let accountActions = $derived.by<ActionItem[]>(() => {
 		const a = accountSheetTarget;
@@ -746,20 +778,33 @@
 				</button>
 			</div>
 
-			<!-- Search -->
-			<div class="relative px-4 pb-2.5">
-				<svg class="absolute left-[26px] top-1/2 -translate-y-[60%] text-dim pointer-events-none" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-				<input
-					class="w-full py-2.5 pr-7 pl-8 rounded-[9px] bg-surface-input border border-line text-heading font-mono text-xs outline-none transition-colors duration-[120ms] placeholder:text-dim focus:border-brand-cyan/30"
-					placeholder={$t('switcher.searchPlaceholder')}
-					bind:value={search}
-					{...INPUT_ATTRS}
-				/>
-				{#if search}
-					<button class="absolute right-[22px] top-1/2 -translate-y-[60%] w-5 h-5 rounded-full border-none bg-surface-hover text-muted cursor-pointer flex items-center justify-center" onclick={() => (search = '')} aria-label="Clear search">
-						<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-					</button>
-				{/if}
+			<!-- Search + global settings cog. The cog opens an action
+			     sheet with device-wide ops (add/import wallet, change
+			     PIN, auto-lock) — they apply to every wallet on this
+			     device, so they don't belong in the per-wallet menu. -->
+			<div class="flex gap-2 px-4 pb-2.5 items-center">
+				<div class="relative flex-1">
+					<svg class="absolute left-2.5 top-1/2 -translate-y-[60%] text-dim pointer-events-none" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+					<input
+						class="w-full py-2.5 pr-7 pl-8 rounded-[9px] bg-surface-input border border-line text-heading font-mono text-xs outline-none transition-colors duration-[120ms] placeholder:text-dim focus:border-brand-cyan/30"
+						placeholder={$t('switcher.searchPlaceholder')}
+						bind:value={search}
+						{...INPUT_ATTRS}
+					/>
+					{#if search}
+						<button class="absolute right-2 top-1/2 -translate-y-[60%] w-5 h-5 rounded-full border-none bg-surface-hover text-muted cursor-pointer flex items-center justify-center" onclick={() => (search = '')} aria-label="Clear search">
+							<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+						</button>
+					{/if}
+				</div>
+				<button
+					class="w-9 h-9 shrink-0 rounded-[9px] border border-line bg-surface-input text-muted cursor-pointer flex items-center justify-center transition-colors duration-100 hover:text-heading hover:border-brand-cyan/30"
+					onclick={() => { globalSheetOpen = true; }}
+					aria-label="Wallet settings"
+					title="Wallet settings"
+				>
+					<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+				</button>
 			</div>
 
 			<!-- ── Wallet list (scrollable) ─────────────────────── -->
@@ -1193,6 +1238,18 @@
 		avatar={accountSheetTarget?.avatar || ''}
 		avatarColor="#a78bfa"
 		actions={accountActions}
+	/>
+
+	<!-- Device-wide settings sheet — opened by the cog next to the
+	     search bar. Bottom-up 80vh, same chrome as the per-wallet /
+	     per-account sheets so the UX feels consistent. -->
+	<ActionSheet
+		bind:open={globalSheetOpen}
+		title="Wallet settings"
+		subtitle="Applies to every wallet on this device"
+		avatar="⚙"
+		avatarColor="#a78bfa"
+		actions={globalSettingsActions}
 	/>
 {/if}
 
