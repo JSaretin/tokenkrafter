@@ -1150,8 +1150,13 @@
 			{#if deletingTarget}
 				<!-- svelte-ignore a11y_click_events_have_key_events -->
 				<!-- svelte-ignore a11y_no_static_element_interactions -->
-				<div class="ws-avatar-overlay" onclick={dismissDeleteConfirm}>
-					<div class="ws-delete-modal" onclick={(e) => e.stopPropagation()}>
+				<div class="ws-form-backdrop" onclick={dismissDeleteConfirm}>
+					<div class="ws-form-sheet" onclick={(e) => e.stopPropagation()}>
+						<div class="ws-form-sheet-grab" aria-hidden="true"></div>
+						<button class="ws-form-sheet-close" onclick={dismissDeleteConfirm} aria-label="Close" disabled={deleting}>
+							<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+						</button>
+						<div class="ws-form-sheet-body ws-delete-body-pad">
 						<div class="ws-delete-icon" aria-hidden="true">
 							<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="2">
 								<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
@@ -1228,6 +1233,7 @@
 								</button>
 							</div>
 						{/if}
+						</div>
 					</div>
 				</div>
 			{/if}
@@ -1666,15 +1672,14 @@
 	}
 	.ws-avatar-clear:hover { background: var(--bg-surface-hover); color: var(--text-heading); }
 
-	/* Delete-wallet confirm modal — uses the same overlay/backdrop as
-	   the avatar picker so it stacks correctly inside the switcher's
-	   contained scope. The body is intentionally narrow to keep the
-	   warning legible without sprawling. */
-	.ws-delete-modal {
-		background: var(--bg); border: 1px solid rgba(248,113,113,0.25);
-		border-radius: 14px; padding: 18px 16px 16px; width: min(320px, calc(100% - 32px));
+	/* Delete-wallet confirm — renders inside the same 80vh
+	   ws-form-sheet as Change PIN / Create / Import / Auto-lock so
+	   the per-wallet flow has the same chrome as device-wide flows.
+	   ws-delete-body-pad just adds breathing room inside the sheet
+	   body since the delete content isn't a `.ws-form` block. */
+	.ws-delete-body-pad {
+		padding: 16px 18px 20px;
 		display: flex; flex-direction: column; gap: 10px;
-		box-shadow: 0 18px 40px rgba(0,0,0,0.5);
 	}
 	.ws-delete-icon {
 		align-self: center;
@@ -1694,7 +1699,7 @@
 	}
 	.ws-delete-label {
 		font-family: 'Space Mono', monospace; font-size: 10px;
-		color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em;
+		color: var(--text-dim); letter-spacing: 0.05em;
 		margin-top: 4px;
 	}
 	.ws-delete-label strong { color: var(--text-heading); font-weight: 700; }

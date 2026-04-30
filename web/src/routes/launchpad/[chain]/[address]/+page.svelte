@@ -848,13 +848,18 @@
 				_wsSubs.push(sub);
 			}
 
-			// Even with a WS subscription, keep a 30s poll as a safety net.
-			// WebSockets can silently stall — mobile background, proxy drops,
-			// idle timeouts — without firing a close event. 2 min was too
-			// long to notice the gap.
-			refreshInterval = setInterval(refreshData, 30_000);
+			// Tight 5s poll even with WS active. The public-node WS
+			// flaps silently (mobile background, proxy idle, edge drops)
+			// — at 30s the activity feed felt broken on hype launches
+			// (one user buys → others see nothing for ~half a minute,
+			// reload was the only way). WS still drives instant refresh
+			// on TokenBought when it works; polling closes the gap when
+			// it doesn't. RPC cost is fine: getPurchases tail-reads are
+			// cheap and short-circuit when the on-chain count hasn't
+			// changed (see refreshLatestTransactions).
+			refreshInterval = setInterval(refreshData, 5000);
 		} else {
-			refreshInterval = setInterval(refreshData, 15000);
+			refreshInterval = setInterval(refreshData, 5000);
 		}
 
 		return () => {
@@ -1599,15 +1604,17 @@
 		await refreshLatestTransactions();
 	}
 
-	// Activity feed: WS events already trigger refreshLatestTransactions via
-	// the launch sub. Polling fallback at 30s catches silently-dropped WS
-	// connections (mobile background, proxy idle) so activity still appears
-	// when another device buys.
+	// Activity feed: WS events already trigger refreshLatestTransactions
+	// via the launch sub. Tight 5s polling catches silently-dropped WS
+	// connections (mobile background, proxy idle, public-node flap)
+	// so a buy from another viewer shows up on the page within ~5s
+	// without needing a reload. The fetch short-circuits when the
+	// on-chain purchase count hasn't changed, so steady-state cost
+	// is one cheap totalPurchases() read every 5s.
 	$effect(() => {
-		const ws = getWsManager();
 		if (launch && launch.state === 1) {
 			loadTransactions();
-			txRefreshInterval = setInterval(refreshLatestTransactions, ws ? 30_000 : 15000);
+			txRefreshInterval = setInterval(refreshLatestTransactions, 5000);
 		} else {
 			loadTransactions();
 		}
