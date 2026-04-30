@@ -1508,15 +1508,33 @@
 							class="ap-max-btn"
 							type="button"
 							title="Use max balance"
-							onclick={() => {
+							onclick={async () => {
 								const dec = sendAsset === 'native' ? nativeDecimals : sendAssetInfo.decimals;
-								if (sendAsset === 'native') {
-									const reserve = ethers.parseUnits('0.001', dec);
-									const max = sendAssetInfo.balance > reserve ? sendAssetInfo.balance - reserve : 0n;
-									sendAmount = ethers.formatUnits(max, dec);
-								} else {
+								if (sendAsset !== 'native') {
 									sendAmount = ethers.formatUnits(sendAssetInfo.balance, dec);
+									return;
 								}
+								// For native: max = balance - (live gas estimate × 1.1).
+								// Plain native transfers consume exactly 21,000 gas, so
+								// the only variable is gasPrice — read it fresh from
+								// the chain rather than guessing with a fixed reserve.
+								// On BSC the old 0.001 BNB reserve was ~50× the actual
+								// cost; users were leaving real money on the table.
+								// 10% safety margin covers gasPrice drift between
+								// MAX click and tx submission.
+								let reserve = ethers.parseUnits('0.0005', dec); // fallback
+								try {
+									const net = getProvider();
+									if (net?.provider) {
+										const feeData = await (net.provider as any).getFeeData();
+										const gasPrice: bigint = feeData.maxFeePerGas ?? feeData.gasPrice ?? 0n;
+										if (gasPrice > 0n) {
+											reserve = (21000n * gasPrice * 110n) / 100n;
+										}
+									}
+								} catch {}
+								const max = sendAssetInfo.balance > reserve ? sendAssetInfo.balance - reserve : 0n;
+								sendAmount = ethers.formatUnits(max, dec);
 							}}
 						>
 							MAX

@@ -28,6 +28,7 @@
 		getWalletState,
 		onWalletStateChange,
 		lockWallet,
+		unlockWallet,
 		getSessionPolicy,
 		setSessionPolicy,
 		type WalletState,
@@ -98,6 +99,15 @@
 	let renameAcctValue = $state('');
 	let switchingId = $state<string | null>(null);
 	let creatingAccount = $state(false);
+
+	// Delete-wallet confirm flow state. Holds the target until the user
+	// types its name and enters their PIN, then we verify both before
+	// dispatching the (irreversible) delete.
+	let deletingTarget = $state<{ id: string; name: string } | null>(null);
+	let deleteTypedName = $state('');
+	let deletePin = $state('');
+	let deleteError = $state('');
+	let deleting = $state(false);
 
 	// Add-wallet form state
 	let addMode = $state<'create' | 'import' | 'change-pin' | 'settings' | null>(null);
@@ -273,7 +283,7 @@
 				sub: 'Removes this wallet from this device',
 				danger: true,
 				iconSvg: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/></svg>',
-				onClick: () => { confirmDelete(w.id); },
+				onClick: () => { openDeleteConfirm(w.id, w.name); },
 			});
 		}
 		return list;
@@ -472,14 +482,56 @@
 		}
 	}
 
-	async function confirmDelete(id: string) {
-		const w = wallets.find((x) => x.id === id);
-		if (!w) return;
+	function openDeleteConfirm(id: string, name: string) {
+		deletingTarget = { id, name };
+		deleteTypedName = '';
+		deletePin = '';
+		deleteError = '';
+	}
+
+	function dismissDeleteConfirm() {
+		if (deleting) return;
+		deletingTarget = null;
+		deleteTypedName = '';
+		deletePin = '';
+		deleteError = '';
+	}
+
+	async function confirmDelete() {
+		if (!deletingTarget) return;
+		const target = deletingTarget;
+		// Defence-in-depth — the button is also disabled, but a script
+		// could call this directly. Match exactly (case + whitespace).
+		if (deleteTypedName !== target.name) {
+			deleteError = `Type "${target.name}" exactly to confirm`;
+			return;
+		}
+		if (!deletePin) {
+			deleteError = 'Enter your PIN';
+			return;
+		}
+		deleting = true;
+		deleteError = '';
 		try {
-			await deleteWallet(id);
-			onFeedback({ message: `Wallet "${w.name}" deleted`, type: 'success' });
+			// Verify PIN before destruction. The PIN is shared device-wide
+			// (changePin re-encrypts every wallet on this device), so
+			// unlockWallet against the active wallet is the canonical
+			// check — no need to target the wallet being deleted.
+			const ok = await unlockWallet(deletePin);
+			if (!ok) {
+				deleteError = 'Incorrect PIN';
+				deleting = false;
+				return;
+			}
+			await deleteWallet(target.id);
+			onFeedback({ message: `Wallet "${target.name}" deleted`, type: 'success' });
+			deletingTarget = null;
+			deleteTypedName = '';
+			deletePin = '';
 		} catch (e) {
-			onFeedback({ message: friendlyError(e), type: 'error' });
+			deleteError = friendlyError(e);
+		} finally {
+			deleting = false;
 		}
 	}
 
@@ -1001,6 +1053,74 @@
 					</div>
 				</div>
 			{/if}
+
+			<!-- Delete-wallet confirm modal. Wallet deletion is irreversible
+			     — without the recovery phrase the wallet can never be
+			     restored. Two friction layers: type the wallet name and
+			     enter the device PIN. Both must match before the danger
+			     button enables. -->
+			{#if deletingTarget}
+				<!-- svelte-ignore a11y_click_events_have_key_events -->
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<div class="ws-avatar-overlay" onclick={dismissDeleteConfirm}>
+					<div class="ws-delete-modal" onclick={(e) => e.stopPropagation()}>
+						<div class="ws-delete-icon" aria-hidden="true">
+							<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="2">
+								<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+								<line x1="12" y1="9" x2="12" y2="13" />
+								<line x1="12" y1="17" x2="12.01" y2="17" />
+							</svg>
+						</div>
+						<div class="ws-delete-title">Delete this wallet?</div>
+						<p class="ws-delete-body">
+							This wallet will be removed from this device. Without your recovery phrase you will not be able to restore it. Any tokens or NFTs in this wallet will be inaccessible.
+						</p>
+						<label class="ws-delete-label" for="ws-del-name">
+							Type <strong>{deletingTarget.name}</strong> to confirm
+						</label>
+						<input
+							id="ws-del-name"
+							class="ws-delete-input"
+							type="text"
+							autocomplete="off"
+							autocorrect="off"
+							autocapitalize="off"
+							spellcheck="false"
+							placeholder={deletingTarget.name}
+							bind:value={deleteTypedName}
+							disabled={deleting}
+						/>
+						<label class="ws-delete-label" for="ws-del-pin">Enter your PIN</label>
+						<input
+							id="ws-del-pin"
+							class="ws-delete-input"
+							type="tel"
+							inputmode="numeric"
+							style="-webkit-text-security: disc; text-security: disc;"
+							autocomplete="off"
+							placeholder="PIN"
+							bind:value={deletePin}
+							disabled={deleting}
+							onkeydown={(e) => { if (e.key === 'Enter') confirmDelete(); }}
+						/>
+						{#if deleteError}
+							<div class="ws-delete-error">{deleteError}</div>
+						{/if}
+						<div class="ws-delete-actions">
+							<button class="ws-delete-cancel" onclick={dismissDeleteConfirm} disabled={deleting}>
+								Cancel
+							</button>
+							<button
+								class="ws-delete-confirm"
+								onclick={confirmDelete}
+								disabled={deleting || deleteTypedName !== deletingTarget.name || !deletePin}
+							>
+								{deleting ? 'Deleting…' : 'Delete wallet'}
+							</button>
+						</div>
+					</div>
+				</div>
+			{/if}
 		</div>
 	</div>
 
@@ -1379,4 +1499,65 @@
 		color: var(--text-dim); cursor: pointer; font-family: 'Space Mono', monospace; font-size: 10px;
 	}
 	.ws-avatar-clear:hover { background: var(--bg-surface-hover); color: var(--text-heading); }
+
+	/* Delete-wallet confirm modal — uses the same overlay/backdrop as
+	   the avatar picker so it stacks correctly inside the switcher's
+	   contained scope. The body is intentionally narrow to keep the
+	   warning legible without sprawling. */
+	.ws-delete-modal {
+		background: var(--bg); border: 1px solid rgba(248,113,113,0.25);
+		border-radius: 14px; padding: 18px 16px 16px; width: min(320px, calc(100% - 32px));
+		display: flex; flex-direction: column; gap: 10px;
+		box-shadow: 0 18px 40px rgba(0,0,0,0.5);
+	}
+	.ws-delete-icon {
+		align-self: center;
+		width: 44px; height: 44px; border-radius: 50%;
+		background: rgba(248,113,113,0.08);
+		display: flex; align-items: center; justify-content: center;
+		margin-bottom: 2px;
+	}
+	.ws-delete-title {
+		font-family: 'Syne', sans-serif; font-size: 15px; font-weight: 800;
+		color: var(--text-heading); text-align: center;
+	}
+	.ws-delete-body {
+		margin: 0 0 4px; font-family: 'Space Mono', monospace;
+		font-size: 11px; line-height: 1.55;
+		color: var(--text-muted); text-align: center;
+	}
+	.ws-delete-label {
+		font-family: 'Space Mono', monospace; font-size: 10px;
+		color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em;
+		margin-top: 4px;
+	}
+	.ws-delete-label strong { color: var(--text-heading); font-weight: 700; }
+	.ws-delete-input {
+		width: 100%; padding: 9px 10px; border-radius: 8px; box-sizing: border-box;
+		background: var(--bg-surface-input); border: 1px solid var(--border);
+		color: var(--text-heading); font-family: 'Space Mono', monospace; font-size: 12px;
+		outline: none; transition: border-color 0.12s;
+	}
+	.ws-delete-input:focus { border-color: rgba(248,113,113,0.4); }
+	.ws-delete-input:disabled { opacity: 0.6; cursor: not-allowed; }
+	.ws-delete-error {
+		font-family: 'Space Mono', monospace; font-size: 10px;
+		color: #f87171; padding: 6px 8px; border-radius: 6px;
+		background: rgba(248,113,113,0.06);
+	}
+	.ws-delete-actions { display: flex; gap: 8px; margin-top: 6px; }
+	.ws-delete-cancel, .ws-delete-confirm {
+		flex: 1; padding: 10px; border: none; border-radius: 9px;
+		font-family: 'Syne', sans-serif; font-size: 12px; font-weight: 700;
+		cursor: pointer; transition: all 0.12s;
+	}
+	.ws-delete-cancel { background: var(--bg-surface-input); color: var(--text-heading); }
+	.ws-delete-cancel:hover:not(:disabled) { background: var(--bg-surface-hover); }
+	.ws-delete-confirm {
+		background: linear-gradient(135deg, #ef4444, #b91c1c); color: white;
+	}
+	.ws-delete-confirm:hover:not(:disabled) { filter: brightness(1.08); }
+	.ws-delete-confirm:disabled, .ws-delete-cancel:disabled {
+		opacity: 0.5; cursor: not-allowed;
+	}
 </style>
