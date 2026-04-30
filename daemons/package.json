@@ -7,7 +7,8 @@
     "ws-indexer": "bun run src/ws-indexer.ts",
     "safu-indexer": "bun run src/safu-indexer.ts",
     "activity-bot": "bun run src/activity-bot.ts",
-    "rate-updater": "bun run src/rate-updater.ts"
+    "rate-updater": "bun run src/rate-updater.ts",
+    "launch-buy-bot": "bun run src/launch-buy-bot.ts"
   },
   "dependencies": {
     "ethers": "^6.16.0",
