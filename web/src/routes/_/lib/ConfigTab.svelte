@@ -160,34 +160,37 @@
 			</div>
 		</div>
 
-		<!-- Social Links -->
+		<!-- Social Links — paired URL + optional Label override per channel.
+		     Label override lets the operator replace the default footer
+		     text (e.g. show plain "Telegram" instead of "Telegram Channel"
+		     when there's only one Telegram presence). Empty URL hides
+		     the channel entirely. Footer cache: edge holds the previous
+		     row for up to a week — purge via Cloudflare to push instantly. -->
 		<div class="card p-5">
 			<h3 class="font-numeric text-lg font-semibold text-heading mb-4">Social Links</h3>
-			<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-				<label class="block">
-	<span class="label-text">Twitter / X</span>
-	<input class="input-field" placeholder="https://x.com/..." bind:value={socials.twitter} />
-</label>
-				<label class="block">
-	<span class="label-text">Telegram Group</span>
-	<input class="input-field" placeholder="https://t.me/..." bind:value={socials.telegram_group} />
-</label>
-				<label class="block">
-	<span class="label-text">Telegram Channel</span>
-	<input class="input-field" placeholder="https://t.me/..." bind:value={socials.telegram_channel} />
-</label>
-				<label class="block">
-	<span class="label-text">Discord</span>
-	<input class="input-field" placeholder="https://discord.gg/..." bind:value={socials.discord} />
-</label>
-				<label class="block">
-	<span class="label-text">Facebook</span>
-	<input class="input-field" placeholder="https://facebook.com/..." bind:value={socials.facebook} />
-</label>
-				<label class="block">
-	<span class="label-text">YouTube</span>
-	<input class="input-field" placeholder="https://youtube.com/..." bind:value={socials.youtube} />
-</label>
+			<p class="text-3xs text-muted font-mono mb-4 leading-normal">
+				URL is required for the channel to render. Label override is optional — leave blank to use the default name shown in the footer.
+			</p>
+			<div class="flex flex-col gap-4">
+				{#each [
+					{ key: 'twitter', defaultLabel: 'Twitter', urlPlaceholder: 'https://x.com/...' },
+					{ key: 'telegram_group', defaultLabel: 'Telegram Group', urlPlaceholder: 'https://t.me/...' },
+					{ key: 'telegram_channel', defaultLabel: 'Telegram Channel', urlPlaceholder: 'https://t.me/...' },
+					{ key: 'discord', defaultLabel: 'Discord', urlPlaceholder: 'https://discord.gg/...' },
+					{ key: 'facebook', defaultLabel: 'Facebook', urlPlaceholder: 'https://facebook.com/...' },
+					{ key: 'youtube', defaultLabel: 'YouTube', urlPlaceholder: 'https://youtube.com/...' },
+				] as s}
+					<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+						<label class="block">
+							<span class="label-text">{s.defaultLabel} — URL</span>
+							<input class="input-field" placeholder={s.urlPlaceholder} bind:value={socials[s.key]} />
+						</label>
+						<label class="block">
+							<span class="label-text">{s.defaultLabel} — Label override</span>
+							<input class="input-field" placeholder={s.defaultLabel} bind:value={socials[`${s.key}_label`]} />
+						</label>
+					</div>
+				{/each}
 			</div>
 			<button class="btn-primary text-xs px-4 py-2 mt-4 cursor-pointer" disabled={saving} onclick={() => saveConfig('social_links', socials)}>
 				{saving ? 'Saving...' : 'Save Socials'}
