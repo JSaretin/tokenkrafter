@@ -13,7 +13,11 @@ async function asJson<T>(res: Response): Promise<T> {
 	return body as T;
 }
 
-export async function quoteOnramp(ngnAmountWhole: number, chainId = 56): Promise<OnrampQuote> {
+export async function quoteOnramp(
+	ngnAmountWhole: number,
+	chainId = 56,
+	receiver?: string,
+): Promise<OnrampQuote> {
 	return asJson<OnrampQuote>(
 		await fetch('/api/onramp/quote', {
 			method: 'POST',
@@ -21,6 +25,7 @@ export async function quoteOnramp(ngnAmountWhole: number, chainId = 56): Promise
 			body: JSON.stringify({
 				ngn_amount_kobo: Math.round(ngnAmountWhole * 100),
 				chain_id: chainId,
+				receiver,
 			}),
 		}),
 	);

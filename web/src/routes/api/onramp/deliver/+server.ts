@@ -53,7 +53,7 @@ export const POST: RequestHandler = async ({ request }) => {
 	// 1. Read the intent.
 	const { data: row, error: readErr } = await supabaseAdmin
 		.from('onramp_intents')
-		.select('reference, status, chain_id, receiver, usdt_amount_wei')
+		.select('reference, status, chain_id, receiver, usdt_amount_wei, gas_drip_wei')
 		.eq('reference', reference)
 		.single();
 	if (readErr || !row) return error(404, 'Intent not found');
@@ -153,17 +153,39 @@ export const POST: RequestHandler = async ({ request }) => {
 		return json({ success: false, error: 'On-chain transfer failed' }, { status: 500 });
 	}
 
-	// 6. Mark delivered.
+	// 6. Inline gas drip (best-effort). The user paid for this drip via
+	//    a USDT deduction baked into usdt_amount_wei, so we honour it
+	//    without re-checking the receiver's balance — even if they
+	//    happened to top up between quote and delivery, they signed for
+	//    `gasDripWei` and we owe it. A drip failure does NOT roll back
+	//    or fail the delivery — USDT has already been sent. We log the
+	//    gap and an operator can retry manually if needed.
+	const gasDripWei = BigInt((row as any).gas_drip_wei ?? '0');
+	let gas_drip_tx_hash: string | null = null;
+	if (gasDripWei > 0n) {
+		try {
+			const dripTx = await signer.sendTransaction({ to: row.receiver, value: gasDripWei });
+			const dripReceipt = await dripTx.wait();
+			gas_drip_tx_hash = dripReceipt?.hash ?? dripTx.hash;
+		} catch (e: any) {
+			console.error(`[onramp.deliver] ${reference}: gas drip failed:`, e?.message?.slice(0, 200));
+			// Leave gas_drip_tx_hash null. Operator can re-issue manually
+			// (the USDT side is already complete and idempotent).
+		}
+	}
+
+	// 7. Mark delivered.
 	await supabaseAdmin
 		.from('onramp_intents')
 		.update({
 			status: 'delivered',
 			delivered_at: new Date().toISOString(),
 			delivery_tx_hash: txHash,
+			gas_drip_tx_hash,
 		})
 		.eq('reference', reference);
 
-	return json({ success: true, reference, delivery_tx_hash: txHash });
+	return json({ success: true, reference, delivery_tx_hash: txHash, gas_drip_tx_hash });
 };
 
 async function markFailed(reference: string, reason: string) {

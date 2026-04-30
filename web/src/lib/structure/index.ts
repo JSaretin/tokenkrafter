@@ -23,6 +23,8 @@ export interface SupportedNetwork {
 	explorer_url?: string;
 	gecko_network?: string;
 	default_bases?: { address: string; symbol: string; name?: string }[];
+	/** Native gas drip offered on the on-ramp quote when the receiver's balance is below this. Decimal native units (e.g. 0.0003 = 0.0003 BNB). User pays for it via a USDT deduction baked into the signed intent. 0 or absent disables. */
+	onramp_gas_drip?: number | string;
 }
 
 export type SupportedNetworks = SupportedNetwork[];

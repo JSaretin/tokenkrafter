@@ -20,6 +20,11 @@
  *   SYNC_SECRET          — vault auth token shared with backend
  *   POLL_INTERVAL_MS     — default 30000 (30s)
  *   REDIS_URL            — for in-flight dedup locks (default redis://localhost:6379)
+ *
+ * Note: gas-drip handling lives inside /api/onramp/deliver — the drip
+ * is paid for via a USDT deduction baked into the signed intent, and
+ * the deliver endpoint sends both USDT and (when the intent specifies
+ * one) native gas. This daemon stays a thin poll loop.
  */
 
 import { createClient, type RedisClientType } from 'redis';

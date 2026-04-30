@@ -233,7 +233,14 @@
 		errorMsg = '';
 		flow = 'quoting';
 		try {
-			quote = await quoteOnramp(amountNgn, chainId);
+			// Pass receiver so the quote endpoint can check on-chain BNB
+			// balance and bake a gas-drip deduction in if the address has
+			// no native. If the wallet isn't connected yet the quote will
+			// just have gas_drip_wei=0; user can still review and we
+			// re-quote once they connect at confirm time. (We don't gate
+			// the review on wallet connection — connect happens in
+			// handleConfirm.)
+			quote = await quoteOnramp(amountNgn, chainId, effectiveReceiver || undefined);
 			flow = 'quoted';
 		} catch (e) {
 			errorMsg = (e as Error).message;
@@ -255,6 +262,19 @@
 			}
 		}
 
+		// If the user reviewed before connecting, the quote was issued
+		// without a receiver and so has gas_drip_wei=0. Re-quote with the
+		// connected address so they get a drip if eligible. Cheap — no
+		// signature yet, fresh reference + nonce.
+		if (BigInt(quote.gas_drip_wei) === 0n && effectiveReceiver) {
+			try {
+				quote = await quoteOnramp(amountNgn ?? 0, chainId, effectiveReceiver);
+			} catch {
+				// Re-quote failure is non-fatal; we proceed with the
+				// receiver-less quote. Worst case: no drip this time.
+			}
+		}
+
 		flow = 'signing';
 		const intent: OnrampIntent = {
 			receiver: effectiveReceiver,
@@ -265,6 +285,7 @@
 			reference: quote.reference,
 			nonce: quote.nonce,
 			expiresAt: String(quote.expires_at),
+			gasDripWei: quote.gas_drip_wei,
 		};
 
 		let signature: string;
@@ -531,7 +552,13 @@
 				{#if quote.fee_bps > 0}
 					<div class="flex justify-between items-center">
 						<span class="font-mono text-xs2 text-(--text-muted)">Fee ({(quote.fee_bps / 100).toFixed(2)}%)</span>
-						<span class="font-numeric text-xs2 text-(--text-muted) tabular-nums">−{((Number(BigInt(quote.usdt_gross_wei) - BigInt(quote.usdt_amount_wei)) / 1e18).toFixed(4))} USDT</span>
+						<span class="font-numeric text-xs2 text-(--text-muted) tabular-nums">−{((Number(BigInt(quote.usdt_gross_wei) * BigInt(quote.fee_bps) / 10000n) / 1e18).toFixed(4))} USDT</span>
+					</div>
+				{/if}
+				{#if BigInt(quote.gas_drip_wei) > 0n}
+					<div class="flex justify-between items-center">
+						<span class="font-mono text-xs2 text-(--text-muted)">Gas top-up · {(Number(BigInt(quote.gas_drip_wei) * 10000n / 10n ** 18n) / 10000).toFixed(4)} {quote.gas_drip_symbol}</span>
+						<span class="font-numeric text-xs2 text-(--text-muted) tabular-nums">−{(Number(BigInt(quote.gas_drip_usdt_deduction_wei) * 10000n / 10n ** 18n) / 10000).toFixed(4)} USDT</span>
 					</div>
 				{/if}
 				<div class="flex justify-between items-center">

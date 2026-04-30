@@ -44,14 +44,19 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	// Cross-check signed values against the issued quote (defence against
 	// a tampered intent body that recovers a valid sig from a different
-	// receiver but with mismatched amount/rate).
+	// receiver but with mismatched amount/rate). gasDripWei must match
+	// the row exactly — the drip is paid for via a USDT deduction baked
+	// into usdt_amount_wei, so any mismatch would either short-change
+	// the user or let them claim a free drip.
+	const rowDripWei = BigInt((row as any).gas_drip_wei ?? '0');
 	if (
 		BigInt(intent.ngnAmount) !== BigInt(row.ngn_amount_kobo) ||
 		BigInt(intent.usdtAmount) !== BigInt(row.usdt_amount_wei) ||
 		BigInt(intent.rate) !== BigInt(row.rate_x100) ||
 		intent.nonce.toLowerCase() !== String(row.nonce).toLowerCase() ||
 		BigInt(intent.expiresAt) !== BigInt(Math.floor(new Date(row.expires_at).getTime() / 1000)) ||
-		Number(intent.chainId) !== Number(row.chain_id)
+		Number(intent.chainId) !== Number(row.chain_id) ||
+		BigInt(intent.gasDripWei ?? '0') !== rowDripWei
 	) {
 		return error(400, 'Intent values do not match the issued quote');
 	}

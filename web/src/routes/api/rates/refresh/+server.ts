@@ -2,6 +2,7 @@ import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { supabaseAdmin } from '$lib/supabaseServer';
 import { isDaemonAuth } from '$lib/daemonAuth';
+import { fetchAllNativePrices } from '$lib/cryptoRates';
 
 const RATE_API = 'https://open.er-api.com/v6/latest/USD';
 const CURRENCIES = ['NGN', 'GBP', 'EUR', 'GHS', 'KES'];
@@ -9,13 +10,16 @@ const CURRENCIES = ['NGN', 'GBP', 'EUR', 'GHS', 'KES'];
 /**
  * POST /api/rates/refresh
  *
- * Fetches live exchange rates and updates platform_config.
+ * Fetches live exchange rates and updates platform_config:
+ *   - Fiat (USD-based) for the on-ramp / off-ramp NGN pricing.
+ *   - Native crypto USD prices for the on-ramp gas drip — quote endpoint
+ *     uses these to convert the BNB drip cost into a USDT deduction.
  * Auth: daemon-only (isDaemonAuth — TX_CONFIRM_SECRET or SYNC_SECRET).
  */
 export const POST: RequestHandler = async ({ request }) => {
 	if (!isDaemonAuth(request)) return error(401, 'Daemon access required');
 
-	// Fetch live rates
+	// Fetch fiat rates
 	let rates: Record<string, number>;
 	try {
 		const res = await fetch(RATE_API);
@@ -32,14 +36,26 @@ export const POST: RequestHandler = async ({ request }) => {
 		return error(502, `Rate fetch failed: ${e.message?.slice(0, 100)}`);
 	}
 
-	// Update DB
+	// Fetch native crypto prices. Best-effort: a CoinGecko outage must
+	// not break fiat rates — we just leave the previous crypto block as-is.
+	let crypto = await fetchAllNativePrices();
+	if (Object.keys(crypto).length === 0) {
+		const { data: prev } = await supabaseAdmin
+			.from('platform_config')
+			.select('value')
+			.eq('key', 'exchange_rates')
+			.single();
+		crypto = (prev?.value?.crypto as Record<string, number>) ?? {};
+	}
+
 	const { error: dbErr } = await supabaseAdmin
 		.from('platform_config')
 		.update({
 			value: {
 				base: 'USD',
 				rates,
-				source: 'open.er-api.com',
+				crypto,
+				source: 'open.er-api.com + coingecko',
 				fetched_at: new Date().toISOString(),
 			},
 			updated_at: new Date().toISOString(),
@@ -52,7 +68,8 @@ export const POST: RequestHandler = async ({ request }) => {
 	}
 
 	const rateStr = CURRENCIES.map(c => `${c}=${rates[c] ?? '?'}`).join(', ');
-	console.log(`[rates/refresh] Updated: ${rateStr}`);
+	const cryptoStr = Object.entries(crypto).map(([k, v]) => `${k}=$${v.toFixed(2)}`).join(', ');
+	console.log(`[rates/refresh] Updated fiat: ${rateStr} | crypto: ${cryptoStr}`);
 
-	return json({ success: true, rates });
+	return json({ success: true, rates, crypto });
 };
