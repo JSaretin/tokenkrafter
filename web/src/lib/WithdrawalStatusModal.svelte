@@ -226,24 +226,9 @@
 				{/if}
 
 				{#if liveStatus === 'pending'}
-					{#if hasExpiry && remaining > 0}
-						<div class="mt-2 mb-1">
-							<span class="font-display text-4xl font-extrabold text-amber-500 tracking-[0.05em]">{Math.floor(remaining / 60)}:{String(remaining % 60).padStart(2, '0')}</span>
-						</div>
-						<div class="mb-4 px-5">
-							<div class="w-full h-1 bg-surface-hover rounded-sm overflow-hidden">
-								<div class="h-full rounded-sm transition-[width] duration-1000" style="width: {progressPct}%; background: linear-gradient(90deg, #f59e0b, #d97706)"></div>
-							</div>
-						</div>
-					{:else if hasExpiry && remaining <= 0}
-						<div class="mt-2 mb-1">
-							<span class="font-display text-4xl font-extrabold text-red-400 tracking-[0.05em]">0:00</span>
-						</div>
-					{:else}
-						<div class="my-2 mb-3">
-							<span class="font-numeric text-13 text-muted animate-[waitPulse_2s_ease-in-out_infinite]">Waiting for confirmation...</span>
-						</div>
-					{/if}
+					<div class="my-2 mb-3">
+						<span class="font-numeric text-13 text-muted animate-[waitPulse_2s_ease-in-out_infinite]">Waiting for confirmation...</span>
+					</div>
 				{/if}
 
 				<div class="font-display text-28 font-extrabold text-heading mb-1">${usdtAmount.toFixed(2)}</div>
@@ -423,22 +408,6 @@
 		font-family: 'Space Mono', monospace; font-size: 14px; font-weight: 700;
 		color: #10b981; margin-bottom: 16px;
 	}
-
-	.countdown-timer { margin: 8px 0 4px; }
-	.timer-digits {
-		font-family: 'Syne', sans-serif; font-size: 36px; font-weight: 800;
-		color: #f59e0b; letter-spacing: 0.05em;
-	}
-	.timer-expired {
-		font-family: 'Syne', sans-serif; font-size: 36px; font-weight: 800;
-		color: #f87171; letter-spacing: 0.05em;
-	}
-	.countdown-bar-wrap { margin-bottom: 16px; padding: 0 20px; }
-	.countdown-bar {
-		width: 100%; height: 4px; background: var(--bg-surface-hover);
-		border-radius: 2px; overflow: hidden;
-	}
-	.countdown-fill { height: 100%; border-radius: 2px; transition: width 1s linear; }
 
 	/* Receipt (confirmed/processing) */
 	.receipt { margin-bottom: 12px; }
