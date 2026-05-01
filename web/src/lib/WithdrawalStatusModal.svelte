@@ -186,7 +186,7 @@
 			case 'processing': return { label: 'Processing', color: '#00d2ff', bg: 'rgba(0,210,255,0.1)', icon: 'M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83' };
 			case 'cancelled': return { label: 'Cancelled', color: '#f87171', bg: 'rgba(239,68,68,0.1)', icon: 'M18 6L6 18M6 6l12 12' };
 			case 'timeout': return { label: 'Timed Out', color: '#f87171', bg: 'rgba(239,68,68,0.1)', icon: 'M12 2a10 10 0 100 20 10 10 0 000-20zM12 6v6l4 2' };
-			default: return { label: 'Pending', color: '#f59e0b', bg: 'rgba(245,158,11,0.1)', icon: 'M12 2v4m0 12v4' };
+			default: return { label: 'Pending', color: '#f59e0b', bg: 'rgba(245,158,11,0.1)', icon: 'M12 6v6l4 2' };
 		}
 	});
 </script>
@@ -211,11 +211,29 @@
 		</div>
 
 		<div class="px-5 py-6 text-center flex-1 overflow-y-auto min-h-0">
-				<!-- Status icon — same pattern as OnrampStatusModal: tinted
-				     circle, status icon at the center, no spinner / ring /
-				     countdown. statusConfig already accounts for the
-				     timed-out state (isTimedOut → red clock icon). -->
+				<!-- Status icon with optional countdown ring (matches the
+				     on-ramp modal). The ring depletes over the on-chain
+				     payoutTimeout window — visual-only timer, no digits.
+				     statusConfig.icon = clock hands while pending; isTimedOut
+				     flips it to the timeout (red clock face) variant. -->
 				<div class="relative w-20 h-20 mx-auto mb-3">
+					{#if liveStatus === 'pending' && hasExpiry}
+						{@const circumference = 2 * Math.PI * 36}
+						{@const ringOffset = circumference * (1 - Math.max(0, Math.min(1, remaining / totalDuration)))}
+						<svg class="absolute inset-0 -rotate-90" viewBox="0 0 80 80" aria-hidden="true">
+							<circle cx="40" cy="40" r="36" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="3" />
+							<circle
+								class={isTimedOut ? '' : 'countdown-ring-pulse'}
+								cx="40" cy="40" r="36" fill="none"
+								stroke={statusConfig.color}
+								stroke-width="3"
+								stroke-linecap="round"
+								stroke-dasharray={circumference}
+								stroke-dashoffset={ringOffset}
+								style="transition: stroke-dashoffset 1s linear; --ring-color: {statusConfig.color};"
+							/>
+						</svg>
+					{/if}
 					<div
 						class="absolute inset-1 rounded-full flex items-center justify-center"
 						style="background: {statusConfig.bg}"
@@ -360,6 +378,19 @@
 </div>
 
 <style>
+	/* Pulsing glow on the countdown ring so users register it as a
+	 * live timer, not a static decoration. Matches OnrampStatusModal. */
+	.countdown-ring-pulse {
+		animation: ringPulse 2s ease-in-out infinite;
+	}
+	@keyframes ringPulse {
+		0%, 100% { filter: drop-shadow(0 0 0 transparent); opacity: 1; }
+		50%      { filter: drop-shadow(0 0 4px var(--ring-color, #f59e0b)); opacity: 0.85; }
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.countdown-ring-pulse { animation: none; }
+	}
+
 	.modal-backdrop {
 		position: fixed; inset: 0; z-index: 100; background: rgba(0,0,0,0.75);
 		backdrop-filter: blur(4px); display: flex; align-items: center;
