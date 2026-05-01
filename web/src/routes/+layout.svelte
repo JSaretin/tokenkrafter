@@ -119,18 +119,35 @@
 	// breaks.
 	let activePath = $derived(navigating.to?.url.pathname ?? page.url.pathname);
 
-	// Hide the Tawk widget on the admin panel (/_) and any time the
-	// in-app wallet is open — Tawk's iframe stacks at z-index ~9999999
-	// so we can't realistically out-z-index it. Hiding while sensitive
-	// surfaces (wallet, secret reveal) are visible is the safer call.
-	$effect(() => {
+	// Live-chat: iframe-only against tawk.to/chat/{id}/default. The
+	// embed.tawk.to tracking script is intentionally NOT loaded — we
+	// own the chat surface entirely (positioning, sizing, dismissal)
+	// and accept the loss of dashboard visitor analytics. The iframe
+	// boots on page load and stays mounted; the FAB just toggles
+	// visibility, so the first open is instant.
+	let chatOpen = $state(false);
+
+	let showCustomChatButton = $derived.by(() => {
+		// Only render on origins where chat is wanted (gates dev /
+		// preview origins out via ALLOWED_ORIGINS).
+		const allowed = (data?.allowedOrigins ?? []) as string[];
+		if (typeof window === 'undefined') return false;
+		if (!allowed.includes(window.location.origin)) return false;
 		const path = page.url.pathname;
 		const inAdmin = path === '/_' || path.startsWith('/_/');
-		const hide = inAdmin || showAccountPanel;
-		const api = (typeof window !== 'undefined' ? (window as any).Tawk_API : null);
-		if (!api?.hideWidget || !api?.showWidget) return;
-		if (hide) api.hideWidget(); else api.showWidget();
+		// Hide on admin pages and while any takeover surface is visible:
+		// wallet sheet (secret-reveal modal lives inside), or the mobile
+		// nav drawer (which would otherwise overlap the FAB on mobile).
+		return !inAdmin && !showAccountPanel && !mobileMenuOpen;
 	});
+
+	function openLiveChat() {
+		chatOpen = true;
+	}
+
+	function closeLiveChat() {
+		chatOpen = false;
+	}
 
 	// View Transitions: cross-fade between routes. Browsers without the
 	// API (Firefox today) just get a hard cut — same as before. Skipped
@@ -415,26 +432,11 @@
 		const saved = localStorage.getItem('theme') as 'dark' | 'light' | null;
 		if (saved === 'light') applyTheme('light');
 
-		// Tawk.to live chat — only inject on origins listed in
-		// ALLOWED_ORIGINS (passed via layout data). Hidden on the admin
-		// panel (/_) — see the $effect above for SPA-nav handling.
-		const allowed = (data?.allowedOrigins ?? []) as string[];
-		if (allowed.includes(location.origin)) {
-			const w = window as any;
-			w.Tawk_API = w.Tawk_API || {};
-			w.Tawk_API.onLoad = () => {
-				const p = location.pathname;
-				const inAdmin = p === '/_' || p.startsWith('/_/');
-				if (inAdmin || showAccountPanel) w.Tawk_API.hideWidget?.();
-			};
-			w.Tawk_LoadStart = new Date();
-			const s = document.createElement('script');
-			s.async = true;
-			s.src = 'https://embed.tawk.to/69f3925f2070c31c3990d3ff/default';
-			s.charset = 'UTF-8';
-			s.setAttribute('crossorigin', '*');
-			document.head.appendChild(s);
-		}
+		// Live chat is iframe-only (see chat-modal markup below). No
+		// embed.tawk.to script is loaded — visibility/positioning are
+		// fully owned by this layout, with the tradeoff that visitor
+		// analytics in the Tawk dashboard are limited to interactions
+		// inside the chat itself (no pageview / session beacons).
 
 		// Standalone-mode (PWA, installed-to-home-screen) detection.
 		// Adds a body class so CSS / components can tighten chrome when
@@ -1089,6 +1091,58 @@
 	</footer>
 	</div>
 
+	<!-- Custom live-chat trigger. Opens an iframe modal pointing at
+	     tawk.to/chat/{id}/default — no embed.tawk.to script loads, so
+	     the chat surface is fully ours (positioning, sizing, dismissal).
+	     Hidden on admin pages and while the wallet panel is open. -->
+	{#if showCustomChatButton}
+		<button
+			type="button"
+			onclick={openLiveChat}
+			aria-label="Open live chat"
+			class="live-chat-fab"
+			class:is-open={chatOpen}
+		>
+			<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+				<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+			</svg>
+		</button>
+	{/if}
+
+	<!-- Live-chat iframe modal. Eagerly mounted on page load so the
+	     first chat open is instant — the iframe boots in the
+	     background while the user navigates, and clicking the FAB
+	     just toggles visibility via .is-hidden. CSS keeps the iframe
+	     loaded but visually + interactively dormant. -->
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div
+		class="live-chat-overlay"
+		class:is-hidden={!chatOpen}
+		onclick={closeLiveChat}
+		aria-hidden={!chatOpen}
+	>
+		<div class="live-chat-panel" onclick={(e) => e.stopPropagation()}>
+			<div class="live-chat-panel-head">
+				<div class="live-chat-panel-title">
+					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+						<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+					</svg>
+					<span>Live support</span>
+				</div>
+				<button type="button" class="live-chat-close" onclick={closeLiveChat} aria-label="Close live chat">
+					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+				</button>
+			</div>
+			<iframe
+				class="live-chat-frame"
+				src="https://tawk.to/chat/69f3925f2070c31c3990d3ff/default"
+				title="Live support chat"
+				allow="microphone; camera; clipboard-write"
+			></iframe>
+		</div>
+	</div>
+
 	<!-- Mobile Bottom Tab Bar. Active tab gets a clear pill + cyan top
 	     accent + bolder icon weight — three cues stacked so the current
 	     page is unmistakable even in a glance. -->
@@ -1185,6 +1239,149 @@
 		margin: 0;
 	}
 	:global(.syne) { font-family: 'Syne', sans-serif; }
+
+	/* Live-chat FAB. Sits above the mobile nav (54px + safe area) and
+	   in the standard bottom-right slot on desktop. z-index below the
+	   wallet sheet (which uses z-[90]+) so it can't escape sensitive
+	   surfaces, but above ordinary page content. */
+	.live-chat-fab {
+		position: fixed;
+		right: 16px;
+		bottom: calc(54px + env(safe-area-inset-bottom, 0px) + 12px);
+		z-index: 50;
+		width: 48px;
+		height: 48px;
+		border-radius: 50%;
+		border: none;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		color: white;
+		background: linear-gradient(135deg, #00d2ff, #10b981);
+		box-shadow: 0 8px 24px rgba(0, 210, 255, 0.32), 0 2px 8px rgba(0, 0, 0, 0.4);
+		cursor: pointer;
+		transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+	}
+	.live-chat-fab:hover {
+		transform: translateY(-1px);
+		box-shadow: 0 10px 28px rgba(0, 210, 255, 0.42), 0 3px 10px rgba(0, 0, 0, 0.5);
+	}
+	.live-chat-fab:active {
+		transform: translateY(0);
+	}
+	.live-chat-fab.is-open {
+		opacity: 0.6;
+	}
+	@media (min-width: 768px) {
+		/* No bottom nav on desktop — return to the conventional
+		   bottom-right placement. */
+		.live-chat-fab {
+			bottom: 20px;
+			right: 20px;
+		}
+	}
+
+	/* Live-chat iframe modal. Mobile = full-bleed sheet above the nav;
+	   desktop = anchored bottom-right card so it feels like a chat
+	   window. is-hidden keeps the iframe mounted but invisible so the
+	   user's chat history survives close/reopen. */
+	.live-chat-overlay {
+		position: fixed;
+		inset: 0;
+		z-index: 80;
+		background: rgba(0, 0, 0, 0.55);
+		backdrop-filter: blur(3px);
+		display: flex;
+		align-items: stretch;
+		justify-content: stretch;
+		opacity: 1;
+		visibility: visible;
+		transition: opacity 0.18s ease, visibility 0.18s ease;
+	}
+	.live-chat-overlay.is-hidden {
+		/* Keep the iframe in flow so its contentWindow stays render-
+		   active — first show is then instant. visibility:hidden +
+		   pointer-events:none takes it out of click + tab order. */
+		opacity: 0;
+		visibility: hidden;
+		pointer-events: none;
+	}
+	.live-chat-panel {
+		position: absolute;
+		inset: 0;
+		display: flex;
+		flex-direction: column;
+		background: var(--bg);
+		overflow: hidden;
+		transform: translateY(0);
+		transition: transform 0.2s ease;
+	}
+	.live-chat-overlay.is-hidden .live-chat-panel {
+		transform: translateY(16px);
+	}
+	.live-chat-panel-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 12px 14px calc(12px + env(safe-area-inset-top, 0px));
+		border-bottom: 1px solid var(--border);
+		flex-shrink: 0;
+	}
+	.live-chat-panel-title {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		font-family: 'Syne', sans-serif;
+		font-size: 13px;
+		font-weight: 800;
+		color: var(--text-heading);
+	}
+	.live-chat-panel-title svg { color: #00d2ff; }
+	.live-chat-close {
+		width: 28px;
+		height: 28px;
+		border-radius: 8px;
+		border: none;
+		background: var(--bg-surface-input);
+		color: var(--text-dim);
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		transition: all 0.12s;
+	}
+	.live-chat-close:hover {
+		background: var(--bg-surface-hover);
+		color: var(--text-heading);
+	}
+	.live-chat-frame {
+		flex: 1;
+		width: 100%;
+		border: none;
+		background: white;
+	}
+	@media (min-width: 768px) {
+		/* Desktop: bottom-right anchored panel ~380×600 — feels like a
+		   chat dock instead of a takeover modal. Backdrop dims the rest
+		   of the page but doesn't block clicks outside the panel area
+		   (we only stretch the panel; clicking the dimmed area still
+		   closes via the overlay onclick). */
+		.live-chat-overlay {
+			background: rgba(0, 0, 0, 0.35);
+		}
+		.live-chat-panel {
+			top: auto;
+			left: auto;
+			right: 20px;
+			bottom: 20px;
+			width: 380px;
+			height: 600px;
+			max-height: calc(100vh - 40px);
+			border-radius: 16px;
+			border: 1px solid var(--border);
+			box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+		}
+	}
 
 	/* ── Mobile bottom-tab active indicator ──
 	   Three stacked cues for the active tab: a cyan top-accent bar,
