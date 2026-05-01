@@ -174,25 +174,6 @@ export interface RecentTransaction {
 	created_at: Timestamp;
 }
 
-// ── creator_profiles ─────────────────────────────────────────────────────
-
-export interface CreatorProfile {
-	wallet_address: Address;
-	display_name: string | null;
-	avatar_url: string | null;
-	bio: string | null;
-	website: string | null;
-	twitter: string | null;
-	telegram: string | null;
-	is_verified: boolean;
-	graduated_count: number;
-	total_launches: number;
-	total_tokens: number;
-	badges: string[];
-	created_at: Timestamp;
-	updated_at: Timestamp;
-}
-
 // ── wallets (multi-wallet embedded wallet storage) ───────────────────────
 
 export interface WalletRow {

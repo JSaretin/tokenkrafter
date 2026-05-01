@@ -2,9 +2,14 @@
 -- Run this in your Supabase SQL editor
 --
 -- Security model:
---   Anon key (frontend) = READ ONLY on all tables
---   Service role key (backend) = bypasses RLS for writes
+--   Anon key (frontend) = READ ONLY on a small allowlist of tables
+--   Service-role key (backend) = bypasses RLS for writes
 --   All writes go through server-side API with wallet signature verification
+--
+-- IMPORTANT: There must be **no** INSERT/UPDATE/DELETE policy on any table
+-- in the public schema. Adding one (e.g. via Supabase Studio with the default
+-- `to public` role) opens a write hole for anon. The cleanup block below
+-- drops any such policy on every re-run as defense-in-depth.
 
 -- ============================================================
 -- Helper: create policy only if it doesn't exist
@@ -24,6 +29,22 @@ begin
   end if;
 end;
 $$ language plpgsql;
+
+-- ============================================================
+-- Defense-in-depth: drop any write policy on public schema.
+-- Re-run safe: only SELECT policies are intended (see security model).
+-- ============================================================
+do $$ declare r record; begin
+  for r in
+    select tablename, policyname
+    from pg_policies
+    where schemaname = 'public'
+      and cmd in ('INSERT', 'UPDATE', 'DELETE', 'ALL')
+  loop
+    execute format('drop policy %I on public.%I', r.policyname, r.tablename);
+    raise notice 'dropped stale write policy: %.%', r.tablename, r.policyname;
+  end loop;
+end $$;
 
 -- ============================================================
 -- Launches table
@@ -653,34 +674,6 @@ alter table created_tokens add column if not exists is_kyc boolean not null defa
 alter table created_tokens add column if not exists kyc_note text; -- e.g. "AMA verified 2026-04-16"
 
 create index if not exists idx_created_tokens_safu on created_tokens (is_safu, has_liquidity);
-
--- ============================================================
--- Creator profiles (badges, reputation)
--- ============================================================
-create table if not exists creator_profiles (
-  wallet_address text primary key,
-  display_name text,
-  avatar_url text,
-  bio text,
-  website text,
-  twitter text,
-  telegram text,
-  is_verified boolean not null default false,
-  graduated_count integer not null default 0,
-  total_launches integer not null default 0,
-  total_tokens integer not null default 0,
-  badges jsonb not null default '[]',    -- e.g. ["graduated", "verified", "partner"]
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-
-alter table creator_profiles enable row level security;
-select create_policy_if_not_exists('creator_profiles', 'Anon read', 'select');
-
-drop trigger if exists creator_profiles_updated_at on creator_profiles;
-create trigger creator_profiles_updated_at
-  before update on creator_profiles
-  for each row execute function update_updated_at();
 
 -- ============================================================
 -- Enable Realtime for wallet vaults (for multi-device sync)

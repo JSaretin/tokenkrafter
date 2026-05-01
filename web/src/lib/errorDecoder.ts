@@ -131,7 +131,6 @@ const CUSTOM_ERRORS: Record<string, string> = {
 	'InvalidTimeout()': 'Timeout is outside the allowed range.',
 	'BelowMinWithdraw()': 'Amount is below the minimum withdrawal.',
 	'InvalidRequest()': 'Withdrawal request is invalid.',
-	'NotPending()': 'Withdrawal is not in a pending state.',
 	'NotRequestOwner()': 'You do not own this withdrawal request.',
 	'TimeoutNotReached()': 'Request cannot be cancelled yet.',
 	'TimeoutReached()': 'Request has timed out.',
@@ -148,7 +147,6 @@ const CUSTOM_ERRORS: Record<string, string> = {
 	'BankRefAlreadyUsed()': 'These bank details have already been used for an in-flight withdrawal. Use a different account or wait for the previous to settle.',
 	'OnrampRefAlreadyUsed()': 'This on-ramp transaction has already been delivered. Refresh and try again.',
 	'InsufficientReserve()': 'On-ramp reserve too low — please contact support.',
-	'ZeroAddress()': 'Address cannot be zero.',
 };
 
 /** Map of 4-byte selector → { name, friendly }. Built lazily on first call. */
