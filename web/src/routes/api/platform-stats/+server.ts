@@ -96,19 +96,11 @@ export const GET: RequestHandler = async ({ url }) => {
 	}
 	const { count: tokenCount } = await countQuery;
 
-	// Active visitors
-	const { data: visitors } = await supabaseAdmin
-		.from('site_visitors')
-		.select('*')
-		.limit(1)
-		.single();
-
 	return json({
 		daily: dailyStats || [],
 		totals: {
 			...totals,
 			total_tokens: tokenCount || 0
-		},
-		visitors: visitors || { total_visitors: 0, browsing: 0, creating: 0, investing: 0 }
+		}
 	});
 };

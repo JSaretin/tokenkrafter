@@ -31,19 +31,46 @@ end;
 $$ language plpgsql;
 
 -- ============================================================
--- Defense-in-depth: drop any write policy on public schema.
--- Re-run safe: only SELECT policies are intended (see security model).
+-- Defense-in-depth: revert any drift introduced via Studio.
+--   1. Drop any non-SELECT (write) policy — service_role bypasses RLS.
+--   2. Drop any SELECT policy not named "Anon read". The migration
+--      creates exactly one "Anon read" policy per readable table;
+--      anything else (typically Studio's "Public read X" or scoped
+--      duplicates) is drift. Re-run to flatten.
+-- Note: legitimate row-scoped SELECT policies (e.g. "Owner can read
+-- own X" with a real qual) would be dropped by this block — when we
+-- add one we should give it a name that distinguishes it from drift
+-- and add it to the migration so the rebuild stays idempotent.
 -- ============================================================
 do $$ declare r record; begin
   for r in
-    select tablename, policyname
+    select tablename, policyname, cmd
     from pg_policies
     where schemaname = 'public'
-      and cmd in ('INSERT', 'UPDATE', 'DELETE', 'ALL')
+      and (
+        cmd in ('INSERT', 'UPDATE', 'DELETE', 'ALL')
+        or (cmd = 'SELECT' and policyname <> 'Anon read')
+      )
   loop
     execute format('drop policy %I on public.%I', r.policyname, r.tablename);
-    raise notice 'dropped stale write policy: %.%', r.tablename, r.policyname;
+    raise notice 'dropped drift policy: %.% (cmd=%)', r.tablename, r.policyname, r.cmd;
   end loop;
+end $$;
+
+-- ============================================================
+-- Disable GraphQL surface (we don't use it).
+-- pg_graphql auto-publishes anything anon can SELECT, so every
+-- public table is otherwise discoverable via /graphql/v1. Revoke
+-- USAGE on the graphql schemas to lock that down. Wrapped in DO
+-- so it's idempotent across re-runs.
+-- ============================================================
+do $$ begin
+  if exists (select 1 from pg_namespace where nspname = 'graphql_public') then
+    revoke usage on schema graphql_public from anon, authenticated, public;
+  end if;
+  if exists (select 1 from pg_namespace where nspname = 'graphql') then
+    revoke usage on schema graphql from anon, authenticated, public;
+  end if;
 end $$;
 
 -- ============================================================
@@ -181,25 +208,6 @@ create table if not exists platform_stats (
 create index if not exists idx_platform_stats_date on platform_stats (stat_date desc);
 alter table platform_stats enable row level security;
 select create_policy_if_not_exists('platform_stats', 'Anon read', 'select');
-
--- ============================================================
--- Site visitors
--- ============================================================
-create table if not exists site_visitors (
-  id bigint generated always as identity primary key,
-  total_visitors integer not null default 0,
-  browsing integer not null default 0,
-  creating integer not null default 0,
-  investing integer not null default 0,
-  updated_at timestamptz not null default now()
-);
-
-insert into site_visitors (total_visitors, browsing, creating, investing)
-select 0, 0, 0, 0
-where not exists (select 1 from site_visitors limit 1);
-
-alter table site_visitors enable row level security;
-select create_policy_if_not_exists('site_visitors', 'Anon read', 'select');
 
 -- ============================================================
 -- Created tokens
@@ -472,9 +480,6 @@ do $$ begin
   if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'launches') then
     alter publication supabase_realtime add table launches;
   end if;
-  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'site_visitors') then
-    alter publication supabase_realtime add table site_visitors;
-  end if;
   if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'launch_transactions') then
     alter publication supabase_realtime add table launch_transactions;
   end if;
@@ -487,58 +492,22 @@ do $$ begin
 end $$;
 
 -- ============================================================
--- pg_cron: auto-update exchange rates every hour
+-- Cleanup: remove old in-DB rate updater. The exchange-rate refresh
+-- now runs from a daemon that writes platform_config directly.
+-- Idempotent: skip silently if pg_cron isn't installed.
 -- ============================================================
-create extension if not exists pg_net with schema extensions;
-create extension if not exists pg_cron with schema extensions;
-
-create or replace function update_exchange_rates()
-returns void as $$
-declare
-  response_id bigint;
-begin
-  select net.http_get(
-    url := 'https://open.er-api.com/v6/latest/USD'
-  ) into response_id;
-end;
-$$ language plpgsql;
-
-create or replace function process_exchange_rate_response()
-returns trigger as $$
-declare
-  body jsonb;
-  rates jsonb;
-begin
-  if NEW.status_code = 200 then
-    body := NEW.content::jsonb;
-    if body->>'result' = 'success' and body->'rates' is not null then
-      rates := body->'rates';
-      update platform_config
-      set value = jsonb_build_object(
-        'base', 'USD',
-        'rates', jsonb_build_object(
-          'NGN', (rates->>'NGN')::numeric,
-          'GBP', (rates->>'GBP')::numeric,
-          'EUR', (rates->>'EUR')::numeric,
-          'GHS', (rates->>'GHS')::numeric,
-          'KES', (rates->>'KES')::numeric
-        ),
-        'source', 'open.er-api.com',
-        'fetched_at', now()
-      ),
-      updated_at = now()
-      where key = 'exchange_rates';
-    end if;
+do $$ declare j record; begin
+  if exists (select 1 from pg_extension where extname = 'pg_cron') then
+    -- unschedule by jobid: name-based unschedule errors when the
+    -- caller is not the job's owning role.
+    for j in select jobid from cron.job where jobname = 'update-exchange-rates'
+    loop
+      perform cron.unschedule(j.jobid);
+    end loop;
   end if;
-  return NEW;
-end;
-$$ language plpgsql;
-
-select cron.schedule(
-  'update-exchange-rates',
-  '0 * * * *',
-  $$select update_exchange_rates()$$
-);
+end $$;
+drop function if exists update_exchange_rates();
+drop function if exists process_exchange_rate_response();
 
 -- ============================================================
 -- Wallets (embedded wallet — encrypted seed storage, multi-wallet)

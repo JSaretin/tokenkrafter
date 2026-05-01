@@ -29,7 +29,6 @@ export type DailyStats = {
 export type DashboardData = {
 	daily: DailyStats[];
 	totals: DailyStats & { total_tokens: number };
-	visitors: { total_visitors: number; browsing: number; creating: number; investing: number };
 };
 
 export type ChainData = {
@@ -163,7 +162,6 @@ export async function loadDashboardStats(
 			stat_date: '',
 			total_tokens: 0,
 		},
-		visitors: { total_visitors: 0, browsing: 0, creating: 0, investing: 0 },
 	};
 
 	const dailyMap = new Map<string, DailyStats>();
@@ -179,16 +177,6 @@ export async function loadDashboardStats(
 		merged.totals.launch_fees_usdt += t.launch_fees_usdt || 0;
 		merged.totals.tax_revenue_usdt += t.tax_revenue_usdt || 0;
 		merged.totals.total_tokens += t.total_tokens || 0;
-
-		if (stats.visitors) {
-			merged.visitors.total_visitors = Math.max(
-				merged.visitors.total_visitors,
-				stats.visitors.total_visitors || 0,
-			);
-			merged.visitors.browsing += stats.visitors.browsing || 0;
-			merged.visitors.creating += stats.visitors.creating || 0;
-			merged.visitors.investing += stats.visitors.investing || 0;
-		}
 
 		for (const day of stats.daily || []) {
 			const existing = dailyMap.get(day.stat_date);
