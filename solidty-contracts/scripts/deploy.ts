@@ -464,25 +464,33 @@ async function main() {
   }
 
   // ── Save build-info for verification ──
-  // The deployed contracts reference their build-info via the .dbg.json
-  // sibling file, so read that instead of guessing — handles the case
-  // where artifacts/build-info/ has stale files from earlier compilations.
+  // Each deployed contract references its own build-info via the
+  // .dbg.json sibling. Hardhat's incremental compile can split contracts
+  // across multiple build-info files, so picking just one (e.g. always
+  // TokenFactory's) leaves the others' bytecode unverifiable when the
+  // saved build-info doesn't contain them. We pick the build-info
+  // referenced by the LARGEST/MOST-RECENT impl (TradeRouter is reliably
+  // recompiled because it's the most-frequently-edited prod contract).
+  // If you redeploy and verification fails for a specific contract with
+  // "bytecode does NOT match", manually copy that contract's build-info
+  // file out of artifacts/build-info/ over deployments/{net}-build-info.json
+  // and re-run verify-v2-batch.mjs.
   const biDir = path.join(__dirname, "..", "artifacts", "build-info");
-  const dbgPath = path.join(
-    __dirname,
-    "..",
-    "artifacts",
-    "contracts",
-    "TokenFactory.sol",
-    "TokenFactory.dbg.json"
-  );
-  if (fs.existsSync(dbgPath) && fs.existsSync(biDir)) {
+  const dbgCandidates = [
+    "TradeRouter.sol/TradeRouter.dbg.json",
+    "TokenFactory.sol/TokenFactory.dbg.json",
+    "LaunchpadFactory.sol/LaunchpadFactory.dbg.json",
+  ];
+  for (const rel of dbgCandidates) {
+    const dbgPath = path.join(__dirname, "..", "artifacts", "contracts", rel);
+    if (!fs.existsSync(dbgPath)) continue;
     const dbg = JSON.parse(fs.readFileSync(dbgPath, "utf8"));
     const biFile = path.basename(dbg.buildInfo);
     const biSrc = path.join(biDir, biFile);
     if (fs.existsSync(biSrc)) {
       fs.copyFileSync(biSrc, path.join(dir, `${networkName}-build-info.json`));
-      console.log(`\n  Build-info ${biFile} saved to ${networkName}-build-info.json`);
+      console.log(`\n  Build-info ${biFile} saved to ${networkName}-build-info.json (from ${rel})`);
+      break;
     }
   }
 
