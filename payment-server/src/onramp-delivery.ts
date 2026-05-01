@@ -8,12 +8,17 @@
  *   ↓
  *   For each row → POST /api/onramp/deliver { reference }
  *   ↓
- *   Backend signs IERC20(USDT).transfer using ADMIN_KEY and updates DB
+ *   Backend signs TradeRouter.onramp(receiver, usdt, txRef) using
+ *   ADMIN_KEY (msg.value carries the BNB gas drip) and updates DB
  *
  * Why a daemon and not the webhook handler:
  *   - FLW webhook has a 60s timeout; on-chain confirms can blow past it.
  *   - Daemon retries naturally via the next poll cycle if anything fails.
- *   - Idempotency lives in the backend's CAS-lock on status='delivering'.
+ *   - Idempotency lives in two places:
+ *       a. Backend CAS-lock on status='delivering' (DB layer).
+ *       b. TradeRouter.onrampRefUsed[txRef] mapping (chain layer) —
+ *          even if the DB CAS races, the contract reverts the second
+ *          tx with OnrampRefAlreadyUsed.
  *
  * Env (lives in .envs/onramp-delivery.env on the VPS):
  *   BACKEND_URL          — SvelteKit backend (e.g. https://tokenkrafter.com)
@@ -21,10 +26,10 @@
  *   POLL_INTERVAL_MS     — default 30000 (30s)
  *   REDIS_URL            — for in-flight dedup locks (default redis://localhost:6379)
  *
- * Note: gas-drip handling lives inside /api/onramp/deliver — the drip
- * is paid for via a USDT deduction baked into the signed intent, and
- * the deliver endpoint sends both USDT and (when the intent specifies
- * one) native gas. This daemon stays a thin poll loop.
+ * Note: USDT itself comes from TradeRouter's reserve (owner pre-funds
+ * the contract by direct USDT transfer). The admin wallet only needs
+ * BNB for gas + the per-intent BNB drip. This daemon stays a thin
+ * poll loop — all on-chain logic lives in /api/onramp/deliver.
  */
 
 import { createClient, type RedisClientType } from 'redis';
@@ -210,8 +215,8 @@ async function processOne(p: PendingDelivery): Promise<'delivered' | 'skipped' |
 			const short = fmtUsdtWei(res.detail.shortfall_wei);
 			await alertOnce(
 				`treasury_low:${p.reference}`,
-				'On-ramp treasury low',
-				`💸 ${p.reference} stuck — top up admin wallet\n• Need: ${need} USDT\n• Have: ${have} USDT\n• Short: ${short} USDT\nWill auto-retry on next poll once funded.`,
+				'On-ramp reserve low',
+				`💸 ${p.reference} stuck — TradeRouter free reserve too low\n• Need: ${need} USDT\n• Have: ${have} USDT\n• Short: ${short} USDT\nTop up by sending USDT to the TradeRouter address. Will auto-retry on next poll once funded.`,
 			);
 		} else {
 			await alertOnce(

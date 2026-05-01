@@ -2,18 +2,26 @@
  * POST /api/onramp/deliver
  * Body: { reference: string }
  *
- * Delivers the USDT for a paid on-ramp intent. Called by the on-ramp
- * delivery daemon once Flutterwave's webhook has flipped the row to
- * `payment_received`.
+ * Delivers the USDT (and optional BNB gas drip) for a paid on-ramp
+ * intent. Called by the on-ramp delivery daemon once Flutterwave's
+ * webhook has flipped the row to `payment_received`.
  *
  * Flow:
  *   1. Vault auth (SYNC_SECRET) — daemon-only access.
  *   2. Read intent by reference; refuse anything not in `payment_received`.
  *   3. CAS-flip status → 'delivering' to prevent double-fire (idempotency).
- *   4. Sign IERC20(USDT).transfer(receiver, usdt_amount_wei) with ADMIN_KEY.
+ *   4. Sign TradeRouter.onramp(receiver, usdt_amount_wei, txRef) with
+ *      ADMIN_KEY — admin wallet pays gas, attaches `gas_drip_wei` BNB as
+ *      msg.value (the contract forwards it to the receiver). USDT itself
+ *      comes from TradeRouter's reserve (owner pre-funds the contract;
+ *      admin wallet no longer needs a USDT balance).
  *   5. Update row: status='delivered', delivery_tx_hash, delivered_at.
  *   6. On failure: status='failed' + failure_reason; the daemon will not
  *      retry these — operator review needed.
+ *
+ * Replay protection lives on-chain: TradeRouter rejects a duplicate
+ * txRef with OnrampRefAlreadyUsed, so even if the DB CAS races we can
+ * never deliver the same reference twice.
  */
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
@@ -22,9 +30,16 @@ import { isVaultAuth } from '$lib/daemonAuth';
 import { ethers } from 'ethers';
 import { env } from '$env/dynamic/private';
 
-const ERC20_TRANSFER_ABI = [
-	'function transfer(address to, uint256 amount) returns (bool)',
+const ERC20_BALANCE_ABI = [
 	'function balanceOf(address owner) view returns (uint256)',
+];
+
+const TRADE_ROUTER_ABI = [
+	'function onramp(address to, uint256 usdtAmount, bytes32 txRef) payable',
+	'function totalEscrow() view returns (uint256)',
+	'function platformEarnings(address token) view returns (uint256)',
+	'function onrampRefUsed(bytes32 txRef) view returns (bool)',
+	'function isAdmin(address account) view returns (bool)',
 ];
 
 async function getNetwork(chainId: number) {
@@ -36,10 +51,11 @@ async function getNetwork(chainId: number) {
 	if (!data?.value) return null;
 	const networks = data.value as any[];
 	const net = networks.find((n: any) => Number(n.chain_id) === chainId);
-	if (!net?.rpc || !net?.usdt_address) return null;
+	if (!net?.rpc || !net?.usdt_address || !net?.trade_router_address) return null;
 	return {
 		rpc: (net.daemon_rpc?.startsWith('http') ? net.daemon_rpc : null) || net.rpc,
 		usdt_address: net.usdt_address as string,
+		trade_router_address: net.trade_router_address as string,
 	};
 }
 
@@ -102,24 +118,57 @@ export const POST: RequestHandler = async ({ request }) => {
 	}
 
 	const signer = new ethers.Wallet(adminKey, provider);
-	const usdt = new ethers.Contract(network.usdt_address, ERC20_TRANSFER_ABI, signer);
+	const usdt = new ethers.Contract(network.usdt_address, ERC20_BALANCE_ABI, provider);
+	const tradeRouter = new ethers.Contract(network.trade_router_address, TRADE_ROUTER_ABI, signer);
 
-	// 4. Pre-flight treasury balance check. Insufficient is *transient*
-	//    (operator funds the wallet → next poll succeeds), so roll back
-	//    to payment_received instead of marking failed.
 	const amount = BigInt(row.usdt_amount_wei);
+	const gasDripWei = BigInt((row as any).gas_drip_wei ?? '0');
+	// onramp() dedups on this — keccak256(reference) keys the on-chain
+	// `onrampRefUsed` mapping. Using the FLW reference directly (not a
+	// derived hash) so any replay debugging can be done by hashing the
+	// reference column from the DB.
+	const txRef = ethers.keccak256(ethers.toUtf8Bytes(reference));
+
+	// 4. Short-circuit if the contract has already accepted this txRef
+	//    from a previous attempt (e.g. delivery succeeded on-chain but
+	//    the response never reached us). Marking failed without recording
+	//    a tx hash would leave a phantom — instead, look up the event by
+	//    txRef topic in operator review. Surface as a permanent fail so
+	//    a human looks; auto-retry would just revert again.
 	try {
-		const treasury: bigint = await usdt.balanceOf(signer.address);
-		if (treasury < amount) {
+		const used: boolean = await tradeRouter.onrampRefUsed(txRef);
+		if (used) {
+			await markFailed(reference, 'TradeRouter already accepted this txRef — possible orphaned delivery, check on-chain');
+			return json({ success: false, error: 'txRef already used on-chain' }, { status: 500 });
+		}
+	} catch (e: any) {
+		await rollbackToPaid(reference);
+		return json({ success: false, error: `txRef check: ${e.message?.slice(0, 200)}` }, { status: 502 });
+	}
+
+	// 5. Pre-flight reserve check. TradeRouter must hold enough free USDT
+	//    above (totalEscrow + platformEarnings[USDT]) to honour this
+	//    delivery without dipping into off-ramp escrow. Insufficient is
+	//    *transient* (operator tops up the contract → next poll succeeds),
+	//    so roll back to payment_received.
+	try {
+		const [bal, escrow, earnings] = (await Promise.all([
+			usdt.balanceOf(network.trade_router_address),
+			tradeRouter.totalEscrow(),
+			tradeRouter.platformEarnings(network.usdt_address),
+		])) as [bigint, bigint, bigint];
+		const reserved = escrow + earnings;
+		const free = bal > reserved ? bal - reserved : 0n;
+		if (free < amount) {
 			await rollbackToPaid(reference);
 			return json(
 				{
 					success: false,
 					error: 'Treasury insufficient',
 					detail: {
-						treasury_have_wei: treasury.toString(),
+						treasury_have_wei: free.toString(),
 						required_wei: amount.toString(),
-						shortfall_wei: (amount - treasury).toString(),
+						shortfall_wei: (amount - free).toString(),
 					},
 				},
 				{ status: 503 },
@@ -127,65 +176,53 @@ export const POST: RequestHandler = async ({ request }) => {
 		}
 	} catch (e: any) {
 		await rollbackToPaid(reference);
-		return json({ success: false, error: `Balance check: ${e.message?.slice(0, 200)}` }, { status: 502 });
+		return json({ success: false, error: `Reserve check: ${e.message?.slice(0, 200)}` }, { status: 502 });
 	}
 
-	// 5. Sign + broadcast the transfer.
+	// 6. Sign + broadcast onramp(). The admin wallet must have enough BNB
+	//    for gas + the gas-drip msg.value; the contract pulls USDT from
+	//    its own reserve (no admin USDT approval needed).
 	let txHash: string | undefined;
 	try {
-		const est = await usdt.transfer.estimateGas(row.receiver, amount);
-		const tx = await usdt.transfer(row.receiver, amount, {
+		const est = await tradeRouter.onramp.estimateGas(row.receiver, amount, txRef, {
+			value: gasDripWei,
+		});
+		const tx = await tradeRouter.onramp(row.receiver, amount, txRef, {
+			value: gasDripWei,
 			gasLimit: (est * 130n) / 100n,
 		});
 		const receipt = await tx.wait();
 		txHash = receipt?.hash ?? tx.hash;
 	} catch (e: any) {
 		// Distinguish transient (RPC drop, gas estimation glitch) from
-		// permanent (revert, blocked address). Conservative default:
-		// treat unknown failures as permanent so an operator looks.
+		// permanent (revert, OnrampRefAlreadyUsed, InsufficientReserve).
+		// Conservative default: treat unknown failures as permanent so an
+		// operator looks.
 		const msg = e?.message ?? '';
-		const transient = /timeout|network|ECONN|nonce too low|replacement|gas|RPC|503|502/i.test(msg);
+		const transient = /timeout|network|ECONN|nonce too low|replacement|gas required|RPC|503|502/i.test(msg);
 		if (transient) {
 			await rollbackToPaid(reference);
-			return json({ success: false, error: `Transfer (transient): ${msg.slice(0, 300)}` }, { status: 502 });
+			return json({ success: false, error: `onramp (transient): ${msg.slice(0, 300)}` }, { status: 502 });
 		}
-		await markFailed(reference, `Transfer failed: ${msg.slice(0, 300)}`);
-		return json({ success: false, error: 'On-chain transfer failed' }, { status: 500 });
+		await markFailed(reference, `onramp failed: ${msg.slice(0, 300)}`);
+		return json({ success: false, error: 'On-chain onramp failed' }, { status: 500 });
 	}
 
-	// 6. Inline gas drip (best-effort). The user paid for this drip via
-	//    a USDT deduction baked into usdt_amount_wei, so we honour it
-	//    without re-checking the receiver's balance — even if they
-	//    happened to top up between quote and delivery, they signed for
-	//    `gasDripWei` and we owe it. A drip failure does NOT roll back
-	//    or fail the delivery — USDT has already been sent. We log the
-	//    gap and an operator can retry manually if needed.
-	const gasDripWei = BigInt((row as any).gas_drip_wei ?? '0');
-	let gas_drip_tx_hash: string | null = null;
-	if (gasDripWei > 0n) {
-		try {
-			const dripTx = await signer.sendTransaction({ to: row.receiver, value: gasDripWei });
-			const dripReceipt = await dripTx.wait();
-			gas_drip_tx_hash = dripReceipt?.hash ?? dripTx.hash;
-		} catch (e: any) {
-			console.error(`[onramp.deliver] ${reference}: gas drip failed:`, e?.message?.slice(0, 200));
-			// Leave gas_drip_tx_hash null. Operator can re-issue manually
-			// (the USDT side is already complete and idempotent).
-		}
-	}
-
-	// 7. Mark delivered.
+	// 7. Mark delivered. delivery_tx_hash covers both USDT + BNB drip
+	//    since they ride on the same tx now; gas_drip_tx_hash is kept
+	//    for backwards compat with the legacy split-tx delivery path
+	//    (older rows in onramp_intents have separate hashes).
 	await supabaseAdmin
 		.from('onramp_intents')
 		.update({
 			status: 'delivered',
 			delivered_at: new Date().toISOString(),
 			delivery_tx_hash: txHash,
-			gas_drip_tx_hash,
+			gas_drip_tx_hash: gasDripWei > 0n ? txHash : null,
 		})
 		.eq('reference', reference);
 
-	return json({ success: true, reference, delivery_tx_hash: txHash, gas_drip_tx_hash });
+	return json({ success: true, reference, delivery_tx_hash: txHash });
 };
 
 async function markFailed(reference: string, reason: string) {

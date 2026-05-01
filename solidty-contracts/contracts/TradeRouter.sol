@@ -145,6 +145,12 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
     // which one a fiat deposit corresponds to.
     mapping(bytes32 => bool) public bankRefUsed;
 
+    /// @notice Dedup keyed on the off-chain payment-processor reference
+    ///         (e.g. Flutterwave transaction id, hashed). Prevents a
+    ///         webhook replay or daemon retry from delivering the same
+    ///         on-ramp twice.
+    mapping(bytes32 => bool) public onrampRefUsed;
+
     uint256 public totalEscrow;                             // total user funds held
     mapping(address => uint256) public platformEarnings;    // per token
 
@@ -184,6 +190,12 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
     event AffiliatePaid(uint256 indexed id, address indexed referrer, uint256 amount);
     event AffiliateEnabledUpdated(bool enabled);
     event AffiliateShareUpdated(uint256 oldBps, uint256 newBps);
+    event OnrampDelivered(
+        address indexed to,
+        bytes32 indexed txRef,
+        uint256 usdtAmount,
+        uint256 bnbSeed
+    );
 
     // ── Errors ──────────────────────────────────────────────────────
     error NotAdmin();
@@ -209,6 +221,8 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
     error EmptyPending();
     error TooManyAdmins();
     error BankRefAlreadyUsed();
+    error OnrampRefAlreadyUsed();
+    error InsufficientReserve();
 
     // ── Modifiers ───────────────────────────────────────────────────
     modifier onlyAdmin() {
@@ -693,6 +707,74 @@ contract TradeRouter is Ownable, ReentrancyGuard, Pausable {
     ) {
         fee = (amount * feeBps) / 10000;
         netAmount = amount - fee;
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  ON-RAMP (admin-driven delivery)
+    // ════════════════════════════════════════════════════════════════
+
+    /// @notice Deliver fiat-on-ramped USDT to a user and optionally drip
+    ///         BNB for gas.
+    ///
+    ///         Inverse flow vs the off-ramp escrow above: there's no user
+    ///         deposit and no per-call USDT pull from the daemon. The
+    ///         contract pays out from its own USDT reserve — i.e. any
+    ///         balance above what's already reserved for off-ramp escrow
+    ///         and for accrued platform earnings. Owner tops the reserve
+    ///         up by directly transferring USDT to the contract; this is
+    ///         the float that backs every on-ramp delivery until it needs
+    ///         replenishing.
+    ///
+    ///         The daemon only attaches `msg.value` BNB for the gas drip.
+    ///         FLW pass-through cuts and the platform's NGN→USDT spread
+    ///         are settled entirely off-chain — the contract just delivers
+    ///         the agreed `usdtAmount` from reserve.
+    ///
+    ///         Affiliate is intentionally NOT reported on this path. After
+    ///         FLW eats ~70% of the displayed 3% spread, platform net
+    ///         margin is ~0.6%, so a 25% affiliate share would leave near
+    ///         zero. Referrers still earn on every downstream action the
+    ///         on-ramped user takes — launchpad buys, swaps, off-ramps.
+    ///
+    /// @param to         End-user wallet receiving the USDT + BNB drip.
+    /// @param usdtAmount USDT to deliver, drawn from the contract's free
+    ///                   reserve.
+    /// @param txRef      Hashed off-chain payment reference (e.g.
+    ///                   keccak256(Flutterwave tx id)). Prevents a webhook
+    ///                   replay from delivering twice.
+    function onramp(
+        address to,
+        uint256 usdtAmount,
+        bytes32 txRef
+    ) external payable onlyAdmin nonReentrant whenNotPaused {
+        if (to == address(0)) revert ZeroAddress();
+        if (usdtAmount == 0) revert ZeroAmount();
+        if (txRef == bytes32(0)) revert InvalidRequest();
+        if (onrampRefUsed[txRef]) revert OnrampRefAlreadyUsed();
+        onrampRefUsed[txRef] = true;
+
+        // Reserve guard: this contract's USDT balance must always cover
+        // (a) all pending off-ramp escrow and (b) all accrued platform
+        // earnings the owner could withdraw. Anything above that is the
+        // free on-ramp reserve. Reverting here protects user deposits
+        // from being drained by an over-eager on-ramp delivery.
+        {
+            uint256 reserved = totalEscrow + platformEarnings[address(usdt)];
+            if (usdt.balanceOf(address(this)) < reserved + usdtAmount) {
+                revert InsufficientReserve();
+            }
+        }
+
+        // Deliver USDT, then drip BNB (if any). USDT first so a failing
+        // BNB transfer leaves the user with their stable payout — the
+        // BNB drip is a UX nicety, not the primary delivery.
+        usdt.safeTransfer(to, usdtAmount);
+        if (msg.value > 0) {
+            (bool ok, ) = to.call{value: msg.value}("");
+            require(ok, "BNB drip failed");
+        }
+
+        emit OnrampDelivered(to, txRef, usdtAmount, msg.value);
     }
 
     // ════════════════════════════════════════════════════════════════
