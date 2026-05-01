@@ -121,7 +121,12 @@ async function main() {
 		process.stdout.write(`  ${c.name}... `);
 		try {
 			const result = await submitVerification(c);
-			if (result.status === '1' || result.result) {
+			// V2 returns { status: "1", message: "OK", result: "<guid>" } on success
+			// and { status: "0", message: "NOTOK", result: "<error>" } on failure.
+			// Previously this checked `result.status === '1' || result.result` which
+			// treated every error string as a fake-GUID; only `status === '1'` is
+			// the actual success signal.
+			if (result.status === '1') {
 				const guid = result.result;
 				guids.push({ name: c.name, guid });
 				console.log(`submitted (${guid})`);
