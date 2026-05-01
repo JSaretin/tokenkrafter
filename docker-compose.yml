@@ -7,6 +7,10 @@ services:
     depends_on: [redis]
     volumes:
       - indexer-data:/app/data
+      # SafuLens bytecode for on-create rug-checks. Without it, ws-indexer
+      # logs "SafuLens bytecode not found — on-create SAFU checks disabled"
+      # and falls back to scoring after the safu sweep cycle picks tokens up.
+      - .envs/prod/SafuLens.json:/app/SafuLens.json:ro
 
   safu:
     build: ./daemons
