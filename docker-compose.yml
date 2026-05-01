@@ -2,7 +2,7 @@ services:
   ws-indexer:
     build: ./daemons
     command: bun ws-indexer.mjs
-    env_file: .envs/indexer.env
+    env_file: .envs/prod/indexer.env
     restart: always
     depends_on: [redis]
     volumes:
@@ -11,21 +11,21 @@ services:
   safu:
     build: ./daemons
     command: bun safu-indexer.mjs
-    env_file: .envs/indexer.env
+    env_file: .envs/prod/indexer.env
     restart: always
     volumes:
-      - .envs/SafuLens.json:/app/SafuLens.json:ro
+      - .envs/prod/SafuLens.json:/app/SafuLens.json:ro
 
   rates:
     build: ./daemons
     command: bun rate-updater.mjs
-    env_file: .envs/indexer.env
+    env_file: .envs/prod/indexer.env
     restart: always
 
   activity-bot:
     build: ./daemons
     command: bun activity-bot.mjs
-    env_file: .envs/activity-bot.env
+    env_file: .envs/prod/activity-bot.env
     restart: "no"
     profiles: [bots]
     volumes:
@@ -34,7 +34,7 @@ services:
   launch-buy-bot:
     build: ./daemons
     command: bun launch-buy-bot.mjs
-    env_file: .envs/launch-buy-bot.env
+    env_file: .envs/prod/launch-buy-bot.env
     restart: "no"
     profiles: [bots]
     volumes:
@@ -43,7 +43,7 @@ services:
   payment:
     build: ./payment-server
     command: bun payment.mjs
-    env_file: .envs/payment.env
+    env_file: .envs/prod/payment.env
     restart: always
     ports:
       - "4100:4100"
@@ -51,14 +51,14 @@ services:
   processor:
     build: ./payment-server
     command: bun processor.mjs
-    env_file: .envs/processor.env
+    env_file: .envs/prod/processor.env
     restart: always
     depends_on: [redis]
 
   onramp-delivery:
     build: ./payment-server
     command: bun onramp-delivery.mjs
-    env_file: .envs/onramp-delivery.env
+    env_file: .envs/prod/onramp-delivery.env
     restart: always
     depends_on: [redis]
 
