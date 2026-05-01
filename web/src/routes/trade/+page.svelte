@@ -868,10 +868,18 @@
 		if (previewTimeout) clearTimeout(previewTimeout);
 		const amt = amountIn;
 		const inAddr = tokenInAddr;
-		const outAddr = tokenOutAddr;
 		const net = selectedNetwork;
+		// In bank mode the user doesn't pick an output token — the on-chain
+		// swap always lands at USDT. We still need a quote (to compute minOut)
+		// because TradeRouter requires non-zero amountOutMin on the
+		// depositAndSwap path. Previously this branch early-returned, leaving
+		// amountOut="" and minOut=0, which now reverts SlippageRequired.
+		const outAddr = outputMode === 'bank' ? net?.usdt_address : tokenOutAddr;
+		// In bank mode tokenOutDecimals is stale (the user didn't pick an
+		// output token). USDT decimals are stable and chain-correct.
+		const outDecs = outputMode === 'bank' ? usdtDecimals : tokenOutDecimals;
 
-		if (!amt || !inAddr || !outAddr || !net || parseFloat(amt) <= 0 || outputMode === 'bank') {
+		if (!amt || !inAddr || !outAddr || !net || parseFloat(amt) <= 0) {
 			amountOut = '';
 			noLiquidity = false;
 			previewLoading = false;
@@ -890,7 +898,7 @@
 
 				const route = findBestRouteLocal(addrIn, addrOut, parsedIn);
 				if (route && route.amountOut > 0n) {
-					amountOut = ethers.formatUnits(route.amountOut, tokenOutDecimals);
+					amountOut = ethers.formatUnits(route.amountOut, outDecs);
 					swapRoute = route;
 					noLiquidity = false;
 					hasInstant = true;
@@ -926,7 +934,7 @@
 
 				const route = await findBestRouteOnChain(provider, net.dex_router, addrIn, addrOut, parsedIn, bases);
 				if (route && route.amountOut > 0n) {
-					amountOut = ethers.formatUnits(route.amountOut, tokenOutDecimals);
+					amountOut = ethers.formatUnits(route.amountOut, outDecs);
 					// Map to SwapRoute format for the swap execution
 					swapRoute = { path: route.path, symbols: [], amountOut: route.amountOut, hops: route.path.length - 1 };
 					noLiquidity = false;
@@ -1043,10 +1051,13 @@
 			const sanitizedIn = parseFloat(amountIn).toFixed(tokenInDecimals);
 			const parsedIn = ethers.parseUnits(sanitizedIn, tokenInDecimals);
 			let expectedOut = 0n;
+			// In bank mode the swap output is USDT, not the stale
+			// tokenOutDecimals. Use usdtDecimals for the parse.
+			const expectedOutDecimals = outputMode === 'bank' ? usdtDecimals : tokenOutDecimals;
 			try {
 				if (amountOut && parseFloat(amountOut) > 0) {
-					const sanitizedOut = parseFloat(amountOut).toFixed(tokenOutDecimals);
-					expectedOut = ethers.parseUnits(sanitizedOut, tokenOutDecimals);
+					const sanitizedOut = parseFloat(amountOut).toFixed(expectedOutDecimals);
+					expectedOut = ethers.parseUnits(sanitizedOut, expectedOutDecimals);
 				}
 			} catch {}
 			// Account for all applicable taxes + slippage in minOut:
@@ -1066,6 +1077,19 @@
 				? (expectedOut * BigInt(10000 - totalTaxBps)) / 10000n
 				: expectedOut;
 			const minOut = afterTax > 0n ? (afterTax * BigInt(10000 - slippageBps)) / 10000n : 0n;
+
+			// minOut == 0 means we never got a price quote (token has no DEX
+			// liquidity, path mis-configured, or user clicked before the
+			// preview loaded). TradeRouter rejects with SlippageRequired —
+			// surface it here as a clearer error before submitting.
+			const _usdtAddr = selectedNetwork.usdt_address.toLowerCase();
+			const _tokenInIsUsdt = tokenInAddr.toLowerCase() === _usdtAddr;
+			const needsSwap = !(outputMode === 'bank' && _tokenInIsUsdt);
+			if (needsSwap && minOut === 0n) {
+				addFeedback({ message: 'No price quote available — wait for the preview to load, or this token has no DEX liquidity.', type: 'error' });
+				isSwapping = false;
+				return;
+			}
 
 			let tx;
 			if (outputMode === 'bank') {
