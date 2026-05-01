@@ -175,7 +175,12 @@
 			? `${explorerUrl.replace(/\/$/, '')}/tx/${withdrawal.tx_hash}`
 			: ''
 	);
+	let isTimedOut = $derived(liveStatus === 'pending' && hasExpiry && remaining <= 0);
 	let statusConfig = $derived.by(() => {
+		// Pending past on-chain expiry overrides the visual to the
+		// timeout treatment, mirroring the on-ramp modal's isExpired
+		// short-circuit.
+		if (isTimedOut) return { label: 'Timed Out', color: '#f87171', bg: 'rgba(239,68,68,0.1)', icon: 'M12 2a10 10 0 100 20 10 10 0 000-20zM12 6v6l4 2' };
 		switch (liveStatus) {
 			case 'confirmed': return { label: 'Confirmed', color: '#10b981', bg: 'rgba(16,185,129,0.1)', icon: 'M20 6L9 17l-5-5' };
 			case 'processing': return { label: 'Processing', color: '#00d2ff', bg: 'rgba(0,210,255,0.1)', icon: 'M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83' };
@@ -206,30 +211,21 @@
 		</div>
 
 		<div class="px-5 py-6 text-center flex-1 overflow-y-auto min-h-0">
-				<!-- ═══ PENDING / TIMED OUT VIEW ═══ -->
-				<div class="w-16 h-16 rounded-full mx-auto mb-3 flex items-center justify-center" style="background: {statusConfig.bg};">
-					{#if liveStatus === 'pending' && (!hasExpiry || remaining > 0)}
-						<div class="w-8 h-8 border-[3px] border-line rounded-full animate-[spin_1s_linear_infinite]" style="border-top-color: {statusConfig.color};"></div>
-					{:else if liveStatus === 'pending' && hasExpiry && remaining <= 0}
-						<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-					{:else}
+				<!-- Status icon — same pattern as OnrampStatusModal: tinted
+				     circle, status icon at the center, no spinner / ring /
+				     countdown. statusConfig already accounts for the
+				     timed-out state (isTimedOut → red clock icon). -->
+				<div class="relative w-20 h-20 mx-auto mb-3">
+					<div
+						class="absolute inset-1 rounded-full flex items-center justify-center"
+						style="background: {statusConfig.bg}"
+					>
 						<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke={statusConfig.color} stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d={statusConfig.icon}/></svg>
-					{/if}
+					</div>
 				</div>
 
-				{#if liveStatus === 'pending' && hasExpiry && remaining <= 0}
-					<div class="font-mono text-13 font-bold uppercase tracking-[0.1em] mb-2" style="color: #f87171;">Timed Out</div>
-				{:else if liveStatus === 'cancelled'}
-					<div class="font-mono text-13 font-bold uppercase tracking-[0.1em] mb-2" style="color: {statusConfig.color};">{statusConfig.label}</div>
-				{:else}
-					<div class="font-mono text-13 font-bold uppercase tracking-[0.1em] mb-2" style="color: {statusConfig.color};">{statusConfig.label}</div>
-				{/if}
-
-				{#if liveStatus === 'pending'}
-					<div class="my-2 mb-3">
-						<span class="font-numeric text-13 text-muted animate-[waitPulse_2s_ease-in-out_infinite]">Waiting for confirmation...</span>
-					</div>
-				{/if}
+				<!-- Status label -->
+				<div class="font-mono text-13 font-bold uppercase tracking-[0.1em] mb-3" style="color: {statusConfig.color};">{statusConfig.label}</div>
 
 				<div class="font-display text-28 font-extrabold text-heading mb-1">${usdtAmount.toFixed(2)}</div>
 				{#if ngnAmount > 0}

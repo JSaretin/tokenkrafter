@@ -98,33 +98,24 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		return error(404, `No pending withdrawal found for wallet ${onChainUser}`);
 	}
 
-	// Match by bankRef — decrypt each candidate's payment details and
-	// compare the computed hash to the on-chain bankRef.
+	// Match by bankRef — bankRef is now ethers.id('wd:<row_id>') (was
+	// previously a hash of payment details, which permanently locked the
+	// same bank account on-chain after a single deposit). Decrypt the
+	// matched row's payment details for downstream disbursement.
 	let matched: (typeof candidates)[0] | null = null;
 	for (const row of candidates) {
+		if (ethers.id(`wd:${row.id}`) !== bankRef) continue;
 		let details = row.payment_details;
 		if (typeof details === 'string') {
 			try { details = await decrypt(details); } catch { continue; }
 		}
 		if (!details?.bank_code || !details?.account) continue;
-
-		let computed: string;
-		if (row.payment_method === 'paypal') {
-			computed = ethers.id(`paypal:${details.email}`);
-		} else if (row.payment_method === 'wise') {
-			computed = ethers.id(`wise:${details.email}:${details.currency || 'NGN'}`);
-		} else {
-			computed = ethers.id(`bank:${details.bank_code}:${details.account}:${details.holder}`);
-		}
-
-		if (computed === bankRef) {
-			matched = { ...row, _details: details };
-			break;
-		}
+		matched = { ...row, _details: details };
+		break;
 	}
 
 	if (!matched) {
-		return error(404, 'No matching bank details found for on-chain bankRef');
+		return error(404, 'No matching withdrawal found for on-chain bankRef');
 	}
 
 	const details = matched._details;

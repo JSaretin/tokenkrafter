@@ -1101,7 +1101,6 @@
 					return;
 				}
 				let paymentDetails: Record<string, unknown> = {};
-				let bankRef: string;
 
 				if (paymentMethod === 'bank') {
 					if (!bankResolved || !bankAccount || !bankCode) {
@@ -1110,7 +1109,6 @@
 						return;
 					}
 					paymentDetails = { method: 'bank', bank_code: bankCode, bank_name: bankBankName, account: bankAccount, holder: bankName };
-					bankRef = ethers.id(`bank:${bankCode}:${bankAccount}:${bankName}`);
 				} else if (paymentMethod === 'paypal') {
 					if (!paypalEmail) {
 						addFeedback({ message: $t('trade.enterPaypalEmail'), type: 'error' });
@@ -1118,7 +1116,6 @@
 						return;
 					}
 					paymentDetails = { method: 'paypal', email: paypalEmail };
-					bankRef = ethers.id(`paypal:${paypalEmail}`);
 				} else {
 					if (!wiseEmail) {
 						addFeedback({ message: $t('trade.enterWiseEmail'), type: 'error' });
@@ -1126,7 +1123,6 @@
 						return;
 					}
 					paymentDetails = { method: 'wise', email: wiseEmail, currency: wiseCurrency };
-					bankRef = ethers.id(`wise:${wiseEmail}:${wiseCurrency}`);
 				}
 
 				// Step 1: Save payment details to DB (session cookie authenticates)
@@ -1155,6 +1151,15 @@
 					throw new Error(errData.message || $t('trade.failedSavePayment'));
 				}
 				const preData = await preRes.json();
+
+				// bankRef is keyed off the DB row id, NOT the payment details.
+				// Earlier this was ethers.id('bank:<code>:<account>:<holder>') —
+				// which meant a failed/cancelled withdrawal permanently locked
+				// that bank account on-chain via TradeRouter.bankRefUsed[]. Now
+				// each new withdrawal_request row gets a fresh ID = fresh hash,
+				// so retries with the same bank work. Verify + processor
+				// endpoints recompute the same way to match.
+				const bankRef = ethers.id(`wd:${preData.id}`);
 
 				// Step 2: Approve token (skipped for native)
 				withdrawStep = 2;
