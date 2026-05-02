@@ -33,10 +33,9 @@
 import { ethers } from 'ethers';
 import * as fs from 'fs';
 import * as path from 'path';
+import { loadNetworks, pickDaemonRpc, type Network } from './lib/chains';
 
-// ── Config ──
-const RPC_URL = process.env.RPC_URL || 'https://bsc-dataseed.binance.org/';
-const CHAIN_ID = parseInt(process.env.CHAIN_ID || '56');
+// ── Config (chain-agnostic) ──
 const WALLET_COUNT = parseInt(process.env.WALLET_COUNT || '50', 10);
 // RUN_ONCE=1 skips the inter-iteration delay and exits after the first
 // successful (or unrecoverable) clone attempt. Used to verify the
@@ -84,11 +83,18 @@ const ERC20_ABI = [
 ];
 
 // ── State persistence ──
-interface State {
+interface ChainState {
 	clonedTokens: string[];
+	tokensCreated: number;
+}
+
+interface State {
+	// Per-chain dedup. Same source token (e.g. solana:CANNONS) can be
+	// cloned to each chain independently, so the cloned set is keyed
+	// by chainId. trendingCache is shared (off-chain GeckoTerminal).
+	byChain: Record<string, ChainState>;
 	trendingCache: CachedToken[];
 	trendingFetchedAt: number;
-	tokensCreated: number;
 }
 
 interface CachedToken {
@@ -109,14 +115,31 @@ interface CachedToken {
 function loadState(): State {
 	try {
 		if (fs.existsSync(STATE_FILE)) {
-			return JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
+			const raw = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
+			// Migrate legacy single-chain shape (clonedTokens at root)
+			// to byChain bucket. Old shape has no chainId; bucket under
+			// '56' since this only existed on BSC.
+			if (raw && Array.isArray(raw.clonedTokens) && !raw.byChain) {
+				return {
+					byChain: { '56': { clonedTokens: raw.clonedTokens, tokensCreated: raw.tokensCreated || 0 } },
+					trendingCache: raw.trendingCache || [],
+					trendingFetchedAt: raw.trendingFetchedAt || 0,
+				};
+			}
+			return raw;
 		}
 	} catch {}
-	return { clonedTokens: [], trendingCache: [], trendingFetchedAt: 0, tokensCreated: 0 };
+	return { byChain: {}, trendingCache: [], trendingFetchedAt: 0 };
 }
 
 function saveState(s: State) {
 	fs.writeFileSync(STATE_FILE, JSON.stringify(s, null, 2));
+}
+
+function getChainState(s: State, chainId: number): ChainState {
+	const k = String(chainId);
+	if (!s.byChain[k]) s.byChain[k] = { clonedTokens: [], tokensCreated: 0 };
+	return s.byChain[k];
 }
 
 // ── GeckoTerminal ──
@@ -370,7 +393,8 @@ async function createClone(
 	usdt: ethers.Contract,
 	usdtAddr: string,
 	routerAddr: string,
-	src: CachedToken
+	src: CachedToken,
+	chainId: number,
 ): Promise<string | null> {
 	const typeKey = pickTokenType();
 	const typeLabels = ['Basic', 'Mintable', 'Taxable', 'Tax+Mint'];
@@ -471,7 +495,7 @@ async function createClone(
 						headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${SYNC_SECRET}` },
 						body: JSON.stringify({
 							address: tokenAddr.toLowerCase(),
-							chain_id: CHAIN_ID,
+							chain_id: chainId,
 							creator: wallet.address.toLowerCase(),
 							name: src.name,
 							symbol: src.symbol,
@@ -501,7 +525,7 @@ async function createClone(
 						},
 						body: JSON.stringify({
 							address: tokenAddr.toLowerCase(),
-							chain_id: CHAIN_ID,
+							chain_id: chainId,
 							name: src.name,
 							symbol: src.symbol,
 							decimals: src.decimals,
@@ -529,173 +553,205 @@ async function createClone(
 	}
 }
 
+// ── Per-chain context ──
+type ChainCtx = {
+	chainId: number;
+	name: string;
+	provider: ethers.JsonRpcProvider;
+	wallets: ethers.Wallet[];
+	treasurer: ethers.Wallet;
+	factory: ethers.Contract;
+	router: ethers.Contract;
+	usdt: ethers.Contract;
+	factoryAddr: string;
+	routerAddr: string;
+	usdtAddr: string;
+};
+
+async function buildChainCtx(net: Network, mnemonic: string): Promise<ChainCtx | null> {
+	const factoryAddr = (net.platform_address as string) || '';
+	const routerAddr = (net.router_address as string) || '';
+	const usdtAddr = (net.usdt_address as string) || '';
+	if (!factoryAddr || !routerAddr || !usdtAddr) {
+		console.warn(`   ⚠️ [c${net.chain_id}] missing platform/router/usdt — skipping`);
+		return null;
+	}
+
+	// HTTP-only provider. WS providers (Infura) reject
+	// eth_sendRawTransaction; activity-bot is a tx-sender, never a
+	// listener, so HTTP is the right shape.
+	const { http } = pickDaemonRpc(net);
+	const rpcUrl = http || (net.rpc as string) || '';
+	if (!rpcUrl) {
+		console.warn(`   ⚠️ [c${net.chain_id}] no http rpc — skipping`);
+		return null;
+	}
+
+	const provider = new ethers.JsonRpcProvider(rpcUrl, net.chain_id, { staticNetwork: true });
+	const wallets = deriveWallets(mnemonic, WALLET_COUNT, provider);
+	const treasurer = wallets[0];
+
+	return {
+		chainId: net.chain_id,
+		name: (net.name as string) || `chain-${net.chain_id}`,
+		provider,
+		wallets,
+		treasurer,
+		factory: new ethers.Contract(factoryAddr, TOKEN_FACTORY_ABI, provider),
+		router: new ethers.Contract(routerAddr, PLATFORM_ROUTER_ABI, provider),
+		usdt: new ethers.Contract(usdtAddr, ERC20_ABI, provider),
+		factoryAddr,
+		routerAddr,
+		usdtAddr,
+	};
+}
+
+// One iteration: refresh trending if stale, pick a candidate, enrich,
+// pick a wallet, clone. The trending cache is shared across chains
+// (same off-chain GCT data), but cloned-set is per-chain.
+async function runChainIteration(
+	ctx: ChainCtx,
+	state: State,
+	log: (msg: string) => void,
+): Promise<{ tokenAddr: string | null; fundable: boolean }> {
+	const cs = getChainState(state, ctx.chainId);
+	const clonedSet = new Set(cs.clonedTokens);
+
+	// Refresh trending (shared cache).
+	if (Date.now() - state.trendingFetchedAt > TRENDING_REFRESH_MS || state.trendingCache.length === 0) {
+		try {
+			state.trendingCache = await fetchTrending();
+			state.trendingFetchedAt = Date.now();
+			saveState(state);
+		} catch (e: any) {
+			log(`  ⚠️  Trending fetch failed: ${e.message?.slice(0, 80)}`);
+			if (state.trendingCache.length === 0) return { tokenAddr: null, fundable: true };
+		}
+	}
+
+	const candidates = state.trendingCache.filter((t) => !clonedSet.has(t.key));
+	if (candidates.length === 0) {
+		log('  ℹ️  All cached tokens cloned (this chain).');
+		return { tokenAddr: null, fundable: true };
+	}
+	const stub = pick(candidates);
+
+	log(`  🔎 Enriching ${stub.network}:${stub.symbol}…`);
+	const source = await enrichOne(stub);
+	if (!source) {
+		clonedSet.add(stub.key);
+		cs.clonedTokens = Array.from(clonedSet);
+		saveState(state);
+		log(`  ⚠️  ${stub.symbol} not enrichable — skipping`);
+		return { tokenAddr: null, fundable: true };
+	}
+
+	let walletIdx = randInt(1, ctx.wallets.length - 1);
+	let wallet = ctx.wallets[walletIdx];
+	let funded = await fundIfLow(ctx.treasurer, wallet, ctx.usdt, ctx.provider);
+	if (!funded.bnb || !funded.usdt) {
+		log(`  🔎 Treasurer can't fund [${walletIdx}] — looking for an already-funded wallet…`);
+		const fallback = await findAlreadyFunded(ctx.wallets, ctx.usdt, ctx.provider, walletIdx);
+		if (fallback) {
+			log(`  ✅ Reusing wallet [${fallback.idx}] (already has BNB+USDT)`);
+			wallet = fallback.wallet;
+			walletIdx = fallback.idx;
+			funded = { bnb: true, usdt: true };
+		} else {
+			log(`  ⚠️  No funded wallets either — top up treasurer ${ctx.treasurer.address}`);
+			return { tokenAddr: null, fundable: false };
+		}
+	}
+
+	const tokenAddr = await createClone(wallet, walletIdx, ctx.router, ctx.factory, ctx.usdt, ctx.usdtAddr, ctx.routerAddr, source, ctx.chainId);
+	if (tokenAddr) {
+		clonedSet.add(source.key);
+		cs.clonedTokens = Array.from(clonedSet);
+		cs.tokensCreated += 1;
+		saveState(state);
+		log(`    Total on chain ${ctx.chainId}: ${cs.tokensCreated}`);
+	}
+	return { tokenAddr, fundable: true };
+}
+
+async function chainLoop(ctx: ChainCtx, state: State, runningRef: { v: boolean }) {
+	const log = (msg: string) => console.log(`[c${ctx.chainId}/${ctx.name}]${msg.startsWith(' ') ? '' : ' '}${msg}`);
+	const speed = SPEEDS[SPEED] || SPEEDS.slow;
+	while (runningRef.v) {
+		try {
+			const result = await runChainIteration(ctx, state, log);
+			if (RUN_ONCE) {
+				log(`\n🏁 RUN_ONCE — exiting (token=${result.tokenAddr || 'failed'})`);
+				return;
+			}
+			if (!result.fundable) {
+				await sleep(60 * 1000);
+				continue;
+			}
+		} catch (e: any) {
+			log(`  ❌ Loop error: ${e.message?.slice(0, 100)}`);
+			if (RUN_ONCE) return;
+		}
+		const delaySec = randInt(speed.tokenMin, speed.tokenMax);
+		log(`  ⏳ Next in ~${(delaySec / 60).toFixed(1)} min`);
+		await Bun.sleep(delaySec * 1000);
+	}
+}
+
 // ── Main ──
 async function main() {
 	const mnemonic = process.env.BOT_MNEMONIC;
 	if (!mnemonic) { console.error('❌ BOT_MNEMONIC required'); process.exit(1); }
 
-	// Load config from backend (DB-managed addresses + RPC)
-	let factoryAddr = '', routerAddr = '', usdtAddr = '', rpcUrl = RPC_URL;
-	try {
-		const cfgHeaders: Record<string, string> = {};
-		if (SYNC_SECRET) cfgHeaders.Authorization = `Bearer ${SYNC_SECRET}`;
-		const res = await fetch(`${API_BASE}/api/config?keys=networks`, { headers: cfgHeaders });
-		const { networks } = await res.json();
-		const net = (networks || []).find((n: any) => Number(n.chain_id) === CHAIN_ID);
-		factoryAddr = net?.platform_address;
-		routerAddr = net?.router_address;
-		usdtAddr = net?.usdt_address;
-		const daemonRpc = net?.daemon_rpc || '';
-		const isWs = daemonRpc.startsWith('wss://') || daemonRpc.startsWith('ws://');
-		// Pick an HTTP RPC only — see provider note below.
-		if (!isWs && daemonRpc) rpcUrl = daemonRpc;
-		else if (net?.rpc) rpcUrl = net.rpc;
-	} catch (e: any) {
-		console.error(`❌ Config fetch failed: ${e.message}`);
-		process.exit(1);
-	}
-	if (!factoryAddr || !routerAddr || !usdtAddr) {
-		console.error('❌ Missing factory/router/usdt address');
-		process.exit(1);
-	}
-
-	// Activity bot only sends transactions — no event subscriptions —
-	// so a plain HTTP JsonRpcProvider is enough. We previously routed
-	// through createManagedProvider (which prefers WS when daemon_rpc
-	// is wss://), but Infura's WS endpoints reject eth_sendRawTransaction
-	// with a generic "could not coalesce error", killing every scatter.
-	const provider = new ethers.JsonRpcProvider(rpcUrl, CHAIN_ID, { staticNetwork: true });
-	const wallets = deriveWallets(mnemonic, WALLET_COUNT, provider);
-	const treasurer = wallets[0]; // wallet[0] holds the pooled funds, scatters to others
 	const speed = SPEEDS[SPEED] || SPEEDS.slow;
+	console.log('\n╔════════════════════════════════════════════════╗');
+	console.log('║   TokenKrafter Activity Bot (multi-chain)      ║');
+	console.log('╚════════════════════════════════════════════════╝');
+	console.log(`  Wallets per chain: ${WALLET_COUNT}`);
+	console.log(`  Speed:             ${SPEED} (${speed.desc})`);
+	console.log(`  State:             ${STATE_FILE}`);
 
-	const factory = new ethers.Contract(factoryAddr, TOKEN_FACTORY_ABI, provider);
-	const router = new ethers.Contract(routerAddr, PLATFORM_ROUTER_ABI, provider);
-	const usdt = new ethers.Contract(usdtAddr, ERC20_ABI, provider);
+	let networks: Network[];
+	try {
+		networks = await loadNetworks(API_BASE, SYNC_SECRET ? `Bearer ${SYNC_SECRET}` : undefined);
+	} catch (e: any) {
+		console.error(`❌ Failed to load networks: ${e.message}`);
+		process.exit(1);
+	}
+	if (networks.length === 0) {
+		console.error('❌ No enabled networks');
+		process.exit(1);
+	}
+	console.log(`  Networks:          ${networks.map((n) => `${n.chain_id}/${n.name}`).join(', ')}\n`);
 
-	const [treasurerBnb, treasurerUsdt] = await Promise.all([
-		provider.getBalance(treasurer.address),
-		usdt.balanceOf(treasurer.address),
-	]);
-
-	console.log(`
-╔════════════════════════════════════════════════╗
-║      TokenKrafter Activity Bot (Standalone)    ║
-╚════════════════════════════════════════════════╝
-  Chain:          ${CHAIN_ID}
-  RPC:            ${rpcUrl}
-  Factory:        ${factoryAddr}
-  Router:         ${routerAddr}
-  USDT:           ${usdtAddr}
-  Treasurer[0]:   ${treasurer.address}
-  Treasurer BNB:  ${ethers.formatEther(treasurerBnb)}
-  Treasurer USDT: ${ethers.formatUnits(treasurerUsdt, 18)}
-  Wallets:        ${WALLET_COUNT}
-  Speed:          ${SPEED} (${speed.desc})
-  State:          ${STATE_FILE}
-`);
+	const chains: ChainCtx[] = [];
+	for (const net of networks) {
+		const c = await buildChainCtx(net, mnemonic);
+		if (!c) continue;
+		const [bnb, ust] = await Promise.all([
+			c.provider.getBalance(c.treasurer.address),
+			c.usdt.balanceOf(c.treasurer.address),
+		]);
+		console.log(`  [c${c.chainId}/${c.name}] treasurer ${c.treasurer.address} — ${ethers.formatEther(bnb)} BNB / ${ethers.formatUnits(ust, 18)} USDT`);
+		chains.push(c);
+	}
+	if (chains.length === 0) {
+		console.error('❌ No usable chain contexts');
+		process.exit(1);
+	}
 
 	const state = loadState();
-	const clonedSet = new Set(state.clonedTokens);
-	let running = true;
-	process.on('SIGINT', () => { running = false; console.log('\n⏹  Stopping...'); });
-	process.on('SIGTERM', () => { running = false; });
+	const runningRef = { v: true };
+	process.on('SIGINT', () => { runningRef.v = false; console.log('\n⏹  Stopping...'); });
+	process.on('SIGTERM', () => { runningRef.v = false; });
 
-	while (running) {
-		try {
-			// Refresh trending
-			if (Date.now() - state.trendingFetchedAt > TRENDING_REFRESH_MS || state.trendingCache.length === 0) {
-				try {
-					state.trendingCache = await fetchTrending();
-					state.trendingFetchedAt = Date.now();
-					saveState(state);
-				} catch (e: any) {
-					console.log(`  ⚠️  Trending fetch failed: ${e.message?.slice(0, 80)}`);
-					if (state.trendingCache.length === 0) {
-						console.log('  ❌ No cache, sleeping 10min...');
-						await sleep(10 * 60 * 1000);
-						continue;
-					}
-				}
-			}
+	// Run all chains in parallel — independent loops, independent
+	// SPEED windows, independent treasurers (same mnemonic but
+	// different chains, so wallet[0] balance is per-chain).
+	await Promise.all(chains.map((c) => chainLoop(c, state, runningRef)));
 
-			const candidates = state.trendingCache.filter(t => !clonedSet.has(t.key));
-			if (candidates.length === 0) {
-				console.log('  ℹ️  All cached tokens cloned. Waiting 30min for refresh...');
-				await sleep(30 * 60 * 1000);
-				continue;
-			}
-			const stub = pick(candidates);
-
-			// Lazy enrich — only the picked token, only right before we
-			// actually need its supply/socials. Two GCT calls instead of
-			// 2×N upfront, so trending refreshes don't hit 429 storms.
-			console.log(`  🔎 Enriching ${stub.network}:${stub.symbol}…`);
-			const source = await enrichOne(stub);
-			if (!source) {
-				// Mark as cloned so we don't repeatedly retry a bad pick.
-				clonedSet.add(stub.key);
-				state.clonedTokens = Array.from(clonedSet);
-				saveState(state);
-				console.log(`  ⚠️  ${stub.symbol} not enrichable — skipping`);
-				continue;
-			}
-
-			// Pick random wallet, fund if low. If treasurer can't scatter
-			// (low balance, RPC error, etc.) fall through to any wallet
-			// already holding BNB+USDT from a prior fund — those funds
-			// shouldn't sit idle just because the treasurer is empty.
-			let walletIdx = randInt(1, wallets.length - 1); // skip 0 (treasurer)
-			let wallet = wallets[walletIdx];
-			let funded = await fundIfLow(treasurer, wallet, usdt, provider);
-			if (!funded.bnb || !funded.usdt) {
-				console.log(`  🔎 Treasurer can't fund [${walletIdx}] — looking for an already-funded wallet…`);
-				const fallback = await findAlreadyFunded(wallets, usdt, provider, walletIdx);
-				if (fallback) {
-					console.log(`  ✅ Reusing wallet [${fallback.idx}] (already has BNB+USDT)`);
-					wallet = fallback.wallet;
-					walletIdx = fallback.idx;
-					funded = { bnb: true, usdt: true };
-				} else {
-					console.log(`  ⚠️  No funded wallets either — sleeping 60s. Top up treasurer at ${treasurer.address}`);
-					if (RUN_ONCE) {
-						console.log('\n🏁 RUN_ONCE — exiting (no fundable wallet)');
-						return;
-					}
-					await sleep(60 * 1000);
-					continue;
-				}
-			}
-
-			const tokenAddr = await createClone(wallet, walletIdx, router, factory, usdt, usdtAddr, routerAddr, source);
-			if (tokenAddr) {
-				clonedSet.add(source.key);
-				state.clonedTokens = Array.from(clonedSet);
-				state.tokensCreated++;
-				saveState(state);
-				console.log(`    Total: ${state.tokensCreated}`);
-			}
-			if (RUN_ONCE) {
-				console.log(`\n🏁 RUN_ONCE — exiting after one iteration (token=${tokenAddr || 'failed'})`);
-				return;
-			}
-		} catch (e: any) {
-			console.error(`  ❌ Loop error: ${e.message?.slice(0, 100)}`);
-			if (RUN_ONCE) {
-				console.log('\n🏁 RUN_ONCE — exiting after error');
-				return;
-			}
-		}
-
-		const delaySec = randInt(speed.tokenMin, speed.tokenMax);
-		console.log(`  ⏳ Next in ~${(delaySec / 60).toFixed(1)} min`);
-		// Sleep the full delay in one shot — SIGINT sets running=false and
-		// the loop condition catches it on the next iteration.
-		await Bun.sleep(delaySec * 1000);
-		if (!running) break;
-	}
-
-	console.log(`\n✅ Stopped. Total: ${state.tokensCreated} tokens cloned.`);
+	const total = Object.values(state.byChain).reduce((sum, cs) => sum + cs.tokensCreated, 0);
+	console.log(`\n✅ Stopped. Total: ${total} tokens cloned across ${chains.length} chain(s).`);
 }
 
 main().catch(e => { console.error('Fatal:', e); process.exit(1); });
