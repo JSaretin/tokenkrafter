@@ -1,63 +1,152 @@
 /**
  * Referral capture + persistence.
  *
- * When a user lands on any TokenKrafter URL with `?ref=0xabc…` we
- * stick that address into localStorage. Subsequent buys / trades pass
- * it to the on-chain `Affiliate` contract via the existing
- * `buyWithRef(...)` overload — the contract pays the referrer a
- * configurable share (default 25%) of the platform fee.
+ * Lifecycle:
+ *   1. Visitor lands on `/?ref=<address|alias>` → captureReferralFromUrl()
+ *      stores the raw value in localStorage under PENDING_KEY (sticky).
+ *   2. User connects a wallet → lockReferral(addr) POSTs the pending
+ *      value to /api/referred. Backend resolves the alias if needed,
+ *      inserts first-write-wins, and returns the locked record. We
+ *      cache that under LOCKED_KEY:<addr> for synchronous reads.
+ *   3. On-chain calls read refOrZero(addr) which returns the locked
+ *      cache value or ZeroAddress. Aliases are resolved server-side
+ *      so this stays sync — no network on the buy hot path.
  *
- * Stickiness: once captured, a referrer survives navigation and
- * tab-close. Self-referral and zero address are rejected. The
- * Affiliate contract additionally enforces stickiness server-side
- * (a user with a recorded referrer can't rotate to a new one).
+ * Stickiness:
+ *   - PENDING_KEY only writes when empty (first ?ref= wins).
+ *   - LOCKED_KEY:<addr> is set after the backend confirms; subsequent
+ *     locks for the same wallet hit the existing row and return the
+ *     same referrer.
+ *   - Self-referral and zero address are rejected at every layer
+ *     (FE, API, DB CHECK constraint).
  */
 import { ethers } from 'ethers';
 
-const STORAGE_KEY = 'referral_addr';
+const PENDING_KEY = 'referral_addr';
+const LOCKED_PREFIX = 'locked_ref:';
 
-/** Capture `?ref=...` from the current URL into localStorage if valid.
- *  Safe to call repeatedly — only writes when a fresh, well-formed
- *  address appears AND the user hasn't already captured one (sticky). */
+function lockedKey(addr: string): string {
+	return `${LOCKED_PREFIX}${addr.toLowerCase()}`;
+}
+
+/** Validate a free-form referral input (address or alias). Aliases are
+ *  the same shape we accept server-side: lowercase letters/digits/dash/
+ *  underscore, 3–20 chars. */
+function isValidReferralInput(v: string): boolean {
+	if (!v) return false;
+	const lower = v.toLowerCase();
+	if (ethers.isAddress(lower)) return lower !== ethers.ZeroAddress.toLowerCase();
+	return /^[a-z0-9_-]{3,20}$/.test(lower);
+}
+
+/** Capture `?ref=...` from the current URL into localStorage. Accepts
+ *  both addresses and aliases — the backend resolves aliases on lock.
+ *  Sticky: only writes when no pending value exists. */
 export function captureReferralFromUrl(currentUrl?: URL): void {
 	if (typeof window === 'undefined') return;
 	try {
 		const url = currentUrl ?? new URL(window.location.href);
 		const ref = url.searchParams.get('ref');
 		if (!ref) return;
-		if (!ethers.isAddress(ref)) return;
-		if (ref.toLowerCase() === ethers.ZeroAddress.toLowerCase()) return;
-		const existing = localStorage.getItem(STORAGE_KEY);
-		if (existing && ethers.isAddress(existing)) return; // sticky
-		localStorage.setItem(STORAGE_KEY, ref.toLowerCase());
+		const v = ref.toLowerCase();
+		if (!isValidReferralInput(v)) return;
+		if (localStorage.getItem(PENDING_KEY)) return; // sticky
+		localStorage.setItem(PENDING_KEY, v);
 	} catch {}
 }
 
-/** Returns the captured referrer address or null. Filters out
- *  self-referral so a user can't game it by refreshing their own
- *  link in their own session. */
-export function getReferral(userAddress?: string | null): string | null {
+/** Pending (URL-captured, not yet locked) referrer. May be an alias. */
+export function getPendingReferral(): string | null {
 	if (typeof window === 'undefined') return null;
 	try {
-		const ref = localStorage.getItem(STORAGE_KEY);
-		if (!ref || !ethers.isAddress(ref)) return null;
-		if (userAddress && ref.toLowerCase() === userAddress.toLowerCase()) return null;
-		return ref;
+		return localStorage.getItem(PENDING_KEY);
 	} catch {
 		return null;
 	}
 }
 
-/** Resolve the ref to pass into a contract call. Falls back to
- *  ZeroAddress when no captured ref or the user is referring
- *  themselves. */
+/** Locked referrer for a given wallet (always an address, lowercase),
+ *  read from localStorage cache populated by lockReferral(). */
+export function getLockedReferral(addr: string): string | null {
+	if (typeof window === 'undefined' || !addr) return null;
+	try {
+		const v = localStorage.getItem(lockedKey(addr));
+		return v && ethers.isAddress(v) ? v : null;
+	} catch {
+		return null;
+	}
+}
+
+/** Resolve the ref to pass into a contract call. Synchronous — reads
+ *  only the cached locked value. ZeroAddress when no lock or self. */
 export function refOrZero(userAddress?: string | null): string {
-	return getReferral(userAddress) ?? ethers.ZeroAddress;
+	if (!userAddress) return ethers.ZeroAddress;
+	const ref = getLockedReferral(userAddress);
+	if (!ref) return ethers.ZeroAddress;
+	if (ref.toLowerCase() === userAddress.toLowerCase()) return ethers.ZeroAddress;
+	return ref;
+}
+
+/** Commit the pending referral to the backend for `addr`. No-op if
+ *  there's no pending capture or we already have a cached lock. The
+ *  server enforces first-write-wins, so calling repeatedly is safe.
+ *
+ *  Also performs a passive hydrate when nothing is pending — the user
+ *  may have locked from a different device, so we still try a GET to
+ *  populate the local cache. */
+export async function lockReferral(addr: string): Promise<string | null> {
+	if (typeof window === 'undefined' || !addr || !ethers.isAddress(addr)) return null;
+	const me = addr.toLowerCase();
+	const cached = getLockedReferral(me);
+	if (cached) return cached;
+
+	const pending = getPendingReferral();
+
+	try {
+		if (pending) {
+			const res = await fetch('/api/referred', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ referral: pending }),
+			});
+			// 400 (invalid/self) → drop the pending so we don't retry forever.
+			if (res.status === 400) {
+				localStorage.removeItem(PENDING_KEY);
+				return null;
+			}
+			if (!res.ok) return null;
+			const row = await res.json();
+			const referrer = (row?.referrer || '').toLowerCase();
+			if (referrer && ethers.isAddress(referrer)) {
+				localStorage.setItem(lockedKey(me), referrer);
+				// Pending served its purpose; clear it.
+				localStorage.removeItem(PENDING_KEY);
+				return referrer;
+			}
+			return null;
+		}
+
+		// No pending — try a self-lookup in case we locked elsewhere.
+		const res = await fetch(`/api/referred?addr=${me}`);
+		if (!res.ok) return null;
+		const row = await res.json();
+		const referrer = (row?.referrer || '').toLowerCase();
+		if (referrer && ethers.isAddress(referrer)) {
+			localStorage.setItem(lockedKey(me), referrer);
+			return referrer;
+		}
+		return null;
+	} catch {
+		return null;
+	}
 }
 
 export function clearReferral(): void {
 	if (typeof window === 'undefined') return;
-	try { localStorage.removeItem(STORAGE_KEY); } catch {}
+	try {
+		localStorage.removeItem(PENDING_KEY);
+		// Locked refs are per-wallet and survive disconnect — leave them.
+	} catch {}
 }
 
 /** Build a shareable URL with the user as the referrer. */

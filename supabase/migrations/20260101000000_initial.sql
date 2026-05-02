@@ -467,6 +467,29 @@ alter table referral_aliases enable row level security;
 select create_policy_if_not_exists('referral_aliases', 'Anon read', 'select');
 
 -- ============================================================
+-- Referred — who referred this wallet.
+-- One row per wallet, locked first-write-wins. Frontend captures
+-- ?ref=<addr|alias> from URL into localStorage; on wallet connect
+-- it POSTs to /api/referred which inserts (idempotent) and returns
+-- the locked record. On-chain calls subsequently read this value
+-- (cached in localStorage by the FE) and pass it to the Affiliate
+-- contract instead of trusting raw localStorage state.
+--
+-- Both columns are stored lowercase for case-insensitive matching.
+-- ============================================================
+create table if not exists referred (
+  wallet_address text primary key,
+  referrer text not null,
+  created_at timestamptz not null default now(),
+  -- Refuse self-referral at the table level so a malicious client
+  -- can't bypass FE checks.
+  constraint referred_no_self check (wallet_address <> referrer)
+);
+create index if not exists idx_referred_referrer on referred (referrer);
+alter table referred enable row level security;
+-- No anon read — referral graph is service-role-only.
+
+-- ============================================================
 -- Platform config (unified key-value store for all settings)
 -- Stores: networks, site info, social links, exchange rates, etc.
 --

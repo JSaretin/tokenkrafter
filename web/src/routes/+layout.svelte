@@ -286,6 +286,11 @@
 		userAddress = address;
 		walletType = type;
 		walletLoading = false;
+		// Commit any pending ?ref= capture to the DB. First-write-wins
+		// server-side; safe to call on every connect.
+		import('$lib/referral')
+			.then((m) => m.lockReferral(address))
+			.catch(() => {});
 		// Clear authChecking too — the OAuth-return path early-returns
 		// out of the autoReconnect IIFE so the bottom-of-block clear
 		// never fires. Leaving authChecking true keeps the nav stuck on
@@ -423,6 +428,11 @@
 					const rpcProvider = new ethers.JsonRpcProvider(net.rpc, net.chain_id, { staticNetwork: true });
 					signer = getEmbeddedSigner(rpcProvider);
 				}
+				// Commit any pending ?ref= capture to the DB. First-write-wins
+				// server-side, so repeated calls are no-ops once locked.
+				import('$lib/referral')
+					.then((m) => m.lockReferral(state.activeAccount!.address))
+					.catch(() => {});
 			} else if (!state.isUnlocked) {
 				signer = null;
 			}
