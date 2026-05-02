@@ -62,7 +62,7 @@ If you ever want a dev daemon stack, copy `docker-compose.yml` to
 
 | File | Purpose |
 | --- | --- |
-| `global.env` | Shared across daemons: RPC, CHAIN_ID, FLW key, TX_CONFIRM_SECRET, REDIS_URL, BACKEND_URL |
+| `global.env` | Shared across daemons: RPC, CHAIN_ID, FLW key, TX_CONFIRM_SECRET, REDIS_URL, API_BASE_URL |
 | `web.env` | SvelteKit frontend + API routes (Supabase, admin keys, Telegram) — pushed to CF Pages with `bun scripts/sync-cf-env.mjs` |
 | `contracts.env` | Hardhat deploy + verify (deployer key, Etherscan API) |
 | `indexer.env` | ws-indexer, safu-indexer, rate-updater (poll interval, daemon SYNC_SECRET) |

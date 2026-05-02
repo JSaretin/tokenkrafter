@@ -24,7 +24,7 @@
  *   TRADE_ROUTER       — TradeRouter contract address
  *   ADMIN_ADDRESS      — admin wallet address (for gas balance check)
  *   TX_CONFIRM_SECRET  — auth for the SvelteKit /api/withdrawals/process
- *   BACKEND_URL        — SvelteKit backend URL (e.g. https://tokenkrafter.com)
+ *   API_BASE_URL        — SvelteKit backend URL (e.g. https://tokenkrafter.com)
  *   FLUTTERWAVE_SECRET_KEY — for direct balance check
  *   REDIS_URL          — Redis connection (default redis://localhost:6379)
  *   MIN_GAS_BNB        — minimum admin BNB balance (default 0.005)
@@ -45,7 +45,7 @@ const {
 	ADMIN_ADDRESS = '',
 	TX_CONFIRM_SECRET = '',
 	SYNC_SECRET = '',
-	BACKEND_URL = 'https://tokenkrafter.com',
+	API_BASE_URL = 'https://tokenkrafter.com',
 	FLUTTERWAVE_SECRET_KEY = '',
 	REDIS_URL = 'redis://localhost:6379',
 	MIN_GAS_BNB = '0.005',
@@ -71,7 +71,7 @@ let resolvedAdminAddress = ADMIN_ADDRESS;
 
 async function resolveFromConfig() {
 	try {
-		const res = await fetch(`${BACKEND_URL}/api/config?keys=networks`, {
+		const res = await fetch(`${API_BASE_URL}/api/config?keys=networks`, {
 			headers: { Authorization: `Bearer ${TX_CONFIRM_SECRET}` },
 		});
 		if (!res.ok) return;
@@ -194,7 +194,7 @@ async function sendAlert(subject: string, message: string, type: string = 'syste
 	// Route through /api/alert — centralized fanout to Telegram, email, etc.
 	// This avoids direct Telegram calls from the VPS (which may be blocked).
 	try {
-		await fetch(`${BACKEND_URL}/api/alert`, {
+		await fetch(`${API_BASE_URL}/api/alert`, {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/json',
@@ -258,7 +258,7 @@ async function processWithdrawal(withdrawId: number): Promise<boolean> {
 		// the on-ramp delivery daemon. This closes the inventory loop:
 		// off-ramp inflows auto-replenish on-ramp outflows, no manual
 		// rebalancing required between the two flows.
-		const res = await fetch(`${BACKEND_URL}/api/withdrawals/process`, {
+		const res = await fetch(`${API_BASE_URL}/api/withdrawals/process`, {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/json',
@@ -463,7 +463,7 @@ async function main() {
 	console.log('Withdrawal Processor starting...');
 	console.log(`  Chain: ${chainId} | Router: ${resolvedTradeRouter}`);
 	console.log(`  Admin: ${adminAddress}`);
-	console.log(`  Backend: ${BACKEND_URL}`);
+	console.log(`  Backend: ${API_BASE_URL}`);
 
 	// Fetch daemon_rpc + contract addresses from DB config
 	await resolveFromConfig();
