@@ -22,9 +22,23 @@ export const load: LayoutServerLoad = async ({ locals, fetch }) => {
 		.map((s) => s.trim())
 		.filter(Boolean);
 
+	// Admin wallet allowlist exposed to the FE so the nav can flip on
+	// the admin links the moment the user connects/switches to an admin
+	// wallet — without first forcing a signed-session round-trip.
+	// Knowing an address is in the list grants no privilege: every
+	// admin endpoint still verifies a fresh signature against the same
+	// allowlist server-side. Admin addresses are usually already public
+	// on chain (deployer / owner / admin-tx history), so this isn't new
+	// exposure.
+	const adminWallets = (env.ADMIN_WALLETS ?? '')
+		.split(',')
+		.map((a) => a.trim().toLowerCase())
+		.filter(Boolean);
+
 	return {
 		isAdmin: locals.isAdmin || false,
 		wallet: locals.wallet || null,
+		adminWallets,
 		socialLinks,
 		allowedOrigins,
 	};

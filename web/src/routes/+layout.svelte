@@ -23,7 +23,18 @@
 	import { ROUTER_ABI_LITE } from '$lib/commonABIs';
 
 	let { children, data }: { children: any; data: any } = $props();
-	let isAdmin = $derived(data?.isAdmin || false);
+	// isAdmin tracks the *currently connected* wallet, not the session.
+	// Without this, switching from a non-admin to an admin wallet keeps
+	// the nav stuck (data.isAdmin came from the original session and
+	// only updates on a fresh signed round-trip / disconnect-reconnect).
+	// Admin endpoints still re-verify the signature server-side, so
+	// flipping the UI bit pre-sign grants nothing — it just unhides the
+	// admin path so the user can navigate there.
+	let isAdmin = $derived.by(() => {
+		if (!userAddress) return data?.isAdmin || false;
+		const list: string[] = data?.adminWallets || [];
+		return list.includes(userAddress.toLowerCase());
+	});
 
 	let showWalletModal = $state(false);
 	let showAccountPanel = $state(false);
