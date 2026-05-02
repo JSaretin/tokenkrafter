@@ -7,11 +7,10 @@
 	import LaunchProgressBar from '$lib/LaunchProgressBar.svelte';
 	import LaunchCountdown from '$lib/LaunchCountdown.svelte';
 	import TokenLogo from '$lib/TokenLogo.svelte';
-	import { supabase } from '$lib/supabaseClient';
-	import type { RealtimeChannel } from '@supabase/supabase-js';
+	import { realtime } from '$lib/realtime.svelte';
 
 	let { data }: { data: any } = $props();
-	// Reactive so the realtime subscription below can prepend new rows.
+	// Reactive so the realtime store's $effect below can prepend new rows.
 	let tokens: any[] = $state(data.tokens);
 	let activeLaunches: any[] = data.activeLaunches || [];
 	let activeLaunchAddrs = $derived(new Set(
@@ -264,7 +263,24 @@
 		]);
 	}
 
-	let _newTokenChannel: RealtimeChannel | null = null;
+	// Observe the global realtime store. INSERTs prepend (de-duped),
+	// UPDATEs patch in place. The store is connected once from the
+	// root layout — no per-page subscribe / removeChannel here.
+	$effect(() => {
+		const ev = realtime.lastTokenInsert;
+		if (!ev?.row?.address) return;
+		const a = ev.row.address.toLowerCase();
+		if (tokens.some((t) => (t.address || '').toLowerCase() === a)) return;
+		tokens = [ev.row, ...tokens];
+	});
+	$effect(() => {
+		const ev = realtime.lastTokenUpdate;
+		if (!ev?.row?.address) return;
+		const a = ev.row.address.toLowerCase();
+		const idx = tokens.findIndex((t) => (t.address || '').toLowerCase() === a);
+		if (idx === -1) return;
+		tokens[idx] = { ...tokens[idx], ...ev.row };
+	});
 
 	onMount(async () => {
 		// Set up IntersectionObserver for lazy SafuLens badge detection
@@ -275,42 +291,6 @@
 			}, 100);
 		}
 
-		// Realtime: prepend new tokens as ws-indexer (or the activity bot)
-		// inserts them. Inserts are upserts in our case — when the row
-		// gets the metadata-PUT first and the indexer's POST upserts on
-		// top, postgres still emits an INSERT only on the first write.
-		// Subsequent column updates fire as UPDATE events; we listen for
-		// those too so a token that arrived as a metadata-only stub
-		// gets enriched in place when the indexer fills name/symbol.
-		_newTokenChannel = supabase
-			.channel('explore-new-tokens')
-			.on(
-				'postgres_changes',
-				{ event: 'INSERT', schema: 'public', table: 'created_tokens' },
-				(payload) => {
-					const row = payload.new as any;
-					if (!row?.address) return;
-					const a = row.address.toLowerCase();
-					// De-dupe — page can re-render or the row could already
-					// be in `tokens` from SSR if it landed mid-load.
-					if (tokens.some((t) => (t.address || '').toLowerCase() === a)) return;
-					tokens = [row, ...tokens];
-				},
-			)
-			.on(
-				'postgres_changes',
-				{ event: 'UPDATE', schema: 'public', table: 'created_tokens' },
-				(payload) => {
-					const row = payload.new as any;
-					if (!row?.address) return;
-					const a = row.address.toLowerCase();
-					const idx = tokens.findIndex((t) => (t.address || '').toLowerCase() === a);
-					if (idx === -1) return;
-					tokens[idx] = { ...tokens[idx], ...row };
-				},
-			)
-			.subscribe();
-
 		// First 30 already loaded from SSR — fetch remaining batches
 		if (tokens.length <= 30) { geckoLoading = false; return; }
 		await refreshGeckoData(30);
@@ -320,10 +300,6 @@
 	onDestroy(() => {
 		_safuObserver?.disconnect();
 		if (_safuTimer) clearTimeout(_safuTimer);
-		if (_newTokenChannel) {
-			supabase.removeChannel(_newTokenChannel);
-			_newTokenChannel = null;
-		}
 	});
 
 	// Re-observe cards when the filtered list changes

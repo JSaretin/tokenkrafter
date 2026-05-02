@@ -482,6 +482,12 @@
 		// captureReferralFromUrl.
 		import('$lib/referral').then((m) => m.captureReferralFromUrl()).catch(() => {});
 
+		// Single global Supabase realtime channel, lazy-loaded so the
+		// chunk doesn't block first paint. Pages observe the store's
+		// reactive fields ($lib/realtime.svelte.ts) instead of opening
+		// their own postgres_changes subscriptions — one WS, one schema.
+		import('$lib/realtime.svelte').then((m) => m.realtime.connect()).catch(() => {});
+
 		// PWA install prompt
 		const dismissed = localStorage.getItem('pwa_install_dismissed');
 		window.addEventListener('beforeinstallprompt', (e: any) => {

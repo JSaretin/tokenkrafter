@@ -1,6 +1,21 @@
 /**
- * Supabase Realtime subscription manager
- * Single channel, chained .on() handlers, one .subscribe()
+ * Supabase Realtime subscription manager.
+ *
+ * One channel, multi-consumer. The root layout calls connect() once
+ * on mount and pages observe state via Svelte runes — no per-page
+ * channel.subscribe() / removeChannel() boilerplate, no duplicate WS
+ * subscriptions, and the multi-page `/explore` ↔ `/launchpad`
+ * navigation doesn't churn.
+ *
+ * Tables covered:
+ *   recent_transactions  — INSERT (transactions stream, capped)
+ *   created_tokens       — INSERT + UPDATE (latest payload + seq)
+ *   launches             — INSERT + UPDATE (latest payload + seq)
+ *
+ * Pages consume by holding their own reactive state (e.g. `tokens`)
+ * and running `$effect` on the matching `lastTokenInsert` /
+ * `lastTokenUpdate` etc. — that gives each page its own filter/order
+ * while sharing the WS connection.
  */
 import { supabase } from '$lib/supabaseClient';
 import type { RealtimeChannel } from '@supabase/supabase-js';
@@ -30,18 +45,40 @@ export interface LiveLaunchUpdate {
 	current_price: string;
 }
 
+/** Generic event payload — pages observe { seq, row } pairs. seq is
+ *  monotonically increasing so $effect fires even if the same row
+ *  arrives twice (e.g. two UPDATEs hit the same column values). */
+export interface RtEvent<T = any> {
+	seq: number;
+	row: T;
+}
+
 class RealtimeStore {
 	transactions: LiveTransaction[] = $state([]);
 	launchUpdates: Map<string, LiveLaunchUpdate> = $state(new Map());
+
+	// Latest INSERT/UPDATE payloads per table — pages $effect on these.
+	lastTokenInsert: RtEvent | null = $state(null);
+	lastTokenUpdate: RtEvent | null = $state(null);
+	lastLaunchInsert: RtEvent | null = $state(null);
+	// `lastLaunchUpdate` is implicit in launchUpdates above — kept for
+	// symmetry so pages have one observation pattern.
+	lastLaunchUpdate: RtEvent | null = $state(null);
+
 	connected = $state(false);
 
 	private channel: RealtimeChannel | null = null;
 	private maxTransactions = 50;
+	private seq = 0;
+	private nextSeq() {
+		this.seq += 1;
+		return this.seq;
+	}
 
 	async connect() {
 		if (this.connected || this.channel) return;
 
-		// Load initial data
+		// Load initial transaction stream (other tables hydrate from SSR).
 		try {
 			const { data } = await supabase
 				.from('recent_transactions')
@@ -51,7 +88,6 @@ class RealtimeStore {
 			if (data) this.transactions = data;
 		} catch {}
 
-		// Single channel, chained handlers, one subscribe
 		this.channel = supabase
 			.channel('platform-realtime')
 			.on(
@@ -60,13 +96,39 @@ class RealtimeStore {
 				(payload) => {
 					const tx = payload.new as LiveTransaction;
 					this.transactions = [tx, ...this.transactions].slice(0, this.maxTransactions);
-				}
+				},
+			)
+			.on(
+				'postgres_changes',
+				{ event: 'INSERT', schema: 'public', table: 'created_tokens' },
+				(payload) => {
+					this.lastTokenInsert = { seq: this.nextSeq(), row: payload.new };
+				},
+			)
+			.on(
+				'postgres_changes',
+				{ event: 'UPDATE', schema: 'public', table: 'created_tokens' },
+				(payload) => {
+					this.lastTokenUpdate = { seq: this.nextSeq(), row: payload.new };
+				},
+			)
+			.on(
+				'postgres_changes',
+				{ event: 'INSERT', schema: 'public', table: 'launches' },
+				(payload) => {
+					this.lastLaunchInsert = { seq: this.nextSeq(), row: payload.new };
+				},
 			)
 			.on(
 				'postgres_changes',
 				{ event: 'UPDATE', schema: 'public', table: 'launches' },
 				(payload) => {
 					const row = payload.new as any;
+					this.lastLaunchUpdate = { seq: this.nextSeq(), row };
+
+					// Legacy compact map kept for MarketFlow (which only
+					// cares about progress fields). Skip when nothing in
+					// the watched columns changed.
 					const existing = this.launchUpdates.get(row.address);
 					if (existing &&
 						existing.state === row.state &&
@@ -80,12 +142,12 @@ class RealtimeStore {
 						state: row.state,
 						total_base_raised: row.total_base_raised,
 						tokens_sold: row.tokens_sold,
-						current_price: row.current_price
+						current_price: row.current_price,
 					};
 					const newMap = new Map(this.launchUpdates);
 					newMap.set(row.address, update);
 					this.launchUpdates = newMap;
-				}
+				},
 			)
 			.subscribe((status) => {
 				this.connected = status === 'SUBSCRIBED';

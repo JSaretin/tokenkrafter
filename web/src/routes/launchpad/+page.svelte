@@ -2,6 +2,7 @@
 	import { ethers } from 'ethers';
 	import { getContext, onMount, untrack } from 'svelte';
 	import { supabase } from '$lib/supabaseClient';
+	import { realtime } from '$lib/realtime.svelte';
 	import { t } from '$lib/i18n';
 	import { favorites, toggleFavorite } from '$lib/favorites';
 	import { buildReferralUrl } from '$lib/referral';
@@ -596,9 +597,6 @@
 		]);
 	}
 
-	// Realtime subscription for live updates
-	let launchChannel: any;
-
 	// Only fire on the providersReady flip; wrap the async call in untrack so
 	// reads inside loadLaunches (which reassigns `launches`) don't re-trigger
 	// this effect and cause an empty-result reload loop.
@@ -606,18 +604,14 @@
 		if (providersReady) untrack(() => { loadLaunches(); });
 	});
 
-	onMount(() => {
-		launchChannel = supabase
-			.channel('launchpad-explorer')
-			.on('postgres_changes', { event: '*', schema: 'public', table: 'launches' }, () => {
-				// Re-fetch on any change
-				loadFromDb().then(() => loadBadges());
-			})
-			.subscribe();
-
-		return () => {
-			if (launchChannel) supabase.removeChannel(launchChannel);
-		};
+	// Realtime is now driven by the global store ($lib/realtime.svelte.ts)
+	// which the layout connects on mount. INSERT and UPDATE both trigger a
+	// re-fetch; the store's seq number guarantees the effect fires on
+	// every event even when the same row hits us twice.
+	$effect(() => {
+		const seq = (realtime.lastLaunchInsert?.seq ?? 0) + (realtime.lastLaunchUpdate?.seq ?? 0);
+		if (seq === 0) return;
+		untrack(() => { loadFromDb().then(() => loadBadges()); });
 	});
 
 	const BADGE_META: Record<string, { label: string; cls: string }> = {
