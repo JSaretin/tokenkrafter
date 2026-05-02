@@ -65,12 +65,19 @@ export const TRADE_ROUTER_ABI = [
 	'function pause() external',
 	'function unpause() external',
 
-	// Events
+	// Events — match the deployed contract exactly. The previous short
+	// shapes (no referrer/expiresAt on WithdrawRequested, no
+	// gross/fee/token on WithdrawConfirmed) had a different topic[0]
+	// hash, so parseLog threw on every receipt log. Symptom: the auto-
+	// open WithdrawalStatusModal showed no countdown ring and never
+	// flipped to Confirmed live (the chain event never matched the
+	// FE filter). History click worked because it reads via
+	// getWithdrawal() instead of parsing a receipt event.
 	'event Swap(address indexed user, address tokenIn, address tokenOut, uint256 amountIn, uint256 amountOut)',
-	'event WithdrawRequested(uint256 indexed id, address indexed user, address token, uint256 grossAmount, uint256 fee, uint256 netAmount, bytes32 bankRef)',
-	'event WithdrawConfirmed(uint256 indexed id, address indexed admin, address indexed to, uint256 amount)',
+	'event WithdrawRequested(uint256 indexed id, address indexed user, address token, uint256 grossAmount, uint256 fee, uint256 netAmount, bytes32 bankRef, address referrer, uint256 expiresAt)',
+	'event WithdrawConfirmed(uint256 indexed id, address indexed admin, address indexed to, uint256 netAmount, uint256 grossAmount, uint256 fee, address token)',
+	'event WithdrawCancelled(uint256 indexed id, address indexed user, uint256 refundedAmount)',
 	'event MinWithdrawUpdated(uint256 oldMin, uint256 newMin)',
-	'event WithdrawCancelled(uint256 indexed id, address indexed user)',
 	'event AffiliatePaid(uint256 indexed id, address indexed referrer, uint256 amount)'
 ];
 
