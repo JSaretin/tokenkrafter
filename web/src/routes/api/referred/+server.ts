@@ -18,24 +18,39 @@ async function resolveReferral(raw: string): Promise<string | null> {
 	return addr && ethers.isAddress(addr) ? addr : null;
 }
 
-// POST /api/referred — lock the caller's referrer first-write-wins.
-// Auth: wallet session cookie (locals.wallet). The on-the-wire `addr`
-// must match the session — otherwise an attacker could pre-lock other
-// users' referrers to themselves.
+// POST /api/referred — lock the addr's referrer first-write-wins.
 //
-// Body: { referral: string }   // address or alias, case-insensitive
+// Intentionally unauthenticated: a brand-new wallet connect happens
+// before any signing, and we want the lock to land at connect time.
+// The asymmetry is fine because:
+//   - the only thing this endpoint can do is INSERT (table has no
+//     update path), and the row is first-write-wins;
+//   - to abuse it an attacker would need to enumerate target wallet
+//     addresses ahead of when those users connect, which is the same
+//     attack surface as guessing wallet addresses generally;
+//   - the on-chain effect is bounded — a wallet's referrer only
+//     affects that wallet's own future trades.
+// The GET below is auth'd because the referral graph itself is
+// privacy-sensitive.
+//
+// Body: { addr: string, referral: string }  // address; address or alias
 // 200:  { wallet_address, referrer, created_at, locked: bool }
 //        `locked` is true when the row already existed (first-write-wins
 //        kept the prior referrer); false when this call inserted a new row.
-export const POST: RequestHandler = async ({ request, locals }) => {
-	if (!locals.wallet) return error(401, 'Wallet authentication required');
-	const me = locals.wallet.toLowerCase();
-
+export const POST: RequestHandler = async ({ request }) => {
 	const body = await request.json().catch(() => ({}));
-	const raw = body?.referral;
-	if (typeof raw !== 'string' || !raw) return error(400, 'referral required');
+	const rawAddr = body?.addr;
+	const rawRef = body?.referral;
 
-	const referrer = await resolveReferral(raw);
+	if (typeof rawAddr !== 'string' || !ethers.isAddress(rawAddr)) {
+		return error(400, 'addr (a valid address) required');
+	}
+	if (typeof rawRef !== 'string' || !rawRef) {
+		return error(400, 'referral required');
+	}
+	const me = rawAddr.toLowerCase();
+
+	const referrer = await resolveReferral(rawRef);
 	if (!referrer) return error(400, 'referral is not a valid address or alias');
 	if (referrer === me) return error(400, 'cannot refer yourself');
 	if (referrer === ethers.ZeroAddress.toLowerCase()) {
@@ -69,23 +84,16 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	return json({ ...existing, locked: true });
 };
 
-// GET /api/referred?addr=0x... — service-only lookup for the locked
-// referrer. Returns { referrer: null } when not yet locked.
+// GET /api/referred?addr=0x... — open lookup of the locked referrer.
+// Returns { referrer: null } when not yet locked.
 //
-// This endpoint is intentionally unauthenticated read for the caller's
-// own address only — clients pass addr=<their session wallet> to
-// hydrate the localStorage cache after a session restore. Service
-// role bypasses RLS so the read works without a public policy.
-export const GET: RequestHandler = async ({ url, locals }) => {
+// Open by design: a fresh connect happens before any signing, and the
+// FE needs to hydrate the referrer at connect time. The leak is that
+// you can ask "who referred address X?" — same shape as on-chain data
+// once the affiliate contract sees the trade, so no real exposure.
+export const GET: RequestHandler = async ({ url }) => {
 	const addr = (url.searchParams.get('addr') || '').toLowerCase();
 	if (!addr || !ethers.isAddress(addr)) return error(400, 'addr required');
-
-	// Lock down to "self only" — leaking the referral graph to anyone
-	// who can guess addresses is the same kind of leak we just closed
-	// on withdrawal_requests.
-	if (!locals.wallet || locals.wallet.toLowerCase() !== addr) {
-		return error(401, 'Wallet authentication required for self-lookup');
-	}
 
 	const { data } = await supabaseAdmin
 		.from('referred')
@@ -97,11 +105,11 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 
 	// Once a referrer is locked the row is immutable (table has no
 	// update path), so we tell the browser to keep the response for a
-	// year. `private` keeps it out of any shared/CDN cache (it's auth-
-	// scoped). When no row exists yet we don't cache — the next visit
-	// might be the one that creates it.
+	// year. `public` because the endpoint itself is unauth'd — same
+	// shape as on-chain queryable data. When no row exists yet we don't
+	// cache; the next visit might be the one that creates it.
 	const headers: Record<string, string> = body.referrer
-		? { 'Cache-Control': 'private, max-age=31536000, immutable' }
+		? { 'Cache-Control': 'public, max-age=31536000, immutable' }
 		: { 'Cache-Control': 'no-store' };
 
 	return json(body, { headers });

@@ -121,7 +121,7 @@ export async function lockReferral(addr: string): Promise<string | null> {
 			const res = await fetch('/api/referred', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ referral: pending }),
+				body: JSON.stringify({ addr: me, referral: pending }),
 			});
 			// 400 (invalid/self) → drop the pending so we don't retry forever.
 			if (res.status === 400) {
