@@ -74,6 +74,58 @@ do $$ begin
 end $$;
 
 -- ============================================================
+-- Drop rls_auto_enable: a SECURITY DEFINER event-trigger handler
+-- Supabase Studio sometimes installs in public. PostgREST exposes
+-- anything in public as /rest/v1/rpc/<name>, and SECURITY DEFINER
+-- runs with the definer's (postgres) privileges — a privilege-
+-- escalation shape if anyone modifies the body. We don't use it.
+-- ============================================================
+drop function if exists public.rls_auto_enable();
+
+-- ============================================================
+-- Table-grant lockdown.
+-- Supabase default-grants ALL (SELECT/INSERT/UPDATE/DELETE/...) on every
+-- public table to anon + authenticated. RLS denies most of it at runtime,
+-- but linters (Supabase Advisor / GraphQL Advisor) still flag the grants
+-- because they make tables visible to introspection (GraphQL schema, etc).
+--
+-- Strategy: revoke all from anon + authenticated on every public table,
+-- then re-grant SELECT only on the read-allowlist. service_role retains
+-- full access — it's how the backend (supabaseAdmin) writes everything.
+--
+-- The allowlist is the set of tables with an "Anon read" SELECT policy.
+-- ============================================================
+do $$ declare r record; begin
+  for r in
+    select c.relname as tbl
+    from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relkind = 'r'
+  loop
+    execute format('revoke all on public.%I from anon, authenticated', r.tbl);
+  end loop;
+end $$;
+
+-- Re-grant SELECT only on tables that are intentionally public-readable.
+-- (Matches the "Anon read" policies created later in this migration.)
+do $$ declare r record; begin
+  for r in
+    select unnest(array[
+      'launches', 'badges', 'launch_transactions', 'comments',
+      'platform_stats', 'created_tokens', 'recent_transactions',
+      'token_aliases', 'ng_banks', 'referral_aliases', 'platform_config'
+    ]) as tbl
+  loop
+    if exists (select 1 from pg_class c
+               join pg_namespace n on n.oid=c.relnamespace
+               where n.nspname='public' and c.relname=r.tbl)
+    then
+      execute format('grant select on public.%I to anon, authenticated', r.tbl);
+    end if;
+  end loop;
+end $$;
+
+-- ============================================================
 -- Launches table
 -- ============================================================
 create table if not exists launches (
