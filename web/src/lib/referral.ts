@@ -77,14 +77,28 @@ export function getLockedReferral(addr: string): string | null {
 	}
 }
 
-/** Resolve the ref to pass into a contract call. Synchronous — reads
- *  only the cached locked value. ZeroAddress when no lock or self. */
+/** Resolve the ref to pass into a contract call. Synchronous.
+ *
+ *  Priority: DB-locked cache > pending URL capture > ZeroAddress.
+ *  The pending fallback only applies when it's already a valid
+ *  address (aliases need backend resolution and can't be used
+ *  on-chain directly). This keeps a buy clicked the same second a
+ *  user lands on a `/?ref=0x…` link from missing the referral
+ *  before lockReferral() has had time to round-trip. */
 export function refOrZero(userAddress?: string | null): string {
 	if (!userAddress) return ethers.ZeroAddress;
-	const ref = getLockedReferral(userAddress);
-	if (!ref) return ethers.ZeroAddress;
-	if (ref.toLowerCase() === userAddress.toLowerCase()) return ethers.ZeroAddress;
-	return ref;
+	const me = userAddress.toLowerCase();
+
+	const locked = getLockedReferral(me);
+	if (locked && locked.toLowerCase() !== me) return locked;
+
+	const pending = getPendingReferral();
+	if (pending && ethers.isAddress(pending)) {
+		const p = pending.toLowerCase();
+		if (p !== me && p !== ethers.ZeroAddress.toLowerCase()) return p;
+	}
+
+	return ethers.ZeroAddress;
 }
 
 /** Commit the pending referral to the backend for `addr`. No-op if

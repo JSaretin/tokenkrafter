@@ -93,5 +93,16 @@ export const GET: RequestHandler = async ({ url, locals }) => {
 		.eq('wallet_address', addr)
 		.single();
 
-	return json({ referrer: data?.referrer ?? null, created_at: data?.created_at ?? null });
+	const body = { referrer: data?.referrer ?? null, created_at: data?.created_at ?? null };
+
+	// Once a referrer is locked the row is immutable (table has no
+	// update path), so we tell the browser to keep the response for a
+	// year. `private` keeps it out of any shared/CDN cache (it's auth-
+	// scoped). When no row exists yet we don't cache — the next visit
+	// might be the one that creates it.
+	const headers: Record<string, string> = body.referrer
+		? { 'Cache-Control': 'private, max-age=31536000, immutable' }
+		: { 'Cache-Control': 'no-store' };
+
+	return json(body, { headers });
 };
