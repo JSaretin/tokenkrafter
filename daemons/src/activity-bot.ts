@@ -220,6 +220,41 @@ async function enrichOne(c: CachedToken): Promise<CachedToken | null> {
 	}
 }
 
+// Auth helper. Mirrors the FE's apiFetch.autoSign so the bot's metadata
+// PUT to /api/token-metadata uses a wallet-signed session — same auth
+// path users go through. Returns the cookie jar string ('session=...').
+// Cached per wallet for the bot's lifetime (sessions are 7d server-side).
+const sessionByWallet = new Map<string, string>();
+async function getWalletSession(wallet: ethers.Wallet): Promise<string | null> {
+	const me = wallet.address.toLowerCase();
+	const cached = sessionByWallet.get(me);
+	if (cached) return cached;
+
+	try {
+		const timestamp = Date.now();
+		const message = `TokenKrafter Auth\nAddress: ${wallet.address}\nOrigin: ${API_BASE}\nTimestamp: ${timestamp}`;
+		const signature = await wallet.signMessage(message);
+
+		const res = await fetch(`${API_BASE}/api/auth`, {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+				'x-wallet-address': me,
+			},
+			body: JSON.stringify({ signature, signed_message: message }),
+		});
+		if (!res.ok) return null;
+		const setCookie = res.headers.get('set-cookie') || '';
+		const match = setCookie.match(/session=[^;]+/);
+		if (!match) return null;
+		const cookie = match[0];
+		sessionByWallet.set(me, cookie);
+		return cookie;
+	} catch {
+		return null;
+	}
+}
+
 // ── Type weighting (no partner — reserved for real users) ──
 function pickTokenType(): number {
 	// 0=basic, 1=mintable, 2=taxable, 3=tax+mint
@@ -245,6 +280,30 @@ function deriveWallets(mnemonic: string, count: number, provider: ethers.Provide
 		wallets.push(new ethers.Wallet(child.privateKey, provider));
 	}
 	return wallets;
+}
+
+// Walk the wallet pool and return the first one that already meets
+// both BNB and USDT thresholds. Lets the bot keep working when the
+// treasurer is empty — yesterday's scattered funds don't go to waste.
+// Returns null when nothing fits.
+async function findAlreadyFunded(
+	wallets: ethers.Wallet[],
+	usdt: ethers.Contract,
+	provider: ethers.Provider,
+	skipIdx: number = -1,
+): Promise<{ wallet: ethers.Wallet; idx: number } | null> {
+	for (let i = 1; i < wallets.length; i++) {  // skip 0 (treasurer)
+		if (i === skipIdx) continue;
+		const w = wallets[i];
+		try {
+			const [bnb, ust] = await Promise.all([
+				provider.getBalance(w.address),
+				usdt.balanceOf(w.address),
+			]);
+			if (bnb >= MIN_BNB_BAL && ust >= MIN_USDT_BAL) return { wallet: w, idx: i };
+		} catch {}
+	}
+	return null;
 }
 
 // ── Fund wallet with BNB + USDT from treasurer (wallet[0]) ──
@@ -369,50 +428,97 @@ async function createClone(
 		);
 		const receipt = await tx.wait();
 
+		// Both PlatformRouter and TokenFactory emit a TokenCreated event,
+		// but with different shapes. Try the long-form (factory) first
+		// since it carries the most data, then fall back to the short-
+		// form (router). Without the fallback, when the router-emitted
+		// log is the only one that matches our caller's perspective, the
+		// parser throws and tokenAddr stays empty.
 		let tokenAddr = '';
-		const iface = new ethers.Interface(TOKEN_FACTORY_ABI);
+		const ifaceFactory = new ethers.Interface(TOKEN_FACTORY_ABI);
+		const ifaceRouter = new ethers.Interface(PLATFORM_ROUTER_ABI);
 		for (const log of receipt!.logs) {
-			try {
-				const parsed = iface.parseLog({ topics: [...log.topics], data: log.data });
-				if (parsed?.name === 'TokenCreated') {
-					tokenAddr = parsed.args[1];
-					break;
-				}
-			} catch {}
+			let parsed;
+			try { parsed = ifaceFactory.parseLog({ topics: [...log.topics], data: log.data }); } catch {}
+			if (!parsed) {
+				try { parsed = ifaceRouter.parseLog({ topics: [...log.topics], data: log.data }); } catch {}
+			}
+			if (parsed?.name === 'TokenCreated') {
+				// Long-form: args[1] is tokenAddress. Short-form: args[1] is token.
+				tokenAddr = parsed.args[1];
+				break;
+			}
 		}
 
 		const gasCost = receipt!.gasUsed * receipt!.gasPrice;
 		console.log(`    ✅ ${tokenAddr.slice(0, 10)}... | Gas: ${ethers.formatEther(gasCost)} BNB | Fee: ${ethers.formatUnits(feeUsdt, 18)} USDT`);
 
-		if (tokenAddr && SYNC_SECRET) {
+		// Save metadata via the same wallet-authed path users go through
+		// in /create (PUT /api/token-metadata). The PUT verifies the
+		// caller is the token's creator, then upserts the row with all
+		// fields. Doing this BEFORE the indexer's WS handler races our
+		// post-deploy callback isn't possible (we don't know the address
+		// pre-deploy), but Supabase upsert only writes the columns we
+		// send — so even if ws-indexer's POST lands first with the basic
+		// fields, our PUT layers metadata on top without clobbering.
+		if (tokenAddr) {
 			try {
-				const res = await fetch(`${API_BASE}/api/created-tokens`, {
-					method: 'POST',
-					headers: {
-						'Content-Type': 'application/json',
-						Authorization: `Bearer ${SYNC_SECRET}`,
-					},
-					body: JSON.stringify({
-						address: tokenAddr.toLowerCase(),
-						chain_id: CHAIN_ID,
-						creator: wallet.address.toLowerCase(),
-						name: src.name,
-						symbol: src.symbol,
-						total_supply: params.totalSupply.toString(),
-						decimals: src.decimals,
-						is_mintable: params.isMintable,
-						is_taxable: params.isTaxable,
-						is_partner: false,
-						description: src.description,
-						logo_url: src.image_url,
-						website: src.website,
-						twitter: src.twitter,
-						telegram: src.telegram,
-					}),
-				});
-				if (!res.ok) console.log(`    ⚠️  Metadata POST ${res.status}`);
+				const cookie = await getWalletSession(wallet);
+				if (!cookie) {
+					console.log('    ⚠️  Wallet session sign failed — falling back to daemon POST');
+					await fetch(`${API_BASE}/api/created-tokens`, {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${SYNC_SECRET}` },
+						body: JSON.stringify({
+							address: tokenAddr.toLowerCase(),
+							chain_id: CHAIN_ID,
+							creator: wallet.address.toLowerCase(),
+							name: src.name,
+							symbol: src.symbol,
+							total_supply: params.totalSupply.toString(),
+							decimals: src.decimals,
+							is_mintable: params.isMintable,
+							is_taxable: params.isTaxable,
+							is_partner: false,
+							description: src.description,
+							logo_url: src.image_url,
+							website: src.website,
+							twitter: src.twitter,
+							telegram: src.telegram,
+						}),
+					});
+				} else {
+					// Send everything the bot knows. The on-chain fields
+					// also come through the indexer; upsert means the
+					// later writer wins on those columns and they always
+					// resolve to the same chain-derived values either way.
+					const res = await fetch(`${API_BASE}/api/token-metadata`, {
+						method: 'PUT',
+						headers: {
+							'Content-Type': 'application/json',
+							'x-wallet-address': wallet.address.toLowerCase(),
+							Cookie: cookie,
+						},
+						body: JSON.stringify({
+							address: tokenAddr.toLowerCase(),
+							chain_id: CHAIN_ID,
+							name: src.name,
+							symbol: src.symbol,
+							decimals: src.decimals,
+							is_taxable: params.isTaxable,
+							is_mintable: params.isMintable,
+							is_partner: false,
+							logo_url: src.image_url || null,
+							description: src.description || null,
+							website: src.website || null,
+							twitter: src.twitter || null,
+							telegram: src.telegram || null,
+						}),
+					});
+					if (!res.ok) console.log(`    ⚠️  Metadata PUT ${res.status}`);
+				}
 			} catch (e: any) {
-				console.log(`    ⚠️  Metadata POST error: ${e.message?.slice(0, 60)}`);
+				console.log(`    ⚠️  Metadata save error: ${e.message?.slice(0, 60)}`);
 			}
 		}
 
@@ -535,14 +641,30 @@ async function main() {
 				continue;
 			}
 
-			// Pick random wallet, fund if low
-			const walletIdx = randInt(0, wallets.length - 1);
-			const wallet = wallets[walletIdx];
-			const funded = await fundIfLow(treasurer, wallet, usdt, provider);
+			// Pick random wallet, fund if low. If treasurer can't scatter
+			// (low balance, RPC error, etc.) fall through to any wallet
+			// already holding BNB+USDT from a prior fund — those funds
+			// shouldn't sit idle just because the treasurer is empty.
+			let walletIdx = randInt(1, wallets.length - 1); // skip 0 (treasurer)
+			let wallet = wallets[walletIdx];
+			let funded = await fundIfLow(treasurer, wallet, usdt, provider);
 			if (!funded.bnb || !funded.usdt) {
-				console.log(`  ⚠️  Wallet [${walletIdx}] not fundable, sleeping 60s...`);
-				await sleep(60 * 1000);
-				continue;
+				console.log(`  🔎 Treasurer can't fund [${walletIdx}] — looking for an already-funded wallet…`);
+				const fallback = await findAlreadyFunded(wallets, usdt, provider, walletIdx);
+				if (fallback) {
+					console.log(`  ✅ Reusing wallet [${fallback.idx}] (already has BNB+USDT)`);
+					wallet = fallback.wallet;
+					walletIdx = fallback.idx;
+					funded = { bnb: true, usdt: true };
+				} else {
+					console.log(`  ⚠️  No funded wallets either — sleeping 60s. Top up treasurer at ${treasurer.address}`);
+					if (RUN_ONCE) {
+						console.log('\n🏁 RUN_ONCE — exiting (no fundable wallet)');
+						return;
+					}
+					await sleep(60 * 1000);
+					continue;
+				}
 			}
 
 			const tokenAddr = await createClone(wallet, walletIdx, router, factory, usdt, usdtAddr, routerAddr, source);
