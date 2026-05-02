@@ -22,6 +22,7 @@
 	let payoutTimeout = $state(0);
 	let platformWallet = $state('');
 	let totalEscrow = $state(0n);
+	let usdtBalance = $state(0n);     // raw USDT held by the TradeRouter
 	let pendingCount = $state(0);
 	let totalWithdrawals = $state(0);
 	let admins = $state<string[]>([]);
@@ -46,6 +47,14 @@
 	let newMinWithdraw = $state('');
 	let newAffiliateShareBps = $state('');
 	let processing = $state(false);
+
+	// On-ramp deliverable reserve. The contract refuses an onramp() call
+	// when balance < totalEscrow + platformEarnings[USDT] + amountRequested,
+	// so this is the figure admins should top up against.
+	let onrampReserve = $derived.by(() => {
+		const reserved = totalEscrow + usdtEarnings;
+		return usdtBalance > reserved ? usdtBalance - reserved : 0n;
+	});
 
 	async function loadData() {
 		if (!selectedNetwork?.trade_router_address) return;
@@ -88,12 +97,19 @@
 			const userAddr = signer ? await (signer as any).getAddress() : '';
 			isOwner = userAddr ? userAddr.toLowerCase() === owner.toLowerCase() : false;
 
-			// Get USDT earnings
+			// USDT earnings + contract balance (used to compute on-ramp reserve).
 			if (selectedNetwork.usdt_address) {
 				try {
-					const usdtC = new ethers.Contract(selectedNetwork.usdt_address, ERC20_DECIMALS_ABI, provider);
+					const usdtC = new ethers.Contract(
+						selectedNetwork.usdt_address,
+						[...ERC20_DECIMALS_ABI, 'function balanceOf(address) view returns (uint256)'],
+						provider,
+					);
 					usdtDecimals = Number(await usdtC.decimals());
-					usdtEarnings = await router.platformEarnings(selectedNetwork.usdt_address);
+					[usdtEarnings, usdtBalance] = await Promise.all([
+						router.platformEarnings(selectedNetwork.usdt_address),
+						usdtC.balanceOf(selectedNetwork.trade_router_address),
+					]);
 				} catch {}
 			}
 
@@ -201,6 +217,22 @@
 				<div class="bg-surface border border-line-subtle rounded-[10px] px-3 py-2.5">
 					<span class="block text-3xs font-mono text-dim uppercase tracking-[0.05em]">Total Withdrawals</span>
 					<span class="block text-sm font-bold font-mono mt-0.5 text-cyan-400">{totalWithdrawals}</span>
+				</div>
+			</div>
+			<!-- On-ramp reserve: free USDT in the TradeRouter that onramp() can dispense.
+			     Reserve = contract USDT balance − totalEscrow − platformEarnings[USDT].
+			     Below zero would mean an accounting break; we clamp at 0 in the derived. -->
+			<div class="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-3">
+				<div class="bg-surface border border-line-subtle rounded-[10px] px-3 py-2.5">
+					<span class="block text-3xs font-mono text-dim uppercase tracking-[0.05em]">USDT in Contract</span>
+					<span class="block text-sm font-bold font-mono mt-0.5 text-cyan-400">${parseFloat(ethers.formatUnits(usdtBalance, usdtDecimals)).toFixed(2)}</span>
+				</div>
+				<div class="bg-surface border border-line-subtle rounded-[10px] px-3 py-2.5">
+					<span class="block text-3xs font-mono text-dim uppercase tracking-[0.05em]">On-ramp Reserve</span>
+					<span class={'block text-sm font-bold font-mono mt-0.5 ' + (onrampReserve === 0n ? 'text-red-400' : 'text-emerald-400')}>
+						${parseFloat(ethers.formatUnits(onrampReserve, usdtDecimals)).toFixed(2)}
+					</span>
+					<span class="block text-3xs font-mono text-dim mt-0.5">balance − escrow − earnings</span>
 				</div>
 			</div>
 		</div>

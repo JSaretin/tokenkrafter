@@ -52,7 +52,7 @@
 	// Confirm modal state
 	let showConfirmModal = $state(false);
 	let confirmTarget = $state<any>(null); // the withdrawal to confirm
-	let confirmMode = $state<'default' | 'custom-wallet'>('default');
+	let confirmMode = $state<'default' | 'custom-wallet' | 'keep-in-contract'>('default');
 	let confirmTo = $state('');
 
 	// Fetch live rate on mount (run once)
@@ -212,6 +212,14 @@
 			if (confirmMode === 'custom-wallet' && confirmTo) {
 				tx = await router['confirm(uint256,address)'](w.withdraw_id, confirmTo);
 				note = `Confirmed: sent to ${confirmTo.slice(0, 8)}...`;
+			} else if (confirmMode === 'keep-in-contract') {
+				// Pass the TradeRouter address as recipient — safeTransfer
+				// to address(this) is a no-op net transfer, but the contract
+				// still flips status to Confirmed and decrements totalEscrow.
+				// The released USDT stays in the contract reserve, available
+				// for the next /onramp delivery without admin top-up.
+				tx = await router['confirm(uint256,address)'](w.withdraw_id, network.trade_router_address);
+				note = 'Confirmed: kept in contract for on-ramp reserve';
 			} else {
 				tx = await router['confirm(uint256)'](w.withdraw_id);
 				note = 'Confirmed on-chain by admin';
@@ -584,6 +592,14 @@
 							<span class="block font-mono text-3xs text-muted mt-px">Send full amount to another address</span>
 						</div>
 					</button>
+					<button class={'flex items-center gap-3 w-full px-3.5 py-2.5 rounded-[10px] border bg-transparent cursor-pointer text-left transition hover:border-cyan-500/20 hover:bg-cyan-500/5 ' + (confirmMode === 'keep-in-contract' ? 'border-cyan-500/40 bg-cyan-500/[0.06]' : 'border-line')}
+						onclick={() => { confirmMode = 'keep-in-contract'; }}>
+						<span class={'w-8 h-8 rounded-lg shrink-0 flex items-center justify-center text-sm border ' + (confirmMode === 'keep-in-contract' ? 'bg-cyan-500/10 border-cyan-500/30 text-brand-cyan' : 'bg-surface border-line')}>⟲</span>
+						<div>
+							<span class="block font-mono text-xs font-bold text-heading">Keep in contract</span>
+							<span class="block font-mono text-3xs text-muted mt-px">Confirm only — USDT stays as on-ramp reserve</span>
+						</div>
+					</button>
 				</div>
 
 				<!-- Custom fields -->
@@ -599,6 +615,7 @@
 					disabled={confirmMode === 'custom-wallet' && !confirmTo}
 				>
 					{confirmMode === 'default' ? 'Confirm & Send to Platform Wallet' :
+					 confirmMode === 'keep-in-contract' ? 'Confirm — Keep in Contract Reserve' :
 					 `Confirm & Send to ${confirmTo ? confirmTo.slice(0, 8) + '...' : '...'}`}
 				</button>
 			</div>
