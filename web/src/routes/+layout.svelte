@@ -486,15 +486,11 @@
 		// chunk doesn't block first paint. Pages observe the store's
 		// reactive fields ($lib/realtime.svelte.ts) instead of opening
 		// their own postgres_changes subscriptions — one WS, one schema.
+		// (The per-chain on-chain event WS already exists separately:
+		// `wsManager` is created above from createWsProviderManager and
+		// provided via setContext('wsManager') for pages like the
+		// launchpad-detail to subscribe to TokenBought/Graduated etc.)
 		import('$lib/realtime.svelte').then((m) => m.realtime.connect()).catch(() => {});
-
-		// Per-chain on-chain event WS — one ethers.WebSocketProvider per
-		// enabled chain (using the public ws_rpc, never daemon_rpc).
-		// Pages subscribe via chainRealtime.subscribe(chainId, filter, cb)
-		// for sub-second feedback on hot-path events (TokenBought,
-		// Graduated, WithdrawConfirmed) without waiting for the
-		// indexer → DB → Supabase realtime hop.
-		import('$lib/chainRealtime.svelte').then((m) => m.chainRealtime.connect(supportedNetworks)).catch(() => {});
 
 		// PWA install prompt
 		const dismissed = localStorage.getItem('pwa_install_dismissed');
