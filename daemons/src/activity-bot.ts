@@ -560,6 +560,9 @@ async function createClone(
 										method: 'POST',
 										headers: {
 											'x-wallet-address': wallet.address.toLowerCase(),
+											// SvelteKit's CSRF middleware blocks cross-site
+											// multipart POSTs unless Origin matches the host.
+											Origin: API_BASE,
 											Cookie: cookie,
 										},
 										body: fd,
