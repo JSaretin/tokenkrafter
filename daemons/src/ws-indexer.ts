@@ -49,10 +49,9 @@ import { Database } from 'bun:sqlite';
 import * as fs from 'fs';
 import * as path from 'path';
 import { createManagedProvider, type ManagedProvider } from '../lib/provider';
+import { loadNetworks, pickDaemonRpc, type Network } from './lib/chains';
 
-// ── Config ─────────────────────────────────────────────────
-const RPC_URL = process.env.RPC_URL || 'https://bsc-dataseed.binance.org/';
-const CHAIN_ID = parseInt(process.env.CHAIN_ID || '56');
+// ── Config (chain-agnostic) ────────────────────────────────
 const API_BASE = process.env.API_BASE_URL || 'http://localhost:5173';
 const SYNC_SECRET = process.env.SYNC_SECRET || '';
 const DB_PATH = process.env.DB_PATH || path.resolve(import.meta.dirname || __dirname, 'ws-indexer.db');
@@ -203,17 +202,6 @@ interface NetworkConfig {
 	dex_router: string;
 	rpc?: string;
 	ws_rpc?: string;
-}
-
-async function fetchNetworkConfig(chainId: number): Promise<NetworkConfig> {
-	const headers: Record<string, string> = {};
-	if (SYNC_SECRET) headers.Authorization = `Bearer ${SYNC_SECRET}`;
-	const res = await fetch(`${API_BASE}/api/config?keys=networks`, { headers });
-	if (!res.ok) throw new Error(`config ${res.status}`);
-	const { networks } = await res.json();
-	const match = (networks || []).find((n: any) => Number(n.chain_id) === chainId);
-	if (!match) throw new Error(`no config for chain ${chainId}`);
-	return match;
 }
 
 // ── SafuLens single-token check ───────────────────────────
@@ -490,12 +478,14 @@ async function pollLaunchStates(ctx: Ctx, running: () => boolean) {
 const dedupeSet = new Set<string>();
 const DEDUPE_MAX = 4096;
 
-function dedupeKey(log: ethers.Log): string {
-	return `${log.blockNumber}:${log.index}`;
+function dedupeKey(chainId: number, log: ethers.Log): string {
+	// Per-chain prefix so block-number collisions across chains don't
+	// suppress legitimate events.
+	return `${chainId}:${log.blockNumber}:${log.index}`;
 }
 
-function isDupe(log: ethers.Log): boolean {
-	const k = dedupeKey(log);
+function isDupe(chainId: number, log: ethers.Log): boolean {
+	const k = dedupeKey(chainId, log);
 	if (dedupeSet.has(k)) return true;
 	dedupeSet.add(k);
 	if (dedupeSet.size > DEDUPE_MAX) {
@@ -520,7 +510,7 @@ function makeDispatcher(ctx: Ctx) {
 	};
 
 	return async (log: ethers.Log) => {
-		if (isDupe(log)) return;
+		if (isDupe(ctx.chainId, log)) return;
 		const src = log.address.toLowerCase();
 
 		try {
@@ -704,23 +694,18 @@ function subscribeAll(ctx: Ctx, managed: ManagedProvider, dispatch: (log: ethers
 	console.log(`  🔔 ${filters.length} WS filters active`);
 }
 
-// ── Main ──────────────────────────────────────────────────
-async function main() {
-	console.log(`\n📡 WS Indexer starting (chain ${CHAIN_ID})`);
-	console.log(`   API:  ${API_BASE}`);
-	console.log(`   DB:   ${DB_PATH}`);
+// ── Per-chain boot ────────────────────────────────────────
+async function bootChain(net: Network, db: Database, safuBc: string, isAlive: () => boolean): Promise<{ pollers: Promise<void>[]; managed: ManagedProvider; chainId: number }> {
+	const chainId = net.chain_id;
+	const { http, ws } = pickDaemonRpc(net);
+	if (!http && !ws) throw new Error(`chain ${chainId}: no rpc / ws_rpc / daemon_rpc`);
+	const rpcUrl = http || ws; // ManagedProvider needs an http for fallback
+	const wsRpc = ws;
 
-	const config = await fetchNetworkConfig(CHAIN_ID);
-	// daemon_rpc: private endpoint, never exposed to browsers.
-	const daemonRpc = (config as any).daemon_rpc || '';
-	const isWs = daemonRpc.startsWith('wss://') || daemonRpc.startsWith('ws://');
-	const rpcUrl = (!isWs && daemonRpc) || config.rpc || RPC_URL;
-	const wsRpc = (isWs ? daemonRpc : '') || config.ws_rpc || '';
-	console.log(`   RPC:  ${rpcUrl}${wsRpc ? ` (ws: ${wsRpc})` : ''}`);
+	console.log(`\n📡 [c${chainId}/${net.name || 'chain'}] RPC: ${rpcUrl}${wsRpc ? ` (ws: ${wsRpc.slice(0, 40)}…)` : ''}`);
 
-	const db = initDb(DB_PATH);
-	const state = getChainState(db, CHAIN_ID);
-	const knownTokens = loadAllKnownTokens(db);
+	const state = getChainState(db, chainId);
+	const knownTokens = loadAllKnownTokens(db);   // shared global table — fine, addresses don't collide
 	const watchedLaunches = loadWatchedLaunches(db);
 	const isFreshBoot = state.lastTokenCount === 0 && state.lastLaunchCount === 0;
 
@@ -728,48 +713,51 @@ async function main() {
 	let dispatch: (log: ethers.Log) => Promise<void>;
 
 	managed = createManagedProvider({
-		chainId: CHAIN_ID,
+		chainId,
 		httpRpc: rpcUrl,
 		wsRpc,
 		onReconnect: () => {
-			if (!dispatch) return; // not ready yet
-			console.log('  🔁 WS reconnected — resubscribing');
+			if (!dispatch) return;
+			console.log(`  🔁 [c${chainId}] WS reconnected — resubscribing`);
 			try { managed.getProvider().removeAllListeners(); } catch {}
 			subscribeAll(ctx, managed, dispatch);
 		},
 	});
 
-	// Resolve DEX factory + WETH (needed for SafuLens)
+	// Resolve DEX factory + WETH (per chain — addresses are different on each)
 	let dexFactory = '', weth = '';
-	if (config.dex_router) {
+	const dexRouter = (net.dex_router as string) || '';
+	if (dexRouter) {
 		try {
-			const dexRouterC = new ethers.Contract(config.dex_router, [
+			const dexRouterC = new ethers.Contract(dexRouter, [
 				'function factory() view returns (address)',
 				'function WETH() view returns (address)',
 			], managed.getProvider());
 			[dexFactory, weth] = await Promise.all([dexRouterC.factory(), dexRouterC.WETH()]);
-			console.log(`   DEX Factory: ${dexFactory}`);
+			console.log(`   [c${chainId}] DEX Factory: ${dexFactory}`);
 		} catch (e: any) {
-			console.warn(`   ⚠️  DEX resolve failed: ${e.message?.slice(0, 60)}`);
+			console.warn(`   [c${chainId}] ⚠️  DEX resolve failed: ${e.message?.slice(0, 60)}`);
 		}
 	}
 
-	// Load SafuLens bytecode for on-create SAFU checks
-	const safuBc = loadSafuBytecode();
-
 	let usdtDecimals = 18;
-	try {
-		const c = new ethers.Contract(config.usdt_address, ['function decimals() view returns (uint8)'], managed.getProvider());
-		usdtDecimals = Number(await c.decimals());
-	} catch {}
+	const usdt = (net.usdt_address as string) || '';
+	if (usdt) {
+		try {
+			const c = new ethers.Contract(usdt, ['function decimals() view returns (uint8)'], managed.getProvider());
+			usdtDecimals = Number(await c.decimals());
+		} catch {}
+	}
 
+	// `Ctx.config` keeps the legacy NetworkConfig shape so existing
+	// pollers/dispatcher don't need to change. Cast wide-typed Network to it.
 	const ctx: Ctx = {
-		chainId: CHAIN_ID,
+		chainId,
 		db,
 		knownTokens,
 		watchedLaunches,
 		provider: () => managed.getProvider(),
-		config,
+		config: net as unknown as NetworkConfig,
 		usdtDecimals,
 		dexFactory,
 		weth,
@@ -780,24 +768,15 @@ async function main() {
 					if (dispatch) dispatch(log);
 				});
 			} catch (e: any) {
-				console.error(`    ✗ sub launch ${addr.slice(0, 10)}: ${e.message?.slice(0, 60)}`);
+				console.error(`    ✗ [c${chainId}] sub launch ${addr.slice(0, 10)}: ${e.message?.slice(0, 60)}`);
 			}
 		},
 	};
 
 	dispatch = makeDispatcher(ctx);
-
-	// WS goes live immediately
 	subscribeAll(ctx, managed, dispatch);
 
-	console.log(`   tokens=${knownTokens.size} launches=${watchedLaunches.size} (${isFreshBoot ? 'fresh boot — full backfill' : 'resuming'})`);
-	console.log(`   poll interval: ${POLL_INTERVAL / 1000}s\n`);
-
-	// Background pollers
-	let alive = true;
-	const isAlive = () => alive;
-	process.on('SIGINT', () => { alive = false; console.log('\n⏹  stopping…'); });
-	process.on('SIGTERM', () => { alive = false; });
+	console.log(`   [c${chainId}] tokens=${knownTokens.size} launches=${watchedLaunches.size} (${isFreshBoot ? 'fresh boot — full backfill' : 'resuming'})`);
 
 	const pollers = [
 		pollTokens(ctx, isAlive),
@@ -805,10 +784,58 @@ async function main() {
 		pollLaunchStates(ctx, isAlive),
 	];
 
-	await Promise.all(pollers);
+	return { pollers, managed, chainId };
+}
+
+// ── Main ──────────────────────────────────────────────────
+async function main() {
+	console.log(`\n📡 WS Indexer (multi-chain) starting`);
+	console.log(`   API:  ${API_BASE}`);
+	console.log(`   DB:   ${DB_PATH}`);
+	console.log(`   poll interval: ${POLL_INTERVAL / 1000}s`);
+
+	let networks: Network[];
+	try {
+		networks = await loadNetworks(API_BASE, SYNC_SECRET ? `Bearer ${SYNC_SECRET}` : undefined);
+	} catch (e: any) {
+		console.error(`Failed to load networks: ${e.message}`);
+		process.exit(1);
+	}
+	if (networks.length === 0) {
+		console.error('No enabled networks in /api/config — nothing to do');
+		process.exit(1);
+	}
+	console.log(`   networks: ${networks.map((n) => `${n.chain_id}/${n.name}`).join(', ')}`);
+
+	const db = initDb(DB_PATH);
+	const safuBc = loadSafuBytecode();
+
+	let alive = true;
+	const isAlive = () => alive;
+	process.on('SIGINT', () => { alive = false; console.log('\n⏹  stopping…'); });
+	process.on('SIGTERM', () => { alive = false; });
+
+	const booted = await Promise.allSettled(networks.map((n) => bootChain(n, db, safuBc, isAlive)));
+
+	const live = booted
+		.filter((r): r is PromiseFulfilledResult<Awaited<ReturnType<typeof bootChain>>> => r.status === 'fulfilled')
+		.map((r) => r.value);
+	const failedCount = booted.filter((r) => r.status === 'rejected').length;
+	if (failedCount > 0) {
+		for (const r of booted) {
+			if (r.status === 'rejected') console.error(`  ✗ chain boot failed: ${r.reason?.message || r.reason}`);
+		}
+	}
+	if (live.length === 0) {
+		console.error('No chains booted successfully — exiting');
+		process.exit(1);
+	}
+	console.log(`\n  ✅ ${live.length} chain(s) live${failedCount ? `, ${failedCount} failed` : ''}\n`);
+
+	await Promise.all(live.flatMap((c) => c.pollers));
 
 	db.close();
-	await managed.close();
+	await Promise.all(live.map((c) => c.managed.close()));
 	console.log('✅ Stopped.');
 }
 
