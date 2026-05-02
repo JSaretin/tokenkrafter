@@ -1,7 +1,10 @@
 <script lang="ts">
-	import { onDestroy } from 'svelte';
+	import { onDestroy, getContext } from 'svelte';
+	import { ethers } from 'ethers';
 	import { supabase } from '$lib/supabaseClient';
 	import { apiFetch } from '$lib/apiFetch';
+	import type { WsProviderManager, EventSubscription } from '$lib/wsProvider';
+	import type { SupportedNetwork } from '$lib/structure';
 
 	let {
 		withdrawal,
@@ -56,10 +59,11 @@
 		return false;
 	}
 
-	// Subscribe to realtime updates on this withdrawal. No polling
-	// fallback — Supabase realtime is the only path. If it drops, the
-	// user can close + reopen the modal to pull a fresh snapshot via
-	// the parent's history refresh.
+	// Subscribe to realtime updates on this withdrawal. Supabase realtime
+	// is the canonical path (daemon → DB → push). The chain-WS sub below
+	// is a faster parallel feed: WithdrawConfirmed lands on chain ~3s
+	// before the daemon reaches our DB, and on a stalled indexer it's
+	// the only signal the user gets.
 	const channel = supabase
 		.channel(`withdrawal-${withdrawal?.id}-${Date.now()}`)
 		.on('postgres_changes', {
@@ -76,6 +80,45 @@
 		})
 		.subscribe();
 
+	// Direct on-chain subscription to WithdrawConfirmed for THIS row's id.
+	// Filter is keyed by the indexed `id` topic so we don't fire on every
+	// admin confirm — only the one we're watching. Same TERMINAL-guard
+	// applies, so even if the chain event arrives before Supabase's
+	// row.status flips, we still flip the modal forward exactly once.
+	const getWsManager = getContext<() => WsProviderManager | null>('wsManager');
+	const supportedNetworksGetter = getContext<() => SupportedNetwork[]>('supportedNetworks');
+	let _chainSub: EventSubscription | null = null;
+	const WITHDRAW_CONFIRMED_TOPIC = ethers.id(
+		'WithdrawConfirmed(uint256,address,address,uint256,uint256,uint256,address)',
+	);
+
+	$effect(() => {
+		// Re-arm whenever the withdrawal swaps (parent prop change) or
+		// chain context becomes available. Tear down prior sub first.
+		if (_chainSub) { _chainSub.unsubscribe(); _chainSub = null; }
+		if (TERMINAL.includes(liveStatus)) return;
+
+		const ws = getWsManager?.();
+		const networks = supportedNetworksGetter?.() || [];
+		const chainId = Number(withdrawal?.chain_id);
+		const withdrawId = withdrawal?.withdraw_id;
+		if (!ws || !chainId || withdrawId == null) return;
+
+		const net = networks.find((n) => n.chain_id === chainId);
+		const tr = net?.trade_router_address;
+		if (!tr) return;
+
+		const idTopic = ethers.zeroPadValue(ethers.toBeHex(BigInt(withdrawId)), 32);
+		_chainSub = ws.subscribeLogs(
+			chainId,
+			{ address: tr, topics: [WITHDRAW_CONFIRMED_TOPIC, idTopic] },
+			() => {
+				if (TERMINAL.includes(liveStatus)) return;
+				liveStatus = 'confirmed';
+			},
+		);
+	});
+
 	// React to prop updates too — if the parent ever swaps in a fresher
 	// `withdrawal` object (e.g. via a history refresh), let its status
 	// drive the modal forward. Same terminal guard applies.
@@ -89,6 +132,7 @@
 	onDestroy(() => {
 		clearInterval(tickInterval);
 		supabase.removeChannel(channel);
+		if (_chainSub) _chainSub.unsubscribe();
 	});
 
 	// Fetch NGN rate only as a fallback — if the caller locked a rate at
