@@ -33,12 +33,15 @@
 import { ethers } from 'ethers';
 import * as fs from 'fs';
 import * as path from 'path';
-import { createManagedProvider } from '../lib/provider';
 
 // ── Config ──
 const RPC_URL = process.env.RPC_URL || 'https://bsc-dataseed.binance.org/';
 const CHAIN_ID = parseInt(process.env.CHAIN_ID || '56');
 const WALLET_COUNT = parseInt(process.env.WALLET_COUNT || '50', 10);
+// RUN_ONCE=1 skips the inter-iteration delay and exits after the first
+// successful (or unrecoverable) clone attempt. Used to verify the
+// end-to-end flow during dev without waiting through the SPEED window.
+const RUN_ONCE = process.env.RUN_ONCE === '1';
 const MIN_BNB_BAL = ethers.parseEther(process.env.MIN_BNB_BAL || '0.003');
 const FUND_BNB = ethers.parseEther(process.env.FUND_BNB || '0.01');
 const MIN_USDT_BAL = ethers.parseUnits(process.env.MIN_USDT_BAL || '30', 18);
@@ -136,8 +139,14 @@ async function gctGet(p: string, retries = 2): Promise<any> {
 	throw new Error(`GCT 429 exhausted retries on ${p}`);
 }
 
+// Lightweight trending list — one GCT call, returns just enough fields
+// (name, symbol, decimals from the included `token` relationships) so
+// we can pick a candidate without enriching every pool. Heavy fields
+// (total_supply, description, socials) are fetched lazily right before
+// we actually clone a specific token, in enrichOne(). This caps GCT
+// usage at 1 list refresh + 2 enrich calls per cloned token.
 async function fetchTrending(): Promise<CachedToken[]> {
-	console.log('  🔍 Fetching trending pools across all networks...');
+	console.log('  🔍 Fetching trending pools (list only)...');
 	const trending = await gctGet('/networks/trending_pools?include=base_token');
 	const pools = trending.data || [];
 	const included = trending.included || [];
@@ -149,45 +158,66 @@ async function fetchTrending(): Promise<CachedToken[]> {
 
 	const results: CachedToken[] = [];
 	for (const pool of pools) {
-		try {
-			const baseTokenId = pool.relationships?.base_token?.data?.id;
-			if (!baseTokenId) continue;
-			const network = baseTokenId.split('_')[0];
-			const address = baseTokenId.split('_').slice(1).join('_');
-			const basics = tokenMap.get(baseTokenId);
-			if (!basics) continue;
+		const baseTokenId = pool.relationships?.base_token?.data?.id;
+		if (!baseTokenId) continue;
+		const network = baseTokenId.split('_')[0];
+		const address = baseTokenId.split('_').slice(1).join('_');
+		const basics = tokenMap.get(baseTokenId);
+		if (!basics) continue;
 
-			await sleep(2100);
-			const base = await gctGet(`/networks/${network}/tokens/${address}`).catch(() => null);
-			await sleep(2100);
-			const info = await gctGet(`/networks/${network}/tokens/${address}/info`).catch(() => null);
-
-			const baseAttrs = base?.data?.attributes || {};
-			const infoAttrs = info?.data?.attributes || {};
-			const totalSupplyRaw = baseAttrs.total_supply;
-			if (!totalSupplyRaw || totalSupplyRaw === '0') continue;
-
-			results.push({
-				key: baseTokenId,
-				network,
-				address,
-				name: basics.name || 'Unknown',
-				symbol: (basics.symbol || 'TKN').toUpperCase().slice(0, 10),
-				decimals: basics.decimals ?? 18,
-				totalSupplyRaw: String(totalSupplyRaw).split('.')[0],
-				image_url: basics.image_url || '',
-				description: infoAttrs.description || '',
-				twitter: infoAttrs.twitter_handle ? `https://x.com/${infoAttrs.twitter_handle}` : '',
-				telegram: infoAttrs.telegram_handle ? `https://t.me/${infoAttrs.telegram_handle}` : '',
-				website: (infoAttrs.websites && infoAttrs.websites[0]) || '',
-			});
-		} catch (e: any) {
-			console.log(`    ⚠️  Skip pool: ${e.message?.slice(0, 60)}`);
-		}
+		results.push({
+			key: baseTokenId,
+			network,
+			address,
+			name: basics.name || 'Unknown',
+			symbol: (basics.symbol || 'TKN').toUpperCase().slice(0, 10),
+			decimals: basics.decimals ?? 18,
+			// Filled lazily on enrichOne() — empty is fine; createClone bails
+			// out without it. Caching empties keeps the list portable across
+			// runs even when GCT throttles enrich calls.
+			totalSupplyRaw: '',
+			image_url: basics.image_url || '',
+			description: '',
+			twitter: '',
+			telegram: '',
+			website: '',
+		});
 	}
 
-	console.log(`  ✓ Cached ${results.length} trending tokens`);
+	console.log(`  ✓ Cached ${results.length} trending tokens (list only — details fetched on demand)`);
 	return results;
+}
+
+// Pull the heavy fields for one token, only when we're about to clone
+// it. Two GCT calls (token + info), spaced to stay under rate limits.
+// Returns null if the token is unusable (no total supply, throttled, etc).
+async function enrichOne(c: CachedToken): Promise<CachedToken | null> {
+	try {
+		const base = await gctGet(`/networks/${c.network}/tokens/${c.address}`).catch(() => null);
+		await sleep(2100);
+		const info = await gctGet(`/networks/${c.network}/tokens/${c.address}/info`).catch(() => null);
+
+		const baseAttrs = base?.data?.attributes || {};
+		const infoAttrs = info?.data?.attributes || {};
+		const totalSupplyRaw = baseAttrs.total_supply;
+		if (!totalSupplyRaw || totalSupplyRaw === '0') return null;
+
+		return {
+			...c,
+			name: baseAttrs.name || c.name,
+			symbol: (baseAttrs.symbol || c.symbol).toUpperCase().slice(0, 10),
+			decimals: baseAttrs.decimals ?? c.decimals,
+			totalSupplyRaw: String(totalSupplyRaw).split('.')[0],
+			image_url: baseAttrs.image_url || c.image_url,
+			description: infoAttrs.description || '',
+			twitter: infoAttrs.twitter_handle ? `https://x.com/${infoAttrs.twitter_handle}` : '',
+			telegram: infoAttrs.telegram_handle ? `https://t.me/${infoAttrs.telegram_handle}` : '',
+			website: (infoAttrs.websites && infoAttrs.websites[0]) || '',
+		};
+	} catch (e: any) {
+		console.log(`    ⚠️  enrich ${c.symbol}: ${e.message?.slice(0, 60)}`);
+		return null;
+	}
 }
 
 // ── Type weighting (no partner — reserved for real users) ──
@@ -325,8 +355,10 @@ async function createClone(
 			taxWallets: [] as string[],
 			taxSharesBps: [] as number[],
 		};
-		// FeePayment: path=[USDT, USDT] signals direct USDT payment (no swap)
-		const fee = { path: [usdtAddr, usdtAddr], maxAmountIn };
+		// FeePayment: single-element path = direct USDT payment, no swap.
+		// (PlatformRouter._payFee short-circuits on len == 1; len == 2 with
+		// path[0]==path[1] hits Pancake's IDENTICAL_ADDRESSES check.)
+		const fee = { path: [usdtAddr], maxAmountIn };
 
 		const gasEstimate = await routerAsWallet.createTokenOnly.estimateGas(
 			params, protection, tax, fee, ethers.ZeroAddress
@@ -409,9 +441,9 @@ async function main() {
 		usdtAddr = net?.usdt_address;
 		const daemonRpc = net?.daemon_rpc || '';
 		const isWs = daemonRpc.startsWith('wss://') || daemonRpc.startsWith('ws://');
+		// Pick an HTTP RPC only — see provider note below.
 		if (!isWs && daemonRpc) rpcUrl = daemonRpc;
 		else if (net?.rpc) rpcUrl = net.rpc;
-		var wsRpc: string | undefined = (isWs ? daemonRpc : '') || net?.ws_rpc;
 	} catch (e: any) {
 		console.error(`❌ Config fetch failed: ${e.message}`);
 		process.exit(1);
@@ -421,8 +453,12 @@ async function main() {
 		process.exit(1);
 	}
 
-	const managed = createManagedProvider({ chainId: CHAIN_ID, httpRpc: rpcUrl, wsRpc });
-	const provider = managed.getProvider();
+	// Activity bot only sends transactions — no event subscriptions —
+	// so a plain HTTP JsonRpcProvider is enough. We previously routed
+	// through createManagedProvider (which prefers WS when daemon_rpc
+	// is wss://), but Infura's WS endpoints reject eth_sendRawTransaction
+	// with a generic "could not coalesce error", killing every scatter.
+	const provider = new ethers.JsonRpcProvider(rpcUrl, CHAIN_ID, { staticNetwork: true });
 	const wallets = deriveWallets(mnemonic, WALLET_COUNT, provider);
 	const treasurer = wallets[0]; // wallet[0] holds the pooled funds, scatters to others
 	const speed = SPEEDS[SPEED] || SPEEDS.slow;
@@ -483,7 +519,21 @@ async function main() {
 				await sleep(30 * 60 * 1000);
 				continue;
 			}
-			const source = pick(candidates);
+			const stub = pick(candidates);
+
+			// Lazy enrich — only the picked token, only right before we
+			// actually need its supply/socials. Two GCT calls instead of
+			// 2×N upfront, so trending refreshes don't hit 429 storms.
+			console.log(`  🔎 Enriching ${stub.network}:${stub.symbol}…`);
+			const source = await enrichOne(stub);
+			if (!source) {
+				// Mark as cloned so we don't repeatedly retry a bad pick.
+				clonedSet.add(stub.key);
+				state.clonedTokens = Array.from(clonedSet);
+				saveState(state);
+				console.log(`  ⚠️  ${stub.symbol} not enrichable — skipping`);
+				continue;
+			}
 
 			// Pick random wallet, fund if low
 			const walletIdx = randInt(0, wallets.length - 1);
@@ -503,8 +553,16 @@ async function main() {
 				saveState(state);
 				console.log(`    Total: ${state.tokensCreated}`);
 			}
+			if (RUN_ONCE) {
+				console.log(`\n🏁 RUN_ONCE — exiting after one iteration (token=${tokenAddr || 'failed'})`);
+				return;
+			}
 		} catch (e: any) {
 			console.error(`  ❌ Loop error: ${e.message?.slice(0, 100)}`);
+			if (RUN_ONCE) {
+				console.log('\n🏁 RUN_ONCE — exiting after error');
+				return;
+			}
 		}
 
 		const delaySec = randInt(speed.tokenMin, speed.tokenMax);
