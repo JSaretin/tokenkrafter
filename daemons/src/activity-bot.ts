@@ -540,6 +540,37 @@ async function createClone(
 						}),
 					});
 					if (!res.ok) console.log(`    ⚠️  Metadata PUT ${res.status}`);
+
+					// Cache the external logo into our own storage so cards
+					// don't hit GeckoTerminal/CoinGecko CDNs forever (slow,
+					// rate-limited, leaks user IPs). The upload endpoint
+					// updates logo_url to the supabase-storage URL on success.
+					if (src.image_url && src.image_url.startsWith('http')) {
+						try {
+							const imgRes = await fetch(src.image_url);
+							if (imgRes.ok) {
+								const blob = await imgRes.blob();
+								const ct = imgRes.headers.get('content-type') || 'image/png';
+								if (blob.size > 0 && blob.size <= 2 * 1024 * 1024) {
+									const fd = new FormData();
+									fd.append('file', new File([blob], 'logo', { type: ct }));
+									fd.append('address', tokenAddr.toLowerCase());
+									fd.append('chain_id', String(chainId));
+									const up = await fetch(`${API_BASE}/api/token-metadata/upload`, {
+										method: 'POST',
+										headers: {
+											'x-wallet-address': wallet.address.toLowerCase(),
+											Cookie: cookie,
+										},
+										body: fd,
+									});
+									if (!up.ok) console.log(`    ⚠️  Logo upload ${up.status}`);
+								}
+							}
+						} catch (e: any) {
+							console.log(`    ⚠️  Logo cache: ${e.message?.slice(0, 60)}`);
+						}
+					}
 				}
 			} catch (e: any) {
 				console.log(`    ⚠️  Metadata save error: ${e.message?.slice(0, 60)}`);

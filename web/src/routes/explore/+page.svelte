@@ -312,7 +312,13 @@
 	});
 
 	let filtered = $derived.by(() => {
-		let list = tokens;
+		// Realtime can prepend rows that arrived before the indexer
+		// finished filling chain-scoped fields. The card link is
+		// `/explore/{chainSlug(chain_id)}/{address}`, so a row missing
+		// either address or chain_id renders a dead link. Filter them
+		// out — they'll re-appear once the indexer's UPDATE patches in
+		// the missing fields and the $effect on lastTokenUpdate fires.
+		let list = tokens.filter((t) => t?.address && t?.chain_id);
 
 		// Tradeable filter — DB columns first (indexed by SAFU daemon),
 		// client-side SafuLens overlay for freshness, Gecko as fallback.
