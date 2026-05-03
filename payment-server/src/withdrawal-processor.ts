@@ -152,13 +152,19 @@ async function processWithdrawal(c: ChainCtx, withdrawId: number): Promise<boole
 	await redis.set(key, Date.now().toString(), { EX: 300 });
 
 	try {
+		// Confirm with `to = TradeRouter address` so the released USDT
+		// stays in the contract (self-transfer is a no-op net move) and
+		// remains as on-ramp reserve. Previously we routed to the admin
+		// wallet, which forced a manual top-up cycle every time on-ramp
+		// volume drained the reserve. Keeping it in-contract closes the
+		// off-ramp ↔ on-ramp loop with no admin intervention.
 		const res = await fetch(`${API_BASE_URL}/api/withdrawals/process`, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${SYNC_SECRET}` },
 			body: JSON.stringify({
 				withdraw_id: withdrawId,
 				chain_id: c.chainId,
-				confirm_to: adminAddress,
+				confirm_to: c.tradeRouter,
 			}),
 		});
 
