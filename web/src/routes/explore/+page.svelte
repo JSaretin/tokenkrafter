@@ -533,9 +533,18 @@
 			{@const buyTax = safu?.buyTaxBps ?? tok.buy_tax_bps ?? 0}
 				{@const lp = isOnLaunchpad(tok) ? launchProgress(tok) : null}
 				{@const hasLiq = (safu?.hasLiquidity ?? tok.has_liquidity) || gecko?.has_data}
-				<div class="explore-card flex flex-col gap-2.5 p-4 rounded-xl bg-white/[0.02] border border-(--border) transition-all duration-150 hover:border-[rgba(0,210,255,0.15)] hover:shadow-[0_4px_20px_rgba(0,0,0,0.15)]" data-token-addr={tok.address} data-chain-id={tok.chain_id}>
-					<!-- Header: clickable to detail page -->
-					<a href="/explore/{slug}/{tok.address}" class="explore-card-header flex items-start gap-2.5 no-underline text-inherit">
+				<div class="explore-card relative flex flex-col gap-2.5 p-4 rounded-xl bg-white/[0.02] border border-(--border) transition-all duration-150 hover:border-[rgba(0,210,255,0.15)] hover:shadow-[0_4px_20px_rgba(0,0,0,0.15)]" data-token-addr={tok.address} data-chain-id={tok.chain_id}>
+					<!-- Full-card link: absolute-positioned overlay so the
+					     entire card surface (including gaps between rows
+					     and the description) navigates to the detail page.
+					     Interactive children (Trade button, badge tooltips)
+					     sit above via `relative z-10`. Pre-existing
+					     inner <a>s on each row were collapsed into this
+					     single overlay. -->
+					<a href="/explore/{slug}/{tok.address}" class="absolute inset-0 z-0 rounded-xl" aria-label="View {tok.symbol || tok.name || 'token'} details"></a>
+
+					<!-- Header -->
+					<div class="relative z-[1] explore-card-header flex items-start gap-2.5">
 						<TokenLogo logoUrl={tok.logo_url} symbol={tok.symbol} address={tok.address} chainId={tok.chain_id} size={36} />
 						<div class="flex-1 min-w-0">
 							<span class="block font-display text-15 font-bold text-(--text-heading) whitespace-nowrap overflow-hidden text-ellipsis">{tok.name || 'Unknown'}</span>
@@ -610,16 +619,18 @@
 								<span class="tc-badge tc-badge-new">New</span>
 							{/if}
 						</div>
-					</a>
+					</div>
 
-					<!-- Description -->
+					<!-- Description — covered by the overlay link above. -->
 					{#if tok.description}
-						<p class="font-mono text-3xs text-[#475569] leading-[1.5] m-0">{tok.description.slice(0, 90)}{tok.description.length > 90 ? '...' : ''}</p>
+						<p class="relative z-[1] font-mono text-3xs text-[#475569] leading-[1.5] m-0 pointer-events-none">{tok.description.slice(0, 90)}{tok.description.length > 90 ? '...' : ''}</p>
 					{/if}
 
-					<!-- Discovery row: price/24h/volume/spark, or launch progress, or "not listed" -->
+					<!-- Discovery row: price/24h/volume/spark, or launch progress, or "not listed".
+					     pointer-events-none lets clicks fall through to the
+					     overlay; child interactives can opt back in. -->
 					{#if gecko?.has_data}
-						<a href="/explore/{slug}/{tok.address}" class="flex items-center gap-3 no-underline text-inherit">
+						<div class="relative z-[1] flex items-center gap-3 pointer-events-none">
 							<div class="flex flex-col gap-0.5 min-w-0">
 								<span class="font-numeric tabular-nums text-base font-bold text-(--text-heading) leading-none">{fmtPrice(gecko.price_usd)}</span>
 								<span class="font-mono text-3xs text-(--text-dim)">Vol {fmtVolume(gecko.volume_24h)}</span>
@@ -637,9 +648,9 @@
 									{/if}
 								{/if}
 							</div>
-						</a>
+						</div>
 					{:else if isOnLaunchpad(tok) && lp}
-						<a href="/explore/{slug}/{tok.address}" class="flex flex-col gap-1.5 no-underline text-inherit">
+						<div class="relative z-[1] flex flex-col gap-1.5 pointer-events-none">
 							<div class="flex items-center justify-between">
 								<span class="font-mono text-3xs font-bold text-[#00d2ff] uppercase tracking-[0.05em]">Live Launch</span>
 								<span class="font-numeric tabular-nums text-xs2 font-semibold text-(--text-heading)">{lp.raised} <span class="text-(--text-dim) font-normal">/ {lp.hardCap}</span></span>
@@ -652,19 +663,21 @@
 									<div class="absolute top-0 -translate-x-1/2 w-0.5 h-2 bg-white/40 rounded-[1px] pointer-events-none" style="left: {lp.softPct}%"></div>
 								{/if}
 							</div>
-						</a>
+						</div>
 					{:else}
-						<a href="/explore/{slug}/{tok.address}" class="flex items-center gap-2 no-underline text-inherit">
+						<div class="relative z-[1] flex items-center gap-2 pointer-events-none">
 							<span class="font-mono text-3xs text-[#475569] uppercase tracking-[0.05em]">Not listed</span>
 							{#if tok.created_at}
 								<span class="font-mono text-3xs text-[#374151]">· {timeAgo(tok.created_at)}</span>
 							{/if}
-						</a>
+						</div>
 					{/if}
 
-					<!-- Trade action (only when liquid) -->
+					<!-- Trade action (only when liquid). z-[1] keeps it
+					     above the full-card overlay link so its own click
+					     target wins. -->
 					{#if hasLiq}
-						<div class="flex gap-2 mt-auto">
+						<div class="relative z-[1] flex gap-2 mt-auto">
 							<a href="/trade?token={tok.address}" class="inline-flex items-center gap-1.5 px-3.5 py-[7px] rounded-lg font-mono text-xs2 no-underline transition-all duration-150 cursor-pointer flex-1 justify-center bg-gradient-to-br from-[rgba(0,210,255,0.12)] to-[rgba(59,130,246,0.12)] border border-[rgba(0,210,255,0.15)] text-[#00d2ff] hover:from-[rgba(0,210,255,0.2)] hover:to-[rgba(59,130,246,0.2)] hover:border-[rgba(0,210,255,0.3)]">
 								<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
 								Trade

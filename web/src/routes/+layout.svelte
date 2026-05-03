@@ -138,18 +138,35 @@
 	// visibility, so the first open is instant.
 	let chatOpen = $state(false);
 
+	// True on /_ and /_/* admin routes. Used to hide both the live-
+	// chat FAB and the iframe overlay so admin work isn't covered by
+	// support chrome.
+	let inAdminPath = $derived.by(() => {
+		const path = page.url.pathname;
+		return path === '/_' || path.startsWith('/_/');
+	});
+
+	// True when the chat surface (iframe overlay) should be in the DOM.
+	// Looser than `showCustomChatButton`: the FAB hides while a wallet
+	// panel / mobile nav is up, but if the user already has the chat
+	// open we keep the overlay mounted so they don't lose context.
+	let showLiveChat = $derived.by(() => {
+		const allowed = (data?.allowedOrigins ?? []) as string[];
+		if (typeof window === 'undefined') return false;
+		if (!allowed.includes(window.location.origin)) return false;
+		return !inAdminPath;
+	});
+
 	let showCustomChatButton = $derived.by(() => {
 		// Only render on origins where chat is wanted (gates dev /
 		// preview origins out via ALLOWED_ORIGINS).
 		const allowed = (data?.allowedOrigins ?? []) as string[];
 		if (typeof window === 'undefined') return false;
 		if (!allowed.includes(window.location.origin)) return false;
-		const path = page.url.pathname;
-		const inAdmin = path === '/_' || path.startsWith('/_/');
 		// Hide on admin pages and while any takeover surface is visible:
 		// wallet sheet (secret-reveal modal lives inside), or the mobile
 		// nav drawer (which would otherwise overlap the FAB on mobile).
-		return !inAdmin && !showAccountPanel && !mobileMenuOpen;
+		return !inAdminPath && !showAccountPanel && !mobileMenuOpen;
 	});
 
 	function openLiveChat() {
@@ -1144,7 +1161,11 @@
 	     first chat open is instant — the iframe boots in the
 	     background while the user navigates, and clicking the FAB
 	     just toggles visibility via .is-hidden. CSS keeps the iframe
-	     loaded but visually + interactively dormant. -->
+	     loaded but visually + interactively dormant.
+	     Gated by `showLiveChat` so admin pages (/_ and /_/*) skip
+	     mounting the iframe entirely — no support chrome on top of
+	     admin work, and the iframe doesn't even load there. -->
+	{#if showLiveChat}
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
@@ -1173,6 +1194,7 @@
 			></iframe>
 		</div>
 	</div>
+	{/if}
 
 	<!-- Mobile Bottom Tab Bar. Active tab gets a clear pill + cyan top
 	     accent + bolder icon weight — three cues stacked so the current
