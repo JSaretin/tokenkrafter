@@ -320,21 +320,24 @@
 						</div>
 					</div>
 				{:else}
-					{@const step = liveStatus === 'confirmed' ? 3 : (liveStatus === 'processing' ? 2 : 1)}
+					<!-- Off-ramp is a 2-stage flow: the on-chain deposit
+					     lands first (held in contract), then the bank
+					     payout. Once this modal opens the deposit is
+					     already locked in — there's no "waiting for the
+					     user to do something" stage like the on-ramp has.
+					     Stage 1 ✓; stage 2 active until liveStatus
+					     confirms (with the existing countdown ring above
+					     telegraphing the wait). -->
+					{@const step = liveStatus === 'confirmed' ? 2 : 1}
 					<div class="flex items-center justify-center my-4">
-						<div class={'flex flex-col items-center gap-1 font-mono text-3xs transition-all duration-200 ' + (step >= 1 ? 'text-foreground ' : 'text-muted ') + (step === 1 && (!hasExpiry || remaining > 0) ? 'text-amber-500' : '')}>
-							<div class={'w-2.5 h-2.5 rounded-full border-2 transition-all duration-200 ' + (step >= 1 ? 'bg-emerald-500 border-emerald-500' : 'bg-surface-hover border-line') + (step === 1 && (!hasExpiry || remaining > 0) ? ' !bg-amber-500 !border-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.4)]' : '')}></div>
-							<span>Awaiting</span>
+						<div class="flex flex-col items-center gap-1 font-mono text-3xs text-foreground">
+							<div class="w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-emerald-500"></div>
+							<span>Deposit</span>
 						</div>
-						<div class={'w-10 h-0.5 mx-1 mb-[18px] transition-[background] duration-200 ' + (step >= 2 ? 'bg-emerald-500' : 'bg-line')}></div>
-						<div class={'flex flex-col items-center gap-1 font-mono text-3xs transition-all duration-200 ' + (step >= 2 ? 'text-foreground ' : 'text-muted ') + (step === 2 ? 'text-amber-500' : '')}>
-							<div class={'w-2.5 h-2.5 rounded-full border-2 transition-all duration-200 ' + (step >= 2 ? 'bg-emerald-500 border-emerald-500' : 'bg-surface-hover border-line') + (step === 2 ? ' !bg-amber-500 !border-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.4)]' : '')}></div>
-							<span>Received</span>
-						</div>
-						<div class={'w-10 h-0.5 mx-1 mb-[18px] transition-[background] duration-200 ' + (step >= 3 ? 'bg-emerald-500' : 'bg-line')}></div>
-						<div class={'flex flex-col items-center gap-1 font-mono text-3xs transition-all duration-200 ' + (step >= 3 ? 'text-foreground' : 'text-muted')}>
-							<div class={'w-2.5 h-2.5 rounded-full border-2 transition-all duration-200 ' + (step >= 3 ? 'bg-emerald-500 border-emerald-500' : 'bg-surface-hover border-line')}></div>
-							<span>Delivered</span>
+						<div class={'w-10 h-0.5 mx-1 mb-[18px] transition-[background] duration-200 ' + (step >= 2 ? 'bg-emerald-500' : 'bg-amber-500/50')}></div>
+						<div class={'flex flex-col items-center gap-1 font-mono text-3xs transition-all duration-200 ' + (step >= 2 ? 'text-foreground' : 'text-amber-500')}>
+							<div class={'w-2.5 h-2.5 rounded-full border-2 transition-all duration-200 ' + (step >= 2 ? 'bg-emerald-500 border-emerald-500' : '!bg-amber-500 !border-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.4)]')}></div>
+							<span>{step >= 2 ? 'Delivered' : 'Awaiting Payout'}</span>
 						</div>
 					</div>
 				{/if}
