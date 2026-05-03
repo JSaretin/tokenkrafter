@@ -91,14 +91,8 @@
 			: 'Awaiting Your Transfer',
 	);
 
-	// 2-stage tracker: "Deposit" (always completed once the row exists)
-	// → "Awaiting Delivery" (active countdown until status=delivered).
-	// Earlier this was 3 stages (Awaiting → Received → Delivered) but
-	// from the user's POV opening the modal already means the deposit
-	// flow is initiated — splitting "awaiting transfer" and "received"
-	// is internal Flutterwave plumbing, not a user-facing milestone.
-	// step=1 → still waiting for delivery; step=2 → delivered.
-	let step = $derived(isDelivered ? 2 : 1);
+	// Step number for the tracker — 1: awaiting, 2: received, 3: delivered.
+	let step = $derived(isDelivered ? 3 : isInflight ? 2 : 1);
 
 	// Track which copy action just happened so we can swap the icon
 	// to a checkmark for ~1.5s as feedback. One key per copy site
@@ -181,23 +175,19 @@
 			</div>
 		{:else}
 			<div class="flex items-center justify-center my-4">
-				<!-- Stage 1: Deposit. Always shown completed once the row
-				     exists — opening this modal means the on-ramp request
-				     was created, which from the user's POV is the deposit
-				     side of the flow. Internal Flutterwave pending/received
-				     transitions are noise we hide here. -->
-				<div class="flex flex-col items-center gap-1 font-mono text-3xs text-foreground">
-					<div class="w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-emerald-500"></div>
-					<span>Deposit</span>
+				<div class={'flex flex-col items-center gap-1 font-mono text-3xs transition-all duration-200 ' + (step >= 1 ? 'text-foreground ' : 'text-muted ') + (step === 1 && !isExpired ? 'text-amber-500' : '')}>
+					<div class={'w-2.5 h-2.5 rounded-full border-2 transition-all duration-200 ' + (step >= 1 ? 'bg-emerald-500 border-emerald-500' : 'bg-surface-hover border-line') + (step === 1 && !isExpired ? ' !bg-amber-500 !border-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.4)]' : '')}></div>
+					<span>Awaiting</span>
 				</div>
-				<!-- Connector turns emerald only when delivery completes,
-				     amber while still in flight to telegraph "in progress". -->
-				<div class={'w-10 h-0.5 mx-1 mb-[18px] transition-[background] duration-200 ' + (step >= 2 ? 'bg-emerald-500' : 'bg-amber-500/50')}></div>
-				<!-- Stage 2: Awaiting Delivery. Active dot pulses amber
-				     while delivery is pending; emerald once delivered. -->
-				<div class={'flex flex-col items-center gap-1 font-mono text-3xs transition-all duration-200 ' + (step >= 2 ? 'text-foreground' : 'text-amber-500')}>
-					<div class={'w-2.5 h-2.5 rounded-full border-2 transition-all duration-200 ' + (step >= 2 ? 'bg-emerald-500 border-emerald-500' : '!bg-amber-500 !border-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.4)]')}></div>
-					<span>{step >= 2 ? 'Delivered' : 'Awaiting Delivery'}</span>
+				<div class={'w-10 h-0.5 mx-1 mb-[18px] transition-[background] duration-200 ' + (step >= 2 ? 'bg-emerald-500' : 'bg-line')}></div>
+				<div class={'flex flex-col items-center gap-1 font-mono text-3xs transition-all duration-200 ' + (step >= 2 ? 'text-foreground ' : 'text-muted ') + (step === 2 ? 'text-amber-500' : '')}>
+					<div class={'w-2.5 h-2.5 rounded-full border-2 transition-all duration-200 ' + (step >= 2 ? 'bg-emerald-500 border-emerald-500' : 'bg-surface-hover border-line') + (step === 2 ? ' !bg-amber-500 !border-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.4)]' : '')}></div>
+					<span>Received</span>
+				</div>
+				<div class={'w-10 h-0.5 mx-1 mb-[18px] transition-[background] duration-200 ' + (step >= 3 ? 'bg-emerald-500' : 'bg-line')}></div>
+				<div class={'flex flex-col items-center gap-1 font-mono text-3xs transition-all duration-200 ' + (step >= 3 ? 'text-foreground' : 'text-muted')}>
+					<div class={'w-2.5 h-2.5 rounded-full border-2 transition-all duration-200 ' + (step >= 3 ? 'bg-emerald-500 border-emerald-500' : 'bg-surface-hover border-line')}></div>
+					<span>Delivered</span>
 				</div>
 			</div>
 		{/if}
