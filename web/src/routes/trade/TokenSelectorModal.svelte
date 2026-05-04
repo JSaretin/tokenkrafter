@@ -24,13 +24,9 @@
 		logo_url?: string;
 	};
 
-	type PopularToken = { address: string; symbol: string; name: string; decimals: number; logo: string };
-
 	let {
 		builtInTokens = [],
 		filteredTokens = [],
-		popularTokens = [],
-		popularLoading = false,
 		tokenSearch = $bindable(''),
 		pastedTokenMeta = null,
 		pastedTokenLoading = false,
@@ -43,8 +39,6 @@
 	}: {
 		builtInTokens?: TokenItem[];
 		filteredTokens?: TokenItem[];
-		popularTokens?: PopularToken[];
-		popularLoading?: boolean;
 		tokenSearch?: string;
 		pastedTokenMeta?: PastedMeta | null;
 		pastedTokenLoading?: boolean;
@@ -60,22 +54,6 @@
 	let isAddressSearch = $derived(ethers.isAddress(trimmedSearch));
 	let shortSearch = $derived(trimmedSearch.slice(0, 6) + '...' + trimmedSearch.slice(-4));
 	let showImportRow = $derived(isAddressSearch && !filteredTokens.find(t => t.address.toLowerCase() === trimmedSearch.toLowerCase()));
-
-	// Popular section: hide entries that are already represented as
-	// quick-buttons or in the main filtered list, and apply the active
-	// search filter so popular results compose with the search box
-	// instead of fighting it.
-	let visiblePopular = $derived.by(() => {
-		const seen = new Set<string>();
-		for (const t of builtInTokens) seen.add(t.address.toLowerCase());
-		for (const t of filteredTokens) seen.add(t.address.toLowerCase());
-		const q = trimmedSearch.toLowerCase();
-		return popularTokens.filter((t) => {
-			if (seen.has(t.address.toLowerCase())) return false;
-			if (!q) return true;
-			return t.symbol.toLowerCase().includes(q) || t.name.toLowerCase().includes(q);
-		});
-	});
 
 	let show = $state(true);
 	$effect(() => { if (!show) onClose(); });
@@ -153,35 +131,11 @@
 			</TokenListItem>
 		{/each}
 
-		{#if visiblePopular.length > 0}
-			<div class="px-3 pt-3 pb-1.5 flex items-center gap-2">
-				<span class="font-mono text-3xs font-bold text-(--text-muted) uppercase tracking-[0.05em]">Popular on this chain</span>
-				<span class="flex-1 border-t border-(--border-subtle)"></span>
-			</div>
-			{#each visiblePopular as t}
-				<TokenListItem
-					logo={t.logo}
-					symbol={t.symbol}
-					primary={t.symbol}
-					secondary={t.name}
-					onclick={() => onSelect({ address: t.address, symbol: t.symbol, name: t.name, decimals: t.decimals, logo_url: t.logo })}
-				>
-					{#snippet rightSlot()}
-						<TokenAddressActions address={t.address} {explorerUrl} oncopy={onCopyAddress} />
-					{/snippet}
-				</TokenListItem>
-			{/each}
-		{:else if popularLoading && filteredTokens.length === 0 && !showImportRow}
-			<div class="flex items-center justify-center py-2.5 px-3 opacity-50">
-				<span class="font-mono text-3xs text-(--text-muted)">Loading popular tokens…</span>
-			</div>
-		{/if}
-
 		{#if dbSearchLoading}
 			<div class="flex items-center justify-center py-2.5 px-3 opacity-50">
 				<span class="font-mono text-3xs text-(--text-muted)">{$t('trade.searching')}</span>
 			</div>
-		{:else if filteredTokens.length === 0 && visiblePopular.length === 0 && !popularLoading && !isAddressSearch}
+		{:else if filteredTokens.length === 0 && !isAddressSearch}
 			<p class="text-center p-5 text-(--text-muted) font-mono text-xs">{$t('trade.noTokensFound')}</p>
 		{/if}
 	</div>

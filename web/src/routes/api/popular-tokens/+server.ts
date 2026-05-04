@@ -1,15 +1,16 @@
 /**
  * GET /api/popular-tokens?chain=bsc
  *
- * Returns ~50 top market-cap tokens that exist on the requested chain,
- * with their on-chain ERC20 address — so the trade page's token picker
- * can offer ETH / XRP / BNB / DOGE / etc. without forcing the user to
- * paste a contract address.
+ * Returns every CoinGecko-known token that exists on the requested chain
+ * (typically a few thousand entries) so the trade page's token picker
+ * can resolve any well-known symbol the user types — ETH, XRP, DOGE,
+ * BUSD, etc — without forcing them to paste a contract address.
  *
- * The data is sourced from CoinGecko (free tier, no API key) and cached
- * in `platform_config.value.popular_tokens.<chain>` for an hour. Within
- * that window every request is a single DB read; on miss / stale we
- * refresh inline (no cron dependency, no scheduled job).
+ * The data is sourced from CoinGecko's `/coins/list?include_platform=true`
+ * (free tier, no API key) and cached in
+ * `platform_config.value.popular_tokens.<chain>` for 6 hours. Within
+ * that window every request is one DB read; on miss / stale we refresh
+ * inline (no cron dependency, no scheduled job).
  *
  * The cache layout is:
  *   platform_config[key='popular_tokens'].value = {
@@ -18,7 +19,10 @@
  *     ...
  *   }
  *
- * Each cached token: { address, symbol, name, decimals: 18, logo, rank, priceUsd }
+ * Each cached token: { address, symbol, name } — minimal so the wire
+ * payload stays small. Logos resolve client-side via tokenLogo.ts, and
+ * decimals are read on-chain when the user actually picks the token, so
+ * a missing decimals here doesn't risk wrong-math at trade time.
  */
 
 import { json } from '@sveltejs/kit';
@@ -37,20 +41,16 @@ const CG_PLATFORM_BY_CHAIN: Record<string, string> = {
 	optimism: 'optimistic-ethereum',
 };
 
-const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+const CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
 
-interface PopularToken {
+interface ChainToken {
 	address: string;
 	symbol: string;
 	name: string;
-	decimals: number;
-	logo: string;
-	rank: number;
-	priceUsd: number;
 }
 
 interface ChainCache {
-	tokens: PopularToken[];
+	tokens: ChainToken[];
 	updated_at: string;
 }
 
@@ -70,62 +70,33 @@ async function writeCache(merged: Record<string, ChainCache>): Promise<void> {
 }
 
 /**
- * Fetch top market-cap tokens that exist on the requested chain.
+ * Fetch every CoinGecko token that has a deployment on the requested chain.
  *
- * CoinGecko's free tier doesn't let us filter `/coins/markets` by
- * platform, so we pull the global top 250 by market cap and then
- * cross-reference `/coins/list?include_platform=true` to extract the
- * on-chain address for the requested chain. Tokens without a deployment
- * on that chain drop out.
+ * One call to `/coins/list?include_platform=true` (~5 MB JSON, ~14k
+ * tokens across all chains) — we filter to the requested chain
+ * server-side before caching, so the wire payload back to the browser
+ * is much smaller (~200-500 KB depending on chain).
  */
-async function refreshChain(chain: string, platformKey: string): Promise<PopularToken[]> {
-	// 1. Top 250 by market cap (one call, ~150 KB).
-	const marketsRes = await fetch(
-		'https://api.coingecko.com/api/v3/coins/markets'
-			+ '?vs_currency=usd&order=market_cap_desc&per_page=250&page=1&sparkline=false',
-		{ headers: { accept: 'application/json' } },
-	);
-	if (!marketsRes.ok) throw new Error(`coingecko markets: ${marketsRes.status}`);
-	const markets = await marketsRes.json() as Array<{
-		id: string; symbol: string; name: string; image: string;
-		market_cap_rank: number | null; current_price: number | null;
-	}>;
-
-	// 2. Coin list with platform addresses (one call, ~5 MB but cached upstream).
-	const listRes = await fetch(
+async function refreshChain(platformKey: string): Promise<ChainToken[]> {
+	const res = await fetch(
 		'https://api.coingecko.com/api/v3/coins/list?include_platform=true',
 		{ headers: { accept: 'application/json' } },
 	);
-	if (!listRes.ok) throw new Error(`coingecko list: ${listRes.status}`);
-	const list = await listRes.json() as Array<{
-		id: string; platforms: Record<string, string | null>;
+	if (!res.ok) throw new Error(`coingecko list: ${res.status}`);
+	const list = await res.json() as Array<{
+		id: string; symbol: string; name: string;
+		platforms: Record<string, string | null>;
 	}>;
-	const addressById = new Map<string, string>();
+
+	const tokens: ChainToken[] = [];
 	for (const c of list) {
 		const addr = c.platforms?.[platformKey];
-		if (addr && /^0x[0-9a-fA-F]{40}$/.test(addr)) addressById.set(c.id, addr);
-	}
-
-	// 3. Join + trim to top 50 with valid addresses.
-	const tokens: PopularToken[] = [];
-	for (const m of markets) {
-		const address = addressById.get(m.id);
-		if (!address) continue;
+		if (!addr || !/^0x[0-9a-fA-F]{40}$/.test(addr)) continue;
 		tokens.push({
-			address,
-			symbol: m.symbol.toUpperCase(),
-			name: m.name,
-			// CoinGecko doesn't expose decimals on /coins/markets. 18 is the
-			// ERC20 default and correct for almost every bridged token; the
-			// trade page reads decimals on-chain when the user actually
-			// selects the token, so a wrong default here gets corrected
-			// before any math runs.
-			decimals: 18,
-			logo: m.image,
-			rank: m.market_cap_rank ?? 999,
-			priceUsd: m.current_price ?? 0,
+			address: addr,
+			symbol: c.symbol.toUpperCase(),
+			name: c.name,
 		});
-		if (tokens.length >= 50) break;
 	}
 	return tokens;
 }
@@ -146,16 +117,15 @@ export const GET: RequestHandler = async ({ url }) => {
 	}
 
 	// On miss / stale, refresh inline. CoinGecko free tier is 30 req/min;
-	// two requests per refresh is well under, and we only refresh once
-	// per hour per chain anyway.
+	// one request per 6 hours per chain is a rounding error.
 	try {
-		const tokens = await refreshChain(chain, platformKey);
+		const tokens = await refreshChain(platformKey);
 		const merged = { ...cache, [chain]: { tokens, updated_at: new Date().toISOString() } };
 		await writeCache(merged);
 		return json({ tokens, chain, cached: false, updated_at: merged[chain].updated_at });
 	} catch (e: any) {
 		// Refresh failed — serve whatever stale cache we have rather than
-		// failing the request, so the modal still shows something.
+		// failing the request, so the picker still resolves known symbols.
 		console.error('[popular-tokens] refresh failed:', e?.message || e);
 		if (entry) {
 			return json({ tokens: entry.tokens, chain, cached: true, stale: true, updated_at: entry.updated_at });

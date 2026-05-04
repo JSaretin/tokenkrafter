@@ -190,30 +190,32 @@
 	// Platform tokens can never be honeypots — suppress false positives
 	let platformTokenAddrs = $derived(new Set(platformTokens.map(t => t.address.toLowerCase())));
 
-	// Popular tokens (CoinGecko top market-cap, mapped to current chain).
-	// Fetched lazily on first modal open per chain, cached in-memory for
-	// the lifetime of the page so re-opens are instant. The endpoint is
-	// itself cached for an hour, so this is one network round-trip per
-	// chain per session at most.
-	type PopularToken = { address: string; symbol: string; name: string; decimals: number; logo: string };
-	let popularTokens = $state<PopularToken[]>([]);
-	let popularLoading = $state(false);
-	const popularCache = new Map<string, PopularToken[]>();
+	// CoinGecko-known tokens for the current chain (a few thousand
+	// entries). Fetched lazily on first modal open per chain, cached
+	// in-memory for the lifetime of the page so re-opens are instant.
+	// The server endpoint caches the upstream CoinGecko fetch for 6h, so
+	// this is one network round-trip per chain per session at most.
+	//
+	// We don't render these as a separate section — they merge into
+	// filteredTokens once the user types a search query, so the picker
+	// stays uncluttered when there's no query but resolves any
+	// well-known symbol the user types.
+	type ChainToken = { address: string; symbol: string; name: string };
+	let chainTokens = $state<ChainToken[]>([]);
+	const chainTokensCache = new Map<string, ChainToken[]>();
 	$effect(() => {
 		if (!showTokenModal || !selectedNetwork?.symbol) return;
 		const slug = selectedNetwork.symbol.toLowerCase();
-		const hit = popularCache.get(slug);
-		if (hit) { popularTokens = hit; return; }
-		popularLoading = true;
+		const hit = chainTokensCache.get(slug);
+		if (hit) { chainTokens = hit; return; }
 		fetch(`/api/popular-tokens?chain=${slug}`)
 			.then(r => r.ok ? r.json() : { tokens: [] })
 			.then(d => {
-				const list = (d.tokens || []) as PopularToken[];
-				popularCache.set(slug, list);
-				popularTokens = list;
+				const list = (d.tokens || []) as ChainToken[];
+				chainTokensCache.set(slug, list);
+				chainTokens = list;
 			})
-			.catch(() => { popularTokens = []; })
-			.finally(() => { popularLoading = false; });
+			.catch(() => { chainTokens = []; });
 	});
 
 	// History
@@ -457,6 +459,40 @@
 			if (!seen.has(r.address.toLowerCase())) {
 				localMatches.push(r);
 				seen.add(r.address.toLowerCase());
+			}
+		}
+
+		// Merge CoinGecko chain tokens — same shape as a built-in entry.
+		// Decimals default to 18; the on-chain decimals lookup runs when
+		// the user actually picks the token, so a wrong default here gets
+		// corrected before any swap math runs. Logo URL is empty so the
+		// existing tokenLogo resolver picks it up via fallback chain
+		// (KNOWN_LOGOS → DB → GeckoTerminal).
+		//
+		// Cap the merged matches to keep the rendered list bounded —
+		// CoinGecko has a few thousand BSC tokens and pasting "DOGE"
+		// could otherwise return 50+ rows. 30 is enough room for the
+		// real match plus near-misses.
+		const cap = 30;
+		if (localMatches.length < cap) {
+			for (const r of chainTokens) {
+				if (localMatches.length >= cap) break;
+				const aLow = r.address.toLowerCase();
+				if (seen.has(aLow)) continue;
+				if (
+					r.symbol.toLowerCase().includes(q) ||
+					r.name.toLowerCase().includes(q) ||
+					aLow.includes(q)
+				) {
+					localMatches.push({
+						address: r.address,
+						symbol: r.symbol,
+						name: r.name,
+						decimals: 18,
+						logo_url: '',
+					});
+					seen.add(aLow);
+				}
 			}
 		}
 
@@ -1860,8 +1896,6 @@
 	<TokenSelectorModal
 		{builtInTokens}
 		{filteredTokens}
-		{popularTokens}
-		{popularLoading}
 		bind:tokenSearch
 		{pastedTokenMeta}
 		{pastedTokenLoading}
