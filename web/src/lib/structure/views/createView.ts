@@ -170,6 +170,23 @@ export function toDepositView(input: DepositInput): DepositView {
 		} catch {
 			depositNeededWei = 0n;
 		}
+		// When the user is paying the fee in an ERC20 (e.g. USDT) AND
+		// listing with a same-token LP pair (e.g. USDT LP), the contract
+		// will pull (fee + LP_amount) from their balance. The deposit
+		// modal needs to show the combined ask, not just the fee, or
+		// the user thinks they're funded after sending only the fee
+		// portion and the create-and-list tx reverts on transferFrom.
+		const paySym = (selectedPayment?.symbol || '').toUpperCase();
+		if (paySym && listingPairs) {
+			for (const pair of listingPairs) {
+				if (!pair.base || pair.base === 'native') continue;
+				if (pair.base.toUpperCase() !== paySym) continue;
+				if (!(Number(pair.amount) > 0)) continue;
+				try {
+					depositNeededWei += ethers.parseUnits(String(pair.amount), dec);
+				} catch {}
+			}
+		}
 	}
 
 	const depositShortWei = depositNeededWei > userBalance ? depositNeededWei - userBalance : 0n;

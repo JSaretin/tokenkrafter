@@ -569,6 +569,16 @@
 		const urlFrom = page.url.searchParams.get('from');
 		const urlTo = page.url.searchParams.get('to');
 		const urlToken = page.url.searchParams.get('token');
+		// `?mode=buy|sell|swap` picks the active panel without forcing
+		// the user to click a tab. Maps to the internal outputMode
+		// machine: buy=fiat (OnrampPanel), sell=bank (off-ramp),
+		// swap=token (token-to-token). Anything else is ignored so
+		// the page falls back to whatever the user last set / the
+		// default 'token'.
+		const urlMode = page.url.searchParams.get('mode');
+		if (urlMode === 'buy') outputMode = 'fiat';
+		else if (urlMode === 'sell') outputMode = 'bank';
+		else if (urlMode === 'swap') outputMode = 'token';
 
 		// Resolve "from" token (input side)
 		if (urlFrom) {

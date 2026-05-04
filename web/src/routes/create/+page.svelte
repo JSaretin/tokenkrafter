@@ -804,9 +804,13 @@
 			userBalance = await erc20.balanceOf(userAddress);
 		}
 
-		// For native payment: check fee + liquidity amounts
+		// Compare against the deposit view's combined need so that
+		// ERC20 payment + same-ERC20 LP pair (e.g. USDT fee + USDT LP)
+		// is treated as one ask, not two. depositNeededWei already
+		// folds in matching same-token LP amounts on the ERC20 path
+		// and totalNativeNeeded for the native path.
 		if (isNativePayment) return userBalance >= deposit.totalNativeNeeded;
-		return userBalance >= selectedFee;
+		return userBalance >= deposit.depositNeededWei;
 	}
 
 	let _createDepositSub: EventSubscription | null = null;

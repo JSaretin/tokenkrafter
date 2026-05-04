@@ -1388,6 +1388,18 @@
 				<span class="ap-selectable block font-mono text-3xs text-(--text-muted) break-all leading-[1.6]">{userAddress}</span>
 				<span class="block text-xs4 text-[#00d2ff] mt-1.5 font-mono">{copiedAddr ? $t('account.copied') : $t('account.tapToCopy')}</span>
 			</div>
+			<!-- Buy-crypto deep link to /trade?mode=buy. Shortcut for users
+			     who landed on Receive expecting a way to fund the wallet
+			     and don't already hold crypto on another chain to send in. -->
+			<a
+				href="/trade?mode=buy"
+				class="w-full mt-1 inline-flex items-center justify-center gap-2 px-4 py-3 rounded-[10px] no-underline transition-all duration-150 cursor-pointer bg-gradient-to-br from-[rgba(0,210,255,0.12)] to-[rgba(59,130,246,0.12)] border border-[rgba(0,210,255,0.2)] text-[#00d2ff] font-mono text-3xs font-bold hover:from-[rgba(0,210,255,0.2)] hover:to-[rgba(59,130,246,0.2)] hover:border-[rgba(0,210,255,0.35)]"
+			>
+				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+					<rect x="2" y="6" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 16h4"/>
+				</svg>
+				<span>Buy crypto with bank transfer</span>
+			</a>
 		</div>
 
 	<!-- ═══ SECURITY VIEW ═══ -->
