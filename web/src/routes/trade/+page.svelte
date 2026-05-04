@@ -476,19 +476,19 @@
 			}
 		}
 
-		// Merge CoinGecko chain tokens. With no query → top-ranked first
-		// (chainTokens is pre-sorted by market-cap rank in the daemon),
-		// so users see AAVE / DOGE / etc. without typing. With a query →
-		// substring filter. Decimals default to 18; the on-chain
-		// decimals lookup runs when the user actually picks the token,
-		// so a wrong default here gets corrected before any swap math.
-		// Long-tail tokens (rank 9999) have no logo — they fall back
-		// to the symbol-initial circle in TokenIcon.
+		// Merge CoinGecko chain tokens (sourced from
+		// tokens.coingecko.com/<slug>/all.json via chainTokensStore —
+		// every entry ships address, symbol, name, decimals, and a
+		// logoURI, so the picker doesn't need any per-row
+		// GeckoTerminal lookup. Order is whatever CoinGecko returns;
+		// the built-in tokens (BNB/USDT/USDC) are already at the top
+		// of `out` from the local list above, so users see the popular
+		// ones first regardless.
 		//
-		// No cap on the merged set — TokenSelectorModal paginates with
-		// infinite scroll (initial slice of N rows, more on scroll), so
-		// the lazy logo lookups stay bounded to whatever's visible
-		// regardless of how many tokens the chain has.
+		// No cap — TokenSelectorModal paginates with infinite scroll
+		// (initial slice of N rows, more on scroll), so render cost
+		// stays bounded to whatever's visible regardless of how many
+		// tokens the chain has.
 		for (const r of chainTokens) {
 			const aLow = r.address.toLowerCase();
 			if (seen.has(aLow)) continue;
@@ -501,8 +501,8 @@
 				address: r.address,
 				symbol: r.symbol,
 				name: r.name,
-				decimals: 18,
-				logo_url: r.logo || '',
+				decimals: r.decimals,
+				logo_url: r.logo,
 			});
 			seen.add(aLow);
 		}

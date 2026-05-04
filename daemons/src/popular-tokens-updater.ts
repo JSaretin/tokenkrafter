@@ -1,16 +1,24 @@
 /**
- * Popular Tokens Updater — fetches CoinGecko's full coins-list every
- * `POPULAR_INTERVAL` seconds (default 6h), filters tokens that exist
- * on each supported chain, writes the result directly to Supabase
+ * Popular Tokens Updater — fetches CoinGecko's per-chain tokenlist
+ * (Uniswap Token List Standard JSON) every `POPULAR_INTERVAL` seconds
+ * (default 6h), stamps each entry with a market-cap rank from
+ * /coins/markets, and writes the result directly to Supabase
  * `platform_config` (key=`popular_tokens`).
  *
- * Why a daemon and not the CF Pages function: parsing CoinGecko's
- * 2.6 MB /coins/list response inside a Cloudflare Pages Function blows
- * the per-request CPU budget — the production endpoint kept returning
- * fast 502s even though the same code worked locally. Moving the
- * upstream fetch + filter into a long-running daemon and writing
- * straight to Supabase via service role keeps the user-facing GET
- * endpoint as a pure DB read (instant, no CPU pressure).
+ * Why the tokenlist endpoint (`tokens.coingecko.com/<chain>/all.json`):
+ * it's what PancakeSwap and other DEXes consume, and it ships
+ * `{address, symbol, name, decimals, logoURI}` for every token on
+ * the chain in one response (~725 KB for BSC) — including logos for
+ * the long tail. Previous versions had to chain-resolve logos
+ * client-side via GeckoTerminal's per-token endpoint, which slammed
+ * the 30-req/min free quota and surfaced as 429s in the picker.
+ *
+ * Why the daemon and not the CF Pages function: parsing megabytes of
+ * upstream JSON inside a Cloudflare Pages Function blows the per-
+ * request CPU budget (the production endpoint kept returning fast
+ * 502s even though the same code worked locally). Keeping the work
+ * in a long-running daemon and writing straight to Supabase via
+ * service role keeps the user-facing GET endpoint as a pure DB read.
  *
  * Env vars:
  *   PUBLIC_SUPABASE_URL        — Supabase project URL
@@ -23,7 +31,9 @@
 
 import { createClient } from '@supabase/supabase-js';
 
-// Our `network.symbol` (GeckoTerminal slug) → CoinGecko's `platforms` key.
+// Our `network.symbol` (GeckoTerminal slug) → CoinGecko's chain key.
+// The same slug is used as the CG `platforms` key on /coins/list and
+// as the path segment on tokens.coingecko.com/<slug>/all.json.
 // Mirror this map in the GET endpoint when you add a chain.
 const CG_PLATFORM_BY_CHAIN: Record<string, string> = {
 	bsc: 'binance-smart-chain',
@@ -54,26 +64,56 @@ interface ChainToken {
 	address: string;
 	symbol: string;
 	name: string;
+	// On-chain decimals straight from the tokenlist (correct, not
+	// defaulted to 18). The frontend still re-reads on-chain when the
+	// user picks the token, so a wrong value here would self-correct,
+	// but having the right one means correct USD math for the
+	// preview row before they click.
+	decimals: number;
 	// Market-cap rank from CoinGecko's global top-N. Lower = more popular.
-	// Tokens beyond the top-N (most of them) get `rank: 9999` so they sort
-	// last but stay in the list for substring search to pick up.
+	// Tokens beyond the top-N (most of them) get `rank: 9999` so they
+	// sort last but stay in the list for substring search to pick up.
 	rank: number;
-	// CG-hosted logo URL for tokens in the top 250. Empty for the long
-	// tail — those fall back to the picker's symbol-initial circle, since
-	// resolving logos for thousands of tokens upstream-side is heavier
-	// than the badge is worth.
+	// Logo URL straight from the tokenlist — every CG-known token on
+	// the chain has one, so the picker no longer needs to lazy-resolve
+	// per row via GeckoTerminal's rate-limited token endpoint.
 	logo: string;
+}
+
+interface TokenListEntry {
+	chainId: number;
+	address: string;
+	name: string;
+	symbol: string;
+	decimals: number;
+	logoURI?: string;
+}
+
+async function fetchTokenList(slug: string): Promise<TokenListEntry[]> {
+	const res = await fetch(`https://tokens.coingecko.com/${slug}/all.json`);
+	if (!res.ok) throw new Error(`tokenlist ${slug}: ${res.status}`);
+	const data = (await res.json()) as { tokens: TokenListEntry[] };
+	return data.tokens || [];
 }
 
 async function refresh() {
 	const ts = new Date().toISOString().slice(11, 19);
 	try {
-		// Two upstream calls. /coins/list gives us the full token universe
-		// with on-chain addresses (~17k entries). /coins/markets gives us
-		// the top 250 by market cap with their CG `id` — we use it to
-		// stamp a rank on each chain token so the picker can show the
-		// well-known ones first without having to type a query.
-		const [listRes, marketsRes] = await Promise.all([
+		// Three upstream sources, fetched in parallel:
+		//  - /coins/list?include_platform=true → CG `id` ↔ chain address
+		//    map. Needed to translate the rank-by-id from /coins/markets
+		//    into a rank-by-address we can join against the tokenlist.
+		//  - /coins/markets?per_page=250 → top 250 by market cap, gives
+		//    us `id → rank`.
+		//  - tokens.coingecko.com/<slug>/all.json (one per chain) →
+		//    full per-chain inventory with addresses, decimals, logos.
+		const tokenlistPromises = CHAINS.map((chain) =>
+			fetchTokenList(CG_PLATFORM_BY_CHAIN[chain]).catch((e) => {
+				console.error(`[${ts}] ✗ tokenlist ${chain}: ${e.message}`);
+				return [] as TokenListEntry[];
+			}),
+		);
+		const [listRes, marketsRes, ...tokenLists] = await Promise.all([
 			fetch(
 				'https://api.coingecko.com/api/v3/coins/list?include_platform=true',
 				{ headers: { accept: 'application/json' } },
@@ -83,6 +123,7 @@ async function refresh() {
 					+ '?vs_currency=usd&order=market_cap_desc&per_page=250&page=1&sparkline=false',
 				{ headers: { accept: 'application/json' } },
 			),
+			...tokenlistPromises,
 		]);
 		if (!listRes.ok) {
 			console.error(`[${ts}] ✗ coingecko list ${listRes.status}`);
@@ -101,37 +142,50 @@ async function refresh() {
 		const markets = (await marketsRes.json()) as Array<{
 			id: string;
 			market_cap_rank: number | null;
-			image: string | null;
 		}>;
-		console.log(`[${ts}] coingecko: ${list.length} tokens, ${markets.length} ranked`);
 
+		// id → rank from /coins/markets.
 		const rankById = new Map<string, number>();
-		const logoById = new Map<string, string>();
 		for (const m of markets) {
 			if (m.market_cap_rank != null) rankById.set(m.id, m.market_cap_rank);
-			if (m.image) logoById.set(m.id, m.image);
 		}
 
 		const merged: Record<string, { tokens: ChainToken[]; updated_at: string }> = {};
 		const updatedAt = new Date().toISOString();
 
-		for (const chain of CHAINS) {
+		for (let i = 0; i < CHAINS.length; i++) {
+			const chain = CHAINS[i];
 			const platformKey = CG_PLATFORM_BY_CHAIN[chain];
-			const tokens: ChainToken[] = [];
+			const tokenlist = tokenLists[i];
+
+			// Per-chain address → rank map. We walk /coins/list once per
+			// chain and only keep entries that have an address on this
+			// platform; their CG `id` lets us look up the rank.
+			const rankByAddress = new Map<string, number>();
 			for (const c of list) {
 				const addr = c.platforms?.[platformKey];
 				if (!addr || !/^0x[0-9a-fA-F]{40}$/.test(addr)) continue;
+				const rank = rankById.get(c.id);
+				if (rank != null) rankByAddress.set(addr.toLowerCase(), rank);
+			}
+
+			const tokens: ChainToken[] = [];
+			for (const t of tokenlist) {
+				if (!t.address || !/^0x[0-9a-fA-F]{40}$/.test(t.address)) continue;
+				const lower = t.address.toLowerCase();
 				tokens.push({
-					address: addr,
-					symbol: c.symbol.toUpperCase(),
-					name: c.name,
-					rank: rankById.get(c.id) ?? 9999,
-					logo: logoById.get(c.id) ?? '',
+					address: t.address,
+					symbol: (t.symbol || '').toUpperCase(),
+					name: t.name || '',
+					decimals: typeof t.decimals === 'number' ? t.decimals : 18,
+					rank: rankByAddress.get(lower) ?? 9999,
+					logo: t.logoURI || '',
 				});
 			}
+
 			// Sort by rank ascending, then symbol — stable order for the
-			// frontend so "show top N" is meaningful and substring search
-			// still hits well-known tokens first.
+			// frontend so paginated rendering surfaces well-known tokens
+			// first and the long tail comes after.
 			tokens.sort((a, b) => a.rank - b.rank || a.symbol.localeCompare(b.symbol));
 			merged[chain] = { tokens, updated_at: updatedAt };
 		}
@@ -145,7 +199,8 @@ async function refresh() {
 		}
 
 		const counts = CHAINS.map((c) => `${c}=${merged[c].tokens.length}`).join(' ');
-		console.log(`[${ts}] ✓ ${counts}`);
+		const ranked = CHAINS.map((c) => merged[c].tokens.filter((t) => t.rank < 9999).length).reduce((a, b) => a + b, 0);
+		console.log(`[${ts}] ✓ ${counts} (ranked: ${ranked})`);
 	} catch (e: any) {
 		console.error(`[${ts}] ✗ ${e?.message || e}`);
 	}
