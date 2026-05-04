@@ -1424,13 +1424,16 @@
 					}
 				}
 
-				// Build path using best route from TradeLens
+				// Build path using best route from TradeLens. Always
+				// spread-copy swapRoute.path because it lives inside
+				// $state and Svelte 5 freezes nested arrays — ethers
+				// (or any downstream consumer that touches the path)
+				// then trips "0 is read-only" on the first index write.
 				const addrIn = tokenInIsNative ? weth : tokenInAddr;
 				const addrOut = tokenOutIsNative ? weth : tokenOutAddr;
 				let path: string[];
 				if (swapRoute && swapRoute.path.length >= 2) {
-					// Use the optimal route found by findBestRoute
-					path = swapRoute.path;
+					path = [...swapRoute.path];
 				} else if (addrIn !== weth && addrOut !== weth) {
 					path = [addrIn, weth, addrOut]; // fallback: route through WETH
 				} else {
