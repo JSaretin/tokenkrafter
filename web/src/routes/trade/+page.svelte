@@ -106,6 +106,12 @@
 	let amountOut = $state('');
 	let previewLoading = $state(false);
 	let noLiquidity = $state(false);
+	// Distinct from noLiquidity: priceQuoteUnavailable means the RPC
+	// route-find eth_call threw (timeout / rate limit / chain hiccup),
+	// not that there's actually no DEX liquidity. We surface a softer
+	// message and don't permanently block the swap, so a retry can
+	// recover when the RPC settles.
+	let priceQuoteUnavailable = $state(false);
 	let swapRoute = $state<SwapRoute | null>(null);
 
 	// Slippage — managed by SlippageSetter, shared via localStorage
@@ -948,14 +954,27 @@
 					// Map to SwapRoute format for the swap execution
 					swapRoute = { path: route.path, symbols: [], amountOut: route.amountOut, hops: route.path.length - 1 };
 					noLiquidity = false;
+					priceQuoteUnavailable = false;
 				} else if (!hasInstant) {
+					// RouteFinder returned but amountOut is 0 — definitive
+					// "no liquidity at this depth across the configured
+					// bases" signal.
 					amountOut = '';
 					noLiquidity = true;
+					priceQuoteUnavailable = false;
 				}
 			} catch {
+				// RPC threw — could be rate-limit, socket drop, public-
+				// endpoint hiccup. We CAN'T distinguish that from a real
+				// no-liquidity outcome, but treating it as "no liquidity"
+				// permanently blocks the swap button until the user
+				// re-enters the amount. Mark as quote-unavailable
+				// instead so the message is softer + retry happens on
+				// the next preview tick automatically.
 				if (!hasInstant) {
 					amountOut = '';
-					noLiquidity = true;
+					noLiquidity = false;
+					priceQuoteUnavailable = true;
 				}
 			} finally {
 				previewLoading = false;
@@ -1481,6 +1500,7 @@
 		if (insufficientBalance) return $t('trade.insufficientBalance').replace('{symbol}', tokenInSymbol);
 		if (noGas) return $t('trade.insufficientGas').replace('{symbol}', selectedNetwork?.native_coin || 'gas');
 		if (noLiquidity && outputMode === 'token') return $t('trade.insufficientLiquidity');
+		if (priceQuoteUnavailable && outputMode === 'token') return 'Price unavailable — retry';
 		if (outputMode === 'bank') {
 			if (belowMinWithdraw) {
 				const min = parseFloat(ethers.formatUnits(minWithdrawUsdt, usdtDecimals)).toFixed(2);
@@ -1500,7 +1520,7 @@
 		isSwapping ||
 		!tokenInAddr || !amountIn || parseFloat(amountIn) <= 0 ||
 		insufficientBalance || noGas ||
-		(outputMode === 'token' && (!tokenOutAddr || noLiquidity)) ||
+		(outputMode === 'token' && (!tokenOutAddr || noLiquidity || priceQuoteUnavailable)) ||
 		(outputMode === 'bank' && (
 			belowMinWithdraw ||
 			(paymentMethod === 'bank' && (!bankResolved || !bankAccount || !bankCode)) ||
@@ -1674,6 +1694,19 @@
 
 				{#if noLiquidity}
 					<NoLiquidityNotice />
+				{:else if priceQuoteUnavailable}
+					<!-- Soft RPC-error notice. Distinct from NoLiquidityNotice
+					     because we can't actually tell if liquidity is missing
+					     when the RouteFinder eth_call throws — it usually
+					     means the public RPC rate-limited or dropped a
+					     socket. The next preview tick retries automatically. -->
+					<div class="rounded-[10px] border border-amber-500/20 bg-amber-500/5 px-3 py-2.5 flex items-start gap-2">
+						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2.2" class="shrink-0 mt-0.5"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+						<div class="flex-1">
+							<span class="block font-mono text-3xs font-bold text-amber-500">Price quote unavailable</span>
+							<span class="block font-mono text-3xs text-(--text-dim) mt-0.5">RPC didn't respond in time. The preview retries automatically — re-enter the amount or wait a moment.</span>
+						</div>
+					</div>
 				{/if}
 			{/if}
 

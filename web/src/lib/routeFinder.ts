@@ -34,22 +34,24 @@ export async function findRoute(
 		[dexRouter, inToken, outToken, amountIn, bases],
 	);
 
-	try {
-		const raw = await provider.call({
-			data: BYTECODE + args.slice(2),
-			gasLimit: 5_000_000,
-		});
+	// NOTE: we intentionally do NOT swallow errors here. A throw from
+	// provider.call (rate limit, socket drop, public-RPC hiccup) is
+	// NOT the same as "no route found" — callers need to distinguish
+	// transient RPC failure (retry) from real liquidity absence
+	// (block the swap). An empty `[]` return means RPC succeeded but
+	// the constructor exited with no usable paths.
+	const raw = await provider.call({
+		data: BYTECODE + args.slice(2),
+		gasLimit: 5_000_000,
+	});
 
-		const decoded = abiCoder.decode([RESULT_TYPE], raw);
-		return (decoded[0] as any[]).map((r: any) => ({
-			path: r.path as string[],
-			amountOut: r.amountOut as bigint,
-			reserveIn: r.reserveIn as bigint,
-			reserveOut: r.reserveOut as bigint,
-		}));
-	} catch {
-		return [];
-	}
+	const decoded = abiCoder.decode([RESULT_TYPE], raw);
+	return (decoded[0] as any[]).map((r: any) => ({
+		path: r.path as string[],
+		amountOut: r.amountOut as bigint,
+		reserveIn: r.reserveIn as bigint,
+		reserveOut: r.reserveOut as bigint,
+	}));
 }
 
 /**
