@@ -19,7 +19,7 @@
  *   BOT_MNEMONIC         — 12/24-word mnemonic for derived bot wallets
  *                          Wallet[0] is the treasurer (scatterer)
  *   WALLET_COUNT         — Number of derived wallets (default 50)
- *   SPEED                — burst | normal | slow (default slow)
+ *   SPEED                — burst | normal | medium | slow (default slow)
  *   MIN_BNB_BAL          — BNB refund threshold (default 0.003, ~$1.8)
  *   FUND_BNB             — BNB amount when topping up (default 0.01, ~$6)
  *   MIN_USDT_BAL         — USDT refund threshold (default 30)
@@ -54,6 +54,7 @@ const SPEED = process.env.SPEED || 'slow';
 const SPEEDS: Record<string, { tokenMin: number; tokenMax: number; desc: string }> = {
 	burst: { tokenMin: 60, tokenMax: 300, desc: '1-5 min' },
 	normal: { tokenMin: 600, tokenMax: 3600, desc: '10-60 min' },
+	medium: { tokenMin: 2400, tokenMax: 10800, desc: '40 min - 3 hours' },
 	slow: { tokenMin: 3600, tokenMax: 14400, desc: '1-4 hours' },
 };
 
