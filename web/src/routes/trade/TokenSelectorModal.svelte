@@ -32,6 +32,10 @@
 		pastedTokenLoading = false,
 		dbSearchLoading = false,
 		explorerUrl = '',
+		// Used by TokenIcon to lazy-resolve missing logos via
+		// GeckoTerminal's per-address tokens endpoint. Passed through
+		// from the parent so the right network is queried.
+		chainId = 56,
 		// Per-row href override for the explorer button. Returns
 		// `/explore/<chain>/<address>` for platform tokens (so the user
 		// lands on our in-app token page) and an empty string for
@@ -52,6 +56,7 @@
 		pastedTokenLoading?: boolean;
 		dbSearchLoading?: boolean;
 		explorerUrl?: string;
+		chainId?: number;
 		getDetailHref?: (address: string) => string;
 		isPlatformToken?: (address: string) => boolean;
 		onSelect: (token: TokenItem) => void;
@@ -132,6 +137,8 @@
 				primary={t.symbol}
 				secondary={t.name}
 				isPlatform={isPlatformToken(t.address)}
+				address={t.address}
+				{chainId}
 				onclick={() => onSelect(t)}
 			>
 				{#snippet rightSlot()}

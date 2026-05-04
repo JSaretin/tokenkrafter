@@ -214,6 +214,7 @@
 				const list = (d.tokens || []) as ChainToken[];
 				chainTokensCache.set(slug, list);
 				chainTokens = list;
+				console.log(chainTokens)
 			})
 			.catch(() => { chainTokens = []; });
 	});
@@ -445,10 +446,6 @@
 
 		const q = tokenSearch.toLowerCase().trim();
 
-		// Cap merged matches to keep the rendered list bounded — CoinGecko
-		// can return thousands per chain; 30 entries comfortably covers
-		// platform tokens + popular CG tokens + near-misses on a search.
-		const cap = 30;
 		// `seen` starts pre-populated with the excluded-side address so
 		// we never re-introduce it via the chainTokens merge below.
 		const excludeAddr = outputMode === 'token'
@@ -483,27 +480,33 @@
 		// substring filter. Decimals default to 18; the on-chain
 		// decimals lookup runs when the user actually picks the token,
 		// so a wrong default here gets corrected before any swap math.
-		// Logo URL is empty so the existing tokenLogo resolver picks
-		// it up via the fallback chain (KNOWN_LOGOS → DB → GeckoTerminal).
-		if (out.length < cap) {
-			for (const r of chainTokens) {
-				if (out.length >= cap) break;
-				const aLow = r.address.toLowerCase();
-				if (seen.has(aLow)) continue;
-				if (q && !(
-					r.symbol.toLowerCase().includes(q) ||
-					r.name.toLowerCase().includes(q) ||
-					aLow.includes(q)
-				)) continue;
-				out.push({
-					address: r.address,
-					symbol: r.symbol,
-					name: r.name,
-					decimals: 18,
-					logo_url: r.logo || '',
-				});
-				seen.add(aLow);
-			}
+		// Long-tail tokens (rank 9999) have no logo — they fall back
+		// to the symbol-initial circle in TokenIcon.
+		//
+		// With no search, cap the merged chain-tokens at 100 rows so the
+		// initial render doesn't fire thousands of lazy logo lookups
+		// against GeckoTerminal at once (72 of the top 100 already
+		// ship logos from the daemon; the rest lazy-resolve on mount).
+		// With a search query, lift the cap entirely — the substring
+		// filter naturally bounds the result set.
+		const noQueryCap = q ? Infinity : 100;
+		for (const r of chainTokens) {
+			if (out.length >= noQueryCap) break;
+			const aLow = r.address.toLowerCase();
+			if (seen.has(aLow)) continue;
+			if (q && !(
+				r.symbol.toLowerCase().includes(q) ||
+				r.name.toLowerCase().includes(q) ||
+				aLow.includes(q)
+			)) continue;
+			out.push({
+				address: r.address,
+				symbol: r.symbol,
+				name: r.name,
+				decimals: 18,
+				logo_url: r.logo || '',
+			});
+			seen.add(aLow);
 		}
 
 		return out;
@@ -1786,14 +1789,12 @@
 					onSelectToken={() => { tokenModalTarget = 'out'; showTokenModal = true; }}
 				>
 					{#snippet notice()}
-						{#if noLiquidity}
-							<NoLiquidityNotice />
-						{:else if priceQuoteUnavailable}
-							<!-- Soft RPC-error notice. Distinct from NoLiquidityNotice
-							     because we can't actually tell if liquidity is missing
-							     when the RouteFinder eth_call throws — it usually
-							     means the public RPC rate-limited or dropped a
-							     socket. The next preview tick retries automatically. -->
+						{#if priceQuoteUnavailable}
+							<!-- Soft RPC-error notice — kept because this state
+							     looks identical to no-liquidity from a 0.00 vs
+							     button-label standpoint, but is recoverable on
+							     the next preview tick and the user shouldn't
+							     re-enter the amount thinking the pair is dead. -->
 							<div class="rounded-[10px] border border-amber-500/20 bg-amber-500/5 px-3 py-2.5 flex items-start gap-2">
 								<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2.2" class="shrink-0 mt-0.5"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
 								<div class="flex-1">
@@ -1802,6 +1803,10 @@
 								</div>
 							</div>
 						{/if}
+						<!-- Removed the noLiquidity banner: the 0.00 amount and
+						     the action button switching to "Insufficient
+						     liquidity" already convey the state without an
+						     extra panel inside the receive card. -->
 					{/snippet}
 				</TokenInput>
 
@@ -1911,6 +1916,7 @@
 		{pastedTokenLoading}
 		{dbSearchLoading}
 		explorerUrl={selectedNetwork?.explorer_url || ''}
+		chainId={selectedNetwork?.chain_id || 56}
 		getDetailHref={(addr) => {
 			// Platform tokens get an in-app /explore page (chart, holders,
 			// trades). Everything else falls back to the chain block-

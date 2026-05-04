@@ -15,6 +15,10 @@
 		// are platform-native (have detail page, are vetted) vs CG-pulled
 		// or pasted-by-address.
 		isPlatform = false,
+		// Forwarded to TokenIcon so it can lazy-resolve missing logos
+		// via GeckoTerminal (same pattern the activity bot uses).
+		address = '',
+		chainId = 56,
 		onclick,
 		rightSlot,
 	}: {
@@ -26,6 +30,8 @@
 		loading?: boolean;
 		disabled?: boolean;
 		isPlatform?: boolean;
+		address?: string;
+		chainId?: number;
 		onclick?: () => void;
 		rightSlot?: Snippet;
 	} = $props();
@@ -42,7 +48,7 @@
 			<div class="w-4 h-4 border-2 border-[rgba(139,92,246,0.2)] border-t-[#a78bfa] rounded-full animate-spin"></div>
 		</div>
 	{:else}
-		<TokenIcon {logo} {symbol} variant={iconVariant} />
+		<TokenIcon {logo} {symbol} {address} {chainId} variant={iconVariant} />
 	{/if}
 
 	<div class="flex-1 min-w-0">
