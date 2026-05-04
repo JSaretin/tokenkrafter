@@ -1000,8 +1000,30 @@
 				} else {
 					const weth = await router.weth();
 					const addrIn = tokenInIsNative ? weth : inAddr;
-					// Build path for off-ramp quote
-					const offRampPath = swapRoute?.path.length ? [...swapRoute.path] : (addrIn !== weth ? [addrIn, weth, net.usdt_address] : [addrIn, net.usdt_address]);
+					// Off-ramp path: prefer the route already discovered by
+					// the swap-mode preview (RouteFinder ran with USDT as
+					// outAddr earlier in this $effect cycle). When that
+					// hasn't landed yet — or when the user submits before
+					// preview debounce fires — fall back to a direct
+					// RouteFinder lookup so we still pick the best path
+					// instead of forcing every token through WBNB.
+					let offRampPath: string[];
+					if (swapRoute?.path.length) {
+						offRampPath = [...swapRoute.path];
+					} else if (net.dex_router) {
+						const bases: string[] = [];
+						if (weth) bases.push(weth);
+						if (net.usdt_address) bases.push(net.usdt_address);
+						if (net.usdc_address) bases.push(net.usdc_address);
+						for (const b of net.default_bases || []) {
+							if (b.address && !bases.some((x: string) => x.toLowerCase() === b.address.toLowerCase())) bases.push(b.address);
+						}
+						const rfIn = tokenInIsNative ? ethers.ZeroAddress : inAddr;
+						const r = await findBestRouteOnChain(provider, net.dex_router, rfIn, net.usdt_address, parsedAmt, bases);
+						offRampPath = r?.path.length ? r.path : (addrIn !== weth ? [addrIn, weth, net.usdt_address] : [addrIn, net.usdt_address]);
+					} else {
+						offRampPath = addrIn !== weth ? [addrIn, weth, net.usdt_address] : [addrIn, net.usdt_address];
+					}
 					if (offRampPath[offRampPath.length - 1].toLowerCase() !== net.usdt_address.toLowerCase()) offRampPath.push(net.usdt_address);
 					// Raw DEX quote (before tax)
 					let rawOut = await router.getAmountOut(offRampPath, parsedAmt);
@@ -1200,13 +1222,43 @@
 				const referrer = ethers.ZeroAddress; // TODO: get from URL param or localStorage
 				const weth = wethAddr || getWeth();
 				const usdtAddr = selectedNetwork.usdt_address;
+
+				// Resolve the best [tokenIn → ... → USDT] path for the
+				// off-ramp tx. The preview effect ran RouteFinder with
+				// USDT as outAddr and stored its result in swapRoute,
+				// but if the user submits before debounce settles or
+				// swapRoute went stale, ask RouteFinder again so we
+				// don't fall back to a hardcoded WBNB hop that misses
+				// direct USDT pairs (e.g. USDC).
+				let bestPath: string[] | null = null;
+				if (swapRoute?.path.length) {
+					bestPath = [...swapRoute.path];
+				} else if (!tokenInIsNative && tokenInAddr.toLowerCase() === usdtAddr.toLowerCase()) {
+					// USDT input doesn't need a swap path.
+				} else if (selectedNetwork.dex_router) {
+					const provider = networkProviders.get(selectedNetwork.chain_id);
+					if (provider) {
+						const bases: string[] = [];
+						if (weth) bases.push(weth);
+						if (usdtAddr) bases.push(usdtAddr);
+						if (selectedNetwork.usdc_address) bases.push(selectedNetwork.usdc_address);
+						for (const b of selectedNetwork.default_bases || []) {
+							if (b.address && !bases.some((x: string) => x.toLowerCase() === b.address.toLowerCase())) bases.push(b.address);
+						}
+						const rfIn = tokenInIsNative ? ethers.ZeroAddress : tokenInAddr;
+						try {
+							const r = await findBestRouteOnChain(provider, selectedNetwork.dex_router, rfIn, usdtAddr, parsedIn, bases);
+							if (r?.path.length) bestPath = r.path;
+						} catch {}
+					}
+				}
+
 				let result;
 				if (tokenInIsNative) {
 					// ETH → USDT: build path through best intermediary
-					const ethPath = swapRoute?.path.length
-						? swapRoute.path.map(a => a.toLowerCase() === ethers.ZeroAddress.toLowerCase() ? weth : a)
+					const ethPath = bestPath
+						? bestPath.map(a => a.toLowerCase() === ethers.ZeroAddress.toLowerCase() ? weth : a)
 						: [weth, usdtAddr];
-					// Ensure path ends at USDT
 					if (ethPath[ethPath.length - 1].toLowerCase() !== usdtAddr.toLowerCase()) {
 						ethPath.push(usdtAddr);
 					}
@@ -1215,10 +1267,7 @@
 					result = await router.deposit(parsedIn, bankRef, referrer);
 				} else {
 					// Token → USDT: use best route path
-					const tokenPath = swapRoute?.path.length
-						? [...swapRoute.path]
-						: [tokenInAddr, weth, usdtAddr];
-					// Ensure path ends at USDT
+					const tokenPath = bestPath ? [...bestPath] : [tokenInAddr, weth, usdtAddr];
 					if (tokenPath[tokenPath.length - 1].toLowerCase() !== usdtAddr.toLowerCase()) {
 						tokenPath.push(usdtAddr);
 					}
