@@ -70,6 +70,31 @@
 	let shortSearch = $derived(trimmedSearch.slice(0, 6) + '...' + trimmedSearch.slice(-4));
 	let showImportRow = $derived(isAddressSearch && !filteredTokens.find(t => t.address.toLowerCase() === trimmedSearch.toLowerCase()));
 
+	// Infinite scroll: render an initial slice and grow it as the user
+	// scrolls a sentinel into view. Reset whenever the search query
+	// changes so the user always lands at the top of fresh results.
+	const PAGE = 50;
+	let visibleCount = $state(PAGE);
+	$effect(() => {
+		// re-runs when trimmedSearch changes
+		trimmedSearch;
+		visibleCount = PAGE;
+	});
+	let visibleTokens = $derived(filteredTokens.slice(0, visibleCount));
+	let hasMore = $derived(visibleCount < filteredTokens.length);
+
+	let sentinel: HTMLDivElement | undefined = $state();
+	$effect(() => {
+		if (!sentinel || !hasMore) return;
+		const io = new IntersectionObserver((entries) => {
+			for (const e of entries) {
+				if (e.isIntersecting) visibleCount += PAGE;
+			}
+		}, { rootMargin: '200px' });
+		io.observe(sentinel);
+		return () => io.disconnect();
+	});
+
 	let show = $state(true);
 	$effect(() => { if (!show) onClose(); });
 </script>
@@ -130,7 +155,7 @@
 			{/if}
 		{/if}
 
-		{#each filteredTokens as t}
+		{#each visibleTokens as t (t.address)}
 			<TokenListItem
 				logo={t.logo_url}
 				symbol={t.symbol}
@@ -148,6 +173,15 @@
 				{/snippet}
 			</TokenListItem>
 		{/each}
+
+		{#if hasMore}
+			<!-- Sentinel — IntersectionObserver bumps visibleCount when this
+			     enters the viewport (with a 200px rootMargin so the next
+			     page is ready before the user hits the bottom). -->
+			<div bind:this={sentinel} class="flex items-center justify-center py-3 opacity-50">
+				<span class="font-mono text-3xs text-(--text-muted)">Loading more…</span>
+			</div>
+		{/if}
 
 		{#if dbSearchLoading}
 			<div class="flex items-center justify-center py-2.5 px-3 opacity-50">

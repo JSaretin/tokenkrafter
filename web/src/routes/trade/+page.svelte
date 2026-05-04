@@ -466,15 +466,11 @@
 		// Long-tail tokens (rank 9999) have no logo — they fall back
 		// to the symbol-initial circle in TokenIcon.
 		//
-		// With no search, cap the merged chain-tokens at 100 rows so the
-		// initial render doesn't fire thousands of lazy logo lookups
-		// against GeckoTerminal at once (72 of the top 100 already
-		// ship logos from the daemon; the rest lazy-resolve on mount).
-		// With a search query, lift the cap entirely — the substring
-		// filter naturally bounds the result set.
-		const noQueryCap = q ? Infinity : 100;
+		// No cap on the merged set — TokenSelectorModal paginates with
+		// infinite scroll (initial slice of N rows, more on scroll), so
+		// the lazy logo lookups stay bounded to whatever's visible
+		// regardless of how many tokens the chain has.
 		for (const r of chainTokens) {
-			if (out.length >= noQueryCap) break;
 			const aLow = r.address.toLowerCase();
 			if (seen.has(aLow)) continue;
 			if (q && !(
