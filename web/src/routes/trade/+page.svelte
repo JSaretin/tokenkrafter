@@ -1901,6 +1901,15 @@
 		{pastedTokenLoading}
 		{dbSearchLoading}
 		explorerUrl={selectedNetwork?.explorer_url || ''}
+		getDetailHref={(addr) => {
+			// Platform tokens get an in-app /explore page (chart, holders,
+			// trades). Everything else falls back to the chain block-
+			// explorer via the explorerUrl prop above.
+			if (!selectedNetwork?.symbol) return '';
+			return platformTokenAddrs.has(addr.toLowerCase())
+				? `/explore/${selectedNetwork.symbol}/${addr}`
+				: '';
+		}}
 		onSelect={(token) => selectToken(tokenModalTarget, token)}
 		onImport={handleCustomAddress}
 		onClose={() => { showTokenModal = false; tokenSearch = ''; }}

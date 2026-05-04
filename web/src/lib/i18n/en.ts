@@ -2926,6 +2926,7 @@ export default {
 	// Tooltips (icons)
 	'trade.copyAddress': 'Copy address',
 	'trade.viewOnExplorer': 'View on explorer',
+	'trade.viewDetails': 'View details',
 
 	// TokenTaxBadge
 	'trade.taxBreakdown': 'Tax: {buy}% buy / {sell}% sell',

@@ -8,9 +8,11 @@
     "safu-indexer": "bun run src/safu-indexer.ts",
     "activity-bot": "bun run src/activity-bot.ts",
     "rate-updater": "bun run src/rate-updater.ts",
-    "launch-buy-bot": "bun run src/launch-buy-bot.ts"
+    "launch-buy-bot": "bun run src/launch-buy-bot.ts",
+    "popular-tokens-updater": "bun run src/popular-tokens-updater.ts"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.45.0",
     "ethers": "^6.16.0",
     "ws": "^8.20.0"
   },

@@ -7,7 +7,8 @@ RUN bun build src/ws-indexer.ts --outfile dist/ws-indexer.mjs --target node --mi
     bun build src/safu-indexer.ts --outfile dist/safu-indexer.mjs --target node --minify && \
     bun build src/activity-bot.ts --outfile dist/activity-bot.mjs --target node --minify && \
     bun build src/rate-updater.ts --outfile dist/rate-updater.mjs --target node --minify && \
-    bun build src/launch-buy-bot.ts --outfile dist/launch-buy-bot.mjs --target node --minify
+    bun build src/launch-buy-bot.ts --outfile dist/launch-buy-bot.mjs --target node --minify && \
+    bun build src/popular-tokens-updater.ts --outfile dist/popular-tokens-updater.mjs --target node --minify
 
 FROM oven/bun:1-alpine
 WORKDIR /app

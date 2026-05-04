@@ -32,6 +32,11 @@
 		pastedTokenLoading = false,
 		dbSearchLoading = false,
 		explorerUrl = '',
+		// Per-row href override for the explorer button. Returns
+		// `/explore/<chain>/<address>` for platform tokens (so the user
+		// lands on our in-app token page) and an empty string for
+		// everything else (which falls back to the chain block-explorer).
+		getDetailHref = (_addr: string) => '',
 		onSelect,
 		onImport,
 		onClose,
@@ -44,6 +49,7 @@
 		pastedTokenLoading?: boolean;
 		dbSearchLoading?: boolean;
 		explorerUrl?: string;
+		getDetailHref?: (address: string) => string;
 		onSelect: (token: TokenItem) => void;
 		onImport: () => void;
 		onClose: () => void;
@@ -125,7 +131,7 @@
 			>
 				{#snippet rightSlot()}
 					{#if t.address !== ZERO_ADDRESS}
-						<TokenAddressActions address={t.address} {explorerUrl} oncopy={onCopyAddress} />
+						<TokenAddressActions address={t.address} {explorerUrl} detailHref={getDetailHref(t.address)} oncopy={onCopyAddress} />
 					{/if}
 				{/snippet}
 			</TokenListItem>
