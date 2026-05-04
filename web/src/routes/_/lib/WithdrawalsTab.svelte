@@ -557,7 +557,7 @@
 	>
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<!-- svelte-ignore a11y_click_events_have_key_events -->
-		<div class="w-full max-w-[440px] bg-background border border-line rounded-[20px] overflow-hidden" onclick={(e) => e.stopPropagation()}>
+		<div class="w-full max-w-[440px] bg-background border border-line rounded-[20px] overflow-hidden flex flex-col max-h-[90vh] max-sm:h-[80vh] max-sm:max-h-[80vh] max-sm:rounded-b-none" onclick={(e) => e.stopPropagation()}>
 			<div class="flex justify-between items-center px-5 py-4 border-b border-line">
 				<h3 class="font-display text-15 font-bold text-heading m-0">Confirm Withdrawal #{w.withdraw_id}</h3>
 				<button aria-label="Close" class="bg-none border-none text-muted cursor-pointer p-1 rounded-lg transition hover:text-foreground hover:bg-surface-hover" onclick={() => { showConfirmModal = false; }}>
@@ -565,7 +565,7 @@
 				</button>
 			</div>
 
-			<div class="px-5 pt-4 pb-5">
+			<div class="px-5 pt-4 pb-5 overflow-y-auto flex-1 min-h-0">
 				<!-- Summary -->
 				<div class="bg-surface-input rounded-xl p-3 mb-4">
 					<div class="flex justify-between text-xs font-mono mb-1">
