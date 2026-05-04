@@ -200,7 +200,7 @@
 	// filteredTokens once the user types a search query, so the picker
 	// stays uncluttered when there's no query but resolves any
 	// well-known symbol the user types.
-	type ChainToken = { address: string; symbol: string; name: string; rank?: number };
+	type ChainToken = { address: string; symbol: string; name: string; rank?: number; logo?: string };
 	let chainTokens = $state<ChainToken[]>([]);
 	const chainTokensCache = new Map<string, ChainToken[]>();
 	$effect(() => {
@@ -500,7 +500,7 @@
 					symbol: r.symbol,
 					name: r.name,
 					decimals: 18,
-					logo_url: '',
+					logo_url: r.logo || '',
 				});
 				seen.add(aLow);
 			}

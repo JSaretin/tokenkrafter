@@ -58,6 +58,11 @@ interface ChainToken {
 	// Tokens beyond the top-N (most of them) get `rank: 9999` so they sort
 	// last but stay in the list for substring search to pick up.
 	rank: number;
+	// CG-hosted logo URL for tokens in the top 250. Empty for the long
+	// tail — those fall back to the picker's symbol-initial circle, since
+	// resolving logos for thousands of tokens upstream-side is heavier
+	// than the badge is worth.
+	logo: string;
 }
 
 async function refresh() {
@@ -96,12 +101,15 @@ async function refresh() {
 		const markets = (await marketsRes.json()) as Array<{
 			id: string;
 			market_cap_rank: number | null;
+			image: string | null;
 		}>;
 		console.log(`[${ts}] coingecko: ${list.length} tokens, ${markets.length} ranked`);
 
 		const rankById = new Map<string, number>();
+		const logoById = new Map<string, string>();
 		for (const m of markets) {
 			if (m.market_cap_rank != null) rankById.set(m.id, m.market_cap_rank);
+			if (m.image) logoById.set(m.id, m.image);
 		}
 
 		const merged: Record<string, { tokens: ChainToken[]; updated_at: string }> = {};
@@ -118,6 +126,7 @@ async function refresh() {
 					symbol: c.symbol.toUpperCase(),
 					name: c.name,
 					rank: rankById.get(c.id) ?? 9999,
+					logo: logoById.get(c.id) ?? '',
 				});
 			}
 			// Sort by rank ascending, then symbol — stable order for the
