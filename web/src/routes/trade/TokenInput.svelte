@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { ethers } from 'ethers';
+	import type { Snippet } from 'svelte';
 	import type { TaxInfo } from '$lib/tradeLens';
 	import TokenSelectorButton from './TokenSelectorButton.svelte';
 	import AmountInput from './AmountInput.svelte';
@@ -26,6 +27,7 @@
 		estimatedGasCost = 0n,
 		onSelectToken,
 		onMaxClick,
+		notice,
 	}: {
 		label: string;
 		tokenSymbol?: string;
@@ -45,6 +47,7 @@
 		estimatedGasCost?: bigint;
 		onSelectToken: () => void;
 		onMaxClick?: () => void;
+		notice?: Snippet;
 	} = $props();
 
 	function handleMax() {
@@ -78,4 +81,7 @@
 	</div>
 	<BalanceRow symbol={tokenSymbol} {balance} {decimals} {usdValue} />
 	<TokenTaxBadge {taxInfo} {taxBuy} {taxSell} {hasTax} {isNative} {isPlatform} />
+	{#if notice}
+		<div class="mt-2">{@render notice()}</div>
+	{/if}
 </div>

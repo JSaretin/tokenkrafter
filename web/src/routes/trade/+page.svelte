@@ -190,6 +190,32 @@
 	// Platform tokens can never be honeypots — suppress false positives
 	let platformTokenAddrs = $derived(new Set(platformTokens.map(t => t.address.toLowerCase())));
 
+	// Popular tokens (CoinGecko top market-cap, mapped to current chain).
+	// Fetched lazily on first modal open per chain, cached in-memory for
+	// the lifetime of the page so re-opens are instant. The endpoint is
+	// itself cached for an hour, so this is one network round-trip per
+	// chain per session at most.
+	type PopularToken = { address: string; symbol: string; name: string; decimals: number; logo: string };
+	let popularTokens = $state<PopularToken[]>([]);
+	let popularLoading = $state(false);
+	const popularCache = new Map<string, PopularToken[]>();
+	$effect(() => {
+		if (!showTokenModal || !selectedNetwork?.symbol) return;
+		const slug = selectedNetwork.symbol.toLowerCase();
+		const hit = popularCache.get(slug);
+		if (hit) { popularTokens = hit; return; }
+		popularLoading = true;
+		fetch(`/api/popular-tokens?chain=${slug}`)
+			.then(r => r.ok ? r.json() : { tokens: [] })
+			.then(d => {
+				const list = (d.tokens || []) as PopularToken[];
+				popularCache.set(slug, list);
+				popularTokens = list;
+			})
+			.catch(() => { popularTokens = []; })
+			.finally(() => { popularLoading = false; });
+	});
+
 	// History
 	let showHistory = $state(false);
 	let historyPanel = $state<TradeHistoryPanel | undefined>();
@@ -1712,7 +1738,26 @@
 					usdValue={usdValueOut}
 					{previewLoading}
 					onSelectToken={() => { tokenModalTarget = 'out'; showTokenModal = true; }}
-				/>
+				>
+					{#snippet notice()}
+						{#if noLiquidity}
+							<NoLiquidityNotice />
+						{:else if priceQuoteUnavailable}
+							<!-- Soft RPC-error notice. Distinct from NoLiquidityNotice
+							     because we can't actually tell if liquidity is missing
+							     when the RouteFinder eth_call throws — it usually
+							     means the public RPC rate-limited or dropped a
+							     socket. The next preview tick retries automatically. -->
+							<div class="rounded-[10px] border border-amber-500/20 bg-amber-500/5 px-3 py-2.5 flex items-start gap-2">
+								<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2.2" class="shrink-0 mt-0.5"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+								<div class="flex-1">
+									<span class="block font-mono text-3xs font-bold text-amber-500">Price quote unavailable</span>
+									<span class="block font-mono text-3xs text-(--text-dim) mt-0.5">RPC didn't respond in time. The preview retries automatically — re-enter the amount or wait a moment.</span>
+								</div>
+							</div>
+						{/if}
+					{/snippet}
+				</TokenInput>
 
 				{#if spotRate}
 					<SpotRatePreview text={spotRate} />
@@ -1734,23 +1779,6 @@
 							<DetailLine label="{$t('trade.buyTax')} ({tokenOutSymbol})" warn>{(tokenOutTaxBuy / 100).toFixed(1)}%</DetailLine>
 						{/if}
 					</TradeDetails>
-				{/if}
-
-				{#if noLiquidity}
-					<NoLiquidityNotice />
-				{:else if priceQuoteUnavailable}
-					<!-- Soft RPC-error notice. Distinct from NoLiquidityNotice
-					     because we can't actually tell if liquidity is missing
-					     when the RouteFinder eth_call throws — it usually
-					     means the public RPC rate-limited or dropped a
-					     socket. The next preview tick retries automatically. -->
-					<div class="rounded-[10px] border border-amber-500/20 bg-amber-500/5 px-3 py-2.5 flex items-start gap-2">
-						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2.2" class="shrink-0 mt-0.5"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-						<div class="flex-1">
-							<span class="block font-mono text-3xs font-bold text-amber-500">Price quote unavailable</span>
-							<span class="block font-mono text-3xs text-(--text-dim) mt-0.5">RPC didn't respond in time. The preview retries automatically — re-enter the amount or wait a moment.</span>
-						</div>
-					</div>
 				{/if}
 			{/if}
 
@@ -1832,6 +1860,8 @@
 	<TokenSelectorModal
 		{builtInTokens}
 		{filteredTokens}
+		{popularTokens}
+		{popularLoading}
 		bind:tokenSearch
 		{pastedTokenMeta}
 		{pastedTokenLoading}
