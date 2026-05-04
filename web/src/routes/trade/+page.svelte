@@ -18,6 +18,13 @@
 	import { pushPreferences } from '$lib/embeddedWallet';
 	import { resolveTokenLogo } from '$lib/tokenLogo';
 	import { getChainTokens, preloadChainTokens } from '$lib/chainTokensStore.svelte';
+	import { idbGet, idbSet } from '$lib/idb';
+
+	type BankPreviewSnapshot = {
+		parsedIn: string;
+		usdtAmount: string;
+		feeBps: number;
+	};
 	import { userTokens, addUserToken, updateUserToken, removeUserToken } from '$lib/userTokens';
 	import { t } from '$lib/i18n';
 	import SwapCardShell from './SwapCardShell.svelte';
@@ -896,7 +903,7 @@
 						tokenOutHasTax = tax.buyTaxBps > 0 || tax.sellTaxBps > 0;
 					}
 				}).catch(e => {
-					// console.warn(`TradeLens failed:`, (e instanceof Error ? e.message : String(e)).slice(0, 200));
+					console.warn(`TradeLens failed:`, (e instanceof Error ? e.message : String(e)).slice(0, 200));
 				});
 			}
 		}
@@ -1065,6 +1072,38 @@
 				const sanitizedAmt = parseFloat(amt).toFixed(tokenInDecimals);
 				const parsedAmt = ethers.parseUnits(sanitizedAmt, tokenInDecimals);
 
+				// Stale-while-revalidate: paint cached fee/net immediately
+				// from the last preview run for this pair, scaled to the
+				// current amount via the cached rate. The live multi-call
+				// chain (router.weth → RouteFinder → getAmountOut →
+				// previewDeposit) is 400-600ms; this gets a plausible
+				// number on screen in <10ms while we refresh.
+				const bankCacheKey = `bank-preview:${net.chain_id}:${inAddr.toLowerCase()}`;
+				idbGet<BankPreviewSnapshot>('quotes', bankCacheKey).then((snap) => {
+					if (!snap) return;
+					// Only apply the snapshot if the user is still on the
+					// same pair / mode by the time IDB resolves — typing
+					// fast can race the IDB read.
+					if (outputMode !== 'bank' || tokenInAddr.toLowerCase() !== inAddr.toLowerCase()) return;
+					try {
+						const inAmtBig = BigInt(snap.parsedIn);
+						const usdtBig = BigInt(snap.usdtAmount);
+						if (inAmtBig === 0n || usdtBig === 0n) return;
+						// rate = usdtAmount per input-wei; scale to current parsedAmt
+						const estUsdt = (parsedAmt * usdtBig) / inAmtBig;
+						const fbps = BigInt(snap.feeBps);
+						const estFee = (estUsdt * fbps) / 10000n;
+						const estNet = estUsdt - estFee;
+						// Don't overwrite if a fresher live result has
+						// already populated previewFee/previewNet during
+						// the IDB await.
+						if (previewFee === 0n && previewNet === 0n) {
+							previewFee = estFee;
+							previewNet = estNet;
+						}
+					} catch {}
+				});
+
 				// For non-USDT tokens, estimate USDT output accounting for token taxes
 				let usdtAmount: bigint;
 				const isUsdt = inAddr.toLowerCase() === net.usdt_address?.toLowerCase();
@@ -1118,6 +1157,21 @@
 				const { fee, netAmount: netAmt } = await router.previewDeposit(usdtAmount);
 				previewFee = fee;
 				previewNet = netAmt;
+
+				// Write-through to IDB so the next page load can paint
+				// stale fee/net for this pair while the live multi-call
+				// runs. We store rate (usdtAmount per parsedIn) + feeBps
+				// so the cache survives amount changes — the next
+				// preview just scales by parsedIn ratio.
+				if (parsedAmt > 0n && usdtAmount > 0n) {
+					const fbps = usdtAmount > 0n ? Number((fee * 10000n) / usdtAmount) : 0;
+					const snapshot: BankPreviewSnapshot = {
+						parsedIn: parsedAmt.toString(),
+						usdtAmount: usdtAmount.toString(),
+						feeBps: fbps,
+					};
+					idbSet('quotes', `bank-preview:${net.chain_id}:${inAddr.toLowerCase()}`, snapshot, 24 * 60 * 60 * 1000);
+				}
 			} catch { previewFee = 0n; previewNet = 0n; }
 		})();
 	});
