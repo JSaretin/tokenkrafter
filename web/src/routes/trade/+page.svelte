@@ -44,7 +44,7 @@
 	import SlippageSetter from '$lib/SlippageSetter.svelte';
 	import SuccessBurst from '$lib/SuccessBurst.svelte';
 	import OnrampPanel from './OnrampPanel.svelte';
-	import TokenSelectorModal from './TokenSelectorModal.svelte';
+	import TokenSelectorModal from '$lib/TokenSelectorModal.svelte';
 	import BankSelectorModal from './BankSelectorModal.svelte';
 	import ConfirmModalShell from './ConfirmModalShell.svelte';
 	import TradeStepperList, { type StepDef } from './TradeStepperList.svelte';
