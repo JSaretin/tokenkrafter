@@ -6,6 +6,7 @@
 	import { ZERO_ADDRESS } from '$lib/tokenCrafter';
 	import { friendlyError } from '$lib/errorDecoder';
 	import Skeleton from '$lib/Skeleton.svelte';
+	import AddressBadge from './AddressBadge.svelte';
 
 	// Narrow ABI — just the admin surface + read helpers. PlatformRouter has
 	// no getState() aggregator, so we call individual getters.
@@ -173,9 +174,13 @@
 				</div>
 				<div class="bg-white/[0.02] border border-line rounded-lg py-2.5 px-3">
 					<span class="block text-3xs font-mono text-dim uppercase tracking-[0.05em]">Address</span>
-					<span class="block text-xs font-bold font-mono mt-0.5 text-gray-400">
-						{selectedNetwork.router_address.slice(0, 6)}…{selectedNetwork.router_address.slice(-4)}
-					</span>
+					<div class="mt-0.5">
+						<AddressBadge
+							address={selectedNetwork.router_address}
+							explorerUrl={selectedNetwork.explorer_url}
+							class="text-xs font-bold text-gray-400"
+						/>
+					</div>
 				</div>
 			</div>
 		</div>

@@ -6,6 +6,7 @@
 	import { t } from '$lib/i18n';
 	import { friendlyError } from '$lib/errorDecoder';
 	import Skeleton from '$lib/Skeleton.svelte';
+	import AddressBadge from './AddressBadge.svelte';
 
 	let getSigner: () => ethers.Signer | null = getContext('signer');
 	let addFeedback: (f: { message: string; type: string }) => void = getContext('addFeedback');
@@ -516,12 +517,12 @@
 	<!-- Factory Info -->
 	<div class="card p-5 mb-4">
 		<div class="flex flex-col gap-0.5">
-			<div class="flex justify-between items-center py-2 border-b border-surface last:border-b-0"><span class="text-gray-500 text-xs">Owner</span><span class="text-white text-xs font-mono">{factoryOwner}</span></div>
-			<div class="flex justify-between items-center py-2 border-b border-surface last:border-b-0"><span class="text-gray-500 text-xs">Contract</span><span class="text-white text-xs font-mono">{selectedNetwork.platform_address}</span></div>
-			<div class="flex justify-between items-center py-2 border-b border-surface last:border-b-0"><span class="text-gray-500 text-xs">DEX Router</span><span class="text-white text-xs font-mono">{formatAddress(dexRouterAddr)}</span></div>
-			<div class="flex justify-between items-center py-2 border-b border-surface last:border-b-0"><span class="text-gray-500 text-xs">USDT</span><span class="text-white text-xs font-mono">{formatAddress(usdtAddr)}</span></div>
-			<div class="flex justify-between items-center py-2 border-b border-surface last:border-b-0"><span class="text-gray-500 text-xs">Authorized Router</span><span class="text-white text-xs font-mono">{formatAddress(authorizedRouterAddr)}</span></div>
-			<div class="flex justify-between items-center py-2 border-b border-surface last:border-b-0"><span class="text-gray-500 text-xs">Platform Wallet</span><span class="text-white text-xs font-mono">{formatAddress(platformWalletAddr)}</span></div>
+			<div class="flex justify-between items-center py-2 border-b border-surface last:border-b-0"><span class="text-gray-500 text-xs">Owner</span><AddressBadge address={factoryOwner} explorerUrl={selectedNetwork.explorer_url} class="text-white" /></div>
+			<div class="flex justify-between items-center py-2 border-b border-surface last:border-b-0"><span class="text-gray-500 text-xs">Contract</span><AddressBadge address={selectedNetwork.platform_address} explorerUrl={selectedNetwork.explorer_url} class="text-white" /></div>
+			<div class="flex justify-between items-center py-2 border-b border-surface last:border-b-0"><span class="text-gray-500 text-xs">DEX Router</span><AddressBadge address={dexRouterAddr} explorerUrl={selectedNetwork.explorer_url} class="text-white" /></div>
+			<div class="flex justify-between items-center py-2 border-b border-surface last:border-b-0"><span class="text-gray-500 text-xs">USDT</span><AddressBadge address={usdtAddr} explorerUrl={selectedNetwork.explorer_url} class="text-white" /></div>
+			<div class="flex justify-between items-center py-2 border-b border-surface last:border-b-0"><span class="text-gray-500 text-xs">Authorized Router</span><AddressBadge address={authorizedRouterAddr} explorerUrl={selectedNetwork.explorer_url} class="text-white" /></div>
+			<div class="flex justify-between items-center py-2 border-b border-surface last:border-b-0"><span class="text-gray-500 text-xs">Platform Wallet</span><AddressBadge address={platformWalletAddr} explorerUrl={selectedNetwork.explorer_url} class="text-white" /></div>
 			<div class="flex justify-between items-center py-2 border-b border-surface last:border-b-0"><span class="text-gray-500 text-xs">Tax Slippage</span><span class="text-white text-xs font-mono">{(taxSlippageBps / 100).toFixed(2)}%</span></div>
 			<div class="flex justify-between items-center py-2 border-b border-surface last:border-b-0"><span class="text-gray-500 text-xs">Tokens Created</span><span class="text-cyan-400 text-sm font-bold">{totalTokens.toString()}</span></div>
 		</div>
@@ -597,7 +598,16 @@
 					<h3 class="section-title mb-3">Implementations</h3>
 					<table class="w-full text-sm"><tbody>
 						{#each implAddresses as addr, i}
-							<tr class="border-b border-white/3"><td class="py-1.5 px-2 text-white text-xs">{TYPE_LABELS[i]}</td><td class="py-1.5 px-2 font-mono text-3xs {addr === ZERO_ADDRESS ? 'text-red-400' : 'text-cyan-400'}">{addr === ZERO_ADDRESS ? 'Not set' : formatAddress(addr)}</td></tr>
+							<tr class="border-b border-white/3">
+								<td class="py-1.5 px-2 text-white text-xs">{TYPE_LABELS[i]}</td>
+								<td class="py-1.5 px-2">
+									{#if addr === ZERO_ADDRESS}
+										<span class="font-mono text-3xs text-red-400">Not set</span>
+									{:else}
+										<AddressBadge address={addr} explorerUrl={selectedNetwork.explorer_url} class="text-cyan-400" />
+									{/if}
+								</td>
+							</tr>
 						{/each}
 					</tbody></table>
 					<div class="flex flex-col sm:flex-row gap-2 mt-3">

@@ -7,6 +7,7 @@
 	import { t } from '$lib/i18n';
 	import { friendlyError } from '$lib/errorDecoder';
 	import Skeleton from '$lib/Skeleton.svelte';
+	import AddressBadge from './AddressBadge.svelte';
 
 	let getSigner: () => ethers.Signer | null = getContext('signer');
 	let addFeedback: (f: { message: string; type: string }) => void = getContext('addFeedback');
@@ -282,23 +283,23 @@
 		<div class="flex flex-col gap-0.5">
 			<div class="flex justify-between items-center py-2 border-b border-surface last:border-b-0">
 				<span class="text-gray-500 text-xs">{$t('admin.contract')}</span>
-				<span class="text-white text-xs font-mono">{selectedNetwork.launchpad_address}</span>
+				<AddressBadge address={selectedNetwork.launchpad_address} explorerUrl={selectedNetwork.explorer_url} class="text-white" />
 			</div>
 			<div class="flex justify-between items-center py-2 border-b border-surface last:border-b-0">
 				<span class="text-gray-500 text-xs">{$t('admin.ownerLabel')}</span>
-				<span class="text-white text-xs font-mono">{lpOwner}</span>
+				<AddressBadge address={lpOwner} explorerUrl={selectedNetwork.explorer_url} class="text-white" />
 			</div>
 			<div class="flex justify-between items-center py-2 border-b border-surface last:border-b-0">
 				<span class="text-gray-500 text-xs">{$t('admin.platformWallet')}</span>
-				<span class="text-cyan-400 text-xs font-mono">{formatAddress(lpPlatformWallet)}</span>
+				<AddressBadge address={lpPlatformWallet} explorerUrl={selectedNetwork.explorer_url} class="text-cyan-400" />
 			</div>
 			<div class="flex justify-between items-center py-2 border-b border-surface last:border-b-0">
 				<span class="text-gray-500 text-xs">{$t('admin.dexRouter')}</span>
-				<span class="text-cyan-400 text-xs font-mono">{formatAddress(lpDexRouter)}</span>
+				<AddressBadge address={lpDexRouter} explorerUrl={selectedNetwork.explorer_url} class="text-cyan-400" />
 			</div>
 			<div class="flex justify-between items-center py-2 border-b border-surface last:border-b-0">
 				<span class="text-gray-500 text-xs">USDT</span>
-				<span class="text-cyan-400 text-xs font-mono">{formatAddress(lpUsdtAddr)}</span>
+				<AddressBadge address={lpUsdtAddr} explorerUrl={selectedNetwork.explorer_url} class="text-cyan-400" />
 			</div>
 		</div>
 	</div>

@@ -5,6 +5,7 @@
 	import { TRADE_ROUTER_ABI } from '$lib/tradeRouter';
 	import { ERC20_DECIMALS_ABI } from '$lib/commonABIs';
 	import Skeleton from '$lib/Skeleton.svelte';
+	import AddressBadge from './AddressBadge.svelte';
 
 	let { selectedNetwork }: { selectedNetwork: SupportedNetwork } = $props();
 
@@ -443,9 +444,9 @@
 		<div class="card p-4">
 			<h3 class="text-white text-sm font-semibold mb-3">Contract Info</h3>
 			<div class="space-y-1 text-xs font-mono text-gray-500">
-				<div class="flex justify-between"><span>Address</span><span class="text-gray-300">{selectedNetwork.trade_router_address}</span></div>
-				<div class="flex justify-between"><span>Owner</span><span class="text-gray-300">{owner}</span></div>
-				<div class="flex justify-between"><span>DEX Router</span><span class="text-gray-300">{selectedNetwork.dex_router}</span></div>
+				<div class="flex justify-between items-center"><span>Address</span><AddressBadge address={selectedNetwork.trade_router_address} explorerUrl={selectedNetwork.explorer_url} class="text-gray-300" /></div>
+				<div class="flex justify-between items-center"><span>Owner</span><AddressBadge address={owner} explorerUrl={selectedNetwork.explorer_url} class="text-gray-300" /></div>
+				<div class="flex justify-between items-center"><span>DEX Router</span><AddressBadge address={selectedNetwork.dex_router} explorerUrl={selectedNetwork.explorer_url} class="text-gray-300" /></div>
 			</div>
 		</div>
 	</div>

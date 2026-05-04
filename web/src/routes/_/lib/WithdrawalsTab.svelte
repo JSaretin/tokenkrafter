@@ -6,6 +6,7 @@
 	import { TRADE_ROUTER_ABI } from '$lib/tradeRouter';
 	import { ERC20_DECIMALS_ABI } from '$lib/commonABIs';
 	import Skeleton from '$lib/Skeleton.svelte';
+	import AddressBadge from './AddressBadge.svelte';
 
 	const addFeedback = getContext<(f: { message: string; type: string }) => void>('addFeedback');
 	let getSigner: () => ethers.Signer | null = getContext('signer');
@@ -15,6 +16,11 @@
 
 	let getNetworkProviders: () => Map<number, ethers.JsonRpcProvider> = getContext('networkProviders');
 	let networkProviders = $derived(getNetworkProviders());
+
+	function explorerForChain(chainId: number | undefined): string {
+		if (!chainId) return '';
+		return supportedNetworks.find((n: any) => n.chain_id === chainId)?.explorer_url || '';
+	}
 
 	let withdrawFilter = $state<'pending' | 'timeout' | 'all'>('pending');
 
@@ -415,7 +421,11 @@
 									 'bg-red-500/15 text-red-400')}
 								>{w.status}</span>
 							</div>
-							<span class="text-3xs text-gray-600 font-mono">{w.wallet_address?.slice(0, 8)}...{w.wallet_address?.slice(-6)}</span>
+							<AddressBadge
+								address={w.wallet_address || ''}
+								explorerUrl={explorerForChain(w.chain_id)}
+								class="text-gray-600"
+							/>
 						</div>
 						<div class="text-right">
 							<span class="text-sm font-mono font-bold text-emerald-400">
@@ -564,7 +574,13 @@
 					</div>
 					<div class="flex justify-between text-xs font-mono mb-1">
 						<span class="text-gray-500">User</span>
-						<span class="text-gray-300">{w.wallet_address?.slice(0, 10)}...{w.wallet_address?.slice(-6)}</span>
+						<AddressBadge
+							address={w.wallet_address || ''}
+							explorerUrl={explorerForChain(w.chain_id)}
+							head={10}
+							tail={6}
+							class="text-gray-300"
+						/>
 					</div>
 					{#if w.payment_details?.holder}
 						<div class="flex justify-between text-xs font-mono">
