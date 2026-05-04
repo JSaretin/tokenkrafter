@@ -6,6 +6,7 @@
  */
 import { ethers } from 'ethers';
 import { TRADE_LENS_BYTECODE } from './tradeLensV2Bytecode';
+import { idbGet as _idbGet, idbSet as _idbSet } from './idb';
 
 export interface PoolInfo {
 	base: string;
@@ -70,6 +71,114 @@ let _tokenCache: Map<string, TokenInfo> = new Map();
 let _weth = '';
 let _lastFetch = 0;
 let _usersCache: UserInfo[] = [];
+
+// ── IDB persistence ──────────────────────────────────
+// Warm-cache to IndexedDB so re-loads of the trade page show prices /
+// pool reserves immediately while a fresh queryTradeLens runs in the
+// background. We persist token metadata + pool reserves but NOT user
+// balances — those are short-lived and mildly privacy-sensitive (clear
+// on user-switch). Bigints are stringified on the wire since they
+// don't survive structuredClone in older Safari.
+
+const TRADELENS_TTL_MS = 24 * 60 * 60 * 1000; // 24h — stale data is fine because queryTradeLens overwrites within seconds.
+
+interface TokenInfoSerializable {
+	token: string;
+	name: string;
+	symbol: string;
+	decimals: number;
+	totalSupply: string;
+	hasLiquidity: boolean;
+	pools: Array<{
+		base: string;
+		pairAddress: string;
+		reserveToken: string;
+		reserveBase: string;
+		hasLiquidity: boolean;
+	}>;
+}
+
+interface CacheSnapshot {
+	weth: string;
+	tokens: TokenInfoSerializable[];
+}
+
+function serializeForIdb(): CacheSnapshot {
+	const tokens: TokenInfoSerializable[] = [];
+	for (const t of _tokenCache.values()) {
+		tokens.push({
+			token: t.token,
+			name: t.name,
+			symbol: t.symbol,
+			decimals: t.decimals,
+			totalSupply: t.totalSupply.toString(),
+			hasLiquidity: t.hasLiquidity,
+			pools: t.pools.map((p) => ({
+				base: p.base,
+				pairAddress: p.pairAddress,
+				reserveToken: p.reserveToken.toString(),
+				reserveBase: p.reserveBase.toString(),
+				hasLiquidity: p.hasLiquidity,
+			})),
+		});
+	}
+	return { weth: _weth, tokens };
+}
+
+function deserializeFromIdb(snap: CacheSnapshot): void {
+	_weth = snap.weth || '';
+	_tokenCache.clear();
+	for (const t of snap.tokens) {
+		_tokenCache.set(t.token.toLowerCase(), {
+			token: t.token,
+			name: t.name,
+			symbol: t.symbol,
+			decimals: t.decimals,
+			totalSupply: BigInt(t.totalSupply),
+			hasLiquidity: t.hasLiquidity,
+			pools: t.pools.map((p) => ({
+				base: p.base,
+				pairAddress: p.pairAddress,
+				reserveToken: BigInt(p.reserveToken),
+				reserveBase: BigInt(p.reserveBase),
+				hasLiquidity: p.hasLiquidity,
+			})),
+			balances: [],
+			balance: 0n,
+		});
+	}
+	// Tag _lastFetch as "loaded but stale-from-IDB" — set it back far
+	// enough that isCacheStale(15s) returns true so callers know to
+	// refresh inline, but isCacheLoaded() returns true so consumers can
+	// render with the warm data immediately.
+	_lastFetch = Date.now() - TRADELENS_TTL_MS;
+}
+
+let _hydrationPromise: Promise<void> | null = null;
+function ensureHydrated(): Promise<void> {
+	if (_hydrationPromise) return _hydrationPromise;
+	_hydrationPromise = (async () => {
+		const snap = await _idbGet<CacheSnapshot>('tradelens', 'snapshot');
+		if (snap && snap.tokens?.length) deserializeFromIdb(snap);
+	})();
+	return _hydrationPromise;
+}
+
+/**
+ * Hydrate the in-memory cache from IDB (if anything is persisted).
+ * Idempotent — repeat calls return the same promise. Safe to call
+ * eagerly at module-import time, but pages that need warm data
+ * before first render should `await` this before reading
+ * isCacheLoaded() / getCachedToken().
+ */
+export async function hydrateTradeLensCache(): Promise<void> {
+	return ensureHydrated();
+}
+
+// Kick off hydration as soon as the module loads — fire-and-forget so
+// importers don't block, but the cache is warm by the time the trade
+// page mounts. Browser-only guard for SSR safety.
+if (typeof indexedDB !== 'undefined') ensureHydrated();
 
 /**
  * Fetch all token info + balances + optionally simulate tax — one eth_call.
@@ -162,6 +271,11 @@ export async function queryTradeLens(
 		_tokenCache.set(t.token.toLowerCase(), t);
 	}
 	_lastFetch = Date.now();
+	// Write-through to IDB so the next page load can hydrate this same
+	// snapshot before the network round-trip completes. Fire-and-forget;
+	// failure is fine because queryTradeLens runs again on every mount
+	// and will keep both caches in sync.
+	_idbSet('tradelens', 'snapshot', serializeForIdb(), TRADELENS_TTL_MS);
 
 	return {
 		weth: decoded[0] as string,
