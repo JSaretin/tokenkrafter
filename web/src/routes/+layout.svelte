@@ -21,6 +21,7 @@
 	import { startBalancePoller, stopBalancePoller, updatePollerAddress, balanceState, refreshBalancesNow, setWsManager, onTokenDiscovered } from '$lib/balancePoller';
 	import { createWsProviderManager, type WsProviderManager } from '$lib/wsProvider';
 	import { ROUTER_ABI_LITE } from '$lib/commonABIs';
+	import { preloadChainTokens } from '$lib/chainTokensStore.svelte';
 
 	let { children, data }: { children: any; data: any } = $props();
 	// isAdmin tracks the *currently connected* wallet, not the session.
@@ -618,6 +619,20 @@
 				initProviders();
 				const kit = await initAppKit(supportedNetworks);
 				if (kit) setupWalletKit(kit);
+
+				// Warm the chain-tokens cache for every supported chain in
+				// the background after the critical-path init has settled.
+				// Any token-picker / payment-token modal opening on /trade
+				// (or any future route) reads from the same cache, so by
+				// the time the user clicks a selector the list is ready
+				// — no spinner, no race between the modal mount and the
+				// async fetch. setTimeout(1000) defers past first paint
+				// + initial app boot so we don't compete for bandwidth.
+				setTimeout(() => {
+					for (const n of supportedNetworks) {
+						if (n?.symbol) preloadChainTokens(n.symbol);
+					}
+				}, 1000);
 			} catch {
 				initProviders();
 				const kit = await initAppKit();

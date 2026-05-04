@@ -17,6 +17,7 @@
 	import { findBestRoute as findBestRouteOnChain } from '$lib/routeFinder';
 	import { pushPreferences } from '$lib/embeddedWallet';
 	import { resolveTokenLogo } from '$lib/tokenLogo';
+	import { getChainTokens, preloadChainTokens } from '$lib/chainTokensStore.svelte';
 	import { userTokens, addUserToken, updateUserToken, removeUserToken } from '$lib/userTokens';
 	import { t } from '$lib/i18n';
 	import SwapCardShell from './SwapCardShell.svelte';
@@ -190,35 +191,6 @@
 	// Platform tokens can never be honeypots — suppress false positives
 	let platformTokenAddrs = $derived(new Set(platformTokens.map(t => t.address.toLowerCase())));
 
-	// CoinGecko-known tokens for the current chain (a few thousand
-	// entries). Fetched lazily on first modal open per chain, cached
-	// in-memory for the lifetime of the page so re-opens are instant.
-	// The server endpoint caches the upstream CoinGecko fetch for 6h, so
-	// this is one network round-trip per chain per session at most.
-	//
-	// We don't render these as a separate section — they merge into
-	// filteredTokens once the user types a search query, so the picker
-	// stays uncluttered when there's no query but resolves any
-	// well-known symbol the user types.
-	type ChainToken = { address: string; symbol: string; name: string; rank?: number; logo?: string };
-	let chainTokens = $state<ChainToken[]>([]);
-	const chainTokensCache = new Map<string, ChainToken[]>();
-	$effect(() => {
-		if (!showTokenModal || !selectedNetwork?.symbol) return;
-		const slug = selectedNetwork.symbol.toLowerCase();
-		const hit = chainTokensCache.get(slug);
-		if (hit) { chainTokens = hit; return; }
-		fetch(`/api/popular-tokens?chain=${slug}`)
-			.then(r => r.ok ? r.json() : { tokens: [] })
-			.then(d => {
-				const list = (d.tokens || []) as ChainToken[];
-				chainTokensCache.set(slug, list);
-				chainTokens = list;
-				console.log(chainTokens)
-			})
-			.catch(() => { chainTokens = []; });
-	});
-
 	// History
 	let showHistory = $state(false);
 	let historyPanel = $state<TradeHistoryPanel | undefined>();
@@ -226,6 +198,17 @@
 	let activeOnrampRow: any = $state(null);
 
 	let selectedNetwork = $derived(tradeNetworks[selectedNetworkIdx]);
+
+	// Chain-token list backed by the shared store at
+	// $lib/chainTokensStore. The root layout warms the cache on app
+	// boot (after a 1s setTimeout) so by the time the user opens the
+	// picker the list is usually already populated. A second
+	// preloadChainTokens call here is idempotent and covers the case
+	// where the user lands directly on /trade with no warm-up window.
+	let chainTokens = $derived(getChainTokens(selectedNetwork?.symbol || ''));
+	$effect(() => {
+		if (selectedNetwork?.symbol) preloadChainTokens(selectedNetwork.symbol);
+	});
 
 	function toWithdrawalView(w: MergedWithdrawal): WithdrawalView {
 		const timedOut = w.status === WithdrawStatus.Pending && w.expiresAt > 0 && Date.now() / 1000 > w.expiresAt;
@@ -898,7 +881,7 @@
 						tokenOutHasTax = tax.buyTaxBps > 0 || tax.sellTaxBps > 0;
 					}
 				}).catch(e => {
-					console.warn(`TradeLens failed:`, (e instanceof Error ? e.message : String(e)).slice(0, 200));
+					// console.warn(`TradeLens failed:`, (e instanceof Error ? e.message : String(e)).slice(0, 200));
 				});
 			}
 		}
