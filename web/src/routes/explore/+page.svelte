@@ -435,7 +435,7 @@
 				<span class="font-display text-13 font-bold text-(--text-heading)">Live Launches</span>
 			</div>
 			<div class="flex gap-2.5 overflow-x-auto pb-2 [scrollbar-width:thin]">
-				{#each activeLaunches as launch}
+				{#each activeLaunches as launch (launch.chain_id + ':' + launch.token_address)}
 					{@const slug = launch.chain_id === 56 ? 'bsc' : 'eth'}
 					{@const decimals = launch.usdt_decimals || 18}
 					{@const raised = parseFloat(ethers.formatUnits(launch.total_base_raised || '0', decimals))}
@@ -520,7 +520,7 @@
 		</div>
 	{:else}
 		<div class="grid gap-3.5 grid-cols-[repeat(auto-fill,minmax(300px,1fr))] max-[500px]:grid-cols-[1fr]">
-			{#each filtered as tok}
+			{#each filtered as tok (tok.chain_id + ':' + tok.address)}
 				{@const slug = chainSlug(tok.chain_id)}
 				{@const gecko = geckoLookup[tok.address?.toLowerCase()]}
 				{@const safu = safuMap[safuKey(tok)]}
@@ -543,8 +543,15 @@
 					     single overlay. -->
 					<a href="/explore/{slug}/{tok.address}" class="absolute inset-0 z-0 rounded-xl" aria-label="View {tok.symbol || tok.name || 'token'} details"></a>
 
-					<!-- Header -->
-					<div class="relative z-[1] explore-card-header flex items-start gap-2.5">
+					<!-- Header. `pointer-events-none` lets clicks fall
+					     through to the overlay anchor below; the badges
+					     opt back into events so their hover tooltips
+					     still work. Without this, clicking the logo /
+					     name / symbol blocked navigation while
+					     ctrl-click still worked because the browser
+					     walks up the DOM looking for an <a> ancestor
+					     for ctrl-click but not for plain click. -->
+					<div class="relative z-[1] explore-card-header flex items-start gap-2.5 pointer-events-none">
 						<TokenLogo logoUrl={tok.logo_url} symbol={tok.symbol} address={tok.address} chainId={tok.chain_id} size={36} />
 						<div class="flex-1 min-w-0">
 							<span class="block font-display text-15 font-bold text-(--text-heading) whitespace-nowrap overflow-hidden text-ellipsis">{tok.name || 'Unknown'}</span>
@@ -556,7 +563,7 @@
 								{/if}
 							</div>
 						</div>
-						<div class="explore-card-badges flex gap-1 items-center justify-end flex-wrap shrink-0">
+						<div class="explore-card-badges flex gap-1 items-center justify-end flex-wrap shrink-0 pointer-events-auto">
 							{#if isSafu}
 								<span class="badge-tip relative inline-flex cursor-pointer">
 									<span class="tc-badge tc-badge-safu">SAFU</span>
