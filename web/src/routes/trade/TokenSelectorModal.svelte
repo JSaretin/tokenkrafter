@@ -37,6 +37,9 @@
 		// lands on our in-app token page) and an empty string for
 		// everything else (which falls back to the chain block-explorer).
 		getDetailHref = (_addr: string) => '',
+		// True when the token at this address was created on TokenKrafter.
+		// Drives the small "TK" badge next to the symbol in the list.
+		isPlatformToken = (_addr: string) => false,
 		onSelect,
 		onImport,
 		onClose,
@@ -50,6 +53,7 @@
 		dbSearchLoading?: boolean;
 		explorerUrl?: string;
 		getDetailHref?: (address: string) => string;
+		isPlatformToken?: (address: string) => boolean;
 		onSelect: (token: TokenItem) => void;
 		onImport: () => void;
 		onClose: () => void;
@@ -127,6 +131,7 @@
 				symbol={t.symbol}
 				primary={t.symbol}
 				secondary={t.name}
+				isPlatform={isPlatformToken(t.address)}
 				onclick={() => onSelect(t)}
 			>
 				{#snippet rightSlot()}

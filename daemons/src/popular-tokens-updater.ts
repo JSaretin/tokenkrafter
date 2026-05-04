@@ -54,26 +54,55 @@ interface ChainToken {
 	address: string;
 	symbol: string;
 	name: string;
+	// Market-cap rank from CoinGecko's global top-N. Lower = more popular.
+	// Tokens beyond the top-N (most of them) get `rank: 9999` so they sort
+	// last but stay in the list for substring search to pick up.
+	rank: number;
 }
 
 async function refresh() {
 	const ts = new Date().toISOString().slice(11, 19);
 	try {
-		const res = await fetch(
-			'https://api.coingecko.com/api/v3/coins/list?include_platform=true',
-			{ headers: { accept: 'application/json' } },
-		);
-		if (!res.ok) {
-			console.error(`[${ts}] ✗ coingecko ${res.status}`);
+		// Two upstream calls. /coins/list gives us the full token universe
+		// with on-chain addresses (~17k entries). /coins/markets gives us
+		// the top 250 by market cap with their CG `id` — we use it to
+		// stamp a rank on each chain token so the picker can show the
+		// well-known ones first without having to type a query.
+		const [listRes, marketsRes] = await Promise.all([
+			fetch(
+				'https://api.coingecko.com/api/v3/coins/list?include_platform=true',
+				{ headers: { accept: 'application/json' } },
+			),
+			fetch(
+				'https://api.coingecko.com/api/v3/coins/markets'
+					+ '?vs_currency=usd&order=market_cap_desc&per_page=250&page=1&sparkline=false',
+				{ headers: { accept: 'application/json' } },
+			),
+		]);
+		if (!listRes.ok) {
+			console.error(`[${ts}] ✗ coingecko list ${listRes.status}`);
 			return;
 		}
-		const list = (await res.json()) as Array<{
+		if (!marketsRes.ok) {
+			console.error(`[${ts}] ✗ coingecko markets ${marketsRes.status}`);
+			return;
+		}
+		const list = (await listRes.json()) as Array<{
 			id: string;
 			symbol: string;
 			name: string;
 			platforms: Record<string, string | null>;
 		}>;
-		console.log(`[${ts}] coingecko returned ${list.length} tokens total`);
+		const markets = (await marketsRes.json()) as Array<{
+			id: string;
+			market_cap_rank: number | null;
+		}>;
+		console.log(`[${ts}] coingecko: ${list.length} tokens, ${markets.length} ranked`);
+
+		const rankById = new Map<string, number>();
+		for (const m of markets) {
+			if (m.market_cap_rank != null) rankById.set(m.id, m.market_cap_rank);
+		}
 
 		const merged: Record<string, { tokens: ChainToken[]; updated_at: string }> = {};
 		const updatedAt = new Date().toISOString();
@@ -88,8 +117,13 @@ async function refresh() {
 					address: addr,
 					symbol: c.symbol.toUpperCase(),
 					name: c.name,
+					rank: rankById.get(c.id) ?? 9999,
 				});
 			}
+			// Sort by rank ascending, then symbol — stable order for the
+			// frontend so "show top N" is meaningful and substring search
+			// still hits well-known tokens first.
+			tokens.sort((a, b) => a.rank - b.rank || a.symbol.localeCompare(b.symbol));
 			merged[chain] = { tokens, updated_at: updatedAt };
 		}
 

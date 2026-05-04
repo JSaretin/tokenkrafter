@@ -200,7 +200,7 @@
 	// filteredTokens once the user types a search query, so the picker
 	// stays uncluttered when there's no query but resolves any
 	// well-known symbol the user types.
-	type ChainToken = { address: string; symbol: string; name: string };
+	type ChainToken = { address: string; symbol: string; name: string; rank?: number };
 	let chainTokens = $state<ChainToken[]>([]);
 	const chainTokensCache = new Map<string, ChainToken[]>();
 	$effect(() => {
@@ -444,59 +444,69 @@
 		}
 
 		const q = tokenSearch.toLowerCase().trim();
-		if (!q) return list;
 
-		// Filter local list
-		const localMatches = list.filter(t =>
-			t.symbol.toLowerCase().includes(q) ||
-			t.name.toLowerCase().includes(q) ||
-			t.address.toLowerCase().includes(q)
-		);
+		// Cap merged matches to keep the rendered list bounded — CoinGecko
+		// can return thousands per chain; 30 entries comfortably covers
+		// platform tokens + popular CG tokens + near-misses on a search.
+		const cap = 30;
+		// `seen` starts pre-populated with the excluded-side address so
+		// we never re-introduce it via the chainTokens merge below.
+		const excludeAddr = outputMode === 'token'
+			? (tokenModalTarget === 'in' ? tokenOutAddr.toLowerCase() : tokenInAddr.toLowerCase())
+			: '';
+		const seen = new Set<string>();
+		if (excludeAddr) seen.add(excludeAddr);
+		const out: typeof list = [];
+		for (const t of list) {
+			if (q && !(
+				t.symbol.toLowerCase().includes(q) ||
+				t.name.toLowerCase().includes(q) ||
+				t.address.toLowerCase().includes(q)
+			)) continue;
+			out.push(t);
+			seen.add(t.address.toLowerCase());
+		}
 
-		// Merge DB search results (for tokens not in the local list)
-		const seen = new Set(localMatches.map(t => t.address.toLowerCase()));
-		for (const r of dbSearchResults) {
-			if (!seen.has(r.address.toLowerCase())) {
-				localMatches.push(r);
-				seen.add(r.address.toLowerCase());
+		// Merge DB search results — only when there's a query.
+		if (q) {
+			for (const r of dbSearchResults) {
+				const aLow = r.address.toLowerCase();
+				if (seen.has(aLow)) continue;
+				out.push(r);
+				seen.add(aLow);
 			}
 		}
 
-		// Merge CoinGecko chain tokens — same shape as a built-in entry.
-		// Decimals default to 18; the on-chain decimals lookup runs when
-		// the user actually picks the token, so a wrong default here gets
-		// corrected before any swap math runs. Logo URL is empty so the
-		// existing tokenLogo resolver picks it up via fallback chain
-		// (KNOWN_LOGOS → DB → GeckoTerminal).
-		//
-		// Cap the merged matches to keep the rendered list bounded —
-		// CoinGecko has a few thousand BSC tokens and pasting "DOGE"
-		// could otherwise return 50+ rows. 30 is enough room for the
-		// real match plus near-misses.
-		const cap = 30;
-		if (localMatches.length < cap) {
+		// Merge CoinGecko chain tokens. With no query → top-ranked first
+		// (chainTokens is pre-sorted by market-cap rank in the daemon),
+		// so users see AAVE / DOGE / etc. without typing. With a query →
+		// substring filter. Decimals default to 18; the on-chain
+		// decimals lookup runs when the user actually picks the token,
+		// so a wrong default here gets corrected before any swap math.
+		// Logo URL is empty so the existing tokenLogo resolver picks
+		// it up via the fallback chain (KNOWN_LOGOS → DB → GeckoTerminal).
+		if (out.length < cap) {
 			for (const r of chainTokens) {
-				if (localMatches.length >= cap) break;
+				if (out.length >= cap) break;
 				const aLow = r.address.toLowerCase();
 				if (seen.has(aLow)) continue;
-				if (
+				if (q && !(
 					r.symbol.toLowerCase().includes(q) ||
 					r.name.toLowerCase().includes(q) ||
 					aLow.includes(q)
-				) {
-					localMatches.push({
-						address: r.address,
-						symbol: r.symbol,
-						name: r.name,
-						decimals: 18,
-						logo_url: '',
-					});
-					seen.add(aLow);
-				}
+				)) continue;
+				out.push({
+					address: r.address,
+					symbol: r.symbol,
+					name: r.name,
+					decimals: 18,
+					logo_url: '',
+				});
+				seen.add(aLow);
 			}
 		}
 
-		return localMatches;
+		return out;
 	});
 
 	// ── Data from server (platformTokens, ngBanks, fiatRates) — already loaded ──
@@ -1910,6 +1920,7 @@
 				? `/explore/${selectedNetwork.symbol}/${addr}`
 				: '';
 		}}
+		isPlatformToken={(addr) => platformTokenAddrs.has(addr.toLowerCase())}
 		onSelect={(token) => selectToken(tokenModalTarget, token)}
 		onImport={handleCustomAddress}
 		onClose={() => { showTokenModal = false; tokenSearch = ''; }}

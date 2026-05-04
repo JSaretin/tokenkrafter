@@ -10,6 +10,11 @@
 		iconVariant = 'brand',
 		loading = false,
 		disabled = false,
+		// Marks tokens that were created on TokenKrafter — gives them a
+		// small inline badge in the picker so users know which tokens
+		// are platform-native (have detail page, are vetted) vs CG-pulled
+		// or pasted-by-address.
+		isPlatform = false,
 		onclick,
 		rightSlot,
 	}: {
@@ -20,6 +25,7 @@
 		iconVariant?: 'brand' | 'custom';
 		loading?: boolean;
 		disabled?: boolean;
+		isPlatform?: boolean;
 		onclick?: () => void;
 		rightSlot?: Snippet;
 	} = $props();
@@ -40,7 +46,12 @@
 	{/if}
 
 	<div class="flex-1 min-w-0">
-		<span class="block font-mono text-13 font-bold text-(--text-heading)">{primary}</span>
+		<div class="flex items-center gap-1.5">
+			<span class="font-mono text-13 font-bold text-(--text-heading)">{primary}</span>
+			{#if isPlatform}
+				<span class="font-mono text-4xs font-bold uppercase tracking-[0.05em] py-0.5 px-1.5 rounded bg-cyan-400/10 text-cyan-400 border border-cyan-400/20" title="Created on TokenKrafter">TK</span>
+			{/if}
+		</div>
 		{#if secondary}
 			<span class="block font-mono text-3xs text-(--text-muted) whitespace-nowrap overflow-hidden text-ellipsis">{secondary}</span>
 		{/if}
