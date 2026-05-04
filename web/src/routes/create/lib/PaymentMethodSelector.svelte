@@ -116,10 +116,18 @@
 	// (the wizard's import flow resolves the on-chain decimals + adds
 	// the row to paymentOptions, which then triggers a fresh balance
 	// + fee-quote computation).
+	//
+	// The modal closes itself on pick — callers don't have to flip
+	// the show flag in their handler. Trying to mix caller-controlled
+	// show with the modal's internal show desyncs the two states (we
+	// got bug reports of "modal stays open after pick"). Now: pick →
+	// fire callback → close, regardless.
 	function handleSelect(t: TokenItem) {
 		const idx = tokens.findIndex((p) => p.address.toLowerCase() === t.address.toLowerCase());
 		if (idx >= 0) onSelect(tokens[idx], idx);
 		else onImport(t.address);
+		show = false;
+		onClose?.();
 	}
 
 	// Paste-to-import: when the user types a fresh address in the search

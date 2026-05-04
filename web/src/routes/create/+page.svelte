@@ -1484,7 +1484,7 @@
 <FixedOverlay bind:show={showPreview} onclose={closePreview}>
 	{#if tokenInfo}
 		<div
-			class="review-modal w-full sm:max-w-md max-h-[100dvh] sm:max-h-[90vh] overflow-y-auto bg-background border border-line-input rounded-t-[20px] sm:rounded-[20px] p-4 sm:p-6 pb-[calc(16px+env(safe-area-inset-bottom,0px))] sm:pb-6 min-h-[60vh] sm:min-h-0 [scrollbar-width:none] [-ms-overflow-style:none]"
+			class="review-modal w-full sm:max-w-md max-h-[80vh] sm:max-h-[90vh] overflow-y-auto bg-background border border-line-input rounded-t-[20px] sm:rounded-[20px] p-4 sm:p-6 pb-[calc(16px+env(safe-area-inset-bottom,0px))] sm:pb-6 [scrollbar-width:none] [-ms-overflow-style:none]"
 		>
 			<!-- Mobile drag indicator -->
 			<div
