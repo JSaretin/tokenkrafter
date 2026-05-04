@@ -187,6 +187,20 @@
 	let showTokenModal = $state(false);
 	let tokenModalTarget = $state<'in' | 'out'>('in');
 	let tokenSearch = $state('');
+	// Debounced mirror of tokenSearch — drives the heavy filteredTokens
+	// derivation and the DB-search effect. The input itself stays bound
+	// to tokenSearch (which updates synchronously) so what the user types
+	// always appears instantly; the substring-scan over ~3.3k chain
+	// tokens then runs ~80ms after typing settles instead of on every
+	// keystroke. Net effect: no perceived input lag, same end result.
+	let debouncedTokenSearch = $state('');
+	let _searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+	$effect(() => {
+		const q = tokenSearch;
+		if (_searchDebounceTimer) clearTimeout(_searchDebounceTimer);
+		_searchDebounceTimer = setTimeout(() => { debouncedTokenSearch = q; }, 80);
+		return () => { if (_searchDebounceTimer) clearTimeout(_searchDebounceTimer); };
+	});
 	let platformTokens: { address: string; symbol: string; name: string; decimals: number; logo_url?: string }[] = $derived(serverData?.platformTokens || []);
 	// Platform tokens can never be honeypots — suppress false positives
 	let platformTokenAddrs = $derived(new Set(platformTokens.map(t => t.address.toLowerCase())));
@@ -427,7 +441,12 @@
 			}
 		}
 
-		const q = tokenSearch.toLowerCase().trim();
+		// Read the debounced mirror so the heavy substring scan over
+		// chainTokens (~3.3k entries) only runs ~80ms after typing
+		// settles. The input is still bound to tokenSearch, so what the
+		// user types appears instantly; only the result list updates
+		// after the debounce window.
+		const q = debouncedTokenSearch.toLowerCase().trim();
 
 		// `seen` starts pre-populated with the excluded-side address so
 		// we never re-introduce it via the chainTokens merge below.
