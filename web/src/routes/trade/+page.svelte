@@ -951,26 +951,21 @@
 				const route = await findBestRouteOnChain(provider, net.dex_router, addrIn, addrOut, parsedIn, bases);
 				if (route && route.amountOut > 0n) {
 					amountOut = ethers.formatUnits(route.amountOut, outDecs);
-					// Map to SwapRoute format for the swap execution
 					swapRoute = { path: route.path, symbols: [], amountOut: route.amountOut, hops: route.path.length - 1 };
 					noLiquidity = false;
 					priceQuoteUnavailable = false;
 				} else if (!hasInstant) {
-					// RouteFinder returned but amountOut is 0 — definitive
-					// "no liquidity at this depth across the configured
-					// bases" signal.
+					// RouteFinder returned cleanly with no path — definitive
+					// no-liquidity at this depth across the configured bases.
 					amountOut = '';
 					noLiquidity = true;
 					priceQuoteUnavailable = false;
 				}
 			} catch {
-				// RPC threw — could be rate-limit, socket drop, public-
-				// endpoint hiccup. We CAN'T distinguish that from a real
-				// no-liquidity outcome, but treating it as "no liquidity"
-				// permanently blocks the swap button until the user
-				// re-enters the amount. Mark as quote-unavailable
-				// instead so the message is softer + retry happens on
-				// the next preview tick automatically.
+				// RouteFinder threw — RPC rate-limit, socket drop, or
+				// public-endpoint hiccup. Don't permanently block the
+				// swap; surface a soft retry notice and let the next
+				// preview tick recover automatically.
 				if (!hasInstant) {
 					amountOut = '';
 					noLiquidity = false;
