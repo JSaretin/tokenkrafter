@@ -97,16 +97,33 @@ export const PATCH: RequestHandler = async ({ request, params }) => {
 	}
 
 	// setPrimary is a cross-row operation — use RPC for atomicity.
-	if (body.setPrimary === true) {
-		await supabaseAdmin.rpc('set_primary_wallet', {
+	const settingPrimary = body.setPrimary === true;
+	if (settingPrimary) {
+		const { error: rpcErr } = await supabaseAdmin.rpc('set_primary_wallet', {
 			_user_id: userId,
 			_wallet_id: params.id!
 		});
+		if (rpcErr) {
+			console.error('[wallets PATCH set_primary_wallet] RPC error:', rpcErr.message);
+			return error(500, `Failed to set primary: ${rpcErr.message}`);
+		}
 		// RPC already set is_primary on this wallet, no need to include in updates
 	}
 
+	// If the only change was setPrimary, the RPC has already done the work —
+	// just fetch and return the updated row instead of 400'ing on "no fields".
+	// Without this, set-primary-only PATCHes failed with "No fields to update"
+	// even after the RPC succeeded, leaving the FE thinking the operation
+	// errored when it actually landed.
 	if (Object.keys(updates).length === 0) {
-		return error(400, 'No fields to update');
+		if (!settingPrimary) return error(400, 'No fields to update');
+		const { data: row } = await supabaseAdmin
+			.from('wallets')
+			.select('*')
+			.eq('id', params.id!)
+			.eq('user_id', userId)
+			.single();
+		return json({ wallet: row });
 	}
 
 	const { data, error: dbErr } = await supabaseAdmin
