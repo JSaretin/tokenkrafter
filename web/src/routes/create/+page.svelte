@@ -656,6 +656,10 @@
 
 			const newOpt: PaymentOption = { symbol: sym, name: name || sym, address: addr, decimals };
 			paymentOptions = [...paymentOptions, newOpt];
+			// Pick the just-imported token immediately so the "Pay with"
+			// chip reflects the user's choice without needing a second
+			// click. Index points to the entry we just appended.
+			selectedPaymentIndex = paymentOptions.length - 1;
 			// Treat a just-imported token as a session default so it stays
 			// visible even if the user hasn't funded it yet.
 			defaultPaymentAddrs = new Set([...defaultPaymentAddrs, addr.toLowerCase()]);
@@ -1634,7 +1638,17 @@
 							chainSlug={launchNetwork?.symbol || 'bsc'}
 							chainId={launchNetwork?.chain_id || 56}
 							explorerUrl={launchNetwork?.explorer_url || ''}
-							onSelect={(_tok, i) => { selectedPaymentIndex = i; showPaymentModal = false; }}
+							onSelect={(tok) => {
+								// Look up by address in the *full* paymentOptions
+								// list — the picker passes an index in the
+								// filtered paymentMethodTokens, which doesn't
+								// match paymentOptions whenever the filter trims
+								// anything (e.g. zero-balance imports stripped).
+								const idx = paymentOptions.findIndex(
+									(p) => p.address.toLowerCase() === tok.address.toLowerCase()
+								);
+								if (idx >= 0) selectedPaymentIndex = idx;
+							}}
 							onImport={(addr) => { payImportAddr = addr; importPaymentToken(); }}
 						/>
 					{/if}
