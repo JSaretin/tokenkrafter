@@ -180,8 +180,92 @@ export async function hydrateTradeLensCache(): Promise<void> {
 // page mounts. Browser-only guard for SSR safety.
 if (typeof indexedDB !== 'undefined') ensureHydrated();
 
+// The TradeLens constructor's assembly `return(...)` data is treated as
+// the would-be runtime code by the EVM during eth_call deployment, so it
+// hits the 24,576-byte "max code size exceeded" rule once the result
+// gets large enough — empirically around ~22-24 tokens × 2 bases. We
+// chunk above this threshold so each underlying eth_call stays under
+// the limit; results are merged and only the first chunk carries
+// users/taxSimulation (those are global, not per-token).
+const TOKENS_PER_CHUNK = 18;
+
+interface RawTradeLensResult {
+	weth: string;
+	factory: string;
+	users: UserInfo[];
+	tokens: TokenInfo[];
+	taxInfo: TaxInfo;
+	taxToken: string;
+}
+
+async function _queryTradeLensOnce(
+	provider: ethers.JsonRpcProvider,
+	dexRouter: string,
+	tokens: string[],
+	baseTokens: string[],
+	usersArr: string[],
+	simulateTax: string,
+	simBuyAmount: bigint,
+): Promise<RawTradeLensResult> {
+	const abiCoder = ethers.AbiCoder.defaultAbiCoder();
+	const args = abiCoder.encode(
+		['address', 'address[]', 'address[]', 'address[]', 'address', 'uint256'],
+		[dexRouter, tokens, baseTokens, usersArr, simulateTax, simBuyAmount]
+	);
+	const callData = TRADE_LENS_BYTECODE + args.slice(2);
+
+	const raw = await provider.call({
+		data: callData,
+		value: simBuyAmount,
+		gasLimit: 15_000_000,
+	});
+	if (!raw || raw === '0x') throw new Error('TradeLens returned empty (constructor reverted)');
+
+	const decoded = abiCoder.decode(RESULT_TYPES, raw);
+	return {
+		weth: decoded[0] as string,
+		factory: decoded[1] as string,
+		users: (decoded[2] as any[]).map((u: any) => ({ user: u.user, nativeBalance: u.nativeBalance })),
+		tokens: (decoded[3] as any[]).map((t: any) => ({
+			token: t.token,
+			name: t.name,
+			symbol: t.symbol,
+			decimals: Number(t.decimals),
+			totalSupply: t.totalSupply,
+			hasLiquidity: t.hasLiquidity,
+			pools: (t.pools as any[]).map((p: any) => ({
+				base: p.base,
+				pairAddress: p.pairAddress,
+				reserveToken: p.reserveToken,
+				reserveBase: p.reserveBase,
+				hasLiquidity: p.hasLiquidity,
+			})),
+			balances: (t.balances as bigint[]).map((b) => b),
+			balance: t.balances.length > 0 ? t.balances[0] : 0n,
+		})),
+		taxInfo: {
+			success: decoded[4].success,
+			canBuy: decoded[4].canBuy,
+			canSell: decoded[4].canSell,
+			buyTaxBps: Number(decoded[4].buyTaxBps),
+			sellTaxBps: Number(decoded[4].sellTaxBps),
+			transferTaxBps: Number(decoded[4].transferTaxBps),
+			buyGas: Number(decoded[4].buyGas),
+			sellGas: Number(decoded[4].sellGas),
+			buyError: decoded[4].buyError,
+			sellError: decoded[4].sellError,
+		},
+		taxToken: decoded[5] as string,
+	};
+}
+
 /**
- * Fetch all token info + balances + optionally simulate tax — one eth_call.
+ * Fetch all token info + balances + optionally simulate tax. Splits
+ * the token list into chunks of TOKENS_PER_CHUNK so each underlying
+ * eth_call stays under the EVM's 24,576-byte runtime-code limit; the
+ * tax simulation + users only run on the first chunk because they're
+ * global state (not per-token), and the second-and-later chunks just
+ * fetch token info / pool reserves.
  *
  * @param provider JSON-RPC provider
  * @param dexRouter DEX router address
@@ -207,67 +291,39 @@ export async function queryTradeLens(
 		? (users === ethers.ZeroAddress ? [] : [users])
 		: users.filter(u => u && u !== ethers.ZeroAddress);
 
-	const abiCoder = ethers.AbiCoder.defaultAbiCoder();
+	// Chunk the token list. Empty list → still run once with [] so the
+	// caller can fetch users/weth without a token query.
+	const chunks: string[][] = tokens.length > 0
+		? Array.from({ length: Math.ceil(tokens.length / TOKENS_PER_CHUNK) }, (_, i) =>
+			tokens.slice(i * TOKENS_PER_CHUNK, (i + 1) * TOKENS_PER_CHUNK))
+		: [[]];
 
-	const args = abiCoder.encode(
-		['address', 'address[]', 'address[]', 'address[]', 'address', 'uint256'],
-		[dexRouter, tokens, baseTokens, usersArr, simulateTax, simBuyAmount]
-	);
-
-	const callData = TRADE_LENS_BYTECODE + args.slice(2);
-
-	const raw = await provider.call({
-		data: callData,
-		value: simBuyAmount,
-		gasLimit: 15_000_000,
-	});
-
-	if (!raw || raw === '0x') {
-		throw new Error('TradeLens returned empty (constructor reverted)');
+	// Run chunks sequentially (some public RPCs throttle parallel
+	// eth_calls of this size; sequential is friendlier and the latency
+	// cost is acceptable for a startup-time call).
+	let merged: RawTradeLensResult | null = null;
+	for (let i = 0; i < chunks.length; i++) {
+		// Only the first chunk carries users + tax sim — those are
+		// global. Subsequent chunks just fetch token / pool data.
+		const isFirst = i === 0;
+		const r = await _queryTradeLensOnce(
+			provider,
+			dexRouter,
+			chunks[i],
+			baseTokens,
+			isFirst ? usersArr : [],
+			isFirst ? simulateTax : ethers.ZeroAddress,
+			isFirst ? simBuyAmount : 0n,
+		);
+		if (!merged) merged = r;
+		else merged.tokens.push(...r.tokens);
 	}
-
-	const decoded = abiCoder.decode(RESULT_TYPES, raw);
-
-	const userInfos: UserInfo[] = (decoded[2] as any[]).map((u: any) => ({
-		user: u.user,
-		nativeBalance: u.nativeBalance,
-	}));
-
-	const tokenInfos: TokenInfo[] = (decoded[3] as any[]).map((t: any) => ({
-		token: t.token,
-		name: t.name,
-		symbol: t.symbol,
-		decimals: Number(t.decimals),
-		totalSupply: t.totalSupply,
-		hasLiquidity: t.hasLiquidity,
-		pools: (t.pools as any[]).map((p: any) => ({
-			base: p.base,
-			pairAddress: p.pairAddress,
-			reserveToken: p.reserveToken,
-			reserveBase: p.reserveBase,
-			hasLiquidity: p.hasLiquidity,
-		})),
-		balances: (t.balances as bigint[]).map(b => b),
-		balance: t.balances.length > 0 ? t.balances[0] : 0n,
-	}));
-
-	const taxInfo: TaxInfo = {
-		success: decoded[4].success,
-		canBuy: decoded[4].canBuy,
-		canSell: decoded[4].canSell,
-		buyTaxBps: Number(decoded[4].buyTaxBps),
-		sellTaxBps: Number(decoded[4].sellTaxBps),
-		transferTaxBps: Number(decoded[4].transferTaxBps),
-		buyGas: Number(decoded[4].buyGas),
-		sellGas: Number(decoded[4].sellGas),
-		buyError: decoded[4].buyError,
-		sellError: decoded[4].sellError,
-	};
+	if (!merged) throw new Error('TradeLens: no chunks executed');
 
 	// Update cache
-	_weth = decoded[0] as string;
-	_usersCache = userInfos;
-	for (const t of tokenInfos) {
+	_weth = merged.weth;
+	_usersCache = merged.users;
+	for (const t of merged.tokens) {
 		_tokenCache.set(t.token.toLowerCase(), t);
 	}
 	_lastFetch = Date.now();
@@ -278,13 +334,13 @@ export async function queryTradeLens(
 	_idbSet('tradelens', 'snapshot', serializeForIdb(), TRADELENS_TTL_MS);
 
 	return {
-		weth: decoded[0] as string,
-		factory: decoded[1] as string,
-		users: userInfos,
-		nativeBalance: userInfos.length > 0 ? userInfos[0].nativeBalance : 0n,
-		tokens: tokenInfos,
-		taxInfo,
-		taxToken: decoded[5] as string,
+		weth: merged.weth,
+		factory: merged.factory,
+		users: merged.users,
+		nativeBalance: merged.users.length > 0 ? merged.users[0].nativeBalance : 0n,
+		tokens: merged.tokens,
+		taxInfo: merged.taxInfo,
+		taxToken: merged.taxToken,
 	};
 }
 
