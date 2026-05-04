@@ -271,7 +271,9 @@
 	</div>
 </FixedOverlay>
 
-<!-- Nested payment selector -->
+<!-- Nested payment selector — delegates to $lib/TokenSelectorModal so
+     the user can pick from curated payment options *and* search the
+     full chain CG inventory for a new token to import as payment. -->
 <PaymentMethodSelector
 	bind:show={showPaymentModal}
 	tokens={paymentTokens}
@@ -279,6 +281,9 @@
 	loading={paymentLoading}
 	importBusy={paymentImportBusy}
 	importError={paymentImportError}
+	chainSlug={(tokenInfo?.network as any)?.symbol || 'bsc'}
+	chainId={tokenInfo?.network?.chain_id || 56}
+	explorerUrl={tokenInfo?.network?.explorer_url || ''}
 	onSelect={(t, i) => onSelectPayment?.(t, i)}
 	onImport={(addr) => onImportPayment?.(addr)}
 	onClose={() => { showPaymentModal = false; }}

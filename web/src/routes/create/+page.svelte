@@ -1623,7 +1623,7 @@
 							</button>
 						</div>
 
-						<!-- Payment method modal (styled like the trade page token selector) -->
+						<!-- Payment method modal (delegates to $lib/TokenSelectorModal) -->
 						<PaymentMethodSelector
 							bind:show={showPaymentModal}
 							tokens={paymentMethodTokens}
@@ -1631,6 +1631,9 @@
 							loading={quoteFeeLoading}
 							importBusy={payImportBusy}
 							importError={payImportError}
+							chainSlug={launchNetwork?.symbol || 'bsc'}
+							chainId={launchNetwork?.chain_id || 56}
+							explorerUrl={launchNetwork?.explorer_url || ''}
 							onSelect={(_tok, i) => { selectedPaymentIndex = i; showPaymentModal = false; }}
 							onImport={(addr) => { payImportAddr = addr; importPaymentToken(); }}
 						/>

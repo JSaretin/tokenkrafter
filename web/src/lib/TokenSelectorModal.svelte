@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { ethers } from 'ethers';
+	import type { Snippet } from 'svelte';
 	import { ZERO_ADDRESS } from '$lib/tokenCrafter';
 	import { t } from '$lib/i18n';
 	import Modal from '$lib/Modal.svelte';
@@ -44,6 +45,17 @@
 		// True when the token at this address was created on TokenKrafter.
 		// Drives the small "TK" badge next to the symbol in the list.
 		isPlatformToken = (_addr: string) => false,
+		// Optional title override — the trade picker uses the default
+		// `trade.selectAToken` translation; the create-wizard / launchpad
+		// pickers can pass "Select payment", etc.
+		title = '',
+		// Optional snippet rendered per row instead of the default
+		// TokenAddressActions (copy + explorer link). Lets the
+		// payment/buy pickers show balance + quote per row while
+		// still using all the search/scroll/lazy-logo plumbing here.
+		// Named `rowRightSlot` so the inner `{#snippet rightSlot()}`
+		// of TokenListItem doesn't shadow it.
+		rowRightSlot,
 		onSelect,
 		onImport,
 		onClose,
@@ -59,6 +71,8 @@
 		chainId?: number;
 		getDetailHref?: (address: string) => string;
 		isPlatformToken?: (address: string) => boolean;
+		title?: string;
+		rowRightSlot?: Snippet<[TokenItem]>;
 		onSelect: (token: TokenItem) => void;
 		onImport: () => void;
 		onClose: () => void;
@@ -102,7 +116,7 @@
 <Modal bind:show maxWidth="max-w-[480px]">
 	<div class="flex flex-col max-h-[80vh] max-sm:h-full max-sm:max-h-full max-sm:min-h-0">
 	<div class="flex justify-between items-center py-4 px-5 border-b border-(--border)">
-		<h3 class="font-display text-base font-bold text-(--text-heading) m-0">{$t('trade.selectAToken')}</h3>
+		<h3 class="font-display text-base font-bold text-(--text-heading) m-0">{title || $t('trade.selectAToken')}</h3>
 		<button aria-label="Close" class="bg-transparent border-0 text-(--text-muted) cursor-pointer p-1 rounded-lg transition-all duration-150 hover:text-(--text) hover:bg-(--bg-surface-hover)" onclick={() => show = false}>
 			<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
 		</button>
@@ -167,7 +181,9 @@
 				onclick={() => onSelect(t)}
 			>
 				{#snippet rightSlot()}
-					{#if t.address !== ZERO_ADDRESS}
+					{#if rowRightSlot}
+						{@render rowRightSlot(t)}
+					{:else if t.address !== ZERO_ADDRESS}
 						<TokenAddressActions address={t.address} {explorerUrl} detailHref={getDetailHref(t.address)} oncopy={onCopyAddress} />
 					{/if}
 				{/snippet}

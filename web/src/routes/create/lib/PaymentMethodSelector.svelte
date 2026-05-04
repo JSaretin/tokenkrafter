@@ -1,11 +1,21 @@
 <script lang="ts">
-	import FixedOverlay from '$lib/FixedOverlay.svelte';
+	/**
+	 * Wrapper around the shared $lib/TokenSelectorModal. Preserves the
+	 * create-wizard's existing API (PaymentOption[] in, onSelect/onImport
+	 * out) so callers don't need to change, but renders inside the same
+	 * picker the trade page uses — search merges curated payment options
+	 * with the chain's CoinGecko-known token list, infinite scroll, IDB-
+	 * cached logos, paste-to-import.
+	 */
 	import { ethers } from 'ethers';
+	import TokenSelectorModal from '$lib/TokenSelectorModal.svelte';
+	import { getChainTokens, preloadChainTokens } from '$lib/chainTokensStore.svelte';
 
 	type PaymentOption = {
 		address: string;
 		symbol: string;
 		name: string;
+		decimals?: number;
 		balanceDisplay?: string;
 		quoteDisplay?: string;
 		logoUrl?: string | null;
@@ -18,6 +28,9 @@
 		loading = false,
 		importBusy = false,
 		importError = null,
+		chainSlug = 'bsc',
+		chainId = 56,
+		explorerUrl = '',
 		onSelect,
 		onImport,
 		onClose,
@@ -28,98 +41,133 @@
 		loading?: boolean;
 		importBusy?: boolean;
 		importError?: string | null;
+		chainSlug?: string;
+		chainId?: number;
+		explorerUrl?: string;
 		onSelect: (token: PaymentOption, index: number) => void;
 		onImport: (address: string) => void;
 		onClose?: () => void;
 	} = $props();
 
-	let importAddr = $state('');
+	// Warm the CG token list for this chain so the modal's search merges
+	// across both the curated payment options and the full CG inventory.
+	$effect(() => { if (show && chainSlug) preloadChainTokens(chainSlug); });
+	let chainTokens = $derived(show ? getChainTokens(chainSlug) : []);
 
-	function handleClose() {
-		if (onClose) onClose();
-		else show = false;
+	let tokenSearch = $state('');
+
+	// Reset the search every time the modal opens so the user lands on a
+	// fresh state instead of whatever they typed last time.
+	$effect(() => { if (show) tokenSearch = ''; });
+
+	type TokenItem = {
+		address: string;
+		symbol: string;
+		name: string;
+		decimals: number;
+		isNative?: boolean;
+		logo_url?: string;
+	};
+
+	// Curated tokens always lead the list (so balances + quotes show
+	// first); CG tokens fill the rest. Both are filtered by the search
+	// query when present.
+	let filteredTokens = $derived.by(() => {
+		const q = tokenSearch.toLowerCase().trim();
+		const seen = new Set<string>();
+		const out: TokenItem[] = [];
+		for (const opt of tokens) {
+			if (q && !(
+				opt.symbol.toLowerCase().includes(q) ||
+				opt.name.toLowerCase().includes(q) ||
+				opt.address.toLowerCase().includes(q)
+			)) continue;
+			out.push({
+				address: opt.address,
+				symbol: opt.symbol,
+				name: opt.name,
+				decimals: opt.decimals ?? 18,
+				logo_url: opt.logoUrl ?? '',
+			});
+			seen.add(opt.address.toLowerCase());
+		}
+		for (const r of chainTokens) {
+			const aLow = r.address.toLowerCase();
+			if (seen.has(aLow)) continue;
+			if (q && !(
+				r.symbol.toLowerCase().includes(q) ||
+				r.name.toLowerCase().includes(q) ||
+				aLow.includes(q)
+			)) continue;
+			out.push({
+				address: r.address,
+				symbol: r.symbol,
+				name: r.name,
+				decimals: r.decimals,
+				logo_url: r.logo,
+			});
+			seen.add(aLow);
+		}
+		return out;
+	});
+
+	// Map a row click to the right callback: known curated payment →
+	// onSelect with index; CG token not in the curated list → onImport
+	// (the wizard's import flow resolves the on-chain decimals + adds
+	// the row to paymentOptions, which then triggers a fresh balance
+	// + fee-quote computation).
+	function handleSelect(t: TokenItem) {
+		const idx = tokens.findIndex((p) => p.address.toLowerCase() === t.address.toLowerCase());
+		if (idx >= 0) onSelect(tokens[idx], idx);
+		else onImport(t.address);
 	}
 
-	function handleImport() {
-		const trimmed = importAddr.trim();
-		if (!trimmed) return;
-		onImport(trimmed);
-	}
+	// Paste-to-import: when the user types a fresh address in the search
+	// field, the modal renders an "Import" row at the top; clicking it
+	// fires onImport with the address. The wizard's flow does the on-
+	// chain ERC20 read + balance fetch.
+	let pastedTokenMeta = $derived.by(() => {
+		const q = tokenSearch.trim();
+		if (!q || !ethers.isAddress(q)) return null;
+		// Skip if the address is already in the merged list — the row
+		// renders normally then, no import needed.
+		const aLow = q.toLowerCase();
+		if (filteredTokens.some((t) => t.address.toLowerCase() === aLow)) return null;
+		// Minimal stub so the modal renders the import row; symbol/name
+		// will populate after the wizard's import resolver runs.
+		return { address: q, symbol: '...', name: importBusy ? 'Importing…' : 'New payment token', decimals: 18, logo_url: '' };
+	});
 </script>
 
-<FixedOverlay bind:show onclose={handleClose}>
-	<div
-		class="w-full max-w-[420px] max-h-[80vh] bg-(--bg) border border-(--border) rounded-[20px] overflow-hidden flex flex-col max-sm:max-w-full max-sm:rounded-t-[20px] max-sm:rounded-b-none max-sm:h-[80vh] max-sm:max-h-[80vh]"
-	>
-		<div class="flex justify-between items-center py-4 px-5 border-b border-(--border)">
-			<h3 class="heading-3">Select payment</h3>
-			<button
-				class="bg-transparent border-none text-(--text-muted) cursor-pointer p-1 rounded-lg transition-all hover:text-(--text) hover:bg-(--bg-surface-hover)"
-				onclick={handleClose}
-				aria-label="Close"
-			>
-				<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-			</button>
-		</div>
-
-		<div class="px-4 py-3">
-			<input
-				class="input-field"
-				placeholder="0x... paste token address to import"
-				bind:value={importAddr}
-				disabled={importBusy}
-				onkeydown={(e) => { if (e.key === 'Enter') handleImport(); }}
-			/>
-		</div>
-		{#if importError}
-			<p class="text-xs2 text-red-400 syne px-4 pb-2 m-0">{importError}</p>
-		{/if}
-		{#if importAddr.trim() && ethers.isAddress(importAddr.trim())}
-			<div class="px-4 pb-2.5">
-				<button
-					class="w-full p-2 rounded-[10px] border border-purple-400/20 bg-purple-400/10 text-purple-300 cursor-pointer syne text-xs2 font-bold transition-all hover:bg-purple-400/20 disabled:opacity-50 disabled:cursor-not-allowed"
-					disabled={importBusy}
-					onclick={handleImport}
-				>
-					{importBusy ? 'Resolving...' : 'Import token'}
-				</button>
+<TokenSelectorModal
+	bind:tokenSearch
+	builtInTokens={[]}
+	{filteredTokens}
+	{pastedTokenMeta}
+	pastedTokenLoading={importBusy}
+	dbSearchLoading={loading}
+	{explorerUrl}
+	{chainId}
+	title="Select payment"
+	onSelect={handleSelect}
+	onImport={() => onImport(tokenSearch.trim())}
+	onClose={() => { show = false; onClose?.(); }}
+>
+	{#snippet rowRightSlot(t)}
+		{@const opt = tokens.find((p) => p.address.toLowerCase() === t.address.toLowerCase())}
+		{#if opt}
+			<div class="text-right shrink-0 flex flex-col items-end">
+				<span class="font-mono text-3xs font-semibold text-(--text-heading) tabular-nums leading-tight">{opt.quoteDisplay ?? '—'}</span>
+				<span class="font-mono text-4xs text-(--text-dim) tabular-nums leading-tight">{opt.balanceDisplay ?? '—'}</span>
 			</div>
-		{/if}
-
-		<div class="overflow-y-auto px-2 pb-2 flex-1">
-			{#if loading}
-				<div class="flex items-center justify-center gap-2 p-4 text-(--text-muted) syne text-xs2">
-					<div class="w-4 h-4 border-2 border-(--border) border-t-cyan-400 rounded-full animate-spin"></div>
-					<span>Loading quotes...</span>
-				</div>
+			{#if selectedAddress.toLowerCase() === opt.address.toLowerCase()}
+				<span class="text-emerald-500 text-sm shrink-0 ml-1">&#10003;</span>
 			{/if}
-			{#each tokens as opt, i}
-				{@const active = selectedAddress.toLowerCase() === opt.address.toLowerCase()}
-				<button
-					class={"flex items-center gap-2.5 w-full p-2.5 px-3 rounded-xl border bg-transparent cursor-pointer transition-all text-left hover:bg-(--bg-surface-hover) "
-						+ (active ? "border-cyan-400/20 bg-cyan-400/[0.03]" : "border-transparent")}
-					onclick={() => onSelect(opt, i)}
-				>
-					{#if opt.logoUrl}
-						<img src={opt.logoUrl} alt={opt.symbol} class="w-9 h-9 rounded-full object-cover shrink-0" />
-					{:else}
-						<div class="w-9 h-9 rounded-full shrink-0 flex items-center justify-center bg-cyan-400/[0.08] text-cyan-400 border border-cyan-400/15 syne text-sm font-bold">
-							{opt.symbol.charAt(0)}
-						</div>
-					{/if}
-					<div class="flex-1 min-w-0 flex flex-col">
-						<span class="block syne text-xs3 font-bold text-(--text-heading)">{opt.symbol}</span>
-						<span class="block syne text-3xs text-(--text-muted) whitespace-nowrap overflow-hidden text-ellipsis">{opt.name}</span>
-					</div>
-					<div class="text-right shrink-0">
-						<span class="block font-['Rajdhani',sans-serif] text-sm font-semibold text-(--text-heading) tabular-nums">{opt.quoteDisplay ?? '—'}</span>
-						<span class="block font-['Rajdhani',sans-serif] text-3xs text-(--text-dim) tabular-nums">{opt.balanceDisplay ?? '—'}</span>
-					</div>
-					{#if active}
-						<span class="text-emerald-500 text-sm shrink-0 ml-1">&#10003;</span>
-					{/if}
-				</button>
-			{/each}
-		</div>
-	</div>
-</FixedOverlay>
+		{/if}
+	{/snippet}
+</TokenSelectorModal>
+
+{#if importError}
+	<!-- Surfaced via a toast / inline message in the wizard flow; the
+	     modal itself stays clean. -->
+{/if}
