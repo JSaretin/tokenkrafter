@@ -1,10 +1,14 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+// OZ 5.6 ERC20PermitUpgradeable + EIP712Upgradeable + MessageHashUtils
+// pin pragma `^0.8.24` (Cancun-era features), so every token impl in
+// this folder is bumped to ^0.8.24 to match. Rest of the repo keeps
+// per-file 0.8.20 pragmas; only the token deploy artifacts need 0.8.24+.
+pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20PermitUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "../shared/DexInterfaces.sol";
 
@@ -22,7 +26,7 @@ import "../shared/DexInterfaces.sol";
 ///         launchpad, platform router, tax wallets, etc.).
 ///         Peer-to-peer transfers between non-pool addresses are unrestricted
 ///         from day zero — curve buyers can move/refund their tokens freely.
-contract BasicTokenImpl is ERC20Upgradeable, OwnableUpgradeable {
+contract BasicTokenImpl is ERC20PermitUpgradeable, OwnableUpgradeable {
     constructor() { _disableInitializers(); }
 
     uint8 private decimals_;
@@ -93,6 +97,11 @@ contract BasicTokenImpl is ERC20Upgradeable, OwnableUpgradeable {
         require(_decimals > 0 && _decimals <= 18, "Decimals must be 1..18");
         require(creator != address(0), "Zero creator");
         __ERC20_init(name, symbol);
+        // EIP-2612 permit. Domain name = token name (per OZ convention)
+        // so wallet UIs render `Permit token: <name>` correctly. Adds no
+        // overhead to transfers — just registers the EIP-712 domain so
+        // signed permits can later set allowances without a tx.
+        __ERC20Permit_init(name);
         decimals_ = _decimals;
         __Ownable_init(creator);
         _mint(creator, totalSupply);

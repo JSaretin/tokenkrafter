@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+// Bumped to ^0.8.24 to match BasicToken's permit-bearing pragma — see
+// BasicToken.sol header for the reasoning.
+pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 import "../shared/TokenInterfaces.sol";
