@@ -139,6 +139,7 @@
 	});
 </script>
 
+{#if show}
 <TokenSelectorModal
 	bind:tokenSearch
 	builtInTokens={[]}
@@ -166,6 +167,7 @@
 		{/if}
 	{/snippet}
 </TokenSelectorModal>
+{/if}
 
 {#if importError}
 	<!-- Surfaced via a toast / inline message in the wizard flow; the
