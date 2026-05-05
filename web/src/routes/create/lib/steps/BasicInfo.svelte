@@ -313,7 +313,7 @@
 	{:else}
 		<div class="flex flex-col gap-[0.3rem]">
 			<label class="font-mono text-[0.82rem] text-foreground tracking-[0.02em]" for="bi-addr">Token Address</label>
-			<input id="bi-addr" class="input-field" type="text" placeholder="0x..." bind:value={existingTokenAddress} required pattern="^0x[a-fA-F0-9]{'{40}'}$" />
+			<input id="bi-addr" class="input-field" type="text" placeholder="0x..." bind:value={existingTokenAddress} required pattern="^0x[a-fA-F0-9]{'{40}'}$" autocomplete="off" autocapitalize="off" spellcheck="false" data-form-type="other" />
 			{#if loading}
 				<span class="font-mono text-[0.72rem] text-brand-cyan">Fetching token info...</span>
 			{:else if fetchError}
@@ -404,18 +404,18 @@
 		<div class="flex gap-3 max-[500px]:flex-col">
 			<div class="flex flex-col gap-[0.3rem] flex-[2]">
 				<label class="font-mono text-[0.82rem] text-foreground tracking-[0.02em]" for="bi-name">Token Name</label>
-				<input id="bi-name" class="input-field" type="text" placeholder="e.g. My Token" bind:value={name} required minlength="1" maxlength="50" />
+				<input id="bi-name" class="input-field" type="text" placeholder="e.g. My Token" bind:value={name} required minlength="1" maxlength="50" autocomplete="off" autocapitalize="off" spellcheck="false" data-form-type="other" />
 			</div>
 			<div class="flex flex-col gap-[0.3rem] flex-1">
 				<label class="font-mono text-[0.82rem] text-foreground tracking-[0.02em]" for="bi-symbol">Symbol</label>
-				<input id="bi-symbol" class="input-field" type="text" placeholder="e.g. MTK" value={symbol} oninput={handleSymbolInput} required minlength="1" maxlength="11" />
+				<input id="bi-symbol" class="input-field" type="text" placeholder="e.g. MTK" value={symbol} oninput={handleSymbolInput} required minlength="1" maxlength="11" autocomplete="off" autocapitalize="characters" spellcheck="false" data-form-type="other" />
 			</div>
 		</div>
 
 		<!-- Total Supply -->
 		<div class="flex flex-col gap-[0.3rem]">
 			<label class="font-mono text-[0.82rem] text-foreground tracking-[0.02em]" for="bi-supply">Total Supply</label>
-			<input id="bi-supply" class="input-field" type="number" placeholder="e.g. 1000000000" bind:value={totalSupply} min="1" required />
+			<input id="bi-supply" class="input-field" type="number" placeholder="e.g. 1000000000" bind:value={totalSupply} min="1" required autocomplete="off" data-form-type="other" />
 			<div class="flex gap-1 mt-1">
 				{#each supplyPresets as p}
 					<button type="button" class={'font-mono text-[0.68rem] px-2.5 py-[3px] rounded-full border bg-surface cursor-pointer transition-all duration-[120ms] ' + (totalSupply === p.value ? 'border-brand-cyan/30 text-brand-cyan bg-brand-cyan/6' : 'border-line text-dim hover:border-brand-cyan/20 hover:text-muted')} tabindex="-1" onclick={() => (totalSupply = p.value)}>{p.label}</button>
@@ -455,16 +455,16 @@
 				</div>
 				<div class="flex flex-col gap-[0.3rem]">
 					<label class="font-mono text-[0.72rem] text-muted tracking-[0.02em]" for="bi-web">Website</label>
-					<input id="bi-web" class="input-field" type="url" placeholder="https://yourtoken.com" bind:value={tokenWebsite} />
+					<input id="bi-web" class="input-field" type="url" placeholder="https://yourtoken.com" bind:value={tokenWebsite} autocomplete="off" spellcheck="false" data-form-type="other" />
 				</div>
 				<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
 					<div class="flex flex-col gap-[0.3rem]">
 						<label class="font-mono text-[0.72rem] text-muted tracking-[0.02em]" for="bi-tw">Twitter / X</label>
-						<input id="bi-tw" class="input-field" type="text" placeholder="@handle" bind:value={tokenTwitter} />
+						<input id="bi-tw" class="input-field" type="text" placeholder="@handle" bind:value={tokenTwitter} autocomplete="off" autocapitalize="off" spellcheck="false" data-form-type="other" />
 					</div>
 					<div class="flex flex-col gap-[0.3rem]">
 						<label class="font-mono text-[0.72rem] text-muted tracking-[0.02em]" for="bi-tg">Telegram</label>
-						<input id="bi-tg" class="input-field" type="text" placeholder="@group" bind:value={tokenTelegram} />
+						<input id="bi-tg" class="input-field" type="text" placeholder="@group" bind:value={tokenTelegram} autocomplete="off" autocapitalize="off" spellcheck="false" data-form-type="other" />
 					</div>
 				</div>
 			</div>

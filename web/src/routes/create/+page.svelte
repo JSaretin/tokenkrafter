@@ -1391,8 +1391,35 @@
 				} catch {}
 			}
 
-			step = 'done';
-				try { sessionStorage.removeItem('tk_create_form_draft'); } catch {}
+			// Clean session/local state so revisiting /create is a fresh
+			// canvas (the previous deploy is finished — no point keeping
+			// the draft, intent mode, or any other resumption hint).
+			try { sessionStorage.removeItem('tk_create_form_draft'); } catch {}
+			try { sessionStorage.removeItem('tk_deploy_after_connect'); } catch {}
+			try { localStorage.removeItem('tk_last_create_mode'); } catch {}
+			createMode.set(null);
+
+			// Redirect to the most useful next page instead of the
+			// "done" screen. Launch (any kind) → the launchpad page
+			// where the creator can monitor / share / promote the
+			// raise. Plain create-and-list → the token's detail page
+			// on /explore so the creator can verify it's listed and
+			// share the link. Both pages have a "manage" entry point
+			// for owners, so we don't lose access to manage-tokens.
+			const slug = tokenInfo.network.symbol?.toLowerCase?.() || 'bsc';
+			if (deployedTokenAddress) {
+				const isLaunch = !!tokenInfo.launch?.enabled;
+				const dest = isLaunch
+					? `/launchpad/${slug}/${deployedTokenAddress}`
+					: `/explore/${slug}/${deployedTokenAddress}`;
+				goto(dest);
+			} else {
+				// Couldn't extract the deployed address from the receipt
+				// (rare — usually a chain that didn't surface the right
+				// log). Fall through to the success screen so the user
+				// can at least click into manage-tokens manually.
+				step = 'done';
+			}
 		} catch (e: any) {
 			const msg = friendlyError(e);
 			addFeedback({ message: `Error: ${msg}`, type: 'error' });
