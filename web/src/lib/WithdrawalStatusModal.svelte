@@ -80,6 +80,34 @@
 		})
 		.subscribe();
 
+	// Belt-and-suspenders polling fallback. We've seen the offramp
+	// modal stay on "pending" even after Flutterwave already paid the
+	// bank, because realtime missed the update — typically a subscribe
+	// race (daemon flipped the row between modal mount and channel
+	// `subscribe()` ack), but also possible on dropped WebSockets or
+	// blocked PG replication. The off-ramp is the moat moment of the
+	// product; one stuck modal during a demo destroys the whole UX
+	// claim. Poll the row directly every 3s as a safety net. The
+	// TERMINAL guard prevents regressions, so realtime + polling
+	// races are harmless. Cheap query (one indexed PK lookup, status
+	// column only).
+	async function pollStatus() {
+		if (TERMINAL.includes(liveStatus) || withdrawal?.id == null) return;
+		const { data } = await supabase
+			.from('withdrawal_requests')
+			.select('status')
+			.eq('id', withdrawal.id)
+			.maybeSingle();
+		if (!data || TERMINAL.includes(liveStatus)) return;
+		if (data.status && data.status !== liveStatus) {
+			liveStatus = data.status;
+		}
+	}
+	// Kick once immediately so we catch any pre-mount transition the
+	// realtime subscribe missed, then on a 3s cadence.
+	pollStatus();
+	const pollInterval = setInterval(() => { pollStatus(); }, 3000);
+
 	// Direct on-chain subscription to WithdrawConfirmed for THIS row's id.
 	// Filter is keyed by the indexed `id` topic so we don't fire on every
 	// admin confirm — only the one we're watching. Same TERMINAL-guard
@@ -131,6 +159,7 @@
 
 	onDestroy(() => {
 		clearInterval(tickInterval);
+		clearInterval(pollInterval);
 		supabase.removeChannel(channel);
 		if (_chainSub) _chainSub.unsubscribe();
 	});
