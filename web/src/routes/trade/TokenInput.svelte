@@ -17,6 +17,11 @@
 		balance = 0n,
 		decimals = 18,
 		isNative = false,
+		// Wrapped-native (WBNB / WETH) is functionally always-sellable
+		// via unwrap. Forwarded to TokenTaxBadge so it suppresses the
+		// honeypot warning for it (the simulator reports canSell=false
+		// for WBNB because the AMM treats it as a base, not a target).
+		isWrappedNative = false,
 		hasTax = false,
 		taxBuy = 0,
 		taxSell = 0,
@@ -37,6 +42,7 @@
 		balance?: bigint;
 		decimals?: number;
 		isNative?: boolean;
+		isWrappedNative?: boolean;
 		hasTax?: boolean;
 		taxBuy?: number;
 		taxSell?: number;
@@ -80,7 +86,7 @@
 		{/if}
 	</div>
 	<BalanceRow symbol={tokenSymbol} {balance} {decimals} {usdValue} />
-	<TokenTaxBadge {taxInfo} {taxBuy} {taxSell} {hasTax} {isNative} {isPlatform} />
+	<TokenTaxBadge {taxInfo} {taxBuy} {taxSell} {hasTax} {isNative} {isWrappedNative} {isPlatform} />
 	{#if notice}
 		<div class="mt-2">{@render notice()}</div>
 	{/if}

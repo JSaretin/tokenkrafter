@@ -1811,6 +1811,7 @@
 					balance={tokenInBalance}
 					decimals={tokenInDecimals}
 					isNative={tokenInIsNative}
+					isWrappedNative={!!wethAddr && tokenInAddr.toLowerCase() === wethAddr.toLowerCase()}
 					hasTax={tokenInHasTax}
 					taxBuy={tokenInTaxBuy}
 					taxSell={tokenInTaxSell}
@@ -1834,6 +1835,7 @@
 					balance={tokenOutBalance}
 					decimals={tokenOutDecimals}
 					isNative={tokenOutIsNative}
+					isWrappedNative={!!wethAddr && tokenOutAddr.toLowerCase() === wethAddr.toLowerCase()}
 					hasTax={tokenOutHasTax}
 					taxBuy={tokenOutTaxBuy}
 					taxSell={tokenOutTaxSell}

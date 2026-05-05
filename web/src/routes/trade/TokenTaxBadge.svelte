@@ -8,6 +8,13 @@
 		taxSell = 0,
 		hasTax = false,
 		isNative = false,
+		// Wrapped-native (WBNB / WETH / etc) — always 1:1 unwrappable to
+		// the chain's native coin, so it's never a honeypot. The
+		// simulator can't simulate a "sell" of WBNB because the AMM
+		// pair semantics treat it as a base, not a swappable target,
+		// so canSell comes back false even though the token is fine.
+		// Skip the honeypot warning for it the same way we skip native.
+		isWrappedNative = false,
 		isPlatform = false,
 	}: {
 		taxInfo?: TaxInfo | null;
@@ -15,10 +22,11 @@
 		taxSell?: number;
 		hasTax?: boolean;
 		isNative?: boolean;
+		isWrappedNative?: boolean;
 		isPlatform?: boolean;
 	} = $props();
 
-	let isHoneypot = $derived(!!(taxInfo && !taxInfo.canSell && !isNative && !isPlatform));
+	let isHoneypot = $derived(!!(taxInfo && !taxInfo.canSell && !isNative && !isWrappedNative && !isPlatform));
 	let showTax = $derived(hasTax || (taxInfo && taxInfo.transferTaxBps > 0));
 	let transferTax = $derived(taxInfo?.transferTaxBps || 0);
 	let totalTax = $derived((taxSell + transferTax) / 100);
