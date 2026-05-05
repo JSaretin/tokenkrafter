@@ -38,11 +38,13 @@
 		{$t('trade.honeypot')}
 	</div>
 {:else if showTax}
+	<!-- Single badge only. The previous "<pct>% tax will be deducted
+	     from the output" note duplicated the breakdown above it; on a
+	     1% taxable token the user saw two near-identical warnings on
+	     the same field. The breakdown carries the same information
+	     and is clearly enough on its own. -->
 	<div class="inline-flex items-center gap-[5px] mt-2 font-mono text-3xs text-[#f59e0b] bg-[rgba(245,158,11,0.08)] border border-[rgba(245,158,11,0.15)] rounded-md py-1 px-2">
 		<span class="w-[5px] h-[5px] rounded-full shrink-0 bg-[#f59e0b]"></span>
 		{$t('trade.taxBreakdown').replace('{buy}', String(taxBuy / 100)).replace('{sell}', String(taxSell / 100))}{#if transferTax}{$t('trade.taxBreakdownTransfer').replace('{transfer}', String(transferTax / 100))}{/if}
 	</div>
-	{#if totalTax > 0}
-		<p class="font-mono text-3xs text-[#fbbf24] mt-1.5 mb-0">{$t('trade.taxDeductedNote').replace('{pct}', String(totalTax))}</p>
-	{/if}
 {/if}
