@@ -1157,26 +1157,41 @@
 					taxSharesBps: tokenInfo.tax?.wallets?.map((w: any) => Math.round(parseFloat(String(w.sharePct || '0')) * 100)) || []
 				};
 
-				// Approve base tokens for router
+				// Approve base tokens for router. If the LP pair uses the
+				// same token as the creation-fee payment, the LP approval
+				// must also cover the fee — otherwise this approve()
+				// overwrites the earlier fee approval and the router
+				// reverts when it tries to pull (fee + LP) atomically
+				// inside createAndList. The classic case: paying fee in
+				// USDT and listing token/USDT.
 				step = 'approving-listing';
+				const feeTokenLower = selectedPayment.address.toLowerCase();
 				for (const pair of erc20Pairs) {
 					const baseAddress = getBaseTokenAddress(network, pair.base);
 					const baseDecimals = getBaseDecimals(network, pair.base);
 					const parsedBaseAmount = ethers.parseUnits(String(pair.amount), baseDecimals);
 					const baseSymbol = getBaseSymbol(network, pair.base);
 
+					// If this base is the same token as the fee payment,
+					// the router will pull (fee + LP) from a single
+					// allowance — request the sum here.
+					const sameAsFee = baseAddress.toLowerCase() === feeTokenLower && selectedFee > 0n;
+					const requiredApproval = sameAsFee ? parsedBaseAmount + selectedFee : parsedBaseAmount;
+					const requiredBalance = sameAsFee ? parsedBaseAmount + selectedFee : parsedBaseAmount;
+
 					const baseContract = new ERC20Client(baseAddress, signer);
 					const balance = await baseContract.balanceOf(userAddress);
-					if (balance < parsedBaseAmount) {
-						addFeedback({ message: `Insufficient ${baseSymbol} balance. Need ${pair.amount} ${baseSymbol}.`, type: 'error' });
+					if (balance < requiredBalance) {
+						const need = ethers.formatUnits(requiredBalance, baseDecimals);
+						addFeedback({ message: `Insufficient ${baseSymbol} balance. Need ${need} ${baseSymbol}.`, type: 'error' });
 						step = 'review';
 						isCreating = false;
 						return;
 					}
 					const allowance = await baseContract.allowance(userAddress, network.router_address);
-					if (allowance < parsedBaseAmount) {
+					if (allowance < requiredApproval) {
 						addFeedback({ message: `Approving ${baseSymbol}...`, type: 'info' });
-						await baseContract.approve(network.router_address, parsedBaseAmount);
+						await baseContract.approve(network.router_address, requiredApproval);
 					}
 				}
 
