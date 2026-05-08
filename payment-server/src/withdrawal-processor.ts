@@ -145,8 +145,32 @@ async function checkChainGas(c: ChainCtx): Promise<boolean> {
 	return true;
 }
 
+// Per-chain async mutex. The Redis `processing:${chain}:${id}` lock
+// only guards against the same withdrawal being processed twice; it
+// does NOT guard against two different withdrawals on the same chain
+// reaching the admin wallet concurrently and racing its nonce
+// (`nonce has already been used`). Both the WS WithdrawRequested
+// handler and the periodic poll can fire processWithdrawal in
+// parallel for distinct ids — that's the legitimate use case the
+// per-id lock can't catch. This mutex serializes all on-chain
+// confirm submissions per chain so the second waits for the first
+// to finish (mine + DB update) before broadcasting.
+const chainAdminMutex = new Map<number, Promise<unknown>>();
+function withChainAdminLock<T>(chainId: number, fn: () => Promise<T>): Promise<T> {
+	const prev = chainAdminMutex.get(chainId) ?? Promise.resolve();
+	const next = prev.catch(() => {}).then(fn);
+	// Store the resolved-to-undefined promise so chained callers don't
+	// see this T leak into the queue's type.
+	chainAdminMutex.set(chainId, next.catch(() => {}));
+	return next;
+}
+
 // ── Process a single withdrawal on a given chain ──
 async function processWithdrawal(c: ChainCtx, withdrawId: number): Promise<boolean> {
+	return withChainAdminLock(c.chainId, () => _processWithdrawalImpl(c, withdrawId));
+}
+
+async function _processWithdrawalImpl(c: ChainCtx, withdrawId: number): Promise<boolean> {
 	const key = `processing:${c.chainId}:${withdrawId}`;
 	if (await redis.exists(key)) return false;
 	await redis.set(key, Date.now().toString(), { EX: 300 });
