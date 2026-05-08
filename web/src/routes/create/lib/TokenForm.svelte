@@ -460,8 +460,11 @@
 			if (initialData.launch.softCap) launchSoftCap = initialData.launch.softCap;
 			if (initialData.launch.hardCap) launchHardCap = initialData.launch.hardCap;
 			if (initialData.launch.durationDays) launchDurationDays = initialData.launch.durationDays;
-			// Convert seconds back to minutes for the UI.
-			if (initialData.launch.lockDurationAfterListing) {
+			// Convert seconds back to minutes for the UI. `!= null` so a
+			// stored "0" (user picked "None (open immediately)") still
+			// restores instead of being treated as falsy and falling
+			// through to the default 60.
+			if (initialData.launch.lockDurationAfterListing != null && initialData.launch.lockDurationAfterListing !== '') {
 				launchLockDurationMinutes = String(Math.round(parseFloat(initialData.launch.lockDurationAfterListing) / 60));
 			}
 			if (initialData.launch.minBuyUsdt) launchMinBuyUsdt = initialData.launch.minBuyUsdt;
@@ -482,7 +485,14 @@
 			listingEnabled = initialData.listing.enabled;
 			if (initialData.listing.pricePerToken) listingPricePerToken = initialData.listing.pricePerToken;
 			if (initialData.listing.pairs?.length) listingPairs = initialData.listing.pairs.map(p => ({ base: p.base, amount: p.amount }));
-			if (initialData.listing.tradingDelay) listingTradingDelaySeconds = initialData.listing.tradingDelay;
+			// `tradingDelay` value of "0" / 0 means the user explicitly
+			// chose "None (open immediately)" — restore it. The previous
+			// truthy guard skipped 0 and silently let the default "60"
+			// take over, so anti-snipe = None never persisted across
+			// reload / draft-restore.
+			if (initialData.listing.tradingDelay != null && initialData.listing.tradingDelay !== '') {
+				listingTradingDelaySeconds = String(initialData.listing.tradingDelay);
+			}
 		}
 	}
 
@@ -559,7 +569,10 @@
 		if (s.maxTransactionPct) maxTransactionPct = s.maxTransactionPct;
 		if (s.cooldownSeconds) cooldownSeconds = s.cooldownSeconds;
 		if (s.launchProtectionEnabled != null) launchProtectionEnabled = s.launchProtectionEnabled;
-		if (s.launchLockDurationMinutes) launchLockDurationMinutes = s.launchLockDurationMinutes;
+		// Same `!= null` check as the sister field above — '0' means
+		// "None (open immediately)" and must restore, not fall through
+		// to the default 60.
+		if (s.launchLockDurationMinutes != null && s.launchLockDurationMinutes !== '') launchLockDurationMinutes = s.launchLockDurationMinutes;
 		if (s.launchMinBuyUsdt) launchMinBuyUsdt = s.launchMinBuyUsdt;
 		if (s.launchStartDateLocal) launchStartDateLocal = s.launchStartDateLocal;
 		if (s.launchTokensPct != null) launchTokensPct = s.launchTokensPct;

@@ -1245,7 +1245,11 @@
 					baseAmounts,
 					tokenAmounts,
 					burnLP: tokenInfo.listing?.burnLp ?? false,
-					tradingDelay: BigInt(tokenInfo.listing.tradingDelay || '60'),
+					// Nullish coalesce, not OR — `tradingDelay = '0'` means the
+					// user explicitly picked "None (open immediately)". `||`
+					// would treat '0' as falsy and override with 60s, so
+					// anti-snipe = None silently became 1 min on submit.
+					tradingDelay: BigInt(tokenInfo.listing.tradingDelay ?? '60'),
 				};
 				// Native value budget: fee BNB (exact-output swap, only consumes
 				// what's needed) + LP BNB (wrapped to WBNB for the pair). The
