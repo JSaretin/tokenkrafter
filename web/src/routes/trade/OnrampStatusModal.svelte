@@ -9,6 +9,7 @@
 	 * the user can resume the transfer if they re-open from history.
 	 */
 	import { onDestroy } from 'svelte';
+	import { supabase } from '$lib/supabaseClient';
 	import ConfirmModalShell from './ConfirmModalShell.svelte';
 
 	interface OnrampHistoryRow {
@@ -29,7 +30,7 @@
 	}
 
 	let {
-		row,
+		row: rowProp,
 		onClose,
 		onCancel,
 	}: {
@@ -41,6 +42,78 @@
 		 *  passes it so the user can abort the flow. */
 		onCancel?: () => void;
 	} = $props();
+
+	// Local mirror of the row that self-heals via realtime + polling.
+	// The previous version read \`row\` straight from the prop and never
+	// updated while the modal was open — so users saw "Awaiting payment"
+	// forever even after Flutterwave confirmed and the daemon delivered
+	// USDT, until they closed and reopened (which let the parent re-fetch
+	// and pass a fresh prop). Same shape, same fields; the component
+	// reads from \`row\` (alias to localRow) so the rest of the file is
+	// unchanged.
+	let localRow = $state<OnrampHistoryRow>(rowProp);
+	let row = $derived(localRow);
+
+	const TERMINAL_STATUSES = ['delivered', 'failed', 'cancelled', 'refunded', 'expired'];
+
+	function applyUpdate(next: OnrampHistoryRow | null | undefined) {
+		if (!next) return;
+		// Only forward — never go backwards once we've reached a terminal
+		// state. Realtime + polling can race; whichever lands first wins
+		// and the other is a no-op.
+		if (TERMINAL_STATUSES.includes(localRow.status)) return;
+		// Same row by reference (the unique key on the table).
+		if (next.reference !== localRow.reference) return;
+		if (next.status === localRow.status) return;
+		localRow = next;
+	}
+
+	// Sync from parent when the prop is replaced (e.g. history list
+	// re-fetches and passes a fresher row).
+	$effect(() => {
+		if (rowProp.reference === localRow.reference && rowProp.status !== localRow.status) {
+			if (!TERMINAL_STATUSES.includes(localRow.status)) {
+				localRow = rowProp;
+			}
+		} else if (rowProp.reference !== localRow.reference) {
+			// User swapped to a different row — fully reinit.
+			localRow = rowProp;
+		}
+	});
+
+	// Realtime — Supabase channel scoped to this single row by reference.
+	const realtimeChannel = supabase
+		.channel(`onramp-${rowProp.reference}-${Date.now()}`)
+		.on('postgres_changes', {
+			event: '*',
+			schema: 'public',
+			table: 'onramp_intents',
+			filter: `reference=eq.${rowProp.reference}`,
+		}, (payload: any) => {
+			applyUpdate(payload.new);
+		})
+		.subscribe();
+
+	// Polling fallback at 3s. Same reasoning as the withdrawal modal:
+	// realtime can miss the update if the row flipped between modal
+	// mount and channel subscribe ack, or the WebSocket dropped. The
+	// terminal guard makes realtime + poll races harmless.
+	async function pollStatus() {
+		if (TERMINAL_STATUSES.includes(localRow.status)) return;
+		const { data } = await supabase
+			.from('onramp_intents')
+			.select('*')
+			.eq('reference', localRow.reference)
+			.maybeSingle();
+		if (data) applyUpdate(data as OnrampHistoryRow);
+	}
+	pollStatus(); // immediate
+	const pollHandle = setInterval(pollStatus, 3000);
+
+	onDestroy(() => {
+		clearInterval(pollHandle);
+		supabase.removeChannel(realtimeChannel);
+	});
 
 	// ── Time-aware state ──
 	let nowSec = $state(Math.floor(Date.now() / 1000));
