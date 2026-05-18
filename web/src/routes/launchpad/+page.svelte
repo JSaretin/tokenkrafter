@@ -141,9 +141,10 @@
 	async function shareLaunch(launch: LaunchInfo & { network: SupportedNetwork; tokenName?: string; tokenSymbol?: string }) {
 		const slug = chainSlug(launch.network?.chain_id ?? 56);
 		const path = `/launchpad/${slug}/${launch.address}`;
-		const url = userAddress
-			? (typeof window !== 'undefined' ? window.location.origin : '') + buildReferralUrl(path, userAddress)
-			: (typeof window !== 'undefined' ? window.location.origin + path : path);
+		const pathWithRef = userAddress ? buildReferralUrl(path, userAddress) : path;
+		const url = typeof window !== 'undefined'
+			? pathWithRef.startsWith('http') ? pathWithRef : window.location.origin + pathWithRef
+			: pathWithRef;
 		const title = launch.tokenName || launch.tokenSymbol || 'TokenKrafter launch';
 		try {
 			if (typeof navigator !== 'undefined' && navigator.share) {
