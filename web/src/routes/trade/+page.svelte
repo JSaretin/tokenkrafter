@@ -1494,7 +1494,10 @@
 					path = [addrIn, addrOut];
 				}
 
+				path = path.map((p)=>p.toLowerCase()===ZERO_ADDRESS.toLowerCase() ? weth : p); // sanity check: RouteFinder can return zero-address for native, but DEX router needs WETH
+
 				const deadline = Math.floor(Date.now() / 1000) + 60 * 20; // 20 min
+
 
 				// Step 2: Execute swap directly on PancakeSwap
 				swapStep = 2;
