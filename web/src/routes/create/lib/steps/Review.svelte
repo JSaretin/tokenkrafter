@@ -7,7 +7,7 @@
 		launchEnabled, listingEnabled,
 		buyTaxPct, sellTaxPct, transferTaxPct, taxWallets,
 		protectionEnabled, maxWalletPct, maxTransactionPct, cooldownSeconds,
-		launchTokensPct, launchCurveType, launchSoftCap, launchHardCap,
+		launchTokensPct, creatorReserveTokens = 0, launchCurveType, launchSoftCap, launchHardCap,
 		launchDurationDays, launchMaxBuyPct, launchCreatorAllocPct, launchVestingDays,
 		listingPoolPct, listingPairs, autoPrice, totalLiquidityUsd,
 		nativeCoin, useExistingToken, existingTokenAddress,
@@ -18,7 +18,7 @@
 		buyTaxPct: string; sellTaxPct: string; transferTaxPct: string;
 		taxWallets: { address: string; sharePct: string }[];
 		protectionEnabled: boolean; maxWalletPct: string; maxTransactionPct: string; cooldownSeconds: string;
-		launchTokensPct: number; launchCurveType: number; launchSoftCap: string; launchHardCap: string;
+		launchTokensPct: number; creatorReserveTokens?: number; launchCurveType: number; launchSoftCap: string; launchHardCap: string;
 		launchDurationDays: string; launchMaxBuyPct: string; launchCreatorAllocPct: string; launchVestingDays: string;
 		listingPoolPct: number; listingPairs: ListingPair[]; autoPrice: number; totalLiquidityUsd: number;
 		nativeCoin: string; useExistingToken: boolean; existingTokenAddress: string;
@@ -105,7 +105,10 @@
 	{#if launchEnabled}
 		<div class="bg-surface border border-line rounded-xl p-3.5">
 			<div class="font-display text-13 font-bold text-[#00d2ff] uppercase tracking-[0.05em] mb-2">Bonding Curve Launch</div>
-			<div class="flex justify-between items-center py-1 text-xs font-mono"><span class="text-dim">Tokens for launch</span><span class="text-foreground font-semibold">{launchTokensPct}%</span></div>
+			<div class="flex justify-between items-center py-1 text-xs font-mono"><span class="text-dim">Tokens for launch</span><span class="text-foreground font-semibold">{launchTokensPct}% of total supply</span></div>
+			{#if creatorReserveTokens > 0}
+				<div class="flex justify-between items-center py-1 text-xs font-mono"><span class="text-dim">Creator reserve (to wallet)</span><span class="text-foreground font-semibold">{creatorReserveTokens.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span></div>
+			{/if}
 			<div class="flex justify-between items-center py-1 text-xs font-mono"><span class="text-dim">Curve</span><span class="text-foreground font-semibold">{curveLabels[launchCurveType] || 'Linear'}</span></div>
 			<div class="flex justify-between items-center py-1 text-xs font-mono"><span class="text-dim">Soft cap</span><span class="text-foreground font-semibold">${launchSoftCap}</span></div>
 			<div class="flex justify-between items-center py-1 text-xs font-mono"><span class="text-dim">Hard cap</span><span class="text-foreground font-semibold">${launchHardCap}</span></div>

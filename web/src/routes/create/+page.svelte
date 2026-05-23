@@ -974,7 +974,13 @@
 
 				const usdtDec = await new ERC20Client(tokenInfo.network.usdt_address, signer).decimals();
 
-				const tokensForLaunch = (totalSupplyWei * BigInt(tokenInfo.launch.tokensForLaunchPct)) / 100n;
+				// Use the exact amount the user entered — do NOT recompute from
+				// totalSupply * pct, because the user may have already sent tokens
+				// to other addresses and their balance no longer equals totalSupply.
+				const tokensForLaunch = ethers.parseUnits(
+					String(tokenInfo.launch.tokensForLaunchAmount || '0'),
+					tokenInfo.decimals
+				);
 				const routerAddr = tokenInfo.network.router_address;
 				if (!routerAddr || routerAddr === '0x') {
 					addFeedback({ message: 'Router not configured for this chain.', type: 'error' });
@@ -1066,7 +1072,12 @@
 				addFeedback({ message: 'Creating token & launch...', type: 'info' });
 				const router = new PlatformRouterClient(tokenInfo.network.router_address, signer);
 
-				const tokensForLaunch = (totalSupplyWei * BigInt(tokenInfo.launch.tokensForLaunchPct)) / 100n;
+				// Use the exact amount entered — consistent with the existing-token
+				// path and avoids any rounding from the pct round-trip.
+				const tokensForLaunch = ethers.parseUnits(
+					String(tokenInfo.launch.tokensForLaunchAmount || '0'),
+					tokenInfo.decimals
+				);
 
 				// Fetch USDT decimals for cap parsing
 				const usdtDec = await new ERC20Client(tokenInfo.network.usdt_address, signer).decimals();

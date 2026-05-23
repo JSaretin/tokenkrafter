@@ -12,7 +12,13 @@
 		burnLp: boolean;
 	};
 	export type LaunchConfig = {
-		enabled: boolean; tokensForLaunchPct: number; curveType: number;
+		enabled: boolean; tokensForLaunchPct: number;
+		// Exact token amount (as a decimal string, in display units — page.svelte
+		// converts to wei using tokenInfo.decimals). Used instead of re-deriving
+		// from totalSupply * pct, which is wrong for existing tokens whose
+		// circulating supply may differ from totalSupply.
+		tokensForLaunchAmount: string;
+		curveType: number;
 		softCap: string; hardCap: string; durationDays: string;
 		maxBuyBps: string; creatorAllocationBps: string; vestingDays: string;
 		// Anti-snipe window after curve graduation, in seconds. Cap 24h.
@@ -132,9 +138,23 @@
 	let blacklistWindowSeconds = $state('0');
 	let launchProtectionEnabled = $state(true);
 
-	let launchTokensPct = $state(40);
+	// Launch allocation: how many tokens the user is putting into the bonding curve launch.
+	// Anything left over (totalSupply - launchAllocationNum) goes straight to the creator's wallet.
+	// The slider below is relative to launchAllocationNum.
+	let launchAllocationRaw = $state('');
 	let supplyNum = $derived(parseFloat((totalSupply || '').replace(/,/g, '')) || 0);
-	let launchTokenAmount = $derived(supplyNum > 0 ? (supplyNum * launchTokensPct) / 100 : 0);
+	let launchAllocationNum = $derived(() => {
+		const n = parseFloat((launchAllocationRaw || '').replace(/,/g, ''));
+		return (!isNaN(n) && n > 0 && n <= supplyNum) ? n : supplyNum;
+	});
+	let creatorReserveNum = $derived(supplyNum - launchAllocationNum());
+
+	// launchTokensPct is the percentage of launchAllocationNum going to the bonding curve.
+	// Stored as % of launchAllocationNum for UX; converted to % of totalSupply on submit.
+	let launchTokensPct = $state(40); // % of launchAllocationNum
+	let launchTokenAmount = $derived(launchAllocationNum() > 0 ? (launchAllocationNum() * launchTokensPct) / 100 : 0);
+	// What the contract needs: % of totalSupply (integer, rounded down)
+	let launchTokensPctOfTotal = $derived(supplyNum > 0 ? Math.floor((launchTokenAmount / supplyNum) * 100) : 0);
 	let launchCurveType = $state(0);
 	let launchSoftCap = $state('');
 	let launchHardCap = $state('');
@@ -532,6 +552,7 @@
 			protectionEnabled, maxWalletPct, maxTransactionPct, cooldownSeconds,
 			launchProtectionEnabled, launchLockDurationMinutes, launchMinBuyUsdt,
 			launchStartDateLocal,
+			launchAllocationRaw,
 			launchTokensPct, launchCurveType, launchSoftCap, launchHardCap,
 			launchDurationDays, launchMaxBuyPct, launchCreatorAllocPct, launchVestingDays,
 			listingPoolPct, listingPairs, listingPricePerToken, burnLp, wizardStep,
@@ -575,6 +596,7 @@
 		if (s.launchLockDurationMinutes != null && s.launchLockDurationMinutes !== '') launchLockDurationMinutes = s.launchLockDurationMinutes;
 		if (s.launchMinBuyUsdt) launchMinBuyUsdt = s.launchMinBuyUsdt;
 		if (s.launchStartDateLocal) launchStartDateLocal = s.launchStartDateLocal;
+		if (s.launchAllocationRaw) launchAllocationRaw = s.launchAllocationRaw;
 		if (s.launchTokensPct != null) launchTokensPct = s.launchTokensPct;
 		if (s.launchCurveType != null) launchCurveType = s.launchCurveType;
 		if (s.launchSoftCap) launchSoftCap = s.launchSoftCap;
@@ -767,7 +789,9 @@
 				burnLp,
 			},
 			launch: {
-				enabled: launchEnabled, tokensForLaunchPct: launchTokensPct,
+				enabled: launchEnabled,
+				tokensForLaunchPct: launchTokensPctOfTotal,
+				tokensForLaunchAmount: String(launchTokenAmount),
 				curveType: launchCurveType, softCap: launchSoftCap, hardCap: launchHardCap,
 				durationDays: launchDurationDays,
 				// When protection disabled, use max 5% buy cap (contract min 0.5%, max 5%) and no anti-snipe
@@ -963,12 +987,34 @@
 			<div>
 				<h2 class="font-display text-xl font-extrabold text-heading m-0 mb-1">Bonding Curve Launch</h2>
 				<div class="mb-3.5">
+					<label for="launchAllocation" class="block text-xs2 font-bold text-dim uppercase tracking-wider font-mono mb-1.5">
+						Launch allocation
+					</label>
+					<input
+						id="launchAllocation"
+						class="input-field"
+						type="text"
+						inputmode="decimal"
+						placeholder="Total supply  (enter less to keep some for yourself)"
+						bind:value={launchAllocationRaw}
+					/>
+					{#if creatorReserveNum > 0 && supplyNum > 0}
+						<span class="block text-3xs text-dim font-mono mt-0.5">
+							{creatorReserveNum.toLocaleString(undefined, { maximumFractionDigits: 0 })} {symbol || 'tokens'} go to your wallet
+							— {launchAllocationNum().toLocaleString(undefined, { maximumFractionDigits: 0 })} {symbol || 'tokens'} allocated to launch
+						</span>
+					{/if}
+				</div>
+				<div class="mb-3.5">
 					<label for="launchTokensPct" class="block text-xs2 font-bold text-dim uppercase tracking-wider font-mono mb-1.5">
-						Tokens for launch ({launchTokensPct}%{#if launchTokenAmount > 0} — {formatTokenAmount(launchTokenAmount)} {symbol || 'tokens'}{/if})
+						Tokens for launch ({launchTokensPct}% of launch allocation{#if launchTokenAmount > 0} — {formatTokenAmount(launchTokenAmount)} {symbol || 'tokens'}{/if})
 					</label>
 					<input id="launchTokensPct" type="range" class="wz-slider w-full h-1.5 bg-surface-hover rounded-sm outline-none" min="20" max="90" step="5" bind:value={launchTokensPct} />
 					{#if launchTokenAmount > 0}
-						<span class="block text-3xs text-dim font-mono mt-0.5">Remaining {formatTokenAmount(supplyNum - launchTokenAmount)} {symbol || 'tokens'} goes to: LP seeding (on graduation) + creator allocation (if any) + burn</span>
+						<div class="flex justify-between mt-1 text-3xs text-dim font-mono">
+							<span>{formatTokenAmount(launchTokenAmount)} {symbol || 'tokens'} on bonding curve ({launchTokensPctOfTotal}% of total supply)</span>
+							<span>{formatTokenAmount(supplyNum - launchTokenAmount - creatorReserveNum)} remaining → LP + creator alloc + burn</span>
+						</div>
 					{/if}
 				</div>
 				<div class="mb-3.5">
@@ -1130,7 +1176,7 @@
 			<div>
 				<h2 class="font-display text-xl font-extrabold text-heading m-0 mb-1">Review</h2>
 				<p class="text-xs text-dim font-mono m-0 mb-4">Confirm your settings before deploying.</p>
-				<Review {name} {symbol} {totalSupply} {decimals} network={selectedNetwork} {isMintable} {isTaxable} {isPartner} {launchEnabled} {listingEnabled} {buyTaxPct} {sellTaxPct} {transferTaxPct} {taxWallets} {protectionEnabled} {maxWalletPct} {maxTransactionPct} {cooldownSeconds} {launchTokensPct} {launchCurveType} {launchSoftCap} {launchHardCap} {launchDurationDays} launchMaxBuyPct={launchMaxBuyPct} launchCreatorAllocPct={launchCreatorAllocPct} {launchVestingDays} {listingPoolPct} {listingPairs} {autoPrice} {totalLiquidityUsd} {nativeCoin} {useExistingToken} {existingTokenAddress} />
+				<Review {name} {symbol} {totalSupply} {decimals} network={selectedNetwork} {isMintable} {isTaxable} {isPartner} {launchEnabled} {listingEnabled} {buyTaxPct} {sellTaxPct} {transferTaxPct} {taxWallets} {protectionEnabled} {maxWalletPct} {maxTransactionPct} {cooldownSeconds} launchTokensPct={launchTokensPctOfTotal} creatorReserveTokens={creatorReserveNum} {launchCurveType} {launchSoftCap} {launchHardCap} {launchDurationDays} launchMaxBuyPct={launchMaxBuyPct} launchCreatorAllocPct={launchCreatorAllocPct} {launchVestingDays} {listingPoolPct} {listingPairs} {autoPrice} {totalLiquidityUsd} {nativeCoin} {useExistingToken} {existingTokenAddress} />
 			</div>
 		{/if}
 	</div>
