@@ -346,10 +346,14 @@ async function enrichLaunch(provider: ethers.Provider, addr: string, chainId: nu
 // sleeps POLL_INTERVAL between ticks.
 
 async function pollTokens(ctx: Ctx, running: () => boolean) {
-	const factory = new ethers.Contract(ctx.config.platform_address, TOKEN_FACTORY_ABI, ctx.provider());
-
 	while (running()) {
 		try {
+			// Rebuilt each iteration — ctx.provider() can return a new
+			// instance after a WS reconnect destroys the old one, and a
+			// Contract bound at function-setup time would keep using the
+			// destroyed provider forever, failing every poll after the
+			// first reconnect.
+			const factory = new ethers.Contract(ctx.config.platform_address, TOKEN_FACTORY_ABI, ctx.provider());
 			const total = Number(await factory.totalTokensCreated());
 			const state = getChainState(ctx.db, ctx.chainId);
 			if (total > state.lastTokenCount) {
@@ -399,10 +403,12 @@ async function pollTokens(ctx: Ctx, running: () => boolean) {
 }
 
 async function pollLaunches(ctx: Ctx, running: () => boolean) {
-	const factory = new ethers.Contract(ctx.config.launchpad_address, LAUNCHPAD_FACTORY_ABI, ctx.provider());
-
 	while (running()) {
 		try {
+			// Rebuilt each iteration — see pollTokens for why (stale
+			// provider reference after a WS reconnect otherwise breaks
+			// this permanently).
+			const factory = new ethers.Contract(ctx.config.launchpad_address, LAUNCHPAD_FACTORY_ABI, ctx.provider());
 			const total = Number(await factory.totalLaunches());
 			const state = getChainState(ctx.db, ctx.chainId);
 			if (total > state.lastLaunchCount) {
