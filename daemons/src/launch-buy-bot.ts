@@ -38,8 +38,6 @@ import * as path from 'path';
 import { createManagedProvider } from '../lib/provider';
 
 // ── Config ──
-const RPC_URL = process.env.RPC_URL || 'https://bsc-dataseed.binance.org/';
-const CHAIN_ID = parseInt(process.env.CHAIN_ID || '56');
 const WALLET_COUNT = Math.max(1, parseInt(process.env.WALLET_COUNT || '10', 10));
 const LAUNCH_ADDRESS = (process.env.LAUNCH_ADDRESS || '').trim();
 const USDT_ADDRESS_ENV = (process.env.USDT_ADDRESS || '').trim();
@@ -308,32 +306,52 @@ async function main() {
 	if (!LAUNCH_ADDRESS) { console.error('❌ LAUNCH_ADDRESS required'); process.exit(1); }
 	if (!ethers.isAddress(LAUNCH_ADDRESS)) { console.error('❌ LAUNCH_ADDRESS invalid'); process.exit(1); }
 
-	// Resolve USDT + RPC. Prefer env override; otherwise pull from /api/config
-	// the same way the activity-bot does, then fall back to launch.usdt().
+	// Look up the launch's chain in the DB — no CHAIN_ID env needed.
+	// One launch lives on exactly one chain, so we read it from
+	// /api/launches and use that chain's network config.
+	let chainId = 0;
 	let usdtAddr = USDT_ADDRESS_ENV;
-	let rpcUrl = RPC_URL;
+	let rpcUrl = '';
 	let wsRpc: string | undefined;
-	if (!usdtAddr) {
-		try {
-			const headers: Record<string, string> = {};
-			if (SYNC_SECRET) headers.Authorization = `Bearer ${SYNC_SECRET}`;
-			const res = await fetch(`${API_BASE}/api/config?keys=networks`, { headers });
-			const { networks } = await res.json();
-			const net = (networks || []).find((n: any) => Number(n.chain_id) === CHAIN_ID);
-			if (net) {
-				usdtAddr = net.usdt_address || usdtAddr;
-				const daemonRpc = net.daemon_rpc || '';
-				const isWs = daemonRpc.startsWith('wss://') || daemonRpc.startsWith('ws://');
-				if (!isWs && daemonRpc) rpcUrl = daemonRpc;
-				else if (net.rpc) rpcUrl = net.rpc;
-				wsRpc = (isWs ? daemonRpc : '') || net.ws_rpc;
-			}
-		} catch (e: any) {
-			console.log(`  ⚠️  Config fetch failed (${e.message?.slice(0, 60)}); will read USDT from launch contract`);
+	try {
+		const headers: Record<string, string> = {};
+		if (SYNC_SECRET) headers.Authorization = `Bearer ${SYNC_SECRET}`;
+		const launchRes = await fetch(
+			`${API_BASE}/api/launches?address=${LAUNCH_ADDRESS.toLowerCase()}`,
+			{ headers },
+		);
+		const launchRows = (await launchRes.json()) as any[];
+		const launchRow = Array.isArray(launchRows) ? launchRows[0] : null;
+		if (!launchRow?.chain_id) {
+			console.error(`❌ Launch ${LAUNCH_ADDRESS} not found in DB — can't resolve chain`);
+			process.exit(1);
 		}
+		chainId = Number(launchRow.chain_id);
+
+		const cfgRes = await fetch(`${API_BASE}/api/config?keys=networks`, { headers });
+		const { networks } = await cfgRes.json();
+		const net = (networks || []).find((n: any) => Number(n.chain_id) === chainId);
+		if (!net) {
+			console.error(`❌ No network config for chain ${chainId}`);
+			process.exit(1);
+		}
+		if (!usdtAddr) usdtAddr = net.usdt_address || usdtAddr;
+		const daemonRpc = net.daemon_rpc || '';
+		const isWs = daemonRpc.startsWith('wss://') || daemonRpc.startsWith('ws://');
+		if (!isWs && daemonRpc) rpcUrl = daemonRpc;
+		else if (net.rpc) rpcUrl = net.rpc;
+		wsRpc = (isWs ? daemonRpc : '') || net.ws_rpc;
+	} catch (e: any) {
+		console.error(`❌ Config fetch failed: ${e.message?.slice(0, 100)}`);
+		process.exit(1);
 	}
 
-	const managed = createManagedProvider({ chainId: CHAIN_ID, httpRpc: rpcUrl, wsRpc });
+	if (!rpcUrl) {
+		console.error('❌ Could not resolve RPC URL from DB config');
+		process.exit(1);
+	}
+
+	const managed = createManagedProvider({ chainId, httpRpc: rpcUrl, wsRpc });
 	const provider = managed.getProvider();
 
 	const launch = new ethers.Contract(LAUNCH_ADDRESS, LAUNCH_ABI, provider);
@@ -360,7 +378,7 @@ async function main() {
 ╔════════════════════════════════════════════════╗
 ║         TokenKrafter Launch Buy Bot            ║
 ╚════════════════════════════════════════════════╝
-  Chain:          ${CHAIN_ID}
+  Chain:          ${chainId}
   RPC:            ${rpcUrl}${wsRpc ? '  (ws: ' + wsRpc + ')' : ''}
   Launch:         ${LAUNCH_ADDRESS}
   Token:          ${tokenAddr}

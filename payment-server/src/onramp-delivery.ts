@@ -21,7 +21,7 @@
  *          tx with OnrampRefAlreadyUsed.
  *
  * Env (lives in .envs/onramp-delivery.env on the VPS):
- *   BACKEND_URL          — SvelteKit backend (e.g. https://tokenkrafter.com)
+ *   API_BASE_URL          — SvelteKit backend (e.g. https://tokenkrafter.com)
  *   SYNC_SECRET          — vault auth token shared with backend
  *   POLL_INTERVAL_MS     — default 30000 (30s)
  *   REDIS_URL            — for in-flight dedup locks (default redis://localhost:6379)
@@ -35,7 +35,7 @@
 import { createClient, type RedisClientType } from 'redis';
 
 const {
-	BACKEND_URL = 'https://tokenkrafter.com',
+	API_BASE_URL = 'https://tokenkrafter.com',
 	SYNC_SECRET = '',
 	POLL_INTERVAL_MS = '30000',
 	REDIS_URL = 'redis://localhost:6379',
@@ -111,7 +111,7 @@ async function clearAlerts(reference: string): Promise<void> {
 
 // ── Backend RPCs ──
 async function fetchPending(): Promise<PendingDelivery[]> {
-	const res = await fetch(`${BACKEND_URL}/api/onramp/pending-deliveries`, {
+	const res = await fetch(`${API_BASE_URL}/api/onramp/pending-deliveries`, {
 		headers: { Authorization: `Bearer ${SYNC_SECRET}` },
 	});
 	if (!res.ok) {
@@ -144,7 +144,7 @@ function fmtUsdtWei(wei: string | undefined): string {
 }
 
 async function deliverOne(reference: string): Promise<DeliverResponse> {
-	const res = await fetch(`${BACKEND_URL}/api/onramp/deliver`, {
+	const res = await fetch(`${API_BASE_URL}/api/onramp/deliver`, {
 		method: 'POST',
 		headers: {
 			Authorization: `Bearer ${SYNC_SECRET}`,
@@ -162,7 +162,7 @@ async function deliverOne(reference: string): Promise<DeliverResponse> {
 async function sendAlert(subject: string, message: string): Promise<void> {
 	console.warn(`[ALERT] ${subject}: ${message}`);
 	try {
-		await fetch(`${BACKEND_URL}/api/alert`, {
+		await fetch(`${API_BASE_URL}/api/alert`, {
 			method: 'POST',
 			headers: {
 				Authorization: `Bearer ${SYNC_SECRET}`,
@@ -267,7 +267,7 @@ async function poll() {
 
 async function main() {
 	console.log('On-ramp Delivery Daemon starting...');
-	console.log(`  Backend: ${BACKEND_URL}`);
+	console.log(`  Backend: ${API_BASE_URL}`);
 	console.log(`  Poll interval: ${pollInterval / 1000}s`);
 
 	await initRedis();

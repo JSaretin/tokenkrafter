@@ -19,7 +19,7 @@
  *   BOT_MNEMONIC         — 12/24-word mnemonic for derived bot wallets
  *                          Wallet[0] is the treasurer (scatterer)
  *   WALLET_COUNT         — Number of derived wallets (default 50)
- *   SPEED                — burst | normal | slow (default slow)
+ *   SPEED                — burst | normal | medium | slow (default slow)
  *   MIN_BNB_BAL          — BNB refund threshold (default 0.003, ~$1.8)
  *   FUND_BNB             — BNB amount when topping up (default 0.01, ~$6)
  *   MIN_USDT_BAL         — USDT refund threshold (default 30)
@@ -33,12 +33,14 @@
 import { ethers } from 'ethers';
 import * as fs from 'fs';
 import * as path from 'path';
-import { createManagedProvider } from '../lib/provider';
+import { loadNetworks, pickDaemonRpc, type Network } from './lib/chains';
 
-// ── Config ──
-const RPC_URL = process.env.RPC_URL || 'https://bsc-dataseed.binance.org/';
-const CHAIN_ID = parseInt(process.env.CHAIN_ID || '56');
+// ── Config (chain-agnostic) ──
 const WALLET_COUNT = parseInt(process.env.WALLET_COUNT || '50', 10);
+// RUN_ONCE=1 skips the inter-iteration delay and exits after the first
+// successful (or unrecoverable) clone attempt. Used to verify the
+// end-to-end flow during dev without waiting through the SPEED window.
+const RUN_ONCE = process.env.RUN_ONCE === '1';
 const MIN_BNB_BAL = ethers.parseEther(process.env.MIN_BNB_BAL || '0.003');
 const FUND_BNB = ethers.parseEther(process.env.FUND_BNB || '0.01');
 const MIN_USDT_BAL = ethers.parseUnits(process.env.MIN_USDT_BAL || '30', 18);
@@ -52,6 +54,7 @@ const SPEED = process.env.SPEED || 'slow';
 const SPEEDS: Record<string, { tokenMin: number; tokenMax: number; desc: string }> = {
 	burst: { tokenMin: 60, tokenMax: 300, desc: '1-5 min' },
 	normal: { tokenMin: 600, tokenMax: 3600, desc: '10-60 min' },
+	medium: { tokenMin: 2400, tokenMax: 5400, desc: '40 - 90 min' },
 	slow: { tokenMin: 3600, tokenMax: 14400, desc: '1-4 hours' },
 };
 
@@ -81,11 +84,18 @@ const ERC20_ABI = [
 ];
 
 // ── State persistence ──
-interface State {
+interface ChainState {
 	clonedTokens: string[];
+	tokensCreated: number;
+}
+
+interface State {
+	// Per-chain dedup. Same source token (e.g. solana:CANNONS) can be
+	// cloned to each chain independently, so the cloned set is keyed
+	// by chainId. trendingCache is shared (off-chain GeckoTerminal).
+	byChain: Record<string, ChainState>;
 	trendingCache: CachedToken[];
 	trendingFetchedAt: number;
-	tokensCreated: number;
 }
 
 interface CachedToken {
@@ -106,14 +116,31 @@ interface CachedToken {
 function loadState(): State {
 	try {
 		if (fs.existsSync(STATE_FILE)) {
-			return JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
+			const raw = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
+			// Migrate legacy single-chain shape (clonedTokens at root)
+			// to byChain bucket. Old shape has no chainId; bucket under
+			// '56' since this only existed on BSC.
+			if (raw && Array.isArray(raw.clonedTokens) && !raw.byChain) {
+				return {
+					byChain: { '56': { clonedTokens: raw.clonedTokens, tokensCreated: raw.tokensCreated || 0 } },
+					trendingCache: raw.trendingCache || [],
+					trendingFetchedAt: raw.trendingFetchedAt || 0,
+				};
+			}
+			return raw;
 		}
 	} catch {}
-	return { clonedTokens: [], trendingCache: [], trendingFetchedAt: 0, tokensCreated: 0 };
+	return { byChain: {}, trendingCache: [], trendingFetchedAt: 0 };
 }
 
 function saveState(s: State) {
 	fs.writeFileSync(STATE_FILE, JSON.stringify(s, null, 2));
+}
+
+function getChainState(s: State, chainId: number): ChainState {
+	const k = String(chainId);
+	if (!s.byChain[k]) s.byChain[k] = { clonedTokens: [], tokensCreated: 0 };
+	return s.byChain[k];
 }
 
 // ── GeckoTerminal ──
@@ -136,8 +163,14 @@ async function gctGet(p: string, retries = 2): Promise<any> {
 	throw new Error(`GCT 429 exhausted retries on ${p}`);
 }
 
+// Lightweight trending list — one GCT call, returns just enough fields
+// (name, symbol, decimals from the included `token` relationships) so
+// we can pick a candidate without enriching every pool. Heavy fields
+// (total_supply, description, socials) are fetched lazily right before
+// we actually clone a specific token, in enrichOne(). This caps GCT
+// usage at 1 list refresh + 2 enrich calls per cloned token.
 async function fetchTrending(): Promise<CachedToken[]> {
-	console.log('  🔍 Fetching trending pools across all networks...');
+	console.log('  🔍 Fetching trending pools (list only)...');
 	const trending = await gctGet('/networks/trending_pools?include=base_token');
 	const pools = trending.data || [];
 	const included = trending.included || [];
@@ -149,45 +182,101 @@ async function fetchTrending(): Promise<CachedToken[]> {
 
 	const results: CachedToken[] = [];
 	for (const pool of pools) {
-		try {
-			const baseTokenId = pool.relationships?.base_token?.data?.id;
-			if (!baseTokenId) continue;
-			const network = baseTokenId.split('_')[0];
-			const address = baseTokenId.split('_').slice(1).join('_');
-			const basics = tokenMap.get(baseTokenId);
-			if (!basics) continue;
+		const baseTokenId = pool.relationships?.base_token?.data?.id;
+		if (!baseTokenId) continue;
+		const network = baseTokenId.split('_')[0];
+		const address = baseTokenId.split('_').slice(1).join('_');
+		const basics = tokenMap.get(baseTokenId);
+		if (!basics) continue;
 
-			await sleep(2100);
-			const base = await gctGet(`/networks/${network}/tokens/${address}`).catch(() => null);
-			await sleep(2100);
-			const info = await gctGet(`/networks/${network}/tokens/${address}/info`).catch(() => null);
-
-			const baseAttrs = base?.data?.attributes || {};
-			const infoAttrs = info?.data?.attributes || {};
-			const totalSupplyRaw = baseAttrs.total_supply;
-			if (!totalSupplyRaw || totalSupplyRaw === '0') continue;
-
-			results.push({
-				key: baseTokenId,
-				network,
-				address,
-				name: basics.name || 'Unknown',
-				symbol: (basics.symbol || 'TKN').toUpperCase().slice(0, 10),
-				decimals: basics.decimals ?? 18,
-				totalSupplyRaw: String(totalSupplyRaw).split('.')[0],
-				image_url: basics.image_url || '',
-				description: infoAttrs.description || '',
-				twitter: infoAttrs.twitter_handle ? `https://x.com/${infoAttrs.twitter_handle}` : '',
-				telegram: infoAttrs.telegram_handle ? `https://t.me/${infoAttrs.telegram_handle}` : '',
-				website: (infoAttrs.websites && infoAttrs.websites[0]) || '',
-			});
-		} catch (e: any) {
-			console.log(`    ⚠️  Skip pool: ${e.message?.slice(0, 60)}`);
-		}
+		results.push({
+			key: baseTokenId,
+			network,
+			address,
+			name: basics.name || 'Unknown',
+			symbol: (basics.symbol || 'TKN').toUpperCase().slice(0, 10),
+			decimals: basics.decimals ?? 18,
+			// Filled lazily on enrichOne() — empty is fine; createClone bails
+			// out without it. Caching empties keeps the list portable across
+			// runs even when GCT throttles enrich calls.
+			totalSupplyRaw: '',
+			image_url: basics.image_url || '',
+			description: '',
+			twitter: '',
+			telegram: '',
+			website: '',
+		});
 	}
 
-	console.log(`  ✓ Cached ${results.length} trending tokens`);
+	console.log(`  ✓ Cached ${results.length} trending tokens (list only — details fetched on demand)`);
 	return results;
+}
+
+// Pull the heavy fields for one token, only when we're about to clone
+// it. Two GCT calls (token + info), spaced to stay under rate limits.
+// Returns null if the token is unusable (no total supply, throttled, etc).
+async function enrichOne(c: CachedToken): Promise<CachedToken | null> {
+	try {
+		const base = await gctGet(`/networks/${c.network}/tokens/${c.address}`).catch(() => null);
+		await sleep(2100);
+		const info = await gctGet(`/networks/${c.network}/tokens/${c.address}/info`).catch(() => null);
+
+		const baseAttrs = base?.data?.attributes || {};
+		const infoAttrs = info?.data?.attributes || {};
+		const totalSupplyRaw = baseAttrs.total_supply;
+		if (!totalSupplyRaw || totalSupplyRaw === '0') return null;
+
+		return {
+			...c,
+			name: baseAttrs.name || c.name,
+			symbol: (baseAttrs.symbol || c.symbol).toUpperCase().slice(0, 10),
+			decimals: baseAttrs.decimals ?? c.decimals,
+			totalSupplyRaw: String(totalSupplyRaw).split('.')[0],
+			image_url: baseAttrs.image_url || c.image_url,
+			description: infoAttrs.description || '',
+			twitter: infoAttrs.twitter_handle ? `https://x.com/${infoAttrs.twitter_handle}` : '',
+			telegram: infoAttrs.telegram_handle ? `https://t.me/${infoAttrs.telegram_handle}` : '',
+			website: (infoAttrs.websites && infoAttrs.websites[0]) || '',
+		};
+	} catch (e: any) {
+		console.log(`    ⚠️  enrich ${c.symbol}: ${e.message?.slice(0, 60)}`);
+		return null;
+	}
+}
+
+// Auth helper. Mirrors the FE's apiFetch.autoSign so the bot's metadata
+// PUT to /api/token-metadata uses a wallet-signed session — same auth
+// path users go through. Returns the cookie jar string ('session=...').
+// Cached per wallet for the bot's lifetime (sessions are 7d server-side).
+const sessionByWallet = new Map<string, string>();
+async function getWalletSession(wallet: ethers.Wallet): Promise<string | null> {
+	const me = wallet.address.toLowerCase();
+	const cached = sessionByWallet.get(me);
+	if (cached) return cached;
+
+	try {
+		const timestamp = Date.now();
+		const message = `TokenKrafter Auth\nAddress: ${wallet.address}\nOrigin: ${API_BASE}\nTimestamp: ${timestamp}`;
+		const signature = await wallet.signMessage(message);
+
+		const res = await fetch(`${API_BASE}/api/auth`, {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+				'x-wallet-address': me,
+			},
+			body: JSON.stringify({ signature, signed_message: message }),
+		});
+		if (!res.ok) return null;
+		const setCookie = res.headers.get('set-cookie') || '';
+		const match = setCookie.match(/session=[^;]+/);
+		if (!match) return null;
+		const cookie = match[0];
+		sessionByWallet.set(me, cookie);
+		return cookie;
+	} catch {
+		return null;
+	}
 }
 
 // ── Type weighting (no partner — reserved for real users) ──
@@ -215,6 +304,30 @@ function deriveWallets(mnemonic: string, count: number, provider: ethers.Provide
 		wallets.push(new ethers.Wallet(child.privateKey, provider));
 	}
 	return wallets;
+}
+
+// Walk the wallet pool and return the first one that already meets
+// both BNB and USDT thresholds. Lets the bot keep working when the
+// treasurer is empty — yesterday's scattered funds don't go to waste.
+// Returns null when nothing fits.
+async function findAlreadyFunded(
+	wallets: ethers.Wallet[],
+	usdt: ethers.Contract,
+	provider: ethers.Provider,
+	skipIdx: number = -1,
+): Promise<{ wallet: ethers.Wallet; idx: number } | null> {
+	for (let i = 1; i < wallets.length; i++) {  // skip 0 (treasurer)
+		if (i === skipIdx) continue;
+		const w = wallets[i];
+		try {
+			const [bnb, ust] = await Promise.all([
+				provider.getBalance(w.address),
+				usdt.balanceOf(w.address),
+			]);
+			if (bnb >= MIN_BNB_BAL && ust >= MIN_USDT_BAL) return { wallet: w, idx: i };
+		} catch {}
+	}
+	return null;
 }
 
 // ── Fund wallet with BNB + USDT from treasurer (wallet[0]) ──
@@ -281,7 +394,8 @@ async function createClone(
 	usdt: ethers.Contract,
 	usdtAddr: string,
 	routerAddr: string,
-	src: CachedToken
+	src: CachedToken,
+	chainId: number,
 ): Promise<string | null> {
 	const typeKey = pickTokenType();
 	const typeLabels = ['Basic', 'Mintable', 'Taxable', 'Tax+Mint'];
@@ -325,8 +439,10 @@ async function createClone(
 			taxWallets: [] as string[],
 			taxSharesBps: [] as number[],
 		};
-		// FeePayment: path=[USDT, USDT] signals direct USDT payment (no swap)
-		const fee = { path: [usdtAddr, usdtAddr], maxAmountIn };
+		// FeePayment: single-element path = direct USDT payment, no swap.
+		// (PlatformRouter._payFee short-circuits on len == 1; len == 2 with
+		// path[0]==path[1] hits Pancake's IDENTICAL_ADDRESSES check.)
+		const fee = { path: [usdtAddr], maxAmountIn };
 
 		const gasEstimate = await routerAsWallet.createTokenOnly.estimateGas(
 			params, protection, tax, fee, ethers.ZeroAddress
@@ -337,50 +453,131 @@ async function createClone(
 		);
 		const receipt = await tx.wait();
 
+		// Both PlatformRouter and TokenFactory emit a TokenCreated event,
+		// but with different shapes. Try the long-form (factory) first
+		// since it carries the most data, then fall back to the short-
+		// form (router). Without the fallback, when the router-emitted
+		// log is the only one that matches our caller's perspective, the
+		// parser throws and tokenAddr stays empty.
 		let tokenAddr = '';
-		const iface = new ethers.Interface(TOKEN_FACTORY_ABI);
+		const ifaceFactory = new ethers.Interface(TOKEN_FACTORY_ABI);
+		const ifaceRouter = new ethers.Interface(PLATFORM_ROUTER_ABI);
 		for (const log of receipt!.logs) {
-			try {
-				const parsed = iface.parseLog({ topics: [...log.topics], data: log.data });
-				if (parsed?.name === 'TokenCreated') {
-					tokenAddr = parsed.args[1];
-					break;
-				}
-			} catch {}
+			let parsed;
+			try { parsed = ifaceFactory.parseLog({ topics: [...log.topics], data: log.data }); } catch {}
+			if (!parsed) {
+				try { parsed = ifaceRouter.parseLog({ topics: [...log.topics], data: log.data }); } catch {}
+			}
+			if (parsed?.name === 'TokenCreated') {
+				// Long-form: args[1] is tokenAddress. Short-form: args[1] is token.
+				tokenAddr = parsed.args[1];
+				break;
+			}
 		}
 
 		const gasCost = receipt!.gasUsed * receipt!.gasPrice;
 		console.log(`    ✅ ${tokenAddr.slice(0, 10)}... | Gas: ${ethers.formatEther(gasCost)} BNB | Fee: ${ethers.formatUnits(feeUsdt, 18)} USDT`);
 
-		if (tokenAddr && SYNC_SECRET) {
+		// Save metadata via the same wallet-authed path users go through
+		// in /create (PUT /api/token-metadata). The PUT verifies the
+		// caller is the token's creator, then upserts the row with all
+		// fields. Doing this BEFORE the indexer's WS handler races our
+		// post-deploy callback isn't possible (we don't know the address
+		// pre-deploy), but Supabase upsert only writes the columns we
+		// send — so even if ws-indexer's POST lands first with the basic
+		// fields, our PUT layers metadata on top without clobbering.
+		if (tokenAddr) {
 			try {
-				const res = await fetch(`${API_BASE}/api/created-tokens`, {
-					method: 'POST',
-					headers: {
-						'Content-Type': 'application/json',
-						Authorization: `Bearer ${SYNC_SECRET}`,
-					},
-					body: JSON.stringify({
-						address: tokenAddr.toLowerCase(),
-						chain_id: CHAIN_ID,
-						creator: wallet.address.toLowerCase(),
-						name: src.name,
-						symbol: src.symbol,
-						total_supply: params.totalSupply.toString(),
-						decimals: src.decimals,
-						is_mintable: params.isMintable,
-						is_taxable: params.isTaxable,
-						is_partner: false,
-						description: src.description,
-						logo_url: src.image_url,
-						website: src.website,
-						twitter: src.twitter,
-						telegram: src.telegram,
-					}),
-				});
-				if (!res.ok) console.log(`    ⚠️  Metadata POST ${res.status}`);
+				const cookie = await getWalletSession(wallet);
+				if (!cookie) {
+					console.log('    ⚠️  Wallet session sign failed — falling back to daemon POST');
+					await fetch(`${API_BASE}/api/created-tokens`, {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${SYNC_SECRET}` },
+						body: JSON.stringify({
+							address: tokenAddr.toLowerCase(),
+							chain_id: chainId,
+							creator: wallet.address.toLowerCase(),
+							name: src.name,
+							symbol: src.symbol,
+							total_supply: params.totalSupply.toString(),
+							decimals: src.decimals,
+							is_mintable: params.isMintable,
+							is_taxable: params.isTaxable,
+							is_partner: false,
+							description: src.description,
+							logo_url: src.image_url,
+							website: src.website,
+							twitter: src.twitter,
+							telegram: src.telegram,
+						}),
+					});
+				} else {
+					// Send everything the bot knows. The on-chain fields
+					// also come through the indexer; upsert means the
+					// later writer wins on those columns and they always
+					// resolve to the same chain-derived values either way.
+					const res = await fetch(`${API_BASE}/api/token-metadata`, {
+						method: 'PUT',
+						headers: {
+							'Content-Type': 'application/json',
+							'x-wallet-address': wallet.address.toLowerCase(),
+							Cookie: cookie,
+						},
+						body: JSON.stringify({
+							address: tokenAddr.toLowerCase(),
+							chain_id: chainId,
+							name: src.name,
+							symbol: src.symbol,
+							decimals: src.decimals,
+							is_taxable: params.isTaxable,
+							is_mintable: params.isMintable,
+							is_partner: false,
+							logo_url: src.image_url || null,
+							description: src.description || null,
+							website: src.website || null,
+							twitter: src.twitter || null,
+							telegram: src.telegram || null,
+						}),
+					});
+					if (!res.ok) console.log(`    ⚠️  Metadata PUT ${res.status}`);
+
+					// Cache the external logo into our own storage so cards
+					// don't hit GeckoTerminal/CoinGecko CDNs forever (slow,
+					// rate-limited, leaks user IPs). The upload endpoint
+					// updates logo_url to the supabase-storage URL on success.
+					if (src.image_url && src.image_url.startsWith('http')) {
+						try {
+							const imgRes = await fetch(src.image_url);
+							if (imgRes.ok) {
+								const blob = await imgRes.blob();
+								const ct = imgRes.headers.get('content-type') || 'image/png';
+								if (blob.size > 0 && blob.size <= 2 * 1024 * 1024) {
+									const fd = new FormData();
+									fd.append('file', new File([blob], 'logo', { type: ct }));
+									fd.append('address', tokenAddr.toLowerCase());
+									fd.append('chain_id', String(chainId));
+									const up = await fetch(`${API_BASE}/api/token-metadata/upload`, {
+										method: 'POST',
+										headers: {
+											'x-wallet-address': wallet.address.toLowerCase(),
+											// SvelteKit's CSRF middleware blocks cross-site
+											// multipart POSTs unless Origin matches the host.
+											Origin: API_BASE,
+											Cookie: cookie,
+										},
+										body: fd,
+									});
+									if (!up.ok) console.log(`    ⚠️  Logo upload ${up.status}`);
+								}
+							}
+						} catch (e: any) {
+							console.log(`    ⚠️  Logo cache: ${e.message?.slice(0, 60)}`);
+						}
+					}
+				}
 			} catch (e: any) {
-				console.log(`    ⚠️  Metadata POST error: ${e.message?.slice(0, 60)}`);
+				console.log(`    ⚠️  Metadata save error: ${e.message?.slice(0, 60)}`);
 			}
 		}
 
@@ -391,131 +588,205 @@ async function createClone(
 	}
 }
 
+// ── Per-chain context ──
+type ChainCtx = {
+	chainId: number;
+	name: string;
+	provider: ethers.JsonRpcProvider;
+	wallets: ethers.Wallet[];
+	treasurer: ethers.Wallet;
+	factory: ethers.Contract;
+	router: ethers.Contract;
+	usdt: ethers.Contract;
+	factoryAddr: string;
+	routerAddr: string;
+	usdtAddr: string;
+};
+
+async function buildChainCtx(net: Network, mnemonic: string): Promise<ChainCtx | null> {
+	const factoryAddr = (net.platform_address as string) || '';
+	const routerAddr = (net.router_address as string) || '';
+	const usdtAddr = (net.usdt_address as string) || '';
+	if (!factoryAddr || !routerAddr || !usdtAddr) {
+		console.warn(`   ⚠️ [c${net.chain_id}] missing platform/router/usdt — skipping`);
+		return null;
+	}
+
+	// HTTP-only provider. WS providers (Infura) reject
+	// eth_sendRawTransaction; activity-bot is a tx-sender, never a
+	// listener, so HTTP is the right shape.
+	const { http } = pickDaemonRpc(net);
+	const rpcUrl = http || (net.rpc as string) || '';
+	if (!rpcUrl) {
+		console.warn(`   ⚠️ [c${net.chain_id}] no http rpc — skipping`);
+		return null;
+	}
+
+	const provider = new ethers.JsonRpcProvider(rpcUrl, net.chain_id, { staticNetwork: true });
+	const wallets = deriveWallets(mnemonic, WALLET_COUNT, provider);
+	const treasurer = wallets[0];
+
+	return {
+		chainId: net.chain_id,
+		name: (net.name as string) || `chain-${net.chain_id}`,
+		provider,
+		wallets,
+		treasurer,
+		factory: new ethers.Contract(factoryAddr, TOKEN_FACTORY_ABI, provider),
+		router: new ethers.Contract(routerAddr, PLATFORM_ROUTER_ABI, provider),
+		usdt: new ethers.Contract(usdtAddr, ERC20_ABI, provider),
+		factoryAddr,
+		routerAddr,
+		usdtAddr,
+	};
+}
+
+// One iteration: refresh trending if stale, pick a candidate, enrich,
+// pick a wallet, clone. The trending cache is shared across chains
+// (same off-chain GCT data), but cloned-set is per-chain.
+async function runChainIteration(
+	ctx: ChainCtx,
+	state: State,
+	log: (msg: string) => void,
+): Promise<{ tokenAddr: string | null; fundable: boolean }> {
+	const cs = getChainState(state, ctx.chainId);
+	const clonedSet = new Set(cs.clonedTokens);
+
+	// Refresh trending (shared cache).
+	if (Date.now() - state.trendingFetchedAt > TRENDING_REFRESH_MS || state.trendingCache.length === 0) {
+		try {
+			state.trendingCache = await fetchTrending();
+			state.trendingFetchedAt = Date.now();
+			saveState(state);
+		} catch (e: any) {
+			log(`  ⚠️  Trending fetch failed: ${e.message?.slice(0, 80)}`);
+			if (state.trendingCache.length === 0) return { tokenAddr: null, fundable: true };
+		}
+	}
+
+	const candidates = state.trendingCache.filter((t) => !clonedSet.has(t.key));
+	if (candidates.length === 0) {
+		log('  ℹ️  All cached tokens cloned (this chain).');
+		return { tokenAddr: null, fundable: true };
+	}
+	const stub = pick(candidates);
+
+	log(`  🔎 Enriching ${stub.network}:${stub.symbol}…`);
+	const source = await enrichOne(stub);
+	if (!source) {
+		clonedSet.add(stub.key);
+		cs.clonedTokens = Array.from(clonedSet);
+		saveState(state);
+		log(`  ⚠️  ${stub.symbol} not enrichable — skipping`);
+		return { tokenAddr: null, fundable: true };
+	}
+
+	let walletIdx = randInt(1, ctx.wallets.length - 1);
+	let wallet = ctx.wallets[walletIdx];
+	let funded = await fundIfLow(ctx.treasurer, wallet, ctx.usdt, ctx.provider);
+	if (!funded.bnb || !funded.usdt) {
+		log(`  🔎 Treasurer can't fund [${walletIdx}] — looking for an already-funded wallet…`);
+		const fallback = await findAlreadyFunded(ctx.wallets, ctx.usdt, ctx.provider, walletIdx);
+		if (fallback) {
+			log(`  ✅ Reusing wallet [${fallback.idx}] (already has BNB+USDT)`);
+			wallet = fallback.wallet;
+			walletIdx = fallback.idx;
+			funded = { bnb: true, usdt: true };
+		} else {
+			log(`  ⚠️  No funded wallets either — top up treasurer ${ctx.treasurer.address}`);
+			return { tokenAddr: null, fundable: false };
+		}
+	}
+
+	const tokenAddr = await createClone(wallet, walletIdx, ctx.router, ctx.factory, ctx.usdt, ctx.usdtAddr, ctx.routerAddr, source, ctx.chainId);
+	if (tokenAddr) {
+		clonedSet.add(source.key);
+		cs.clonedTokens = Array.from(clonedSet);
+		cs.tokensCreated += 1;
+		saveState(state);
+		log(`    Total on chain ${ctx.chainId}: ${cs.tokensCreated}`);
+	}
+	return { tokenAddr, fundable: true };
+}
+
+async function chainLoop(ctx: ChainCtx, state: State, runningRef: { v: boolean }) {
+	const log = (msg: string) => console.log(`[c${ctx.chainId}/${ctx.name}]${msg.startsWith(' ') ? '' : ' '}${msg}`);
+	const speed = SPEEDS[SPEED] || SPEEDS.slow;
+	while (runningRef.v) {
+		try {
+			const result = await runChainIteration(ctx, state, log);
+			if (RUN_ONCE) {
+				log(`\n🏁 RUN_ONCE — exiting (token=${result.tokenAddr || 'failed'})`);
+				return;
+			}
+			if (!result.fundable) {
+				await sleep(60 * 1000);
+				continue;
+			}
+		} catch (e: any) {
+			log(`  ❌ Loop error: ${e.message?.slice(0, 100)}`);
+			if (RUN_ONCE) return;
+		}
+		const delaySec = randInt(speed.tokenMin, speed.tokenMax);
+		log(`  ⏳ Next in ~${(delaySec / 60).toFixed(1)} min`);
+		await Bun.sleep(delaySec * 1000);
+	}
+}
+
 // ── Main ──
 async function main() {
 	const mnemonic = process.env.BOT_MNEMONIC;
 	if (!mnemonic) { console.error('❌ BOT_MNEMONIC required'); process.exit(1); }
 
-	// Load config from backend (DB-managed addresses + RPC)
-	let factoryAddr = '', routerAddr = '', usdtAddr = '', rpcUrl = RPC_URL;
-	try {
-		const cfgHeaders: Record<string, string> = {};
-		if (SYNC_SECRET) cfgHeaders.Authorization = `Bearer ${SYNC_SECRET}`;
-		const res = await fetch(`${API_BASE}/api/config?keys=networks`, { headers: cfgHeaders });
-		const { networks } = await res.json();
-		const net = (networks || []).find((n: any) => Number(n.chain_id) === CHAIN_ID);
-		factoryAddr = net?.platform_address;
-		routerAddr = net?.router_address;
-		usdtAddr = net?.usdt_address;
-		const daemonRpc = net?.daemon_rpc || '';
-		const isWs = daemonRpc.startsWith('wss://') || daemonRpc.startsWith('ws://');
-		if (!isWs && daemonRpc) rpcUrl = daemonRpc;
-		else if (net?.rpc) rpcUrl = net.rpc;
-		var wsRpc: string | undefined = (isWs ? daemonRpc : '') || net?.ws_rpc;
-	} catch (e: any) {
-		console.error(`❌ Config fetch failed: ${e.message}`);
-		process.exit(1);
-	}
-	if (!factoryAddr || !routerAddr || !usdtAddr) {
-		console.error('❌ Missing factory/router/usdt address');
-		process.exit(1);
-	}
-
-	const managed = createManagedProvider({ chainId: CHAIN_ID, httpRpc: rpcUrl, wsRpc });
-	const provider = managed.getProvider();
-	const wallets = deriveWallets(mnemonic, WALLET_COUNT, provider);
-	const treasurer = wallets[0]; // wallet[0] holds the pooled funds, scatters to others
 	const speed = SPEEDS[SPEED] || SPEEDS.slow;
+	console.log('\n╔════════════════════════════════════════════════╗');
+	console.log('║   TokenKrafter Activity Bot (multi-chain)      ║');
+	console.log('╚════════════════════════════════════════════════╝');
+	console.log(`  Wallets per chain: ${WALLET_COUNT}`);
+	console.log(`  Speed:             ${SPEED} (${speed.desc})`);
+	console.log(`  State:             ${STATE_FILE}`);
 
-	const factory = new ethers.Contract(factoryAddr, TOKEN_FACTORY_ABI, provider);
-	const router = new ethers.Contract(routerAddr, PLATFORM_ROUTER_ABI, provider);
-	const usdt = new ethers.Contract(usdtAddr, ERC20_ABI, provider);
+	let networks: Network[];
+	try {
+		networks = await loadNetworks(API_BASE, SYNC_SECRET ? `Bearer ${SYNC_SECRET}` : undefined);
+	} catch (e: any) {
+		console.error(`❌ Failed to load networks: ${e.message}`);
+		process.exit(1);
+	}
+	if (networks.length === 0) {
+		console.error('❌ No enabled networks');
+		process.exit(1);
+	}
+	console.log(`  Networks:          ${networks.map((n) => `${n.chain_id}/${n.name}`).join(', ')}\n`);
 
-	const [treasurerBnb, treasurerUsdt] = await Promise.all([
-		provider.getBalance(treasurer.address),
-		usdt.balanceOf(treasurer.address),
-	]);
-
-	console.log(`
-╔════════════════════════════════════════════════╗
-║      TokenKrafter Activity Bot (Standalone)    ║
-╚════════════════════════════════════════════════╝
-  Chain:          ${CHAIN_ID}
-  RPC:            ${rpcUrl}
-  Factory:        ${factoryAddr}
-  Router:         ${routerAddr}
-  USDT:           ${usdtAddr}
-  Treasurer[0]:   ${treasurer.address}
-  Treasurer BNB:  ${ethers.formatEther(treasurerBnb)}
-  Treasurer USDT: ${ethers.formatUnits(treasurerUsdt, 18)}
-  Wallets:        ${WALLET_COUNT}
-  Speed:          ${SPEED} (${speed.desc})
-  State:          ${STATE_FILE}
-`);
+	const chains: ChainCtx[] = [];
+	for (const net of networks) {
+		const c = await buildChainCtx(net, mnemonic);
+		if (!c) continue;
+		const [bnb, ust] = await Promise.all([
+			c.provider.getBalance(c.treasurer.address),
+			c.usdt.balanceOf(c.treasurer.address),
+		]);
+		console.log(`  [c${c.chainId}/${c.name}] treasurer ${c.treasurer.address} — ${ethers.formatEther(bnb)} BNB / ${ethers.formatUnits(ust, 18)} USDT`);
+		chains.push(c);
+	}
+	if (chains.length === 0) {
+		console.error('❌ No usable chain contexts');
+		process.exit(1);
+	}
 
 	const state = loadState();
-	const clonedSet = new Set(state.clonedTokens);
-	let running = true;
-	process.on('SIGINT', () => { running = false; console.log('\n⏹  Stopping...'); });
-	process.on('SIGTERM', () => { running = false; });
+	const runningRef = { v: true };
+	process.on('SIGINT', () => { runningRef.v = false; console.log('\n⏹  Stopping...'); });
+	process.on('SIGTERM', () => { runningRef.v = false; });
 
-	while (running) {
-		try {
-			// Refresh trending
-			if (Date.now() - state.trendingFetchedAt > TRENDING_REFRESH_MS || state.trendingCache.length === 0) {
-				try {
-					state.trendingCache = await fetchTrending();
-					state.trendingFetchedAt = Date.now();
-					saveState(state);
-				} catch (e: any) {
-					console.log(`  ⚠️  Trending fetch failed: ${e.message?.slice(0, 80)}`);
-					if (state.trendingCache.length === 0) {
-						console.log('  ❌ No cache, sleeping 10min...');
-						await sleep(10 * 60 * 1000);
-						continue;
-					}
-				}
-			}
+	// Run all chains in parallel — independent loops, independent
+	// SPEED windows, independent treasurers (same mnemonic but
+	// different chains, so wallet[0] balance is per-chain).
+	await Promise.all(chains.map((c) => chainLoop(c, state, runningRef)));
 
-			const candidates = state.trendingCache.filter(t => !clonedSet.has(t.key));
-			if (candidates.length === 0) {
-				console.log('  ℹ️  All cached tokens cloned. Waiting 30min for refresh...');
-				await sleep(30 * 60 * 1000);
-				continue;
-			}
-			const source = pick(candidates);
-
-			// Pick random wallet, fund if low
-			const walletIdx = randInt(0, wallets.length - 1);
-			const wallet = wallets[walletIdx];
-			const funded = await fundIfLow(treasurer, wallet, usdt, provider);
-			if (!funded.bnb || !funded.usdt) {
-				console.log(`  ⚠️  Wallet [${walletIdx}] not fundable, sleeping 60s...`);
-				await sleep(60 * 1000);
-				continue;
-			}
-
-			const tokenAddr = await createClone(wallet, walletIdx, router, factory, usdt, usdtAddr, routerAddr, source);
-			if (tokenAddr) {
-				clonedSet.add(source.key);
-				state.clonedTokens = Array.from(clonedSet);
-				state.tokensCreated++;
-				saveState(state);
-				console.log(`    Total: ${state.tokensCreated}`);
-			}
-		} catch (e: any) {
-			console.error(`  ❌ Loop error: ${e.message?.slice(0, 100)}`);
-		}
-
-		const delaySec = randInt(speed.tokenMin, speed.tokenMax);
-		console.log(`  ⏳ Next in ~${(delaySec / 60).toFixed(1)} min`);
-		// Sleep the full delay in one shot — SIGINT sets running=false and
-		// the loop condition catches it on the next iteration.
-		await Bun.sleep(delaySec * 1000);
-		if (!running) break;
-	}
-
-	console.log(`\n✅ Stopped. Total: ${state.tokensCreated} tokens cloned.`);
+	const total = Object.values(state.byChain).reduce((sum, cs) => sum + cs.tokensCreated, 0);
+	console.log(`\n✅ Stopped. Total: ${total} tokens cloned across ${chains.length} chain(s).`);
 }
 
 main().catch(e => { console.error('Fatal:', e); process.exit(1); });
